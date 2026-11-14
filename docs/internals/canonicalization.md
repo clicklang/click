@@ -106,7 +106,7 @@ a load may mention bound variables; the first stage still applies there.
 Creation sites do not rewrite a term to a preferred member of an equality
 class. In particular, a verified call records its owned ranges in
 assumption-free canonical form in both the call-memory derivation and its
-`CMemoryEffectSummary`. If a caller's effect or frame proof uses another
+`MemoryEffectSummary`. If a caller's effect or frame proof uses another
 spelling for a bound, smart frame planning selects the exact equality premises
 outside the kernel and emits an ordinary `frame using` certificate. The exact
 frame checker consumes that proof-local range view without replacing the

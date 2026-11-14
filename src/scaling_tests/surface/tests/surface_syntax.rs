@@ -71,13 +71,13 @@ fn snapshot_blind_surface_selection_scales_by_index_height() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),
     };
-    let load_fact = |memory: CMemory, upper: u32| {
+    let load_fact = |memory: Memory, upper: u32| {
         Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(MachineTerm::MemoryLoad(
-                    crate::kernel::intern_c_memory(memory),
+                    crate::kernel::intern_memory(memory),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Int32,
                 )),
@@ -86,8 +86,8 @@ fn snapshot_blind_surface_selection_scales_by_index_height() {
             true,
         )
     };
-    let recorded = load_fact(CMemory::new().with_block("entry-marker", 0), 7);
-    let query = load_fact(CMemory::new().with_block("later-marker", 0), 7);
+    let recorded = load_fact(Memory::new().with_block("entry-marker", 0), 7);
+    let query = load_fact(Memory::new().with_block("later-marker", 0), 7);
     let surface = ClickProposition::Comparison {
         left: current_var("x"),
         operator: ComparisonOperator::LessThan,
@@ -234,11 +234,11 @@ fn qualified_storage_source_index_preserves_forks_and_scales() {
         };
         let expression = ContractExpression::QualifiedC {
             name: format!("file{index}::state"),
-            lowered: CExpression::TypedLoad {
-                pointer: Box::new(CExpression::Value(CValue::Pointer(
-                    crate::kernel::CPointerValue::new(pointer.clone(), CType::UInt64Pointer),
+            lowered: ProgramExpression::TypedLoad {
+                pointer: Box::new(ProgramExpression::Value(ProgramValue::Pointer(
+                    crate::kernel::PointerValue::new(pointer.clone(), ProgramType::UInt64Pointer),
                 ))),
-                value_type: CType::UInt64,
+                value_type: ProgramType::UInt64,
                 volatile: false,
                 pointee_constant: false,
                 access_class: None,
@@ -255,7 +255,7 @@ fn qualified_storage_source_index_preserves_forks_and_scales() {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: Box::new(MachineTerm::MemoryLoad(
-                    crate::kernel::intern_c_memory(CMemory::new()),
+                    crate::kernel::intern_memory(Memory::new()),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Int32,
                 )),

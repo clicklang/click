@@ -164,7 +164,7 @@ mod tests {
         let domain = Proposition::ForAll {
             name: BinderName::written("i"),
             var: inner,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(Proposition::Implies(
                 Box::new(equality(inner, 0)),
                 Box::new(equality(outer, 1)),
@@ -174,7 +174,7 @@ mod tests {
         let scoped = ScopedExistential::new(
             "k".into(),
             outer,
-            Sort::CInt32,
+            Sort::ProgramInt32,
             vec![path(body.clone(), domain.clone())],
         );
         assert_eq!(scoped.branches[0].proposition, body);
@@ -191,7 +191,7 @@ mod tests {
             Proposition::Exists {
                 name: "k".into(),
                 var: outer,
-                sort: Sort::CInt32,
+                sort: Sort::ProgramInt32,
                 body: Box::new(Proposition::And(Box::new(domain), Box::new(body))),
             }
         );
@@ -205,7 +205,7 @@ mod tests {
         let scoped = ScopedExistential::new(
             "k".into(),
             variable,
-            Sort::CInt32,
+            Sort::ProgramInt32,
             vec![
                 path(equality(variable, 0), equality(variable, 1)),
                 path(equality(variable, 1), equality(variable, 0)),

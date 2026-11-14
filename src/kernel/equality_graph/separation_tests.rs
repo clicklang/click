@@ -4,13 +4,13 @@ use crate::kernel::VerificationSession;
 fn pointer(id: u64) -> Pointer {
     Pointer::symbolic(Variable(990_000 + id))
 }
-fn range(p: &Pointer, start: u32, end: u32) -> CMemoryRange {
-    CMemoryRange::new_with_element_width(p.clone(), start.into(), end.into(), 8)
+fn range(p: &Pointer, start: u32, end: u32) -> MemoryRange {
+    MemoryRange::new_with_element_width(p.clone(), start.into(), end.into(), 8)
 }
 fn separate(a: &Pointer, b: &Pointer) -> Proposition {
-    Proposition::CResourceSeparate {
-        left: Box::new(CResource::Memory(range(a, 0, 1))),
-        right: Box::new(CResource::Memory(range(b, 0, 1))),
+    Proposition::ResourceSeparate {
+        left: Box::new(Resource::Memory(range(a, 0, 1))),
+        right: Box::new(Resource::Memory(range(b, 0, 1))),
     }
 }
 
@@ -105,27 +105,27 @@ fn numeric_aliases_transfer_only_address_separation_not_pointer_identity() {
 fn empty_unknown_ranges_views_and_pointer_value_inequality_supply_no_address_separation() {
     let _session = VerificationSession::enter();
     let (a, b) = (pointer(40), pointer(41));
-    let empty = Proposition::CResourceSeparate {
-        left: Box::new(CResource::Memory(range(&a, 0, 0))),
-        right: Box::new(CResource::Memory(range(&b, 0, 1))),
+    let empty = Proposition::ResourceSeparate {
+        left: Box::new(Resource::Memory(range(&a, 0, 0))),
+        right: Box::new(Resource::Memory(range(&b, 0, 1))),
     };
-    let unknown = Proposition::CResourceSeparate {
-        left: Box::new(CResource::Memory(CMemoryRange::new(
+    let unknown = Proposition::ResourceSeparate {
+        left: Box::new(Resource::Memory(MemoryRange::new(
             a.clone(),
             0u32.into(),
             MachineTerm::Variable(Variable(990_050)),
         ))),
-        right: Box::new(CResource::Memory(range(&b, 0, 1))),
+        right: Box::new(Resource::Memory(range(&b, 0, 1))),
     };
-    let views = Proposition::CResourceComposition(
+    let views = Proposition::ResourceComposition(
         ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::view_memory(range(&a, 0, 1)))
-            .unchecked_with_fact(CResourceFact::view_memory(range(&b, 0, 1))),
+            .unchecked_with_fact(ResourceFact::view_memory(range(&a, 0, 1)))
+            .unchecked_with_fact(ResourceFact::view_memory(range(&b, 0, 1))),
     );
     let unequal = Proposition::ConditionIs(
         ConditionTerm::PointerValueEqual(
-            Box::new(CPointerValue::new(a.clone(), CType::Int32Pointer)),
-            Box::new(CPointerValue::new(b.clone(), CType::Int32Pointer)),
+            Box::new(PointerValue::new(a.clone(), ProgramType::Int32Pointer)),
+            Box::new(PointerValue::new(b.clone(), ProgramType::Int32Pointer)),
         ),
         false,
     );
@@ -139,9 +139,9 @@ fn empty_unknown_ranges_views_and_pointer_value_inequality_supply_no_address_sep
 fn separated_nonzero_range_starts_use_their_byte_addresses() {
     let _session = VerificationSession::enter();
     let (a, b) = (pointer(60), pointer(61));
-    let source = Proposition::CResourceSeparate {
-        left: Box::new(CResource::Memory(range(&a, 2, 3))),
-        right: Box::new(CResource::Memory(range(&b, 1, 2))),
+    let source = Proposition::ResourceSeparate {
+        left: Box::new(Resource::Memory(range(&a, 2, 3))),
+        right: Box::new(Resource::Memory(range(&b, 1, 2))),
     };
     let context = PureFactContext::new().assume_proposition(source);
     assert!(context.contains_known(&different(&a.offset_by_bytes(16), &b.offset_by_bytes(8))));

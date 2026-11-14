@@ -2273,14 +2273,14 @@ mod tests {
         )
         .unwrap();
 
-        let load = || match crate::cli::read_c_inputs(&sidecar, proof)? {
-            crate::cli::CInput::Prepared(imports) => Ok(imports),
+        let load = || match crate::cli::read_verification_inputs(&sidecar, proof)? {
+            crate::cli::VerificationInput::Prepared(imports) => Ok(imports),
             _ => Err("expected the unit's prepared source".to_string()),
         };
         let imports = load().unwrap();
         assert_eq!(imports[0].logical_source(), "../../upstream/main.c");
         assert_eq!(imports[0].source(), "int answer(void) { return 42; }\n");
-        crate::surface::verify_c0_prepared_sources(proof, &imports).unwrap();
+        crate::surface::verify_c_prepared_sources(proof, &imports).unwrap();
 
         fs::write(upstream.join("local.h"), "#define VALUE 43\n").unwrap();
         let error = load().unwrap_err();
@@ -2416,21 +2416,21 @@ mod tests {
 
         let sidecar = fixture.0.join("main.click");
         let proof = fs::read_to_string(&sidecar).unwrap();
-        let crate::cli::CInput::Prepared(imports) =
-            crate::cli::read_c_inputs(&sidecar, &proof).unwrap()
+        let crate::cli::VerificationInput::Prepared(imports) =
+            crate::cli::read_verification_inputs(&sidecar, &proof).unwrap()
         else {
             panic!("ordinary loading must select the locked GCC artifact");
         };
         let original_sidecar = original.join("main.click");
-        let crate::cli::CInput::Prepared(original_imports) =
-            crate::cli::read_c_inputs(&original_sidecar, &proof).unwrap()
+        let crate::cli::VerificationInput::Prepared(original_imports) =
+            crate::cli::read_verification_inputs(&original_sidecar, &proof).unwrap()
         else {
             panic!("the committed fixture must select its locked GCC artifact");
         };
         assert_eq!(imports[0].identity(), original_imports[0].identity());
         assert!(imports[0].source().contains("return 8"));
         assert!(imports[0].source().contains("+ 34;"));
-        let verified = crate::surface::verify_c0_prepared_sources(&proof, &imports).unwrap();
+        let verified = crate::surface::verify_c_prepared_sources(&proof, &imports).unwrap();
         assert_eq!(
             verified[0].import_identity.as_deref(),
             Some(imports[0].identity())
@@ -2443,18 +2443,18 @@ mod tests {
             + 1;
         let column = offset - proof[..offset].rfind('\n').unwrap();
         let expanded =
-            crate::surface::expand_c0_prepared_tactic_source_at(&proof, &imports, line, column)
+            crate::surface::expand_c_prepared_tactic_source_at(&proof, &imports, line, column)
                 .unwrap();
         assert_ne!(expanded, proof);
-        crate::surface::verify_c0_prepared_sources(&expanded, &imports).unwrap();
+        crate::surface::verify_c_prepared_sources(&expanded, &imports).unwrap();
 
         let header = fixture.0.join("local.h");
         fs::write(&header, "#define LOCAL_OFFSET 35\n").unwrap();
-        assert!(crate::cli::read_c_inputs(&sidecar, &proof).is_err());
+        assert!(crate::cli::read_verification_inputs(&sidecar, &proof).is_err());
         fs::copy(original.join("local.h"), &header).unwrap();
         let artifact = fixture.0.join(".click/main/main.c.i");
         fs::write(&artifact, "int answer(void) { return 43; }\n").unwrap();
-        assert!(crate::cli::read_c_inputs(&sidecar, &proof).is_err());
+        assert!(crate::cli::read_verification_inputs(&sidecar, &proof).is_err());
     }
 
     #[test]

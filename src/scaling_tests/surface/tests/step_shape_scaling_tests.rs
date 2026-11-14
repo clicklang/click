@@ -542,7 +542,7 @@ const RESOURCE_TACTICS: [&str; 2] = ["unfold", "fold"];
 fn run(shape: fn(usize) -> (String, String), n: usize) -> Run {
     let (c, click) = shape(n);
     let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
-        verify_c0_sources(&click, &[("hunt.c", c.as_str())])
+        verify_c_sources(&click, &[("hunt.c", c.as_str())])
     });
     result.unwrap_or_else(|error| panic!("size {n}: {}", error.message()));
     let body = c
@@ -775,7 +775,7 @@ fn a_branch_arm_step_ignores_earlier_branches() {
     let largest = [1, 3, 7].map(|n| {
         let (c, click) = branches(n);
         let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
-            verify_c0_sources(&click, &[("hunt.c", c.as_str())])
+            verify_c_sources(&click, &[("hunt.c", c.as_str())])
         });
         result.unwrap_or_else(|error| panic!("branches at {n}: {}", error.message()));
         samples
@@ -985,7 +985,7 @@ void caller({params}) {{
 }}"
         );
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            verify_c0_sources(&click, &[("hunt.c", c.as_str())])
+            verify_c_sources(&click, &[("hunt.c", c.as_str())])
         });
         result.unwrap_or_else(|error| panic!("size {n}: {}", error.message()));
         work
@@ -1057,7 +1057,7 @@ fn a_have_ignores_unrelated_parameters() {
     let work = [2, 32].map(|n| {
         let (c, click) = many_parameters(n);
         let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
-            verify_c0_sources(&click, &[("hunt.c", c.as_str())])
+            verify_c_sources(&click, &[("hunt.c", c.as_str())])
         });
         result.unwrap_or_else(|error| panic!("many_parameters at {n}: {}", error.message()));
         samples
@@ -1102,7 +1102,7 @@ fn saved_iterated_base_ignores_aliases_snapshots_and_unrelated_resources() {
             .collect::<String>();
         click = click.replace("    mark before;", &format!("{marks}    mark before;"));
         let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
-            verify_c0_sources(&click, &[(sources[0].0.as_str(), c.as_str())])
+            verify_c_sources(&click, &[(sources[0].0.as_str(), c.as_str())])
         });
         result.unwrap_or_else(|error| panic!("size {size}: {}", error.message()));
         let successful = samples
@@ -1113,7 +1113,7 @@ fn saved_iterated_base_ignores_aliases_snapshots_and_unrelated_resources() {
             .expect("give work");
         let false_guard = c.replace("occupied[index] = 0", "occupied[index] = 1");
         let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
-            verify_c0_sources(&click, &[(sources[0].0.as_str(), false_guard.as_str())])
+            verify_c_sources(&click, &[(sources[0].0.as_str(), false_guard.as_str())])
         });
         assert!(result.unwrap_err().message().contains("the guard is false"));
         let refused = samples
@@ -1148,7 +1148,7 @@ fn named_unfold_beside_views_scales_with_the_opened_delta() {
         "#
         );
         let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
-            verify_c0_sources(&proof, &[("hunt.c", c.as_str())])
+            verify_c_sources(&proof, &[("hunt.c", c.as_str())])
         });
         result.unwrap_or_else(|error| panic!("count {count}: {}", error.message()));
         let work = samples
@@ -1195,7 +1195,7 @@ fn observing_one_composite_ignores_same_shape_owners() {
             "#
             );
             let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
-                verify_c0_sources(&proof, &[("hunt.c", c.as_str())])
+                verify_c_sources(&proof, &[("hunt.c", c.as_str())])
             });
             result.unwrap_or_else(|error| {
                 panic!("count {count}, crowded {crowded}: {}", error.message())
@@ -1252,7 +1252,7 @@ fn observing_one_owner_ignores_unused_parameters() {
             "#
         );
         let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
-            verify_c0_sources(&proof, &[("observe.c", c.as_str())])
+            verify_c_sources(&proof, &[("observe.c", c.as_str())])
         });
         result.unwrap_or_else(|error| panic!("{count} parameters: {}", error.message()));
         let work = samples
@@ -1305,7 +1305,7 @@ fn have_opening_does_not_copy_ambient_compositions() {
             .map(|(n, s)| (n.as_str(), s.as_str()))
             .collect::<Vec<_>>();
         let (result, samples) =
-            crate::instrumentation::collect_tactic_work(|| verify_c0_sources(&proof, &borrowed));
+            crate::instrumentation::collect_tactic_work(|| verify_c_sources(&proof, &borrowed));
         result.unwrap_or_else(|error| panic!("{size}: {}", error.report()));
         let selected = samples
             .iter()
@@ -1354,7 +1354,7 @@ fn explicit_pointer_separation_ignores_ambient_aliases() {
             .map(|(n, s)| (n.as_str(), s.as_str()))
             .collect::<Vec<_>>();
         let (result, samples) =
-            crate::instrumentation::collect_tactic_work(|| verify_c0_sources(&proof, &borrowed));
+            crate::instrumentation::collect_tactic_work(|| verify_c_sources(&proof, &borrowed));
         result.unwrap_or_else(|e| panic!("{size}: {}", e.report()));
         let work = samples
             .iter()
@@ -1399,7 +1399,7 @@ fn one_write_with_a_loan_does_not_walk_unrelated_aliases() {
                 proof
             };
             let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
-                verify_c0_sources(&proof, &[("loan.c", &c)])
+                verify_c_sources(&proof, &[("loan.c", &c)])
             });
             result.unwrap_or_else(|e| panic!("viewed={viewed}, aliases={size}: {}", e.report()));
             let work = samples
@@ -1444,7 +1444,7 @@ fn retaining_call_compositions_ignores_unused_aliases() {
             "#
             );
             let (result, events) = crate::instrumentation::collect(|| {
-                verify_c0_sources(&click, &[("hunt.c", c.as_str())])
+                verify_c_sources(&click, &[("hunt.c", c.as_str())])
             });
             result.unwrap();
             let work = events

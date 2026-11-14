@@ -16,7 +16,7 @@ fn integer_truncation_pure_aliases_preserve_shared_scaling() {
             "requires a{depth} == a{depth}; ensures a{depth} == a{depth} by {{ assumption(); }} }}"
         ));
         let (result, work) =
-            crate::instrumentation::measure_deterministic_work(|| verify_c0_sources(&source, &[]));
+            crate::instrumentation::measure_deterministic_work(|| verify_c_sources(&source, &[]));
         result.unwrap_or_else(|error| panic!("depth {depth}: {}", error.message()));
         measured.push(work);
     }

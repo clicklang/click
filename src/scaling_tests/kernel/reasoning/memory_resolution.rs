@@ -51,25 +51,25 @@ fn stored_load_alias_lookup_ignores_unrelated_cells() {
     );
     let mut samples = Vec::new();
     for count in [8, 32, 128, 512] {
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         for index in 0..count {
             memory = memory.store(
                 Pointer {
                     block: PointerBlock::ExternalArgument,
                     offset: PointerOffsetTerm::Constant(index * 4),
                 },
-                CValue::Int32(MachineTerm::constant(0)),
+                ProgramValue::Int32(MachineTerm::constant(0)),
             );
         }
         // Snapshot construction/interning belongs to the producer. Measure
         // only a lookup in the already established snapshot.
-        crate::kernel::intern_c_memory_ref(&memory);
+        crate::kernel::intern_memory_ref(&memory);
         let (absent, work) = crate::instrumentation::measure_deterministic_work(|| {
             stored_value_at_equal_pointer(&memory, &target, &assumptions)
         });
         assert!(absent.is_none());
         samples.push(work);
-        let value = CValue::Int32(MachineTerm::constant(17));
+        let value = ProgramValue::Int32(MachineTerm::constant(17));
         memory = memory.store(alias.clone(), value.clone());
         assert_eq!(
             stored_value_at_equal_pointer(&memory, &target, &assumptions),
@@ -221,8 +221,8 @@ fn unresolved_load_projection_ignores_earlier_objects_and_hidden_slots() {
             offset: PointerOffsetTerm::Constant(0),
         };
         let object = |index: usize| Pointer::symbolic(Variable(98_700 + index as u64));
-        let value = |index: usize| CValue::Int32((index as u32).into());
-        let mut memory = CMemory::new();
+        let value = |index: usize| ProgramValue::Int32((index as u32).into());
+        let mut memory = Memory::new();
         let mut last = 0;
         for index in 0..=size {
             memory = memory
@@ -260,8 +260,14 @@ fn retained_endpoint_queries_reuse_shared_dag_pairs() {
     };
     let samples = [8usize, 32, 128].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut root = KernelTerm::variable(KernelType::C(T::Int32.c_type()), Variable(993891));
-        let other = KernelTerm::variable(KernelType::C(T::Int32.c_type()), Variable(993892));
+        let mut root = KernelTerm::variable(
+            KernelType::Program(T::Int32.program_type()),
+            Variable(993891),
+        );
+        let other = KernelTerm::variable(
+            KernelType::Program(T::Int32.program_type()),
+            Variable(993892),
+        );
         let context = PureFactContext::new();
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -298,7 +304,8 @@ fn run_access_retains_cold_shared_index_dags() {
         let mut samples = Vec::new();
         for size in [16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
-            let mut term = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1018601));
+            let mut term =
+                KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1018601));
             for _ in 0..size {
                 term = KernelTerm::machine_binary_shared(
                     ty,
@@ -314,9 +321,9 @@ fn run_access_retains_cold_shared_index_dags() {
             let run = CellRun::new(
                 base.clone(),
                 4,
-                CType::Int32,
+                ProgramType::Int32,
                 16,
-                crate::kernel::intern_c_memory(CMemory::new()),
+                crate::kernel::intern_memory(Memory::new()),
                 Default::default(),
             );
             let offset = if ty == MachineIntegerType::Int32 {
@@ -374,7 +381,8 @@ fn wide_offset_step_retains_dags_and_ignores_unrelated_facts() {
         let mut samples = Vec::new();
         for unrelated in [0, size] {
             let _session = crate::kernel::VerificationSession::enter();
-            let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1018703));
+            let mut root =
+                KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1018703));
             for _ in 0..size {
                 root = KernelTerm::machine_binary_shared(
                     ty,

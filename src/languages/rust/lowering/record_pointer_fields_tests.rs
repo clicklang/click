@@ -1,4 +1,4 @@
-use crate::surface::C0VerificationSession;
+use crate::surface::ProgramVerificationSession;
 
 #[test]
 fn nested_box_fields_keep_their_pointer_type_in_old_reads() {
@@ -51,10 +51,10 @@ fn nested_box_fields_keep_their_pointer_type_in_old_reads() {
             }
         }
     "#;
-    C0VerificationSession::new_program_prepared(source, &prepared)
+    ProgramVerificationSession::new_program_prepared(source, &prepared)
         .unwrap_or_else(|error| panic!("{error}"));
     let missing_field = source.replace("head.next", "head.missing");
-    let error = C0VerificationSession::new_program_prepared(&missing_field, &prepared)
+    let error = ProgramVerificationSession::new_program_prepared(&missing_field, &prepared)
         .err()
         .expect("a named record has no arbitrary fields");
     assert!(

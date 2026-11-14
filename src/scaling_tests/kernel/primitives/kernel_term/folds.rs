@@ -75,12 +75,14 @@ fn nested_machine_fold_producers_retain_children_without_native_exports() {
     use crate::kernel::ExecutionValue;
     for size in [8, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let zero = ExecutionValue::Native(CValue::Int32(MachineTerm::constant(0)));
-        let end = ExecutionValue::Native(CValue::Int32(MachineTerm::Variable(Variable(981001))));
+        let zero = ExecutionValue::Native(ProgramValue::Int32(MachineTerm::constant(0)));
+        let end =
+            ExecutionValue::Native(ProgramValue::Int32(MachineTerm::Variable(Variable(981001))));
         let before = KernelTermExport::machine_export_count();
         let (value, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let mut value =
-                ExecutionValue::Native(CValue::Int32(MachineTerm::Variable(Variable(981002))));
+            let mut value = ExecutionValue::Native(ProgramValue::Int32(MachineTerm::Variable(
+                Variable(981002),
+            )));
             for _ in 0..size {
                 value = crate::kernel::spec::symbolic_spec_range_fold_value(
                     zero.clone(),

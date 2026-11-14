@@ -18,7 +18,7 @@ fn trait_methods_project() -> Project {
 fn charon_trait_method_implementations_refine_their_interface() {
     let p = trait_methods_project();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(SIDECAR, &prepared)
+    ProgramVerificationSession::new_program_prepared(SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     // Keep the original full positive check. Select complete function
     // proofs for local failures; declaration/interface boundary cases
@@ -146,7 +146,7 @@ fn charon_trait_method_implementations_refine_their_interface() {
             verify_rust_proof_after(&invalid, &prepared, head)
                 .expect_err("an implementation or call the interface does not justify must fail")
         } else {
-            C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
                 .err()
                 .expect("an implementation or call the interface does not justify must fail")
         };

@@ -26,9 +26,9 @@ pub(super) use special_arithmetic_planner::*;
 /// Fields are private to the checker; presentation syntax cannot create it.
 #[derive(Clone)]
 pub(super) struct CheckedResourceClaim<'e> {
-    execution: &'e CCheckedFunctionExecution,
+    execution: &'e CheckedFunctionExecution,
     path_index: usize,
-    key: CFunctionContractClaimKey,
+    key: FunctionContractClaimKey,
     returned_resources: crate::kernel::ResourceContext,
     borrowed: bool,
     deferred_guard: bool,
@@ -36,9 +36,9 @@ pub(super) struct CheckedResourceClaim<'e> {
 
 impl CheckedResourceClaim<'_> {
     pub(super) fn inactive(
-        execution: &CCheckedFunctionExecution,
+        execution: &CheckedFunctionExecution,
         path_index: usize,
-        key: CFunctionContractClaimKey,
+        key: FunctionContractClaimKey,
         borrowed: bool,
     ) -> CheckedResourceClaim<'_> {
         CheckedResourceClaim {
@@ -52,9 +52,9 @@ impl CheckedResourceClaim<'_> {
     }
 
     pub(super) fn deferred(
-        execution: &CCheckedFunctionExecution,
+        execution: &CheckedFunctionExecution,
         path_index: usize,
-        key: CFunctionContractClaimKey,
+        key: FunctionContractClaimKey,
         borrowed: bool,
     ) -> CheckedResourceClaim<'_> {
         CheckedResourceClaim {
@@ -69,13 +69,13 @@ impl CheckedResourceClaim<'_> {
 
     pub(super) fn matches(
         &self,
-        execution: &CCheckedFunctionExecution,
+        execution: &CheckedFunctionExecution,
         path_index: usize,
-        key: &CFunctionContractClaimKey,
+        key: &FunctionContractClaimKey,
     ) -> bool {
         std::ptr::eq(self.execution, execution) && self.path_index == path_index && &self.key == key
     }
-    pub(super) fn claim_key(&self) -> &CFunctionContractClaimKey {
+    pub(super) fn claim_key(&self) -> &FunctionContractClaimKey {
         &self.key
     }
     pub(super) fn path_index(&self) -> usize {
@@ -97,9 +97,9 @@ impl CheckedResourceClaim<'_> {
 /// range it has not, rendered for a diagnostic.
 fn produced_range_left_uninitialized(
     resource: &ResourceClause,
-    expected: &[CResourceFact],
+    expected: &[ResourceFact],
     parameter_binding: ParameterBinding<'_>,
-    post_state: &CState,
+    post_state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> Option<String> {
     let segments = match resource {
@@ -111,7 +111,7 @@ fn produced_range_left_uninitialized(
         return None;
     }
     expected.iter().enumerate().find_map(|(index, fact)| {
-        let CResource::Memory(range) = fact.resource() else {
+        let Resource::Memory(range) = fact.resource() else {
             return None;
         };
         let runs = (expected.len() == segments.len())
@@ -138,8 +138,8 @@ fn produced_range_left_uninitialized(
 }
 
 pub(super) fn prove_ensure_resource<'e>(
-    checked_execution: &'e CCheckedFunctionExecution,
-    claim_key: CFunctionContractClaimKey,
+    checked_execution: &'e CheckedFunctionExecution,
+    claim_key: FunctionContractClaimKey,
     claim_label: &str,
     path_index: usize,
     // Read only to describe a failure: a path's merged facts are its whole
@@ -149,9 +149,9 @@ pub(super) fn prove_ensure_resource<'e>(
     resource: &ResourceClause,
     borrowed: bool,
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    entry_state: &CState,
-    outcome: &CFunctionOutcome,
+    pre_state: &ExecutionState,
+    entry_state: &ExecutionState,
+    outcome: &FunctionOutcome,
     guard_active: Option<bool>,
     guard_deferred: bool,
 ) -> Result<CheckedResourceClaim<'e>, ClickError> {
@@ -165,7 +165,7 @@ pub(super) fn prove_ensure_resource<'e>(
                 "resource claim has no checked execution path",
             ));
         }
-        let CFunctionOutcome::Return {
+        let FunctionOutcome::Return {
             value: result,
             state: post_state,
         } = outcome
@@ -208,7 +208,7 @@ pub(super) fn prove_ensure_resource<'e>(
             post_state
         };
         let assumptions = assumptions_from_propositions(available_pure_facts);
-        let lower_at = |clause_state: &CState| {
+        let lower_at = |clause_state: &ExecutionState| {
             lower_resource_clause_facts_at_state_with_result_and_entry(
                 resource,
                 parameter_binding,
@@ -335,13 +335,13 @@ pub(super) fn evaluate_witness_tactic_value(
     path_index: usize,
     tactic_index: usize,
     contract_environment: ContractEnvironment<'_>,
-    pre_state: &CState,
-    post_state: &CState,
-    result: Option<&CValue>,
+    pre_state: &ExecutionState,
+    post_state: &ExecutionState,
+    result: Option<&ProgramValue>,
     assumptions: &PureFactContext,
     spec_definitions: SpecDefinitions<'_>,
     recorded_snapshots: &RecordedSnapshots,
-) -> Result<CValue, ClickError> {
+) -> Result<ProgramValue, ClickError> {
     let mut active_functions = BTreeSet::new();
     let value = evaluate_contract_expression_with_environment(
         contract_environment.values,
@@ -366,7 +366,7 @@ pub(super) fn evaluate_witness_tactic_value(
 
 pub(super) fn apply_witness_tactic(
     witness: &ProofWitness,
-    witness_value: CValue,
+    witness_value: ProgramValue,
     goal: Proposition,
     claim_label: &str,
     path_index: usize,
@@ -392,44 +392,46 @@ pub(super) fn apply_witness_tactic(
 
     let expected = match &sort {
         sort if sort.machine_integer_type().is_some() => {
-            Some(sort.machine_integer_type().unwrap().c_type())
+            Some(sort.machine_integer_type().unwrap().program_type())
         }
-        Sort::CPointer(c_type) | Sort::CObjectPointer(c_type, _) => Some(*c_type),
+        Sort::ProgramPointer(interface_type) | Sort::ProgramObjectPointer(interface_type, _) => {
+            Some(*interface_type)
+        }
         _ => None,
     };
     if let Some(expected) = expected
         && !expected.accepts(&witness_value)
     {
         let actual = match witness_value.numeric_value() {
-            CValue::PointerInteger(_) => unreachable!("numeric projection"),
-            CValue::Parameter(_) => witness_value.c_type(),
-            CValue::Void => CType::Void,
-            CValue::Bool(_) => CType::Bool,
-            CValue::Int8(_) => CType::Int8,
-            CValue::Int16(_) => CType::Int16,
-            CValue::Int32(_) => CType::Int32,
-            CValue::UInt8(_) => CType::UInt8,
-            CValue::UInt16(_) => CType::UInt16,
-            CValue::UInt32(_) => CType::UInt32,
-            CValue::Int64(_) => CType::Int64,
-            CValue::UInt64(_) => CType::UInt64,
-            CValue::Int128(_) => CType::Int128,
-            CValue::UInt128(_) => CType::UInt128,
-            CValue::Float32(_) => CType::Float32,
-            CValue::Float64(_) => CType::Float64,
-            CValue::Pointer(pointer) => pointer.c_type(),
+            ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
+            ProgramValue::Parameter(_) => witness_value.program_type(),
+            ProgramValue::Void => ProgramType::Void,
+            ProgramValue::Bool(_) => ProgramType::Bool,
+            ProgramValue::Int8(_) => ProgramType::Int8,
+            ProgramValue::Int16(_) => ProgramType::Int16,
+            ProgramValue::Int32(_) => ProgramType::Int32,
+            ProgramValue::UInt8(_) => ProgramType::UInt8,
+            ProgramValue::UInt16(_) => ProgramType::UInt16,
+            ProgramValue::UInt32(_) => ProgramType::UInt32,
+            ProgramValue::Int64(_) => ProgramType::Int64,
+            ProgramValue::UInt64(_) => ProgramType::UInt64,
+            ProgramValue::Int128(_) => ProgramType::Int128,
+            ProgramValue::UInt128(_) => ProgramType::UInt128,
+            ProgramValue::Float32(_) => ProgramType::Float32,
+            ProgramValue::Float64(_) => ProgramType::Float64,
+            ProgramValue::Pointer(pointer) => pointer.program_type(),
         };
         return Err(ClickError::new(format!(
             "`witness` failed for `{claim_label}` path {path_index}, tactic {tactic_index}: witness `{}` has the wrong type: expected {}, got {}",
             witness.name(),
-            describe_c0_type(super::generics::c0_type_from_kernel(expected)),
-            describe_c0_type(super::generics::c0_type_from_kernel(actual)),
+            describe_interface_type(super::generics::interface_type_from_program_type(expected)),
+            describe_interface_type(super::generics::interface_type_from_program_type(actual)),
         )));
     }
 
-    if let Sort::CObjectPointer(ty, class) = &sort
+    if let Sort::ProgramObjectPointer(ty, class) = &sort
         && !crate::kernel::AlgebraicValueType::ObjectPointer(*ty, class.clone())
-            .accepts_c_value(&witness_value)
+            .accepts_program_value(&witness_value)
     {
         return Err(ClickError::new(
             "pointer witness lacks the required original object class",
@@ -444,9 +446,9 @@ pub(super) fn apply_witness_tactic(
             substitute_int32_variable_in_proposition(&body, var, value)
         }
         (
-            Sort::CPointer(expected) | Sort::CObjectPointer(expected, _),
-            CValue::Pointer(pointer),
-        ) if expected.accepts(&CValue::Pointer(pointer.clone())) => {
+            Sort::ProgramPointer(expected) | Sort::ProgramObjectPointer(expected, _),
+            ProgramValue::Pointer(pointer),
+        ) if expected.accepts(&ProgramValue::Pointer(pointer.clone())) => {
             crate::kernel::substitute_pointer_value_in_proposition(&body, var, &pointer)
                 .map_err(ClickError::new)?
         }

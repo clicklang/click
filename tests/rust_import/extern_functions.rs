@@ -17,7 +17,7 @@ fn extern_function_project() -> Project {
 fn charon_extern_block_calls_meet_their_extern_contract() {
     let p = extern_function_project();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(SIDECAR, &prepared)
+    ProgramVerificationSession::new_program_prepared(SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     let head = "extern fn extern_functions::clamp_reading(raw: i32) -> i32 {";
     // A head names the parameters; the declaration in the import has none.
@@ -30,7 +30,7 @@ fn charon_extern_block_calls_meet_their_extern_contract() {
             "    requires raw >= 0;\n    ensures 0",
             "    requires value >= 0;\n    ensures 0",
         );
-    C0VerificationSession::new_program_prepared(&renamed, &prepared)
+    ProgramVerificationSession::new_program_prepared(&renamed, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     let caller_requires = "    requires raw >= 0;\n    ensures 1";
     for (before, after, expected) in [
@@ -53,7 +53,7 @@ fn charon_extern_block_calls_meet_their_extern_contract() {
     ] {
         let invalid = SIDECAR.replace(before, after);
         assert_ne!(invalid, SIDECAR);
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        let error = ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
             .err()
             .expect("an unmet or misstated extern contract must fail");
         assert!(format!("{error:?}").contains(expected), "{error:?}");

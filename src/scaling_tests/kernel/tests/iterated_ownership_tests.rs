@@ -54,8 +54,8 @@ fn a_loop_taking_m_elements_is_linear_in_m() {
 fn separation_from_an_unrelated_range_is_constant_in_the_range_size() {
     let mut samples = Vec::new();
     for size in SIZES {
-        let fact = CResource::iterated(cells_fact(size));
-        let unrelated = CResource::Memory(range(UNRELATED, 0, 4));
+        let fact = Resource::iterated(cells_fact(size));
+        let unrelated = Resource::Memory(range(UNRELATED, 0, 4));
         let assumptions = PureFactContext::new();
         let (separate, work) = crate::instrumentation::measure_deterministic_work(|| {
             assumptions.proves_resource_separate(&fact, &unrelated)
@@ -65,10 +65,10 @@ fn separation_from_an_unrelated_range_is_constant_in_the_range_size() {
     }
     assert_constant_plus_log("separation from an unrelated range", &samples, 2.0);
     // A range that may hold an element is never proved separate.
-    let fact = CResource::iterated(cells_fact(16));
+    let fact = Resource::iterated(cells_fact(16));
     assert!(
         !PureFactContext::new()
-            .proves_resource_separate(&fact, &CResource::Memory(range(DATA, 3, 4)))
+            .proves_resource_separate(&fact, &Resource::Memory(range(DATA, 3, 4)))
     );
 }
 
@@ -77,17 +77,17 @@ fn unfolding_the_declaring_resource_is_constant_in_the_range_size() {
     let definitions = cells_definition();
     let mut samples = Vec::new();
     for size in SIZES {
-        let folded = CResourceFact::own(CResource::Composite {
+        let folded = ResourceFact::own(Resource::Composite {
             name: "cells".into(),
             arguments: vec![
-                CValue::pointer(heap_base(DATA)).into(),
-                CValue::pointer(heap_base(OCCUPIED)).into(),
+                ProgramValue::pointer(heap_base(DATA)).into(),
+                ProgramValue::pointer(heap_base(OCCUPIED)).into(),
                 int32(size).into(),
             ]
             .into(),
         });
         let context = ResourceContext::new().unchecked_with_fact(folded.clone());
-        let memory = CMemory::new();
+        let memory = Memory::new();
         let assumptions = PureFactContext::new();
         let (expanded, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::functions::expand_composite_resource_fact(
@@ -100,7 +100,7 @@ fn unfolding_the_declaring_resource_is_constant_in_the_range_size() {
         });
         let expanded = expanded.expect("the body expands");
         assert!(
-            expanded.contains_exact_representation(&CResourceFact::own(CResource::iterated(
+            expanded.contains_exact_representation(&ResourceFact::own(Resource::iterated(
                 cells_fact(size)
             )))
         );
@@ -109,12 +109,12 @@ fn unfolding_the_declaring_resource_is_constant_in_the_range_size() {
         let folded_again = expanded
             .clone()
             .without_fact(
-                &CResourceFact::own(CResource::iterated(cells_fact(size))),
+                &ResourceFact::own(Resource::iterated(cells_fact(size))),
                 &assumptions,
             )
             .and_then(|context| {
                 context.without_fact(
-                    &CResourceFact::own_memory(range(OCCUPIED, 0, size)),
+                    &ResourceFact::own_memory(range(OCCUPIED, 0, size)),
                     &assumptions,
                 )
             })
@@ -142,10 +142,10 @@ fn giving_one_element_is_constant_in_the_range_size() {
 
 /// `cells_state` beside `unrelated` owned ranges, one per other block: the
 /// ambient holdings a simple step must not scan.
-fn cells_state_beside_unrelated_ranges(capacity: u32, unrelated: u32) -> CState {
+fn cells_state_beside_unrelated_ranges(capacity: u32, unrelated: u32) -> ExecutionState {
     let state = cells_state(capacity, capacity);
     let resources = (0..unrelated).fold(state.resources().clone(), |resources, index| {
-        resources.unchecked_with_fact(CResourceFact::own_memory(range(
+        resources.unchecked_with_fact(ResourceFact::own_memory(range(
             UNRELATED + 10 + u64::from(index),
             0,
             4,

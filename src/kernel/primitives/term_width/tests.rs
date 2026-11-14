@@ -74,21 +74,21 @@ fn an_operand_of_the_wrong_width_is_reported_where_it_meets_its_operator() {
 #[test]
 fn a_value_tag_and_its_term_agree_on_the_carrier() {
     assert_eq!(
-        value_width_mismatch(&CValue::UInt64(MachineTerm::constant(0))),
+        value_width_mismatch(&ProgramValue::UInt64(MachineTerm::constant(0))),
         Some(WidthMismatch {
-            site: "CValue::UInt64",
+            site: "ProgramValue::UInt64",
             expected: CarrierWidth::Bits64,
             found: CarrierWidth::Bits32,
         })
     );
     assert_eq!(
-        value_width_mismatch(&CValue::UInt64(MachineTerm::uint64_constant(0))),
+        value_width_mismatch(&ProgramValue::UInt64(MachineTerm::uint64_constant(0))),
         None
     );
     // Narrow values ride in the 32-bit carrier.
     assert_eq!(value_width_mismatch(&crate::kernel::int8(5)), None);
     assert_eq!(
-        value_width_mismatch(&CValue::Int64(MachineTerm::Variable(Variable(4)))),
+        value_width_mismatch(&ProgramValue::Int64(MachineTerm::Variable(Variable(4)))),
         None
     );
 }
@@ -213,10 +213,10 @@ fn separate_fact_contexts_may_use_one_variable_number_at_different_widths() {
 fn a_bool_constant_is_the_byte_zero_or_one() {
     let byte = |bits| MachineTerm::narrow_constant(MachineIntegerType::UInt8, bits);
     for in_range in [
-        CValue::bool_constant(false),
-        CValue::bool_constant(true),
+        ProgramValue::bool_constant(false),
+        ProgramValue::bool_constant(true),
         // A symbolic `Bool` carrier is kept in range by rule C1.
-        CValue::Bool(MachineTerm::Variable(Variable(15))),
+        ProgramValue::Bool(MachineTerm::Variable(Variable(15))),
     ] {
         assert_eq!(
             narrow_constant_out_of_range(&in_range),
@@ -225,18 +225,18 @@ fn a_bool_constant_is_the_byte_zero_or_one() {
         );
         assert_eq!(value_mismatch(&in_range), None, "{in_range:?}");
     }
-    let out_of_range = CValue::Bool(byte(2));
+    let out_of_range = ProgramValue::Bool(byte(2));
     assert!(narrow_constant_out_of_range(&out_of_range).is_some());
     assert!(value_mismatch(&out_of_range).is_some());
     // A narrow value's constant is native: a 32-bit word in an 8- or 16-bit
     // value, a `Bool` among them, is a width mismatch, whatever its bits.
     let c = MachineTerm::constant;
     for word in [
-        CValue::Bool(c(1)),
-        CValue::Int8(c(127)),
-        CValue::UInt8(c(255)),
-        CValue::Int16(c(-32768i32 as u32)),
-        CValue::UInt16(c(65535)),
+        ProgramValue::Bool(c(1)),
+        ProgramValue::Int8(c(127)),
+        ProgramValue::UInt8(c(255)),
+        ProgramValue::Int16(c(-32768i32 as u32)),
+        ProgramValue::UInt16(c(65535)),
     ] {
         assert!(value_mismatch(&word).is_some(), "{word:?}");
     }

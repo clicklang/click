@@ -88,42 +88,44 @@ impl Gen {
             0 => SpecMemory::Current,
             1 => SpecMemory::FunctionEntry,
             2 => SpecMemory::LoopEntry,
-            _ => SpecMemory::Fixed(CMemory::new()),
+            _ => SpecMemory::Fixed(Memory::new()),
         }
     }
 
-    fn c(&mut self) -> CExpression {
+    fn c(&mut self) -> ProgramExpression {
         const NAMES: [&str; 6] = ["x", "x", "n", "v", "acc", "i"];
         match self.pick(4) {
-            0 => CExpression::Variable(NAMES[self.pick(6) as usize].into()),
-            1 => CExpression::Value(CValue::Int32(MachineTerm::constant(1))),
-            2 => CExpression::Value(CValue::Int32(MachineTerm::Variable(self.variable()))),
-            _ => CExpression::Load(Box::new(CExpression::Variable("p".into()))),
+            0 => ProgramExpression::Variable(NAMES[self.pick(6) as usize].into()),
+            1 => ProgramExpression::Value(ProgramValue::Int32(MachineTerm::constant(1))),
+            2 => ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Variable(
+                self.variable(),
+            ))),
+            _ => ProgramExpression::Load(Box::new(ProgramExpression::Variable("p".into()))),
         }
     }
 
     fn expr_leaf(&mut self) -> SpecExpression {
         match self.pick(5) {
-            0 => SpecExpression::Value(CValue::Int32(MachineTerm::constant(7))),
-            1 => SpecExpression::Value(CValue::Int32(MachineTerm::Variable(self.variable()))),
+            0 => SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(7))),
+            1 => SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(self.variable()))),
             2 => SpecExpression::ResourceField {
                 projection: self.projection(),
-                c_type: CType::Int32,
+                program_type: ProgramType::Int32,
             },
-            _ => SpecExpression::CExpression(self.c()),
+            _ => SpecExpression::ProgramExpression(self.c()),
         }
     }
 
     /// A load address: often a constant offset from the parameter `x`.
     fn pointer(&mut self, depth: u32) -> SpecExpression {
-        let parameter = SpecExpression::CExpression(CExpression::Variable("x".into()));
+        let parameter = SpecExpression::ProgramExpression(ProgramExpression::Variable("x".into()));
         match self.pick(3) {
             0 => parameter,
             1 => SpecExpression::PointerOffset {
                 pointer: Box::new(parameter),
-                elements: Box::new(SpecExpression::Value(CValue::Int32(MachineTerm::constant(
-                    2,
-                )))),
+                elements: Box::new(SpecExpression::Value(ProgramValue::Int32(
+                    MachineTerm::constant(2),
+                ))),
                 byte_width: 4,
             },
             _ => self.expr(depth),
@@ -137,15 +139,17 @@ impl Gen {
         let d = depth - 1;
         match self.pick(20) {
             0 => self.expr_leaf(),
-            1 => SpecExpression::CExpression(self.c()),
+            1 => SpecExpression::ProgramExpression(self.c()),
             2 => SpecExpression::IntegerToMachine {
                 value: Box::new(self.int(d)),
                 destination: MachineIntegerType::Int32,
             },
             3 => SpecExpression::Add(Box::new(self.expr(d)), Box::new(self.expr(d))),
             4 => SpecExpression::BitwiseNot(Box::new(self.expr(d))),
-            19 => SpecExpression::PointerCoercion(Box::new(self.expr(d)), CType::UInt8Pointer),
-            5 => SpecExpression::Cast(Box::new(self.expr(d)), CType::Int32),
+            19 => {
+                SpecExpression::PointerCoercion(Box::new(self.expr(d)), ProgramType::UInt8Pointer)
+            }
+            5 => SpecExpression::Cast(Box::new(self.expr(d)), ProgramType::Int32),
             6 => SpecExpression::LoopEntrySnapshot(Box::new(self.expr(d))),
             7 => SpecExpression::If {
                 condition: Box::new(self.prop(d)),
@@ -168,7 +172,7 @@ impl Gen {
             10 => SpecExpression::PureFunctionApplication {
                 name: "f".into(),
                 arguments: vec![self.arg(d), self.arg(d)],
-                result_type: CType::Int32,
+                result_type: ProgramType::Int32,
                 pointer_result: None,
                 result_object_class: None,
                 projection: None,
@@ -181,12 +185,12 @@ impl Gen {
             12 => SpecExpression::MemoryLoad {
                 memory: self.memory(),
                 pointer: Box::new(self.pointer(d)),
-                value_type: CType::Int32,
+                value_type: ProgramType::Int32,
             },
             13 => SpecExpression::AggregateFieldValue {
                 parameter: "s".into(),
                 pointer: Box::new(self.pointer(d)),
-                value_type: CType::Int32,
+                value_type: ProgramType::Int32,
             },
             14 => SpecExpression::CountedResourceCount {
                 name: "member".into(),
@@ -297,7 +301,7 @@ impl Gen {
                 1 => SpecAlgebraicExpressionNode::Constructor {
                     variant: "One".into(),
                     fields: vec![match self.pick(3) {
-                        0 => SpecAlgebraicValue::C(self.expr(d)),
+                        0 => SpecAlgebraicValue::Program(self.expr(d)),
                         1 => SpecAlgebraicValue::Integer(self.int(d)),
                         _ => SpecAlgebraicValue::Algebraic(self.alg(d)),
                     }],
@@ -356,7 +360,7 @@ impl Gen {
             _ => SpecPureFunctionArgument::ArrayRef {
                 memory: self.memory(),
                 pointer: self.expr(depth),
-                element_type: CType::Int32,
+                element_type: ProgramType::Int32,
             },
         }
     }
@@ -397,7 +401,7 @@ impl Gen {
         match choice {
             0 => SpecProposition::Comparison {
                 left: self.expr(d),
-                operator: CComparisonOperator::LessThan,
+                operator: ComparisonOperator::LessThan,
                 right: self.expr(d),
             },
             1 => SpecProposition::Defined(self.expr(d)),
@@ -463,7 +467,7 @@ impl Gen {
             },
             14 => SpecProposition::FloatClassification {
                 expression: self.expr(d),
-                classification: CFloatClassification::Finite,
+                classification: FloatClassification::Finite,
             },
             15 => SpecProposition::Or(Box::new(self.prop(d)), Box::new(self.prop(d))),
             16 => SpecProposition::ResourceViewable {

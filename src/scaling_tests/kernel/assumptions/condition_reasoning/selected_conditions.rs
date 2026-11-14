@@ -302,7 +302,7 @@ fn compound_load_condition_hits_and_misses_ignore_other_facts() {
                 let _session = crate::kernel::VerificationSession::enter();
                 let var = |id| MachineTerm::Variable(Variable(id));
                 let raw = MachineTerm::MemoryLoad(
-                    crate::kernel::intern_c_memory(CMemory::new()),
+                    crate::kernel::intern_memory(Memory::new()),
                     Box::new(Pointer::symbolic(Variable(997_000))),
                     crate::kernel::LoadKind::Int32,
                 );
@@ -390,8 +390,9 @@ fn additive_dag_matching_retains_multiplicity_without_expanding_occurrences() {
     let mut samples = Vec::new();
     for size in [8, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(993521));
-        let other = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(993522));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(993521));
+        let other = KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(993522));
         for _ in 0..size {
             root =
                 KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [root.clone(), root]);
@@ -427,7 +428,8 @@ fn retained_transport_reuses_growing_prefixes_across_context_changes() {
     let mut samples = Vec::new();
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let variable = |n| KernelTerm::variable(KernelType::C(ty.c_type()), Variable(n));
+        let variable =
+            |n| KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(n));
         let mut root = variable(993531);
         let [a, b] = [variable(993532), variable(993533)];
         let mut context = PureFactContext::new();
@@ -480,8 +482,8 @@ fn conditional_transport_reuses_shared_arms_and_requires_selected_equality() {
         let b = Variable(993532);
         let guard =
             KernelTermImport::default().condition(&ConditionTerm::Variable(Variable(993533)));
-        let mut left = KernelTerm::variable(KernelType::C(ty.c_type()), a);
-        let mut right = KernelTerm::variable(KernelType::C(ty.c_type()), b);
+        let mut left = KernelTerm::variable(KernelType::Program(ty.program_type()), a);
+        let mut right = KernelTerm::variable(KernelType::Program(ty.program_type()), b);
         for _ in 0..size {
             left = KernelTerm::machine_if_shared(ty, [guard.clone(), left.clone(), left]);
             right = KernelTerm::machine_if_shared(ty, [guard.clone(), right.clone(), right]);

@@ -43,7 +43,7 @@ mod tests {
     use super::*;
 
     fn literal() -> SpecExpression {
-        SpecExpression::Value(CValue::Int32(MachineTerm::constant(0)))
+        SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(0)))
     }
 
     fn count() -> SpecExpression {
@@ -71,7 +71,7 @@ mod tests {
             )))),
         };
         for body in [nested, predicate(true)] {
-            let registered = CPredicateUnfolding::new(predicate(false), body);
+            let registered = PredicateUnfolding::new(predicate(false), body);
             assert!(matches!(
                 registered.predicate(),
                 SpecProposition::Predicate {
@@ -88,7 +88,7 @@ mod tests {
             let body = SpecProposition::Defined(SpecExpression::PureFunctionApplication {
                 name: "identity".into(),
                 arguments: vec![SpecPureFunctionArgument::Value(argument)],
-                result_type: CType::Int32,
+                result_type: ProgramType::Int32,
                 pointer_result: None,
                 result_object_class: None,
                 projection: None,
@@ -134,7 +134,7 @@ mod tests {
                         operator: IntegerComparisonOperator::Equal,
                         right: SpecIntegerExpression::Term(IntegerTerm::constant_i64(0)),
                     };
-                    let registered = CPredicateUnfolding::new(predicate(false), body);
+                    let registered = PredicateUnfolding::new(predicate(false), body);
                     assert!(
                         matches!(registered.predicate(), SpecProposition::Predicate {
                         resource_state_dependent, ..

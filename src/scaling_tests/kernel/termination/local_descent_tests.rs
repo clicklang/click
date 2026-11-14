@@ -10,24 +10,24 @@ use super::*;
 /// now holds one bound per join, which decides every edge the same way.
 #[test]
 fn a_recursion_check_is_linear_in_sequential_branches() {
-    let n = || crate::kernel::c_variable("n");
-    let literal = |value: u32| crate::kernel::c_int32_literal(value);
-    let guarded_call = |argument: CExpression| {
-        crate::kernel::c_if(
-            crate::kernel::c_greater_than(n(), literal(0)),
-            crate::kernel::c_call("countdown", vec![argument]),
-            CStatement::Skip,
+    let n = || crate::kernel::program_expression::variable("n");
+    let literal = |value: u32| crate::kernel::program_expression::int32_literal(value);
+    let guarded_call = |argument: ProgramExpression| {
+        crate::kernel::program_if(
+            crate::kernel::program_expression::greater_than(n(), literal(0)),
+            crate::kernel::program_call("countdown", vec![argument]),
+            ProgramStatement::Skip,
         )
     };
     // A balanced sequence, so the walk's depth is logarithmic and the
     // test measures the branch count and not the nesting.
-    fn sequence(statements: &[CStatement]) -> CStatement {
+    fn sequence(statements: &[ProgramStatement]) -> ProgramStatement {
         match statements {
-            [] => CStatement::Skip,
+            [] => ProgramStatement::Skip,
             [only] => only.clone(),
             _ => {
                 let (left, right) = statements.split_at(statements.len() / 2);
-                CStatement::seq(Arc::new(sequence(left)), Arc::new(sequence(right)))
+                ProgramStatement::seq(Arc::new(sequence(left)), Arc::new(sequence(right)))
             }
         }
     }
@@ -35,36 +35,39 @@ fn a_recursion_check_is_linear_in_sequential_branches() {
         // Branches on the measure that establish nothing about it.
         let branches = (0..branches)
             .map(|index| {
-                crate::kernel::c_if(
-                    crate::kernel::c_less_than(n(), literal(index as u32 + 1_000)),
-                    CStatement::Skip,
-                    CStatement::Skip,
+                crate::kernel::program_if(
+                    crate::kernel::program_expression::less_than(
+                        n(),
+                        literal(index as u32 + 1_000),
+                    ),
+                    ProgramStatement::Skip,
+                    ProgramStatement::Skip,
                 )
             })
             .collect::<Vec<_>>();
         let mut body = sequence(&branches);
         let argument = if descends {
-            crate::kernel::c_subtract(n(), literal(1))
+            crate::kernel::program_expression::subtract(n(), literal(1))
         } else {
             n()
         };
-        body = CStatement::seq(Arc::new(body), Arc::new(guarded_call(argument)));
-        [CVerifiedFunctionRule {
+        body = ProgramStatement::seq(Arc::new(body), Arc::new(guarded_call(argument)));
+        [VerifiedFunctionRule {
             pointer_result: None,
-            loop_semantics: CLoopSemantics::ApplyVerifiedRules,
+            loop_semantics: LoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
             applied_tactics: Default::default(),
-            function: CFunction::new(
-                CType::Void,
+            function: ProgramFunction::new(
+                ProgramType::Void,
                 "countdown",
-                vec![crate::kernel::c_parameter("n", CType::Int32)],
+                vec![crate::kernel::program_parameter("n", ProgramType::Int32)],
                 body,
             ),
         }]
     };
-    let plan = CFunctionTerminationPlan {
+    let plan = FunctionTerminationPlan {
         function_name: "countdown".to_string(),
-        recursive_measure: Some(CFunctionTerminationMeasure::NumericParameter(0)),
+        recursive_measure: Some(FunctionTerminationMeasure::NumericParameter(0)),
         loop_measures: BTreeMap::new(),
     };
     // Judged by the checker's deterministic work, not the host clock:
@@ -73,7 +76,7 @@ fn a_recursion_check_is_linear_in_sequential_branches() {
     let mut previous: Option<(usize, usize)> = None;
     for branches in [8, 64, 512] {
         let rules = build(branches, true);
-        let heights = c_termination_height_plan(&rules, &[]);
+        let heights = program_termination_height_plan(&rules, &[]);
         let (verdicts, work) = crate::instrumentation::measure_deterministic_work(|| {
             check(&rules, std::slice::from_ref(&plan), &heights, &[])
                 .expect("a descending call checks")
@@ -90,7 +93,7 @@ fn a_recursion_check_is_linear_in_sequential_branches() {
         previous = Some((branches, work));
     }
     let rules = build(64, false);
-    let heights = c_termination_height_plan(&rules, &[]);
+    let heights = program_termination_height_plan(&rules, &[]);
     let error = check(&rules, std::slice::from_ref(&plan), &heights, &[])
         .expect_err("a call that passes the measure unchanged does not descend");
     assert!(error.message.contains("must pass"), "{error}");

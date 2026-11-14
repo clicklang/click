@@ -1494,7 +1494,7 @@ impl ExecutionBudget {
     /// The first runtime error an evaluation under this budget dropped
     /// because every path of a sub-evaluation ended in one, for the message
     /// a caller writes when the evaluation produced no value path at all.
-    pub fn dropped_runtime_error(&self) -> Option<&CRuntimeError> {
+    pub fn dropped_runtime_error(&self) -> Option<&RuntimeError> {
         self.dropped_runtime_error.as_ref()
     }
 
@@ -1587,19 +1587,19 @@ impl ExecutionBudget {
             dropped_refuted_range_extent: None,
             dropped_fold_body: None,
             dropped_comparison: None,
-            c_byte_order: None,
+            program_byte_order: None,
         }
     }
 
     /// Installs the byte order of the environment a C statement executes
     /// under, for the byte view of integer cells its loads and stores use.
-    pub(in crate::kernel) fn install_c_byte_order(&mut self, byte_order: ByteOrder) {
-        self.c_byte_order = Some(byte_order);
+    pub(in crate::kernel) fn install_program_byte_order(&mut self, byte_order: ByteOrder) {
+        self.program_byte_order = Some(byte_order);
     }
 
     /// The byte order installed by the executing statement, if any.
-    pub(in crate::kernel) fn c_byte_order(&self) -> Option<ByteOrder> {
-        self.c_byte_order
+    pub(in crate::kernel) fn program_byte_order(&self) -> Option<ByteOrder> {
+        self.program_byte_order
     }
 
     /// A budget for an execution that has issued nothing yet: the
@@ -1669,10 +1669,10 @@ impl ExecutionBudget {
 
     /// The work allowance of one selected C expression over a new execution,
     /// for tests. Production callers open the budget explicitly and add the
-    /// cost with [`Self::with_c_expression_cost`].
+    /// cost with [`Self::with_program_expression_cost`].
     #[cfg(test)]
-    pub(crate) fn for_c_expression(expression: &CExpression) -> Self {
-        Self::for_new_execution().with_c_expression_cost(expression)
+    pub(crate) fn for_program_expression(expression: &ProgramExpression) -> Self {
+        Self::for_new_execution().with_program_expression_cost(expression)
     }
 
     /// [`Self::continuing_from`] as a builder step, for tests that set the
@@ -1718,30 +1718,30 @@ impl ExecutionBudget {
     /// caller has already opened with [`Self::for_new_execution`] or
     /// [`Self::continuing_from`], so the choice between the two stays at the
     /// call site rather than hiding inside a constructor.
-    pub(crate) fn with_c_expression_cost(self, expression: &CExpression) -> Self {
-        self.with_c_source_cost(c_expression_source_cost(expression))
+    pub(crate) fn with_program_expression_cost(self, expression: &ProgramExpression) -> Self {
+        self.with_program_source_cost(program_expression_source_cost(expression))
     }
 
     /// Adds the evaluator work inherent in one selected C statement tree.
-    pub(crate) fn with_c_statement_cost(self, statement: &CStatement) -> Self {
-        self.with_c_source_cost(c_statement_source_cost(statement))
+    pub(crate) fn with_execution_statement_cost(self, statement: &ProgramStatement) -> Self {
+        self.with_program_source_cost(execution_statement_source_cost(statement))
     }
 
     /// Adds the evaluator work inherent in one selected whole-function
     /// judgment, including evaluation of its caller-side arguments.
-    pub(crate) fn with_c_function_cost(
+    pub(crate) fn with_program_function_cost(
         self,
-        function: &CFunction,
-        arguments: &[CExpression],
+        function: &ProgramFunction,
+        arguments: &[ProgramExpression],
     ) -> Self {
-        let mut cost = c_statement_source_cost(function.body());
+        let mut cost = execution_statement_source_cost(function.body());
         for argument in arguments {
-            cost.add_expression(c_expression_source_cost(argument).expression_steps);
+            cost.add_expression(program_expression_source_cost(argument).expression_steps);
         }
-        self.with_c_source_cost(cost)
+        self.with_program_source_cost(cost)
     }
 
-    fn with_c_source_cost(mut self, cost: CSourceCost) -> Self {
+    fn with_program_source_cost(mut self, cost: ProgramSourceCost) -> Self {
         self.expression_steps = self.expression_steps.saturating_add(cost.expression_steps);
         self.statement_steps = self.statement_steps.saturating_add(cost.statement_steps);
         self
@@ -1902,12 +1902,12 @@ impl ExecutionBudget {
 /// to consume the fixed dynamic reserve and the independent call, loop, and
 /// path limits.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-struct CSourceCost {
+struct ProgramSourceCost {
     expression_steps: usize,
     statement_steps: usize,
 }
 
-impl CSourceCost {
+impl ProgramSourceCost {
     fn expression(expression_steps: usize) -> Self {
         Self {
             expression_steps,
@@ -1921,25 +1921,25 @@ impl CSourceCost {
 }
 
 /// Expression visits made by one non-amplified rvalue evaluation.
-fn c_expression_source_cost(expression: &CExpression) -> CSourceCost {
-    CSourceCost::expression(c_expression_steps_for_mode(expression, false))
+fn program_expression_source_cost(expression: &ProgramExpression) -> ProgramSourceCost {
+    ProgramSourceCost::expression(program_expression_steps_for_mode(expression, false))
 }
 
-fn c_expression_source_steps(expression: &CExpression) -> usize {
-    c_expression_source_cost(expression).expression_steps
+fn program_expression_source_steps(expression: &ProgramExpression) -> usize {
+    program_expression_source_cost(expression).expression_steps
 }
 
-fn c_expression_steps_for_mode(expression: &CExpression, lvalue: bool) -> usize {
+fn program_expression_steps_for_mode(expression: &ProgramExpression, lvalue: bool) -> usize {
     let mut steps = 0usize;
     let mut pending = vec![(expression, lvalue)];
     while let Some((expression, lvalue)) = pending.pop() {
         steps = steps.saturating_add(1);
         if lvalue {
             match expression {
-                CExpression::Load(pointer) | CExpression::TypedLoad { pointer, .. } => {
+                ProgramExpression::Load(pointer) | ProgramExpression::TypedLoad { pointer, .. } => {
                     pending.push((pointer, false));
                 }
-                CExpression::Index(base, index) => {
+                ProgramExpression::Index(base, index) => {
                     pending.push((base, false));
                     pending.push((index, false));
                 }
@@ -1950,9 +1950,11 @@ fn c_expression_steps_for_mode(expression: &CExpression, lvalue: bool) -> usize 
             continue;
         }
         match expression {
-            CExpression::Value(_) | CExpression::FunctionAddress(_) => {}
-            CExpression::Cast { expression, .. } => pending.push((expression, false)),
-            CExpression::Conditional {
+            ProgramExpression::Value(_)
+            | ProgramExpression::FunctionAddress(_)
+            | ProgramExpression::CallResult { .. } => {}
+            ProgramExpression::Cast { expression, .. } => pending.push((expression, false)),
+            ProgramExpression::Conditional {
                 condition,
                 then_branch,
                 else_branch,
@@ -1961,139 +1963,143 @@ fn c_expression_steps_for_mode(expression: &CExpression, lvalue: bool) -> usize 
                 pending.push((then_branch, false));
                 pending.push((else_branch, false));
             }
-            CExpression::FloatNegate(expression)
-            | CExpression::FloatClassification { expression, .. }
-            | CExpression::EnumField {
+            ProgramExpression::FloatNegate(expression)
+            | ProgramExpression::FloatClassification { expression, .. }
+            | ProgramExpression::EnumField {
                 value: expression, ..
             }
-            | CExpression::EnumIs {
+            | ProgramExpression::EnumIs {
                 value: expression, ..
             } => pending.push((expression, false)),
-            CExpression::EnumConstruct { fields, .. } => {
+            ProgramExpression::EnumConstruct { fields, .. } => {
                 pending.extend(fields.iter().map(|field| (field, false)))
             }
             // Scalar variables add an lvalue visit. Arrays skip it, so this is
             // a safe structural allowance without consulting an execution
             // state during budget construction.
-            CExpression::Variable(_) => pending.push((expression, true)),
-            CExpression::AddressOf(target) | CExpression::CheckedObjectAddress(target) => {
-                pending.push((target, true))
-            }
-            CExpression::PointerOffsetBytes { pointer, .. }
-            | CExpression::Subobject { pointer, .. }
-            | CExpression::Not(pointer)
-            | CExpression::BitwiseNot(pointer) => pending.push((pointer, false)),
+            ProgramExpression::Variable(_) => pending.push((expression, true)),
+            ProgramExpression::AddressOf(target)
+            | ProgramExpression::CheckedObjectAddress(target) => pending.push((target, true)),
+            ProgramExpression::PointerOffsetBytes { pointer, .. }
+            | ProgramExpression::Subobject { pointer, .. }
+            | ProgramExpression::Not(pointer)
+            | ProgramExpression::BitwiseNot(pointer) => pending.push((pointer, false)),
             crate::kernel::binary_c_operation!(left, right) => {
                 pending.push((left, false));
                 pending.push((right, false));
             }
-            CExpression::Load(_) | CExpression::TypedLoad { .. } | CExpression::Index(_, _) => {
-                pending.push((expression, true))
-            }
+            ProgramExpression::Load(_)
+            | ProgramExpression::TypedLoad { .. }
+            | ProgramExpression::Index(_, _) => pending.push((expression, true)),
         }
     }
     steps
 }
 
-fn c_statement_source_cost(statement: &CStatement) -> CSourceCost {
-    let mut cost = CSourceCost::default();
+fn execution_statement_source_cost(statement: &ProgramStatement) -> ProgramSourceCost {
+    let mut cost = ProgramSourceCost::default();
     let mut pending = vec![statement];
     while let Some(statement) = pending.pop() {
-        if !matches!(statement, CStatement::Seq(_)) {
+        if !matches!(statement, ProgramStatement::Seq(_)) {
             cost.statement_steps = cost.statement_steps.saturating_add(1);
         }
         match statement {
-            CStatement::ScalarReferenceScope(scope) => {
+            ProgramStatement::ScalarReferenceScope(scope) => {
                 cost.statement_steps = cost
                     .statement_steps
                     .saturating_add(scope.cleared_locals().len());
             }
-            CStatement::Skip
-            | CStatement::EndScalarReference(_)
-            | CStatement::EndAutomaticLifetimes { .. }
-            | CStatement::Break
-            | CStatement::Continue
-            | CStatement::Goto { .. }
-            | CStatement::Declare {
+            ProgramStatement::Skip
+            | ProgramStatement::EndScalarReference(_)
+            | ProgramStatement::EndAutomaticLifetimes { .. }
+            | ProgramStatement::Break
+            | ProgramStatement::Continue
+            | ProgramStatement::Goto { .. }
+            | ProgramStatement::Declare {
                 initializer: None, ..
             }
-            | CStatement::DeclareAggregate { .. } => {}
-            CStatement::ForStep { step, .. } => pending.push(step),
-            CStatement::Declare {
+            | ProgramStatement::DeclareAggregate { .. } => {}
+            ProgramStatement::ForStep { step, .. } => pending.push(step),
+            ProgramStatement::Declare {
                 initializer: Some(expression),
                 ..
             }
-            | CStatement::Assign { expression, .. } => {
+            | ProgramStatement::Assign { expression, .. } => {
                 cost.add_expression(1); // assignment target lvalue
-                cost.add_expression(c_expression_source_steps(expression));
+                cost.add_expression(program_expression_source_steps(expression));
             }
-            CStatement::CallAssign { arguments, .. } | CStatement::Call { arguments, .. } => {
+            ProgramStatement::CallAssign { arguments, .. }
+            | ProgramStatement::Call { arguments, .. }
+            | ProgramStatement::CallResult { arguments, .. } => {
                 for argument in arguments {
-                    cost.add_expression(c_expression_source_steps(argument));
+                    cost.add_expression(program_expression_source_steps(argument));
                 }
             }
-            CStatement::HeapAllocate { bytes, .. } => {
-                cost.add_expression(c_expression_source_steps(bytes));
+            ProgramStatement::HeapAllocate { bytes, .. } => {
+                cost.add_expression(program_expression_source_steps(bytes));
                 // Successful allocation assigns a synthesized pointer value
                 // to a local: one lvalue and one value-expression visit.
                 cost.add_expression(2);
             }
-            CStatement::HeapFree { pointer } => {
-                cost.add_expression(c_expression_source_steps(pointer));
+            ProgramStatement::HeapFree { pointer } => {
+                cost.add_expression(program_expression_source_steps(pointer));
             }
-            CStatement::Assert { condition, .. } | CStatement::LoopTest { condition } => {
-                cost.add_expression(c_expression_source_steps(condition));
+            ProgramStatement::Assert { condition, .. }
+            | ProgramStatement::LoopTest { condition } => {
+                cost.add_expression(program_expression_source_steps(condition));
             }
-            CStatement::Seq(statements) => {
+            ProgramStatement::Seq(statements) => {
                 for statement in statements.iter() {
                     pending.push(statement);
                 }
             }
-            CStatement::TryCatchInt32 {
+            ProgramStatement::TryCatchInt32 {
                 try_body, handler, ..
             } => {
                 pending.push(try_body);
                 pending.push(handler);
             }
-            CStatement::Return(expression) | CStatement::Throw(expression) => {
-                cost.add_expression(c_expression_source_steps(expression));
+            ProgramStatement::Return(expression) | ProgramStatement::Throw(expression) => {
+                cost.add_expression(program_expression_source_steps(expression));
             }
-            CStatement::Store { pointer, value }
-            | CStatement::TypedStore { pointer, value, .. } => {
+            ProgramStatement::Store { pointer, value }
+            | ProgramStatement::TypedStore { pointer, value, .. } => {
                 // The store target is evaluated as a synthesized load lvalue.
-                cost.add_expression(1usize.saturating_add(c_expression_source_steps(pointer)));
-                cost.add_expression(c_expression_source_steps(value));
+                cost.add_expression(
+                    1usize.saturating_add(program_expression_source_steps(pointer)),
+                );
+                cost.add_expression(program_expression_source_steps(value));
             }
-            CStatement::CopyAggregate { target, source, .. }
-            | CStatement::InitializeScalarArray { target, source, .. } => {
-                cost.add_expression(c_expression_source_steps(target));
-                cost.add_expression(c_expression_source_steps(source));
+            ProgramStatement::CopyAggregate { target, source, .. }
+            | ProgramStatement::InitializeScalarArray { target, source, .. } => {
+                cost.add_expression(program_expression_source_steps(target));
+                cost.add_expression(program_expression_source_steps(source));
             }
-            CStatement::Update {
+            ProgramStatement::Update {
                 target, operand, ..
             } => {
-                cost.add_expression(c_expression_steps_for_mode(target, true));
+                cost.add_expression(program_expression_steps_for_mode(target, true));
                 cost.add_expression(1); // read the current lvalue value
-                cost.add_expression(c_expression_source_steps(operand));
+                cost.add_expression(program_expression_source_steps(operand));
                 cost.add_expression(1); // apply the update operator
             }
-            CStatement::If {
+            ProgramStatement::If {
                 condition,
                 then_branch,
                 else_branch,
             } => {
-                cost.add_expression(c_expression_source_steps(condition));
+                cost.add_expression(program_expression_source_steps(condition));
                 pending.push(then_branch);
                 pending.push(else_branch);
             }
-            CStatement::While {
+            ProgramStatement::While {
                 condition, body, ..
             } => {
-                cost.add_expression(c_expression_source_steps(condition));
+                cost.add_expression(program_expression_source_steps(condition));
                 pending.push(body);
             }
-            CStatement::Switch { expression, cases } => {
-                cost.add_expression(c_expression_source_steps(expression));
+            ProgramStatement::Switch { expression, cases } => {
+                cost.add_expression(program_expression_source_steps(expression));
                 for case in cases {
                     pending.push(&case.body);
                 }

@@ -805,19 +805,19 @@ mod tests {
             let (mut assignments, mut loops) = (0, 0);
             while let Some(s) = pending.pop() {
                 match s {
-                    CStatement::Seq(statements) => {
+                    ProgramStatement::Seq(statements) => {
                         pending.extend(statements.iter().map(|statement| statement.as_ref()))
                     }
-                    CStatement::If {
+                    ProgramStatement::If {
                         then_branch,
                         else_branch,
                         ..
                     } => pending.extend([then_branch.as_ref(), else_branch.as_ref()]),
-                    CStatement::While { body, .. } => {
+                    ProgramStatement::While { body, .. } => {
                         loops += 1;
                         pending.push(body);
                     }
-                    CStatement::Assign { name, .. } if name == "marker" => assignments += 1,
+                    ProgramStatement::Assign { name, .. } if name == "marker" => assignments += 1,
                     _ => {}
                 }
             }

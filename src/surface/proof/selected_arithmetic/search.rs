@@ -17,6 +17,24 @@ impl RewriteGoalKey {
     }
 }
 
+// Planner policy follows the compared word, independently of its carrier.
+// Shared machine roots spell their comparisons as Integer observations.
+fn is_word32_equality(goal: &Proposition) -> bool {
+    let Proposition::ConditionIs(condition, true) = goal else {
+        return false;
+    };
+    crate::kernel::machine_integer::comparison::structural_comparison_view(condition).is_some_and(
+        |view| {
+            !view.negated
+                && view.relation == CompareRelation::Equal
+                && matches!(
+                    view.format,
+                    MachineIntegerType::Int32 | MachineIntegerType::UInt32
+                )
+        },
+    )
+}
+
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     fn establish_carried_arithmetic(
         proof: &Proof<'a>,
@@ -555,17 +573,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // already has the indexed native-reading arithmetic route; proving it by
         // bounds would repeat that search for each bound.
         if !plain_32_bit
-            && let (
-                Proposition::ConditionIs(
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                        relation: CompareRelation::Equal,
-                        ..
-                    },
-                    true,
-                ),
-                ClickProposition::Comparison { left, right, .. },
-            ) = (goal, surface_goal)
+            && is_word32_equality(goal)
+            && let ClickProposition::Comparison { left, right, .. } = surface_goal
             && !writes_sum_or_difference(left, right)
         {
             return Ok(None);
@@ -581,18 +590,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(None);
         }
-        let _arithmetic_scope = matches!(
-            goal,
-            Proposition::ConditionIs(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                    relation: CompareRelation::Equal,
-                    ..
-                },
-                true
-            )
-        )
-        .then(MachineEqualityBridgeScope::enter);
+        let _arithmetic_scope = is_word32_equality(goal).then(MachineEqualityBridgeScope::enter);
         // A native equality is split as its observed reading, so a bound
         // such as `0u64 <= x` that holds by its type stays a stated Integer
         // fact rather than folding to `true`.
@@ -1805,18 +1803,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some((lower, upper, relation, true)) = relation_parts(surface_goal) else {
             return Ok(None);
         };
-        let _arithmetic_scope = matches!(
-            goal,
-            Proposition::ConditionIs(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                    relation: CompareRelation::Equal,
-                    ..
-                },
-                true
-            )
-        )
-        .then(MachineEqualityBridgeScope::enter);
+        let _arithmetic_scope = is_word32_equality(goal).then(MachineEqualityBridgeScope::enter);
         // A machine comparison is the Integer comparison of its operands'
         // exact observations, so its Integer reading is the goal itself:
         // state each sum or difference defined, as `to_integer` of it needs,
@@ -2032,5 +2019,54 @@ mod logical_wrapper_search_tests {
         "#,
         )
         .expect("the introduced body retains equality search");
+    }
+}
+
+#[cfg(test)]
+mod retained_match_policy_tests {
+    use super::*;
+    #[test]
+    fn match_equality_keeps_word_planner_policy_in_both_carriers() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let native = MachineTerm::AlgebraicMatch {
+            scrutinee: Box::new(crate::kernel::KernelMatch::test_scrutinee(vec![])),
+            arms: vec![crate::kernel::AlgebraicBitvectorMatchArm {
+                variant: "Arm".into(),
+                bindings: vec![],
+                binding_names: Default::default(),
+                body: MachineTerm::constant(0),
+            }],
+        };
+        let observed =
+            crate::kernel::IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
+                MachineIntegerType::Int32,
+                native.clone(),
+            ));
+        let common = ConditionTerm::IntegerEqual(
+            observed.into(),
+            crate::kernel::IntegerTerm::constant_i64(1).into(),
+        );
+        let written = ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(native),
+            right: Box::new(MachineTerm::constant(1)),
+        };
+        for condition in [common, written] {
+            assert!(is_word32_equality(&Proposition::ConditionIs(
+                condition.clone(),
+                true
+            )));
+            assert!(!is_word32_equality(&Proposition::ConditionIs(
+                condition, false
+            )));
+        }
+        assert!(!is_word32_equality(&Proposition::ConditionIs(
+            ConditionTerm::IntegerEqual(
+                crate::kernel::IntegerTerm::Variable(crate::kernel::Variable(991989)).into(),
+                crate::kernel::IntegerTerm::constant_i64(1).into()
+            ),
+            true
+        )));
     }
 }

@@ -380,7 +380,7 @@ Every read application (pointer, int32 and uint64) takes the read's
 *numeric* address, `UInt64Address(address class)`, as its operand, not the
 pointer's address class. Memory is addressed, so two reads of one snapshot at
 equal addresses read the same bytes. A C pointer comparison states only a
-uint64 address equality (`c_pointer_comparison_condition`), which merges the
+uint64 address equality (`program_pointer_comparison_condition`), which merges the
 two numeric addresses and so the reads, but never the address classes that
 pointer equality and read authority use. Equal pointers still have equal
 numeric addresses by congruence. The first read at a displaced address
@@ -654,7 +654,7 @@ its separate pointer check. Congruent sums and registered same-snapshot loads
 can therefore identify equal range endpoints, while changed snapshots and
 missing premises remain distinct.
 
-The checked `CValue::Int32` value comparison queries the graph before its
+The checked `ProgramValue::Int32` value comparison queries the graph before its
 broader memory-resolution path. Direct composite, token, and instance matching
 use that shared typed rule for resource arguments and instance fields, rather
 than maintaining a resource-specific graph check. Byte-typed values and pointer
@@ -1585,7 +1585,7 @@ The retained raw constructors are intentional and have different lifetimes:
 | Startup static-resource construction | Builds provisional program data before proof assumptions exist. Its live execution input is published at the explicit proof boundary, not by permission lookup. |
 | Bitvector/pointer substitution of theorem/state resource terms | Rebuilds structural proof payloads without current assumptions. Old graph equalities cannot be inherited after variable substitution. A live instantiated input is published when admitted to execution. |
 | Surface composite-body instantiation and branch-interface collection | Provisional lowering output is explicitly checked/composed before becoming live authority; no permission query attaches it implicitly. |
-| Instance field scope and default empty `CState` fields | Lexical instance interpretation or empty data, rather than a memory-authority context. Live resource assembly uses the rules above. |
+| Instance field scope and default empty `ExecutionState` fields | Lexical instance interpretation or empty data, rather than a memory-authority context. Live resource assembly uses the rules above. |
 
 A new producer must choose one of these publication boundaries and document any
 raw lifetime. Do not repair a missing attachment by scanning a cold frame from

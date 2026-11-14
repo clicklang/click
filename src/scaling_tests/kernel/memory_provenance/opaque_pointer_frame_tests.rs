@@ -17,7 +17,7 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
             offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(9_880_301)), 4),
         };
         let stored = Pointer::symbolic(Variable(9_880_302));
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         let mut context = PureFactContext::new();
         for index in 0..size {
             let block = format!("local:irrelevant-{index}");
@@ -26,7 +26,7 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
                     block: PointerBlock::Concrete(block),
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                CValue::Int32(MachineTerm::constant(1)),
+                ProgramValue::Int32(MachineTerm::constant(1)),
             );
             context = context.assume_condition(
                 ConditionTerm::pointer_equal(
@@ -38,11 +38,11 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
         }
         memory = memory.store(
             field.clone(),
-            CValue::typed_pointer(stored.clone(), CType::Int32Pointer),
+            ProgramValue::typed_pointer(stored.clone(), ProgramType::Int32Pointer),
         );
         memory =
             memory.without_possible_aliasing_cells(&possible_write, 4, &PureFactContext::new());
-        let snapshot = intern_c_memory(memory);
+        let snapshot = intern_memory(memory);
         let read = Pointer::loaded_value(&snapshot, &field);
         context
             .equality_graph
@@ -74,11 +74,11 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
             Box::new(parent_alias),
             crate::kernel::AddressObjectClass::NONE,
         );
-        let source = intern_c_memory(
+        let source = intern_memory(
             snapshot
                 .memory()
                 .clone()
-                .store(write_alias, CValue::UInt64(value.clone())),
+                .store(write_alias, ProgramValue::UInt64(value.clone())),
         );
         let projected = canonical_projected_load_memory(&source, &wide_address);
         let wide_read =
@@ -123,7 +123,7 @@ fn complete_read_domains_use_numeric_storage_classes_without_scanning_other_clas
         let a = Pointer::symbolic(Variable(9_889_000));
         let b = Pointer::symbolic(Variable(9_889_001));
         facts = facts.assume_condition(equal(a.clone(), b.clone()), true);
-        let memory = intern_c_memory(CMemory::new());
+        let memory = intern_memory(Memory::new());
         let left = Pointer::loaded_value(&memory, &a);
         let right = Pointer::loaded_value(&memory, &b);
         let (holds, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -144,13 +144,13 @@ fn copied_pointer_frames_ignore_unrelated_separations() {
     let costs = [16u64, 64, 256, 1024].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
         let _reads = crate::kernel::TransportReadScope::enter();
-        let separation = |a: Pointer, a_words: u32, b: Pointer| Proposition::CResourceSeparate {
-            left: Box::new(CResource::Memory(CMemoryRange::new(
+        let separation = |a: Pointer, a_words: u32, b: Pointer| Proposition::ResourceSeparate {
+            left: Box::new(Resource::Memory(MemoryRange::new(
                 a,
                 0u32.into(),
                 a_words.into(),
             ))),
-            right: Box::new(CResource::Memory(CMemoryRange::new(
+            right: Box::new(Resource::Memory(MemoryRange::new(
                 b,
                 0u32.into(),
                 8u32.into(),
@@ -168,18 +168,18 @@ fn copied_pointer_frames_ignore_unrelated_separations() {
         let field = header.clone().offset_by_bytes(8);
         let buffer = Pointer::symbolic(Variable(9_909_001));
         let target = Pointer::symbolic(Variable(9_909_002));
-        let stored = CPointerValue::new(target.clone(), CType::Int32Pointer).with_extent(Some(
-            SubobjectExtent {
+        let stored = PointerValue::new(target.clone(), ProgramType::Int32Pointer).with_extent(
+            Some(SubobjectExtent {
                 start: target,
                 width: 4u32.into(),
-            },
-        ));
-        let before = CMemory::new().store(field.clone(), CValue::Pointer(stored.clone()));
+            }),
+        );
+        let before = Memory::new().store(field.clone(), ProgramValue::Pointer(stored.clone()));
         let write = buffer.clone().offset_by_bytes(4);
         let after = before
             .clone()
             .without_possible_aliasing_cells(&write, 4, &PureFactContext::new())
-            .store(write.clone(), CValue::Int32(7u32.into()));
+            .store(write.clone(), ProgramValue::Int32(7u32.into()));
         facts = facts.assume_proposition(separation(header, 4, buffer));
         let (holds, work) = crate::instrumentation::measure_deterministic_work(|| {
             let (read, equality) =
@@ -201,23 +201,23 @@ fn sibling_pointer_reads_stop_before_unrelated_shared_history() {
     let costs = [16u64, 64, 256, 1024].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
         let field = Pointer::symbolic(Variable(9_920_000));
-        let mut memory = CMemory::new().with_block("local:read-common-history", 4096);
+        let mut memory = Memory::new().with_block("local:read-common-history", 4096);
         for index in 0..size {
             memory = memory.store(
                 Pointer {
                     block: "local:read-common-history".into(),
                     offset: PointerOffsetTerm::Constant(index as i64 * 4),
                 },
-                CValue::Int32(0u32.into()),
+                ProgramValue::Int32(0u32.into()),
             );
         }
-        let left = intern_c_memory(memory.clone().store(
+        let left = intern_memory(memory.clone().store(
             field.offset_by_bytes(8),
-            CValue::UInt64(MachineTerm::uint64_constant(1)),
+            ProgramValue::UInt64(MachineTerm::uint64_constant(1)),
         ));
-        let right = intern_c_memory(memory.store(
+        let right = intern_memory(memory.store(
             field.offset_by_bytes(16),
-            CValue::UInt64(MachineTerm::uint64_constant(2)),
+            ProgramValue::UInt64(MachineTerm::uint64_constant(2)),
         ));
         let producer = crate::kernel::equality_graph::EqualityGraph::default();
         for index in 0..size {
@@ -233,7 +233,7 @@ fn sibling_pointer_reads_stop_before_unrelated_shared_history() {
                 &field.offset_by_bytes(32 + index as u32 * 8),
             );
         }
-        let legacy = |memory: &SharedCMemory| {
+        let legacy = |memory: &SharedMemory| {
             Pointer::loaded(&MachineTerm::MemoryLoad(
                 memory.clone(),
                 Box::new(field.clone()),
@@ -276,7 +276,7 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
             block: "packed-scaling".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let mut memory = CMemory::new().with_block("packed-scaling", 32);
+        let mut memory = Memory::new().with_block("packed-scaling", 32);
         let mut context = PureFactContext::new();
         for index in 0..size {
             let name = format!("local:unrelated-packed-{index}");
@@ -285,7 +285,7 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
                     block: name.into(),
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                CValue::Int32(MachineTerm::constant(index)),
+                ProgramValue::Int32(MachineTerm::constant(index)),
             );
             context = context.assume_condition(
                 ConditionTerm::pointer_equal(
@@ -295,16 +295,19 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
                 true,
             );
         }
-        let before = intern_c_memory(memory);
+        let before = intern_memory(memory);
         let bits =
             MachineTerm::MemoryLoad(before.clone(), Box::new(field.clone()), LoadKind::Bits64);
-        let value = CPointerValue::from_read(
+        let value = PointerValue::from_read(
             Pointer::integer_address(bits),
-            CType::VoidPointer,
+            ProgramType::VoidPointer,
             &before,
             &field,
         );
-        let parent = CPointerValue::new(Pointer::symbolic(Variable(9_891_000)), CType::VoidPointer);
+        let parent = PointerValue::new(
+            Pointer::symbolic(Variable(9_891_000)),
+            ProgramType::VoidPointer,
+        );
         let source = Proposition::ConditionIs(
             ConditionTerm::PointerValueEqual(Box::new(value), Box::new(parent)),
             true,
@@ -312,11 +315,11 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
         context = context.assume_proposition(source.clone());
         let one_write = before.memory().clone().store(
             field.offset_by_bytes(24),
-            CValue::Int32(MachineTerm::constant(1)),
+            ProgramValue::Int32(MachineTerm::constant(1)),
         );
         let (one_theorem, unrelated_work) =
             crate::instrumentation::measure_deterministic_work(|| {
-                prove_c_condition_fact_transport(&source, &one_write, &context)
+                prove_program_condition_fact_transport(&source, &one_write, &context)
             });
         assert!(one_theorem.is_some());
         assert!(unrelated_work > 0);
@@ -329,11 +332,12 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
             for index in 0..size {
                 after = after.store(
                     field.offset_by_bytes(24),
-                    CValue::Int32(MachineTerm::constant(index)),
+                    ProgramValue::Int32(MachineTerm::constant(index)),
                 );
-                let theorem = prove_c_condition_fact_transport(&current, &after, &explicit_context)
-                    .expect("the supplied adjacent transition preserves the packed pointer");
-                let (premises, target) = c_condition_fact_transport_parts(&theorem, &current)
+                let theorem =
+                    prove_program_condition_fact_transport(&current, &after, &explicit_context)
+                        .expect("the supplied adjacent transition preserves the packed pointer");
+                let (premises, target) = program_condition_fact_transport_parts(&theorem, &current)
                     .expect("a condition transport retains its explicit premises");
                 assert!(
                     premises
@@ -346,7 +350,7 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
             after
         });
         assert!(
-            prove_c_condition_fact_transport(&source, &after, &context).is_none(),
+            prove_program_condition_fact_transport(&source, &after, &context).is_none(),
             "a cold endpoint query must not search the older stores"
         );
         assert!(work > 0);
@@ -372,7 +376,7 @@ fn converted_narrow_read_value_uses_only_selected_terms_and_cells() {
     for size in [4u64, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Pointer::symbolic(Variable(9_889_000));
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         let mut facts = PureFactContext::new();
         for index in 0..size {
             memory = memory.store(
@@ -388,9 +392,9 @@ fn converted_narrow_read_value_uses_only_selected_terms_and_cells() {
             );
         }
         let value = MachineTerm::narrow_constant(MachineIntegerType::UInt8, 129);
-        memory = memory.store(pointer.clone(), CValue::UInt8(value.clone()));
+        memory = memory.store(pointer.clone(), ProgramValue::UInt8(value.clone()));
         let load =
-            MachineTerm::MemoryLoad(intern_c_memory(memory), Box::new(pointer), LoadKind::UInt8);
+            MachineTerm::MemoryLoad(intern_memory(memory), Box::new(pointer), LoadKind::UInt8);
         let cast = |value| MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             from: MachineIntegerType::UInt8,
@@ -438,27 +442,29 @@ fn complete_word_record_at_bounded_stop_has_flat_lookup_work() {
             offset: PointerOffsetTerm::Constant(0),
         };
         let context = PureFactContext::new();
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         for index in 0..size {
             memory = memory.store(
                 Pointer {
                     block: format!("local:carrier-noise-{index}").into(),
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                CValue::Int32(7u32.into()),
+                ProgramValue::Int32(7u32.into()),
             );
         }
         let target = Pointer::symbolic(Variable(9_887_001));
-        let value = CValue::PointerInteger(PointerIntegerValue {
-            numeric: Box::new(CValue::UInt64(MachineTerm::pointer_address(target.clone()))),
-            pointer: Box::new(CPointerValue::new(target, CType::Int32Pointer)),
+        let value = ProgramValue::PointerInteger(PointerIntegerValue {
+            numeric: Box::new(ProgramValue::UInt64(MachineTerm::pointer_address(
+                target.clone(),
+            ))),
+            pointer: Box::new(PointerValue::new(target, ProgramType::Int32Pointer)),
             kind: PointerIntegerKind::Exact,
         });
         let memory = memory
             .store(field.clone(), value.clone())
             .without_possible_aliasing_cells(&Pointer::symbolic(Variable(9_887_002)), 8, &context);
         assert!(memory.known_value(&field).is_none());
-        let read = Pointer::loaded_value(&intern_c_memory(memory), &field);
+        let read = Pointer::loaded_value(&intern_memory(memory), &field);
         let (recovered, work) = crate::instrumentation::measure_deterministic_work(|| {
             complete_pointer_carrier_read_value(&read, &context)
         });
@@ -478,51 +484,51 @@ fn complete_word_frame_reuses_named_versions_across_observations() {
         let _session = crate::kernel::VerificationSession::enter();
         let field = Pointer::symbolic(Variable(9_950_001));
         let write = Pointer::symbolic(Variable(9_950_002));
-        let base = intern_c_memory(CMemory::new());
+        let base = intern_memory(Memory::new());
         let mut observed = base.memory().clone();
         for index in 0..size {
             observed = observed.materialize_cell_from_source(
                 field.offset_by_bytes(index * 8),
-                CType::UInt64,
+                ProgramType::UInt64,
                 base.clone(),
             );
         }
-        let before = intern_c_memory(observed);
+        let before = intern_memory(observed);
         // This is the actual read producer, not a warm-up of the query:
         // its designation names the pre-observation version of the word.
-        let value = CPointerValue::from_read(
+        let value = PointerValue::from_read(
             Pointer::integer_address(MachineTerm::uint64_constant(8)),
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
             &before,
             &field,
         );
-        let after = intern_c_memory(before.memory().clone().store(
+        let after = intern_memory(before.memory().clone().store(
             write.clone(),
-            CValue::UInt64(MachineTerm::uint64_constant(1)),
+            ProgramValue::UInt64(MachineTerm::uint64_constant(1)),
         ));
-        let target = CPointerValue::from_read(
+        let target = PointerValue::from_read(
             Pointer::integer_address(MachineTerm::uint64_constant(8)),
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
             &after,
             &field,
         );
         let range = |p| {
-            CResource::Memory(CMemoryRange::new_with_element_width(
+            Resource::Memory(MemoryRange::new_with_element_width(
                 p,
                 0u32.into(),
                 1u32.into(),
                 8,
             ))
         };
-        let context = PureFactContext::new().assume_proposition(Proposition::CResourceSeparate {
+        let context = PureFactContext::new().assume_proposition(Proposition::ResourceSeparate {
             left: Box::new(range(write)),
             right: Box::new(range(field.clone())),
         });
-        let overwritten = intern_c_memory(
+        let overwritten = intern_memory(
             before
                 .memory()
                 .clone()
-                .store(field.offset_by_bytes(4), CValue::UInt32(0u32.into())),
+                .store(field.offset_by_bytes(4), ProgramValue::UInt32(0u32.into())),
         );
         let changed = Pointer::loaded_value(&overwritten, &field);
         let (holds, work) = crate::instrumentation::measure_deterministic_work(|| {

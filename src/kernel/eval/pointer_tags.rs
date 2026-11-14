@@ -16,7 +16,7 @@
 //! closure can retain them and a simple `arithmetic using` step can check
 //! the same decision from those facts alone.
 
-use super::operators::CBitwiseOperation;
+use super::operators::BitwiseOperation;
 use super::*;
 use crate::kernel::MachineTerm;
 use crate::kernel::{CompareRelation, MachineIntegerType, MachineOperandView};
@@ -558,9 +558,9 @@ fn structural_form_of(
             [left, right],
         )) => {
             let operation = if op == MachineBinaryOp::BitwiseAnd {
-                CBitwiseOperation::And
+                BitwiseOperation::And
             } else {
-                CBitwiseOperation::Or
+                BitwiseOperation::Or
             };
             // The tag side is a constant, or for `|` a masked term `x & m`
             // (rbtree's `rb_color(rb) | (unsigned long)p`), whose bound the
@@ -571,7 +571,7 @@ fn structural_form_of(
             let (inner, tag, constant) = match (left.uint64_constant(), right.uint64_constant()) {
                 (None, Some(constant)) => (left, None, constant),
                 (Some(constant), None) => (right, None, constant),
-                (None, None) if matches!(operation, CBitwiseOperation::Or) => {
+                (None, None) if matches!(operation, BitwiseOperation::Or) => {
                     match (masked_bound(left, used), masked_bound(right, used)) {
                         (None, Some(bound)) => {
                             (left, Some(right.retain(MachineIntegerType::UInt64)), bound)
@@ -588,7 +588,7 @@ fn structural_form_of(
                 return Ok(None);
             };
             match operation {
-                CBitwiseOperation::And => {
+                BitwiseOperation::And => {
                     let Some(alignment) = clearing_mask_alignment(constant) else {
                         return Ok(None);
                     };
@@ -618,7 +618,7 @@ fn structural_form_of(
                         },
                     })
                 }
-                CBitwiseOperation::Or => {
+                BitwiseOperation::Or => {
                     let Some(alignment) = constant
                         .checked_add(1)
                         .and_then(u64::checked_next_power_of_two)
@@ -647,7 +647,7 @@ fn structural_form_of(
                         ),
                     })
                 }
-                CBitwiseOperation::Xor => None,
+                BitwiseOperation::Xor => None,
             }
         }
         _ => None,
@@ -811,8 +811,8 @@ pub(in crate::kernel) fn cast_tagged_address_to_pointer(
     term: &MachineTerm,
     assumptions: &PureFactContext,
     obligations: &mut Vec<ProofObligation>,
-    target_type: CType,
-) -> Result<Option<CPointerValue>, String> {
+    target_type: ProgramType,
+) -> Result<Option<PointerValue>, String> {
     let mut used = UsedFacts::new();
     let form = match form_of(
         MachineOperandView::Legacy(term),
@@ -832,7 +832,7 @@ pub(in crate::kernel) fn cast_tagged_address_to_pointer(
     );
     match assumptions.decide(&tag_is_zero) {
         Some(true) => Ok(Some(
-            CPointerValue::new(form.pointer, target_type)
+            PointerValue::new(form.pointer, target_type)
                 .with_declared_object_class(form.object_class),
         )),
         Some(false) => Err(
@@ -854,7 +854,7 @@ pub(in crate::kernel) fn cast_tagged_address_to_pointer(
                 return Err(format!("{context}; they are refuted"));
             }
             Ok(Some(
-                CPointerValue::new(form.pointer, target_type)
+                PointerValue::new(form.pointer, target_type)
                     .with_declared_object_class(form.object_class),
             ))
         }
@@ -870,10 +870,10 @@ mod exact_word_address_tests {
         use crate::kernel::{KernelTermExport, KernelTermImport};
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Pointer::symbolic(Variable(985_331));
-        let memory = CMemory::new();
+        let memory = Memory::new();
         let read = |memory| {
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(memory),
+                crate::kernel::intern_memory(memory),
                 Box::new(pointer.clone()),
                 LoadKind::Bits64,
             )
@@ -1135,29 +1135,29 @@ mod exact_word_address_tests {
         let assumptions = PureFactContext::new()
             .assume_condition(ConditionTerm::pointer_aligned(pointer.clone(), 4), true);
         let mut obligations = Vec::new();
-        let encoded = cast_c_value_to_type(
-            CValue::Pointer(
-                CPointerValue::new(pointer.clone(), CType::Int32Pointer)
+        let encoded = cast_program_value_to_type(
+            ProgramValue::Pointer(
+                PointerValue::new(pointer.clone(), ProgramType::Int32Pointer)
                     .with_object_class(Some(class.clone())),
             ),
-            CType::UInt64,
+            ProgramType::UInt64,
             IntegerConversion::Modular,
             &mut obligations,
             &assumptions,
         )
         .unwrap();
-        let decoded = cast_c_value_to_type(
+        let decoded = cast_program_value_to_type(
             encoded.clone(),
-            CType::Float64Pointer,
+            ProgramType::Float64Pointer,
             IntegerConversion::Modular,
             &mut obligations,
             &assumptions,
         )
         .unwrap();
         assert!(
-            matches!(decoded, CValue::Pointer(ref value) if value.object_class() == Some(class.clone()))
+            matches!(decoded, ProgramValue::Pointer(ref value) if value.object_class() == Some(class.clone()))
         );
-        let CValue::UInt64(address) = encoded.numeric_value() else {
+        let ProgramValue::UInt64(address) = encoded.numeric_value() else {
             panic!("encoded address")
         };
         let address = address.clone();
@@ -1176,20 +1176,20 @@ mod exact_word_address_tests {
                 &word,
                 &assumptions,
                 &mut obligations,
-                CType::Float64Pointer,
+                ProgramType::Float64Pointer,
             )
             .unwrap()
             .unwrap();
             assert_eq!(decoded.pointer(), &pointer);
             assert_eq!(decoded.object_class(), Some(class.clone()));
-            assert_eq!(decoded.c_type(), CType::Float64Pointer);
+            assert_eq!(decoded.program_type(), ProgramType::Float64Pointer);
         }
         assert!(
             cast_tagged_address_to_pointer(
                 &tagged,
                 &assumptions,
                 &mut obligations,
-                CType::Int32Pointer
+                ProgramType::Int32Pointer
             )
             .is_err()
         );
@@ -1220,10 +1220,14 @@ mod exact_word_address_tests {
         let parent = PureFactContext::new();
         let branch = parent.clone().assume_proposition(premise.clone());
         let mut obligations = Vec::new();
-        let decoded =
-            cast_tagged_address_to_pointer(&word, &branch, &mut obligations, CType::Float64Pointer)
-                .unwrap()
-                .unwrap();
+        let decoded = cast_tagged_address_to_pointer(
+            &word,
+            &branch,
+            &mut obligations,
+            ProgramType::Float64Pointer,
+        )
+        .unwrap()
+        .unwrap();
         assert_eq!(decoded.pointer(), &pointer);
         assert_eq!(decoded.object_class(), Some(class));
         for context in [parent, branch.restricted_to_facts(&[], &[])] {
@@ -1232,7 +1236,7 @@ mod exact_word_address_tests {
                     &word,
                     &context,
                     &mut obligations,
-                    CType::Float64Pointer
+                    ProgramType::Float64Pointer
                 )
                 .unwrap()
                 .is_none()
@@ -1242,7 +1246,7 @@ mod exact_word_address_tests {
             &MachineTerm::pointer_address(pointer),
             &PureFactContext::new(),
             &mut obligations,
-            CType::Float64Pointer,
+            ProgramType::Float64Pointer,
         )
         .unwrap()
         .unwrap();
@@ -1273,7 +1277,7 @@ mod exact_word_address_tests {
                     &expression,
                     &assumptions,
                     &mut obligations,
-                    CType::Int32Pointer
+                    ProgramType::Int32Pointer
                 )
                 .unwrap(),
                 None
@@ -1604,10 +1608,10 @@ mod retained_tag_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let pointer = Pointer::symbolic(Variable(986030));
-        let memory = CMemory::new().with_block("tag-cell", 8);
+        let memory = Memory::new().with_block("tag-cell", 8);
         let read = |memory| {
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(memory),
+                crate::kernel::intern_memory(memory),
                 Box::new(cell.clone()),
                 LoadKind::Bits64,
             )

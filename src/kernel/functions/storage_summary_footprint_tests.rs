@@ -1,29 +1,29 @@
 use super::*;
 
-fn outside(owned: Vec<CMemoryRange>, required: CMemoryRange) -> Vec<StorageWriteOutsideFootprint> {
-    let function = CFunction::new(
-        CType::Int32,
+fn outside(owned: Vec<MemoryRange>, required: MemoryRange) -> Vec<StorageWriteOutsideFootprint> {
+    let function = ProgramFunction::new(
+        ProgramType::Int32,
         "caller",
         Vec::new(),
-        c_return(c_int32_literal(0)),
+        program_return(crate::kernel::program_expression::int32_literal(0)),
     );
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let facts = [
-        ExecutionPureFact::internal(Proposition::CMemoryEffectSummary {
+        ExecutionPureFact::internal(Proposition::MemoryEffectSummary {
             before: memory.clone(),
             after: memory,
             mutable_ranges: vec![required],
         })
         .into_certified(),
     ];
-    let projection = CFunctionMemoryEffectProjection {
+    let projection = FunctionMemoryEffectProjection {
         ranges: owned,
         evidence_facts: ExecutionFacts::new(),
         range_sources: Vec::new(),
     };
     storage_writes_outside_owned_footprint(
         &function,
-        &CState::new(),
+        &ExecutionState::new(),
         &facts,
         &PureFactContext::new(),
         None,
@@ -36,36 +36,31 @@ fn outside(owned: Vec<CMemoryRange>, required: CMemoryRange) -> Vec<StorageWrite
 #[test]
 fn storage_summary_combines_adjacent_owned_fields() {
     for base in [
-        CMemory::global_pointer("pair"),
-        CMemory::static_pointer("caller", "pair"),
+        Memory::global_pointer("pair"),
+        Memory::static_pointer("caller", "pair"),
     ] {
-        let left = CMemoryRange::new_with_element_width(base.clone(), 0.into(), 1.into(), 8);
+        let left = MemoryRange::new_with_element_width(base.clone(), 0.into(), 1.into(), 8);
         let right =
-            CMemoryRange::new_with_element_width(base.offset_by_bytes(8), 0.into(), 1.into(), 8);
-        let required = CMemoryRange::new_with_element_width(base.clone(), 0.into(), 4.into(), 4);
+            MemoryRange::new_with_element_width(base.offset_by_bytes(8), 0.into(), 1.into(), 8);
+        let required = MemoryRange::new_with_element_width(base.clone(), 0.into(), 4.into(), 4);
         assert!(outside(vec![left.clone(), right.clone()], required.clone()).is_empty());
         assert!(outside(vec![right, left], required).is_empty());
-        let interior = CMemoryRange::new_with_element_width(base.clone(), 1.into(), 3.into(), 4);
-        let owned = CMemoryRange::new_with_element_width(base, 0.into(), 2.into(), 8);
+        let interior = MemoryRange::new_with_element_width(base.clone(), 1.into(), 3.into(), 4);
+        let owned = MemoryRange::new_with_element_width(base, 0.into(), 2.into(), 8);
         assert!(outside(vec![owned], interior).is_empty());
     }
 }
 
 #[test]
 fn storage_summary_does_not_fill_gaps_or_cross_storage_blocks() {
-    let base = CMemory::global_pointer("pair");
-    let left = CMemoryRange::new_with_element_width(base.clone(), 0.into(), 1.into(), 8);
-    let right =
-        CMemoryRange::new_with_element_width(base.offset_by_bytes(8), 0.into(), 1.into(), 8);
-    let required = CMemoryRange::new_with_element_width(base.clone(), 0.into(), 4.into(), 4);
+    let base = Memory::global_pointer("pair");
+    let left = MemoryRange::new_with_element_width(base.clone(), 0.into(), 1.into(), 8);
+    let right = MemoryRange::new_with_element_width(base.offset_by_bytes(8), 0.into(), 1.into(), 8);
+    let required = MemoryRange::new_with_element_width(base.clone(), 0.into(), 4.into(), 4);
     let suffix =
-        CMemoryRange::new_with_element_width(base.offset_by_bytes(12), 0.into(), 1.into(), 4);
-    let other = CMemoryRange::new_with_element_width(
-        CMemory::global_pointer("other"),
-        0.into(),
-        1.into(),
-        8,
-    );
+        MemoryRange::new_with_element_width(base.offset_by_bytes(12), 0.into(), 1.into(), 4);
+    let other =
+        MemoryRange::new_with_element_width(Memory::global_pointer("other"), 0.into(), 1.into(), 8);
     for owned in [
         vec![],
         vec![left.clone()],
@@ -75,6 +70,6 @@ fn storage_summary_does_not_fill_gaps_or_cross_storage_blocks() {
     ] {
         assert_eq!(outside(owned, required.clone()).len(), 1);
     }
-    let larger = CMemoryRange::new_with_element_width(base, 0.into(), 5.into(), 4);
+    let larger = MemoryRange::new_with_element_width(base, 0.into(), 5.into(), 4);
     assert_eq!(outside(vec![left, right], larger).len(), 1);
 }

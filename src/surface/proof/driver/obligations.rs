@@ -989,16 +989,16 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     /// Ordinary value facts alone do not replace the lowering's safety evidence.
     pub(in crate::surface::proof) fn prepare_loop_invariant_bundle(
         &self,
-        loop_entry_state: &CState,
-        loop_head_state: &CState,
+        loop_entry_state: &ExecutionState,
+        loop_head_state: &ExecutionState,
         head_iterations: &crate::kernel::IntegerTerm,
-        condition: &CExpression,
-        invariant_checks: &[CLoopInvariantCheck],
-        ranking_measures: &[crate::kernel::CRankingComponent],
+        condition: &ProgramExpression,
+        invariant_checks: &[LoopInvariantCheck],
+        ranking_measures: &[crate::kernel::RankingComponent],
         structural_measure: Option<&str>,
         invariant_surfaces: &[ClickProposition],
-        binders: &[crate::kernel::CLoopBinder],
-        composite_resource_definitions: &[CCompositeResourceDefinition],
+        binders: &[crate::kernel::LoopBinder],
+        composite_resource_definitions: &[CompositeResourceDefinition],
         do_while: bool,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         let driver_proof = self.proof;
@@ -1028,7 +1028,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         }
 
         if do_while {
-            let condition_may_continue = crate::kernel::c_loop_condition_may_continue(
+            let condition_may_continue = crate::kernel::loop_condition_may_continue(
                 &execution.core.state,
                 condition,
                 &driver_proof.back_edge_assumptions(execution),

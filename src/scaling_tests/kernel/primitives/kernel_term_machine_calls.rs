@@ -5,7 +5,8 @@ fn machine_call_roots_retain_growing_shared_arguments_without_exports() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let mut operand = KernelTerm::variable(KernelType::C(CType::Int32), Variable(995803));
+        let mut operand =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(995803));
         let exports = KernelTermExport::machine_export_count();
         let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 0..size {
@@ -46,10 +47,11 @@ fn common_call_numeric_identity_is_linear_cold_and_constant_warm() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::C(format.c_type()), Variable(995830));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(format.program_type()), Variable(995830));
         for _ in 0..size {
             root = KernelTerm::intern(
-                KernelType::C(format.c_type()),
+                KernelType::Program(format.program_type()),
                 KernelTermNode::Call {
                     name: "identity_chain".into(),
                     arguments: vec![root.clone(), root],
@@ -82,7 +84,8 @@ fn common_call_import_keeps_growing_shared_arguments_without_exporting() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::C(CType::Int32), Variable(995910));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(995910));
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {

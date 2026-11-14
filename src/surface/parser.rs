@@ -75,8 +75,8 @@ pub(super) fn library_path_modules(source: &str) -> Result<BTreeSet<&'static str
 
 #[derive(Clone, Debug)]
 pub(super) struct QualifiedCObject {
-    pub expression: CExpression,
-    pub address: Option<CExpression>,
+    pub expression: ProgramExpression,
+    pub address: Option<ProgramExpression>,
     pub struct_name: Option<String>,
     pub array_shape: Option<Vec<u32>>,
     pub ambiguous: bool,
@@ -137,7 +137,7 @@ const RETIRED_SPECIAL_CERTIFICATE: &str =
 #[derive(Clone, Debug)]
 pub(super) struct GlobalArrayShape {
     pub(super) shape: Vec<u32>,
-    pub(super) element_type: CType,
+    pub(super) element_type: ProgramType,
 }
 
 /// The output pattern a call step may bind. The single-name form is kept as a
@@ -180,7 +180,8 @@ pub(in crate::surface) struct FunctionLocals {
     /// The locals of pointer type, whose arithmetic keeps its C meaning.
     pub(in crate::surface) pointers: BTreeSet<String>,
     /// For a Rust function, the iterator each loop advances, by loop index.
-    pub(in crate::surface) loop_iterators: Vec<Option<syntax::RustLoopIterator>>,
+    pub(in crate::surface) loop_iterators:
+        Vec<Option<crate::languages::interface::RustLoopIterator>>,
 }
 
 /// The program facts a sidecar is parsed against: its struct and union
@@ -190,12 +191,13 @@ pub(in crate::surface) struct FunctionLocals {
 pub(in crate::surface) struct ProgramLayouts {
     /// A C definition's execution name, indexed by translation unit and source spelling.
     pub(in crate::surface) qualified_functions: BTreeMap<(String, String), String>,
-    pub(in crate::surface) c_object_names: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
+    pub(in crate::surface) program_object_names: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
     /// The other members of each function's recursive C component, for the
     /// functions in a component of two or more. An expression `decreases`
     /// measure ranks calls to these functions too.
     pub(in crate::surface) recursion_peers: BTreeMap<String, Vec<String>>,
-    pub(in crate::surface) struct_layouts: BTreeMap<String, syntax::C0StructLayout>,
+    pub(in crate::surface) struct_layouts:
+        BTreeMap<String, crate::languages::interface::RecordLayout>,
     pub(in crate::surface) union_layouts: BTreeMap<String, syntax::C0UnionLayout>,
     /// Each function's address-backed aggregate objects, with their structs.
     pub(in crate::surface) aggregate_objects: BTreeMap<String, BTreeMap<String, String>>,
@@ -269,8 +271,14 @@ pub(in crate::surface) struct ProgramLayouts {
 /// An instance of a generic function the import declares: its name, the
 /// generic function's, its parameter and result types, its parameters'
 /// names as a head writes them, and whether a method's receiver is `const`.
-pub(in crate::surface) type GenericInstance =
-    (String, String, Vec<C0Type>, C0Type, Vec<String>, bool);
+pub(in crate::surface) type GenericInstance = (
+    String,
+    String,
+    Vec<InterfaceType>,
+    InterfaceType,
+    Vec<String>,
+    bool,
+);
 
 /// One of the C++ declarations that share a path: its importer name,
 /// whether a method's receiver is `const`, and its parameters' types after
@@ -280,7 +288,7 @@ pub(in crate::surface) type GenericInstance =
 pub(in crate::surface) struct CppOverload {
     pub(in crate::surface) name: String,
     pub(in crate::surface) constant: bool,
-    pub(in crate::surface) parameters: Vec<C0Type>,
+    pub(in crate::surface) parameters: Vec<InterfaceType>,
 }
 
 /// A braced proof block as the parser read it: the positions of its braces
@@ -837,7 +845,7 @@ struct Parser {
     /// A predicate goal may introduce its declared quantifiers when unfolded.
     loop_predicate_bodies: BTreeMap<String, ClickProposition>,
     resource_parameters: BTreeMap<String, usize>,
-    c_object_names_by_function: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
+    program_object_names_by_function: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
     recursion_peers_by_function: BTreeMap<String, Vec<String>>,
     /// Click library modules the program's C declarations bring.
     implied_library_modules: BTreeSet<&'static str>,
@@ -896,14 +904,14 @@ struct Parser {
     rust_slice_params: BTreeSet<String>,
     /// The element type of each slice parameter read so far, by name: the
     /// latest parameter of that name, which is the current declaration's.
-    rust_slice_elements: BTreeMap<String, C0Type>,
+    rust_slice_elements: BTreeMap<String, InterfaceType>,
     /// The `Vec` parameters of the Rust signature being parsed, and
     /// `result` when it returns one: each reads `v.len()` and `v[i]`, through
     /// `*v` when the parameter is a reference (`true`).
     rust_vec_params: BTreeMap<String, bool>,
     /// The iterator each loop of the Rust function being parsed advances,
     /// by loop index: `loop(i).iter` names its state.
-    rust_loop_iterators: Vec<Option<syntax::RustLoopIterator>>,
+    rust_loop_iterators: Vec<Option<crate::languages::interface::RustLoopIterator>>,
     /// How many `loop` blocks enclose the text being parsed: inside one,
     /// `iter` is that loop's iterator.
     loop_block_depth: usize,
@@ -976,7 +984,7 @@ struct Parser {
     implicit_proof_spans: Vec<ImplicitProofSpan>,
     matching_parentheses: Vec<Option<usize>>,
     position: usize,
-    struct_layouts: BTreeMap<String, syntax::C0StructLayout>,
+    struct_layouts: BTreeMap<String, crate::languages::interface::RecordLayout>,
     /// See [`ProgramLayouts::rust_enum_types`].
     rust_enum_types: BTreeMap<String, crate::kernel::TypeParameterName>,
     union_layouts: BTreeMap<String, syntax::C0UnionLayout>,
@@ -992,7 +1000,7 @@ struct Parser {
     current_reference_result: bool,
     /// The C type of the current function's `result`, which keeps its C
     /// meaning in a comparison when it is a pointer or a float.
-    current_result_c_type: Option<C0Type>,
+    current_result_interface_type: Option<InterfaceType>,
     /// The current function's locals of pointer type that no parameter
     /// shadows.
     current_local_pointers: BTreeSet<String>,
@@ -1024,12 +1032,12 @@ struct Parser {
     let_operands: spec_arithmetic::LetOperands,
     /// The machine types of the current theorem's or pure function's
     /// parameters, which a diagnostic names.
-    spec_parameter_types: BTreeMap<String, C0Type>,
+    spec_parameter_types: BTreeMap<String, InterfaceType>,
     /// The casts written as `address(p)`, which convert a C pointer to its
     /// `uint64` address. Arithmetic on them is
     /// pointer-word arithmetic, such as a tag added to an aligned address,
     /// and keeps its C meaning as a pointer operand does.
-    address_casts: std::collections::HashSet<CExpression>,
+    address_casts: std::collections::HashSet<ProgramExpression>,
     /// The pointer parameters of the theorem being parsed. Arithmetic on one
     /// is pointer arithmetic and keeps its C meaning, as it does on a C
     /// function's pointer parameter.
@@ -1064,7 +1072,7 @@ struct Parser {
     /// This is an index over the clauses, not a second source for a binder's
     /// spelling: every entry is copied from the `ResourceClause::Named`
     /// binding the clause already carries, which is also the name lowering
-    /// copies into `CResourceSpec::Instance::binder`. The parser cannot read
+    /// copies into `ResourceSpec::Instance::binder`. The parser cannot read
     /// that kernel field instead, because it resolves a call map while
     /// parsing, before any clause is lowered; and it needs each binder's
     /// identity, resource family, and `owns`/`produces` kind keyed by callee,
@@ -1122,12 +1130,12 @@ pub(in crate::surface) enum CalleeResourceBinderKind {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ParsedType {
-    c_type: C0Type,
+    interface_type: InterfaceType,
     struct_name: Option<String>,
     struct_pointer: bool,
     constant: bool,
     pointee_constant: bool,
-    /// Written `T&`: `c_type` is the pointer that carries the reference.
+    /// Written `T&`: `interface_type` is the pointer that carries the reference.
     reference: bool,
 }
 
@@ -1201,24 +1209,24 @@ pub(super) fn is_c_type_keyword(name: &str) -> bool {
     )
 }
 
-pub(in crate::surface) fn algebraic_field_c_type_supported(c_type: C0Type) -> bool {
+pub(in crate::surface) fn algebraic_field_c_type_supported(interface_type: InterfaceType) -> bool {
     !matches!(
-        c_type,
-        C0Type::Void
-            | C0Type::FunctionPointer(_)
-            | C0Type::Int8Array(_)
-            | C0Type::Int16Array(_)
-            | C0Type::Int32Array(_)
-            | C0Type::CharArray(_, _)
-            | C0Type::UInt8Array(_)
-            | C0Type::UInt16Array(_)
-            | C0Type::UInt32Array(_)
-            | C0Type::Int128Array(_)
-            | C0Type::Int64Array(_, _)
-            | C0Type::UInt128Array(_)
-            | C0Type::UInt64Array(_, _)
-            | C0Type::Float32Array(_)
-            | C0Type::Float64Array(_)
+        interface_type,
+        InterfaceType::Void
+            | InterfaceType::FunctionPointer(_)
+            | InterfaceType::Int8Array(_)
+            | InterfaceType::Int16Array(_)
+            | InterfaceType::Int32Array(_)
+            | InterfaceType::CharArray(_, _)
+            | InterfaceType::UInt8Array(_)
+            | InterfaceType::UInt16Array(_)
+            | InterfaceType::UInt32Array(_)
+            | InterfaceType::Int128Array(_)
+            | InterfaceType::Int64Array(_, _)
+            | InterfaceType::UInt128Array(_)
+            | InterfaceType::UInt64Array(_, _)
+            | InterfaceType::Float32Array(_)
+            | InterfaceType::Float64Array(_)
     )
 }
 
@@ -1257,11 +1265,13 @@ impl Parser {
 }
 
 /// The machine types of a theorem's or pure function's parameters.
-fn spec_parameter_types(parameters: &[FunctionParameter]) -> BTreeMap<String, C0Type> {
+fn spec_parameter_types(parameters: &[FunctionParameter]) -> BTreeMap<String, InterfaceType> {
     parameters
         .iter()
         .filter_map(|parameter| match parameter.click_type() {
-            ClickType::C(c_type) => Some((parameter.name().to_string(), *c_type)),
+            ClickType::Program(interface_type) => {
+                Some((parameter.name().to_string(), *interface_type))
+            }
             _ => None,
         })
         .collect()
@@ -1279,7 +1289,7 @@ fn algebraic_parameter_types(
                 Some((parameter.name().to_string(), (application.clone(), index)))
             }
             ClickType::Parameter(_)
-            | ClickType::C(_)
+            | ClickType::Program(_)
             | ClickType::CObjectPointer { .. }
             | ClickType::Integer => None,
         })
@@ -1288,11 +1298,11 @@ fn algebraic_parameter_types(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ResolvedField {
-    c_type: C0Type,
+    interface_type: InterfaceType,
     pointee_constant: bool,
     struct_name: Option<String>,
     union_name: Option<String>,
-    function_pointer_signature: Option<syntax::C0FunctionPointerSignature>,
+    function_pointer_signature: Option<crate::languages::interface::CallbackInterface>,
     array_element_width: Option<u32>,
     array_shape: Option<Vec<u32>>,
     offset_bytes: u32,
@@ -1339,7 +1349,7 @@ impl Parser {
 
     fn new_with_layouts(
         source: &str,
-        struct_layouts: BTreeMap<String, syntax::C0StructLayout>,
+        struct_layouts: BTreeMap<String, crate::languages::interface::RecordLayout>,
         union_layouts: BTreeMap<String, syntax::C0UnionLayout>,
     ) -> Result<Self, ClickError> {
         Self::new_with_layouts_and_aggregate_objects(
@@ -1373,7 +1383,7 @@ impl Parser {
             &layouts.record_spellings,
         )
         .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
-        parser.c_object_names_by_function = layouts.c_object_names;
+        parser.program_object_names_by_function = layouts.program_object_names;
         parser.rust_enum_types = layouts.rust_enum_types;
         parser.recursion_peers_by_function = layouts.recursion_peers;
         parser
@@ -1535,7 +1545,7 @@ impl Parser {
 
     fn new_with_layouts_and_aggregate_objects(
         source: &str,
-        struct_layouts: BTreeMap<String, syntax::C0StructLayout>,
+        struct_layouts: BTreeMap<String, crate::languages::interface::RecordLayout>,
         union_layouts: BTreeMap<String, syntax::C0UnionLayout>,
         aggregate_objects_by_function: BTreeMap<String, BTreeMap<String, String>>,
         aggregate_array_objects_by_function: BTreeMap<String, BTreeSet<String>>,
@@ -1671,7 +1681,7 @@ impl Parser {
             loop_name_context: None,
             loop_proof_value_names: Default::default(),
             loop_predicate_bodies: BTreeMap::new(),
-            c_object_names_by_function: BTreeMap::new(),
+            program_object_names_by_function: BTreeMap::new(),
             recursion_peers_by_function: BTreeMap::new(),
             implied_library_modules: path_library_modules,
             library_module,
@@ -1682,7 +1692,7 @@ impl Parser {
             global_array_shapes_by_function,
             local_struct_pointers_by_function: BTreeMap::new(),
             current_reference_result: false,
-            current_result_c_type: None,
+            current_result_interface_type: None,
             current_local_pointers: BTreeSet::new(),
             names: NameTable::default(),
             pure_function_slices: BTreeMap::new(),
@@ -1886,7 +1896,7 @@ impl Parser {
             return None;
         };
         match inner.as_ref() {
-            ContractExpression::CFragment(CExpression::Variable(slice))
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(slice))
                 if self.rust_slice_params.contains(slice) =>
             {
                 Some(slice)
@@ -1946,20 +1956,22 @@ impl Parser {
                         .expect("matched above")
                         .to_string();
                     spread.push(argument);
-                    spread.push(ContractExpression::CFragment(CExpression::Variable(
-                        format!("{slice}_len"),
-                    )));
+                    spread.push(ContractExpression::ProgramExpression(
+                        ProgramExpression::Variable(format!("{slice}_len")),
+                    ));
                 }
-                ContractExpression::CFragment(CExpression::Variable(slice))
+                ContractExpression::ProgramExpression(ProgramExpression::Variable(slice))
                     if self.rust_slice_params.contains(&slice) =>
                 {
-                    let length = ContractExpression::CFragment(CExpression::Variable(format!(
-                        "{slice}_len"
-                    )));
-                    spread.push(ContractExpression::CFragment(CExpression::Variable(slice)));
+                    let length = ContractExpression::ProgramExpression(
+                        ProgramExpression::Variable(format!("{slice}_len")),
+                    );
+                    spread.push(ContractExpression::ProgramExpression(
+                        ProgramExpression::Variable(slice),
+                    ));
                     spread.push(length);
                 }
-                ContractExpression::CFragment(CExpression::Variable(slice)) => {
+                ContractExpression::ProgramExpression(ProgramExpression::Variable(slice)) => {
                     return Err(self.error(format!(
                         "argument {} of `{name}` is a slice, but `{slice}` is not a slice parameter; pass one, or `slice::from_raw_parts(p, n)` for a pointer and a length",
                         index + 1
@@ -2304,7 +2316,7 @@ impl Parser {
             theorem_definitions.push(self.parse_theorem_definition()?);
         }
         self.position = end;
-        let mut c_function_names = self
+        let mut program_function_names = self
             .local_struct_pointers_by_function
             .iter()
             .filter_map(|(source, info)| {
@@ -2324,7 +2336,7 @@ impl Parser {
                     .qualified_functions
                     .get(&(source.clone(), name.to_string()))
                 {
-                    c_function_names.insert(signature.name().to_string(), target.clone());
+                    program_function_names.insert(signature.name().to_string(), target.clone());
                 }
             }
         }
@@ -2344,7 +2356,7 @@ impl Parser {
                     .map(|(name, layout)| (name.clone(), layout.size_bytes()))
                     .collect(),
             ),
-            c_function_names: std::sync::Arc::new(c_function_names),
+            program_function_names: std::sync::Arc::new(program_function_names),
             imports,
             library_imports,
             verifying_sources,
@@ -2700,7 +2712,7 @@ impl Parser {
             return Ok(AlgebraicFieldType::Algebraic {
                 name: "Slice".to_string(),
                 arguments: vec![AlgebraicFieldType::C {
-                    c_type: element,
+                    interface_type: element,
                     struct_name: None,
                     object_class: None,
                 }],
@@ -2734,7 +2746,7 @@ impl Parser {
                 Some(parsed) => parsed,
                 None => self.parse_type()?,
             };
-            if !algebraic_field_c_type_supported(parsed.c_type) {
+            if !algebraic_field_c_type_supported(parsed.interface_type) {
                 return Err(self.error(
                     "algebraic datatype fields must be C scalar, data-pointer, or algebraic values",
                 ));
@@ -2744,13 +2756,14 @@ impl Parser {
             // `struct tag**` does not point at one either, so neither is a
             // memory base in a match arm.
             let object_class = self.declared_object_class(&parsed);
-            let struct_name = if parsed.struct_pointer && parsed.c_type == C0Type::Int32Pointer {
-                parsed.struct_name
-            } else {
-                None
-            };
+            let struct_name =
+                if parsed.struct_pointer && parsed.interface_type == InterfaceType::Int32Pointer {
+                    parsed.struct_name
+                } else {
+                    None
+                };
             return Ok(AlgebraicFieldType::C {
-                c_type: parsed.c_type,
+                interface_type: parsed.interface_type,
                 struct_name,
                 object_class,
             });
@@ -2890,7 +2903,7 @@ impl Parser {
         })
     }
 
-    fn is_qualified_c_name(&self) -> bool {
+    fn is_qualified_program_name(&self) -> bool {
         if let Some(written) = self
             .here()
             .and_then(|position| self.symbols.written_path(&position))
@@ -2905,7 +2918,7 @@ impl Parser {
                 .is_some_and(|name| self.source_aliases.contains_key(name))
     }
 
-    fn parse_qualified_c_name(&mut self) -> Result<(String, CExpression), ClickError> {
+    fn parse_qualified_program_name(&mut self) -> Result<(String, ProgramExpression), ClickError> {
         let written = self.expect_c_declaration_ident("C source alias")?;
         let (alias, mut name) = match written.split_once("::") {
             Some((alias, name)) => (alias.to_string(), name.to_string()),
@@ -2925,7 +2938,7 @@ impl Parser {
             .get(&alias)
             .ok_or_else(|| self.error(format!("unknown C source alias `{alias}`")))?;
         let expression = match &self.qualified_objects {
-            None => CExpression::Variable(qualified.clone()),
+            None => ProgramExpression::Variable(qualified.clone()),
             Some(objects) => objects
                 .get(source)
                 .and_then(|objects| objects.get(&name))
@@ -2953,11 +2966,13 @@ impl Parser {
             .get(name)
     }
 
-    fn parse_segment_primary(&mut self) -> Result<(ContractExpression, CExpression), ClickError> {
+    fn parse_segment_primary(
+        &mut self,
+    ) -> Result<(ContractExpression, ProgramExpression), ClickError> {
         if self.peek_next() == Some(&Token::ColonColon) {
-            let (name, expression) = self.parse_qualified_c_name()?;
+            let (name, expression) = self.parse_qualified_program_name()?;
             return Ok((
-                ContractExpression::CFragment(CExpression::Variable(name)),
+                ContractExpression::ProgramExpression(ProgramExpression::Variable(name)),
                 expression,
             ));
         }
@@ -2969,14 +2984,14 @@ impl Parser {
         // parameter types and would default a global byte slice to `int32`
         // cells, letting `owns bytes[0..1]` authorize the neighboring byte.
         let lowered = self.retype_global_array_pointer(&expression);
-        Ok((ContractExpression::CFragment(expression), lowered))
+        Ok((ContractExpression::ProgramExpression(expression), lowered))
     }
 
     /// Wraps a bare global-array name in a cast to its element pointer type.
     /// A parameter shadowing the global is not in the per-function shape map,
     /// so it keeps the parameter's own type.
-    fn retype_global_array_pointer(&self, expression: &CExpression) -> CExpression {
-        let CExpression::Variable(name) = expression else {
+    fn retype_global_array_pointer(&self, expression: &ProgramExpression) -> ProgramExpression {
+        let ProgramExpression::Variable(name) = expression else {
             return expression.clone();
         };
         match self
@@ -2985,10 +3000,10 @@ impl Parser {
             .get(name)
             .and_then(|array| array.element_type.pointer_to())
         {
-            Some(target_type) => CExpression::Cast {
+            Some(target_type) => ProgramExpression::Cast {
                 expression: Box::new(expression.clone()),
                 target_type,
-                integer_mode: crate::kernel::CIntegerCastMode::Standard,
+                integer_mode: crate::kernel::IntegerCastMode::Standard,
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
@@ -3074,7 +3089,7 @@ impl Parser {
             if parsed_return_type.struct_name.is_some() && !parsed_return_type.struct_pointer {
                 return Err(self.error("only pointer-to-struct types are supported"));
             }
-            if parsed_return_type.c_type == C0Type::Void {
+            if parsed_return_type.interface_type == InterfaceType::Void {
                 return Err(self.error("pure Click functions must return a value"));
             }
         }
@@ -3132,7 +3147,7 @@ impl Parser {
             &mut self.spec_parameter_types,
             spec_parameter_types(&parsed_parameters.parameters),
         );
-        let body = self.parse_branch_value(return_type == ClickType::C(C0Type::Bool));
+        let body = self.parse_branch_value(return_type == ClickType::Program(InterfaceType::Bool));
         self.spec_parameter_types = previous_spec_parameter_types;
         let body = body?;
         // A `-> Integer` body is read where its result is used.
@@ -3454,7 +3469,7 @@ impl Parser {
             self.expect(Token::Colon)?;
             let (click_type, parsed_c_type) = self.parse_click_type()?;
             if parsed_c_type.as_ref().is_some_and(|ty| {
-                !algebraic_field_c_type_supported(ty.c_type)
+                !algebraic_field_c_type_supported(ty.interface_type)
                     || ty.struct_name.is_some()
                     || ty.constant
                     || ty.pointee_constant
@@ -3595,12 +3610,12 @@ impl Parser {
                         .click_type
                         .as_ref()
                         .expect("`let ... where` carries its type");
-                    let Some(c_type) = click_type.c_type() else {
+                    let Some(interface_type) = click_type.interface_type() else {
                         return Err(self.error(
                             "resource witnesses must have a C pointer type, not an algebraic type",
                         ));
                     };
-                    if !c_type.is_pointer() {
+                    if !interface_type.is_pointer() {
                         return Err(self.error(format!(
                             "resource witness `{}` must have a pointer type",
                             binding.name
@@ -3613,7 +3628,7 @@ impl Parser {
                     }
                     witnesses.push(ResourceWitness {
                         name: binding.name,
-                        c_type,
+                        interface_type,
                     });
                     facts.push(condition);
                 }
@@ -3704,7 +3719,7 @@ impl Parser {
         let binder = self.expect_ident("iterated ownership index name")?;
         self.expect(Token::Colon)?;
         let (click_type, _) = self.parse_click_type()?;
-        if click_type != ClickType::C(C0Type::Int32) {
+        if click_type != ClickType::Program(InterfaceType::Int32) {
             return Err(self.error(format!(
                 "iterated ownership index `{binder}` must have type `int32`"
             )));
@@ -3862,13 +3877,13 @@ impl Parser {
                     if let Some(slices) = &mut self.pending_slice_params {
                         slices.push(name.clone());
                     }
-                    if let Some(pointee) = element.c_type.pointee_type() {
+                    if let Some(pointee) = element.interface_type.pointee_type() {
                         self.rust_slice_elements.insert(name.clone(), pointee);
                     }
                     self.implied_library_modules.insert(SLICE_MODULE);
                     parameters.push(self.parse_parameter_array_suffix(name, element)?.parameter);
                     parameters.push(FunctionParameter {
-                        click_type: ClickType::C(C0Type::UInt64(LongRank::Long)),
+                        click_type: ClickType::Program(InterfaceType::UInt64(LongRank::Long)),
                         name: length,
                         struct_name: None,
                         function_pointer_signature: None,
@@ -3880,11 +3895,11 @@ impl Parser {
                     let (click_type, parsed_c_type) = self.parse_click_type()?;
                     let parsed_parameter = if let Some(parsed_type) = parsed_c_type {
                         if self.peek() == Some(&Token::LParen) {
-                            let (c_type, function_pointer_signature) =
+                            let (interface_type, function_pointer_signature) =
                                 self.parse_abstract_function_pointer_type(parsed_type)?;
                             ParsedParameter {
                                 parameter: FunctionParameter {
-                                    click_type: ClickType::C(c_type),
+                                    click_type: ClickType::Program(interface_type),
                                     name,
                                     struct_name: None,
                                     function_pointer_signature: Some(function_pointer_signature),
@@ -3917,7 +3932,7 @@ impl Parser {
                     };
                     if let Some(struct_name) = parsed_parameter.struct_name {
                         if parsed_parameter.parameter.click_type
-                            == ClickType::C(C0Type::Int32PointerPointer)
+                            == ClickType::Program(InterfaceType::Int32PointerPointer)
                         {
                             struct_params.insert(
                                 struct_pointer_pointer_key(&parsed_parameter.parameter.name),
@@ -4067,8 +4082,8 @@ impl Parser {
                 .filter(|parameter| {
                     parameter
                         .click_type()
-                        .c_type()
-                        .is_some_and(|c_type| c_type.is_pointer())
+                        .interface_type()
+                        .is_some_and(|interface_type| interface_type.is_pointer())
                 })
                 .map(|parameter| parameter.name().to_string())
                 .collect(),
@@ -4339,7 +4354,7 @@ impl Parser {
                 .filter(|parameter| {
                     matches!(
                         parameter.click_type(),
-                        ClickType::C(C0Type::ParameterPointer(_))
+                        ClickType::Program(InterfaceType::ParameterPointer(_))
                     )
                 })
                 .map(|parameter| parameter.name().to_owned())
@@ -4413,9 +4428,9 @@ impl Parser {
                 continue;
             };
             for field in layout.fields().values() {
-                match (field.c_type(), field.struct_name()) {
-                    (C0Type::Parameter(_), _) => return true,
-                    (C0Type::Int32, Some(embedded)) => pending.push(embedded.to_string()),
+                match (field.interface_type(), field.struct_name()) {
+                    (InterfaceType::Parameter(_), _) => return true,
+                    (InterfaceType::Int32, Some(embedded)) => pending.push(embedded.to_string()),
                     _ => {}
                 }
             }
@@ -4639,20 +4654,22 @@ impl Parser {
             signature
                 .parameters()
                 .iter()
-                .filter(|parameter| parameter.c_type() == C0Type::VoidPointer)
+                .filter(|parameter| parameter.interface_type() == InterfaceType::VoidPointer)
                 .map(|parameter| parameter.name().to_string())
                 .collect(),
         );
         let previous_c_object_names = std::mem::replace(
-            &mut self.names.c_object_names,
-            self.c_object_names_by_function.get(&table_name).cloned(),
+            &mut self.names.program_object_names,
+            self.program_object_names_by_function
+                .get(&table_name)
+                .cloned(),
         );
         let previous_c_parameter_types = std::mem::replace(
-            &mut self.names.c_parameter_types,
+            &mut self.names.program_parameter_types,
             signature
                 .parameters()
                 .iter()
-                .map(|parameter| (parameter.name().to_string(), parameter.c_type()))
+                .map(|parameter| (parameter.name().to_string(), parameter.interface_type()))
                 .collect(),
         );
         let previous_parameter_struct_casts =
@@ -4697,7 +4714,9 @@ impl Parser {
             &mut self.current_reference_result,
             signature.returns_reference(),
         );
-        let previous_result_c_type = self.current_result_c_type.replace(signature.return_type());
+        let previous_result_c_type = self
+            .current_result_interface_type
+            .replace(signature.return_type());
         let local_pointers = self
             .local_struct_pointers_by_function
             .get(&table_name)
@@ -4736,17 +4755,20 @@ impl Parser {
                     if binding.kind == ContractLetBindingKind::Parameter {
                         // A clause would read the value where the body reads
                         // the program's variable.
-                        if self.names.is_c_variable(&binding.name) {
+                        if self.names.is_program_variable(&binding.name) {
                             return Err(self.error(format!(
                                 "contract value parameter `{}` takes the name of a C variable; a clause would read the value where the body reads the variable; choose another name",
                                 binding.name
                             )));
                         }
-                        let c_type = binding
+                        let interface_type = binding
                             .click_type
                             .as_ref()
-                            .and_then(ClickType::c_type)
-                            .filter(|c_type| !c_type.is_pointer() && *c_type != C0Type::Void)
+                            .and_then(ClickType::interface_type)
+                            .filter(|interface_type| {
+                                !interface_type.is_pointer()
+                                    && *interface_type != InterfaceType::Void
+                            })
                             .ok_or_else(|| {
                                 self.error(format!(
                                     "contract value parameter `{}` must have a scalar type",
@@ -4754,7 +4776,7 @@ impl Parser {
                                 ))
                             })?;
                         self.contract_value_parameters.push(FunctionParameter {
-                            click_type: ClickType::C(c_type),
+                            click_type: ClickType::Program(interface_type),
                             name: binding.name.clone(),
                             struct_name: None,
                             function_pointer_signature: None,
@@ -4889,13 +4911,13 @@ impl Parser {
                     if components.is_empty() {
                         let measure = self.parse_measure_component()?;
                         self.expect(Token::Semicolon)?;
-                        decreases = Some(CFunctionDecrease::Unresolved(
+                        decreases = Some(FunctionDecrease::Unresolved(
                             substitute_contract_expression(&measure, &substitutions)
                                 .map_err(|message| self.error(message))?,
                         ));
                     } else {
                         self.expect(Token::Semicolon)?;
-                        decreases = Some(CFunctionDecrease::Lexicographic(
+                        decreases = Some(FunctionDecrease::Lexicographic(
                             components
                                 .iter()
                                 .map(|component| {
@@ -5163,8 +5185,8 @@ impl Parser {
                 )));
             }
         }
-        let c_object_names = self
-            .c_object_names_by_function
+        let program_object_names = self
+            .program_object_names_by_function
             .get(&table_name)
             .cloned()
             .unwrap_or_else(|| {
@@ -5180,8 +5202,8 @@ impl Parser {
         self.names.struct_params = previous_struct_params;
         self.names
             .replace(NameKind::VoidPointerParameter, previous_void_pointer_params);
-        self.names.c_parameter_types = previous_c_parameter_types;
-        self.names.c_object_names = previous_c_object_names;
+        self.names.program_parameter_types = previous_c_parameter_types;
+        self.names.program_object_names = previous_c_object_names;
         self.rust_loop_iterators = previous_loop_iterators;
         let parameter_struct_casts = std::mem::replace(
             &mut self.names.parameter_struct_casts,
@@ -5198,7 +5220,7 @@ impl Parser {
         self.names
             .replace(NameKind::ReferenceParameter, previous_reference_params);
         self.current_reference_result = previous_reference_result;
-        self.current_result_c_type = previous_result_c_type;
+        self.current_result_interface_type = previous_result_c_type;
         self.current_local_pointers = previous_local_pointers;
         self.names
             .replace(NameKind::IntegerParameter, previous_integer_params);
@@ -5322,7 +5344,7 @@ impl Parser {
                 implicit_proofs: self.implicit_proof_spans[first_implicit_proof..].to_vec(),
                 proof_clauses: self.proof_clause_spans[first_proof_clause..].to_vec(),
             },
-            c_object_names,
+            program_object_names,
             recursion_peers,
             signature,
             external,
@@ -5376,9 +5398,9 @@ impl Parser {
             // arithmetic on a machine value has no meaning.
             let value = match &click_type {
                 Some(ClickType::Integer) => self.at_integer_position(value),
-                Some(ClickType::C(c_type)) => {
-                    let value = self.typed_let_literal(&name, *c_type, value)?;
-                    self.refuse_mixed_narrow_arithmetic(&name, *c_type, &value)?;
+                Some(ClickType::Program(interface_type)) => {
+                    let value = self.typed_let_literal(&name, *interface_type, value)?;
+                    self.refuse_mixed_narrow_arithmetic(&name, *interface_type, &value)?;
                     value
                 }
                 Some(_) => value,
@@ -5421,7 +5443,7 @@ impl Parser {
             if let Some(parameter) = parsed_parameters
                 .parameters
                 .iter()
-                .find(|parameter| parameter.click_type().c_type().is_none())
+                .find(|parameter| parameter.click_type().interface_type().is_none())
             {
                 return Err(self.error(format!(
                     "tactic parameter `{}` has a mathematical type; tactic parameters are C \
@@ -5438,7 +5460,7 @@ impl Parser {
             return Ok(ParsedFunctionSignature {
                 signature: FunctionSignature {
                     c_source: None,
-                    return_type: C0Type::Void,
+                    return_type: InterfaceType::Void,
                     return_struct_name: None,
                     return_pointee_constant: false,
                     return_reference: false,
@@ -5469,7 +5491,7 @@ impl Parser {
         let returnless = self.verifies_cpp() && self.cpp_returnless_declarator_follows();
         let parsed_return_type = if returnless {
             ParsedType {
-                c_type: C0Type::Void,
+                interface_type: InterfaceType::Void,
                 struct_name: None,
                 struct_pointer: false,
                 constant: false,
@@ -5491,7 +5513,7 @@ impl Parser {
         {
             self.scalar_struct_value_type(struct_name)?
         } else {
-            parsed_return_type.c_type
+            parsed_return_type.interface_type
         };
         let mut c_source = None;
         let (name, receiver) = if self.verifies_cpp() {
@@ -5559,7 +5581,7 @@ impl Parser {
             let this = self.parse_parameter_array_suffix(
                 "this".into(),
                 ParsedType {
-                    c_type: C0Type::Int32Pointer,
+                    interface_type: InterfaceType::Int32Pointer,
                     struct_name: Some(record.clone()),
                     struct_pointer: true,
                     constant: false,
@@ -5577,15 +5599,14 @@ impl Parser {
         let name = match self.cpp_overloads.get(&name) {
             Some(overloads) => {
                 let written = &parsed_parameters.parameters[usize::from(has_receiver)..];
-                let mut selected = overloads.iter().filter(|overload| {
-                    overload.constant == receiver_constant
-                        && overload.parameters.len() == written.len()
-                        && overload
-                            .parameters
-                            .iter()
-                            .zip(written)
-                            .all(|(expected, parameter)| *expected == parameter.c_type())
-                });
+                let mut selected =
+                    overloads.iter().filter(|overload| {
+                        overload.constant == receiver_constant
+                            && overload.parameters.len() == written.len()
+                            && overload.parameters.iter().zip(written).all(
+                                |(expected, parameter)| *expected == parameter.interface_type(),
+                            )
+                    });
                 match (selected.next(), selected.next()) {
                     (Some(overload), None) => overload.name.clone(),
                     (selected, _) => {
@@ -5610,11 +5631,11 @@ impl Parser {
             if parsed.constant
                 || parsed.pointee_constant
                 || parsed.struct_name.is_some()
-                || parsed.c_type != C0Type::Int32
+                || parsed.interface_type != InterfaceType::Int32
             {
                 return Err(self.error("the exceptional payload type must be `int32`"));
             }
-            Some(C0Type::Int32)
+            Some(InterfaceType::Int32)
         } else {
             None
         };
@@ -5692,10 +5713,10 @@ impl Parser {
             "false" => false,
             _ => return None,
         };
-        let shadowed = self.names.c_parameter_types.contains_key(name)
+        let shadowed = self.names.program_parameter_types.contains_key(name)
             || self
                 .names
-                .c_object_names
+                .program_object_names
                 .as_ref()
                 .is_some_and(|names| names.contains(name))
             || self.names.contains(NameKind::ProofBinder, name)
@@ -5718,7 +5739,7 @@ impl Parser {
     /// function's complete object-name table.
     fn refuse_unknown_loop_value(&self, name: &str) -> Result<(), ClickError> {
         if let Some(context) = &self.loop_name_context
-            && self.names.c_object_names.is_some()
+            && self.names.program_object_names.is_some()
             // A loop's returning arm may close the function's postcondition.
             // Execution checking decides when this built-in value exists.
             && name != "result"
@@ -5746,7 +5767,9 @@ impl Parser {
             return Ok(expression);
         }
         let name = self.take_rust_slice_len(&name).unwrap_or(name);
-        Ok(ContractExpression::CFragment(CExpression::Variable(name)))
+        Ok(ContractExpression::ProgramExpression(
+            ProgramExpression::Variable(name),
+        ))
     }
 
     fn parse_parameters(&mut self) -> Result<ParsedParameters, ClickError> {
@@ -5771,12 +5794,12 @@ impl Parser {
             // C function-pointer typedef.
             let callable = match self.parse_cpp_std_function_type()? {
                 Some(callable) => Some(callable),
-                None => self.parse_c_function_pointer_typedef()?,
+                None => self.parse_program_function_pointer_typedef()?,
             };
-            if let Some((c_type, function_pointer_signature)) = callable {
+            if let Some((interface_type, function_pointer_signature)) = callable {
                 let name = self.expect_ident("parameter name")?;
                 parameters.push(FunctionParameter {
-                    click_type: ClickType::C(c_type),
+                    click_type: ClickType::Program(interface_type),
                     name,
                     struct_name: None,
                     function_pointer_signature: Some(function_pointer_signature),
@@ -5805,7 +5828,7 @@ impl Parser {
             if let Some((element, length, constant)) = self.parse_c_array_typedef()? {
                 let name = self.expect_ident("parameter name")?;
                 let parsed_type = ParsedType {
-                    c_type: element,
+                    interface_type: element,
                     struct_name: None,
                     struct_pointer: false,
                     constant,
@@ -5841,11 +5864,11 @@ impl Parser {
             }
             let parsed_type = self.parse_type()?;
             let parsed_parameter = if self.peek() == Some(&Token::LParen) {
-                let (name, c_type, function_pointer_signature) =
+                let (name, interface_type, function_pointer_signature) =
                     self.parse_function_pointer_declarator(parsed_type.clone())?;
                 ParsedParameter {
                     parameter: FunctionParameter {
-                        click_type: ClickType::C(c_type),
+                        click_type: ClickType::Program(interface_type),
                         name,
                         struct_name: None,
                         function_pointer_signature: Some(function_pointer_signature),
@@ -5863,7 +5886,7 @@ impl Parser {
             };
             if let Some(struct_name) = parsed_parameter.struct_name {
                 if parsed_parameter.parameter.click_type
-                    == ClickType::C(C0Type::Int32PointerPointer)
+                    == ClickType::Program(InterfaceType::Int32PointerPointer)
                 {
                     struct_params.insert(
                         struct_pointer_pointer_key(&parsed_parameter.parameter.name),
@@ -5943,7 +5966,7 @@ impl Parser {
             if let Some(reference) = indirection {
                 self.position += 1;
                 return Ok(ParsedType {
-                    c_type: C0Type::ParameterPointer(parameter),
+                    interface_type: InterfaceType::ParameterPointer(parameter),
                     struct_name: None,
                     struct_pointer: false,
                     constant: false,
@@ -5952,7 +5975,7 @@ impl Parser {
                 });
             }
             return Ok(ParsedType {
-                c_type: C0Type::Parameter(parameter),
+                interface_type: InterfaceType::Parameter(parameter),
                 struct_name: None,
                 struct_pointer: false,
                 constant: is_constant,
@@ -5988,13 +6011,13 @@ impl Parser {
         let typedef_struct = match self.c_typedefs.get(&spelling) {
             Some(syntax::C0HeadTypedef::Struct {
                 name,
-                c_type,
+                interface_type,
                 constant,
                 pointee_constant,
             }) => {
                 self.check_head_typedef(&spelling)?;
                 is_constant |= constant;
-                Some((name.clone(), *c_type, *pointee_constant))
+                Some((name.clone(), *interface_type, *pointee_constant))
             }
             _ => None,
         };
@@ -6002,8 +6025,8 @@ impl Parser {
         // before it qualifies the pointer, as in C.
         let alias_pointer = typedef_struct
             .as_ref()
-            .filter(|(_, c_type, _)| *c_type != C0Type::Int32)
-            .map(|(_, c_type, pointee_constant)| (*c_type, *pointee_constant));
+            .filter(|(_, interface_type, _)| *interface_type != InterfaceType::Int32)
+            .map(|(_, interface_type, pointee_constant)| (*interface_type, *pointee_constant));
         if spelling == "struct" || cpp_record || typedef_struct.is_some() {
             let struct_name = if let Some((name, _, _)) = typedef_struct {
                 name
@@ -6020,7 +6043,7 @@ impl Parser {
             if self.peek() == Some(&Token::Amp) && alias_pointer.is_none() {
                 self.position += 1;
                 return Ok(ParsedType {
-                    c_type: C0Type::Int32Pointer,
+                    interface_type: InterfaceType::Int32Pointer,
                     struct_name: Some(struct_name),
                     struct_pointer: true,
                     constant: false,
@@ -6029,8 +6052,8 @@ impl Parser {
                 });
             }
             if self.peek() == Some(&Token::Star) || alias_pointer.is_some() {
-                let (mut c_type, mut pointee_constant) =
-                    alias_pointer.unwrap_or((C0Type::Int32, false));
+                let (mut interface_type, mut pointee_constant) =
+                    alias_pointer.unwrap_or((InterfaceType::Int32, false));
                 let mut saw_pointer = alias_pointer.is_some();
                 while self.peek() == Some(&Token::Star) {
                     if saw_pointer && pointee_constant {
@@ -6041,9 +6064,9 @@ impl Parser {
                     let base_constant = object_constant;
                     object_constant = false;
                     self.position += 1;
-                    c_type = match c_type {
-                        C0Type::Int32 => C0Type::Int32Pointer,
-                        C0Type::Int32Pointer => C0Type::Int32PointerPointer,
+                    interface_type = match interface_type {
+                        InterfaceType::Int32 => InterfaceType::Int32Pointer,
+                        InterfaceType::Int32Pointer => InterfaceType::Int32PointerPointer,
                         _ => return Err(self.error("pointer depth beyond `**` is not supported")),
                     };
                     pointee_constant = base_constant;
@@ -6054,7 +6077,7 @@ impl Parser {
                     saw_pointer = true;
                 }
                 return Ok(ParsedType {
-                    c_type,
+                    interface_type,
                     struct_name: Some(struct_name),
                     struct_pointer: true,
                     constant: object_constant,
@@ -6063,7 +6086,7 @@ impl Parser {
                 });
             }
             return Ok(ParsedType {
-                c_type: C0Type::Int32Pointer,
+                interface_type: InterfaceType::Int32Pointer,
                 struct_name: Some(struct_name),
                 struct_pointer: false,
                 constant: object_constant,
@@ -6087,11 +6110,11 @@ impl Parser {
         // A specification type names a representation: a sidecar's `long
         // long` is `int64`, which matches a C `long` or `long long` alike. A
         // function head restates a C declaration and keeps its rank.
-        let integer = integer.map(|(c_type, count)| {
+        let integer = integer.map(|(interface_type, count)| {
             if self.exact_long_rank {
-                (c_type, count)
+                (interface_type, count)
             } else {
-                (c_type.erase_long_rank(), count)
+                (interface_type.erase_long_rank(), count)
             }
         });
         let typedef_rank = if self.exact_long_rank {
@@ -6101,12 +6124,12 @@ impl Parser {
         };
         // A scalar pointer alias's pointee qualification, as for a struct one.
         let mut alias_scalar_pointer = None;
-        let scalar_type = if let Some((c_type, count)) = integer {
+        let scalar_type = if let Some((interface_type, count)) = integer {
             self.position += count - 1;
-            c_type
+            interface_type
         } else {
             match spelling.as_str() {
-                "void" => C0Type::Void,
+                "void" => InterfaceType::Void,
                 // Stage 5 (decision D4): a function head restates its
                 // language's declaration, `bool` or `_Bool`; Click's own
                 // positions write `Bool`, and a Rust sidecar writes Rust's
@@ -6117,30 +6140,30 @@ impl Parser {
                             self.error(format!("`{spelling}` is not a Click type; write `Bool`"))
                         );
                     }
-                    C0Type::Bool
+                    InterfaceType::Bool
                 }
-                "Bool" => C0Type::Bool,
-                "int8" | "int8_t" => C0Type::Int8,
-                "int16" | "int16_t" => C0Type::Int16,
-                "int32" | "int32_t" => C0Type::Int32,
-                "uint8" | "uint8_t" => C0Type::UInt8,
-                "uint16" | "uint16_t" => C0Type::UInt16,
-                "uint32" | "uint32_t" => C0Type::UInt32,
-                "int64" | "ssize_t" => C0Type::Int64(LongRank::Long),
-                "int64_t" => C0Type::Int64(typedef_rank),
-                "uint64" | "size_t" => C0Type::UInt64(LongRank::Long),
-                "uint64_t" => C0Type::UInt64(typedef_rank),
-                "int128" => C0Type::Int128,
-                "uint128" => C0Type::UInt128,
-                "float" => C0Type::Float32,
-                "double" => C0Type::Float64,
+                "Bool" => InterfaceType::Bool,
+                "int8" | "int8_t" => InterfaceType::Int8,
+                "int16" | "int16_t" => InterfaceType::Int16,
+                "int32" | "int32_t" => InterfaceType::Int32,
+                "uint8" | "uint8_t" => InterfaceType::UInt8,
+                "uint16" | "uint16_t" => InterfaceType::UInt16,
+                "uint32" | "uint32_t" => InterfaceType::UInt32,
+                "int64" | "ssize_t" => InterfaceType::Int64(LongRank::Long),
+                "int64_t" => InterfaceType::Int64(typedef_rank),
+                "uint64" | "size_t" => InterfaceType::UInt64(LongRank::Long),
+                "uint64_t" => InterfaceType::UInt64(typedef_rank),
+                "int128" => InterfaceType::Int128,
+                "uint128" => InterfaceType::UInt128,
+                "float" => InterfaceType::Float32,
+                "double" => InterfaceType::Float64,
                 "volatile" => {
                     return Err(self.error("the `volatile` qualifier is not supported by Click"));
                 }
                 _ if let Some(typedef) = self.c_typedefs.get(&spelling) => {
                     self.check_head_typedef(&spelling)?;
                     let syntax::C0HeadTypedef::Scalar {
-                        c_type,
+                        interface_type,
                         constant,
                         pointee_constant,
                     } = *typedef
@@ -6153,10 +6176,10 @@ impl Parser {
                         )));
                     };
                     is_constant |= constant;
-                    if c_type.is_pointer() {
+                    if interface_type.is_pointer() {
                         alias_scalar_pointer = Some(pointee_constant);
                     }
-                    c_type
+                    interface_type
                 }
                 _ => {
                     return Err(self.error(format!(
@@ -6165,7 +6188,7 @@ impl Parser {
                 }
             }
         };
-        let mut c_type = scalar_type;
+        let mut interface_type = scalar_type;
         let mut object_constant = is_constant;
         let mut pointee_constant = alias_scalar_pointer.unwrap_or(false);
         if self.peek_ident() == Some("const") {
@@ -6187,33 +6210,33 @@ impl Parser {
             let base_constant = object_constant;
             object_constant = false;
             self.position += 1;
-            c_type = match c_type {
-                C0Type::Void if reference => {
+            interface_type = match interface_type {
+                InterfaceType::Void if reference => {
                     return Err(self.error("a reference to `void` is not a type"));
                 }
-                C0Type::Void => C0Type::VoidPointer,
-                C0Type::Int8 => C0Type::Int8Pointer,
-                C0Type::Int16 => C0Type::Int16Pointer,
-                C0Type::UInt16 => C0Type::UInt16Pointer,
-                C0Type::Int32 => C0Type::Int32Pointer,
-                C0Type::Char(plain) => C0Type::CharPointer(plain),
-                C0Type::UInt8 => C0Type::UInt8Pointer,
-                C0Type::UInt32 => C0Type::UInt32Pointer,
-                C0Type::Int64(rank) => C0Type::Int64Pointer(rank),
-                C0Type::Int128 => C0Type::Int128Pointer,
-                C0Type::UInt64(rank) => C0Type::UInt64Pointer(rank),
-                C0Type::UInt128 => C0Type::UInt128Pointer,
-                C0Type::Int8Pointer => C0Type::Int8PointerPointer,
-                C0Type::Int16Pointer => C0Type::Int16PointerPointer,
-                C0Type::UInt16Pointer => C0Type::UInt16PointerPointer,
-                C0Type::Int32Pointer => C0Type::Int32PointerPointer,
-                C0Type::CharPointer(plain) => C0Type::CharPointerPointer(plain),
-                C0Type::UInt8Pointer => C0Type::UInt8PointerPointer,
-                C0Type::UInt32Pointer => C0Type::UInt32PointerPointer,
-                C0Type::Int64Pointer(rank) => C0Type::Int64PointerPointer(rank),
-                C0Type::Int128Pointer => C0Type::Int128PointerPointer,
-                C0Type::UInt64Pointer(rank) => C0Type::UInt64PointerPointer(rank),
-                C0Type::UInt128Pointer => C0Type::UInt128PointerPointer,
+                InterfaceType::Void => InterfaceType::VoidPointer,
+                InterfaceType::Int8 => InterfaceType::Int8Pointer,
+                InterfaceType::Int16 => InterfaceType::Int16Pointer,
+                InterfaceType::UInt16 => InterfaceType::UInt16Pointer,
+                InterfaceType::Int32 => InterfaceType::Int32Pointer,
+                InterfaceType::Char(plain) => InterfaceType::CharPointer(plain),
+                InterfaceType::UInt8 => InterfaceType::UInt8Pointer,
+                InterfaceType::UInt32 => InterfaceType::UInt32Pointer,
+                InterfaceType::Int64(rank) => InterfaceType::Int64Pointer(rank),
+                InterfaceType::Int128 => InterfaceType::Int128Pointer,
+                InterfaceType::UInt64(rank) => InterfaceType::UInt64Pointer(rank),
+                InterfaceType::UInt128 => InterfaceType::UInt128Pointer,
+                InterfaceType::Int8Pointer => InterfaceType::Int8PointerPointer,
+                InterfaceType::Int16Pointer => InterfaceType::Int16PointerPointer,
+                InterfaceType::UInt16Pointer => InterfaceType::UInt16PointerPointer,
+                InterfaceType::Int32Pointer => InterfaceType::Int32PointerPointer,
+                InterfaceType::CharPointer(plain) => InterfaceType::CharPointerPointer(plain),
+                InterfaceType::UInt8Pointer => InterfaceType::UInt8PointerPointer,
+                InterfaceType::UInt32Pointer => InterfaceType::UInt32PointerPointer,
+                InterfaceType::Int64Pointer(rank) => InterfaceType::Int64PointerPointer(rank),
+                InterfaceType::Int128Pointer => InterfaceType::Int128PointerPointer,
+                InterfaceType::UInt64Pointer(rank) => InterfaceType::UInt64PointerPointer(rank),
+                InterfaceType::UInt128Pointer => InterfaceType::UInt128PointerPointer,
                 _ => return Err(self.error("pointer depth beyond `**` is not supported")),
             };
             if base_constant {
@@ -6229,7 +6252,7 @@ impl Parser {
             saw_pointer = true;
         }
         Ok(ParsedType {
-            c_type,
+            interface_type,
             struct_name: None,
             struct_pointer: false,
             constant: object_constant,
@@ -6249,7 +6272,7 @@ impl Parser {
         match (&parsed.struct_name, parsed.struct_pointer) {
             (Some(_), false) => None,
             (struct_name, _) => syntax::declared_pointee_class(
-                parsed.c_type,
+                parsed.interface_type,
                 struct_name.as_deref(),
                 &self.struct_layouts,
             ),
@@ -6262,23 +6285,23 @@ impl Parser {
                 ClickType::Algebraic(AlgebraicTypeApplication {
                     rigid: false,
                     name: "Slice".to_string(),
-                    arguments: vec![ClickType::C(element)],
+                    arguments: vec![ClickType::Program(element)],
                 }),
                 None,
             ));
         }
         if let Some(parsed) = self.parse_rust_click_type()? {
-            return Ok((ClickType::C(parsed.c_type), Some(parsed)));
+            return Ok((ClickType::Program(parsed.interface_type), Some(parsed)));
         }
         let Some(name) = self.peek_ident() else {
             return Err(self.error("expected Click type"));
         };
         // A C++ generic method's or resource's abstract type parameter.
-        let c_type = is_c_type_keyword(name)
+        let interface_type = is_c_type_keyword(name)
             || (self.verifies_cpp() && self.rust_abstract_type_parameters.contains(name));
-        if c_type || self.at_cpp_record_type() {
+        if interface_type || self.at_cpp_record_type() {
             let parsed = self.parse_type()?;
-            return Ok((ClickType::C(parsed.c_type), Some(parsed)));
+            return Ok((ClickType::Program(parsed.interface_type), Some(parsed)));
         }
         let Some(name) = self.peek_ident() else {
             return Err(self.error("expected Click type"));
@@ -6297,7 +6320,7 @@ impl Parser {
             if self.peek() == Some(&Token::Star) {
                 self.position += 1;
                 return Ok((
-                    ClickType::C(C0Type::ParameterPointer(
+                    ClickType::Program(InterfaceType::ParameterPointer(
                         crate::kernel::TypeParameterName::intern(&name),
                     )),
                     None,
@@ -6335,7 +6358,7 @@ impl Parser {
         Ok(parameters)
     }
 
-    fn scalar_struct_value_type(&self, struct_name: &str) -> Result<C0Type, ClickError> {
+    fn scalar_struct_value_type(&self, struct_name: &str) -> Result<InterfaceType, ClickError> {
         let layout = self
             .struct_layouts
             .get(struct_name)
@@ -6351,7 +6374,7 @@ impl Parser {
                 self.scalar_struct_value_type(nested_name)?;
                 continue;
             }
-            if field.c_type() == C0Type::Int32
+            if field.interface_type() == InterfaceType::Int32
                 && field.struct_name().is_some()
                 && field.array_element_width().is_none()
             {
@@ -6363,44 +6386,44 @@ impl Parser {
                 continue;
             }
             if field.union_name().is_some()
-                || (field.struct_name().is_some() && !field.c_type().is_pointer())
+                || (field.struct_name().is_some() && !field.interface_type().is_pointer())
                 || !matches!(
-                    field.c_type(),
-                    C0Type::Int8 | C0Type::Int16
-                        | C0Type::Int32
-                        | C0Type::Char(_)
-                        | C0Type::UInt8
-                        | C0Type::UInt16
-                        | C0Type::UInt32
-                        | C0Type::Int64(_)
-                        | C0Type::UInt64(_)
-                        | C0Type::Float32
-                        | C0Type::Float64
-                        | C0Type::Int32Array(_)
-                        | C0Type::UInt32Array(_)
-                        | C0Type::Int128Array(_)
-                        | C0Type::Int64Array(_, _)
-                        | C0Type::UInt128Array(_)
-                        | C0Type::UInt64Array(_, _)
-                        | C0Type::CharArray(_, _)
-                        | C0Type::UInt8Array(_)
-                        | C0Type::Float32Array(_)
-                        | C0Type::Float64Array(_)
-                        | C0Type::Int32Pointer
-                        | C0Type::CharPointer(_)
-                        | C0Type::UInt8Pointer
-                        | C0Type::Float32Pointer
-                        | C0Type::Float64Pointer
-                        | C0Type::Int32PointerPointer
-                        | C0Type::CharPointerPointer(_)
-                        | C0Type::UInt8PointerPointer
-                        | C0Type::Float32PointerPointer
-                        | C0Type::Float64PointerPointer
+                    field.interface_type(),
+                    InterfaceType::Int8 | InterfaceType::Int16
+                        | InterfaceType::Int32
+                        | InterfaceType::Char(_)
+                        | InterfaceType::UInt8
+                        | InterfaceType::UInt16
+                        | InterfaceType::UInt32
+                        | InterfaceType::Int64(_)
+                        | InterfaceType::UInt64(_)
+                        | InterfaceType::Float32
+                        | InterfaceType::Float64
+                        | InterfaceType::Int32Array(_)
+                        | InterfaceType::UInt32Array(_)
+                        | InterfaceType::Int128Array(_)
+                        | InterfaceType::Int64Array(_, _)
+                        | InterfaceType::UInt128Array(_)
+                        | InterfaceType::UInt64Array(_, _)
+                        | InterfaceType::CharArray(_, _)
+                        | InterfaceType::UInt8Array(_)
+                        | InterfaceType::Float32Array(_)
+                        | InterfaceType::Float64Array(_)
+                        | InterfaceType::Int32Pointer
+                        | InterfaceType::CharPointer(_)
+                        | InterfaceType::UInt8Pointer
+                        | InterfaceType::Float32Pointer
+                        | InterfaceType::Float64Pointer
+                        | InterfaceType::Int32PointerPointer
+                        | InterfaceType::CharPointerPointer(_)
+                        | InterfaceType::UInt8PointerPointer
+                        | InterfaceType::Float32PointerPointer
+                        | InterfaceType::Float64PointerPointer
                         // A callback field is an eight-byte pointer value,
                         // matching the C boundary's own by-value field set.
-                        | C0Type::FunctionPointer(_)
+                        | InterfaceType::FunctionPointer(_)
                         // A generic Rust struct's field of a type parameter.
-                        | C0Type::Parameter(_)
+                        | InterfaceType::Parameter(_)
                 )
             {
                 return Err(self.error(format!(
@@ -6408,13 +6431,20 @@ impl Parser {
                 )));
             }
         }
-        Ok(C0Type::UInt8Array(layout.size_bytes()))
+        Ok(InterfaceType::UInt8Array(layout.size_bytes()))
     }
 
     fn parse_function_pointer_declarator(
         &mut self,
         return_type: ParsedType,
-    ) -> Result<(String, C0Type, syntax::C0FunctionPointerSignature), ClickError> {
+    ) -> Result<
+        (
+            String,
+            InterfaceType,
+            crate::languages::interface::CallbackInterface,
+        ),
+        ClickError,
+    > {
         if return_type.struct_name.is_some() && !return_type.struct_pointer {
             return Err(self.error(
                 "function-pointer return values must use modeled scalars or struct pointers",
@@ -6424,22 +6454,30 @@ impl Parser {
         self.expect(Token::Star)?;
         let name = self.expect_ident("function-pointer parameter name")?;
         self.expect(Token::RParen)?;
-        let (c_type, function_pointer_signature) =
+        let (interface_type, function_pointer_signature) =
             self.parse_function_pointer_signature_tail(return_type)?;
-        Ok((name, c_type, function_pointer_signature))
+        Ok((name, interface_type, function_pointer_signature))
     }
 
     /// A parameter type that is a function-pointer typedef name of the
     /// verified C source, `unary f`: its callable type. `None`, with nothing
     /// consumed, for any other type.
-    fn parse_c_function_pointer_typedef(
+    fn parse_program_function_pointer_typedef(
         &mut self,
-    ) -> Result<Option<(C0Type, syntax::C0FunctionPointerSignature)>, ClickError> {
+    ) -> Result<
+        Option<(
+            InterfaceType,
+            crate::languages::interface::CallbackInterface,
+        )>,
+        ClickError,
+    > {
         let Some(name) = self.peek_ident() else {
             return Ok(None);
         };
-        let Some(syntax::C0HeadTypedef::FunctionPointer { c_type, signature }) =
-            self.c_typedefs.get(name)
+        let Some(syntax::C0HeadTypedef::FunctionPointer {
+            interface_type,
+            signature,
+        }) = self.c_typedefs.get(name)
         else {
             return Ok(None);
         };
@@ -6448,7 +6486,7 @@ impl Parser {
         if !matches!(self.peek_next(), Some(Token::Ident(_))) {
             return Ok(None);
         }
-        let callable = (*c_type, signature.clone());
+        let callable = (*interface_type, signature.clone());
         self.check_head_typedef(name)?;
         self.position += 1;
         Ok(Some(callable))
@@ -6457,7 +6495,7 @@ impl Parser {
     /// A parameter type that is a scalar array typedef name of the verified
     /// C source, `triple values`: its element type, length and element
     /// `const`. `None`, with nothing consumed, for any other type.
-    fn parse_c_array_typedef(&mut self) -> Result<Option<(C0Type, u32, bool)>, ClickError> {
+    fn parse_c_array_typedef(&mut self) -> Result<Option<(InterfaceType, u32, bool)>, ClickError> {
         let Some(name) = self.peek_ident() else {
             return Ok(None);
         };
@@ -6483,7 +6521,13 @@ impl Parser {
     /// nothing consumed, when the type is not one.
     fn parse_cpp_std_function_type(
         &mut self,
-    ) -> Result<Option<(C0Type, syntax::C0FunctionPointerSignature)>, ClickError> {
+    ) -> Result<
+        Option<(
+            InterfaceType,
+            crate::languages::interface::CallbackInterface,
+        )>,
+        ClickError,
+    > {
         if !self.verifies_cpp() {
             return Ok(None);
         }
@@ -6514,7 +6558,13 @@ impl Parser {
     fn parse_abstract_function_pointer_type(
         &mut self,
         return_type: ParsedType,
-    ) -> Result<(C0Type, syntax::C0FunctionPointerSignature), ClickError> {
+    ) -> Result<
+        (
+            InterfaceType,
+            crate::languages::interface::CallbackInterface,
+        ),
+        ClickError,
+    > {
         if return_type.struct_name.is_some() && !return_type.struct_pointer {
             return Err(self.error(
                 "function-pointer return values must use modeled scalars or struct pointers",
@@ -6529,13 +6579,19 @@ impl Parser {
     fn parse_function_pointer_signature_tail(
         &mut self,
         return_type: ParsedType,
-    ) -> Result<(C0Type, syntax::C0FunctionPointerSignature), ClickError> {
+    ) -> Result<
+        (
+            InterfaceType,
+            crate::languages::interface::CallbackInterface,
+        ),
+        ClickError,
+    > {
         self.expect(Token::LParen)?;
         let mut parameters = Vec::new();
         if self.peek() != Some(&Token::RParen) {
             loop {
                 let parsed_type = self.parse_type()?;
-                if parsed_type.c_type == C0Type::Void {
+                if parsed_type.interface_type == InterfaceType::Void {
                     return Err(self.error("function-pointer parameters cannot have type `void`"));
                 }
                 if parsed_type.struct_name.is_some() && !parsed_type.struct_pointer {
@@ -6550,8 +6606,8 @@ impl Parser {
                 };
                 let parsed_parameter =
                     self.parse_parameter_array_suffix(parameter_name, parsed_type)?;
-                parameters.push(syntax::C0FunctionPointerParameter::new(
-                    parsed_parameter.parameter.c_type(),
+                parameters.push(crate::languages::interface::CallbackParameter::new(
+                    parsed_parameter.parameter.interface_type(),
                     parsed_parameter.struct_name,
                     parsed_parameter.parameter.pointee_is_constant(),
                 ));
@@ -6577,27 +6633,27 @@ impl Parser {
             .iter()
             .map(|parameter| {
                 (
-                    parameter.c_type().to_kernel_type(),
+                    parameter.interface_type().to_kernel_type(),
                     parameter.pointee_is_constant(),
                 )
             })
             .collect::<Vec<_>>();
-        let signature = crate::kernel::CType::qualified_function_pointer_signature(
-            return_type.c_type.to_kernel_type(),
+        let signature = crate::kernel::ProgramType::qualified_function_pointer_signature(
+            return_type.interface_type.to_kernel_type(),
             return_type.pointee_constant,
             &parameter_types,
         );
         if signature == crate::kernel::CallbackSignature::UNSPECIFIED {
             return Err(self.error("function-pointer signature uses an unsupported modeled type"));
         }
-        let function_pointer_signature = syntax::C0FunctionPointerSignature::new(
-            return_type.c_type,
+        let function_pointer_signature = crate::languages::interface::CallbackInterface::new(
+            return_type.interface_type,
             return_type.struct_name,
             parameters,
             return_type.pointee_constant,
         );
         Ok((
-            C0Type::FunctionPointer(signature),
+            InterfaceType::FunctionPointer(signature),
             function_pointer_signature,
         ))
     }
@@ -6607,21 +6663,21 @@ impl Parser {
         name: String,
         parsed_type: ParsedType,
     ) -> Result<ParsedParameter, ClickError> {
-        if parsed_type.c_type == C0Type::Void {
+        if parsed_type.interface_type == InterfaceType::Void {
             return Err(self.error("parameters cannot have type `void`"));
         }
         if self.peek() != Some(&Token::LBracket) {
             let struct_name = parsed_type.struct_name;
-            let c_type = if let Some(struct_name) = struct_name.as_deref()
+            let interface_type = if let Some(struct_name) = struct_name.as_deref()
                 && !parsed_type.struct_pointer
             {
                 self.scalar_struct_value_type(struct_name)?
             } else {
-                parsed_type.c_type
+                parsed_type.interface_type
             };
             return Ok(ParsedParameter {
                 parameter: FunctionParameter {
-                    click_type: ClickType::C(c_type),
+                    click_type: ClickType::Program(interface_type),
                     // The parameter is the pointer that carries the
                     // reference; the written name is the referent.
                     name: if parsed_type.reference {
@@ -6652,7 +6708,7 @@ impl Parser {
             self.expect(Token::RBracket)?;
             return Ok(ParsedParameter {
                 parameter: FunctionParameter {
-                    click_type: ClickType::C(C0Type::Int32Pointer),
+                    click_type: ClickType::Program(InterfaceType::Int32Pointer),
                     name,
                     struct_name: struct_name.clone(),
                     function_pointer_signature: None,
@@ -6687,35 +6743,35 @@ impl Parser {
         parsed_type: ParsedType,
         length: Option<u32>,
     ) -> Result<ParsedParameter, ClickError> {
-        let (pointer_type, element_width) = match parsed_type.c_type {
-            C0Type::Int8 => (C0Type::Int8Pointer, 1),
-            C0Type::Int16 => (C0Type::Int16Pointer, 2),
-            C0Type::Int32 => (C0Type::Int32Pointer, 4),
-            C0Type::Char(plain) => (C0Type::CharPointer(plain), 1),
-            C0Type::UInt8 => (C0Type::UInt8Pointer, 1),
-            C0Type::UInt16 => (C0Type::UInt16Pointer, 2),
-            C0Type::UInt32 => (C0Type::UInt32Pointer, 4),
-            C0Type::Int64(rank) => (C0Type::Int64Pointer(rank), 8),
-            C0Type::Int128 => (C0Type::Int128Pointer, 16),
-            C0Type::UInt64(rank) => (C0Type::UInt64Pointer(rank), 8),
-            C0Type::UInt128 => (C0Type::UInt128Pointer, 16),
-            C0Type::Int8Pointer => (C0Type::Int8PointerPointer, 8),
-            C0Type::Int16Pointer => (C0Type::Int16PointerPointer, 8),
-            C0Type::UInt16Pointer => (C0Type::UInt16PointerPointer, 8),
-            C0Type::Int32Pointer => (C0Type::Int32PointerPointer, 8),
-            C0Type::CharPointer(plain) => (C0Type::CharPointerPointer(plain), 8),
-            C0Type::UInt8Pointer => (C0Type::UInt8PointerPointer, 8),
-            C0Type::UInt32Pointer => (C0Type::UInt32PointerPointer, 8),
-            C0Type::Int64Pointer(rank) => (C0Type::Int64PointerPointer(rank), 8),
-            C0Type::Int128Pointer => (C0Type::Int128PointerPointer, 8),
-            C0Type::UInt64Pointer(rank) => (C0Type::UInt64PointerPointer(rank), 8),
-            C0Type::UInt128Pointer => (C0Type::UInt128PointerPointer, 8),
+        let (pointer_type, element_width) = match parsed_type.interface_type {
+            InterfaceType::Int8 => (InterfaceType::Int8Pointer, 1),
+            InterfaceType::Int16 => (InterfaceType::Int16Pointer, 2),
+            InterfaceType::Int32 => (InterfaceType::Int32Pointer, 4),
+            InterfaceType::Char(plain) => (InterfaceType::CharPointer(plain), 1),
+            InterfaceType::UInt8 => (InterfaceType::UInt8Pointer, 1),
+            InterfaceType::UInt16 => (InterfaceType::UInt16Pointer, 2),
+            InterfaceType::UInt32 => (InterfaceType::UInt32Pointer, 4),
+            InterfaceType::Int64(rank) => (InterfaceType::Int64Pointer(rank), 8),
+            InterfaceType::Int128 => (InterfaceType::Int128Pointer, 16),
+            InterfaceType::UInt64(rank) => (InterfaceType::UInt64Pointer(rank), 8),
+            InterfaceType::UInt128 => (InterfaceType::UInt128Pointer, 16),
+            InterfaceType::Int8Pointer => (InterfaceType::Int8PointerPointer, 8),
+            InterfaceType::Int16Pointer => (InterfaceType::Int16PointerPointer, 8),
+            InterfaceType::UInt16Pointer => (InterfaceType::UInt16PointerPointer, 8),
+            InterfaceType::Int32Pointer => (InterfaceType::Int32PointerPointer, 8),
+            InterfaceType::CharPointer(plain) => (InterfaceType::CharPointerPointer(plain), 8),
+            InterfaceType::UInt8Pointer => (InterfaceType::UInt8PointerPointer, 8),
+            InterfaceType::UInt32Pointer => (InterfaceType::UInt32PointerPointer, 8),
+            InterfaceType::Int64Pointer(rank) => (InterfaceType::Int64PointerPointer(rank), 8),
+            InterfaceType::Int128Pointer => (InterfaceType::Int128PointerPointer, 8),
+            InterfaceType::UInt64Pointer(rank) => (InterfaceType::UInt64PointerPointer(rank), 8),
+            InterfaceType::UInt128Pointer => (InterfaceType::UInt128PointerPointer, 8),
             _ => return Err(self.error("only scalar array parameters are supported")),
         };
         let declared_bytes = length.and_then(|length| length.checked_mul(element_width));
         Ok(ParsedParameter {
             parameter: FunctionParameter {
-                click_type: ClickType::C(pointer_type),
+                click_type: ClickType::Program(pointer_type),
                 name,
                 struct_name: None,
                 function_pointer_signature: None,
@@ -7574,10 +7630,10 @@ impl Parser {
                         access: ResourceAccessMode::Own,
                         kind: ResourceKind::Token,
                         name: family.to_string(),
-                        arguments: vec![ContractExpression::CFragment(CExpression::Variable(
-                            "mutex".to_string(),
-                        ))],
-                        parameter_types: vec![C0Type::VoidPointer],
+                        arguments: vec![ContractExpression::ProgramExpression(
+                            ProgramExpression::Variable("mutex".to_string()),
+                        )],
+                        parameter_types: vec![InterfaceType::VoidPointer],
                     }),
                 });
                 binders.insert(
@@ -7631,7 +7687,7 @@ impl Parser {
         }
         crate::instrumentation::record_deterministic_work(1);
         Ok(
-            super::validation::library_c_function_value_parameters(callee)?
+            super::validation::library_program_function_value_parameters(callee)?
                 .into_iter()
                 .map(|name| (name, Self::value_parameter_callee_binder()))
                 .collect(),
@@ -8253,14 +8309,14 @@ impl Parser {
             let Some(click_type) = binding.click_type else {
                 unreachable!("`let ... where` parser requires an explicit type")
             };
-            let ClickType::C(c_type) = click_type else {
+            let ClickType::Program(interface_type) = click_type else {
                 return Err(self.error(
                     "`let ... where` quantifies a C value; algebraic quantifiers are not supported yet",
                 ));
             };
             let body = self.parse_proposition()?;
             return Ok(ClickProposition::Exists {
-                click_type: ClickType::C(c_type),
+                click_type: ClickType::Program(interface_type),
                 name: binding.name,
                 written_name: None,
                 body: Box::new(ClickProposition::And(Box::new(condition), Box::new(body))),
@@ -8374,7 +8430,7 @@ impl Parser {
             self.position += 1;
             self.expect(Token::LParen)?;
             let pointer = self.parse_contract_expression()?;
-            let Some(pointer) = contract_expression_as_c_fragment(&pointer) else {
+            let Some(pointer) = contract_expression_as_program_expression(&pointer) else {
                 return Err(self.error("aligned expects a current C pointer expression"));
             };
             self.expect(Token::Comma)?;
@@ -8638,7 +8694,7 @@ impl Parser {
                                     .set_scoped(NameKind::IntegerParameter, &name, true);
                                 self.integer_literal_context = true;
                             }
-                            ClickType::C(_) | ClickType::CObjectPointer { .. } => {
+                            ClickType::Program(_) | ClickType::CObjectPointer { .. } => {
                                 self.names
                                     .set_scoped(NameKind::IntegerParameter, &name, false);
                                 self.names.set_scoped(NameKind::IntegerLet, &name, false);
@@ -8933,7 +8989,7 @@ impl Parser {
         self.expect(Token::RBracket)?;
         let literal = |bound: &Option<ContractExpression>| match bound {
             Some(ContractExpression::IntegerLiteral(text)) => text.parse::<u64>().ok(),
-            Some(bound @ ContractExpression::CFragment(CExpression::Value(_))) => {
+            Some(bound @ ContractExpression::ProgramExpression(ProgramExpression::Value(_))) => {
                 crate::surface::diagnostics::describe_contract_expression(bound)
                     .strip_suffix("u64")?
                     .parse::<u64>()
@@ -9004,7 +9060,7 @@ impl Parser {
     /// point, `old(bytes)` or `at(point, bytes)`.
     fn rust_slice_parameter_read<'a>(&self, expression: &'a ContractExpression) -> Option<&'a str> {
         match expression {
-            ContractExpression::CFragment(CExpression::Variable(slice))
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(slice))
                 if self.rust_slice_params.contains(slice) =>
             {
                 Some(slice)
@@ -9023,12 +9079,14 @@ impl Parser {
             algebraic_type: AlgebraicTypeApplication {
                 rigid: false,
                 name: "Slice".to_string(),
-                arguments: vec![ClickType::C(element)],
+                arguments: vec![ClickType::Program(element)],
             },
             variant: "Slice".to_string(),
             arguments: vec![
                 expression.clone(),
-                ContractExpression::CFragment(CExpression::Variable(format!("{parameter}_len"))),
+                ContractExpression::ProgramExpression(ProgramExpression::Variable(format!(
+                    "{parameter}_len"
+                ))),
             ],
         })
     }
@@ -9157,14 +9215,14 @@ impl Parser {
             )));
         }
         if resource
-            && self.names.is_c_variable(name)
+            && self.names.is_program_variable(name)
             && self.names.resource_bindings.contains_key(name)
         {
             return Err(self.error(format!(
                 "`{name}` names both a C variable and the contract's resource instance `{name}`; a proof binder cannot hide the C variable, so the instance cannot be bound again under this name; rename the instance in the contract"
             )));
         }
-        if self.names.is_c_variable(name) {
+        if self.names.is_program_variable(name) {
             return Err(self.error(format!(
                 "`{name}` names a C variable here; a proof binder cannot hide it, since execution keeps reading the program's `{name}`; choose another name"
             )));
@@ -9390,7 +9448,7 @@ impl Parser {
                 .get(family)
                 .is_some_and(|fields| {
                     fields.iter().any(|field| {
-                        field.name == slot && matches!(field.click_type, ClickType::C(_))
+                        field.name == slot && matches!(field.click_type, ClickType::Program(_))
                     })
                 });
             if introduce && scalar_field {
@@ -9868,7 +9926,9 @@ impl Parser {
                     self.names.set_scoped(NameKind::IntegerLet, name, true);
                     self.integer_literal_context = true;
                 }
-                ClickType::C(_) | ClickType::CObjectPointer { .. } | ClickType::Algebraic(_) => {
+                ClickType::Program(_)
+                | ClickType::CObjectPointer { .. }
+                | ClickType::Algebraic(_) => {
                     self.names.set_scoped(NameKind::IntegerLet, name, false);
                     self.names.set_scoped(NameKind::ContractBinding, name, true);
                     self.integer_literal_context = false;
@@ -11356,25 +11416,26 @@ impl Parser {
         self.expect(Token::RParen)?;
         let mut resource_arguments = Vec::new();
         let first_reference = arguments.iter().position(|argument| {
-            matches!(argument, ContractExpression::CFragment(CExpression::Variable(name)) | ContractExpression::Binding(name)
+            matches!(argument, ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) | ContractExpression::Binding(name)
                 if self.names.resource_bindings.contains_key(name))
                 || matches!(argument, ContractExpression::Resource(subject)
                     if matches!(subject.as_ref(), ResourceSubject::Instance { .. }))
         });
         if let Some(first) = first_reference {
             for argument in arguments.drain(first..) {
-                let reference =
-                    match argument {
-                        ContractExpression::CFragment(CExpression::Variable(name))
-                        | ContractExpression::Binding(name) => name,
-                        ContractExpression::Resource(subject) => match *subject {
-                            ResourceSubject::Instance { name, at: None, .. } => name,
-                            _ => return Err(self.error("resource arguments must name instances")),
-                        },
-                        _ => return Err(self.error(
+                let reference = match argument {
+                    ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
+                    | ContractExpression::Binding(name) => name,
+                    ContractExpression::Resource(subject) => match *subject {
+                        ResourceSubject::Instance { name, at: None, .. } => name,
+                        _ => return Err(self.error("resource arguments must name instances")),
+                    },
+                    _ => {
+                        return Err(self.error(
                             "resource arguments must be named resources after ordinary arguments",
-                        )),
-                    };
+                        ));
+                    }
+                };
                 let Some(ResourceClause::Named { binding, .. }) =
                     self.names.resource_targets.get(&reference)
                 else {
@@ -12746,7 +12807,7 @@ impl Parser {
             && self.peek_next() == Some(&Token::LParen)
         {
             let expression = self.parse_contract_primary()?;
-            let base = contract_expression_as_c_fragment(&expression).ok_or_else(|| {
+            let base = contract_expression_as_program_expression(&expression).ok_or_else(|| {
                 self.error("memory segment base must be a current C pointer expression")
             })?;
             (expression, base)
@@ -12754,7 +12815,7 @@ impl Parser {
             self.position += 1;
             let expression = self.parse_contract_expression()?;
             self.expect(Token::RParen)?;
-            let base = contract_expression_as_c_fragment(&expression).ok_or_else(|| {
+            let base = contract_expression_as_program_expression(&expression).ok_or_else(|| {
                 self.error("memory segment base must be a current C pointer expression")
             })?;
             (expression, base)
@@ -12763,7 +12824,7 @@ impl Parser {
         };
         let mut struct_name = match &surface_base {
             ContractExpression::Binding(name)
-            | ContractExpression::CFragment(CExpression::Variable(name)) => self
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => self
                 .names
                 .struct_params
                 .get(name)
@@ -12774,16 +12835,18 @@ impl Parser {
                 })
                 .cloned(),
             ContractExpression::CUnary {
-                lowered: CExpression::Cast { pointee_struct, .. },
+                lowered: ProgramExpression::Cast { pointee_struct, .. },
                 ..
             }
-            | ContractExpression::CFragment(CExpression::Cast { pointee_struct, .. }) => {
-                pointee_struct.clone()
-            }
+            | ContractExpression::ProgramExpression(ProgramExpression::Cast {
+                pointee_struct,
+                ..
+            }) => pointee_struct.clone(),
             _ => None,
         };
         if let ContractExpression::Binding(name)
-        | ContractExpression::CFragment(CExpression::Variable(name)) = &surface_base
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) =
+            &surface_base
             && self
                 .names
                 .struct_params
@@ -12793,7 +12856,7 @@ impl Parser {
         }
         let names_aggregate_object = match &surface_base {
             ContractExpression::Binding(name)
-            | ContractExpression::CFragment(CExpression::Variable(name)) => {
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
                 self.names.aggregate_objects.contains_key(name)
                     || self.names.global_array_shapes.contains_key(name)
                     || self.qualified_object(name).is_some()
@@ -12804,7 +12867,7 @@ impl Parser {
         let mut union_name: Option<String> = None;
         let mut struct_array_element_width = match &surface_base {
             ContractExpression::Binding(name)
-            | ContractExpression::CFragment(CExpression::Variable(name))
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
                 if self.names.contains(NameKind::StructArrayParameter, name) =>
             {
                 struct_name
@@ -12812,7 +12875,7 @@ impl Parser {
                     .and_then(|name| self.struct_layouts.get(name))
                     .map(|layout| layout.size_bytes())
             }
-            ContractExpression::CFragment(CExpression::Variable(name)) => self
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => self
                 .qualified_object(name)
                 .filter(|object| object.struct_name.is_some() && object.array_shape.is_some())
                 .and_then(|object| object.struct_name.as_ref())
@@ -12821,7 +12884,7 @@ impl Parser {
             _ => None,
         };
         let mut struct_array_shape = match &surface_base {
-            ContractExpression::CFragment(CExpression::Variable(name)) => self
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => self
                 .qualified_object(name)
                 .filter(|object| object.struct_name.is_some())
                 .and_then(|object| object.array_shape.clone()),
@@ -12829,7 +12892,7 @@ impl Parser {
         };
         let mut scalar_array_shape = match &surface_base {
             ContractExpression::Binding(name)
-            | ContractExpression::CFragment(CExpression::Variable(name)) => self
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => self
                 .names
                 .global_array_shapes
                 .get(name)
@@ -12840,7 +12903,7 @@ impl Parser {
                 }),
             _ => None,
         };
-        let mut indexed_scalar_field: Option<CType> = None;
+        let mut indexed_scalar_field: Option<ProgramType> = None;
         let mut scalar_range_offset = None;
         let mut postfixes = 0;
         while matches!(self.peek(), Some(Token::Arrow | Token::Dot))
@@ -12852,7 +12915,7 @@ impl Parser {
                 self.position += 1;
                 let index = self.parse_place_index()?;
                 self.expect(Token::RBracket)?;
-                let index = contract_expression_as_c_fragment(&index).ok_or_else(|| {
+                let index = contract_expression_as_program_expression(&index).ok_or_else(|| {
                     self.error("struct array indices must be current C expressions")
                 })?;
                 let surface_base_before_index = surface_base;
@@ -12875,10 +12938,10 @@ impl Parser {
                             Some(Token::Arrow | Token::Dot | Token::LBracket)
                         )
                     {
-                        base = CExpression::Index(Box::new(base), Box::new(index.clone()));
+                        base = ProgramExpression::Index(Box::new(base), Box::new(index.clone()));
                         surface_base = ContractExpression::Index(
                             Box::new(surface_base_before_index),
-                            Box::new(ContractExpression::CFragment(index)),
+                            Box::new(ContractExpression::ProgramExpression(index)),
                         );
                         struct_name = None;
                         union_name = None;
@@ -12886,17 +12949,18 @@ impl Parser {
                         continue;
                     }
                     let mut indexes = vec![index.clone()];
-                    let mut surface_indexes = vec![ContractExpression::CFragment(index.clone())];
+                    let mut surface_indexes =
+                        vec![ContractExpression::ProgramExpression(index.clone())];
                     while struct_array_shape.is_some() && self.peek() == Some(&Token::LBracket) {
                         self.position += 1;
                         let next_index = self.parse_contract_expression()?;
                         self.expect(Token::RBracket)?;
-                        let next_index = contract_expression_as_c_fragment(&next_index)
+                        let next_index = contract_expression_as_program_expression(&next_index)
                             .ok_or_else(|| {
                                 self.error("struct array indices must be current C expressions")
                             })?;
                         indexes.push(next_index.clone());
-                        surface_indexes.push(ContractExpression::CFragment(next_index));
+                        surface_indexes.push(ContractExpression::ProgramExpression(next_index));
                     }
                     let offset = if let Some(shape) = struct_array_shape.take() {
                         if indexes.len() != shape.len() {
@@ -12911,7 +12975,8 @@ impl Parser {
                         index
                     };
                     let stride = struct_byte_stride(offset, element_width);
-                    base = CExpression::Add(Box::new(struct_byte_base(base)), Box::new(stride));
+                    base =
+                        ProgramExpression::Add(Box::new(struct_byte_base(base)), Box::new(stride));
                     surface_base = surface_indexes
                         .into_iter()
                         .fold(surface_base_before_index, |base, index| {
@@ -12921,18 +12986,18 @@ impl Parser {
                     indexed_scalar_field = None;
                 } else if let Some(shape) = struct_array_shape.take() {
                     let mut indexes = vec![index.clone()];
-                    let mut surface_indexes = vec![ContractExpression::CFragment(index)];
+                    let mut surface_indexes = vec![ContractExpression::ProgramExpression(index)];
                     while self.peek() == Some(&Token::LBracket) && !self.contract_bracket_is_range()
                     {
                         self.position += 1;
                         let next_index = self.parse_contract_expression()?;
                         self.expect(Token::RBracket)?;
-                        let next_index = contract_expression_as_c_fragment(&next_index)
+                        let next_index = contract_expression_as_program_expression(&next_index)
                             .ok_or_else(|| {
                                 self.error("struct array indices must be current C expressions")
                             })?;
                         indexes.push(next_index.clone());
-                        surface_indexes.push(ContractExpression::CFragment(next_index));
+                        surface_indexes.push(ContractExpression::ProgramExpression(next_index));
                     }
                     if indexes.len() != shape.len() {
                         return Err(self.error(format!(
@@ -12942,7 +13007,7 @@ impl Parser {
                         )));
                     }
                     let offset = flatten_array_indices(indexes, &shape);
-                    base = CExpression::Add(Box::new(base), Box::new(offset));
+                    base = ProgramExpression::Add(Box::new(base), Box::new(offset));
                     surface_base = surface_indexes
                         .into_iter()
                         .fold(surface_base_before_index, |base, index| {
@@ -12953,18 +13018,18 @@ impl Parser {
                     struct_array_element_width = None;
                 } else if let Some(shape) = scalar_array_shape.take() {
                     let mut indexes = vec![index.clone()];
-                    let mut surface_indexes = vec![ContractExpression::CFragment(index)];
+                    let mut surface_indexes = vec![ContractExpression::ProgramExpression(index)];
                     while self.peek() == Some(&Token::LBracket) && !self.contract_bracket_is_range()
                     {
                         self.position += 1;
                         let next_index = self.parse_contract_expression()?;
                         self.expect(Token::RBracket)?;
-                        let next_index = contract_expression_as_c_fragment(&next_index)
+                        let next_index = contract_expression_as_program_expression(&next_index)
                             .ok_or_else(|| {
                                 self.error("global array indices must be current C expressions")
                             })?;
                         indexes.push(next_index.clone());
-                        surface_indexes.push(ContractExpression::CFragment(next_index));
+                        surface_indexes.push(ContractExpression::ProgramExpression(next_index));
                     }
                     let has_following_range =
                         self.peek() == Some(&Token::LBracket) && self.contract_bracket_is_range();
@@ -12980,7 +13045,7 @@ impl Parser {
                         scalar_range_offset = Some(offset);
                         base
                     } else {
-                        CExpression::Index(Box::new(base), Box::new(offset))
+                        ProgramExpression::Index(Box::new(base), Box::new(offset))
                     };
                     surface_base = surface_indexes
                         .into_iter()
@@ -12991,8 +13056,8 @@ impl Parser {
                     union_name = None;
                     struct_array_element_width = None;
                 } else {
-                    let surface_index = ContractExpression::CFragment(index.clone());
-                    base = CExpression::Index(Box::new(base), Box::new(index));
+                    let surface_index = ContractExpression::ProgramExpression(index.clone());
+                    base = ProgramExpression::Index(Box::new(base), Box::new(index));
                     surface_base = ContractExpression::Index(
                         Box::new(surface_base_before_index),
                         Box::new(surface_index),
@@ -13023,7 +13088,7 @@ impl Parser {
                     // It does not authorize reading or copying a typed union value.
                     let field = if field.union_name.is_some() {
                         ResolvedField {
-                            c_type: C0Type::UInt8,
+                            interface_type: InterfaceType::UInt8,
                             byte_width: 1,
                             union_name: None,
                             ..field
@@ -13045,7 +13110,7 @@ impl Parser {
                 {
                     let field =
                         self.resolve_struct_field_metadata(base_struct_name, &field_name)?;
-                    if field.struct_name.is_some() && !field.c_type.is_pointer() {
+                    if field.struct_name.is_some() && !field.interface_type.is_pointer() {
                         if !allow_aggregates {
                             return Err(self.error(
                                 "aggregate contract segments are only supported in resource clauses",
@@ -13062,7 +13127,7 @@ impl Parser {
                     // It does not authorize reading or copying a typed union value.
                     let field = if field.union_name.is_some() {
                         ResolvedField {
-                            c_type: C0Type::UInt8,
+                            interface_type: InterfaceType::UInt8,
                             byte_width: 1,
                             union_name: None,
                             ..field
@@ -13096,21 +13161,21 @@ impl Parser {
                 && self.union_layouts.contains_key(base_union_name)
             {
                 let field = self.resolve_union_field_metadata(base_union_name, &field_name)?;
-                dereferences_pointer = field.c_type.is_pointer();
+                dereferences_pointer = field.interface_type.is_pointer();
                 let pointer = self.offset_field_pointer(base, field.offset_bytes);
                 let field_memory_pointer = field_has_direct_memory_place(&field);
                 scalar_field = field_memory_pointer
                     && matches!(
-                        field.c_type,
-                        C0Type::Int8
-                            | C0Type::Int16
-                            | C0Type::Int32
-                            | C0Type::Char(_)
-                            | C0Type::UInt8
-                            | C0Type::UInt16
-                            | C0Type::UInt32
-                            | C0Type::Int64(_)
-                            | C0Type::UInt64(_)
+                        field.interface_type,
+                        InterfaceType::Int8
+                            | InterfaceType::Int16
+                            | InterfaceType::Int32
+                            | InterfaceType::Char(_)
+                            | InterfaceType::UInt8
+                            | InterfaceType::UInt16
+                            | InterfaceType::UInt32
+                            | InterfaceType::Int64(_)
+                            | InterfaceType::UInt64(_)
                     );
                 (
                     lowered_field_expression(pointer, &field),
@@ -13125,21 +13190,21 @@ impl Parser {
                 && self.struct_layouts.contains_key(base_struct_name)
             {
                 let field = self.resolve_struct_field_metadata(base_struct_name, &field_name)?;
-                dereferences_pointer = field.c_type.is_pointer();
+                dereferences_pointer = field.interface_type.is_pointer();
                 let pointer = self.member_field_pointer(base, &field);
                 let field_memory_pointer = field_has_direct_memory_place(&field);
                 scalar_field = field_memory_pointer
                     && matches!(
-                        field.c_type,
-                        C0Type::Int8
-                            | C0Type::Int16
-                            | C0Type::Int32
-                            | C0Type::Char(_)
-                            | C0Type::UInt8
-                            | C0Type::UInt16
-                            | C0Type::UInt32
-                            | C0Type::Int64(_)
-                            | C0Type::UInt64(_)
+                        field.interface_type,
+                        InterfaceType::Int8
+                            | InterfaceType::Int16
+                            | InterfaceType::Int32
+                            | InterfaceType::Char(_)
+                            | InterfaceType::UInt8
+                            | InterfaceType::UInt16
+                            | InterfaceType::UInt32
+                            | InterfaceType::Int64(_)
+                            | InterfaceType::UInt64(_)
                     );
                 indexed_scalar_field = scalar_array_field_element(&field).map(|(_, ty)| ty);
                 (
@@ -13180,21 +13245,21 @@ impl Parser {
                     // carries its element type; unwrapping it to the raw byte
                     // pointer would index the range in four-byte cells. Keep
                     // the typed base so the slice keeps the element width.
-                    CExpression::TypedLoad {
+                    ProgramExpression::TypedLoad {
                         value_type:
-                            CType::Int32Array(_)
-                            | CType::UInt8Array(_)
-                            | CType::Int8Array(_)
-                            | CType::Int16Array(_)
-                            | CType::UInt16Array(_)
-                            | CType::UInt32Array(_)
-                            | CType::Int128Array(_)
-                            | CType::Int64Array(_)
-                            | CType::UInt128Array(_)
-                            | CType::UInt64Array(_),
+                            ProgramType::Int32Array(_)
+                            | ProgramType::UInt8Array(_)
+                            | ProgramType::Int8Array(_)
+                            | ProgramType::Int16Array(_)
+                            | ProgramType::UInt16Array(_)
+                            | ProgramType::UInt32Array(_)
+                            | ProgramType::Int128Array(_)
+                            | ProgramType::Int64Array(_)
+                            | ProgramType::UInt128Array(_)
+                            | ProgramType::UInt64Array(_),
                         ..
                     } => None,
-                    CExpression::TypedLoad { pointer, .. } => Some((**pointer).clone()),
+                    ProgramExpression::TypedLoad { pointer, .. } => Some((**pointer).clone()),
                     _ => None,
                 }
             } else {
@@ -13217,7 +13282,7 @@ impl Parser {
             // The lowered base already addresses the selected scalar element.
             // Retain the complete written place, including every subscript,
             // instead of losing it in the field's byte-address arithmetic.
-            let address = CExpression::AddressOf(Box::new(CExpression::TypedLoad {
+            let address = ProgramExpression::AddressOf(Box::new(ProgramExpression::TypedLoad {
                 pointer: Box::new(base.clone()),
                 value_type: element_type,
                 volatile: false,
@@ -13229,15 +13294,17 @@ impl Parser {
                 uninitialized: false,
                 state: ContractSegmentState::Current,
                 base,
-                start: CExpression::Value(int32(0)),
-                end: CExpression::Value(int32(1)),
+                start: ProgramExpression::Value(int32(0)),
+                end: ProgramExpression::Value(int32(1)),
                 surface: ContractSegmentSurface::Range {
                     base: ContractExpression::CUnary {
                         operand: Box::new(surface_base),
                         lowered: address,
                     },
-                    start: ContractExpression::CFragment(CExpression::Value(int32(0))),
-                    end: ContractExpression::CFragment(CExpression::Value(int32(1))),
+                    start: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(
+                        0,
+                    ))),
+                    end: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
                 },
             }]);
         }
@@ -13248,13 +13315,15 @@ impl Parser {
         };
         let names_reference = match &surface_base {
             ContractExpression::Binding(name)
-            | ContractExpression::CFragment(CExpression::Variable(name)) => carries_reference(name),
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+                carries_reference(name)
+            }
             _ => false,
         };
         let names_scalar_referent = matches!(
             &surface_base,
-            ContractExpression::CFragment(CExpression::Index(carrier, _))
-                if matches!(carrier.as_ref(), CExpression::Variable(name) if carries_reference(name))
+            ContractExpression::ProgramExpression(ProgramExpression::Index(carrier, _))
+                if matches!(carrier.as_ref(), ProgramExpression::Variable(name) if carries_reference(name))
         );
         if dereference && (names_reference || names_scalar_referent) {
             return Err(self.error(
@@ -13265,9 +13334,12 @@ impl Parser {
         // carrier, typed and sized by the carrier.
         if names_scalar_referent
             && self.peek() != Some(&Token::LBracket)
-            && let CExpression::Index(carrier, _) = &base
+            && let ProgramExpression::Index(carrier, _) = &base
         {
-            let (start, end) = (CExpression::Value(int32(0)), CExpression::Value(int32(1)));
+            let (start, end) = (
+                ProgramExpression::Value(int32(0)),
+                ProgramExpression::Value(int32(1)),
+            );
             return Ok(vec![ContractSegment {
                 uninitialized: false,
                 state: ContractSegmentState::Current,
@@ -13275,16 +13347,16 @@ impl Parser {
                 start: start.clone(),
                 end: end.clone(),
                 surface: ContractSegmentSurface::Range {
-                    base: ContractExpression::CFragment((**carrier).clone()),
-                    start: ContractExpression::CFragment(start),
-                    end: ContractExpression::CFragment(end),
+                    base: ContractExpression::ProgramExpression((**carrier).clone()),
+                    start: ContractExpression::ProgramExpression(start),
+                    end: ContractExpression::ProgramExpression(end),
                 },
             }]);
         }
         // Written alone, a struct reference is the object it refers to.
         let dereference = dereference
             || (names_reference
-                && matches!(base, CExpression::Variable(_))
+                && matches!(base, ProgramExpression::Variable(_))
                 && self.peek() != Some(&Token::LBracket));
         if dereference {
             if self.peek() == Some(&Token::LBracket) {
@@ -13297,15 +13369,16 @@ impl Parser {
             }
             // `*bytes` on a slice parameter is the whole slice, as `*value`
             // is the one object a reference refers to.
-            if let CExpression::Variable(name) = &base
+            if let ProgramExpression::Variable(name) = &base
                 && self.rust_slice_params.contains(name)
             {
-                let length =
-                    ContractExpression::CFragment(CExpression::Variable(format!("{name}_len")));
+                let length = ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                    format!("{name}_len"),
+                ));
                 let end_expression = length;
-                let end = contract_expression_as_c_fragment(&end_expression)
+                let end = contract_expression_as_program_expression(&end_expression)
                     .expect("a slice length is a C expression");
-                let start = CExpression::Value(int32(0));
+                let start = ProgramExpression::Value(int32(0));
                 return Ok(vec![ContractSegment {
                     uninitialized: false,
                     state: ContractSegmentState::Current,
@@ -13314,12 +13387,15 @@ impl Parser {
                     end,
                     surface: ContractSegmentSurface::Range {
                         base: surface_base,
-                        start: ContractExpression::CFragment(start),
+                        start: ContractExpression::ProgramExpression(start),
                         end: end_expression,
                     },
                 }]);
             }
-            let (start, end) = (CExpression::Value(int32(0)), CExpression::Value(int32(1)));
+            let (start, end) = (
+                ProgramExpression::Value(int32(0)),
+                ProgramExpression::Value(int32(1)),
+            );
             let Some(struct_name) = struct_name else {
                 return Ok(vec![ContractSegment {
                     uninitialized: false,
@@ -13329,8 +13405,8 @@ impl Parser {
                     end: end.clone(),
                     surface: ContractSegmentSurface::Range {
                         base: surface_base,
-                        start: ContractExpression::CFragment(start),
-                        end: ContractExpression::CFragment(end),
+                        start: ContractExpression::ProgramExpression(start),
+                        end: ContractExpression::ProgramExpression(end),
                     },
                 }]);
             };
@@ -13341,13 +13417,17 @@ impl Parser {
         // imported ABI so input cells use the actual field types.
         if postfixes == 0
             && self.peek() != Some(&Token::LBracket)
-            && let ContractExpression::CFragment(CExpression::Variable(name)) = &surface_base
+            && let ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) =
+                &surface_base
         {
-            let object = if !self.names.c_parameter_types.contains_key(name)
+            let object = if !self.names.program_parameter_types.contains_key(name)
                 && !self.names.contains(NameKind::StructArrayParameter, name)
                 && let Some(struct_name) = self.names.aggregate_objects.get(name)
             {
-                Some((struct_name, CExpression::AddressOf(Box::new(base.clone()))))
+                Some((
+                    struct_name,
+                    ProgramExpression::AddressOf(Box::new(base.clone())),
+                ))
             } else {
                 self.qualified_object(name)
                     .filter(|object| object.address.is_none() && object.array_shape.is_none())
@@ -13370,7 +13450,7 @@ impl Parser {
         // A place written alone is its own storage: one element at its
         // address.
         if self.peek() != Some(&Token::LBracket) {
-            if let CExpression::Variable(name) = &base
+            if let ProgramExpression::Variable(name) = &base
                 && self.names.struct_params.contains_key(name)
                 && !names_aggregate_object
             {
@@ -13379,9 +13459,10 @@ impl Parser {
                 )));
             }
             let base = match base {
-                CExpression::TypedLoad { pointer, .. } => *pointer,
-                CExpression::Value(CValue::Pointer(_)) => {
-                    let ContractExpression::CFragment(CExpression::Variable(name)) = &surface_base
+                ProgramExpression::TypedLoad { pointer, .. } => *pointer,
+                ProgramExpression::Value(ProgramValue::Pointer(_)) => {
+                    let ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) =
+                        &surface_base
                     else {
                         return Err(self.error("this C expression has no storage to own"));
                     };
@@ -13389,21 +13470,25 @@ impl Parser {
                         .and_then(|object| object.address.clone())
                         .ok_or_else(|| self.error("this C expression has no storage to own"))?
                 }
-                expression => CExpression::AddressOf(Box::new(expression)),
+                expression => ProgramExpression::AddressOf(Box::new(expression)),
             };
-            let surface_base = ContractExpression::CFragment(CExpression::AddressOf(Box::new(
-                contract_expression_as_c_fragment(&surface_base).expect("C segment base"),
-            )));
+            let surface_base =
+                ContractExpression::ProgramExpression(ProgramExpression::AddressOf(Box::new(
+                    contract_expression_as_program_expression(&surface_base)
+                        .expect("C segment base"),
+                )));
             return Ok(vec![ContractSegment {
                 uninitialized: false,
                 state: ContractSegmentState::Current,
                 base,
-                start: CExpression::Value(int32(0)),
-                end: CExpression::Value(int32(1)),
+                start: ProgramExpression::Value(int32(0)),
+                end: ProgramExpression::Value(int32(1)),
                 surface: ContractSegmentSurface::Range {
                     base: surface_base,
-                    start: ContractExpression::CFragment(CExpression::Value(int32(0))),
-                    end: ContractExpression::CFragment(CExpression::Value(int32(1))),
+                    start: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(
+                        0,
+                    ))),
+                    end: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
                 },
             }]);
         }
@@ -13426,22 +13511,22 @@ impl Parser {
             .transpose()?;
         self.expect(Token::LBracket)?;
         let start_expression = self.parse_contract_expression()?;
-        let mut start = resource_body_c_fragment(&start_expression).ok_or_else(|| {
+        let mut start = resource_body_program_expression(&start_expression).ok_or_else(|| {
             self.error(
                 "memory segment start must be a current C expression or a scalar field of the resource being defined",
             )
         })?;
         self.expect(Token::DotDot)?;
         let end_expression = self.parse_contract_expression()?;
-        let mut end = resource_body_c_fragment(&end_expression).ok_or_else(|| {
+        let mut end = resource_body_program_expression(&end_expression).ok_or_else(|| {
             self.error(
                 "memory segment end must be a current C expression or a scalar field of the resource being defined",
             )
         })?;
         self.expect(Token::RBracket)?;
         if let Some(offset) = scalar_range_offset {
-            start = CExpression::Add(Box::new(offset.clone()), Box::new(start));
-            end = CExpression::Add(Box::new(offset), Box::new(end));
+            start = ProgramExpression::Add(Box::new(offset.clone()), Box::new(start));
+            end = ProgramExpression::Add(Box::new(offset), Box::new(end));
         }
         Ok(vec![ContractSegment {
             uninitialized: false,
@@ -13468,7 +13553,7 @@ impl Parser {
     /// One complete struct object at `base`.
     fn object_segment(
         &self,
-        base: CExpression,
+        base: ProgramExpression,
         struct_name: String,
     ) -> Result<ContractSegment, ClickError> {
         let layout = self.struct_layouts.get(&struct_name).ok_or_else(|| {
@@ -13486,15 +13571,15 @@ impl Parser {
             uninitialized: false,
             state: ContractSegmentState::Current,
             base,
-            start: CExpression::Value(int32(0)),
-            end: CExpression::Value(int32(layout.size_bytes() / 4)),
+            start: ProgramExpression::Value(int32(0)),
+            end: ProgramExpression::Value(int32(layout.size_bytes() / 4)),
             surface: ContractSegmentSurface::Object(struct_name),
         })
     }
 
     fn aggregate_field_segments(
         &self,
-        base: CExpression,
+        base: ProgramExpression,
         surface_base: ContractExpression,
         field_name: &str,
         field: &ResolvedField,
@@ -13556,7 +13641,7 @@ impl Parser {
     fn append_aggregate_leaf_segments(
         &self,
         segments: &mut Vec<ContractSegment>,
-        base: CExpression,
+        base: ProgramExpression,
         struct_name: &str,
         base_offset: u32,
         name_prefix: &str,
@@ -13574,7 +13659,7 @@ impl Parser {
             if let Some(nested_name) = resolved
                 .struct_name
                 .as_deref()
-                .filter(|_| !resolved.c_type.is_pointer())
+                .filter(|_| !resolved.interface_type.is_pointer())
             {
                 if resolved.array_element_width.is_some() {
                     self.append_aggregate_array_leaf_segments(
@@ -13629,7 +13714,7 @@ impl Parser {
     fn append_aggregate_array_leaf_segments(
         &self,
         segments: &mut Vec<ContractSegment>,
-        base: CExpression,
+        base: ProgramExpression,
         base_offset: u32,
         field: &ResolvedField,
         struct_name: &str,
@@ -13672,7 +13757,7 @@ impl Parser {
 
     fn resolve_field_segment(
         &self,
-        base: CExpression,
+        base: ProgramExpression,
         surface_base: Option<ContractExpression>,
         field_name: &str,
     ) -> Result<ContractSegment, ClickError> {
@@ -13683,8 +13768,8 @@ impl Parser {
                 uninitialized: false,
                 state: ContractSegmentState::Current,
                 base,
-                start: CExpression::Value(int32(0)),
-                end: CExpression::Value(int32(1)),
+                start: ProgramExpression::Value(int32(0)),
+                end: ProgramExpression::Value(int32(1)),
                 surface: ContractSegmentSurface::Field {
                     value_bytes: None,
                     base: surface_base.map(Box::new),
@@ -13704,38 +13789,39 @@ impl Parser {
     }
 
     fn field_segment_from_metadata(
-        base: CExpression,
+        base: ProgramExpression,
         surface_base: Option<ContractExpression>,
         field_name: &str,
         field: &ResolvedField,
     ) -> ContractSegment {
-        let array = match field.c_type {
-            C0Type::Int32Array(length) => Some((length, 4, CType::Int32)),
-            C0Type::Int64Array(_, length) => Some((length, 8, CType::Int64)),
-            C0Type::Int128Array(length) => Some((length, 16, CType::Int128)),
-            C0Type::UInt64Array(_, length) => Some((length, 8, CType::UInt64)),
-            C0Type::UInt128Array(length) => Some((length, 16, CType::UInt128)),
-            C0Type::CharArray(crate::languages::c::syntax::PlainChar::Unsigned, length)
-            | C0Type::UInt8Array(length) => Some((length, 1, CType::UInt8)),
-            C0Type::CharArray(crate::languages::c::syntax::PlainChar::Signed, length)
-            | C0Type::Int8Array(length) => Some((length, 1, CType::Int8)),
+        let array = match field.interface_type {
+            InterfaceType::Int32Array(length) => Some((length, 4, ProgramType::Int32)),
+            InterfaceType::Int64Array(_, length) => Some((length, 8, ProgramType::Int64)),
+            InterfaceType::Int128Array(length) => Some((length, 16, ProgramType::Int128)),
+            InterfaceType::UInt64Array(_, length) => Some((length, 8, ProgramType::UInt64)),
+            InterfaceType::UInt128Array(length) => Some((length, 16, ProgramType::UInt128)),
+            InterfaceType::CharArray(crate::languages::c::syntax::PlainChar::Unsigned, length)
+            | InterfaceType::UInt8Array(length) => Some((length, 1, ProgramType::UInt8)),
+            InterfaceType::CharArray(crate::languages::c::syntax::PlainChar::Signed, length)
+            | InterfaceType::Int8Array(length) => Some((length, 1, ProgramType::Int8)),
             _ => None,
         };
         if let Some((length, element_width, element_type)) = array {
-            let field_base = crate::kernel::c_pointer_offset_bytes(base, field.offset_bytes);
+            let field_base =
+                crate::kernel::program_expression::pointer_offset_bytes(base, field.offset_bytes);
             return ContractSegment {
                 uninitialized: false,
                 state: ContractSegmentState::Current,
-                base: CExpression::TypedLoad {
+                base: ProgramExpression::TypedLoad {
                     pointer: Box::new(field_base),
-                    value_type: field.c_type.to_kernel_type(),
+                    value_type: field.interface_type.to_kernel_type(),
                     volatile: false,
                     pointee_constant: field.pointee_constant,
                     access_class: None,
                     source: Default::default(),
                 },
-                start: CExpression::Value(int32(0)),
-                end: CExpression::Value(int32(length)),
+                start: ProgramExpression::Value(int32(0)),
+                end: ProgramExpression::Value(int32(length)),
                 surface: ContractSegmentSurface::Field {
                     value_bytes: None,
                     base: surface_base.map(Box::new),
@@ -13745,14 +13831,14 @@ impl Parser {
                 },
             };
         }
-        let element_width = match field.c_type {
-            C0Type::Char(_) => 1,
-            C0Type::UInt8 => 1,
-            C0Type::Int8 => 1,
-            C0Type::Int16 | C0Type::UInt16 => 2,
-            C0Type::Int64(_) | C0Type::UInt64(_) => 8,
-            C0Type::Float32 => 4,
-            C0Type::Float64 => 8,
+        let element_width = match field.interface_type {
+            InterfaceType::Char(_) => 1,
+            InterfaceType::UInt8 => 1,
+            InterfaceType::Int8 => 1,
+            InterfaceType::Int16 | InterfaceType::UInt16 => 2,
+            InterfaceType::Int64(_) | InterfaceType::UInt64(_) => 8,
+            InterfaceType::Float32 => 4,
+            InterfaceType::Float64 => 8,
             _ => 4,
         };
         let start = field.offset_bytes / element_width;
@@ -13761,8 +13847,8 @@ impl Parser {
             uninitialized: false,
             state: ContractSegmentState::Current,
             base,
-            start: CExpression::Value(int32(start)),
-            end: CExpression::Value(int32(end)),
+            start: ProgramExpression::Value(int32(start)),
+            end: ProgramExpression::Value(int32(end)),
             surface: ContractSegmentSurface::Field {
                 base: surface_base.map(Box::new),
                 name: field_name.to_string(),
@@ -13770,7 +13856,7 @@ impl Parser {
                 // width. Smaller integer fields retain their natural
                 // two-byte/one-byte units so a typed load is covered exactly.
                 element_width: Some(element_width),
-                element_type: Some(field.c_type.to_kernel_type()),
+                element_type: Some(field.interface_type.to_kernel_type()),
                 value_bytes: Some(element_width),
             },
         }
@@ -13778,16 +13864,16 @@ impl Parser {
 
     fn resolve_field_load(
         &self,
-        base: CExpression,
+        base: ProgramExpression,
         field_name: &str,
-    ) -> Result<CExpression, ClickError> {
+    ) -> Result<ProgramExpression, ClickError> {
         self.refuse_trait_receiver_field(named_place_base(&base).map(String::as_str))?;
         let Some(field) = self.resolve_field_metadata(&base, field_name)? else {
-            return Ok(CExpression::Load(Box::new(base)));
+            return Ok(ProgramExpression::Load(Box::new(base)));
         };
-        Ok(CExpression::TypedLoad {
+        Ok(ProgramExpression::TypedLoad {
             pointer: Box::new(self.member_field_pointer(base, &field)),
-            value_type: field.c_type.to_kernel_type(),
+            value_type: field.interface_type.to_kernel_type(),
             volatile: false,
             pointee_constant: field.pointee_constant,
             access_class: None,
@@ -13835,7 +13921,7 @@ impl Parser {
                     pointer: Box::new(pointer),
                     union_name,
                 }
-            } else if field.c_type == C0Type::Int32 {
+            } else if field.interface_type == InterfaceType::Int32 {
                 if let Some(struct_name) = field.struct_name {
                     C0Expression::AggregateAddress {
                         pointer: Box::new(pointer),
@@ -13844,7 +13930,7 @@ impl Parser {
                 } else {
                     C0Expression::Field {
                         pointer: Box::new(pointer),
-                        field_type: field.c_type,
+                        field_type: field.interface_type,
                         pointee_constant: field.pointee_constant,
                         field_struct_name: None,
                         function_pointer_signature: None,
@@ -13856,7 +13942,7 @@ impl Parser {
             } else {
                 C0Expression::Field {
                     pointer: Box::new(pointer),
-                    field_type: field.c_type,
+                    field_type: field.interface_type,
                     pointee_constant: field.pointee_constant,
                     field_struct_name: field.struct_name,
                     function_pointer_signature: field.function_pointer_signature.clone(),
@@ -13871,7 +13957,7 @@ impl Parser {
             let pointer = self.offset_c0_field_pointer(base.clone(), field.offset_bytes);
             return Ok(Some(C0Expression::UnionField {
                 pointer: Box::new(pointer),
-                field_type: field.c_type,
+                field_type: field.interface_type,
                 union_name: union_name.clone(),
                 pointee_constant: field.pointee_constant,
             }));
@@ -13881,7 +13967,7 @@ impl Parser {
 
     fn resolve_field_metadata(
         &self,
-        base: &CExpression,
+        base: &ProgramExpression,
         field_name: &str,
     ) -> Result<Option<ResolvedField>, ClickError> {
         let Some(base_name) = named_place_base(base) else {
@@ -13910,17 +13996,18 @@ impl Parser {
     fn contract_expression_struct_name(&self, expression: &ContractExpression) -> Option<String> {
         match expression {
             ContractExpression::CUnary {
-                lowered: CExpression::Cast { pointee_struct, .. },
+                lowered: ProgramExpression::Cast { pointee_struct, .. },
                 ..
             }
-            | ContractExpression::CFragment(CExpression::Cast { pointee_struct, .. }) => {
-                pointee_struct.clone()
-            }
+            | ContractExpression::ProgramExpression(ProgramExpression::Cast {
+                pointee_struct,
+                ..
+            }) => pointee_struct.clone(),
             ContractExpression::QualifiedC { name, .. } => self
                 .qualified_object(name)
                 .and_then(|object| object.struct_name.clone()),
             ContractExpression::Binding(name)
-            | ContractExpression::CFragment(CExpression::Variable(name)) => self
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => self
                 .names
                 .struct_params
                 .get(name)
@@ -13983,12 +14070,12 @@ impl Parser {
         let slot_end_bytes = layout
             .fields()
             .values()
-            .map(syntax::C0StructField::offset_bytes)
+            .map(crate::languages::interface::RecordField::offset_bytes)
             .filter(|offset| *offset > field.offset_bytes())
             .min()
             .unwrap_or_else(|| layout.size_bytes());
         Ok(ResolvedField {
-            c_type: field.c_type(),
+            interface_type: field.interface_type(),
             pointee_constant: field.pointee_is_constant(),
             struct_name: field.struct_name().map(str::to_string),
             union_name: field.union_name().map(str::to_string),
@@ -14018,7 +14105,7 @@ impl Parser {
             );
         }
         Ok(ResolvedField {
-            c_type: field.c_type(),
+            interface_type: field.interface_type(),
             pointee_constant: field.pointee_is_constant(),
             struct_name: None,
             union_name: None,
@@ -14037,7 +14124,7 @@ impl Parser {
                 self.error("arrays of embedded structs require an index before a resource segment")
             );
         }
-        if field.c_type == C0Type::Int32
+        if field.interface_type == InterfaceType::Int32
             && (field.struct_name.is_some() || field.union_name.is_some())
         {
             return Err(self.error(
@@ -14045,19 +14132,19 @@ impl Parser {
             ));
         }
         if matches!(
-            field.c_type,
-            C0Type::Int32Array(_)
-                | C0Type::CharArray(_, _)
-                | C0Type::UInt8Array(_)
-                | C0Type::Int128Array(_)
-                | C0Type::Int64Array(_, _)
-                | C0Type::UInt128Array(_)
-                | C0Type::UInt64Array(_, _)
+            field.interface_type,
+            InterfaceType::Int32Array(_)
+                | InterfaceType::CharArray(_, _)
+                | InterfaceType::UInt8Array(_)
+                | InterfaceType::Int128Array(_)
+                | InterfaceType::Int64Array(_, _)
+                | InterfaceType::UInt128Array(_)
+                | InterfaceType::UInt64Array(_, _)
         ) {
-            let width = match field.c_type {
-                C0Type::Int64Array(_, _) | C0Type::UInt64Array(_, _) => 8,
-                C0Type::Int128Array(_) | C0Type::UInt128Array(_) => 16,
-                C0Type::Int32Array(_) => 4,
+            let width = match field.interface_type {
+                InterfaceType::Int64Array(_, _) | InterfaceType::UInt64Array(_, _) => 8,
+                InterfaceType::Int128Array(_) | InterfaceType::UInt128Array(_) => 16,
+                InterfaceType::Int32Array(_) => 4,
                 _ => 1,
             };
             if !field.offset_bytes.is_multiple_of(width)
@@ -14068,7 +14155,10 @@ impl Parser {
             }
             return Ok(());
         }
-        if matches!(field.c_type, C0Type::Int16 | C0Type::UInt16) {
+        if matches!(
+            field.interface_type,
+            InterfaceType::Int16 | InterfaceType::UInt16
+        ) {
             if !field.offset_bytes.is_multiple_of(2)
                 || field.byte_width != 2
                 || field.slot_end_bytes < field.offset_bytes
@@ -14078,7 +14168,10 @@ impl Parser {
             }
             return Ok(());
         }
-        if matches!(field.c_type, C0Type::Int64(_) | C0Type::UInt64(_)) {
+        if matches!(
+            field.interface_type,
+            InterfaceType::Int64(_) | InterfaceType::UInt64(_)
+        ) {
             if !field.offset_bytes.is_multiple_of(8)
                 || field.byte_width != 8
                 || field.slot_end_bytes < field.offset_bytes
@@ -14090,7 +14183,10 @@ impl Parser {
             }
             return Ok(());
         }
-        if matches!(field.c_type, C0Type::Int8 | C0Type::Char(_) | C0Type::UInt8) {
+        if matches!(
+            field.interface_type,
+            InterfaceType::Int8 | InterfaceType::Char(_) | InterfaceType::UInt8
+        ) {
             if field.byte_width != 1 || field.slot_end_bytes < field.offset_bytes {
                 return Err(self.error("byte field places require one-byte width"));
             }
@@ -14107,19 +14203,27 @@ impl Parser {
         Ok(())
     }
 
-    fn member_field_pointer(&self, base: CExpression, field: &ResolvedField) -> CExpression {
+    fn member_field_pointer(
+        &self,
+        base: ProgramExpression,
+        field: &ResolvedField,
+    ) -> ProgramExpression {
         let pointer = self.offset_field_pointer(base, field.offset_bytes);
         if field.byte_width == 0 {
             return pointer;
         }
-        CExpression::Subobject {
+        ProgramExpression::Subobject {
             pointer: Box::new(pointer),
             width: field.byte_width,
         }
     }
 
-    fn offset_field_pointer(&self, base: CExpression, offset_bytes: u32) -> CExpression {
-        crate::kernel::c_pointer_offset_bytes(base, offset_bytes)
+    fn offset_field_pointer(
+        &self,
+        base: ProgramExpression,
+        offset_bytes: u32,
+    ) -> ProgramExpression {
+        crate::kernel::program_expression::pointer_offset_bytes(base, offset_bytes)
     }
 
     fn offset_c0_field_pointer(&self, base: C0Expression, offset_bytes: u32) -> C0Expression {
@@ -14190,17 +14294,17 @@ impl Parser {
     /// synthesized proof text reads the parameter with a single layout.
     fn record_parameter_struct_cast(
         &mut self,
-        operand: &CExpression,
+        operand: &ProgramExpression,
         struct_name: &str,
     ) -> Result<(), ClickError> {
         // Integer casts name the complete word's reconstructed pointer.
         // Unknown types (notably `result`) are checked after elaboration.
         if matches!(
-            crate::surface::validation::infer_c_expression_type(
+            crate::surface::validation::infer_program_expression_type(
                 operand,
-                &self.names.c_parameter_types,
+                &self.names.program_parameter_types,
             ),
-            None | Some(C0Type::Int64(_) | C0Type::UInt64(_))
+            None | Some(InterfaceType::Int64(_) | InterfaceType::UInt64(_))
         ) {
             return Ok(());
         }
@@ -14208,15 +14312,15 @@ impl Parser {
         // the expression. It does not assign a layout to the source parameter.
         if matches!(
             operand,
-            CExpression::Cast {
-                target_type: CType::VoidPointer,
+            ProgramExpression::Cast {
+                target_type: ProgramType::VoidPointer,
                 ..
             }
         ) {
             return Ok(());
         }
         let name = match operand {
-            CExpression::Variable(name) => Some(name.as_str()),
+            ProgramExpression::Variable(name) => Some(name.as_str()),
             _ => None,
         };
         let Some(name) =
@@ -14267,9 +14371,9 @@ impl Parser {
     /// The target of a Click cast at the cursor, after its `(` or inside the
     /// parentheses of a pointer target: an integer type, `void *`, or an
     /// integer pointer type such as `uint8 *`, unqualified.
-    fn parse_click_cast_type(&mut self) -> Result<CType, ClickError> {
+    fn parse_click_cast_type(&mut self) -> Result<ProgramType, ClickError> {
         let parsed_type = self.parse_type()?;
-        let target_type = parsed_type.c_type.to_kernel_type();
+        let target_type = parsed_type.interface_type.to_kernel_type();
         if parsed_type.reference
             || (target_type.is_pointer() && (parsed_type.constant || parsed_type.pointee_constant))
         {
@@ -14285,25 +14389,25 @@ impl Parser {
         cast: StructPointerCast,
         source_operand: ContractExpression,
     ) -> Result<ContractExpression, ClickError> {
-        let Some(operand) = contract_expression_as_c_fragment(&source_operand) else {
+        let Some(operand) = contract_expression_as_program_expression(&source_operand) else {
             return Err(self.error(
                 "struct pointer cast expects a current C `void *` expression; put old(...) around the whole cast for an entry-state value",
             ));
         };
-        let integer_source = crate::surface::validation::infer_c_expression_type(
+        let integer_source = crate::surface::validation::infer_program_expression_type(
             &operand,
-            &self.names.c_parameter_types,
+            &self.names.program_parameter_types,
         )
-        .is_some_and(|ty| matches!(ty, C0Type::Int64(_) | C0Type::UInt64(_)));
+        .is_some_and(|ty| matches!(ty, InterfaceType::Int64(_) | InterfaceType::UInt64(_)));
         if !integer_source {
             self.record_parameter_struct_cast(&operand, &cast.struct_name)?;
         }
         Ok(crate::surface::lowering::contract_c_unary(
             source_operand,
-            CExpression::Cast {
+            ProgramExpression::Cast {
                 expression: Box::new(operand),
-                target_type: CType::Int32Pointer,
-                integer_mode: crate::kernel::CIntegerCastMode::Standard,
+                target_type: ProgramType::Int32Pointer,
+                integer_mode: crate::kernel::IntegerCastMode::Standard,
                 pointee_struct: Some(cast.struct_name),
                 pointee_volatile: false,
                 pointee_constant: cast.pointee_constant,
@@ -14316,7 +14420,7 @@ impl Parser {
     /// `x as uint32` or `p as (uint8 *)`.
     fn lower_click_cast(
         &mut self,
-        target_type: CType,
+        target_type: ProgramType,
         operand: ContractExpression,
     ) -> Result<ContractExpression, ClickError> {
         let historical = crate::surface::validation::contains_old_expression(&operand)
@@ -14325,32 +14429,32 @@ impl Parser {
         // Other cast families retain their current-expression validation.
         let integer_target = matches!(
             target_type,
-            CType::Int8
-                | CType::Int16
-                | CType::Int32
-                | CType::UInt8
-                | CType::UInt16
-                | CType::UInt32
-                | CType::Int64
-                | CType::UInt64
-                | CType::Int128
-                | CType::UInt128
+            ProgramType::Int8
+                | ProgramType::Int16
+                | ProgramType::Int32
+                | ProgramType::UInt8
+                | ProgramType::UInt16
+                | ProgramType::UInt32
+                | ProgramType::Int64
+                | ProgramType::UInt64
+                | ProgramType::Int128
+                | ProgramType::UInt128
         );
         if historical && !integer_target {
             return Err(self.error("scalar cast expects a current expression; put old(...) around the whole cast for an entry-state value"));
         }
-        let expression =
-            contract_expression_as_c_fragment(&operand).unwrap_or(CExpression::Value(int32(0)));
-        if target_type == CType::VoidPointer {
+        let expression = contract_expression_as_program_expression(&operand)
+            .unwrap_or(ProgramExpression::Value(int32(0)));
+        if target_type == ProgramType::VoidPointer {
             crate::surface::validation::validate_void_pointer_cast_source(
                 &expression,
-                &self.names.c_parameter_types,
+                &self.names.program_parameter_types,
                 "contract expression",
             )?;
         }
         Ok(ContractExpression::CUnary {
             operand: Box::new(operand),
-            lowered: CExpression::Cast {
+            lowered: ProgramExpression::Cast {
                 expression: Box::new(expression),
                 target_type,
                 // This cast was written in the contract. Pointer targets
@@ -14358,9 +14462,9 @@ impl Parser {
                 // marker also used for inserted pointer coercions. Authored
                 // void and byte casts select the enclosing-object view.
                 integer_mode: if target_type.is_pointer() {
-                    crate::kernel::CIntegerCastMode::Standard
+                    crate::kernel::IntegerCastMode::Standard
                 } else {
-                    crate::kernel::CIntegerCastMode::CConversion
+                    crate::kernel::IntegerCastMode::CConversion
                 },
                 pointee_struct: None,
                 pointee_volatile: false,
@@ -14408,9 +14512,11 @@ impl Parser {
             }
             if self.peek_next() == Some(&Token::Int64MinimumMagnitude) {
                 self.position += 2;
-                return Ok(ContractExpression::CFragment(CExpression::Value(
-                    CValue::Int64(MachineTerm::int64_constant(i64::MIN)),
-                )));
+                return Ok(ContractExpression::ProgramExpression(
+                    ProgramExpression::Value(ProgramValue::Int64(MachineTerm::int64_constant(
+                        i64::MIN,
+                    ))),
+                ));
             }
             self.position += 1;
             return Ok(ContractExpression::Negate(Box::new(
@@ -14429,14 +14535,14 @@ impl Parser {
             self.position += 1;
             let pointer = self.parse_contract_unary_at_depth(depth + 1)?;
             let source_pointer = pointer.clone();
-            let Some(pointer) = contract_expression_as_c_fragment(&pointer) else {
+            let Some(pointer) = contract_expression_as_program_expression(&pointer) else {
                 return Err(
                     self.error("pointer dereference is only supported on current C fragments")
                 );
             };
             return Ok(crate::surface::lowering::contract_c_unary(
                 source_pointer,
-                CExpression::Load(Box::new(pointer)),
+                ProgramExpression::Load(Box::new(pointer)),
             ));
         }
         if self.peek() == Some(&Token::Amp) && self.at_reference_parameter_address() {
@@ -14460,33 +14566,35 @@ impl Parser {
                 // `&p->f` (`design/pointer-subobject-extents.md`), so a
                 // contract's `&pair->second` is the program's pointer value
                 // and is not equal to `&pair->first + 1`.
-                if let CExpression::TypedLoad { value_type, .. } = lowered
+                if let ProgramExpression::TypedLoad { value_type, .. } = lowered
                     && value_type.pointer_to().is_some()
                 {
                     return Ok(ContractExpression::CUnary {
                         operand: Box::new(expression.clone()),
-                        lowered: CExpression::AddressOf(Box::new(contract_member_lvalue(lowered))),
+                        lowered: ProgramExpression::AddressOf(Box::new(contract_member_lvalue(
+                            lowered,
+                        ))),
                     });
                 }
                 let source_base = (**base).clone();
-                let Some(base) = contract_expression_as_c_fragment(base) else {
+                let Some(base) = contract_expression_as_program_expression(base) else {
                     return Err(self.error("address-of field requires a current C pointer base"));
                 };
                 return Ok(crate::surface::lowering::contract_c_unary(
                     source_base,
-                    CExpression::PointerOffsetBytes {
+                    ProgramExpression::PointerOffsetBytes {
                         pointer: Box::new(base),
                         bytes: *offset_bytes,
                     },
                 ));
             }
             let source_expression = expression.clone();
-            let Some(expression) = contract_expression_as_c_fragment(&expression) else {
+            let Some(expression) = contract_expression_as_program_expression(&expression) else {
                 return Err(self.error("address-of is only supported on current C expressions"));
             };
             return Ok(crate::surface::lowering::contract_c_unary(
                 source_expression,
-                CExpression::AddressOf(Box::new(expression)),
+                ProgramExpression::AddressOf(Box::new(expression)),
             ));
         }
 
@@ -14531,9 +14639,9 @@ impl Parser {
         };
         let carrier = self.reference_binding_carrier(name);
         self.position += 2;
-        Ok(ContractExpression::CFragment(CExpression::Variable(
-            carrier,
-        )))
+        Ok(ContractExpression::ProgramExpression(
+            ProgramExpression::Variable(carrier),
+        ))
     }
 
     /// A reference parameter's name is its referent. The pointer that
@@ -14547,7 +14655,7 @@ impl Parser {
         mut expression: ContractExpression,
     ) -> Result<ContractExpression, ClickError> {
         if let ContractExpression::Binding(name)
-        | ContractExpression::CFragment(CExpression::Variable(name)) = &expression
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) = &expression
             && self.is_reference_binding(name)
         {
             let name = name.clone();
@@ -14558,7 +14666,8 @@ impl Parser {
                     "`{name}` is a struct reference; name a field as `{name}.field`, or its address as `&{name}`"
                 )));
             }
-            expression = ContractExpression::CFragment(CExpression::Variable(carrier));
+            expression =
+                ContractExpression::ProgramExpression(ProgramExpression::Variable(carrier));
             if !is_struct {
                 if self.peek() == Some(&Token::LBracket) {
                     return Err(self.error(format!(
@@ -14588,17 +14697,18 @@ impl Parser {
         expression = self.resolve_reference_parameter(expression)?;
         let mut struct_name = match &expression {
             ContractExpression::CUnary {
-                lowered: CExpression::Cast { pointee_struct, .. },
+                lowered: ProgramExpression::Cast { pointee_struct, .. },
                 ..
             }
-            | ContractExpression::CFragment(CExpression::Cast { pointee_struct, .. }) => {
-                pointee_struct.clone()
-            }
+            | ContractExpression::ProgramExpression(ProgramExpression::Cast {
+                pointee_struct,
+                ..
+            }) => pointee_struct.clone(),
             ContractExpression::QualifiedC { name, .. } => self
                 .qualified_object(name)
                 .and_then(|object| object.struct_name.clone()),
             ContractExpression::Binding(name)
-            | ContractExpression::CFragment(CExpression::Variable(name)) => self
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => self
                 .names
                 .struct_params
                 .get(name)
@@ -14612,7 +14722,7 @@ impl Parser {
         };
         // A struct double pointer indexes pointer slots, not struct objects.
         if let ContractExpression::Binding(name)
-        | ContractExpression::CFragment(CExpression::Variable(name)) = &expression
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) = &expression
             && self
                 .names
                 .struct_params
@@ -14623,7 +14733,7 @@ impl Parser {
         let mut union_name: Option<String> = None;
         let mut struct_array_element_width = match &expression {
             ContractExpression::Binding(name)
-            | ContractExpression::CFragment(CExpression::Variable(name)) => self
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => self
                 .names
                 .contains(NameKind::StructArrayParameter, name)
                 .then(|| {
@@ -14653,7 +14763,7 @@ impl Parser {
                 .qualified_object(name)
                 .and_then(|object| object.array_shape.clone()),
             ContractExpression::Binding(name)
-            | ContractExpression::CFragment(CExpression::Variable(name)) => self
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => self
                 .names
                 .global_array_shapes
                 .get(name)
@@ -14696,25 +14806,26 @@ impl Parser {
                     }) && let Some(base_struct_name) = &struct_name
                         && self.struct_layouts.contains_key(base_struct_name)
                     {
-                        let base = contract_expression_as_c_fragment(&expression)
+                        let base = contract_expression_as_program_expression(&expression)
                             .ok_or_else(|| {
                                 self.error(
                                     "struct array indexing is only supported on current C fragments",
                                 )
                             })?;
                         let source_index = index.clone();
-                        let index = contract_expression_as_c_fragment(&index).ok_or_else(|| {
-                            self.error("struct array indices must be current C expressions")
-                        })?;
+                        let index =
+                            contract_expression_as_program_expression(&index).ok_or_else(|| {
+                                self.error("struct array indices must be current C expressions")
+                            })?;
                         let mut indexes = vec![source_index];
                         while struct_array_shape.is_some() && self.peek() == Some(&Token::LBracket)
                         {
                             self.position += 1;
                             let next_index = self.parse_contract_expression()?;
                             self.expect(Token::RBracket)?;
-                            contract_expression_as_c_fragment(&next_index).ok_or_else(|| {
-                                self.error("struct array indices must be current C expressions")
-                            })?;
+                            contract_expression_as_program_expression(&next_index).ok_or_else(
+                                || self.error("struct array indices must be current C expressions"),
+                            )?;
                             indexes.push(next_index);
                         }
                         let dimensions = struct_array_shape.clone().unwrap_or_else(|| vec![1]);
@@ -14730,7 +14841,7 @@ impl Parser {
                                 indexes
                                     .iter()
                                     .map(|index| {
-                                        contract_expression_as_c_fragment(index)
+                                        contract_expression_as_program_expression(index)
                                             .expect("validated C index")
                                     })
                                     .collect(),
@@ -14748,7 +14859,7 @@ impl Parser {
                             indexes,
                             dimensions,
                             lowered: {
-                                let address = CExpression::Add(
+                                let address = ProgramExpression::Add(
                                     Box::new(struct_byte_base(base)),
                                     Box::new(stride),
                                 );
@@ -14758,9 +14869,9 @@ impl Parser {
                                     // A bare struct subscript retains the legacy
                                     // first-word read; a following field uses the
                                     // byte-scaled address of the whole element.
-                                    CExpression::TypedLoad {
+                                    ProgramExpression::TypedLoad {
                                         pointer: Box::new(address),
-                                        value_type: crate::kernel::CType::Int32,
+                                        value_type: crate::kernel::ProgramType::Int32,
                                         volatile: false,
                                         pointee_constant: false,
                                         access_class: None,
@@ -14771,7 +14882,7 @@ impl Parser {
                         };
                         struct_array_element_width = None;
                     } else if let Some(shape) = struct_array_shape.take() {
-                        contract_expression_as_c_fragment(&index).ok_or_else(|| {
+                        contract_expression_as_program_expression(&index).ok_or_else(|| {
                             self.error("struct array indices must be current C expressions")
                         })?;
                         let mut indexes = vec![index.clone()];
@@ -14781,9 +14892,9 @@ impl Parser {
                             self.position += 1;
                             let next_index = self.parse_contract_expression()?;
                             self.expect(Token::RBracket)?;
-                            contract_expression_as_c_fragment(&next_index).ok_or_else(|| {
-                                self.error("struct array indices must be current C expressions")
-                            })?;
+                            contract_expression_as_program_expression(&next_index).ok_or_else(
+                                || self.error("struct array indices must be current C expressions"),
+                            )?;
                             indexes.push(next_index);
                         }
                         if indexes.len() != shape.len() {
@@ -14797,7 +14908,7 @@ impl Parser {
                             indexes
                                 .iter()
                                 .map(|index| {
-                                    contract_expression_as_c_fragment(index)
+                                    contract_expression_as_program_expression(index)
                                         .expect("validated C index")
                                 })
                                 .collect(),
@@ -14807,13 +14918,13 @@ impl Parser {
                         // access, as a global array access does: the
                         // flattened index alone prints as one subscript,
                         // which does not parse back.
-                        expression = match contract_expression_as_c_fragment(&expression) {
+                        expression = match contract_expression_as_program_expression(&expression) {
                             Some(lowered_base) if indexes.len() > 1 => {
                                 ContractExpression::ArrayIndex {
                                     base: Box::new(expression),
                                     indexes,
                                     dimensions: shape.clone(),
-                                    lowered: CExpression::Index(
+                                    lowered: ProgramExpression::Index(
                                         Box::new(lowered_base),
                                         Box::new(offset),
                                     ),
@@ -14837,8 +14948,8 @@ impl Parser {
                                         } else {
                                             ContractExpression::Multiply(
                                                 Box::new(expression),
-                                                Box::new(ContractExpression::CFragment(
-                                                    CExpression::Value(int32(stride)),
+                                                Box::new(ContractExpression::ProgramExpression(
+                                                    ProgramExpression::Value(int32(stride)),
                                                 )),
                                             )
                                         }
@@ -14854,7 +14965,7 @@ impl Parser {
                         union_name = None;
                         struct_array_element_width = None;
                     } else if let Some(shape) = scalar_array_shape.take() {
-                        contract_expression_as_c_fragment(&index).ok_or_else(|| {
+                        contract_expression_as_program_expression(&index).ok_or_else(|| {
                             self.error("global array indices must be current C expressions")
                         })?;
                         let mut indexes = vec![index.clone()];
@@ -14864,9 +14975,9 @@ impl Parser {
                             self.position += 1;
                             let next_index = self.parse_contract_expression()?;
                             self.expect(Token::RBracket)?;
-                            contract_expression_as_c_fragment(&next_index).ok_or_else(|| {
-                                self.error("global array indices must be current C expressions")
-                            })?;
+                            contract_expression_as_program_expression(&next_index).ok_or_else(
+                                || self.error("global array indices must be current C expressions"),
+                            )?;
                             indexes.push(next_index);
                         }
                         if indexes.len() != shape.len() {
@@ -14876,15 +14987,15 @@ impl Parser {
                                 indexes.len()
                             )));
                         }
-                        let lowered_base = contract_expression_as_c_fragment(&expression)
+                        let lowered_base = contract_expression_as_program_expression(&expression)
                             .ok_or_else(|| {
-                                self.error("global array base must be a current C expression")
-                            })?;
+                            self.error("global array base must be a current C expression")
+                        })?;
                         let offset = flatten_array_indices(
                             indexes
                                 .iter()
                                 .map(|index| {
-                                    contract_expression_as_c_fragment(index)
+                                    contract_expression_as_program_expression(index)
                                         .expect("validated C index")
                                 })
                                 .collect(),
@@ -14894,7 +15005,10 @@ impl Parser {
                             base: Box::new(expression),
                             indexes,
                             dimensions: shape.clone(),
-                            lowered: CExpression::Index(Box::new(lowered_base), Box::new(offset)),
+                            lowered: ProgramExpression::Index(
+                                Box::new(lowered_base),
+                                Box::new(offset),
+                            ),
                         };
                         struct_name = None;
                         union_name = None;
@@ -14922,14 +15036,16 @@ impl Parser {
                         access.click_type = None;
                         continue;
                     }
-                    if let ContractExpression::CFragment(CExpression::Variable(owner)) = &expression
+                    if let ContractExpression::ProgramExpression(ProgramExpression::Variable(owner)) =
+                        &expression
                         && self.peek() == Some(&Token::Dot)
                         && self.names.ended_instance_names.contains(owner)
                         && !self.names.is_bound(owner)
                     {
                         return Err(self.unknown_instance(owner, "resource instance"));
                     }
-                    if let ContractExpression::CFragment(CExpression::Variable(owner)) = &expression
+                    if let ContractExpression::ProgramExpression(ProgramExpression::Variable(owner)) =
+                        &expression
                         && let Some((identity, resource_name)) =
                             self.names.resource_bindings.get(owner).cloned()
                     {
@@ -14983,8 +15099,8 @@ impl Parser {
                         ContractExpression::Old(inner)
                         | ContractExpression::At {
                             expression: inner, ..
-                        } => contract_expression_as_c_fragment(inner),
-                        _ => contract_expression_as_c_fragment(&expression),
+                        } => contract_expression_as_program_expression(inner),
+                        _ => contract_expression_as_program_expression(&expression),
                     }
                     .ok_or_else(|| self.error("field access requires a C pointer expression"))?;
                     if let Some(base_union_name) = &union_name
@@ -15001,7 +15117,7 @@ impl Parser {
                             pointee_struct: field
                                 .struct_name
                                 .clone()
-                                .filter(|_| field.c_type.is_pointer()),
+                                .filter(|_| field.interface_type.is_pointer()),
                             base: Box::new(surface_base),
                             field: field_name,
                             lowered: lowered_field_expression(pointer, &field),
@@ -15022,7 +15138,7 @@ impl Parser {
                             pointee_struct: field
                                 .struct_name
                                 .clone()
-                                .filter(|_| field.c_type.is_pointer()),
+                                .filter(|_| field.interface_type.is_pointer()),
                             base: Box::new(surface_base),
                             field: field_name,
                             lowered: lowered_field_expression(pointer, &field),
@@ -15056,7 +15172,7 @@ impl Parser {
         mut expression: ContractExpression,
     ) -> Result<ContractExpression, ClickError> {
         let unresolved = |expression: &ContractExpression| {
-            CExpression::Variable(format!(
+            ProgramExpression::Variable(format!(
                 "<{} read at its call>",
                 crate::surface::diagnostics::describe_contract_expression(expression)
             ))
@@ -15244,14 +15360,14 @@ impl Parser {
             }
             if let Some(name) = self.peek_ident().map(str::to_string) {
                 self.position += 1;
-                return Ok(ContractExpression::CFragment(CExpression::Variable(
-                    format!("{}{}", "outer.".repeat(depth), name),
-                )));
+                return Ok(ContractExpression::ProgramExpression(
+                    ProgramExpression::Variable(format!("{}{}", "outer.".repeat(depth), name)),
+                ));
             }
             self.position = start;
         }
-        if self.is_qualified_c_name() {
-            let (name, lowered) = self.parse_qualified_c_name()?;
+        if self.is_qualified_program_name() {
+            let (name, lowered) = self.parse_qualified_program_name()?;
             return Ok(ContractExpression::QualifiedC { name, lowered });
         }
         // Region values sit beside their `entry` and `exit` points: `.result`
@@ -15350,10 +15466,10 @@ impl Parser {
                     self.parse_type()?
                 };
                 self.expect(Token::RParen)?;
-                if parsed_type.c_type == C0Type::Void {
+                if parsed_type.interface_type == InterfaceType::Void {
                     return Err(self.error("`sizeof(void)` is not supported"));
                 }
-                if let C0Type::Parameter(_) = parsed_type.c_type {
+                if let InterfaceType::Parameter(_) = parsed_type.interface_type {
                     return Err(self.error(
                         "the size of an abstract type is not the same at every type argument",
                     ));
@@ -15377,12 +15493,12 @@ impl Parser {
                             })?
                             .size_bytes()
                     }
-                    _ => parsed_type.c_type.abi_size_bytes(),
+                    _ => parsed_type.interface_type.abi_size_bytes(),
                 }
             };
-            return Ok(ContractExpression::CFragment(CExpression::Value(int32(
-                bytes,
-            ))));
+            return Ok(ContractExpression::ProgramExpression(
+                ProgramExpression::Value(int32(bytes)),
+            ));
         }
         if self.peek_ident() == Some("let") {
             if self.contract_expression_nesting >= CONTRACT_LET_RECURSION_LIMIT {
@@ -15451,14 +15567,14 @@ impl Parser {
             self.position += 2;
             let pointer = self.parse_contract_expression()?;
             let source_pointer = pointer;
-            let Some(pointer) = contract_expression_as_c_fragment(&source_pointer) else {
+            let Some(pointer) = contract_expression_as_program_expression(&source_pointer) else {
                 return Err(self.error("address expects a current C pointer expression"));
             };
             self.expect(Token::RParen)?;
-            let cast = CExpression::Cast {
+            let cast = ProgramExpression::Cast {
                 expression: Box::new(pointer),
-                target_type: CType::UInt64,
-                integer_mode: crate::kernel::CIntegerCastMode::Standard,
+                target_type: ProgramType::UInt64,
+                integer_mode: crate::kernel::IntegerCastMode::Standard,
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
@@ -15475,7 +15591,7 @@ impl Parser {
             self.position += 2;
             let pointer = self.parse_contract_expression()?;
             let source_pointer = pointer;
-            let Some(pointer) = contract_expression_as_c_fragment(&source_pointer) else {
+            let Some(pointer) = contract_expression_as_program_expression(&source_pointer) else {
                 return Err(self.error("byte offset expects a current C pointer expression"));
             };
             self.expect(Token::Comma)?;
@@ -15494,7 +15610,7 @@ impl Parser {
             self.expect(Token::RParen)?;
             return Ok(crate::surface::lowering::contract_c_unary(
                 source_pointer,
-                CExpression::PointerOffsetBytes {
+                ProgramExpression::PointerOffsetBytes {
                     pointer: Box::new(pointer),
                     bytes,
                 },
@@ -15509,10 +15625,10 @@ impl Parser {
             let pointer = self.parse_contract_expression()?;
             self.expect(Token::RParen)?;
             let source_pointer = pointer.clone();
-            if let Some(pointer) = contract_expression_as_c_fragment(&pointer) {
+            if let Some(pointer) = contract_expression_as_program_expression(&pointer) {
                 return Ok(crate::surface::lowering::contract_c_unary(
                     source_pointer,
-                    CExpression::TypedLoad {
+                    ProgramExpression::TypedLoad {
                         pointer: Box::new(pointer),
                         value_type,
                         volatile: false,
@@ -15525,10 +15641,10 @@ impl Parser {
             // The operand remains authoritative during spec lowering. A
             // historical pointer selects an address, while this load uses
             // the surrounding clause's memory snapshot.
-            let pointer = CExpression::Value(int32(0));
+            let pointer = ProgramExpression::Value(int32(0));
             return Ok(ContractExpression::CUnary {
                 operand: Box::new(source_pointer),
-                lowered: CExpression::TypedLoad {
+                lowered: ProgramExpression::TypedLoad {
                     pointer: Box::new(pointer),
                     value_type,
                     volatile: false,
@@ -15641,23 +15757,23 @@ impl Parser {
             Some(Token::UnsuffixedUInt64(value)) => {
                 Ok(ContractExpression::IntegerLiteral(value.to_string()))
             }
-            Some(Token::UInt8Number(value)) => Ok(ContractExpression::CFragment(
-                CExpression::Value(crate::kernel::uint8(u32::from(value))),
+            Some(Token::UInt8Number(value)) => Ok(ContractExpression::ProgramExpression(
+                ProgramExpression::Value(crate::kernel::uint8(u32::from(value))),
             )),
-            Some(Token::UInt32Number(value)) => Ok(ContractExpression::CFragment(
-                CExpression::Value(CValue::UInt32(MachineTerm::uint32_constant(value))),
+            Some(Token::UInt32Number(value)) => Ok(ContractExpression::ProgramExpression(
+                ProgramExpression::Value(ProgramValue::UInt32(MachineTerm::uint32_constant(value))),
             )),
             Some(Token::Int64MinimumMagnitude) => Err(self.error(
                 "positive int64 literal `9223372036854775808i64` is outside 0..9223372036854775807; this magnitude is allowed only after unary minus",
             )),
-            Some(Token::Int64Number(value)) => Ok(ContractExpression::CFragment(
-                CExpression::Value(CValue::Int64(MachineTerm::int64_constant(value))),
+            Some(Token::Int64Number(value)) => Ok(ContractExpression::ProgramExpression(
+                ProgramExpression::Value(ProgramValue::Int64(MachineTerm::int64_constant(value))),
             )),
-            Some(Token::UInt64Number(value)) => Ok(ContractExpression::CFragment(
-                CExpression::Value(CValue::UInt64(MachineTerm::uint64_constant(value))),
+            Some(Token::UInt64Number(value)) => Ok(ContractExpression::ProgramExpression(
+                ProgramExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(value))),
             )),
-            Some(Token::CharLiteral(value)) => Ok(ContractExpression::CFragment(
-                CExpression::Value(self.character_constant_value(value)?),
+            Some(Token::CharLiteral(value)) => Ok(ContractExpression::ProgramExpression(
+                ProgramExpression::Value(self.character_constant_value(value)?),
             )),
             Some(Token::LParen) => {
                 let start = self.position;
@@ -15984,23 +16100,23 @@ impl Parser {
             return Some(ClickType::Algebraic(AlgebraicTypeApplication {
                 rigid: false,
                 name: "Slice".into(),
-                arguments: vec![ClickType::C(element)],
+                arguments: vec![ClickType::Program(element)],
             }));
         }
         let Some(Token::Ident(pointee)) = self.peek_next() else {
             return None;
         };
         let pointer = match rust_syntax::rust_scalar_type(pointee)? {
-            C0Type::Int8 => C0Type::Int8Pointer,
-            C0Type::UInt8 => C0Type::UInt8Pointer,
-            C0Type::Int16 => C0Type::Int16Pointer,
-            C0Type::UInt16 => C0Type::UInt16Pointer,
-            C0Type::Int32 => C0Type::Int32Pointer,
-            C0Type::UInt32 => C0Type::UInt32Pointer,
+            InterfaceType::Int8 => InterfaceType::Int8Pointer,
+            InterfaceType::UInt8 => InterfaceType::UInt8Pointer,
+            InterfaceType::Int16 => InterfaceType::Int16Pointer,
+            InterfaceType::UInt16 => InterfaceType::UInt16Pointer,
+            InterfaceType::Int32 => InterfaceType::Int32Pointer,
+            InterfaceType::UInt32 => InterfaceType::UInt32Pointer,
             _ => return None,
         };
         self.position += 2;
-        Some(ClickType::C(pointer))
+        Some(ClickType::Program(pointer))
     }
 
     fn parse_algebraic_type_application_arguments(
@@ -16033,14 +16149,14 @@ impl Parser {
             }
             let (mut argument, parsed_c_type) = self.parse_click_type()?;
             if let Some(parsed) = parsed_c_type {
-                if !algebraic_field_c_type_supported(parsed.c_type) {
+                if !algebraic_field_c_type_supported(parsed.interface_type) {
                     return Err(self.error("algebraic datatype arguments must be value types"));
                 }
-                if parsed.c_type.is_pointer()
+                if parsed.interface_type.is_pointer()
                     && let Some(struct_name) = parsed.struct_name
                 {
                     argument = ClickType::CObjectPointer {
-                        c_type: parsed.c_type,
+                        interface_type: parsed.interface_type,
                         struct_name,
                     };
                 }
@@ -16304,7 +16420,7 @@ impl Parser {
             if let Some((literal, end)) = self.negated_rust_literal() {
                 self.position = end;
                 return literal
-                    .c_expression(true)
+                    .program_expression(true)
                     .map_err(|message| self.error(message));
             }
             if self.peek_next() == Some(&Token::Int64MinimumMagnitude) {
@@ -16403,7 +16519,7 @@ impl Parser {
                 let name = self.take_rust_slice_len(&name).unwrap_or(name);
                 Ok(C0Expression::Variable(name))
             }
-            Some(Token::RustInteger(literal)) => literal.c_expression(false).map_err(|message| self.error(message)),
+            Some(Token::RustInteger(literal)) => literal.program_expression(false).map_err(|message| self.error(message)),
             Some(Token::Number(value)) => Ok(C0Expression::Int32Literal(value)),
             Some(Token::UInt8Number(value)) => Ok(C0Expression::UInt8Literal(value)),
             Some(Token::UInt32Number(value)) => Ok(C0Expression::UInt32Literal(value)),
@@ -16414,7 +16530,7 @@ impl Parser {
             Some(Token::UInt64Number(value)) => Ok(C0Expression::UInt64Literal(value)),
             Some(Token::CharLiteral(value)) => Ok(
                 match self.character_constant_value(value)? {
-                    CValue::Int32(bits32_constant!(bits)) => C0Expression::Int32Literal(constant_u32(bits)),
+                    ProgramValue::Int32(bits32_constant!(bits)) => C0Expression::Int32Literal(constant_u32(bits)),
                     _ => C0Expression::UInt8Literal(value),
                 },
             ),
@@ -16427,11 +16543,11 @@ impl Parser {
                     self.position += 4;
                     let operand = self.parse_ensure_unary()?;
                     crate::surface::validation::validate_void_pointer_cast_source(
-                        &operand.to_kernel_expression(), &self.names.c_parameter_types, "contract expression"
+                        &operand.to_kernel_expression(), &self.names.program_parameter_types, "contract expression"
                     )?;
                     return Ok(C0Expression::Cast {
                         expression: Box::new(operand),
-                        c_type: C0Type::VoidPointer,
+                        interface_type: InterfaceType::VoidPointer,
                         struct_name: None,
                         pointee_volatile: false,
                         pointee_constant: false,
@@ -16446,7 +16562,7 @@ impl Parser {
                     )?;
                     return Ok(C0Expression::Cast {
                         expression: Box::new(operand),
-                        c_type: C0Type::Int32Pointer,
+                        interface_type: InterfaceType::Int32Pointer,
                         struct_name: Some(cast.struct_name),
                         pointee_volatile: false,
                         pointee_constant: cast.pointee_constant,
@@ -16538,7 +16654,7 @@ impl Parser {
         match self.next() {
             Some(Token::RustInteger(literal)) => {
                 literal
-                    .c_expression(false)
+                    .program_expression(false)
                     .map_err(|message| self.error_at(at.clone(), message))?;
                 literal
                     .digits
@@ -16806,7 +16922,7 @@ impl Parser {
     /// 6.4.4.4p10): the `int` value of a plain `char` holding the byte. A
     /// byte below 0x80 means the same under every target and stays an
     /// unsigned byte; a higher byte needs the target's plain `char`.
-    fn character_constant_value(&self, byte: u8) -> Result<CValue, ClickError> {
+    fn character_constant_value(&self, byte: u8) -> Result<ProgramValue, ClickError> {
         if byte < 0x80 {
             return Ok(crate::kernel::uint8(u32::from(byte)));
         }
@@ -16814,7 +16930,7 @@ impl Parser {
             Some(syntax::PlainChar::Unsigned) => {
                 Ok(crate::kernel::uint8(u32::from(byte)))
             }
-            Some(plain @ syntax::PlainChar::Signed) => Ok(CValue::Int32(MachineTerm::constant(
+            Some(plain @ syntax::PlainChar::Signed) => Ok(ProgramValue::Int32(MachineTerm::constant(
                 plain.character_value(byte) as i32 as u32,
             ))),
             None => Err(self.error(format!(
@@ -16838,20 +16954,20 @@ fn loop_clause_description(label: Option<&str>) -> String {
     }
 }
 
-fn typed_load_type_from_name(name: Option<&str>) -> Option<CType> {
+fn typed_load_type_from_name(name: Option<&str>) -> Option<ProgramType> {
     match name {
-        Some("load_int32") => Some(CType::Int32),
-        Some("load_uint8") => Some(CType::UInt8),
-        Some("load_uint16") => Some(CType::UInt16),
-        Some("load_uint32") => Some(CType::UInt32),
-        Some("load_int64") => Some(CType::Int64),
-        Some("load_uint64") => Some(CType::UInt64),
-        Some("load_int32_pointer") => Some(CType::Int32Pointer),
-        Some("load_uint8_pointer") => Some(CType::UInt8Pointer),
-        Some("load_uint16_pointer") => Some(CType::UInt16Pointer),
-        Some("load_int32_pointer_pointer") => Some(CType::Int32PointerPointer),
-        Some("load_uint8_pointer_pointer") => Some(CType::UInt8PointerPointer),
-        Some("load_uint16_pointer_pointer") => Some(CType::UInt16PointerPointer),
+        Some("load_int32") => Some(ProgramType::Int32),
+        Some("load_uint8") => Some(ProgramType::UInt8),
+        Some("load_uint16") => Some(ProgramType::UInt16),
+        Some("load_uint32") => Some(ProgramType::UInt32),
+        Some("load_int64") => Some(ProgramType::Int64),
+        Some("load_uint64") => Some(ProgramType::UInt64),
+        Some("load_int32_pointer") => Some(ProgramType::Int32Pointer),
+        Some("load_uint8_pointer") => Some(ProgramType::UInt8Pointer),
+        Some("load_uint16_pointer") => Some(ProgramType::UInt16Pointer),
+        Some("load_int32_pointer_pointer") => Some(ProgramType::Int32PointerPointer),
+        Some("load_uint8_pointer_pointer") => Some(ProgramType::UInt8PointerPointer),
+        Some("load_uint16_pointer_pointer") => Some(ProgramType::UInt16PointerPointer),
         _ => None,
     }
 }
@@ -16954,11 +17070,11 @@ fn negatable_int32_magnitude(token: &Token) -> Option<u32> {
     }
 }
 
-fn named_place_base(expression: &CExpression) -> Option<&String> {
+fn named_place_base(expression: &ProgramExpression) -> Option<&String> {
     match expression {
-        CExpression::Variable(name) => Some(name),
-        CExpression::AddressOf(inner) => match inner.as_ref() {
-            CExpression::Variable(name) => Some(name),
+        ProgramExpression::Variable(name) => Some(name),
+        ProgramExpression::AddressOf(inner) => match inner.as_ref() {
+            ProgramExpression::Variable(name) => Some(name),
             _ => None,
         },
         _ => None,
@@ -16966,9 +17082,9 @@ fn named_place_base(expression: &CExpression) -> Option<&String> {
 }
 
 pub(in crate::surface) fn flatten_array_indices(
-    indexes: Vec<CExpression>,
+    indexes: Vec<ProgramExpression>,
     dimensions: &[u32],
-) -> CExpression {
+) -> ProgramExpression {
     let mut terms = Vec::with_capacity(indexes.len());
     for (index, expression) in indexes.into_iter().enumerate() {
         let stride = dimensions[index + 1..]
@@ -16982,9 +17098,9 @@ pub(in crate::surface) fn flatten_array_indices(
         terms.push(if stride == 1 {
             expression
         } else {
-            CExpression::Multiply(
+            ProgramExpression::Multiply(
                 Box::new(expression),
-                Box::new(CExpression::Value(int32(stride))),
+                Box::new(ProgramExpression::Value(int32(stride))),
             )
         });
     }
@@ -16993,7 +17109,7 @@ pub(in crate::surface) fn flatten_array_indices(
         .next()
         .expect("a multidimensional access has at least one index");
     for term in terms {
-        offset = CExpression::Add(Box::new(offset), Box::new(term));
+        offset = ProgramExpression::Add(Box::new(offset), Box::new(term));
     }
     offset
 }
@@ -17015,9 +17131,9 @@ fn row_major_index_path(flat_index: u32, shape: &[u32]) -> String {
 /// contract's `&p->f`: the address keeps the member's extent as the C
 /// frontend's member address does. The specification lowers the address as
 /// one C fragment, so the kernel evaluates the narrowing.
-fn contract_member_lvalue(load: &CExpression) -> CExpression {
+fn contract_member_lvalue(load: &ProgramExpression) -> ProgramExpression {
     let mut load = load.clone();
-    if let CExpression::TypedLoad {
+    if let ProgramExpression::TypedLoad {
         pointer,
         value_type,
         ..
@@ -17025,8 +17141,9 @@ fn contract_member_lvalue(load: &CExpression) -> CExpression {
     {
         let width = value_type.byte_width();
         if width != 0 {
-            let member = std::mem::replace(pointer.as_mut(), CExpression::Variable(String::new()));
-            **pointer = CExpression::Subobject {
+            let member =
+                std::mem::replace(pointer.as_mut(), ProgramExpression::Variable(String::new()));
+            **pointer = ProgramExpression::Subobject {
                 pointer: Box::new(member),
                 width,
             };
@@ -17035,14 +17152,18 @@ fn contract_member_lvalue(load: &CExpression) -> CExpression {
     load
 }
 
-fn lowered_field_expression(pointer: CExpression, field: &ResolvedField) -> CExpression {
-    if field.c_type == C0Type::Int32 && (field.struct_name.is_some() || field.union_name.is_some())
+fn lowered_field_expression(
+    pointer: ProgramExpression,
+    field: &ResolvedField,
+) -> ProgramExpression {
+    if field.interface_type == InterfaceType::Int32
+        && (field.struct_name.is_some() || field.union_name.is_some())
     {
         pointer
     } else {
-        CExpression::TypedLoad {
+        ProgramExpression::TypedLoad {
             pointer: Box::new(pointer),
-            value_type: field.c_type.to_kernel_type(),
+            value_type: field.interface_type.to_kernel_type(),
             volatile: false,
             pointee_constant: field.pointee_constant,
             access_class: None,
@@ -17062,38 +17183,38 @@ fn field_has_direct_memory_place(field: &ResolvedField) -> bool {
         return false;
     }
     matches!(
-        field.c_type,
-        C0Type::Int8
-            | C0Type::Int16
-            | C0Type::Int32
-            | C0Type::Char(_)
-            | C0Type::UInt8
-            | C0Type::UInt16
-            | C0Type::UInt32
-            | C0Type::Int64(_)
-            | C0Type::UInt64(_)
-            | C0Type::Int32Array(_)
-            | C0Type::Int128Array(_)
-            | C0Type::Int64Array(_, _)
-            | C0Type::UInt128Array(_)
-            | C0Type::UInt64Array(_, _)
-            | C0Type::CharArray(_, _)
-            | C0Type::UInt8Array(_)
+        field.interface_type,
+        InterfaceType::Int8
+            | InterfaceType::Int16
+            | InterfaceType::Int32
+            | InterfaceType::Char(_)
+            | InterfaceType::UInt8
+            | InterfaceType::UInt16
+            | InterfaceType::UInt32
+            | InterfaceType::Int64(_)
+            | InterfaceType::UInt64(_)
+            | InterfaceType::Int32Array(_)
+            | InterfaceType::Int128Array(_)
+            | InterfaceType::Int64Array(_, _)
+            | InterfaceType::UInt128Array(_)
+            | InterfaceType::UInt64Array(_, _)
+            | InterfaceType::CharArray(_, _)
+            | InterfaceType::UInt8Array(_)
     )
 }
 
-fn scalar_array_field_element(field: &ResolvedField) -> Option<(u32, CType)> {
+fn scalar_array_field_element(field: &ResolvedField) -> Option<(u32, ProgramType)> {
     if field.struct_name.is_some() || field.union_name.is_some() || field.array_shape.is_none() {
         return None;
     }
-    match field.c_type {
-        C0Type::Int32Array(_) => Some((4, CType::Int32)),
-        C0Type::Int64Array(_, _) => Some((8, CType::Int64)),
-        C0Type::Int128Array(_) => Some((16, CType::Int128)),
-        C0Type::UInt64Array(_, _) => Some((8, CType::UInt64)),
-        C0Type::UInt128Array(_) => Some((16, CType::UInt128)),
-        C0Type::CharArray(plain, _) => Some((1, plain.byte_type().to_kernel_type())),
-        C0Type::UInt8Array(_) => Some((1, CType::UInt8)),
+    match field.interface_type {
+        InterfaceType::Int32Array(_) => Some((4, ProgramType::Int32)),
+        InterfaceType::Int64Array(_, _) => Some((8, ProgramType::Int64)),
+        InterfaceType::Int128Array(_) => Some((16, ProgramType::Int128)),
+        InterfaceType::UInt64Array(_, _) => Some((8, ProgramType::UInt64)),
+        InterfaceType::UInt128Array(_) => Some((16, ProgramType::UInt128)),
+        InterfaceType::CharArray(plain, _) => Some((1, plain.byte_type().to_kernel_type())),
+        InterfaceType::UInt8Array(_) => Some((1, ProgramType::UInt8)),
         _ => None,
     }
 }
@@ -17252,23 +17373,25 @@ fn source_nesting_error_message(
 
 /// `aligned(p, n)` is sugar for `address(p) & (n - 1) == 0`; the kernel
 /// decides that shape from the pointer's formation.
-fn aligned_proposition(pointer: CExpression, alignment: u64) -> ClickProposition {
+fn aligned_proposition(pointer: ProgramExpression, alignment: u64) -> ClickProposition {
     let uint64 = |value: u64| {
-        ContractExpression::CFragment(CExpression::Value(CValue::UInt64(
+        ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt64(
             MachineTerm::uint64_constant(value),
         )))
     };
     ClickProposition::Comparison {
         left: ContractExpression::BitwiseAnd(
-            Box::new(ContractExpression::CFragment(CExpression::Cast {
-                expression: Box::new(pointer),
-                target_type: CType::UInt64,
-                integer_mode: crate::kernel::CIntegerCastMode::Standard,
-                pointee_struct: None,
-                pointee_volatile: false,
-                pointee_constant: false,
-                explicit_qualification: false,
-            })),
+            Box::new(ContractExpression::ProgramExpression(
+                ProgramExpression::Cast {
+                    expression: Box::new(pointer),
+                    target_type: ProgramType::UInt64,
+                    integer_mode: crate::kernel::IntegerCastMode::Standard,
+                    pointee_struct: None,
+                    pointee_volatile: false,
+                    pointee_constant: false,
+                    explicit_qualification: false,
+                },
+            )),
             Box::new(uint64(alignment - 1)),
         ),
         operator: ComparisonOperator::Equal,
@@ -17286,7 +17409,7 @@ fn aligned_proposition(pointer: CExpression, alignment: u64) -> ClickProposition
 /// fact would make a counted population require a positive witness.
 fn object_alignment_fact(
     clause: &ResourceClause,
-    struct_layouts: &BTreeMap<String, syntax::C0StructLayout>,
+    struct_layouts: &BTreeMap<String, crate::languages::interface::RecordLayout>,
 ) -> Option<ClickProposition> {
     let (ResourceClause::OwnMemory(segment) | ResourceClause::ViewMemory(segment)) = clause else {
         return None;
@@ -17304,7 +17427,7 @@ fn object_alignment_fact(
 
 fn requirement_object_alignment_facts(
     requirement: &Requirement,
-    struct_layouts: &BTreeMap<String, syntax::C0StructLayout>,
+    struct_layouts: &BTreeMap<String, crate::languages::interface::RecordLayout>,
     out: &mut Vec<ClickProposition>,
 ) {
     match requirement {
@@ -17406,7 +17529,7 @@ mod integer_quantifier_parser_tests {
     }
 
     #[test]
-    fn nested_c_binder_restores_integer_shadowing() {
+    fn nested_program_binder_restores_integer_shadowing() {
         let mut parser =
             Parser::new("forall (z: Integer) { exists (z: int32) { z == 0 } }").unwrap();
         let proposition = parser.parse_proposition().unwrap();
@@ -17534,7 +17657,7 @@ mod integer_quantifier_parser_tests {
         };
         assert!(matches!(
             left,
-            ContractExpression::CFragment(CExpression::Variable(name)) if name == "saved"
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) if name == "saved"
         ));
     }
 
@@ -17557,28 +17680,28 @@ mod integer_quantifier_parser_tests {
 }
 
 /// Preserve the C parser's exact, widened struct byte stride in sidecars.
-fn struct_byte_stride(index: CExpression, width: u32) -> CExpression {
-    CExpression::Multiply(
-        Box::new(CExpression::Cast {
+fn struct_byte_stride(index: ProgramExpression, width: u32) -> ProgramExpression {
+    ProgramExpression::Multiply(
+        Box::new(ProgramExpression::Cast {
             expression: Box::new(index),
-            target_type: crate::kernel::CType::Int64,
-            integer_mode: crate::kernel::CIntegerCastMode::Standard,
+            target_type: crate::kernel::ProgramType::Int64,
+            integer_mode: crate::kernel::IntegerCastMode::Standard,
             pointee_struct: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,
         }),
-        Box::new(CExpression::Value(crate::kernel::int64(
+        Box::new(ProgramExpression::Value(crate::kernel::int64(
             crate::kernel::MachineTerm::int64_constant(i64::from(width)),
         ))),
     )
 }
 
-fn struct_byte_base(base: CExpression) -> CExpression {
-    CExpression::Cast {
+fn struct_byte_base(base: ProgramExpression) -> ProgramExpression {
+    ProgramExpression::Cast {
         expression: Box::new(base),
-        target_type: crate::kernel::CType::UInt8Pointer,
-        integer_mode: crate::kernel::CIntegerCastMode::Standard,
+        target_type: crate::kernel::ProgramType::UInt8Pointer,
+        integer_mode: crate::kernel::IntegerCastMode::Standard,
         pointee_struct: None,
         pointee_volatile: false,
         pointee_constant: false,
@@ -17800,7 +17923,7 @@ mod loop_name_tests {
             "predicate reflexive() {{ forall (introduced: int32) {{ introduced == introduced }} }} predicate alias() {{ reflexive() }} int32 lp(int32 n, int32* p) {{ ensures result == n; }} by {{ loop {{ {body} }} }}"
         );
         let mut layouts = ProgramLayouts::default();
-        layouts.c_object_names.insert(
+        layouts.program_object_names.insert(
             "lp".to_string(),
             std::sync::Arc::new(["n", "p", "i"].map(str::to_string).into()),
         );
@@ -17848,7 +17971,7 @@ mod loop_name_tests {
     }
 
     #[test]
-    fn loop_names_keep_c_locals_quantifiers_and_phase_binders() {
+    fn loop_names_keep_program_locals_quantifiers_and_phase_binders() {
         parse_loop("decreases n - i; invariant forall (k: int32) { k == k }; invariant i <= n; views p[0..n]; preserve by { have forall (saved: int32) { saved == saved } by { intro(); have saved == saved; } }").unwrap();
     }
 

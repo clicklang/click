@@ -5,7 +5,7 @@
 
 use super::*;
 use crate::kernel::primitives::ReservedLocalScalarOwner;
-use crate::kernel::{CPointerValue, CState};
+use crate::kernel::{ExecutionState, PointerValue};
 
 /// Opaque custody carried by pointer values, including local copies and casts.
 /// The current ledger retains the backing; values carry only a fresh identity.
@@ -60,7 +60,7 @@ impl LoanLedger {
     }
 }
 
-impl CState {
+impl ExecutionState {
     pub(in crate::kernel) fn has_local_reference_scope(&self) -> bool {
         self.loan_ledger()
             .is_some_and(|ledger| ledger.storage.data.local_reference_scope.is_some())
@@ -79,7 +79,7 @@ impl CState {
         &self,
         reference: &LocalScalarReference,
         pointer: &Pointer,
-        value_type: CType,
+        value_type: ProgramType,
         assumptions: &PureFactContext,
     ) -> Result<(ResourceContext, ResourceOccurrenceId), LoanRefusal> {
         let ledger = self.loan_ledger().ok_or(LoanRefusal::MissingLoanBinding)?;
@@ -110,34 +110,34 @@ impl CState {
 // Source plans and kernel tests use these private constructors. Observation
 // labels never supply custody, ownership, or a recovery right.
 #[cfg_attr(not(test), allow(dead_code))]
-impl CState {
+impl ExecutionState {
     pub(in crate::kernel) fn begin_local_scalar_reference(
         &self,
-        parent: &CPointerValue,
+        parent: &PointerValue,
         support: Option<ResourceOccurrenceId>,
-        value_type: CType,
+        value_type: ProgramType,
         assumptions: &PureFactContext,
-    ) -> Result<(Self, CPointerValue), LoanRefusal> {
+    ) -> Result<(Self, PointerValue), LoanRefusal> {
         self.begin_scalar_reference(parent, support, value_type, assumptions, None)
     }
     pub(in crate::kernel) fn begin_source_scalar_reference(
         &self,
-        parent: &CPointerValue,
+        parent: &PointerValue,
         support: Option<ResourceOccurrenceId>,
-        value_type: CType,
+        value_type: ProgramType,
         assumptions: &PureFactContext,
         key: crate::kernel::ScalarReferencePlanKey,
-    ) -> Result<(Self, CPointerValue), LoanRefusal> {
+    ) -> Result<(Self, PointerValue), LoanRefusal> {
         self.begin_scalar_reference(parent, support, value_type, assumptions, Some(key))
     }
     fn begin_scalar_reference(
         &self,
-        parent: &CPointerValue,
+        parent: &PointerValue,
         support: Option<ResourceOccurrenceId>,
-        value_type: CType,
+        value_type: ProgramType,
         assumptions: &PureFactContext,
         source_plan: Option<crate::kernel::ScalarReferencePlanKey>,
-    ) -> Result<(Self, CPointerValue), LoanRefusal> {
+    ) -> Result<(Self, PointerValue), LoanRefusal> {
         let holder = self.loan_participant().ok_or(LoanRefusal::WrongHolder)?;
         let ledger = self.loan_ledger().ok_or(LoanRefusal::MissingLoanBinding)?;
         let (ledger, resources, parent_binding) = if let Some(reference) = parent.local_reference()
@@ -164,7 +164,7 @@ impl CState {
                 .memory_own_range()
                 .ok_or(LoanRefusal::MissingBacking)?;
             if range.start_pointer() != *parent.pointer()
-                || parent.c_type().pointee_type() != Some(value_type)
+                || parent.program_type().pointee_type() != Some(value_type)
                 || (!crate::kernel::eval::is_external_memory_pointer(parent.pointer())
                     && !self
                         .memory
@@ -262,7 +262,7 @@ impl CState {
             .owned
             .memory_own_range()
             .ok_or(LoanRefusal::MissingBacking)?;
-        let pointer = CPointerValue::new(
+        let pointer = PointerValue::new(
             range.start_pointer(),
             binding
                 .backing
@@ -276,7 +276,7 @@ impl CState {
 
     pub(in crate::kernel) fn end_local_scalar_reference(
         &self,
-        pointer: &CPointerValue,
+        pointer: &PointerValue,
         assumptions: &PureFactContext,
     ) -> Result<Self, LoanRefusal> {
         let reference = pointer

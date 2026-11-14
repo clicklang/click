@@ -21,9 +21,9 @@ use super::*;
 /// fragments over the body's parameters and fields; none mentions the index.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface) struct IteratedClauseShape {
-    pub(in crate::surface) lower: CExpression,
-    pub(in crate::surface) upper: CExpression,
-    pub(in crate::surface) element_base: CExpression,
+    pub(in crate::surface) lower: ProgramExpression,
+    pub(in crate::surface) upper: ProgramExpression,
+    pub(in crate::surface) element_base: ProgramExpression,
     pub(in crate::surface) stride: u32,
     pub(in crate::surface) start_offset: i32,
     pub(in crate::surface) end_offset: i32,
@@ -32,9 +32,9 @@ pub(in crate::surface) struct IteratedClauseShape {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface) struct IteratedGuardShape {
-    pub(in crate::surface) base: CExpression,
+    pub(in crate::surface) base: ProgramExpression,
     pub(in crate::surface) holds_when_equal: bool,
-    pub(in crate::surface) value: CExpression,
+    pub(in crate::surface) value: ProgramExpression,
 }
 
 /// An affine form `coefficient * index + constant` with integer constants.
@@ -44,44 +44,46 @@ struct Affine {
     constant: i64,
 }
 
-fn c_expression_constant(expression: &CExpression) -> Option<i64> {
+fn program_expression_constant(expression: &ProgramExpression) -> Option<i64> {
     match expression {
-        CExpression::Value(CValue::Int32(term)) => term.as_const().map(|value| value as i32 as i64),
-        CExpression::Cast { expression, .. } => c_expression_constant(expression),
+        ProgramExpression::Value(ProgramValue::Int32(term)) => {
+            term.as_const().map(|value| value as i32 as i64)
+        }
+        ProgramExpression::Cast { expression, .. } => program_expression_constant(expression),
         _ => None,
     }
 }
 
 /// Reads `expression` as an affine function of `index` with constant
 /// coefficients, or `None` when it is not one.
-fn affine_in(expression: &CExpression, index: &str) -> Option<Affine> {
-    if let Some(constant) = c_expression_constant(expression) {
+fn affine_in(expression: &ProgramExpression, index: &str) -> Option<Affine> {
+    if let Some(constant) = program_expression_constant(expression) {
         return Some(Affine {
             coefficient: 0,
             constant,
         });
     }
     match expression {
-        CExpression::Variable(name) if name == index => Some(Affine {
+        ProgramExpression::Variable(name) if name == index => Some(Affine {
             coefficient: 1,
             constant: 0,
         }),
-        CExpression::Cast { expression, .. } => affine_in(expression, index),
-        CExpression::Add(left, right) => {
+        ProgramExpression::Cast { expression, .. } => affine_in(expression, index),
+        ProgramExpression::Add(left, right) => {
             let (left, right) = (affine_in(left, index)?, affine_in(right, index)?);
             Some(Affine {
                 coefficient: left.coefficient.checked_add(right.coefficient)?,
                 constant: left.constant.checked_add(right.constant)?,
             })
         }
-        CExpression::Subtract(left, right) => {
+        ProgramExpression::Subtract(left, right) => {
             let (left, right) = (affine_in(left, index)?, affine_in(right, index)?);
             Some(Affine {
                 coefficient: left.coefficient.checked_sub(right.coefficient)?,
                 constant: left.constant.checked_sub(right.constant)?,
             })
         }
-        CExpression::Multiply(left, right) => {
+        ProgramExpression::Multiply(left, right) => {
             let (left, right) = (affine_in(left, index)?, affine_in(right, index)?);
             match (left.coefficient, right.coefficient) {
                 (0, _) => Some(Affine {
@@ -101,27 +103,31 @@ fn affine_in(expression: &CExpression, index: &str) -> Option<Affine> {
 
 /// `base[index]` as the C fragment a comparison side lowers to: the base
 /// pointer expression, when the load's address is exactly `base + index`.
-fn indexed_load_base<'a>(expression: &'a CExpression, index: &str) -> Option<&'a CExpression> {
+fn indexed_load_base<'a>(
+    expression: &'a ProgramExpression,
+    index: &str,
+) -> Option<&'a ProgramExpression> {
     match expression {
-        CExpression::Index(base, offset) => {
-            matches!(offset.as_ref(), CExpression::Variable(name) if name == index).then_some(base)
+        ProgramExpression::Index(base, offset) => {
+            matches!(offset.as_ref(), ProgramExpression::Variable(name) if name == index)
+                .then_some(base)
         }
-        CExpression::TypedLoad { pointer, .. } | CExpression::Load(pointer) => {
+        ProgramExpression::TypedLoad { pointer, .. } | ProgramExpression::Load(pointer) => {
             match pointer.as_ref() {
-                CExpression::Add(base, offset) if matches!(offset.as_ref(), CExpression::Variable(name) if name == index) => {
+                ProgramExpression::Add(base, offset) if matches!(offset.as_ref(), ProgramExpression::Variable(name) if name == index) => {
                     Some(base)
                 }
-                CExpression::Index(..) => indexed_load_base(pointer, index),
+                ProgramExpression::Index(..) => indexed_load_base(pointer, index),
                 _ => None,
             }
         }
-        CExpression::Cast { expression, .. } => indexed_load_base(expression, index),
+        ProgramExpression::Cast { expression, .. } => indexed_load_base(expression, index),
         _ => None,
     }
 }
 
-fn side_as_c(expression: &ContractExpression) -> Result<CExpression, String> {
-    resource_body_c_fragment(expression).ok_or_else(|| {
+fn side_as_c(expression: &ContractExpression) -> Result<ProgramExpression, String> {
+    resource_body_program_expression(expression).ok_or_else(|| {
         format!(
             "`{}` is not a C expression",
             crate::surface::diagnostics::describe_contract_expression(expression)
@@ -129,8 +135,8 @@ fn side_as_c(expression: &ContractExpression) -> Result<CExpression, String> {
     })
 }
 
-fn is_index(expression: &CExpression, index: &str) -> bool {
-    matches!(expression, CExpression::Variable(name) if name == index)
+fn is_index(expression: &ProgramExpression, index: &str) -> bool {
+    matches!(expression, ProgramExpression::Variable(name) if name == index)
 }
 
 /// One bound of the `where` proposition: `Ok(Some((true, lo)))` for a lower
@@ -138,7 +144,7 @@ fn is_index(expression: &CExpression, index: &str) -> bool {
 fn range_bound(
     proposition: &ClickProposition,
     index: &str,
-) -> Result<Option<(bool, CExpression)>, String> {
+) -> Result<Option<(bool, ProgramExpression)>, String> {
     let ClickProposition::Comparison {
         left,
         operator,
@@ -250,18 +256,18 @@ pub(in crate::surface) fn iterated_clause_shape(
         ((true, lower), (false, upper)) | ((false, upper), (true, lower)) => (lower, upper),
         _ => return Err(bounded()),
     };
-    if crate::surface::validation::c_expression_uses_variable(&lower, index)
-        || crate::surface::validation::c_expression_uses_variable(&upper, index)
+    if crate::surface::validation::program_expression_uses_variable(&lower, index)
+        || crate::surface::validation::program_expression_uses_variable(&upper, index)
     {
         return Err(bounded());
     }
     let element = &clause.element;
-    if crate::surface::validation::c_expression_uses_variable(&element.base, index) {
+    if crate::surface::validation::program_expression_uses_variable(&element.base, index) {
         return Err(format!(
             "the element base must not depend on `{index}`; write the index in the range, `base[{index}..{index} + 1]`"
         ));
     }
-    let affine = |expression: &CExpression, which: &str| {
+    let affine = |expression: &ProgramExpression, which: &str| {
         affine_in(expression, index).ok_or_else(|| {
             format!(
                 "the element range's {which} must be `s * {index} + c` with integer constants `s` and `c`"
@@ -327,7 +333,7 @@ pub(in crate::surface) fn iterated_clause_shape(
                 (None, Some(base)) => (base.clone(), left),
                 _ => return Err(refusal()),
             };
-            if crate::surface::validation::c_expression_uses_variable(&base, index) || crate::surface::validation::c_expression_uses_variable(&value, index)
+            if crate::surface::validation::program_expression_uses_variable(&base, index) || crate::surface::validation::program_expression_uses_variable(&value, index)
             {
                 return Err(refusal());
             }
@@ -368,7 +374,7 @@ fn iterated_clause_as_proposition(clause: &IteratedResourceClause) -> ClickPropo
         None => ClickProposition::And(Box::new(clause.range.clone()), Box::new(element)),
     };
     ClickProposition::ForAll {
-        click_type: ClickType::C(C0Type::Int32),
+        click_type: ClickType::Program(InterfaceType::Int32),
         name: clause.binder.clone(),
         written_name: None,
         body: Box::new(body),
@@ -417,23 +423,23 @@ pub(in crate::surface) fn substitute_iterated_clause(
 /// The kernel specification of one iterated clause in a resource body.
 pub(in crate::surface) fn iterated_clause_to_spec(
     clause: &IteratedResourceClause,
-    parameters: &[syntax::C0Parameter],
-) -> Result<crate::kernel::CIteratedSpec, ClickError> {
+    parameters: &[crate::languages::interface::ImportedParameter],
+) -> Result<crate::kernel::IteratedSpec, ClickError> {
     let shape = iterated_clause_shape(clause).map_err(ClickError::new)?;
     let guard = shape.guard.ok_or_else(|| {
         ClickError::new("an unguarded iterated ownership clause lowers to a plain memory range")
     })?;
     let element_width =
         contract_segment_element_width_for_result_type(parameters, &clause.element, None);
-    Ok(crate::kernel::CIteratedSpec {
+    Ok(crate::kernel::IteratedSpec {
         owner: clause.owner.clone(),
-        element: CMemorySegment::new(shape.element_base, shape.lower, shape.upper)
+        element: MemorySegment::new(shape.element_base, shape.lower, shape.upper)
             .with_element_width(element_width),
         stride: shape.stride,
         start_offset: shape.start_offset,
         end_offset: shape.end_offset,
         guard_base: guard.base,
-        guard_cell_type: crate::kernel::CType::Int32,
+        guard_cell_type: crate::kernel::ProgramType::Int32,
         guard_cell_width: 4,
         holds_when_equal: guard.holds_when_equal,
         guard_value: guard.value,
@@ -444,12 +450,12 @@ pub(in crate::surface) fn iterated_clause_to_spec(
 /// read once through the kernel evaluator.
 pub(in crate::surface) fn lower_iterated_clause_with_values(
     clause: &IteratedResourceClause,
-    parameters: &[syntax::C0Parameter],
-    values: &BTreeMap<String, CValue>,
-    state: &CState,
-    result: Option<&CValue>,
+    parameters: &[crate::languages::interface::ImportedParameter],
+    values: &BTreeMap<String, ProgramValue>,
+    state: &ExecutionState,
+    result: Option<&ProgramValue>,
     assumptions: &PureFactContext,
-) -> Result<CResourceFact, ClickError> {
+) -> Result<ResourceFact, ClickError> {
     let shape = iterated_clause_shape(clause).map_err(ClickError::new)?;
     let guard = shape.guard.clone().ok_or_else(|| {
         ClickError::new("an unguarded iterated ownership clause lowers to a plain memory range")
@@ -457,7 +463,7 @@ pub(in crate::surface) fn lower_iterated_clause_with_values(
     let element_width =
         contract_segment_element_width_for_result_type(parameters, &clause.element, None);
     let array_refs = array_refs_for_parameters(parameters, values, state.memory());
-    let evaluate = |expression: &CExpression, what: &str| {
+    let evaluate = |expression: &ProgramExpression, what: &str| {
         crate::surface::proof::evaluate_resource_fragment_through_kernel(
             expression,
             assumptions,
@@ -472,23 +478,23 @@ pub(in crate::surface) fn lower_iterated_clause_with_values(
             ))
         })
     };
-    let pointer = |value: CValue, what: &str| match value {
-        CValue::Pointer(pointer) => Ok(pointer.into_pointer()),
+    let pointer = |value: ProgramValue, what: &str| match value {
+        ProgramValue::Pointer(pointer) => Ok(pointer.into_pointer()),
         other => Err(ClickError::new(format!(
             "the {what} of the iterated ownership clause of `{}` evaluated to `{}`, not a pointer",
             clause.owner,
-            crate::surface::diagnostics::describe_c_value(
+            crate::surface::diagnostics::describe_program_value(
                 &other,
                 crate::surface::ParameterBinding::default()
             )
         ))),
     };
-    let int32 = |value: CValue, what: &str| match value {
-        CValue::Int32(term) => Ok(term),
+    let int32 = |value: ProgramValue, what: &str| match value {
+        ProgramValue::Int32(term) => Ok(term),
         other => Err(ClickError::new(format!(
             "the {what} of the iterated ownership clause of `{}` evaluated to `{}`, not an `int32`",
             clause.owner,
-            crate::surface::diagnostics::describe_c_value(
+            crate::surface::diagnostics::describe_program_value(
                 &other,
                 crate::surface::ParameterBinding::default()
             )
@@ -502,7 +508,7 @@ pub(in crate::surface) fn lower_iterated_clause_with_values(
     let upper = int32(evaluate(&shape.upper, "upper bound")?, "upper bound")?;
     let guard_base = pointer(evaluate(&guard.base, "guard base")?, "guard base")?;
     let guard_value = int32(evaluate(&guard.value, "guard value")?, "guard value")?;
-    let iterated = crate::kernel::CIteratedMemory::new(
+    let iterated = crate::kernel::IteratedMemory::new(
         &clause.owner,
         element_base,
         element_width,
@@ -511,16 +517,16 @@ pub(in crate::surface) fn lower_iterated_clause_with_values(
         shape.end_offset,
         lower,
         upper,
-        crate::kernel::CIteratedGuard::new(
+        crate::kernel::IteratedGuard::new(
             guard_base,
-            crate::kernel::CType::Int32,
+            crate::kernel::ProgramType::Int32,
             4,
             guard.holds_when_equal,
             guard_value,
         ),
     )
     .ok_or_else(|| ClickError::new("iterated ownership clause has an invalid element shape"))?;
-    Ok(CResourceFact::own(CResource::iterated(iterated)))
+    Ok(ResourceFact::own(Resource::iterated(iterated)))
 }
 
 /// The clause as written, for printing and diagnostics.

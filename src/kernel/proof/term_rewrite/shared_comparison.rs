@@ -38,7 +38,7 @@ impl TermRewrite<'_> {
         let cacheable = self.conditions.is_none()
             && self.comparison_arithmetic
             && self.resolve_registered_loads
-            && self.scope.c.iter().all(|(a, b)| a == b)
+            && self.scope.program_values.iter().all(|(a, b)| a == b)
             && self.scope.integer.iter().all(|(a, b)| a == b)
             && self.scope.algebraic.iter().all(|(a, b)| a == b);
         let local = std::cell::RefCell::new(HashMap::<u64, KernelTerm>::new());
@@ -96,7 +96,7 @@ impl TermRewrite<'_> {
                 && self.integer_variables.is_none()
                 && self.typed_variables.is_none()
                 && !self.resolve_registered_loads
-                && self.scope.c.is_empty()
+                && self.scope.program_values.is_empty()
                 && self.scope.integer.is_empty()
                 && self.scope.algebraic.is_empty()
                 && !term.has_conditional_machine_rewrites()
@@ -104,10 +104,10 @@ impl TermRewrite<'_> {
                 local.borrow_mut().insert(term.id(), term.clone());
                 continue;
             }
-            let KernelType::C(ty) = term.ty() else {
+            let KernelType::Program(ty) = term.ty() else {
                 return None;
             };
-            let format = MachineIntegerType::from_c_type(*ty)?;
+            let format = MachineIntegerType::from_program_type(*ty)?;
             // Exact machine replacement precedes descent, as in `bits`.
             // Import each selected source/replacement once per interpretation,
             // rather than rebuilding it at every shared occurrence.
@@ -118,7 +118,7 @@ impl TermRewrite<'_> {
                     || matches!(to, MachineOperandView::Shared(_)))
                 && !from
                     .variable()
-                    .is_some_and(|variable| self.scope.c.contains_key(variable))
+                    .is_some_and(|variable| self.scope.program_values.contains_key(variable))
             {
                 let source = sources.entry(format).or_insert_with(|| match from {
                     MachineOperandView::Legacy(from) => {
@@ -132,6 +132,7 @@ impl TermRewrite<'_> {
                 if !matches
                     && root.has_machine_conversions()
                     && (source.is_none()
+                        || source.as_ref().is_some_and(KernelTerm::has_machine_matches)
                         || matches!(from, MachineOperandView::Shared(value) if value.has_machine_conversions()))
                 {
                     let Some(found) = opaque_sources
@@ -195,6 +196,9 @@ impl TermRewrite<'_> {
                 continue;
             }
             let value = match term.node() {
+                KernelTermNode::Match(matched) => self
+                    .rewrite_retained_match_value_in(matched)?
+                    .with_machine_observation_type(format),
                 KernelTermNode::Fold(fold) => self
                     .retained_fold_in(fold)
                     .ok()?
@@ -826,10 +830,10 @@ fn comparison_read_fixture(value: MachineTerm) -> (Variable, Variable) {
         block: PointerBlock::Concrete("opaque-comparison".into()),
         offset: PointerOffsetTerm::scaled_int32_node(value, 4),
     };
-    let memory = crate::kernel::intern_c_memory(
-        CMemory::new()
+    let memory = crate::kernel::intern_memory(
+        Memory::new()
             .with_block("opaque-comparison", 64)
-            .store(pointer(index.clone()), CValue::Int32(value)),
+            .store(pointer(index.clone()), ProgramValue::Int32(value)),
     );
     let written = MachineTerm::Binary {
         format: ty,
@@ -1225,7 +1229,10 @@ mod tests {
             assert_eq!(actual, imported(format, expected));
             assert_eq!(KernelTermExport::machine_export_count(), exports);
         }
-        let c = BTreeMap::from([(variable, TypedCReplacement::Bitvector(9u32.into()))]);
+        let c = BTreeMap::from([(
+            variable,
+            TypedProgramValueReplacement::Bitvector(9u32.into()),
+        )]);
         let integer = BTreeMap::from([(variable, replacement)]);
         let algebraic = BTreeMap::new();
         let expected = TermRewrite::for_typed_variables(&c, &integer, &algebraic).bits(&native);
@@ -1472,7 +1479,7 @@ mod tests {
         let observed = |root| SharedMachineIntegerTerm::from_shared(format, root).unwrap();
         let mut carriers = CarrierVariables::default();
         collect_machine_carriers(&observed(left.clone()), &mut carriers);
-        assert_eq!(carriers.c, BTreeSet::from([a, c]));
+        assert_eq!(carriers.program_values, BTreeSet::from([a, c]));
         assert_eq!(carriers.integer, BTreeSet::from([a]));
         assert!(carriers.algebraic.is_empty());
         let condition = ConditionTerm::integer_equal(
@@ -1632,7 +1639,8 @@ mod call_tests {
         let to = MachineTerm::Variable(Variable(995861));
         let missing = MachineTerm::Variable(Variable(995862));
         for format in crate::kernel::machine_integer::FORMATS {
-            let argument = KernelTerm::variable(KernelType::C(CType::Int32), Variable(995860));
+            let argument =
+                KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(995860));
             let root = call(format, argument);
             let native = KernelTermExport::machine(&root).unwrap();
             let expected = TermRewrite::for_bits_checked(&from, &to).bits(&native);
@@ -1678,7 +1686,7 @@ mod call_tests {
         };
         let application = SharedPureApplication::intern(
             "binder_call".into(),
-            vec![PureFunctionArgument::Value(CValue::Int32(fold))],
+            vec![PureFunctionArgument::Value(ProgramValue::Int32(fold))],
         );
         let root =
             KernelTermImport::default().machine_call(MachineIntegerType::Int32, &application);
@@ -1697,8 +1705,9 @@ mod call_tests {
         let MachineTerm::ClickFunctionApplication { arguments, .. } = actual else {
             panic!()
         };
-        let PureFunctionArgument::Value(CValue::Int32(MachineTerm::RangeFold {
-            accumulator, ..
+        let PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::RangeFold {
+            accumulator,
+            ..
         })) = &arguments[0]
         else {
             panic!()

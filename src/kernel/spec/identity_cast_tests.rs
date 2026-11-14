@@ -16,17 +16,17 @@ const FORMATS: [MachineIntegerType; 10] = [
 
 pub(super) fn cast_chain(
     root: &KernelTerm,
-    target: CType,
+    target: ProgramType,
     count: usize,
 ) -> (SpecExpressionPath, usize) {
-    let state = CState::new();
+    let state = ExecutionState::new();
     let mut values = crate::persistent::PersistentMap::default();
     values.insert("x".to_string(), root.clone());
     let scope = SpecScope {
         values: Some(&values),
         ..SpecScope::unbound(&state, None)
     };
-    let mut expression = SpecExpression::CExpression(CExpression::Variable("x".into()));
+    let mut expression = SpecExpression::ProgramExpression(ProgramExpression::Variable("x".into()));
     for _ in 0..count {
         expression = SpecExpression::Cast(Box::new(expression), target);
     }
@@ -52,7 +52,7 @@ fn identity_casts_preserve_exact_shared_roots_at_every_integer_width() {
             KernelTermImport::default().machine(format, &MachineTerm::Variable(Variable(995410)));
         for count in [1, 3] {
             let exports = KernelTermExport::machine_export_count();
-            let (path, _) = cast_chain(&root, format.c_type(), count);
+            let (path, _) = cast_chain(&root, format.program_type(), count);
             assert_eq!(path.value, SpecValue::Shared(root.clone()), "{format:?}");
             assert!(path.facts.is_empty());
             assert!(path.obligations.is_empty());
@@ -65,9 +65,9 @@ fn identity_casts_preserve_exact_shared_roots_at_every_integer_width() {
 fn identity_casts_keep_selected_read_snapshots_distinct() {
     let _session = VerificationSession::enter();
     let pointer = Pointer::symbolic(Variable(995411));
-    let before = crate::kernel::intern_c_memory(CMemory::new());
-    let after = crate::kernel::intern_c_memory(
-        CMemory::new().store(pointer.clone(), CValue::Int32(7u32.into())),
+    let before = crate::kernel::intern_memory(Memory::new());
+    let after = crate::kernel::intern_memory(
+        Memory::new().store(pointer.clone(), ProgramValue::Int32(7u32.into())),
     );
     let roots = [before, after].map(|memory| {
         let name = crate::kernel::eval::load_variable_for_exact_cell(
@@ -81,7 +81,7 @@ fn identity_casts_keep_selected_read_snapshots_distinct() {
     assert_ne!(roots[0], roots[1]);
     let exports = KernelTermExport::machine_export_count();
     for root in &roots {
-        let (path, _) = cast_chain(root, CType::Int32, 3);
+        let (path, _) = cast_chain(root, ProgramType::Int32, 3);
         assert_eq!(path.value, SpecValue::Shared(root.clone()));
     }
     assert_eq!(KernelTermExport::machine_export_count(), exports);
@@ -94,12 +94,12 @@ fn changed_type_cast_is_not_an_identity_cast() {
         MachineIntegerType::UInt64,
         &MachineTerm::uint64_constant(256),
     );
-    let (path, _) = cast_chain(&root, CType::UInt8, 1);
-    assert_eq!(path.value.c_type(), CType::UInt8);
+    let (path, _) = cast_chain(&root, ProgramType::UInt8, 1);
+    assert_eq!(path.value.program_type(), ProgramType::UInt8);
     assert_ne!(path.value, SpecValue::Shared(root));
     assert_eq!(
         path.value.into_native(),
-        CValue::UInt8(MachineTerm::narrow_constant(MachineIntegerType::UInt8, 0))
+        ProgramValue::UInt8(MachineTerm::narrow_constant(MachineIntegerType::UInt8, 0))
     );
 }
 

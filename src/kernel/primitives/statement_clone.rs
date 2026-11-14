@@ -1,8 +1,8 @@
 //! Clone statement trees without recursing through nested branch bodies.
 
-use super::{CStatement, CSwitchCase};
+use super::{ProgramStatement, SwitchCase};
 
-impl Clone for CStatement {
+impl Clone for ProgramStatement {
     fn clone(&self) -> Self {
         let mut result = Self::Skip;
         let mut pending = vec![(self, &mut result)];
@@ -54,7 +54,7 @@ impl Clone for CStatement {
     }
 }
 
-impl CStatement {
+impl ProgramStatement {
     // Sequence roots are persistent. Only the directly boxed children need
     // placeholders for the visitor; all other fields retain ordinary clone
     // semantics, including source provenance, loop contracts and call data.
@@ -76,7 +76,7 @@ impl CStatement {
             Self::Declare {
                 initializer,
                 name,
-                c_type,
+                program_type,
                 volatile,
                 pointee_volatile,
                 constant,
@@ -86,7 +86,7 @@ impl CStatement {
             } => Self::Declare {
                 initializer: initializer.clone(),
                 name: name.clone(),
-                c_type: *c_type,
+                program_type: *program_type,
                 volatile: *volatile,
                 pointee_volatile: *pointee_volatile,
                 constant: *constant,
@@ -153,6 +153,19 @@ impl CStatement {
             } => Self::Call {
                 function_name: function_name.clone(),
                 arguments: arguments.clone(),
+            },
+            Self::CallResult {
+                call,
+                function_name,
+                arguments,
+                result_type,
+                result_pointee_constant,
+            } => Self::CallResult {
+                call: *call,
+                function_name: function_name.clone(),
+                arguments: arguments.clone(),
+                result_type: *result_type,
+                result_pointee_constant: *result_pointee_constant,
             },
             Self::HeapAllocate {
                 target,
@@ -261,7 +274,7 @@ impl CStatement {
                 expression: expression.clone(),
                 cases: cases
                     .iter()
-                    .map(|case| CSwitchCase {
+                    .map(|case| SwitchCase {
                         value: case.value,
                         body: Box::new(Self::Skip),
                     })

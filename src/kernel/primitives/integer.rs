@@ -471,50 +471,50 @@ pub enum MachineIntegerType {
 }
 
 impl MachineIntegerType {
-    pub fn symbolic_value(self, variable: Variable) -> CValue {
+    pub fn symbolic_value(self, variable: Variable) -> ProgramValue {
         let term = MachineTerm::Variable(variable);
         match self {
-            Self::Int8 => CValue::Int8(term),
-            Self::Int16 => CValue::Int16(term),
-            Self::Int32 => CValue::Int32(term),
-            Self::UInt8 => CValue::UInt8(term),
-            Self::UInt16 => CValue::UInt16(term),
-            Self::UInt32 => CValue::UInt32(term),
-            Self::Int64 => CValue::Int64(term),
-            Self::UInt64 => CValue::UInt64(term),
-            Self::Int128 => CValue::Int128(term),
-            Self::UInt128 => CValue::UInt128(term),
+            Self::Int8 => ProgramValue::Int8(term),
+            Self::Int16 => ProgramValue::Int16(term),
+            Self::Int32 => ProgramValue::Int32(term),
+            Self::UInt8 => ProgramValue::UInt8(term),
+            Self::UInt16 => ProgramValue::UInt16(term),
+            Self::UInt32 => ProgramValue::UInt32(term),
+            Self::Int64 => ProgramValue::Int64(term),
+            Self::UInt64 => ProgramValue::UInt64(term),
+            Self::Int128 => ProgramValue::Int128(term),
+            Self::UInt128 => ProgramValue::UInt128(term),
         }
     }
 
-    pub fn from_c_type(c_type: CType) -> Option<Self> {
-        Some(match c_type {
-            CType::Int8 => Self::Int8,
-            CType::Int16 => Self::Int16,
-            CType::Int32 => Self::Int32,
-            CType::UInt8 => Self::UInt8,
-            CType::UInt16 => Self::UInt16,
-            CType::UInt32 => Self::UInt32,
-            CType::Int64 => Self::Int64,
-            CType::UInt64 => Self::UInt64,
-            CType::Int128 => Self::Int128,
-            CType::UInt128 => Self::UInt128,
+    pub fn from_program_type(program_type: ProgramType) -> Option<Self> {
+        Some(match program_type {
+            ProgramType::Int8 => Self::Int8,
+            ProgramType::Int16 => Self::Int16,
+            ProgramType::Int32 => Self::Int32,
+            ProgramType::UInt8 => Self::UInt8,
+            ProgramType::UInt16 => Self::UInt16,
+            ProgramType::UInt32 => Self::UInt32,
+            ProgramType::Int64 => Self::Int64,
+            ProgramType::UInt64 => Self::UInt64,
+            ProgramType::Int128 => Self::Int128,
+            ProgramType::UInt128 => Self::UInt128,
             _ => return None,
         })
     }
 
-    pub fn c_type(self) -> CType {
+    pub fn program_type(self) -> ProgramType {
         match self {
-            Self::Int8 => CType::Int8,
-            Self::Int16 => CType::Int16,
-            Self::Int32 => CType::Int32,
-            Self::UInt8 => CType::UInt8,
-            Self::UInt16 => CType::UInt16,
-            Self::UInt32 => CType::UInt32,
-            Self::Int64 => CType::Int64,
-            Self::UInt64 => CType::UInt64,
-            Self::Int128 => CType::Int128,
-            Self::UInt128 => CType::UInt128,
+            Self::Int8 => ProgramType::Int8,
+            Self::Int16 => ProgramType::Int16,
+            Self::Int32 => ProgramType::Int32,
+            Self::UInt8 => ProgramType::UInt8,
+            Self::UInt16 => ProgramType::UInt16,
+            Self::UInt32 => ProgramType::UInt32,
+            Self::Int64 => ProgramType::Int64,
+            Self::UInt64 => ProgramType::UInt64,
+            Self::Int128 => ProgramType::Int128,
+            Self::UInt128 => ProgramType::UInt128,
         }
     }
 }
@@ -810,7 +810,14 @@ impl SharedMachineIntegerTerm {
                     .map(|root| root.with_machine_observation_type(ty))
             })
             .or_else(|| KernelTermImport::default().machine_arithmetic(ty, value))?;
-        let shared = Self::from_shared(ty, root)?;
+        // Scoped machine forms can retain opaque calls in their bodies.
+        // Use the same numeric observation as `intern`, while preserving
+        // the exact imported root at its producer boundary.
+        let shared = if root.has_opaque_observation_boundary() && root.has_machine_control_terms() {
+            Self::observe_shared(ty, root)
+        } else {
+            Self::from_shared(ty, root)
+        }?;
         shared.remember_explicit_import(MachineIntegerKey::native(ty, value.clone()));
         Some(shared)
     }
@@ -833,7 +840,8 @@ impl SharedMachineIntegerTerm {
 
     /// Retain exact operand identity, including producer and read metadata.
     pub(crate) fn from_shared(ty: MachineIntegerType, term: KernelTerm) -> Option<Self> {
-        if term.ty() != &KernelType::C(ty.c_type()) || !term.is_shared_machine_operand() {
+        if term.ty() != &KernelType::Program(ty.program_type()) || !term.is_shared_machine_operand()
+        {
             return None;
         }
         crate::instrumentation::record_deterministic_work(1);
@@ -1001,13 +1009,13 @@ impl MachineIntegerKey {
     fn native(ty: MachineIntegerType, value: MachineTerm) -> Self {
         if let MachineTerm::ClickFunctionApplication { name, arguments } = value {
             return Self::Application {
-                arena: super::c_memory_arena_token(),
+                arena: super::memory_arena_token(),
                 ty,
                 application: SharedPureApplication::intern(name, arguments),
             };
         }
         Self::Legacy {
-            arena: super::c_memory_arena_token(),
+            arena: super::memory_arena_token(),
             ty,
             value,
         }
@@ -1856,6 +1864,26 @@ impl IntegerTerm {
         BigInt::from_str(value).ok().map(Self::constant)
     }
 
+    pub(crate) fn algebraic_match(
+        scrutinee: AlgebraicTerm,
+        arms: Vec<AlgebraicIntegerMatchArm>,
+    ) -> Self {
+        let native = Self::AlgebraicMatch {
+            scrutinee: Box::new(scrutinee),
+            arms,
+        };
+        let matched =
+            crate::kernel::KernelMatch::import_integer(&mut KernelTermImport::default(), &native)
+                .expect("Integer match producer");
+        // The path result still has a shallow native Integer reading. Arm
+        // bodies retain their common handles across this explicit boundary.
+        KernelTermExport::default()
+            .integer(&matched.into_term())
+            .expect("Integer match result reading")
+            .as_ref()
+            .clone()
+    }
+
     pub fn range_fold(
         index: IntegerRangeFoldIndex,
         initial: Self,
@@ -2542,12 +2570,12 @@ mod tests {
         let whole = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
             "counted".to_string(),
             vec![
-                crate::kernel::PureFunctionArgument::Value(CValue::Int32(MachineTerm::Variable(
-                    start,
-                ))),
-                crate::kernel::PureFunctionArgument::Value(CValue::Int32(MachineTerm::Variable(
-                    end,
-                ))),
+                crate::kernel::PureFunctionArgument::Value(ProgramValue::Int32(
+                    MachineTerm::Variable(start),
+                )),
+                crate::kernel::PureFunctionArgument::Value(ProgramValue::Int32(
+                    MachineTerm::Variable(end),
+                )),
             ],
         ));
 

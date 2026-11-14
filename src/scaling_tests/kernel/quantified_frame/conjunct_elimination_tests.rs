@@ -24,7 +24,7 @@ fn conjunct_elimination_is_flat_against_unrelated_history_and_facts() {
     };
     let mut costs = Vec::new();
     for size in [16u32, 64, 256] {
-        let mut before = CMemory::new()
+        let mut before = Memory::new()
             .with_block("conjunct-frame", 16)
             .with_block("conjunct-frame-unrelated", size);
         for index in 0..size {
@@ -42,10 +42,10 @@ fn conjunct_elimination_is_flat_against_unrelated_history_and_facts() {
                 true,
             ))
         });
-        let defined = |memory: &CMemory| Proposition::CMemoryReadDefined {
+        let defined = |memory: &Memory| Proposition::MemoryReadDefined {
             memory: memory.clone(),
             pointer: base.clone(),
-            value_type: CType::UInt8,
+            value_type: ProgramType::UInt8,
         };
         // Built outside the measurement: interning a snapshot is paid by
         // whoever builds it, not by the frame.
@@ -55,12 +55,12 @@ fn conjunct_elimination_is_flat_against_unrelated_history_and_facts() {
         let leaf =
             |from: &Proposition, to: &Proposition, context: &PureFactContext| match (from, to) {
                 (
-                    Proposition::CMemoryReadDefined {
+                    Proposition::MemoryReadDefined {
                         memory: before,
                         pointer,
                         value_type,
                     },
-                    Proposition::CMemoryReadDefined { memory: after, .. },
+                    Proposition::MemoryReadDefined { memory: after, .. },
                 ) => crate::kernel::memory_provenance::typed_read_has_same_memory_source(
                     before,
                     after,
@@ -106,7 +106,7 @@ fn load_equality_work(earlier: u32, between: u32, written: bool) -> usize {
         block: "load-frame-other".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let mut before = CMemory::new()
+    let mut before = Memory::new()
         .with_block("load-frame", between + 8)
         .with_block("load-frame-other", earlier);
     if written {
@@ -122,9 +122,9 @@ fn load_equality_work(earlier: u32, between: u32, written: bool) -> usize {
     for index in 0..between {
         after = after.store(base.offset_by_bytes(8 + index), crate::kernel::uint8(0u32));
     }
-    let bi = crate::kernel::intern_c_memory_ref(&before);
-    let ai = crate::kernel::intern_c_memory_ref(&after);
-    let load = |m: &SharedCMemory| {
+    let bi = crate::kernel::intern_memory_ref(&before);
+    let ai = crate::kernel::intern_memory_ref(&after);
+    let load = |m: &SharedMemory| {
         MachineTerm::MemoryLoad(m.clone(), Box::new(base.clone()), LoadKind::UInt8)
     };
     let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {

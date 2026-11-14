@@ -21,26 +21,30 @@ pub(in crate::kernel) enum SpecDivision {
 pub(in crate::kernel) fn apply_spec_machine_arithmetic(
     op: MachineBinaryOp,
     division: SpecDivision,
-    left: &CValue,
-    right: &CValue,
+    left: &ProgramValue,
+    right: &ProgramValue,
     facts: &ExecutionFacts,
     inherited: &[ProofObligation],
-) -> Option<CExpressionPath> {
-    if matches!(left, CValue::Pointer(_) | CValue::PointerInteger(_))
-        || matches!(right, CValue::Pointer(_) | CValue::PointerInteger(_))
-    {
+) -> Option<ExpressionPath> {
+    if matches!(
+        left,
+        ProgramValue::Pointer(_) | ProgramValue::PointerInteger(_)
+    ) || matches!(
+        right,
+        ProgramValue::Pointer(_) | ProgramValue::PointerInteger(_)
+    ) {
         return None;
     }
-    if matches!(left, CValue::Int128(_) | CValue::UInt128(_))
-        || matches!(right, CValue::Int128(_) | CValue::UInt128(_))
+    if matches!(left, ProgramValue::Int128(_) | ProgramValue::UInt128(_))
+        || matches!(right, ProgramValue::Int128(_) | ProgramValue::UInt128(_))
     {
         return wide::apply(op, division, left, right, facts, inherited);
     }
     if matches!(op, MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight) {
         return apply_spec_shift(op, left, right, facts, inherited);
     }
-    let (left, right) = promote_c_bool_scalar_operands(left.clone(), right.clone());
-    let (left, right, width) = apply_c_scalar_terms(left, right)?;
+    let (left, right) = promote_program_bool_scalar_operands(left.clone(), right.clone());
+    let (left, right, width) = apply_program_scalar_terms(left, right)?;
     let format = width.format();
     let mut obligations = inherited.to_vec();
     let mut domain = Vec::new();
@@ -74,12 +78,12 @@ pub(in crate::kernel) fn apply_spec_machine_arithmetic(
         );
     }
     let term = MachineTerm::logical_machine_binary(format, op, left, right);
-    Some(CExpressionPath {
-        outcome: CExpressionOutcome::Value(match width {
-            ScalarWidth::Int32 => CValue::Int32(term),
-            ScalarWidth::UInt32 => CValue::UInt32(term),
-            ScalarWidth::Int64 => CValue::Int64(term),
-            ScalarWidth::UInt64 => CValue::UInt64(term),
+    Some(ExpressionPath {
+        outcome: ExpressionOutcome::Value(match width {
+            ScalarWidth::Int32 => ProgramValue::Int32(term),
+            ScalarWidth::UInt32 => ProgramValue::UInt32(term),
+            ScalarWidth::Int64 => ProgramValue::Int64(term),
+            ScalarWidth::UInt64 => ProgramValue::UInt64(term),
         }),
         facts: facts.clone(),
         obligations,
@@ -90,11 +94,11 @@ pub(in crate::kernel) fn apply_spec_machine_arithmetic(
 /// must be checked before narrowing it to the shifted word's representation.
 fn apply_spec_shift(
     op: MachineBinaryOp,
-    left: &CValue,
-    right: &CValue,
+    left: &ProgramValue,
+    right: &ProgramValue,
     facts: &ExecutionFacts,
     inherited: &[ProofObligation],
-) -> Option<CExpressionPath> {
+) -> Option<ExpressionPath> {
     apply_spec_shift_with_count_width(op, left, right, facts, inherited, None)
 }
 
@@ -103,25 +107,25 @@ fn apply_spec_shift(
 /// signed operand for arithmetic sign extension. Only the count is partial.
 pub(in crate::kernel) fn apply_spec_rust_shift(
     op: MachineBinaryOp,
-    left: &CValue,
-    right: &CValue,
+    left: &ProgramValue,
+    right: &ProgramValue,
     facts: &ExecutionFacts,
     inherited: &[ProofObligation],
-) -> Option<CExpressionPath> {
+) -> Option<ExpressionPath> {
     use crate::kernel::machine_integer::conversion::convert_value;
-    if matches!(right.numeric_value(), CValue::Bool(_)) {
+    if matches!(right.numeric_value(), ProgramValue::Bool(_)) {
         return None;
     }
     let left = left.numeric_value();
     let (format, bits) = match left {
-        CValue::Int8(_) => (MachineIntegerType::Int8, 8),
-        CValue::UInt8(_) => (MachineIntegerType::UInt8, 8),
-        CValue::Int16(_) => (MachineIntegerType::Int16, 16),
-        CValue::UInt16(_) => (MachineIntegerType::UInt16, 16),
-        CValue::Int32(_) => (MachineIntegerType::Int32, 32),
-        CValue::UInt32(_) => (MachineIntegerType::UInt32, 32),
-        CValue::Int64(_) => (MachineIntegerType::Int64, 64),
-        CValue::UInt64(_) => (MachineIntegerType::UInt64, 64),
+        ProgramValue::Int8(_) => (MachineIntegerType::Int8, 8),
+        ProgramValue::UInt8(_) => (MachineIntegerType::UInt8, 8),
+        ProgramValue::Int16(_) => (MachineIntegerType::Int16, 16),
+        ProgramValue::UInt16(_) => (MachineIntegerType::UInt16, 16),
+        ProgramValue::Int32(_) => (MachineIntegerType::Int32, 32),
+        ProgramValue::UInt32(_) => (MachineIntegerType::UInt32, 32),
+        ProgramValue::Int64(_) => (MachineIntegerType::Int64, 64),
+        ProgramValue::UInt64(_) => (MachineIntegerType::UInt64, 64),
         _ => return None,
     };
     let operand = if op == MachineBinaryOp::ShiftLeft {
@@ -138,24 +142,24 @@ pub(in crate::kernel) fn apply_spec_rust_shift(
     };
     let mut path =
         apply_spec_shift_with_count_width(op, &operand, right, facts, inherited, Some(bits))?;
-    let CExpressionOutcome::Value(value) = path.outcome else {
+    let ExpressionOutcome::Value(value) = path.outcome else {
         return None;
     };
-    path.outcome = CExpressionOutcome::Value(convert_value(value, format)?);
+    path.outcome = ExpressionOutcome::Value(convert_value(value, format)?);
     Some(path)
 }
 
 fn apply_spec_shift_with_count_width(
     op: MachineBinaryOp,
-    left: &CValue,
-    right: &CValue,
+    left: &ProgramValue,
+    right: &ProgramValue,
     facts: &ExecutionFacts,
     inherited: &[ProofObligation],
     count_width: Option<u32>,
-) -> Option<CExpressionPath> {
+) -> Option<ExpressionPath> {
     let width = scalar_width(left, left)?;
-    let left = promote_c_path_value(left.clone(), width.format())?;
-    let (right, unsigned_count, right_is_wide) = promote_c_shift_count(right.clone())?;
+    let left = promote_program_path_value(left.clone(), width.format())?;
+    let (right, unsigned_count, right_is_wide) = promote_program_shift_count(right.clone())?;
     let wide = matches!(width, ScalarWidth::Int64 | ScalarWidth::UInt64);
     let count = if wide && !right_is_wide {
         if unsigned_count {
@@ -224,12 +228,12 @@ fn apply_spec_shift_with_count_width(
         );
     }
     let term = MachineTerm::logical_machine_binary(width.format(), op, left, count);
-    Some(CExpressionPath {
-        outcome: CExpressionOutcome::Value(match width {
-            ScalarWidth::Int32 => CValue::Int32(term),
+    Some(ExpressionPath {
+        outcome: ExpressionOutcome::Value(match width {
+            ScalarWidth::Int32 => ProgramValue::Int32(term),
             ScalarWidth::UInt32 => uint32(term),
-            ScalarWidth::Int64 => CValue::Int64(term),
-            ScalarWidth::UInt64 => CValue::UInt64(term),
+            ScalarWidth::Int64 => ProgramValue::Int64(term),
+            ScalarWidth::UInt64 => ProgramValue::UInt64(term),
         }),
         facts: facts.clone(),
         obligations,
@@ -242,7 +246,7 @@ mod tests {
 
     #[test]
     fn rust_shift_carrier_discharges_only_established_count_domains() {
-        let left = CValue::Int8(MachineTerm::Variable(Variable(991_500)));
+        let left = ProgramValue::Int8(MachineTerm::Variable(Variable(991_500)));
         let count = MachineTerm::Variable(Variable(991_501));
         let right = uint32(count.clone());
         let bound = ConditionTerm::unsigned_less_than(count, MachineTerm::uint32_constant(8));
@@ -296,14 +300,14 @@ mod tests {
             (int32(u32::MAX), int32(1), MachineBinaryOp::ShiftLeft),
             (int32(i32::MAX as u32), int32(1), MachineBinaryOp::ShiftLeft),
             (
-                CValue::UInt64(MachineTerm::uint64_constant(1)),
+                ProgramValue::UInt64(MachineTerm::uint64_constant(1)),
                 int32(64),
                 MachineBinaryOp::ShiftLeft,
             ),
             // Narrowing the count first would silently turn this into zero.
             (
                 int32(1),
-                CValue::UInt64(MachineTerm::uint64_constant(1 << 32)),
+                ProgramValue::UInt64(MachineTerm::uint64_constant(1 << 32)),
                 MachineBinaryOp::ShiftRight,
             ),
         ] {
@@ -316,7 +320,7 @@ mod tests {
                 &[],
             )
             .unwrap();
-            assert!(matches!(path.outcome, CExpressionOutcome::Value(_)));
+            assert!(matches!(path.outcome, ExpressionOutcome::Value(_)));
             assert!(path.facts.is_empty());
             assert!(
                 path.obligations.iter().any(
@@ -332,18 +336,18 @@ mod tests {
     }
 
     #[test]
-    fn logical_shift_value_agrees_with_c_for_defined_mixed_width_operands() {
+    fn logical_shift_value_agrees_with_program_for_defined_mixed_width_operands() {
         let values = [
-            CValue::Int32(MachineTerm::constant(8)),
-            CValue::UInt32(MachineTerm::uint32_constant(8)),
-            CValue::Int64(MachineTerm::int64_constant(8)),
-            CValue::UInt64(MachineTerm::uint64_constant(8)),
+            ProgramValue::Int32(MachineTerm::constant(8)),
+            ProgramValue::UInt32(MachineTerm::uint32_constant(8)),
+            ProgramValue::Int64(MachineTerm::int64_constant(8)),
+            ProgramValue::UInt64(MachineTerm::uint64_constant(8)),
         ];
         let counts = [
-            CValue::Int32(MachineTerm::constant(2)),
-            CValue::UInt32(MachineTerm::uint32_constant(2)),
-            CValue::Int64(MachineTerm::int64_constant(2)),
-            CValue::UInt64(MachineTerm::uint64_constant(2)),
+            ProgramValue::Int32(MachineTerm::constant(2)),
+            ProgramValue::UInt32(MachineTerm::uint32_constant(2)),
+            ProgramValue::Int64(MachineTerm::int64_constant(2)),
+            ProgramValue::UInt64(MachineTerm::uint64_constant(2)),
         ];
         for left in &values {
             for right in &counts {
@@ -358,9 +362,9 @@ mod tests {
                     )
                     .unwrap();
                     let apply = if op == MachineBinaryOp::ShiftLeft {
-                        apply_c_shift_left
+                        apply_program_shift_left
                     } else {
-                        apply_c_shift_right
+                        apply_program_shift_right
                     };
                     let executed = apply(
                         left.clone(),
@@ -395,10 +399,10 @@ mod tests {
                 MachineBinaryOp::ShiftRight,
             ] {
                 let wrap = |term| match format {
-                    MachineIntegerType::Int32 => CValue::Int32(term),
-                    MachineIntegerType::UInt32 => CValue::UInt32(term),
-                    MachineIntegerType::Int64 => CValue::Int64(term),
-                    MachineIntegerType::UInt64 => CValue::UInt64(term),
+                    MachineIntegerType::Int32 => ProgramValue::Int32(term),
+                    MachineIntegerType::UInt32 => ProgramValue::UInt32(term),
+                    MachineIntegerType::Int64 => ProgramValue::Int64(term),
+                    MachineIntegerType::UInt64 => ProgramValue::UInt64(term),
                     _ => unreachable!(),
                 };
                 let left = MachineTerm::Variable(Variable(991_000));
@@ -415,7 +419,7 @@ mod tests {
                     .unwrap();
                     assert_eq!(
                         path.outcome,
-                        CExpressionOutcome::Value(wrap(MachineTerm::machine_binary(
+                        ExpressionOutcome::Value(wrap(MachineTerm::machine_binary(
                             format,
                             op,
                             left.clone(),
@@ -469,15 +473,15 @@ mod tests {
             let path = apply_spec_machine_arithmetic(
                 op,
                 SpecDivision::Total,
-                &CValue::Int32(left.clone()),
-                &CValue::Int32(right.clone()),
+                &ProgramValue::Int32(left.clone()),
+                &ProgramValue::Int32(right.clone()),
                 &ExecutionFacts::default(),
                 &[],
             )
             .unwrap();
             assert_eq!(
                 path.outcome,
-                CExpressionOutcome::Value(CValue::Int32(MachineTerm::Binary {
+                ExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::Binary {
                     format: MachineIntegerType::Int32,
                     op,
                     left: Box::new(left),
@@ -505,7 +509,7 @@ mod tests {
                 &[],
             )
             .unwrap();
-            assert!(matches!(path.outcome, CExpressionOutcome::Value(_)));
+            assert!(matches!(path.outcome, ExpressionOutcome::Value(_)));
             assert!(
                 path.obligations
                     .iter()
@@ -515,7 +519,7 @@ mod tests {
     }
 
     #[test]
-    fn a_zero_divisor_is_owed_only_by_c_definedness_and_keeps_the_opaque_quotient() {
+    fn a_zero_divisor_is_owed_only_by_program_definedness_and_keeps_the_opaque_quotient() {
         for format in [
             MachineIntegerType::Int32,
             MachineIntegerType::UInt32,
@@ -526,10 +530,10 @@ mod tests {
                 crate::kernel::machine_integer::range::constant_word(format, &value.into()).unwrap()
             };
             let wrap = |term| match format {
-                MachineIntegerType::Int32 => CValue::Int32(term),
-                MachineIntegerType::UInt32 => CValue::UInt32(term),
-                MachineIntegerType::Int64 => CValue::Int64(term),
-                MachineIntegerType::UInt64 => CValue::UInt64(term),
+                MachineIntegerType::Int32 => ProgramValue::Int32(term),
+                MachineIntegerType::UInt32 => ProgramValue::UInt32(term),
+                MachineIntegerType::Int64 => ProgramValue::Int64(term),
+                MachineIntegerType::UInt64 => ProgramValue::UInt64(term),
                 _ => unreachable!(),
             };
             for op in [MachineBinaryOp::Divide, MachineBinaryOp::Remainder] {
@@ -546,7 +550,7 @@ mod tests {
                 // No value is chosen: the quotient stays an operation node.
                 assert_eq!(
                     total.outcome,
-                    CExpressionOutcome::Value(wrap(MachineTerm::Binary {
+                    ExpressionOutcome::Value(wrap(MachineTerm::Binary {
                         format,
                         op,
                         left: Box::new(left.clone()),

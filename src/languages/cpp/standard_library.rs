@@ -11,7 +11,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::languages::c::syntax::C0StructLayout;
+use crate::languages::interface::RecordLayout;
 
 /// One model accessor bound to a field path in one library's record.
 struct AccessorBinding {
@@ -65,7 +65,7 @@ const BINDINGS: &[AccessorBinding] = &[
 /// that match more than one binding of an accessor bind it to neither, so an
 /// accessor is never misbound.
 pub(crate) fn model_accessors(
-    layouts: &BTreeMap<String, C0StructLayout>,
+    layouts: &BTreeMap<String, RecordLayout>,
 ) -> BTreeMap<&'static str, &'static [&'static str]> {
     let mut accessors = BTreeMap::new();
     let mut ambiguous = Vec::new();
@@ -84,8 +84,8 @@ pub(crate) fn model_accessors(
 }
 
 fn has_path(
-    layouts: &BTreeMap<String, C0StructLayout>,
-    layout: &C0StructLayout,
+    layouts: &BTreeMap<String, RecordLayout>,
+    layout: &RecordLayout,
     path: &[&str],
 ) -> bool {
     let Some((first, rest)) = path.split_first() else {
@@ -369,10 +369,11 @@ pub(super) fn contracts(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::languages::c::syntax::{C0Type, LongRank};
+    use crate::languages::c::syntax::LongRank;
+    use crate::languages::interface::InterfaceType;
 
-    fn record(fields: &[(&str, C0Type, Option<&str>, u32, u32)]) -> C0StructLayout {
-        C0StructLayout::from_explicit_fields_with_structs(
+    fn record(fields: &[(&str, InterfaceType, Option<&str>, u32, u32)]) -> RecordLayout {
+        RecordLayout::from_explicit_fields_with_structs(
             fields
                 .iter()
                 .map(|(name, kind, nested, offset, width)| {
@@ -389,10 +390,10 @@ mod tests {
             8,
             &BTreeMap::from([(
                 "__extent_storage".to_string(),
-                C0StructLayout::from_explicit_fields(
+                RecordLayout::from_explicit_fields(
                     vec![(
                         "_M_extent_value".to_string(),
-                        C0Type::UInt64(LongRank::Long),
+                        InterfaceType::UInt64(LongRank::Long),
                         0,
                         8,
                     )],
@@ -405,14 +406,14 @@ mod tests {
         .unwrap()
     }
 
-    fn accessors(span: C0StructLayout) -> BTreeMap<&'static str, &'static [&'static str]> {
+    fn accessors(span: RecordLayout) -> BTreeMap<&'static str, &'static [&'static str]> {
         let mut layouts = BTreeMap::from([("span__unsigned_char".to_string(), span)]);
         layouts.insert(
             "__extent_storage".to_string(),
-            C0StructLayout::from_explicit_fields(
+            RecordLayout::from_explicit_fields(
                 vec![(
                     "_M_extent_value".to_string(),
-                    C0Type::UInt64(LongRank::Long),
+                    InterfaceType::UInt64(LongRank::Long),
                     0,
                     8,
                 )],
@@ -427,8 +428,14 @@ mod tests {
     #[test]
     fn libstdcxx_and_libcxx_span_layouts_bind_the_same_accessors() {
         let libstdcxx = accessors(record(&[
-            ("_M_ptr", C0Type::UInt8Pointer, None, 0, 8),
-            ("_M_extent", C0Type::Int32, Some("__extent_storage"), 8, 8),
+            ("_M_ptr", InterfaceType::UInt8Pointer, None, 0, 8),
+            (
+                "_M_extent",
+                InterfaceType::Int32,
+                Some("__extent_storage"),
+                8,
+                8,
+            ),
         ]));
         assert_eq!(libstdcxx["std_span_data"], &["_M_ptr"]);
         assert_eq!(
@@ -436,8 +443,8 @@ mod tests {
             &["_M_extent", "_M_extent_value"]
         );
         let libcxx = accessors(record(&[
-            ("__data_", C0Type::UInt8Pointer, None, 0, 8),
-            ("__size_", C0Type::UInt64(LongRank::Long), None, 8, 8),
+            ("__data_", InterfaceType::UInt8Pointer, None, 0, 8),
+            ("__size_", InterfaceType::UInt64(LongRank::Long), None, 8, 8),
         ]));
         assert_eq!(libcxx["std_span_data"], &["__data_"]);
         assert_eq!(libcxx["std_span_size"], &["__size_"]);
@@ -446,13 +453,13 @@ mod tests {
     #[test]
     fn an_unknown_or_ambiguous_span_layout_binds_no_accessor() {
         let unknown = accessors(record(&[
-            ("pointer", C0Type::UInt8Pointer, None, 0, 8),
-            ("length", C0Type::UInt64(LongRank::Long), None, 8, 8),
+            ("pointer", InterfaceType::UInt8Pointer, None, 0, 8),
+            ("length", InterfaceType::UInt64(LongRank::Long), None, 8, 8),
         ]));
         assert!(unknown.is_empty(), "{unknown:?}");
         let ambiguous = accessors(record(&[
-            ("_M_ptr", C0Type::UInt8Pointer, None, 0, 8),
-            ("__data_", C0Type::UInt8Pointer, None, 8, 8),
+            ("_M_ptr", InterfaceType::UInt8Pointer, None, 0, 8),
+            ("__data_", InterfaceType::UInt8Pointer, None, 8, 8),
         ]));
         assert!(!ambiguous.contains_key("std_span_data"), "{ambiguous:?}");
     }

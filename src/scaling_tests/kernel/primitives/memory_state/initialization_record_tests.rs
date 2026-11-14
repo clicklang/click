@@ -32,11 +32,11 @@ fn a_covering_query_scales_with_the_cells_it_crosses() {
     for count in [64i64, 512, 4096] {
         let block = format!("local:record-cells-{count}");
         let mut memory =
-            CMemory::new().with_block(block.as_str(), u32::try_from(4 * count).unwrap());
+            Memory::new().with_block(block.as_str(), u32::try_from(4 * count).unwrap());
         for index in 0..count {
             memory = memory.store(
                 element(&block, index),
-                CValue::Int32(MachineTerm::constant(1)),
+                ProgramValue::Int32(MachineTerm::constant(1)),
             );
         }
         let index = MachineTerm::Variable(Variable(924_008));

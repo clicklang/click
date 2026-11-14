@@ -253,10 +253,10 @@ fn attestation_uses_verified_header_snapshot_after_files_change() {
     project.write("cap.h", "#define CAP 1\n");
     let sidecar = project.sidecar();
     let (click_source, _, inputs) = load_sidecar_inputs(&sidecar, sidecar.parent()).unwrap();
-    let CInput::Bundle(sources) = inputs else {
+    let VerificationInput::Bundle(sources) = inputs else {
         panic!("test uses ordinary C inputs")
     };
-    verify_c0_sources(&click_source, &source_refs(&sources)).unwrap();
+    verify_c_sources(&click_source, &source_refs(&sources)).unwrap();
 
     project.git(&["restore", "cap.h"]);
     record_full_verification(&project.sidecar(), &click_source, &sources, &[]).unwrap();

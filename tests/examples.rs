@@ -12,13 +12,13 @@ use std::process::Command;
 use sha2::{Digest, Sha256};
 
 use click::cli::{
-    CInput, files_with_extension, read_c_inputs_for_project, read_click_project,
-    read_click_project_at_root, read_verifying_sources, select_sidecars, source_refs,
+    VerificationInput, files_with_extension, read_click_project, read_click_project_at_root,
+    read_verification_inputs_for_project, read_verifying_sources, select_sidecars, source_refs,
 };
 use click::instrumentation::{self, ArtifactReuseRejection, HiddenPrerequisiteRoute};
 use click::surface::{
-    c0_tactic_source_position, project_tactic_source_position, verify_c0_prepared_project,
-    verify_c0_project, verify_c0_sources, verify_c0_sources_at, verify_program_prepared_project,
+    c_tactic_source_position, project_tactic_source_position, verify_c_prepared_project,
+    verify_c_project, verify_c_sources, verify_c_sources_at, verify_program_prepared_project,
 };
 
 #[path = "support/limits.rs"]
@@ -629,7 +629,7 @@ fn rbtree_solve_recolor_expansion_rechecks() {
     );
     let error = match result {
         Ok(expanded) => {
-            click::surface::verify_c0_project(
+            click::surface::verify_c_project(
                 &project.with_entry_source(expanded),
                 &source_refs(&c_sources),
             )
@@ -684,7 +684,7 @@ void rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 color) {
     limits::spawn(
         "rbtree null parent",
         "click-rbtree-null-parent".into(),
-        move || click::surface::verify_c0_project(&project, &source_refs(&c_sources)),
+        move || click::surface::verify_c_project(&project, &source_refs(&c_sources)),
     )
     .unwrap()
     .expect("the unchanged helper must produce a tagged null parent");
@@ -710,7 +710,7 @@ fn rbtree_insert_whole_claim_expansion_verifies() {
             )?;
             assert_ne!(expanded, source);
             let rewritten = project.with_entry_source(expanded);
-            click::surface::verify_c0_project(&rewritten, &source_refs(&c_sources))
+            click::surface::verify_c_project(&rewritten, &source_refs(&c_sources))
         },
     )
     .unwrap()
@@ -822,18 +822,20 @@ fn check_sized_context_rotation_retained_expansion(sidecar: &str) {
         move || {
             let loaded = click::cli::load_target_inputs(&path, None).unwrap();
             let (session, verified) = match &loaded.inputs {
-                CInput::Bundle(sources) => click::surface::C0VerificationSession::new_project(
-                    &loaded.project,
-                    &source_refs(sources),
-                ),
-                CInput::Prepared(imports) => {
-                    click::surface::C0VerificationSession::new_prepared_project(
+                VerificationInput::Bundle(sources) => {
+                    click::surface::ProgramVerificationSession::new_project(
+                        &loaded.project,
+                        &source_refs(sources),
+                    )
+                }
+                VerificationInput::Prepared(imports) => {
+                    click::surface::ProgramVerificationSession::new_prepared_project(
                         &loaded.project,
                         imports,
                     )
                 }
-                CInput::PreparedProgram(import) => {
-                    click::surface::C0VerificationSession::new_program_prepared_project(
+                VerificationInput::PreparedProgram(import) => {
+                    click::surface::ProgramVerificationSession::new_program_prepared_project(
                         &loaded.project,
                         import,
                     )
@@ -886,7 +888,7 @@ fn rbtree_insert_refuses_a_skipped_recolour() {
     let error = limits::spawn(
         "skipped-recolour verifier",
         "click-skipped-recolour".to_string(),
-        move || click::surface::verify_c0_project(&project, &source_refs(&c_sources)),
+        move || click::surface::verify_c_project(&project, &source_refs(&c_sources)),
     )
     .unwrap_or_else(|error| panic!("{error}"))
     .expect_err("the insert proof must refuse C that skips the root recolour");
@@ -940,7 +942,7 @@ fn rbtree_erase_general_explicit_closers_preserve_ownership() {
             )?;
             let expanded_project = read_click_project(&path, &expanded)
                 .expect("the expanded general unlink resolves its imports");
-            click::surface::verify_c0_project(&expanded_project, &source_refs(&c_sources))
+            click::surface::verify_c_project(&expanded_project, &source_refs(&c_sources))
         },
     )
     .unwrap()
@@ -998,7 +1000,7 @@ fn solve_on_an_arena_cell_read_answers_instead_of_deadlocking() {
     let _ = limits::spawn(
         "arena solve verifier",
         "click-arena-solve".to_string(),
-        move || verify_c0_sources_at(&edited, &source_refs(&c_sources), line, column),
+        move || verify_c_sources_at(&edited, &source_refs(&c_sources), line, column),
     )
     .unwrap_or_else(|error| panic!("{error}"));
     assert!(
@@ -1052,7 +1054,7 @@ fn erase_source_replacement_error_for_function(
                 &ProgramInputs::Bundle(source_refs(&c_sources)),
                 [function],
             ),
-            None => click::surface::verify_c0_project(&project, &source_refs(&c_sources)),
+            None => click::surface::verify_c_project(&project, &source_refs(&c_sources)),
         },
     )
     .unwrap_or_else(|error| panic!("{error}"))
@@ -1527,19 +1529,20 @@ fn run_example_project(project: &Path) -> Result<(), String> {
         let click_source = fs::read_to_string(&click_path)
             .map_err(|error| format!("failed to read `{}`: {error}", click_path.display()))?;
         let click_project = read_click_project_at_root(&click_path, &click_source, &project_root)?;
-        let inputs = read_c_inputs_for_project(&click_path, &click_source, &click_project)?;
+        let inputs =
+            read_verification_inputs_for_project(&click_path, &click_source, &click_project)?;
         match source_status {
             Some(SourceFixtureStatus::ParserOnly) => {
-                let CInput::Bundle(c_sources) = inputs else {
+                let VerificationInput::Bundle(c_sources) = inputs else {
                     return Err(format!(
                         "parser-only example `{}` cannot use a compiler import",
                         click_path.display()
                     ));
                 };
                 match if click_project.modules().len() == 1 && click_project.c_profile().is_none() {
-                    verify_c0_sources(&click_source, &source_refs(&c_sources))
+                    verify_c_sources(&click_source, &source_refs(&c_sources))
                 } else {
-                    verify_c0_project(&click_project, &source_refs(&c_sources))
+                    verify_c_project(&click_project, &source_refs(&c_sources))
                 } {
                     Err(error)
                         if error.message().starts_with("failed to parse C source")
@@ -1570,19 +1573,19 @@ fn run_example_project(project: &Path) -> Result<(), String> {
             Some(SourceFixtureStatus::Verified) | None => {
                 let verify = || {
                     match &inputs {
-                        CInput::Bundle(c_sources)
+                        VerificationInput::Bundle(c_sources)
                             if click_project.modules().len() == 1
                                 && click_project.c_profile().is_none() =>
                         {
-                            verify_c0_sources(&click_source, &source_refs(c_sources))
+                            verify_c_sources(&click_source, &source_refs(c_sources))
                         }
-                        CInput::Bundle(c_sources) => {
-                            verify_c0_project(&click_project, &source_refs(c_sources))
+                        VerificationInput::Bundle(c_sources) => {
+                            verify_c_project(&click_project, &source_refs(c_sources))
                         }
-                        CInput::Prepared(imports) => {
-                            verify_c0_prepared_project(&click_project, imports)
+                        VerificationInput::Prepared(imports) => {
+                            verify_c_prepared_project(&click_project, imports)
                         }
-                        CInput::PreparedProgram(import) => {
+                        VerificationInput::PreparedProgram(import) => {
                             verify_program_prepared_project(&click_project, import)
                         }
                     }
@@ -1601,32 +1604,38 @@ fn run_example_project(project: &Path) -> Result<(), String> {
                         &samples,
                         |claim, source_index| {
                             match &inputs {
-                                CInput::Bundle(c_sources) if single_module => {
-                                    c0_tactic_source_position(
+                                VerificationInput::Bundle(c_sources) if single_module => {
+                                    c_tactic_source_position(
                                         &click_source,
                                         &source_refs(c_sources),
                                         claim,
                                         source_index,
                                     )
                                 }
-                                CInput::Bundle(c_sources) => project_tactic_source_position(
-                                    &click_project,
-                                    &ProgramInputs::Bundle(source_refs(c_sources)),
-                                    claim,
-                                    source_index,
-                                ),
-                                CInput::Prepared(imports) => project_tactic_source_position(
-                                    &click_project,
-                                    &ProgramInputs::Prepared(imports),
-                                    claim,
-                                    source_index,
-                                ),
-                                CInput::PreparedProgram(import) => project_tactic_source_position(
-                                    &click_project,
-                                    &ProgramInputs::program(import),
-                                    claim,
-                                    source_index,
-                                ),
+                                VerificationInput::Bundle(c_sources) => {
+                                    project_tactic_source_position(
+                                        &click_project,
+                                        &ProgramInputs::Bundle(source_refs(c_sources)),
+                                        claim,
+                                        source_index,
+                                    )
+                                }
+                                VerificationInput::Prepared(imports) => {
+                                    project_tactic_source_position(
+                                        &click_project,
+                                        &ProgramInputs::Prepared(imports),
+                                        claim,
+                                        source_index,
+                                    )
+                                }
+                                VerificationInput::PreparedProgram(import) => {
+                                    project_tactic_source_position(
+                                        &click_project,
+                                        &ProgramInputs::program(import),
+                                        claim,
+                                        source_index,
+                                    )
+                                }
                             }
                             .ok()
                             .map(|position| (position.line, position.column))
@@ -2510,7 +2519,7 @@ fn rbtree_augmented_wrappers_reject_missing_or_wrong_calls() {
         let error = limits::spawn(
             "augmented wrapper mutation verifier",
             "click-augmented-wrapper-mutation".to_string(),
-            move || verify_c0_project(&project, &source_refs(&inputs)),
+            move || verify_c_project(&project, &source_refs(&inputs)),
         )
         .unwrap()
         .expect_err("the augmented wrapper must reject the changed call");
@@ -2687,7 +2696,7 @@ fn c_buffer_resource_modular_output_expands_and_rechecks() {
             let source = fixture.click_source.as_deref().unwrap();
             let sources = source_refs(&fixture.c_sources);
             let (session, verified) =
-                click::surface::C0VerificationSession::new(source, &sources).unwrap();
+                click::surface::ProgramVerificationSession::new(source, &sources).unwrap();
             assert!(!verified.is_empty());
             let mut rewrites = Vec::new();
             for name in ["init", "probe"] {
@@ -2718,7 +2727,7 @@ fn c_buffer_resource_modular_output_expands_and_rechecks() {
             // the thread-local kernel tables.
             drop(session);
             for (expanded, _, _) in rewrites {
-                verify_c0_sources(&expanded, &sources)
+                verify_c_sources(&expanded, &sources)
                     .expect("the written buffer output certificate must check fresh");
             }
         },
@@ -2889,22 +2898,22 @@ fn owned_vector_grow_then_push_prefix_rechecks_in_all_proof_modes() {
             let source = fs::read_to_string(&path).unwrap();
             let c_sources = read_verifying_sources(&path, &source).unwrap();
             let sources = source_refs(&c_sources);
-            let expanded = click::surface::expand_c0_claim_source(
+            let expanded = click::surface::expand_c_claim_source(
                 &source,
                 &sources,
                 "allocated_vector_push",
-                click::surface::CProofClaim::Grouped,
+                click::surface::ContractProofClaim::Grouped,
             )
             .expect("the complete grow-then-push claim must expand");
             let declaration = expanded.find("int32 allocated_vector_push(").unwrap();
             let offset = declaration + expanded[declaration..].find("ensures").unwrap();
             let line = expanded[..offset].bytes().filter(|b| *b == b'\n').count() + 1;
             let column = expanded[..offset].rsplit('\n').next().unwrap().len() + 1;
-            verify_c0_sources_at(&expanded, &sources, line, column)
+            verify_c_sources_at(&expanded, &sources, line, column)
                 .expect("the expanded grow-then-push claim must check fresh");
             // Session construction cold-verifies the complete original source.
             let (session, verified) =
-                click::surface::C0VerificationSession::new(&source, &sources).unwrap();
+                click::surface::ProgramVerificationSession::new(&source, &sources).unwrap();
             assert!(!verified.is_empty());
             session
                 .verify_at(&expanded, line, column)
@@ -2933,11 +2942,11 @@ fn pointer_field_call_branch_rejects_wrong_result_and_missing_backing_authority(
             let original_c = &c_sources[0].1;
             let wrong = original_c.replace("data[index] = value;", "data[index] = 0;");
             assert_ne!(wrong, *original_c);
-            assert!(verify_c0_sources(&source, &[("vector.c", wrong.as_str())]).is_err());
+            assert!(verify_c_sources(&source, &[("vector.c", wrong.as_str())]).is_err());
             let ownership = "    owns owner->data[0..owner->cap];\n";
             assert_eq!(source.matches(ownership).count(), 1);
             let missing = source.replace(ownership, "");
-            assert!(verify_c0_sources(&missing, &source_refs(&c_sources)).is_err());
+            assert!(verify_c_sources(&missing, &source_refs(&c_sources)).is_err());
         },
     )
     .unwrap();
@@ -2963,20 +2972,20 @@ fn borrowed_composite_fact_after_write_expands_and_rechecks() {
             .unwrap();
             let source = fixture.click_source.as_deref().unwrap();
             let sources = source_refs(&fixture.c_sources);
-            verify_c0_sources(source, &sources).unwrap();
-            let expanded = click::surface::expand_c0_claim_source(
+            verify_c_sources(source, &sources).unwrap();
+            let expanded = click::surface::expand_c_claim_source(
                 source,
                 &sources,
                 "first",
-                click::surface::CProofClaim::Grouped,
+                click::surface::ContractProofClaim::Grouped,
             )
             .expect("opening the borrowed fact after a write must expand");
-            verify_c0_sources(&expanded, &sources)
+            verify_c_sources(&expanded, &sources)
                 .expect("the expanded borrowed fact must check fresh");
             let offset = expanded.find("ensures result != 0;").unwrap();
             let line = expanded[..offset].bytes().filter(|byte| *byte == b'\n').count() + 1;
             let column = expanded[..offset].rsplit('\n').next().unwrap().len() + 1;
-            let (session, _) = click::surface::C0VerificationSession::new(source, &sources).unwrap();
+            let (session, _) = click::surface::ProgramVerificationSession::new(source, &sources).unwrap();
             session
                 .verify_at(&expanded, line, column)
                 .expect("the expanded borrowed fact must check retained");
@@ -2992,12 +3001,12 @@ fn borrowed_composite_fact_after_write_expands_and_rechecks() {
             ] {
                 assert_eq!(source.matches(before).count(), 1);
                 let changed = source.replace(before, after);
-                assert!(verify_c0_sources(&changed, &sources).is_err(), "{before}");
+                assert!(verify_c_sources(&changed, &sources).is_err(), "{before}");
             }
             let original = &fixture.c_sources[0].1;
             let borrowed_write = original.replace("q[0] = 1;", "p[0] = 0;");
             assert_ne!(borrowed_write, *original);
-            assert!(verify_c0_sources(source, &[("probe.c", &borrowed_write)]).is_err());
+            assert!(verify_c_sources(source, &[("probe.c", &borrowed_write)]).is_err());
         },
     )
     .unwrap();
@@ -3038,7 +3047,7 @@ fn produced_population_predicate_expands_and_retains_its_return_state() {
                 let invalid = source.replace(before, after);
                 assert_ne!(invalid, source);
                 assert!(
-                    verify_c0_sources(&invalid, &source_refs(&sources)).is_err(),
+                    verify_c_sources(&invalid, &source_refs(&sources)).is_err(),
                     "accepted {before} -> {after}"
                 );
             }
@@ -3052,7 +3061,7 @@ fn produced_population_predicate_expands_and_retains_its_return_state() {
                 })
                 .collect::<Vec<_>>();
             assert_ne!(wrong_capacity, sources);
-            assert!(verify_c0_sources(&source, &source_refs(&wrong_capacity)).is_err());
+            assert!(verify_c_sources(&source, &source_refs(&wrong_capacity)).is_err());
         },
     )
     .unwrap();
@@ -3070,11 +3079,11 @@ fn written_store_alias_frame_expands_and_rechecks() {
             let fixture = click::cli::read_mdtest(&path).unwrap();
             let source = fixture.click_source.unwrap();
             let sources = source_refs(&fixture.c_sources);
-            verify_c0_sources(&source, &sources).expect("manual frame proof verifies");
+            verify_c_sources(&source, &sources).expect("manual frame proof verifies");
             let expanded =
-                click::surface::expand_c0_claim_source_by_label(&source, &sources, "walk.contract")
+                click::surface::expand_c_claim_source_by_label(&source, &sources, "walk.contract")
                     .expect("manual frame proof expands");
-            verify_c0_sources(&expanded, &sources).expect("expanded manual frame proof verifies");
+            verify_c_sources(&expanded, &sources).expect("expanded manual frame proof verifies");
         },
     )
     .unwrap();
@@ -3087,7 +3096,7 @@ fn replay_cell_source_example(example: &str, sidecar: &str, claim: &str) {
     let path = root.join(sidecar);
     let source = fs::read_to_string(&path).unwrap();
     let project = read_click_project_at_root(&path, &source, &root).unwrap();
-    let prepared = read_c_inputs_for_project(&path, &source, &project).unwrap();
+    let prepared = read_verification_inputs_for_project(&path, &source, &project).unwrap();
     let inputs = prepared.program_inputs();
     let expanded = click::surface::expand_project_claim_source_by_label(&project, &inputs, claim)
         .unwrap_or_else(|error| {

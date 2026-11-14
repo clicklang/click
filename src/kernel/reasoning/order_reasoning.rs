@@ -151,7 +151,7 @@ pub(crate) fn collect_forall_chain<'a>(
         // (`uint64_antecedent_ranges`); the finite tables read both.
         Proposition::ForAll {
             var,
-            sort: Sort::CInt32 | Sort::CMachineInteger(MachineIntegerType::UInt64),
+            sort: Sort::ProgramInt32 | Sort::ProgramInteger(MachineIntegerType::UInt64),
             body,
             ..
         } => {
@@ -1579,7 +1579,7 @@ mod shared_antecedent_tests {
         let variable = Variable(997701);
         let variables = BTreeSet::from([variable]);
         for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
-            let root = KernelTerm::variable(KernelType::C(format.c_type()), variable);
+            let root = KernelTerm::variable(KernelType::Program(format.program_type()), variable);
             let arithmetic = KernelTerm::machine_binary_shared(
                 format,
                 MachineBinaryOp::Add,
@@ -1660,7 +1660,8 @@ mod retained_cycle_tests {
     fn shared_cycles_preserve_strictness_polarity_and_finite_range_boundary() {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let variable = KernelTerm::variable(KernelType::C(CType::Int32), Variable(995301));
+        let variable =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(995301));
         let root = KernelTerm::machine_binary_shared(
             ty,
             MachineBinaryOp::Multiply,
@@ -1768,8 +1769,10 @@ mod retained_fold_endpoint_tests {
     fn shared_fold_endpoint_equality_uses_exact_sources_at_the_index_width() {
         for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
             let _session = VerificationSession::enter();
-            let left = KernelTerm::variable(KernelType::C(format.c_type()), Variable(999101));
-            let right = KernelTerm::variable(KernelType::C(format.c_type()), Variable(999102));
+            let left =
+                KernelTerm::variable(KernelType::Program(format.program_type()), Variable(999101));
+            let right =
+                KernelTerm::variable(KernelType::Program(format.program_type()), Variable(999102));
             let left = SharedMachineIntegerTerm::from_shared(
                 format,
                 KernelTerm::machine_binary_shared(format, Op::Add, [left.clone(), left]),

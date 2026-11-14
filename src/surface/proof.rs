@@ -18,8 +18,8 @@ mod claim_proofs;
 #[cfg(test)]
 pub(in crate::surface) use claim_proofs::count_flat_proof_units;
 pub(in crate::surface) use fixed_state_proofs::{
-    FixedStateLoweringOptions, evaluate_c_fragment_through_kernel,
-    evaluate_fixed_state_array_ref_through_kernel, evaluate_fixed_state_expression_through_kernel,
+    FixedStateLoweringOptions, evaluate_fixed_state_array_ref_through_kernel,
+    evaluate_fixed_state_expression_through_kernel, evaluate_program_expression_through_kernel,
     evaluate_resource_argument_through_kernel, evaluate_resource_fragment_through_kernel,
     lower_fixed_state_proposition_through_kernel,
     lower_fixed_state_proposition_through_kernel_with,
@@ -96,8 +96,8 @@ use execution_planning::*;
 pub(super) use execution_planning::{StatementPrerequisitePolicy, certified_statement_transitions};
 use execution_state::*;
 pub(super) use execution_state::{
-    capture_c0_proof_site_expansion, capture_c0_tactic_expansion,
     capture_prepared_proof_site_expansion, capture_prepared_tactic_expansion,
+    capture_program_proof_site_expansion, capture_program_tactic_expansion,
     capture_project_proof_site_expansion, capture_project_tactic_expansion,
 };
 #[cfg(test)]
@@ -138,7 +138,12 @@ use theorem_application::*;
 use timing::TacticTiming;
 pub(super) use timing::{SourceSiteKind, source_site_kind};
 
-type NextTopLevelStatement = (CState, CState, CStatement, Option<CStatement>);
+type NextTopLevelStatement = (
+    ExecutionState,
+    ExecutionState,
+    ProgramStatement,
+    Option<ProgramStatement>,
+);
 
 fn check_verification_deadline() -> Result<(), ClickError> {
     if crate::instrumentation::deadline_exceeded() {
@@ -209,7 +214,7 @@ mod certificate_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(CMemory::new()),
+            crate::kernel::intern_memory(Memory::new()),
             Box::new(pointer),
             crate::kernel::LoadKind::Int32,
         );
@@ -253,7 +258,7 @@ mod certificate_tests {
             synthesize_surface_proposition(
                 &proposition,
                 ParameterBinding::default(),
-                &CState::new()
+                &ExecutionState::new()
             )
             .is_none()
         );
@@ -267,9 +272,9 @@ mod certificate_tests {
         let mut surface = ClickProposition::Comparison {
             left: ContractExpression::CBinding("value".to_string()),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                MachineTerm::constant(0),
-            ))),
+            right: ContractExpression::ProgramExpression(ProgramExpression::Value(
+                ProgramValue::Int32(MachineTerm::constant(0)),
+            )),
         };
         for _ in 0..=SNAPSHOT_ANNOTATION_DEPTH_LIMIT {
             surface = ClickProposition::Not(Box::new(surface));
@@ -289,8 +294,8 @@ mod certificate_tests {
 
     #[test]
     fn snapshot_index_finds_a_late_exact_selector_inside_a_quantifier() {
-        let early_memory = CMemory::new().with_block("early", 4);
-        let target_memory = CMemory::new().with_block("target", 4);
+        let early_memory = Memory::new().with_block("early", 4);
+        let target_memory = Memory::new().with_block("target", 4);
         let pointer = Pointer {
             block: "target".into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -304,7 +309,7 @@ mod certificate_tests {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(MachineTerm::MemoryLoad(
-                        crate::kernel::intern_c_memory(target_memory.clone()),
+                        crate::kernel::intern_memory(target_memory.clone()),
                         Box::new(pointer),
                         crate::kernel::LoadKind::Int32,
                     )),
@@ -322,8 +327,11 @@ mod certificate_tests {
             kind: ProgramPointKind::Entry,
         };
         let mut states = RecordedSnapshots::new();
-        states.insert(early, CState::new().with_memory(early_memory));
-        states.insert(late.clone(), CState::new().with_memory(target_memory));
+        states.insert(early, ExecutionState::new().with_memory(early_memory));
+        states.insert(
+            late.clone(),
+            ExecutionState::new().with_memory(target_memory),
+        );
 
         let (exact, compatible) = snapshot_indexed_selectors(&kernel, &states);
         assert_eq!(
@@ -338,7 +346,7 @@ mod certificate_tests {
 
     #[test]
     fn missing_snapshot_form_reports_a_concise_indexed_failure() {
-        let target_memory = CMemory::new().with_block("target", 4);
+        let target_memory = Memory::new().with_block("target", 4);
         let pointer = Pointer {
             block: "target".into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -348,7 +356,7 @@ mod certificate_tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(MachineTerm::MemoryLoad(
-                    crate::kernel::intern_c_memory(target_memory),
+                    crate::kernel::intern_memory(target_memory),
                     Box::new(pointer),
                     crate::kernel::LoadKind::Int32,
                 )),
@@ -356,7 +364,7 @@ mod certificate_tests {
             },
             true,
         );
-        let state = CState::new().with_memory(CMemory::new().with_block("current", 4));
+        let state = ExecutionState::new().with_memory(Memory::new().with_block("current", 4));
 
         let facts = ProofFacts::from_ordered(&[]);
         let error = checked_surface_comparison_fact_in_state_with_indexed_facts(
@@ -385,7 +393,7 @@ mod certificate_tests {
                 .contains("0 exact and 0 compatible recorded snapshots"),
             "{error}"
         );
-        assert!(!error.message().contains("CMemory"), "{error}");
+        assert!(!error.message().contains("Memory"), "{error}");
     }
 
     #[test]
@@ -393,9 +401,9 @@ mod certificate_tests {
         let base = ClickProposition::Comparison {
             left: ContractExpression::CBinding("value".to_string()),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                MachineTerm::constant(0),
-            ))),
+            right: ContractExpression::ProgramExpression(ProgramExpression::Value(
+                ProgramValue::Int32(MachineTerm::constant(0)),
+            )),
         };
         let selectors = (0..20)
             .map(|index| {
@@ -550,7 +558,7 @@ mod certificate_tests {
     #[test]
     fn deferred_tactics_retain_their_owning_source_occurrence() {
         let mut execution = ExecutionProofState::at_entry(
-            CState::new(),
+            ExecutionState::new(),
             ExecutionFrontier::default(),
             RecordedSnapshots::new(),
             SurfacePropositionMap::default(),
@@ -572,9 +580,9 @@ mod certificate_tests {
     fn timing_classifies_a_have_with_only_simple_tactics_as_simple() {
         let have = ProofTactic::Have(ProofHave {
             proposition: ClickProposition::Comparison {
-                left: ContractExpression::CFragment(CExpression::Value(int32(1))),
+                left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
                 operator: ComparisonOperator::Equal,
-                right: ContractExpression::CFragment(CExpression::Value(int32(1))),
+                right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
             },
             proof: SourceProof::Script(vec![ProofTactic::Assumption]),
         });
@@ -585,9 +593,9 @@ mod certificate_tests {
     #[test]
     fn timing_classifies_smart_and_structural_have_sites_separately() {
         let proposition = ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::Value(int32(1))),
+            left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::CFragment(CExpression::Value(int32(1))),
+            right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
         };
         let smart = ProofTactic::Have(ProofHave {
             proposition: proposition.clone(),
@@ -612,9 +620,9 @@ mod certificate_tests {
     fn post_execution_timing_charges_have_as_control() {
         let have = PostExecutionTactic::Have(ProofHave {
             proposition: ClickProposition::Comparison {
-                left: ContractExpression::CFragment(CExpression::Value(int32(1))),
+                left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
                 operator: ComparisonOperator::Equal,
-                right: ContractExpression::CFragment(CExpression::Value(int32(1))),
+                right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
             },
             proof: SourceProof::Script(vec![ProofTactic::Assumption]),
         });
@@ -633,7 +641,7 @@ mod certificate_tests {
         )
         .expect("theorem should parse");
         let predicate_environment = PredicateEnvironment::new(file.predicate_definitions())
-            .with_contracts(file.contract_definitions(), &file.c_function_names);
+            .with_contracts(file.contract_definitions(), &file.program_function_names);
         let click_function_environment =
             ClickFunctionEnvironment::new(file.click_function_definitions());
         let spec_definitions =
@@ -740,7 +748,7 @@ mod certificate_tests {
         )
         .expect("theorems should parse");
         let predicate_environment = PredicateEnvironment::new(file.predicate_definitions())
-            .with_contracts(file.contract_definitions(), &file.c_function_names);
+            .with_contracts(file.contract_definitions(), &file.program_function_names);
         let click_function_environment =
             ClickFunctionEnvironment::new(file.click_function_definitions());
 
@@ -794,9 +802,11 @@ mod certificate_tests {
     #[test]
     fn path_aligned_certificates_preserve_branch_structure() {
         let condition = ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::Variable("x".to_string())),
+            left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                "x".to_string(),
+            )),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+            right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
         };
         let assumption = ProofCertificate::from_proof_tactics(&[ProofTactic::Assumption])
             .expect("assumption is a certificate");
@@ -847,14 +857,18 @@ mod certificate_tests {
     #[test]
     fn path_aligned_certificates_reject_incompatible_frontiers() {
         let condition = ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::Variable("x".to_string())),
+            left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                "x".to_string(),
+            )),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+            right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
         };
         let other = ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::Variable("y".to_string())),
+            left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                "y".to_string(),
+            )),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+            right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
         };
         let assumption = ProofCertificate::from_proof_tactics(&[ProofTactic::Assumption])
             .expect("assumption is a certificate");
@@ -1746,12 +1760,10 @@ pub(super) enum FunctionClaimRef<'a> {
 }
 
 impl<'a> FunctionClaimRef<'a> {
-    pub(super) fn key(self) -> CFunctionContractClaimKey {
+    pub(super) fn key(self) -> FunctionContractClaimKey {
         match self {
-            Self::Ensure(index, _) => CFunctionContractClaimKey::Ensure(index),
-            Self::ExceptionalEnsure(index, _) => {
-                CFunctionContractClaimKey::ExceptionalEnsure(index)
-            }
+            Self::Ensure(index, _) => FunctionContractClaimKey::Ensure(index),
+            Self::ExceptionalEnsure(index, _) => FunctionContractClaimKey::ExceptionalEnsure(index),
         }
     }
 
@@ -1767,24 +1779,21 @@ impl<'a> FunctionClaimRef<'a> {
         }
     }
 
-    pub(super) fn applies_to(self, outcome: &CFunctionOutcome) -> bool {
+    pub(super) fn applies_to(self, outcome: &FunctionOutcome) -> bool {
         matches!(
             (self, outcome),
-            (Self::Ensure(_, _), CFunctionOutcome::Return { .. })
-                | (
-                    Self::ExceptionalEnsure(_, _),
-                    CFunctionOutcome::Throw { .. }
-                )
+            (Self::Ensure(_, _), FunctionOutcome::Return { .. })
+                | (Self::ExceptionalEnsure(_, _), FunctionOutcome::Throw { .. })
         )
     }
 
-    pub(super) fn is_vacuous_for(self, outcome: &CFunctionOutcome) -> bool {
+    pub(super) fn is_vacuous_for(self, outcome: &FunctionOutcome) -> bool {
         matches!(
             (self, outcome),
-            (Self::Ensure(_, _), CFunctionOutcome::Throw { .. })
+            (Self::Ensure(_, _), FunctionOutcome::Throw { .. })
                 | (
                     Self::ExceptionalEnsure(_, _),
-                    CFunctionOutcome::Return { .. }
+                    FunctionOutcome::Return { .. }
                 )
         )
     }
@@ -1824,8 +1833,8 @@ pub(super) fn function_claims(function_block: &FunctionBlock) -> Vec<FunctionCla
 /// instead of building it again.
 #[derive(Clone, Debug)]
 pub(in crate::surface) struct ProofEntryContext {
-    pub(in crate::surface) state: CState,
-    pub(in crate::surface) arguments: Vec<CExpression>,
+    pub(in crate::surface) state: ExecutionState,
+    pub(in crate::surface) arguments: Vec<ProgramExpression>,
     pub(in crate::surface) pure_facts: PureFactList,
 }
 
@@ -1841,8 +1850,8 @@ impl Eq for ProofEntryContext {}
 
 #[derive(Clone)]
 pub(super) struct InitialClaimContext {
-    pub(super) state: CState,
-    pub(super) arguments: Vec<CExpression>,
+    pub(super) state: ExecutionState,
+    pub(super) arguments: Vec<ProgramExpression>,
     /// The entry facts, with the context the setup built from them kept
     /// for the proof and certification to extend.
     pub(super) pure_facts: PureFactList,
@@ -1852,14 +1861,14 @@ pub(super) struct InitialClaimContext {
 
 pub(super) fn initial_claim_context(
     function_block: &FunctionBlock,
-    parsed_function: &syntax::C0Function,
+    parsed_function: &crate::languages::interface::ImportedFunction,
     resource_environment: &ResourceEnvironment,
     spec_definitions: SpecDefinitions<'_>,
     claim_label: &str,
 ) -> Result<
     (
-        CState,
-        Vec<CExpression>,
+        ExecutionState,
+        Vec<ProgramExpression>,
         PureFactList,
         SurfacePropositionMap,
     ),
@@ -1886,10 +1895,10 @@ pub(super) fn initial_claim_context(
 fn bool_range_surface(name: &str) -> ClickProposition {
     let cast = ContractExpression::CUnary {
         operand: Box::new(ContractExpression::CBinding(name.to_string())),
-        lowered: CExpression::Cast {
-            expression: Box::new(CExpression::Variable(name.to_string())),
-            target_type: crate::kernel::CType::Int32,
-            integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+        lowered: ProgramExpression::Cast {
+            expression: Box::new(ProgramExpression::Variable(name.to_string())),
+            target_type: crate::kernel::ProgramType::Int32,
+            integer_mode: crate::kernel::IntegerCastMode::CConversion,
             pointee_struct: None,
             pointee_volatile: false,
             pointee_constant: false,
@@ -1906,7 +1915,7 @@ fn bool_range_surface(name: &str) -> ClickProposition {
 
 pub(super) fn initial_claim_context_with_caller_owner(
     function_block: &FunctionBlock,
-    parsed_function: &syntax::C0Function,
+    parsed_function: &crate::languages::interface::ImportedFunction,
     resource_environment: &ResourceEnvironment,
     spec_definitions: SpecDefinitions<'_>,
     claim_label: &str,
@@ -1921,7 +1930,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
             ));
         }
         (
-            crate::kernel::initialize_c_function_globals(
+            crate::kernel::initialize_program_function_globals(
                 &startup.as_ref().clone().with_population_creation_tracking(),
                 &parsed_function.to_kernel_function(),
             ),
@@ -2097,9 +2106,14 @@ pub(super) fn initial_claim_context_with_caller_owner(
         .parameters()
         .iter()
         .zip(&arguments)
-        .filter(|(parameter, _)| matches!(parameter.c_type(), syntax::C0Type::Bool))
+        .filter(|(parameter, _)| {
+            matches!(
+                parameter.interface_type(),
+                crate::languages::interface::InterfaceType::Bool
+            )
+        })
         .filter_map(|(parameter, argument)| match argument {
-            CExpression::Value(value) => crate::kernel::c_bool_cast_range_facts(value)
+            ProgramExpression::Value(value) => crate::kernel::program_bool_cast_range_facts(value)
                 .and_then(|facts| facts.last().cloned())
                 .map(|fact| (bool_range_surface(parameter.name()), fact)),
             _ => None,
@@ -2109,8 +2123,8 @@ pub(super) fn initial_claim_context_with_caller_owner(
     // kernel states from the parameter's value (rule C1b). A narrow integer
     // parameter is a value of its own format, whose range is the format's.
     for argument in &arguments {
-        if let CExpression::Value(value) = argument
-            && let Some(facts) = crate::kernel::c_bool_cast_range_facts(value)
+        if let ProgramExpression::Value(value) = argument
+            && let Some(facts) = crate::kernel::program_bool_cast_range_facts(value)
         {
             requirement_pure_facts.extend(facts);
         }
@@ -2471,9 +2485,9 @@ pub(super) fn initial_claim_context_with_caller_owner(
 /// memory the function may change can differ between the two.
 fn refuse_overlapping_returned_places(
     function_block: &FunctionBlock,
-    parsed_function: &syntax::C0Function,
-    state: &CState,
-    arguments: &[CExpression],
+    parsed_function: &crate::languages::interface::ImportedFunction,
+    state: &ExecutionState,
+    arguments: &[ProgramExpression],
     assumptions: &crate::kernel::PureFactContext,
 ) -> Result<(), ClickError> {
     let parameters = parsed_function.parameters();
@@ -2493,7 +2507,7 @@ fn refuse_overlapping_returned_places(
         };
         let fixed_place = [&segment.base, &segment.start, &segment.end]
             .into_iter()
-            .all(crate::surface::validation::c_expression_reads_no_memory);
+            .all(crate::surface::validation::program_expression_reads_no_memory);
         if !fixed_place {
             continue;
         }
@@ -2521,7 +2535,7 @@ fn refuse_overlapping_returned_places(
         return Ok(());
     };
     // Name each place as its clause wrote it.
-    let spelled = |range: &crate::kernel::CMemoryRange| {
+    let spelled = |range: &crate::kernel::MemoryRange| {
         written
             .iter()
             .find(|(candidate, _)| candidate == range)
@@ -2551,7 +2565,7 @@ fn entry_pure_fact_without_unconditional_loadability(
     proposition: &Proposition,
 ) -> Option<Proposition> {
     match proposition {
-        Proposition::CMemoryLoadable { .. } => None,
+        Proposition::MemoryLoadable { .. } => None,
         Proposition::And(left, right) => {
             let left = entry_pure_fact_without_unconditional_loadability(left);
             let right = entry_pure_fact_without_unconditional_loadability(right);
@@ -2611,9 +2625,9 @@ fn collect_conjunctive_loadability_segments(
 
 fn explicit_entry_loadability_facts(
     function_block: &FunctionBlock,
-    parsed_function: &syntax::C0Function,
-    arguments: &[CExpression],
-    state: &CState,
+    parsed_function: &crate::languages::interface::ImportedFunction,
+    arguments: &[ProgramExpression],
+    state: &ExecutionState,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Vec<Proposition>, ClickError> {
     // Every requirement is lowered at `state` with these arguments, so one
@@ -2637,7 +2651,7 @@ fn explicit_entry_loadability_facts(
             Requirement::LoadableSegment { .. } => {
                 let lowered = lower_one(requirement)?;
                 for fact in lowered {
-                    if matches!(fact, Proposition::CMemoryLoadable { .. })
+                    if matches!(fact, Proposition::MemoryLoadable { .. })
                         && seen.insert(fact.clone())
                     {
                         facts.push(fact);
@@ -2651,7 +2665,7 @@ fn explicit_entry_loadability_facts(
                     let loadable = Requirement::Proposition(ClickProposition::Loadable { segment });
                     let lowered = lower_one(&loadable)?;
                     for fact in lowered {
-                        if matches!(fact, Proposition::CMemoryLoadable { .. })
+                        if matches!(fact, Proposition::MemoryLoadable { .. })
                             && seen.insert(fact.clone())
                         {
                             facts.push(fact);
@@ -2674,17 +2688,17 @@ fn explicit_entry_loadability_facts(
 #[allow(clippy::too_many_arguments)]
 fn evaluate_entry_resource_context(
     function_block: &FunctionBlock,
-    parsed_function: &syntax::C0Function,
+    parsed_function: &crate::languages::interface::ImportedFunction,
     resource_environment: &ResourceEnvironment,
     spec_definitions: SpecDefinitions<'_>,
-    state: CState,
-    arguments: &[CExpression],
+    state: ExecutionState,
+    arguments: &[ProgramExpression],
     pure_facts: &PureFactList,
     include_owned_composite_cores: Option<resources::OwnedCores>,
     claim_label: &str,
     entry_resources: &ResourceContext,
-    entry_memory: &CMemory,
-) -> Result<(CState, Vec<Proposition>, Vec<Proposition>), ClickError> {
+    entry_memory: &Memory,
+) -> Result<(ExecutionState, Vec<Proposition>, Vec<Proposition>), ClickError> {
     let parameter_binding = ParameterBinding::new(parsed_function.parameters(), arguments);
     let (resource_specs, _) = crate::surface::verification::function_resource_summary(
         function_block,
@@ -2716,7 +2730,7 @@ fn evaluate_entry_resource_context(
         .filter(|fact| {
             matches!(
                 fact.resource(),
-                CResource::Instance(_) | CResource::Memory(_) | CResource::PopulationAuthority(_)
+                Resource::Instance(_) | Resource::Memory(_) | Resource::PopulationAuthority(_)
             )
         })
         .cloned()
@@ -2729,45 +2743,47 @@ fn evaluate_entry_resource_context(
     let precondition_read_facts = pure_facts
         .iter()
         .filter_map(|fact| {
-            let Proposition::CMemoryLoadable { base, bytes, .. } = fact else {
+            let Proposition::MemoryLoadable { base, bytes, .. } = fact else {
                 return None;
             };
             let range = match bytes {
                 binary_term!(Int32, Multiply, left, right)
-                    if **right == MachineTerm::constant(CType::Int32.byte_width()) =>
+                    if **right == MachineTerm::constant(ProgramType::Int32.byte_width()) =>
                 {
-                    CMemoryRange::new(
+                    MemoryRange::new(
                         base.clone(),
                         MachineTerm::constant(0),
                         left.as_ref().clone(),
                     )
                 }
                 binary_term!(Int32, Multiply, left, right)
-                    if **left == MachineTerm::constant(CType::Int32.byte_width()) =>
+                    if **left == MachineTerm::constant(ProgramType::Int32.byte_width()) =>
                 {
-                    CMemoryRange::new(
+                    MemoryRange::new(
                         base.clone(),
                         MachineTerm::constant(0),
                         right.as_ref().clone(),
                     )
                 }
                 bits32_constant!(bytes)
-                    if constant_u32(*bytes).is_multiple_of(CType::Int32.byte_width()) =>
+                    if constant_u32(*bytes).is_multiple_of(ProgramType::Int32.byte_width()) =>
                 {
-                    CMemoryRange::new(
+                    MemoryRange::new(
                         base.clone(),
                         MachineTerm::constant(0),
-                        MachineTerm::constant(constant_u32(*bytes) / CType::Int32.byte_width()),
+                        MachineTerm::constant(
+                            constant_u32(*bytes) / ProgramType::Int32.byte_width(),
+                        ),
                     )
                 }
-                _ => CMemoryRange::new_with_element_width(
+                _ => MemoryRange::new_with_element_width(
                     base.clone(),
                     MachineTerm::constant(0),
                     bytes.clone(),
                     1,
                 ),
             };
-            Some(CResourceFact::view_memory(range))
+            Some(ResourceFact::view_memory(range))
         })
         .collect::<Vec<_>>();
     let assumptions = pure_facts.context();
@@ -2904,7 +2920,7 @@ fn click_proposition_mentions_defined(proposition: &ClickProposition) -> bool {
 pub(in crate::surface) fn available_initial_requirement_propositions(
     requires: &[Requirement],
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Vec<Proposition> {
     // Each requirement is lowered on its own, at one shared lowering state;
@@ -2934,17 +2950,17 @@ pub(in crate::surface) fn available_initial_requirement_propositions(
 }
 
 fn canonical_claim_caller_state(
-    state: CState,
+    state: ExecutionState,
     has_verified_loops: bool,
-    function: &CFunction,
-    arguments: &[CExpression],
+    function: &ProgramFunction,
+    arguments: &[ProgramExpression],
     pure_facts: &(impl PropositionSource + ?Sized),
     claim_label: &str,
-) -> Result<CState, ClickError> {
+) -> Result<ExecutionState, ClickError> {
     if !has_verified_loops {
         return Ok(state);
     }
-    let entry = c_function_contract_entry_state(
+    let entry = program_function_contract_entry_state(
         &state,
         function,
         arguments,
@@ -2955,16 +2971,16 @@ fn canonical_claim_caller_state(
 }
 
 fn install_borrowed_contract_inputs(
-    state: CState,
-    function: &CFunction,
+    state: ExecutionState,
+    function: &ProgramFunction,
     pure_facts: &(impl PropositionSource + ?Sized),
     parameter_binding: ParameterBinding<'_>,
     proof_label: &str,
-) -> Result<CState, ClickError> {
+) -> Result<ExecutionState, ClickError> {
     if let Some(message) = crate::kernel::guard_contract_refusal(function.contract_interface()) {
         return Err(ClickError::new(format!("`{proof_label}` {message}")));
     }
-    crate::kernel::c_state_with_borrowed_contract_inputs(
+    crate::kernel::execution_state_with_borrowed_contract_inputs(
         state,
         function,
         parameter_binding.arguments,
@@ -2982,15 +2998,15 @@ pub(super) fn prove_claim_by_implicit_tail(
     expansion_capture: Option<&mut ExpansionCapture>,
     source_path: &str,
     function_block: &FunctionBlock,
-    parsed_function: &syntax::C0Function,
+    parsed_function: &crate::languages::interface::ImportedFunction,
     claim: &FunctionClaimRef<'_>,
     claim_label: &str,
-    function_environment: &CExecutionEnvironment,
+    function_environment: &ExecutionEnvironment,
     spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
     theorem_environment: &TheoremEnvironment,
     function_source_registry: Arc<FunctionSourceRegistry>,
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
     // The implicit tail executes the remaining C, then solves each goal.
     let tactics = [ProofTactic::SmartExecute, ProofTactic::ImplicitSolve];
     let mut theorems = prove_claim_by_tactics(
@@ -3020,15 +3036,15 @@ pub(super) fn prove_claim_by_solve(
     expansion_capture: Option<&mut ExpansionCapture>,
     source_path: &str,
     function_block: &FunctionBlock,
-    parsed_function: &syntax::C0Function,
+    parsed_function: &crate::languages::interface::ImportedFunction,
     claim: &FunctionClaimRef<'_>,
     claim_label: &str,
-    function_environment: &CExecutionEnvironment,
+    function_environment: &ExecutionEnvironment,
     spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
     theorem_environment: &TheoremEnvironment,
     function_source_registry: Arc<FunctionSourceRegistry>,
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
     if count_loop_regions(parsed_function) != 0 {
         return Err(ClickError::new(format!(
             "`solve` does not prove loop-backed claims for `{claim_label}`; omit the proof"
@@ -3064,16 +3080,16 @@ pub(super) fn prove_claim_by_script(
     expansion_capture: Option<&mut ExpansionCapture>,
     source_path: &str,
     function_block: &FunctionBlock,
-    parsed_function: &syntax::C0Function,
+    parsed_function: &crate::languages::interface::ImportedFunction,
     claim: &FunctionClaimRef<'_>,
     claim_label: &str,
-    function_environment: &CExecutionEnvironment,
+    function_environment: &ExecutionEnvironment,
     spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
     theorem_environment: &TheoremEnvironment,
     function_source_registry: Arc<FunctionSourceRegistry>,
     tactics: &[ProofTactic],
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
     let theorems = prove_claim_by_tactics(
         expansion_capture,
         source_path,

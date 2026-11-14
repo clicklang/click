@@ -153,7 +153,7 @@ int32 id(int32 x) {
 }
 "#;
         let lines = capture(|| {
-            crate::surface::verify_c0_sources(click, &[("f.c", c)]).unwrap();
+            crate::surface::verify_c_sources(click, &[("f.c", c)]).unwrap();
         });
         assert!(lines.is_empty(), "{lines:#?}");
     }
@@ -163,12 +163,12 @@ int32 id(int32 x) {
         let quantified = |var| Proposition::Exists {
             name: "x".into(),
             var,
-            sort: crate::kernel::Sort::CInt32,
-            body: Box::new(Proposition::CMemoryLoadable {
-                memory: crate::kernel::CMemory::new().with_declared_scalar_block(
+            sort: crate::kernel::Sort::ProgramInt32,
+            body: Box::new(Proposition::MemoryLoadable {
+                memory: crate::kernel::Memory::new().with_declared_scalar_block(
                     "local:word".into(),
                     4,
-                    crate::kernel::CType::Int32,
+                    crate::kernel::ProgramType::Int32,
                 ),
                 base: crate::kernel::Pointer::symbolic(Variable(700)),
                 bytes: MachineTerm::Variable(var),

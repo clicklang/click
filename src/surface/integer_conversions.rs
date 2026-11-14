@@ -1,18 +1,18 @@
 //! Public spelling and source types of explicit Integer conversions.
 use super::*;
 
-pub(super) fn integer_conversion_target(name: &str) -> Option<C0Type> {
+pub(super) fn integer_conversion_target(name: &str) -> Option<InterfaceType> {
     Some(match name {
-        "to_int8" => C0Type::Int8,
-        "to_int16" => C0Type::Int16,
-        "to_int32" => C0Type::Int32,
-        "to_uint8" => C0Type::UInt8,
-        "to_uint16" => C0Type::UInt16,
-        "to_uint32" => C0Type::UInt32,
-        "to_int64" => C0Type::Int64(LongRank::Long),
-        "to_uint64" => C0Type::UInt64(LongRank::Long),
-        "to_int128" => C0Type::Int128,
-        "to_uint128" => C0Type::UInt128,
+        "to_int8" => InterfaceType::Int8,
+        "to_int16" => InterfaceType::Int16,
+        "to_int32" => InterfaceType::Int32,
+        "to_uint8" => InterfaceType::UInt8,
+        "to_uint16" => InterfaceType::UInt16,
+        "to_uint32" => InterfaceType::UInt32,
+        "to_int64" => InterfaceType::Int64(LongRank::Long),
+        "to_uint64" => InterfaceType::UInt64(LongRank::Long),
+        "to_int128" => InterfaceType::Int128,
+        "to_uint128" => InterfaceType::UInt128,
         _ => return None,
     })
 }
@@ -21,19 +21,19 @@ pub(super) fn is_integer_conversion(name: &str) -> bool {
     name == "to_integer" || integer_conversion_target(name).is_some()
 }
 
-pub(super) fn machine_integer_source_type(c_type: C0Type) -> bool {
+pub(super) fn machine_integer_source_type(interface_type: InterfaceType) -> bool {
     matches!(
-        c_type,
-        C0Type::Int8
-            | C0Type::Int16
-            | C0Type::Int32
-            | C0Type::UInt8
-            | C0Type::UInt16
-            | C0Type::UInt32
-            | C0Type::Int64(_)
-            | C0Type::UInt64(_)
-            | C0Type::Int128
-            | C0Type::UInt128
+        interface_type,
+        InterfaceType::Int8
+            | InterfaceType::Int16
+            | InterfaceType::Int32
+            | InterfaceType::UInt8
+            | InterfaceType::UInt16
+            | InterfaceType::UInt32
+            | InterfaceType::Int64(_)
+            | InterfaceType::UInt64(_)
+            | InterfaceType::Int128
+            | InterfaceType::UInt128
     )
 }
 
@@ -57,29 +57,29 @@ mod tests {
     #[test]
     fn int32_remainder_bridge_requires_definedness_and_expands() {
         let source = "import click::integer; theorem remainder(a: int32, b: int32) { requires defined(a % b); requires to_integer(b) != 0; ensures to_integer(a % b) == truncating_remainder(to_integer(a), to_integer(b)) by { apply(integer::int32_remainder_to_integer(a, b)) using { defined(a % b); to_integer(b) != 0; } } }";
-        verify_c0_sources(source, &[]).unwrap();
-        let expanded = expand_c0_claim_source_by_label(source, &[], "remainder.ensures_0").unwrap();
-        verify_c0_sources(&expanded, &[]).unwrap();
-        assert!(verify_c0_sources(&source.replace("requires defined(a % b);", ""), &[]).is_err());
+        verify_c_sources(source, &[]).unwrap();
+        let expanded = expand_c_claim_source_by_label(source, &[], "remainder.ensures_0").unwrap();
+        verify_c_sources(&expanded, &[]).unwrap();
+        assert!(verify_c_sources(&source.replace("requires defined(a % b);", ""), &[]).is_err());
         // `defined(a % b)` states `b != 0`, which is the one form of
         // `to_integer(b) != 0`, so the disequality alone is redundant.
-        verify_c0_sources(&source.replace("requires to_integer(b) != 0;", ""), &[]).unwrap();
+        verify_c_sources(&source.replace("requires to_integer(b) != 0;", ""), &[]).unwrap();
         for (a, b) in [("0", "0"), ("-2147483648", "-1")] {
             let invalid = format!(
                 "import click::integer; theorem invalid() {{ ensures to_integer({a} % {b}) == 0 by {{ apply(integer::int32_remainder_to_integer({a}, {b})); }} }}"
             );
-            assert!(verify_c0_sources(&invalid, &[]).is_err());
+            assert!(verify_c_sources(&invalid, &[]).is_err());
         }
         let forged = "theorem int32_remainder_to_integer(a: int32, b: int32) { requires b != 0; requires to_integer(b) != 0; ensures to_integer(a % b) == truncating_remainder(to_integer(a), to_integer(b)); }";
-        assert!(verify_c0_sources(forged, &[]).is_err());
+        assert!(verify_c_sources(forged, &[]).is_err());
     }
 
     #[test]
     fn uint32_product_bound_guard_expands_and_rejects_wrapped_or_signed_bounds() {
         let source = "import click::integer; theorem bounded(a: uint32, b: uint32) { requires to_integer(a) * to_integer(b) <= 4294967295; ensures b == 0u32 or a <= 4294967295u32 / b by { apply(integer::uint32_multiply_guard_by_integer_bound(a, b)) using { to_integer(a) * to_integer(b) <= 4294967295; } } }";
-        verify_c0_sources(source, &[]).unwrap();
-        let expanded = expand_c0_claim_source_by_label(source, &[], "bounded.ensures_0").unwrap();
-        verify_c0_sources(&expanded, &[]).unwrap();
+        verify_c_sources(source, &[]).unwrap();
+        let expanded = expand_c_claim_source_by_label(source, &[], "bounded.ensures_0").unwrap();
+        verify_c_sources(&expanded, &[]).unwrap();
         for requirement in [
             "to_integer(a * b) <= 4294967295",
             "to_integer(a as int32) * to_integer(b as int32) <= 4294967295",
@@ -87,24 +87,24 @@ mod tests {
         ] {
             let invalid =
                 source.replace("to_integer(a) * to_integer(b) <= 4294967295", requirement);
-            assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+            assert!(verify_c_sources(&invalid, &[]).is_err(), "{invalid}");
         }
         let missing = source.replace("requires to_integer(a) * to_integer(b) <= 4294967295;", "");
-        assert!(verify_c0_sources(&missing, &[]).is_err());
+        assert!(verify_c_sources(&missing, &[]).is_err());
         let forged = "theorem uint32_multiply_guard_by_integer_bound(a: uint32, b: uint32) { requires to_integer(a) * to_integer(b) <= 4294967296; ensures b == 0u32 or a <= 4294967295u32 / b; }";
-        assert!(verify_c0_sources(forged, &[]).is_err());
+        assert!(verify_c_sources(forged, &[]).is_err());
     }
 
     #[test]
     fn scalar_casts_keep_byte_read_width_in_definedness() {
         let c = "int32 read(const uint8* p) { return (int32)p[0]; }";
         let source = "verifying \"read.c\"; int32 read(const uint8* p) { views p[0..1]; ensures defined(p[0] as int32); }";
-        verify_c0_sources(source, &[("read.c", c)]).unwrap();
+        verify_c_sources(source, &[("read.c", c)]).unwrap();
         let expanded =
-            expand_c0_claim_source_by_label(source, &[("read.c", c)], "read.ensures_0").unwrap();
-        verify_c0_sources(&expanded, &[("read.c", c)]).unwrap();
+            expand_c_claim_source_by_label(source, &[("read.c", c)], "read.ensures_0").unwrap();
+        verify_c_sources(&expanded, &[("read.c", c)]).unwrap();
         assert!(
-            verify_c0_sources(
+            verify_c_sources(
                 &source.replace(
                     "ensures defined(p[0] as int32)",
                     "ensures defined(p[1] as int32)"
@@ -124,13 +124,13 @@ mod tests {
             let source = format!(
                 "spec enum Box {{ Wrapped(Integer) }} spec enum Outer {{ Wrapped(Box) }} theorem wrapped(x: int32) {{ ensures {value} == {value} by solve(); }}"
             );
-            assert!(verify_c0_sources(&source, &[]).is_err(), "{source}");
+            assert!(verify_c_sources(&source, &[]).is_err(), "{source}");
             let bounded = source.replace("{ ensures", "{ requires defined(x + 1); ensures");
-            verify_c0_sources(&bounded, &[])
+            verify_c_sources(&bounded, &[])
                 .unwrap_or_else(|e| panic!("{}\n{bounded}", e.message()));
             let expanded =
-                expand_c0_claim_source_by_label(&bounded, &[], "wrapped.ensures_0").unwrap();
-            verify_c0_sources(&expanded, &[]).unwrap();
+                expand_c_claim_source_by_label(&bounded, &[], "wrapped.ensures_0").unwrap();
+            verify_c_sources(&expanded, &[]).unwrap();
         }
     }
 
@@ -149,16 +149,16 @@ mod tests {
             let source = format!(
                 "import click::integer; theorem round_trip(z: Integer) {{ requires z >= {lower}; requires z <= {upper}; ensures to_integer(to_{target}(z)) == z by {{ apply(integer::to_{target}_round_trip(z)); }} }}"
             );
-            verify_c0_sources(&source, &[]).unwrap_or_else(|e| panic!("{}\n{source}", e.message()));
+            verify_c_sources(&source, &[]).unwrap_or_else(|e| panic!("{}\n{source}", e.message()));
             let expanded =
-                expand_c0_claim_source_by_label(&source, &[], "round_trip.ensures_0").unwrap();
-            verify_c0_sources(&expanded, &[]).unwrap();
+                expand_c_claim_source_by_label(&source, &[], "round_trip.ensures_0").unwrap();
+            verify_c_sources(&expanded, &[]).unwrap();
             for missing in [
                 format!("requires z >= {lower};"),
                 format!("requires z <= {upper};"),
             ] {
                 let invalid = source.replace(&missing, "");
-                assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+                assert!(verify_c_sources(&invalid, &[]).is_err(), "{invalid}");
             }
         }
     }
@@ -177,18 +177,18 @@ mod tests {
             let source = format!(
                 "theorem round_trip(z: Integer) {{ requires z >= {lower}; requires z <= {upper}; ensures to_integer(to_{target}(z)) == z by {{ solve(); }} }}"
             );
-            verify_c0_sources(&source, &[]).unwrap_or_else(|e| panic!("{}\n{source}", e.message()));
+            verify_c_sources(&source, &[]).unwrap_or_else(|e| panic!("{}\n{source}", e.message()));
             let expanded =
-                expand_c0_claim_source_by_label(&source, &[], "round_trip.ensures_0").unwrap();
+                expand_c_claim_source_by_label(&source, &[], "round_trip.ensures_0").unwrap();
             assert!(expanded.contains("integer_cast_identity"), "{expanded}");
-            crate::surface::proof::without_implicit_solve(|| verify_c0_sources(&expanded, &[]))
+            crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &[]))
                 .unwrap();
             for missing in [
                 format!("requires z >= {lower};"),
                 format!("requires z <= {upper};"),
             ] {
                 let invalid = source.replace(&missing, "");
-                assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+                assert!(verify_c_sources(&invalid, &[]).is_err(), "{invalid}");
             }
         }
     }
@@ -203,9 +203,9 @@ mod tests {
             let source = format!(
                 "theorem compose(x: int32) {{ ensures {expression} == {expression} by solve(); }}"
             );
-            assert!(verify_c0_sources(&source, &[]).is_err(), "{source}");
+            assert!(verify_c_sources(&source, &[]).is_err(), "{source}");
             let bounded = source.replace("{ ensures", "{ requires defined(x + 1); ensures");
-            verify_c0_sources(&bounded, &[]).unwrap();
+            verify_c_sources(&bounded, &[]).unwrap();
         }
     }
 
@@ -215,14 +215,14 @@ mod tests {
         let source = format!(
             "theorem branch(c: int32, x: int32, y: int32) {{ requires defined({expression}); ensures to_integer({expression}) == to_integer({expression}) by solve(); }}"
         );
-        verify_c0_sources(&source, &[]).unwrap();
+        verify_c_sources(&source, &[]).unwrap();
         let invalid = source.replace(&format!("requires defined({expression});"), "");
-        assert!(verify_c0_sources(&invalid, &[]).is_err());
+        assert!(verify_c_sources(&invalid, &[]).is_err());
         let one_branch = source.replace(
             &format!("requires defined({expression});"),
             "requires defined(x + 1);",
         );
-        assert!(verify_c0_sources(&one_branch, &[]).is_err());
+        assert!(verify_c_sources(&one_branch, &[]).is_err());
     }
 
     #[test]
@@ -233,9 +233,9 @@ mod tests {
         ] {
             let source =
                 format!("theorem alias(x: int32) {{ {alias} ensures a == a by solve(); }}");
-            assert!(verify_c0_sources(&source, &[]).is_err(), "{source}");
+            assert!(verify_c_sources(&source, &[]).is_err(), "{source}");
             let bounded = source.replace("{ let", "{ requires defined(x + 1); let");
-            verify_c0_sources(&bounded, &[]).unwrap();
+            verify_c_sources(&bounded, &[]).unwrap();
         }
     }
 
@@ -243,11 +243,11 @@ mod tests {
     fn forward_conversion_memory_requires_ownership_and_definedness() {
         let c = "int32 read(int32* p) { return *p; }";
         let source = "verifying \"read.c\"; int32 read(int32* p) { owns p[0..1]; requires defined(p[0] + 1); ensures to_integer(p[0] + 1) == to_integer(p[0] + 1); }";
-        verify_c0_sources(source, &[("read.c", c)]).unwrap();
+        verify_c_sources(source, &[("read.c", c)]).unwrap();
         for missing in ["owns p[0..1];", "requires defined(p[0] + 1);"] {
             let invalid = source.replace(missing, "");
             assert!(
-                verify_c0_sources(&invalid, &[("read.c", c)]).is_err(),
+                verify_c_sources(&invalid, &[("read.c", c)]).is_err(),
                 "{invalid}"
             );
         }
@@ -256,13 +256,13 @@ mod tests {
     #[test]
     fn forward_conversion_keeps_intermediate_overflow_obligations() {
         let source = "theorem nested(x: int32) { requires defined((x + 1) + 1); ensures to_integer((x + 1) + 1) == to_integer((x + 1) + 1) by solve(); }";
-        verify_c0_sources(source, &[]).unwrap();
+        verify_c_sources(source, &[]).unwrap();
         let missing = source.replace("requires defined((x + 1) + 1);", "requires defined(x + 1);");
-        assert!(verify_c0_sources(&missing, &[]).is_err());
+        assert!(verify_c_sources(&missing, &[]).is_err());
         let cancelled = "theorem cancelled(x: int32) { ensures to_integer((x + 1) - 1) == to_integer((x + 1) - 1) by solve(); }";
-        assert!(verify_c0_sources(cancelled, &[]).is_err());
+        assert!(verify_c_sources(cancelled, &[]).is_err());
         let bounded = cancelled.replace("{ ensures", "{ requires defined((x + 1) - 1); ensures");
-        verify_c0_sources(&bounded, &[]).unwrap();
+        verify_c_sources(&bounded, &[]).unwrap();
     }
 
     #[test]
@@ -271,35 +271,35 @@ mod tests {
             let source = format!(
                 "theorem forward(x: int32) {{ ensures to_integer(x + 1) == to_integer(x + 1) by {{ {proof}; }} }}"
             );
-            assert!(verify_c0_sources(&source, &[]).is_err(), "{source}");
+            assert!(verify_c_sources(&source, &[]).is_err(), "{source}");
             let bounded = source.replace("{ ensures", "{ requires defined(x + 1); ensures");
-            verify_c0_sources(&bounded, &[])
+            verify_c_sources(&bounded, &[])
                 .unwrap_or_else(|error| panic!("{}\n{bounded}", error.message()));
             if proof == "solve()" {
                 let expanded =
-                    expand_c0_claim_source_by_label(&bounded, &[], "forward.ensures_0").unwrap();
-                verify_c0_sources(&expanded, &[]).unwrap();
+                    expand_c_claim_source_by_label(&bounded, &[], "forward.ensures_0").unwrap();
+                verify_c_sources(&expanded, &[]).unwrap();
             }
         }
         let c = "int32 identity(int32 x) { return x; }";
         let source = "verifying \"identity.c\"; int32 identity(int32 x) { ensures to_integer(x + 1) == to_integer(x + 1); }";
-        assert!(verify_c0_sources(source, &[("identity.c", c)]).is_err());
+        assert!(verify_c_sources(source, &[("identity.c", c)]).is_err());
         let bounded = source.replace("{ ensures", "{ requires defined(x + 1); ensures");
-        verify_c0_sources(&bounded, &[("identity.c", c)]).unwrap();
+        verify_c_sources(&bounded, &[("identity.c", c)]).unwrap();
     }
 
     #[test]
     fn integer_bounds_establish_c_add_definedness_without_circular_assumptions() {
         let source = "import click::integer; theorem safety(a: int32, b: int32) { requires to_integer(a) + to_integer(b) >= -2147483648; requires to_integer(a) + to_integer(b) <= 2147483647; ensures defined(a + b) by { apply(integer::int32_add_defined_by_integer_bounds(a, b)); } }";
-        verify_c0_sources(source, &[]).unwrap();
-        let expanded = expand_c0_claim_source_by_label(source, &[], "safety.ensures_0").unwrap();
-        verify_c0_sources(&expanded, &[]).unwrap();
+        verify_c_sources(source, &[]).unwrap();
+        let expanded = expand_c_claim_source_by_label(source, &[], "safety.ensures_0").unwrap();
+        verify_c_sources(&expanded, &[]).unwrap();
         for missing in [
             "requires to_integer(a) + to_integer(b) >= -2147483648;",
             "requires to_integer(a) + to_integer(b) <= 2147483647;",
         ] {
             let invalid = source.replace(missing, "");
-            assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+            assert!(verify_c_sources(&invalid, &[]).is_err(), "{invalid}");
         }
     }
 
@@ -312,21 +312,21 @@ mod tests {
             let source = format!(
                 "import click::integer; theorem bridge(a: int32, b: int32) {{ requires defined(a {operator} b); ensures to_integer(a {operator} b) == to_integer(a) {operator} to_integer(b) by {{ apply({name}(a, b)); }} }}"
             );
-            verify_c0_sources(&source, &[]).unwrap_or_else(|e| panic!("{}\n{source}", e.message()));
+            verify_c_sources(&source, &[]).unwrap_or_else(|e| panic!("{}\n{source}", e.message()));
             let expanded =
-                expand_c0_claim_source_by_label(&source, &[], "bridge.ensures_0").unwrap();
-            verify_c0_sources(&expanded, &[]).unwrap();
+                expand_c_claim_source_by_label(&source, &[], "bridge.ensures_0").unwrap();
+            verify_c_sources(&expanded, &[]).unwrap();
             let invalid = source.replace(&format!("requires defined(a {operator} b);"), "");
-            assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+            assert!(verify_c_sources(&invalid, &[]).is_err(), "{invalid}");
         }
     }
 
     #[test]
     fn uint32_small_remainder_expands_and_requires_strict_unsigned_evidence() {
         let source = "import click::integer; theorem lane(value: uint32, divisor: uint32) { requires value < divisor; ensures value % divisor == value by { apply(integer::uint32_less_than_divisor_implies_remainder_is_value(value, divisor)); } }";
-        verify_c0_sources(source, &[]).unwrap();
-        let expanded = expand_c0_claim_source_by_label(source, &[], "lane.ensures_0").unwrap();
-        verify_c0_sources(&expanded, &[]).unwrap();
+        verify_c_sources(source, &[]).unwrap();
+        let expanded = expand_c_claim_source_by_label(source, &[], "lane.ensures_0").unwrap();
+        verify_c_sources(&expanded, &[]).unwrap();
         for invalid in [
             source.replace("requires value < divisor;", ""),
             source.replace("value < divisor", "value <= divisor"),
@@ -340,23 +340,23 @@ mod tests {
                 "ensures value % divisor == divisor",
             ),
         ] {
-            assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+            assert!(verify_c_sources(&invalid, &[]).is_err(), "{invalid}");
         }
     }
 
     #[test]
     fn uint32_remainder_bound_expands_and_requires_a_nonzero_divisor() {
         let source = "import click::integer; theorem bridge(value: uint32, divisor: uint32) { requires divisor != 0u32; ensures to_integer(value % divisor) < to_integer(divisor) by { apply(integer::uint32_remainder_less_than_divisor(value, divisor)); } }";
-        verify_c0_sources(source, &[]).unwrap();
-        let expanded = expand_c0_claim_source_by_label(source, &[], "bridge.ensures_0").unwrap();
-        verify_c0_sources(&expanded, &[]).unwrap();
+        verify_c_sources(source, &[]).unwrap();
+        let expanded = expand_c_claim_source_by_label(source, &[], "bridge.ensures_0").unwrap();
+        verify_c_sources(&expanded, &[]).unwrap();
         for invalid in [
             source.replace("requires divisor != 0u32;", ""),
             source.replace("requires divisor != 0u32;", "requires value != 0u32;"),
             source.replace("< to_integer(divisor) by", "< 65521 by"),
             source.replace("< to_integer(divisor) by", ">= to_integer(divisor) by"),
         ] {
-            assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+            assert!(verify_c_sources(&invalid, &[]).is_err(), "{invalid}");
         }
     }
 
@@ -367,11 +367,11 @@ mod tests {
             "import click::integer; theorem wrong(value: uint32) { ensures to_integer(value + 1u32) == to_integer(value) + 1 by { apply(integer::uint32_to_integer_bounds(value + 1u32)); } }",
             "import click::integer; theorem wrong(value: uint32) { ensures to_integer(value / 0u32) == 0 by { apply(integer::uint32_to_integer_bounds(value / 0u32)); } }",
         ] {
-            assert!(verify_c0_sources(invalid, &[]).is_err(), "{invalid}");
+            assert!(verify_c_sources(invalid, &[]).is_err(), "{invalid}");
         }
         // Specification division is total: the quotient by zero is an opaque
         // `uint32`, so it has the type's range and no other property.
-        verify_c0_sources(
+        verify_c_sources(
             "import click::integer; theorem range(value: uint32) { ensures 0 <= to_integer(value / 0u32) by { apply(integer::uint32_to_integer_bounds(value / 0u32)); } }",
             &[],
         )
@@ -400,10 +400,10 @@ mod tests {
             let source = format!(
                 "import click::integer; theorem bridge(left: uint32, right: uint32) {{ requires {premise}; ensures {conclusion} by {{ apply({name}(left, right)); }} }}"
             );
-            verify_c0_sources(&source, &[]).unwrap();
+            verify_c_sources(&source, &[]).unwrap();
             let expanded =
-                expand_c0_claim_source_by_label(&source, &[], "bridge.ensures_0").unwrap();
-            verify_c0_sources(&expanded, &[]).unwrap();
+                expand_c_claim_source_by_label(&source, &[], "bridge.ensures_0").unwrap();
+            verify_c_sources(&expanded, &[]).unwrap();
             let mut invalid = vec![
                 source.replace(&format!("requires {premise};"), ""),
                 source.replace("ensures", "ensures not"),
@@ -417,7 +417,7 @@ mod tests {
                 ));
             }
             for invalid in invalid {
-                assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+                assert!(verify_c_sources(&invalid, &[]).is_err(), "{invalid}");
             }
         }
     }
@@ -425,16 +425,16 @@ mod tests {
     #[test]
     fn integer_order_observation_requires_the_c_guard_and_rechecks_expansion() {
         let source = "import click::integer; theorem bridge(left: int32, right: int32) { requires left <= right; ensures to_integer(left) <= to_integer(right) by { apply(integer::int32_less_equal_to_integer(left, right)); } }";
-        verify_c0_sources(source, &[]).unwrap();
-        let expanded = expand_c0_claim_source_by_label(source, &[], "bridge.ensures_0").unwrap();
-        verify_c0_sources(&expanded, &[]).unwrap();
+        verify_c_sources(source, &[]).unwrap();
+        let expanded = expand_c_claim_source_by_label(source, &[], "bridge.ensures_0").unwrap();
+        verify_c_sources(&expanded, &[]).unwrap();
 
         for invalid in [
             source.replace("requires left <= right;", ""),
             source.replace("requires left <= right;", "requires right <= left;"),
         ] {
             assert!(
-                verify_c0_sources(&invalid, &[]).is_err(),
+                verify_c_sources(&invalid, &[]).is_err(),
                 "order observation accepted an invalid guard: {invalid}"
             );
         }
@@ -444,9 +444,9 @@ mod tests {
     fn symbolic_integer_datatype_matches_are_exhaustive_and_checked() {
         let source = "spec enum Box<T> { Empty, Wrapped(T), }\n            function project(value: Box<Integer>) -> Integer { match value { Box::Empty => to_integer(0), Box::Wrapped(inner) => inner, } }\n\
             theorem symbolic(value: Box<Integer>) { ensures project(value) == project(value) by solve(); }";
-        verify_c0_sources(source, &[]).unwrap();
-        let expanded = expand_c0_claim_source_by_label(source, &[], "symbolic.ensures_0").unwrap();
-        verify_c0_sources(&expanded, &[]).unwrap();
+        verify_c_sources(source, &[]).unwrap();
+        let expanded = expand_c_claim_source_by_label(source, &[], "symbolic.ensures_0").unwrap();
+        verify_c_sources(&expanded, &[]).unwrap();
     }
 
     #[test]
@@ -456,31 +456,31 @@ mod tests {
             function project(value: Box) -> Integer { match value { Box::Empty => to_integer(0), Box::Wrapped(inner) => inner, } }
             theorem known() { ensures project(Box::Wrapped(to_integer(7))) == to_integer(7) by solve(); }
         "#;
-        verify_c0_sources(source, &[]).unwrap();
-        let expanded = expand_c0_claim_source_by_label(source, &[], "known.ensures_0").unwrap();
-        verify_c0_sources(&expanded, &[]).unwrap();
+        verify_c_sources(source, &[]).unwrap();
+        let expanded = expand_c_claim_source_by_label(source, &[], "known.ensures_0").unwrap();
+        verify_c_sources(&expanded, &[]).unwrap();
     }
 
     #[test]
     fn deferred_integer_function_c_arguments_keep_mandatory_definedness() {
         let unguarded = "function f(x: int32) -> Integer { to_integer(x) }\n\
             theorem call(x: int32) { ensures f(x + 1) == f(x + 1) by solve(); }";
-        assert!(verify_c0_sources(unguarded, &[]).is_err());
+        assert!(verify_c_sources(unguarded, &[]).is_err());
 
         let guarded = unguarded.replace("{ ensures", "{ requires defined(x + 1); ensures");
-        verify_c0_sources(&guarded, &[]).unwrap();
-        let expanded = expand_c0_claim_source_by_label(&guarded, &[], "call.ensures_0").unwrap();
-        verify_c0_sources(&expanded, &[]).unwrap();
+        verify_c_sources(&guarded, &[]).unwrap();
+        let expanded = expand_c_claim_source_by_label(&guarded, &[], "call.ensures_0").unwrap();
+        verify_c_sources(&expanded, &[]).unwrap();
 
         let mixed = "function mix(left: int32, right: int32) -> Integer { to_integer(left) }\n\
             theorem call(left: int32, right: int32) { requires defined(left + 1); requires defined(right + 1); ensures mix(left + 1, right + 1) == mix(left + 1, right + 1) by solve(); }";
-        verify_c0_sources(mixed, &[]).unwrap();
+        verify_c_sources(mixed, &[]).unwrap();
         for missing in [
             "requires defined(left + 1); ",
             "requires defined(right + 1); ",
         ] {
             let invalid = mixed.replacen(missing, "", 1);
-            assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+            assert!(verify_c_sources(&invalid, &[]).is_err(), "{invalid}");
         }
     }
 
@@ -492,26 +492,24 @@ mod tests {
                  theorem call(x: int32) {{ ensures f(-2147483648 / x) == f(-2147483648 / x) by {{ {proof}; }} }}"
             );
             // A zero divisor owes nothing; `MIN / -1` still overflows.
-            assert!(verify_c0_sources(&division, &[]).is_err(), "{division}");
+            assert!(verify_c_sources(&division, &[]).is_err(), "{division}");
             let guarded = division.replace("{ ensures", "{ requires x != -1; ensures");
-            verify_c0_sources(&guarded, &[]).unwrap();
-            let expanded =
-                expand_c0_claim_source_by_label(&guarded, &[], "call.ensures_0").unwrap();
-            verify_c0_sources(&expanded, &[]).unwrap();
+            verify_c_sources(&guarded, &[]).unwrap();
+            let expanded = expand_c_claim_source_by_label(&guarded, &[], "call.ensures_0").unwrap();
+            verify_c_sources(&expanded, &[]).unwrap();
 
             let branch = format!(
                 "function f(x: int32) -> Integer {{ to_integer(x) }}\n\
                  theorem call(c: int32, x: int32, y: int32) {{ ensures f(if c == 0 {{ x + 1 }} else {{ y + 1 }}) == f(if c == 0 {{ x + 1 }} else {{ y + 1 }}) by {{ {proof}; }} }}"
             );
-            assert!(verify_c0_sources(&branch, &[]).is_err(), "{branch}");
+            assert!(verify_c_sources(&branch, &[]).is_err(), "{branch}");
             let guarded = branch.replace(
                 "{ ensures",
                 "{ requires defined(if c == 0 { x + 1 } else { y + 1 }); ensures",
             );
-            verify_c0_sources(&guarded, &[]).unwrap();
-            let expanded =
-                expand_c0_claim_source_by_label(&guarded, &[], "call.ensures_0").unwrap();
-            verify_c0_sources(&expanded, &[]).unwrap();
+            verify_c_sources(&guarded, &[]).unwrap();
+            let expanded = expand_c_claim_source_by_label(&guarded, &[], "call.ensures_0").unwrap();
+            verify_c_sources(&expanded, &[]).unwrap();
         }
     }
 
@@ -521,11 +519,11 @@ mod tests {
             function pack(x: int32) -> Box { Box::Wrapped(x) }\n\
             function f(value: Box) -> Integer { 0 }\n\
             theorem call(x: int32) { ensures f(pack(x + 1)) == f(pack(x + 1)) by solve(); }";
-        assert!(verify_c0_sources(source, &[]).is_err());
+        assert!(verify_c_sources(source, &[]).is_err());
         let guarded = source.replace("{ ensures", "{ requires defined(x + 1); ensures");
-        verify_c0_sources(&guarded, &[]).unwrap();
-        let expanded = expand_c0_claim_source_by_label(&guarded, &[], "call.ensures_0").unwrap();
-        verify_c0_sources(&expanded, &[]).unwrap();
+        verify_c_sources(&guarded, &[]).unwrap();
+        let expanded = expand_c_claim_source_by_label(&guarded, &[], "call.ensures_0").unwrap();
+        verify_c_sources(&expanded, &[]).unwrap();
     }
 
     #[test]
@@ -534,10 +532,10 @@ mod tests {
             "theorem conversion(x: int32) { ensures to_integer(x) == to_integer(x) by solve(); }",
             "theorem conversion() { ensures to_integer(to_uint64(18446744073709551615)) == 18446744073709551615 by solve(); }",
         ] {
-            verify_c0_sources(source, &[]).unwrap();
+            verify_c_sources(source, &[]).unwrap();
             let expanded =
-                expand_c0_claim_source_by_label(source, &[], "conversion.ensures_0").unwrap();
-            verify_c0_sources(&expanded, &[])
+                expand_c_claim_source_by_label(source, &[], "conversion.ensures_0").unwrap();
+            verify_c_sources(&expanded, &[])
                 .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
             assert!(!expanded.contains("by solve()"), "{expanded}");
         }
@@ -552,11 +550,11 @@ mod tests {
             "theorem observe() { ensures to_integer(to_int128(170141183460469231731687303715884105727)) == 170141183460469231731687303715884105727 by solve(); }",
             "theorem observe() { ensures to_integer(to_uint128(340282366920938463463374607431768211455)) == 340282366920938463463374607431768211455 by solve(); }",
         ] {
-            verify_c0_sources(source, &[])
+            verify_c_sources(source, &[])
                 .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
             let expanded =
-                expand_c0_claim_source_by_label(source, &[], "observe.ensures_0").unwrap();
-            verify_c0_sources(&expanded, &[])
+                expand_c_claim_source_by_label(source, &[], "observe.ensures_0").unwrap();
+            verify_c_sources(&expanded, &[])
                 .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
         }
         for (target, value) in [
@@ -568,7 +566,7 @@ mod tests {
             let source = format!(
                 "theorem bad() {{ ensures to_integer(to_{target}({value})) == {value} by solve(); }}"
             );
-            assert!(verify_c0_sources(&source, &[]).is_err(), "{source}");
+            assert!(verify_c_sources(&source, &[]).is_err(), "{source}");
         }
         for (target, lower, upper) in [
             (
@@ -590,7 +588,7 @@ mod tests {
                 let source = format!(
                     "theorem observe(z: Integer) {{ {requirements} ensures to_integer(to_{target}(z)) == to_integer(to_{target}(z)) by solve(); }}"
                 );
-                assert_eq!(verify_c0_sources(&source, &[]).is_ok(), valid, "{source}");
+                assert_eq!(verify_c_sources(&source, &[]).is_ok(), valid, "{source}");
             }
         }
     }
@@ -612,7 +610,7 @@ mod tests {
                     "theorem bad() {{ ensures to_{target}({value}) == to_{target}({value}) by solve(); }}"
                 );
                 assert!(
-                    verify_c0_sources(&source, &[]).is_err(),
+                    verify_c_sources(&source, &[]).is_err(),
                     "out-of-range conversion accepted: {source}"
                 );
             }
@@ -634,7 +632,7 @@ mod tests {
             let source = format!(
                 "theorem conversion(z: Integer) {{ requires z >= {lower}; requires z <= {upper}; ensures to_{target}(z) == to_{target}(z) by solve(); }}"
             );
-            verify_c0_sources(&source, &[]).unwrap_or_else(|error| {
+            verify_c_sources(&source, &[]).unwrap_or_else(|error| {
                 panic!(
                     "bounded symbolic conversion `{target}` rejected: {}",
                     error.message()
@@ -646,7 +644,7 @@ mod tests {
     #[test]
     fn to_integer_of_an_integer_is_that_integer() {
         let source = "theorem same(z: Integer) { ensures to_integer(z) == z by solve(); }";
-        verify_c0_sources(source, &[]).unwrap();
+        verify_c_sources(source, &[]).unwrap();
     }
 
     #[test]
@@ -674,7 +672,7 @@ mod tests {
                     "theorem conversion(z: Integer) {{{requires} ensures to_{target}(z) == to_{target}(z) by solve(); }}"
                 );
                 assert!(
-                    verify_c0_sources(&source, &[]).is_err(),
+                    verify_c_sources(&source, &[]).is_err(),
                     "conversion `{target}` accepted without both bounds: {source}"
                 );
             }
@@ -684,23 +682,23 @@ mod tests {
     #[test]
     fn wrapped_symbolic_conversions_keep_bounds_through_proofs_and_expansion() {
         let bounded = "theorem wrapped(z: Integer) { requires z >= -2147483648; requires z <= 2147483647; ensures to_int32(z) + 0 == to_int32(z) by solve(); }";
-        verify_c0_sources(bounded, &[]).unwrap();
+        verify_c_sources(bounded, &[]).unwrap();
         let normalized = bounded.replace("by solve(); }", "by { normalize(); } }");
-        verify_c0_sources(&normalized, &[]).unwrap();
-        let expanded = expand_c0_claim_source_by_label(bounded, &[], "wrapped.ensures_0").unwrap();
-        verify_c0_sources(&expanded, &[]).unwrap();
+        verify_c_sources(&normalized, &[]).unwrap();
+        let expanded = expand_c_claim_source_by_label(bounded, &[], "wrapped.ensures_0").unwrap();
+        verify_c_sources(&expanded, &[]).unwrap();
 
         for missing in ["requires z >= -2147483648;", "requires z <= 2147483647;"] {
             let invalid = bounded.replace(missing, "");
-            assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+            assert!(verify_c_sources(&invalid, &[]).is_err(), "{invalid}");
         }
 
         let prior_have = "theorem prior(z: Integer) { requires z >= -2147483648; requires z <= 2147483647; let x: int32 = to_int32(z); ensures x + 0 == x by solve(); }";
-        verify_c0_sources(prior_have, &[]).unwrap();
+        verify_c_sources(prior_have, &[]).unwrap();
         let aliases = "theorem aliases(z: Integer) { requires z >= -2147483648; requires z <= 2147483647; let a: int32 = to_int32(z); let b: int32 = a + 0; ensures b == a by solve(); }";
-        verify_c0_sources(aliases, &[]).unwrap();
+        verify_c_sources(aliases, &[]).unwrap();
         let no_bounds = "theorem aliases(z: Integer) { let a: int32 = to_int32(z); let b: int32 = a + 0; ensures b == a by solve(); }";
-        assert!(verify_c0_sources(no_bounds, &[]).is_err());
+        assert!(verify_c_sources(no_bounds, &[]).is_err());
     }
 
     #[test]
@@ -720,7 +718,7 @@ mod tests {
         ] {
             let source = format!("theorem bad({parameters}) {{ ensures {claim} by solve(); }}");
             assert!(
-                verify_c0_sources(&source, &[]).is_err(),
+                verify_c_sources(&source, &[]).is_err(),
                 "invalid conversion accepted: {source}"
             );
         }
@@ -753,14 +751,14 @@ mod tests {
 }}
 "#
             );
-            verify_c0_sources(&source, &[("cast.c", &c)])
+            verify_c_sources(&source, &[("cast.c", &c)])
                 .unwrap_or_else(|e| panic!("{field}: {}", e.message()));
             let expanded =
-                expand_c0_claim_source_by_label(&source, &[("cast.c", &c)], "cast.ensures_0")
+                expand_c_claim_source_by_label(&source, &[("cast.c", &c)], "cast.ensures_0")
                     .unwrap();
-            verify_c0_sources(&expanded, &[("cast.c", &c)]).unwrap();
+            verify_c_sources(&expanded, &[("cast.c", &c)]).unwrap();
             assert!(
-                verify_c0_sources(
+                verify_c_sources(
                     &source.replace(&format!("views self->{field};"), ""),
                     &[("cast.c", &c)]
                 )
@@ -805,29 +803,29 @@ mod tests {
 {destination} caller({source_ty} value) {{ {contract} }}
 "#
             );
-            verify_c0_sources(&source, &[("cast.c", &c)])
+            verify_c_sources(&source, &[("cast.c", &c)])
                 .unwrap_or_else(|e| panic!("{source_ty}/{destination}: {}", e.message()));
             if source_ty == "uint64" && destination == "int64" {
                 let implicit_return = c.replace("return (int64)value;", "return value;");
-                verify_c0_sources(&source, &[("cast.c", &implicit_return)]).unwrap();
-                let expanded = expand_c0_claim_source_by_label(
+                verify_c_sources(&source, &[("cast.c", &implicit_return)]).unwrap();
+                let expanded = expand_c_claim_source_by_label(
                     &source,
                     &[("cast.c", &implicit_return)],
                     "cast.ensures_0",
                 )
                 .unwrap();
-                verify_c0_sources(&expanded, &[("cast.c", &implicit_return)]).unwrap();
+                verify_c_sources(&expanded, &[("cast.c", &implicit_return)]).unwrap();
             }
             // C's conversion owes no native range; the Integer bounds the
             // certificate cites alone justify the identity.
             if !native_guard.is_empty() {
-                verify_c0_sources(&source.replace(native_guard, ""), &[("cast.c", &c)])
+                verify_c_sources(&source.replace(native_guard, ""), &[("cast.c", &c)])
                     .unwrap_or_else(|e| panic!("{source_ty}/{destination}: {}", e.message()));
             }
             let expanded =
-                expand_c0_claim_source_by_label(&source, &[("cast.c", &c)], "caller.ensures_0")
+                expand_c_claim_source_by_label(&source, &[("cast.c", &c)], "caller.ensures_0")
                     .unwrap();
-            verify_c0_sources(&expanded, &[("cast.c", &c)]).unwrap();
+            verify_c_sources(&expanded, &[("cast.c", &c)]).unwrap();
             let without_lower =
                 source.replace(&format!("requires {lower} <= to_integer(value);"), "");
             // Remove the equivalent native guard too when testing a missing bound.
@@ -835,17 +833,17 @@ mod tests {
                 .replace(&format!("requires to_integer(value) <= {upper};"), "")
                 .replace(native_guard, "");
             if source_ty.starts_with("int") {
-                verify_c0_sources(&without_lower, &[("cast.c", &c)])
+                verify_c_sources(&without_lower, &[("cast.c", &c)])
                     .expect_err("a signed source needs its nonnegative bound");
             }
             if source_ty == "uint64" {
-                verify_c0_sources(&without_upper, &[("cast.c", &c)])
+                verify_c_sources(&without_upper, &[("cast.c", &c)])
                     .expect_err("narrowing the unsigned range needs its upper bound");
-                verify_c0_sources(&without_lower, &[("cast.c", &c)])
+                verify_c_sources(&without_lower, &[("cast.c", &c)])
                     .expect("uint64 already guarantees the nonnegative bound");
             }
             if matches!(source_ty, "int64" | "uint32") {
-                verify_c0_sources(&without_upper, &[("cast.c", &c)])
+                verify_c_sources(&without_upper, &[("cast.c", &c)])
                     .expect("the source type already guarantees this upper bound");
             }
             for invalid in [
@@ -863,7 +861,7 @@ mod tests {
                 ),
             ] {
                 assert!(
-                    verify_c0_sources(&invalid, &[("cast.c", &c)]).is_err(),
+                    verify_c_sources(&invalid, &[("cast.c", &c)]).is_err(),
                     "{source_ty}/{destination}"
                 );
             }
@@ -873,9 +871,9 @@ mod tests {
     #[test]
     fn uint32_subtract_bridge_rechecks_guards_and_expansion() {
         let source = "import click::integer; theorem exact(left: uint32, right: uint32) { requires right <= left; ensures to_integer(left - right) == to_integer(left) - to_integer(right) by { apply(integer::uint32_subtract_to_integer(left, right)) using { right <= left; } } }";
-        verify_c0_sources(source, &[]).unwrap();
-        let expanded = expand_c0_claim_source_by_label(source, &[], "exact.ensures_0").unwrap();
-        verify_c0_sources(&expanded, &[]).unwrap();
+        verify_c_sources(source, &[]).unwrap();
+        let expanded = expand_c_claim_source_by_label(source, &[], "exact.ensures_0").unwrap();
+        verify_c_sources(&expanded, &[]).unwrap();
         for invalid in [
             source.replace("requires right <= left;", ""),
             source.replace("requires right <= left;", "requires defined(left - right);"),
@@ -886,7 +884,7 @@ mod tests {
                 "to_integer(left) + to_integer(right) by",
             ),
         ] {
-            assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+            assert!(verify_c_sources(&invalid, &[]).is_err(), "{invalid}");
         }
         for (left, right, difference) in [
             (0u32, 0u32, 0u32),
@@ -898,21 +896,21 @@ mod tests {
             let concrete = format!(
                 "import click::integer; theorem boundary() {{ ensures to_integer({left}u32 - {right}u32) == {difference} by {{ apply(integer::uint32_subtract_to_integer({left}u32, {right}u32)); solve(); }} }}"
             );
-            verify_c0_sources(&concrete, &[]).unwrap();
+            verify_c_sources(&concrete, &[]).unwrap();
         }
         let underflow = "import click::integer; theorem wrapping() { ensures to_integer(0u32 - 1u32) == -1 by { apply(integer::uint32_subtract_to_integer(0u32, 1u32)); } }";
-        assert!(verify_c0_sources(underflow, &[]).is_err());
+        assert!(verify_c_sources(underflow, &[]).is_err());
     }
 
     #[test]
     fn uint32_subtract_bridge_verifies_executed_c_difference() {
         let c = "unsigned int difference(unsigned int left, unsigned int right) { return left - right; }";
         let source = "import click::integer; verifying \"difference.c\"; uint32 difference(uint32 left, uint32 right) { requires right <= left; ensures to_integer(result) == to_integer(left) - to_integer(right); } by { step_until(function.exit); apply(integer::uint32_subtract_to_integer(left, right)) using { right <= left; } solve(); }";
-        verify_c0_sources(source, &[("difference.c", c)]).unwrap();
+        verify_c_sources(source, &[("difference.c", c)]).unwrap();
         let expanded =
-            expand_c0_claim_source_by_label(source, &[("difference.c", c)], "difference.contract")
+            expand_c_claim_source_by_label(source, &[("difference.c", c)], "difference.contract")
                 .unwrap();
-        verify_c0_sources(&expanded, &[("difference.c", c)]).unwrap();
+        verify_c_sources(&expanded, &[("difference.c", c)]).unwrap();
         for invalid in [
             source.replace("requires right <= left;", ""),
             source.replace("requires right <= left;", "requires defined(left - right);"),
@@ -922,7 +920,7 @@ mod tests {
             ),
         ] {
             assert!(
-                verify_c0_sources(&invalid, &[("difference.c", c)]).is_err(),
+                verify_c_sources(&invalid, &[("difference.c", c)]).is_err(),
                 "{invalid}"
             );
         }
@@ -966,10 +964,10 @@ mod tests {
             let source = format!(
                 "import click::integer; theorem bridge(left: uint64, right: uint64) {{ requires {guard}; ensures {goal} by {{ apply({name}(left, right)); }} }}"
             );
-            verify_c0_sources(&source, &[]).unwrap_or_else(|e| panic!("{name}: {}", e.message()));
+            verify_c_sources(&source, &[]).unwrap_or_else(|e| panic!("{name}: {}", e.message()));
             let expanded =
-                expand_c0_claim_source_by_label(&source, &[], "bridge.ensures_0").unwrap();
-            verify_c0_sources(&expanded, &[]).unwrap();
+                expand_c_claim_source_by_label(&source, &[], "bridge.ensures_0").unwrap();
+            verify_c_sources(&expanded, &[]).unwrap();
             for invalid in [
                 source.replace(&format!("requires {guard};"), ""),
                 source.replace(
@@ -980,7 +978,7 @@ mod tests {
                 source.replace("right: uint64", "right: uint32"),
                 source.replace(&format!("ensures {goal}"), "ensures left > right"),
             ] {
-                assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+                assert!(verify_c_sources(&invalid, &[]).is_err(), "{invalid}");
             }
         }
     }
@@ -1011,22 +1009,22 @@ mod tests {
             let source = format!(
                 "import click::integer; verifying \"op.c\"; uint32 op(uint32 left, uint32 right) {{ requires {guard}; ensures {goal}; }} by {{ apply({name}(left, right)); step_until(function.exit); solve(); }} uint32 caller(uint32 left, uint32 right) {{ requires {guard}; ensures {goal}; }}"
             );
-            verify_c0_sources(&source, &[("op.c", &c)])
+            verify_c_sources(&source, &[("op.c", &c)])
                 .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
             let expanded =
-                expand_c0_claim_source_by_label(&source, &[("op.c", &c)], "op.ensures_0").unwrap();
-            verify_c0_sources(&expanded, &[("op.c", &c)]).unwrap();
+                expand_c_claim_source_by_label(&source, &[("op.c", &c)], "op.ensures_0").unwrap();
+            verify_c_sources(&expanded, &[("op.c", &c)]).unwrap();
             // `to_integer(right) != 0` and `right != 0` are one fact, so
             // either premise alone suffices and only dropping both fails.
             for redundant in [
                 "requires right != 0u32;",
                 "requires to_integer(right) != 0;",
             ] {
-                verify_c0_sources(&source.replace(redundant, ""), &[("op.c", &c)])
+                verify_c_sources(&source.replace(redundant, ""), &[("op.c", &c)])
                     .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
             }
             assert!(
-                verify_c0_sources(
+                verify_c_sources(
                     &source.replace(
                         "requires right != 0u32; requires to_integer(right) != 0;",
                         ""
@@ -1036,7 +1034,7 @@ mod tests {
                 .is_err()
             );
             assert!(
-                verify_c0_sources(
+                verify_c_sources(
                     &source.replace(&format!("ensures {goal};"), &format!("ensures {goal} + 1;")),
                     &[("op.c", &c)]
                 )
@@ -1062,17 +1060,17 @@ mod tests {
             let source = format!(
                 "import click::integer; theorem exact(left: uint64, right: uint64) {{ requires right != 0u64; requires to_integer(right) != 0; ensures to_integer(left {op} right) == {mathematical}(to_integer(left), to_integer(right)) by {{ apply({name}(left, right)); }} }}"
             );
-            verify_c0_sources(&source, &[]).unwrap();
+            verify_c_sources(&source, &[]).unwrap();
             // The Integer disequality and the native one are one fact, so
             // either premise alone suffices and only dropping both fails.
             for redundant in [
                 "requires right != 0u64;",
                 "requires to_integer(right) != 0;",
             ] {
-                verify_c0_sources(&source.replace(redundant, ""), &[]).unwrap();
+                verify_c_sources(&source.replace(redundant, ""), &[]).unwrap();
             }
             assert!(
-                verify_c0_sources(
+                verify_c_sources(
                     &source.replace(
                         "requires right != 0u64; requires to_integer(right) != 0;",
                         ""
@@ -1129,13 +1127,13 @@ mod tests {
             let source = format!(
                 "import click::integer; verifying \"op.c\"; uint64 op(uint64 left, uint64 right) {{ requires {guard}; ensures {result_goal}; }} by {{ apply({name}(left, right)); step_until(function.exit); solve(); }} uint64 caller(uint64 left, uint64 right) {{ requires {guard}; ensures {result_goal}; }}"
             );
-            verify_c0_sources(&source, &[("op.c", &c)])
+            verify_c_sources(&source, &[("op.c", &c)])
                 .unwrap_or_else(|e| panic!("{name}: {}", e.message()));
             let expanded =
-                expand_c0_claim_source_by_label(&source, &[("op.c", &c)], "op.ensures_0").unwrap();
-            verify_c0_sources(&expanded, &[("op.c", &c)]).unwrap();
+                expand_c_claim_source_by_label(&source, &[("op.c", &c)], "op.ensures_0").unwrap();
+            verify_c_sources(&expanded, &[("op.c", &c)]).unwrap();
             assert!(
-                verify_c0_sources(
+                verify_c_sources(
                     &source.replace(&format!("requires {guard};"), ""),
                     &[("op.c", &c)]
                 )
@@ -1163,15 +1161,15 @@ mod tests {
             let source = format!(
                 "import click::integer; theorem bridge(left: {ty}, right: {ty}) {{ requires {guard}; ensures {goal} by {{ apply({name}(left, right)); }} }}"
             );
-            verify_c0_sources(&source, &[]).unwrap();
+            verify_c_sources(&source, &[]).unwrap();
             let expanded =
-                expand_c0_claim_source_by_label(&source, &[], "bridge.ensures_0").unwrap();
-            verify_c0_sources(&expanded, &[]).unwrap();
+                expand_c_claim_source_by_label(&source, &[], "bridge.ensures_0").unwrap();
+            verify_c_sources(&expanded, &[]).unwrap();
             for invalid in [
                 source.replace(&format!("requires {guard};"), ""),
                 source.replace(&format!("ensures {goal}"), "ensures left > right"),
             ] {
-                assert!(verify_c0_sources(&invalid, &[]).is_err());
+                assert!(verify_c_sources(&invalid, &[]).is_err());
             }
         }
     }
@@ -1182,20 +1180,20 @@ mod tests {
             let source = format!(
                 "theorem cast(x: {ty}) {{ ensures x as {ty} == x by {{ have x as {ty} == x by solve(); assumption(); }} }}"
             );
-            verify_c0_sources(&source, &[]).unwrap();
-            let expanded = expand_c0_claim_source_by_label(&source, &[], "cast.ensures_0").unwrap();
-            verify_c0_sources(&expanded, &[]).unwrap();
+            verify_c_sources(&source, &[]).unwrap();
+            let expanded = expand_c_claim_source_by_label(&source, &[], "cast.ensures_0").unwrap();
+            verify_c_sources(&expanded, &[]).unwrap();
             let historical = source.replace(&format!("x as {ty}"), &format!("old(x) as {ty}"));
-            verify_c0_sources(&historical, &[]).unwrap();
+            verify_c_sources(&historical, &[]).unwrap();
             let expanded =
-                expand_c0_claim_source_by_label(&historical, &[], "cast.ensures_0").unwrap();
-            verify_c0_sources(&expanded, &[]).unwrap();
+                expand_c_claim_source_by_label(&historical, &[], "cast.ensures_0").unwrap();
+            verify_c_sources(&expanded, &[]).unwrap();
             for invalid in [
                 source.replace(&format!("x as {ty}"), &format!("x as ({ty} *)")),
                 source.replace(&format!("x: {ty}"), "x: Integer"),
                 source.replace("== x", "!= x"),
             ] {
-                assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+                assert!(verify_c_sources(&invalid, &[]).is_err(), "{invalid}");
             }
         }
     }
@@ -1205,14 +1203,14 @@ mod tests {
         let source = format!(
             "import click::integer; theorem exact(left: int64, right: int64) {{ requires defined(left {op} right); ensures to_integer(left {op} right) == to_integer(left) {op} to_integer(right) by {{ apply({name}(left, right)); }} }}"
         );
-        verify_c0_sources(&source, &[]).unwrap();
-        let expanded = expand_c0_claim_source_by_label(&source, &[], "exact.ensures_0").unwrap();
-        verify_c0_sources(&expanded, &[]).unwrap();
+        verify_c_sources(&source, &[]).unwrap();
+        let expanded = expand_c_claim_source_by_label(&source, &[], "exact.ensures_0").unwrap();
+        verify_c_sources(&expanded, &[]).unwrap();
         for invalid in [
             source.replace(&format!("requires defined(left {op} right);"), ""),
             source.replace(" == ", " != "),
         ] {
-            assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+            assert!(verify_c_sources(&invalid, &[]).is_err(), "{invalid}");
         }
     }
     #[test]
@@ -1226,32 +1224,31 @@ mod tests {
             .split("```")
             .next()
             .unwrap();
-        verify_c0_sources(source, &[]).unwrap();
+        verify_c_sources(source, &[]).unwrap();
         for label in [
             "derived_floor_from_remainder.ensures_0",
             "derived_floor_from_remainder.ensures_1",
             "derived_ceiling_from_remainder.ensures_0",
             "derived_ceiling_from_remainder.ensures_1",
         ] {
-            let expanded = expand_c0_claim_source_by_label(source, &[], label).unwrap();
-            verify_c0_sources(&expanded, &[]).unwrap();
+            let expanded = expand_c_claim_source_by_label(source, &[], label).unwrap();
+            verify_c_sources(&expanded, &[]).unwrap();
         }
     }
 
     #[test]
     fn integer_multiply_add_rechecks_application_and_expansion() {
         let source = "import click::integer; theorem distribute(a: Integer, b: Integer, c: Integer) { ensures (a + b) * c == a * c + b * c by { apply(integer::multiply_add(a, b, c)); } }";
-        verify_c0_sources(source, &[]).unwrap();
-        let expanded =
-            expand_c0_claim_source_by_label(source, &[], "distribute.ensures_0").unwrap();
-        verify_c0_sources(&expanded, &[]).unwrap();
+        verify_c_sources(source, &[]).unwrap();
+        let expanded = expand_c_claim_source_by_label(source, &[], "distribute.ensures_0").unwrap();
+        verify_c_sources(&expanded, &[]).unwrap();
         for invalid in [
             source.replace("a * c + b * c", "a * c + b"),
             source.replace("multiply_add(a, b, c)", "multiply_add(a, c, b)"),
             source.replace("multiply_add(a, b, c)", "multiply_add(a, b)"),
             source.replace(": Integer", ": int32"),
         ] {
-            assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+            assert!(verify_c_sources(&invalid, &[]).is_err(), "{invalid}");
         }
     }
 
@@ -1291,20 +1288,20 @@ mod tests {
             let source = format!(
                 "import click::integer; theorem law(n: Integer, d: Integer) {{ {requires}ensures {goal} by {{ apply({name}(n, d)); }} }}"
             );
-            verify_c0_sources(&source, &[]).unwrap();
-            let expanded = expand_c0_claim_source_by_label(&source, &[], "law.ensures_0").unwrap();
-            verify_c0_sources(&expanded, &[]).unwrap();
+            verify_c_sources(&source, &[]).unwrap();
+            let expanded = expand_c_claim_source_by_label(&source, &[], "law.ensures_0").unwrap();
+            verify_c_sources(&expanded, &[]).unwrap();
             for guard in requirements {
                 let invalid = source.replace(&format!("requires {guard};"), "");
                 if *guard == "d != 0" && requirements.contains(&"0 < d") {
-                    verify_c0_sources(&invalid, &[])
+                    verify_c_sources(&invalid, &[])
                         .expect("the entry solver derives nonzero from a positive divisor");
                 } else {
-                    assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+                    assert!(verify_c_sources(&invalid, &[]).is_err(), "{invalid}");
                 }
             }
             let invalid = source.replace(&format!("ensures {goal}"), "ensures n == d");
-            assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+            assert!(verify_c_sources(&invalid, &[]).is_err(), "{invalid}");
         }
     }
 
@@ -1319,7 +1316,7 @@ mod tests {
             .split("```")
             .next()
             .unwrap();
-        verify_c0_sources(source, &[]).unwrap();
+        verify_c_sources(source, &[]).unwrap();
         for label in [
             "checked_integer_multiply_order_nonnegative.ensures_0",
             "checked_integer_multiply_order_nonpositive.ensures_0",
@@ -1330,18 +1327,18 @@ mod tests {
             "fee_caller_division_bounds.ensures_2",
             "fee_caller_division_bounds.ensures_3",
         ] {
-            let expanded = expand_c0_claim_source_by_label(source, &[], label).unwrap();
-            verify_c0_sources(&expanded, &[]).unwrap();
+            let expanded = expand_c_claim_source_by_label(source, &[], label).unwrap();
+            verify_c_sources(&expanded, &[]).unwrap();
         }
         let guarded = "import click::integer; theorem use_order(a: Integer, b: Integer, c: Integer) { requires a <= b; requires 0 <= c; ensures a * c <= b * c by { apply(integer::multiply_order_nonnegative(a,b,c)); } }";
-        verify_c0_sources(guarded, &[]).unwrap();
+        verify_c_sources(guarded, &[]).unwrap();
         for bad in [
             guarded.replace("requires a <= b;", ""),
             guarded.replace("requires 0 <= c;", ""),
             guarded.replace("requires 0 <= c;", "requires c <= 0;"),
             guarded.replace("ensures a * c <= b * c", "ensures b * c <= a * c"),
         ] {
-            assert!(verify_c0_sources(&bad, &[]).is_err(), "{bad}");
+            assert!(verify_c_sources(&bad, &[]).is_err(), "{bad}");
         }
         for requirement in [
             "requires -9223372036854775808 <= fee;",
@@ -1350,7 +1347,7 @@ mod tests {
             "requires at_size <= size;",
         ] {
             assert!(
-                verify_c0_sources(&source.replace(requirement, ""), &[]).is_err(),
+                verify_c_sources(&source.replace(requirement, ""), &[]).is_err(),
                 "{requirement}"
             );
         }
@@ -1366,34 +1363,34 @@ mod tests {
             .split("```")
             .next()
             .unwrap();
-        verify_c0_sources(source, &[]).unwrap();
+        verify_c_sources(source, &[]).unwrap();
         for label in [
             "checked_quotient_lower.ensures_0",
             "checked_quotient_upper.ensures_0",
             "use_scaled_quotient.ensures_0",
             "use_scaled_quotient.ensures_1",
         ] {
-            let expanded = expand_c0_claim_source_by_label(source, &[], label).unwrap();
-            verify_c0_sources(&expanded, &[]).unwrap();
+            let expanded = expand_c_claim_source_by_label(source, &[], label).unwrap();
+            verify_c_sources(&expanded, &[]).unwrap();
         }
         let guarded = "import click::integer; theorem lower(x: int64, d: Integer) { requires defined(x + 1i64); requires d != 0; requires 1 <= d; requires -100 * d <= to_integer(x) + 1; ensures -100 <= truncating_quotient(to_integer(x + 1i64), d) by { have to_integer(x + 1i64) == to_integer(x) + 1; have -100 * d <= to_integer(x + 1i64) by { rewrite(to_integer(x + 1i64) == to_integer(x) + 1); assumption(); } apply(integer::positive_divisor_quotient_lower(to_integer(x + 1i64), d, -100)); } }";
-        verify_c0_sources(guarded, &[]).unwrap();
+        verify_c_sources(guarded, &[]).unwrap();
         for bad in [
             guarded.replace("requires defined(x + 1i64);", ""),
             guarded
                 .replace("requires d != 0;", "")
                 .replace("requires 1 <= d;", ""),
         ] {
-            assert!(verify_c0_sources(&bad, &[]).is_err(), "{bad}");
+            assert!(verify_c_sources(&bad, &[]).is_err(), "{bad}");
         }
-        verify_c0_sources(&guarded.replace("requires d != 0;", ""), &[])
+        verify_c_sources(&guarded.replace("requires d != 0;", ""), &[])
             .expect("the entry solver derives nonzero from 1 <= d");
         // Written for the Integer parameters without `to_integer`, `x + 1i64`
         // is the exact sum, which owes no definedness.
         let exact = guarded
             .replace("to_integer(x + 1i64)", "x + 1i64")
             .replace("requires defined(x + 1i64);", "");
-        verify_c0_sources(&exact, &[]).unwrap();
+        verify_c_sources(&exact, &[]).unwrap();
     }
     #[test]
     fn negated_integer_order_arithmetic_expands_and_reverifies() {
@@ -1405,16 +1402,16 @@ mod tests {
             .split("```")
             .next()
             .unwrap();
-        verify_c0_sources(source, &[]).unwrap();
+        verify_c_sources(source, &[]).unwrap();
         for label in ["negated_lower.ensures_0", "negated_upper.ensures_0"] {
-            let expanded = expand_c0_claim_source_by_label(source, &[], label).unwrap();
-            verify_c0_sources(&expanded, &[]).unwrap();
+            let expanded = expand_c_claim_source_by_label(source, &[], label).unwrap();
+            verify_c_sources(&expanded, &[]).unwrap();
         }
         for bad in [
             source.replace("requires not (n <= 0);", "requires n <= 0;"),
             source.replace("requires not (0 <= n);", "requires 0 <= n;"),
         ] {
-            assert!(verify_c0_sources(&bad, &[]).is_err());
+            assert!(verify_c_sources(&bad, &[]).is_err());
         }
     }
 
@@ -1429,7 +1426,7 @@ mod tests {
             .split("```")
             .next()
             .unwrap();
-        verify_c0_sources(source, &[]).unwrap();
+        verify_c_sources(source, &[]).unwrap();
         for label in [
             "checked_strict_lower.ensures_0",
             "checked_strict_upper.ensures_0",
@@ -1440,8 +1437,8 @@ mod tests {
             "fee_ceiling_quotient_fit.ensures_0",
             "fee_ceiling_quotient_fit.ensures_1",
         ] {
-            let expanded = expand_c0_claim_source_by_label(source, &[], label).unwrap();
-            verify_c0_sources(&expanded, &[]).unwrap();
+            let expanded = expand_c_claim_source_by_label(source, &[], label).unwrap();
+            verify_c_sources(&expanded, &[]).unwrap();
         }
         let uses = source.split("theorem use_strict_lower").nth(1).unwrap();
         let uses = format!("theorem use_strict_lower{uses}");
@@ -1454,7 +1451,7 @@ mod tests {
             "requires n < bound * d;",
         ] {
             let bad = uses.replace(guard, "");
-            assert!(verify_c0_sources(&bad, &[]).is_err(), "missing {guard}");
+            assert!(verify_c_sources(&bad, &[]).is_err(), "missing {guard}");
         }
         for (from, to) in [
             ("bound * d < n", "bound * d <= n"),
@@ -1463,7 +1460,7 @@ mod tests {
             ("0 < bound", "0 <= bound"),
         ] {
             let bad = uses.replacen(&format!("requires {from};"), &format!("requires {to};"), 1);
-            assert!(verify_c0_sources(&bad, &[]).is_err(), "weakened {from}");
+            assert!(verify_c_sources(&bad, &[]).is_err(), "weakened {from}");
         }
     }
 
@@ -1477,15 +1474,15 @@ mod tests {
             .split("```")
             .next()
             .unwrap();
-        verify_c0_sources(source, &[]).unwrap();
+        verify_c_sources(source, &[]).unwrap();
         for label in [
             "derived_lower_correction_bound.ensures_0",
             "derived_upper_correction_bound.ensures_0",
             "use_lower_correction_bound.ensures_0",
             "use_upper_correction_bound.ensures_0",
         ] {
-            let expanded = expand_c0_claim_source_by_label(source, &[], label).unwrap();
-            verify_c0_sources(&expanded, &[]).unwrap();
+            let expanded = expand_c_claim_source_by_label(source, &[], label).unwrap();
+            verify_c_sources(&expanded, &[]).unwrap();
         }
         for (which, bound, scaled, sign, goal) in [
             (
@@ -1511,16 +1508,16 @@ mod tests {
                     .map(|p| format!("requires {p}; "))
                     .collect::<String>()
             );
-            verify_c0_sources(&source, &[]).unwrap();
+            verify_c_sources(&source, &[]).unwrap();
             for premise in premises {
                 let bad = source.replace(&format!("requires {premise};"), "");
-                assert!(verify_c0_sources(&bad, &[]).is_err(), "{bad}");
+                assert!(verify_c_sources(&bad, &[]).is_err(), "{bad}");
             }
             for bad in [
                 source.replace(&format!("requires {sign};"), "requires r == 0;"),
                 source.replace("n == q * d + r", "n == q * d + -r"),
             ] {
-                assert!(verify_c0_sources(&bad, &[]).is_err(), "{bad}");
+                assert!(verify_c_sources(&bad, &[]).is_err(), "{bad}");
             }
         }
     }
@@ -1536,17 +1533,17 @@ mod tests {
                 "theorem pinned(x: Integer, b: Integer) {{ {bounds} ensures {goal} by {{ solve() using {{ {}; }} }} }}",
                 bounds.replace("requires ", "").trim_end_matches(';')
             );
-            verify_c0_sources(&source, &[]).unwrap_or_else(|error| panic!("{}", error.message()));
+            verify_c_sources(&source, &[]).unwrap_or_else(|error| panic!("{}", error.message()));
             let expanded =
-                expand_c0_claim_source_by_label(&source, &[], "pinned.ensures_0").unwrap();
+                expand_c_claim_source_by_label(&source, &[], "pinned.ensures_0").unwrap();
             assert!(expanded.contains("equal_from_bounds"), "{expanded}");
-            verify_c0_sources(&expanded, &[]).unwrap();
+            verify_c_sources(&expanded, &[]).unwrap();
             assert!(
-                verify_c0_sources(&source.replace("ensures x == b", "ensures x == b + 1"), &[])
+                verify_c_sources(&source.replace("ensures x == b", "ensures x == b + 1"), &[])
                     .is_err()
             );
             assert!(
-                verify_c0_sources(&expanded.replace("=> x == b;", "=> x == b + 1;"), &[]).is_err()
+                verify_c_sources(&expanded.replace("=> x == b;", "=> x == b + 1;"), &[]).is_err()
             );
         }
     }
@@ -1554,29 +1551,28 @@ mod tests {
     #[test]
     fn signed_int64_minimum_literal_preserves_type_and_round_trips() {
         let source = "theorem minimum() { ensures to_integer(-9223372036854775808i64) == -9223372036854775808 by { normalize(); } }";
-        verify_c0_sources(source, &[]).unwrap();
-        let expanded = expand_c0_claim_source_by_label(source, &[], "minimum.ensures_0").unwrap();
-        verify_c0_sources(&expanded, &[]).unwrap();
+        verify_c_sources(source, &[]).unwrap();
+        let expanded = expand_c_claim_source_by_label(source, &[], "minimum.ensures_0").unwrap();
+        verify_c_sources(&expanded, &[]).unwrap();
         for literal in [
             "9223372036854775808i64",
             "-9223372036854775809i64",
             "9223372036854775809i64",
         ] {
             assert!(
-                verify_c0_sources(&source.replace("-9223372036854775808i64", literal), &[])
-                    .is_err(),
+                verify_c_sources(&source.replace("-9223372036854775808i64", literal), &[]).is_err(),
                 "{literal}"
             );
         }
         assert!(
-            verify_c0_sources(
+            verify_c_sources(
                 "theorem bad() { ensures defined(0i64 - 9223372036854775808i64) by { normalize(); } }",
                 &[]
             )
             .is_err()
         );
         assert!(
-            verify_c0_sources(
+            verify_c_sources(
                 "theorem bad() { ensures defined(-(-9223372036854775808i64)) by { normalize(); } }",
                 &[]
             )

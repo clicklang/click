@@ -39,7 +39,7 @@ fn shared_machine_collectors_preserve_carriers_binders_and_loads() {
             value: folded.into(),
             destination: format,
         };
-        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let memory = crate::kernel::intern_memory(Memory::new());
         let load = crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
             &Pointer::symbolic(Variable(989965)),
@@ -190,8 +190,8 @@ fn shared_scope_maximum_covers_empty_syntax_and_extreme_identities() {
         format,
         MachineBinaryOp::Add,
         [
-            KernelTerm::variable(KernelType::C(CType::Int32), fresh),
-            KernelTerm::variable(KernelType::C(CType::Int32), Variable(u64::MAX)),
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), fresh),
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(u64::MAX)),
         ],
     );
     let machine = SharedMachineIntegerTerm::from_shared(format, root).unwrap();

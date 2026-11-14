@@ -62,7 +62,7 @@ fn machine_arms<'a, const ALLOW_LOADS: bool>(
                 let ordinal = *next_binder;
                 *next_binder = ordinal.checked_add(1)?;
                 let map = match carrier {
-                    BindingCarrier::C => &mut bindings.bitvector,
+                    BindingCarrier::Program => &mut bindings.bitvector,
                     BindingCarrier::Integer => &mut bindings.integer,
                     BindingCarrier::Algebraic => &mut bindings.algebraic,
                 };
@@ -78,7 +78,7 @@ fn machine_arms<'a, const ALLOW_LOADS: bool>(
         })();
         for (carrier, variable, prior) in changes.into_iter().rev() {
             let map = match carrier {
-                BindingCarrier::C => &mut bindings.bitvector,
+                BindingCarrier::Program => &mut bindings.bitvector,
                 BindingCarrier::Integer => &mut bindings.integer,
                 BindingCarrier::Algebraic => &mut bindings.algebraic,
             };
@@ -140,10 +140,10 @@ pub(crate) fn retained_alpha_equivalent(
         return Some(false);
     }
     fn key(matched: &crate::kernel::KernelMatch) -> Option<(AlphaBitvectorKey, usize)> {
-        let crate::kernel::KernelType::C(ty) = matched.result_type else {
+        let crate::kernel::KernelType::Program(ty) = matched.result_type else {
             return None;
         };
-        crate::kernel::MachineIntegerType::from_c_type(ty)?;
+        crate::kernel::MachineIntegerType::from_program_type(ty)?;
         let mut bindings = fold_keys::bindings();
         let key = retained_machine::<false>(matched, &mut bindings, &mut 0)?;
         Some((key, bindings.work_units))
@@ -159,7 +159,7 @@ pub(crate) fn retained_alpha_equivalent(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{AlgebraicBitvectorMatchArm, AlgebraicValue, CValue};
+    use crate::kernel::{AlgebraicBitvectorMatchArm, AlgebraicValue, ProgramValue};
 
     fn selected_match(bound: u64, count: usize) -> MachineTerm {
         MachineTerm::AlgebraicMatch {
@@ -170,9 +170,9 @@ mod tests {
             arms: (0..count)
                 .map(|index| AlgebraicBitvectorMatchArm {
                     variant: format!("Arm{index}"),
-                    bindings: vec![AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(
-                        Variable(bound),
-                    )))],
+                    bindings: vec![AlgebraicValue::Program(ProgramValue::Int32(
+                        MachineTerm::Variable(Variable(bound)),
+                    ))],
                     body: MachineTerm::Variable(Variable(bound)),
                     binding_names: Default::default(),
                 })

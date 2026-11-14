@@ -60,16 +60,16 @@ fn wide_cached_load_canonicalization_ignores_unrelated_cells() {
             offset: PointerOffsetTerm::Constant(0),
         };
         let bits = MachineTerm::uint64_constant(0x1_0000_0001);
-        let mut memory = CMemory::new().with_block("wide-cached-scaling", (count + 1) * 8);
+        let mut memory = Memory::new().with_block("wide-cached-scaling", (count + 1) * 8);
         for index in 1..=count {
             memory = memory.store(
                 pointer.offset_by_bytes(index * 8),
-                CValue::UInt64(MachineTerm::uint64_constant(index as u64)),
+                ProgramValue::UInt64(MachineTerm::uint64_constant(index as u64)),
             );
         }
-        memory = memory.store(pointer.clone(), CValue::UInt64(bits.clone()));
+        memory = memory.store(pointer.clone(), ProgramValue::UInt64(bits.clone()));
         let load =
-            MachineTerm::MemoryLoad(intern_c_memory(memory), Box::new(pointer), LoadKind::Bits64);
+            MachineTerm::MemoryLoad(intern_memory(memory), Box::new(pointer), LoadKind::Bits64);
         crate::kernel::memory_provenance::clear_canonical_form_caches();
         crate::kernel::memory_provenance::reset_atomic_canonicalization_term_visits();
         let (result, work) = crate::persistent::measure_persistent_work(|| {
@@ -104,7 +104,7 @@ fn selected_wide_read_value_keeps_alias_authority_and_scales_with_unrelated_cell
         MachineTerm::uint64_constant(0x1_0000_0001),
     );
     let kept = CallKeptOwnership::new(
-        ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(memory_range(
+        ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(memory_range(
             owned_pointer,
             0,
             2,
@@ -115,14 +115,14 @@ fn selected_wide_read_value_keeps_alias_authority_and_scales_with_unrelated_cell
     let matches = crate::kernel::memory_provenance::wide_read_has_recorded_value;
     let mut previous = None;
     for count in [16, 64, 256, 1024] {
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         for index in 0..count {
             memory = memory.store(
                 Pointer::symbolic(Variable(79_000 + index)),
-                CValue::UInt64(MachineTerm::uint64_constant(index)),
+                ProgramValue::UInt64(MachineTerm::uint64_constant(index)),
             );
         }
-        memory = memory.store(read_pointer.clone(), CValue::UInt64(bits.clone()));
+        memory = memory.store(read_pointer.clone(), ProgramValue::UInt64(bits.clone()));
         let after = memory.with_call_memory_havoc(
             Variable(78_104),
             &[memory_range(callee.clone(), 0, 2)],
@@ -130,7 +130,7 @@ fn selected_wide_read_value_keeps_alias_authority_and_scales_with_unrelated_cell
             Some(&kept),
         );
         let load = MachineTerm::MemoryLoad(
-            intern_c_memory_ref(&after),
+            intern_memory_ref(&after),
             Box::new(read_pointer.clone()),
             LoadKind::Bits64,
         );
@@ -146,7 +146,7 @@ fn selected_wide_read_value_keeps_alias_authority_and_scales_with_unrelated_cell
         assert!(!matches(&load, &bits, &PureFactContext::new()));
         assert!(!matches(&load, &MachineTerm::uint64_constant(1), &selected));
         let narrow = MachineTerm::MemoryLoad(
-            intern_c_memory_ref(&after),
+            intern_memory_ref(&after),
             Box::new(read_pointer.clone()),
             LoadKind::Int32,
         );
@@ -154,9 +154,9 @@ fn selected_wide_read_value_keeps_alias_authority_and_scales_with_unrelated_cell
         let partial = read_pointer.offset_by_bytes(4);
         let changed = after
             .without_possible_aliasing_cells(&partial, 4, &selected)
-            .store(partial, CValue::Int32(MachineTerm::constant(0)));
+            .store(partial, ProgramValue::Int32(MachineTerm::constant(0)));
         let changed = MachineTerm::MemoryLoad(
-            intern_c_memory(changed),
+            intern_memory(changed),
             Box::new(read_pointer.clone()),
             LoadKind::Bits64,
         );
@@ -179,14 +179,14 @@ fn selected_wide_read_value_bounds_unselected_call_history() {
     );
     let kept = CallKeptOwnership::new(
         ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::own_memory(memory_range(owner, 0, 2))),
+            .unchecked_with_fact(ResourceFact::own_memory(memory_range(owner, 0, 2))),
         CallKeptRanges::new(ResourceContext::new(), Vec::new(), None),
         &selected,
     );
     let bits = MachineTerm::uint64_constant(7);
     let mut previous = None;
     for count in [128, 256, 512] {
-        let mut memory = CMemory::new().store(pointer.clone(), CValue::UInt64(bits.clone()));
+        let mut memory = Memory::new().store(pointer.clone(), ProgramValue::UInt64(bits.clone()));
         for index in 0..count {
             memory = memory.with_call_memory_havoc(
                 Variable(82_000 + index),
@@ -196,7 +196,7 @@ fn selected_wide_read_value_bounds_unselected_call_history() {
             );
         }
         let load = MachineTerm::MemoryLoad(
-            intern_c_memory(memory),
+            intern_memory(memory),
             Box::new(pointer.clone()),
             LoadKind::Bits64,
         );
@@ -229,11 +229,11 @@ fn selected_wide_read_congruence_preserves_history_width_and_scales() {
     let mut previous_work = None;
     for count in [4u32, 16, 64, 256] {
         let mut selected = PureFactContext::new().assume_condition(alias.clone(), true);
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         for index in 0..count {
             memory = memory.store(
                 owned_pointer.offset_by_bytes((index + 1) * 8),
-                CValue::UInt64(MachineTerm::uint64_constant(u64::from(index))),
+                ProgramValue::UInt64(MachineTerm::uint64_constant(u64::from(index))),
             );
             selected = selected.assume_condition(
                 ConditionTerm::equal(
@@ -245,28 +245,25 @@ fn selected_wide_read_congruence_preserves_history_width_and_scales() {
         }
         memory = memory.store(
             owned_pointer.clone(),
-            CValue::UInt64(MachineTerm::Variable(Variable(90_000 + u64::from(count)))),
+            ProgramValue::UInt64(MachineTerm::Variable(Variable(90_000 + u64::from(count)))),
         );
-        let kept =
-            CallKeptOwnership::new(
-                ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
-                    memory_range(owned_pointer.clone(), 0, 2),
-                )),
-                CallKeptRanges::new(ResourceContext::new(), Vec::new(), None),
-                &selected,
-            );
+        let kept = CallKeptOwnership::new(
+            ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(memory_range(
+                owned_pointer.clone(),
+                0,
+                2,
+            ))),
+            CallKeptRanges::new(ResourceContext::new(), Vec::new(), None),
+            &selected,
+        );
         let after = memory.clone().with_call_memory_havoc(
             Variable(91_000 + u64::from(count)),
             &[memory_range(callee.clone(), 0, 2)],
             &selected,
             Some(&kept),
         );
-        let read = |snapshot: &CMemory, pointer: &Pointer, kind| {
-            MachineTerm::MemoryLoad(
-                intern_c_memory_ref(snapshot),
-                Box::new(pointer.clone()),
-                kind,
-            )
+        let read = |snapshot: &Memory, pointer: &Pointer, kind| {
+            MachineTerm::MemoryLoad(intern_memory_ref(snapshot), Box::new(pointer.clone()), kind)
         };
         let current = read(&after, &read_pointer, LoadKind::Bits64);
         let same_snapshot = read(&after, &owned_pointer, LoadKind::Bits64);
@@ -293,8 +290,11 @@ fn selected_wide_read_congruence_preserves_history_width_and_scales() {
             &selected,
         ));
         for (offset, value) in [
-            (0, CValue::UInt64(MachineTerm::uint64_constant(1 << 32))),
-            (4, CValue::Int32(MachineTerm::constant(1))),
+            (
+                0,
+                ProgramValue::UInt64(MachineTerm::uint64_constant(1 << 32)),
+            ),
+            (4, ProgramValue::Int32(MachineTerm::constant(1))),
         ] {
             let address = owned_pointer.offset_by_bytes(offset);
             let changed = after

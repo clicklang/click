@@ -1,8 +1,8 @@
 use super::*;
 use crate::kernel::PointerOffsetTerm;
 
-fn scalar(name: &str) -> CResourceFact {
-    CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+fn scalar(name: &str) -> ResourceFact {
+    ResourceFact::own_memory(MemoryRange::new_with_element_width(
         Pointer {
             block: name.into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -29,7 +29,7 @@ fn access(
             .memory_own_range()
             .unwrap()
             .start_pointer(),
-        CType::Int32,
+        ProgramType::Int32,
     )
 }
 
@@ -37,11 +37,11 @@ fn register(
     ledger: &LoanLedger,
     holder: LoanParticipantId,
     resources: &ResourceContext,
-    fact: &CResourceFact,
+    fact: &ResourceFact,
 ) -> (LocalReferenceBinding, LoanLedger) {
     let support = resources.unique_owned_occurrence_for_fact(fact).unwrap().0;
     let (root, transition) = ledger
-        .register_local_reference(holder, resources, support, CType::Int32)
+        .register_local_reference(holder, resources, support, ProgramType::Int32)
         .unwrap();
     let ledger = ledger.apply(&transition).unwrap();
     assert!(ledger.invariant_holds());
@@ -241,12 +241,18 @@ fn local_reference_wrong_holder_arena_pointer_and_type_are_refused() {
             holder,
             &resources,
             &pointer.offset_by_bytes(4),
-            CType::Int32
+            ProgramType::Int32
         ),
         Err(LoanRefusal::InvalidEvidence)
     );
     assert_eq!(
-        ledger.validate_local_reference_access(&root, holder, &resources, &pointer, CType::UInt32),
+        ledger.validate_local_reference_access(
+            &root,
+            holder,
+            &resources,
+            &pointer,
+            ProgramType::UInt32
+        ),
         Err(LoanRefusal::InvalidEvidence)
     );
 }
@@ -269,12 +275,12 @@ fn local_reference_requires_exact_live_owned_occurrence_at_access_and_recovery()
             .unwrap_err(),
         LoanRefusal::MissingBacking
     );
-    let view = CResourceFact::view_memory(root.backing.owned.memory_own_range().unwrap().clone());
+    let view = ResourceFact::view_memory(root.backing.owned.memory_own_range().unwrap().clone());
     let views = ResourceContext::new().unchecked_with_fact(view.clone());
     let support = views.occurrences_for_fact(&view)[0];
     assert_eq!(
         ledger
-            .register_local_reference(holder, &views, support, CType::Int32)
+            .register_local_reference(holder, &views, support, ProgramType::Int32)
             .unwrap_err(),
         LoanRefusal::MissingBacking
     );
@@ -289,7 +295,7 @@ fn local_reference_registration_rejects_duplicate_or_unsupported_backing() {
     let (ledger, holder, resources, root) = fixture();
     assert_eq!(
         ledger
-            .register_local_reference(holder, &resources, root.backing.support, CType::Int32)
+            .register_local_reference(holder, &resources, root.backing.support, ProgramType::Int32)
             .unwrap_err(),
         LoanRefusal::InvalidEvidence
     );
@@ -299,12 +305,12 @@ fn local_reference_registration_rejects_duplicate_or_unsupported_backing() {
                 holder,
                 &resources,
                 ResourceOccurrenceId::default(),
-                CType::Int32
+                ProgramType::Int32
             )
             .unwrap_err(),
         LoanRefusal::MissingBacking
     );
-    let fact = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+    let fact = ResourceFact::own_memory(MemoryRange::new_with_element_width(
         Pointer {
             block: "local:array".into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -317,13 +323,13 @@ fn local_reference_registration_rejects_duplicate_or_unsupported_backing() {
     let support = resources.unique_owned_occurrence_for_fact(&fact).unwrap().0;
     assert_eq!(
         ledger
-            .register_local_reference(holder, &resources, support, CType::Int32)
+            .register_local_reference(holder, &resources, support, ProgramType::Int32)
             .unwrap_err(),
         LoanRefusal::InvalidEvidence
     );
     assert_eq!(
         ledger
-            .register_local_reference(holder, &resources, support, CType::Int32Pointer)
+            .register_local_reference(holder, &resources, support, ProgramType::Int32Pointer)
             .unwrap_err(),
         LoanRefusal::InvalidEvidence
     );
@@ -451,12 +457,17 @@ fn local_reference_alternative_successors_cannot_exchange_child_bindings() {
 fn local_reference_scalar_registration_checks_width_and_support_type() {
     let ledger = LoanLedger::new();
     let holder = ledger.fresh_participant().unwrap();
-    for value_type in [CType::Int32, CType::UInt8, CType::UInt16, CType::UInt32] {
+    for value_type in [
+        ProgramType::Int32,
+        ProgramType::UInt8,
+        ProgramType::UInt16,
+        ProgramType::UInt32,
+    ] {
         let pointer = Pointer {
             block: format!("local:{value_type:?}").into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let fact = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        let fact = ResourceFact::own_memory(MemoryRange::new_with_element_width(
             pointer.clone(),
             0u32.into(),
             1u32.into(),
@@ -474,14 +485,14 @@ fn local_reference_scalar_registration_checks_width_and_support_type() {
         );
         assert_eq!(
             ledger
-                .register_local_reference(holder, &resources, support, CType::Int64)
+                .register_local_reference(holder, &resources, support, ProgramType::Int64)
                 .unwrap_err(),
             LoanRefusal::InvalidEvidence
         );
         let wrong_width = if value_type.byte_width() == 1 {
-            CType::UInt16
+            ProgramType::UInt16
         } else {
-            CType::UInt8
+            ProgramType::UInt8
         };
         assert_eq!(
             ledger

@@ -593,7 +593,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     /// Import the facts introduced by lowering this claim, then open its proof.
     pub(in crate::surface::proof) fn open_contract_claim(
         &self,
-        goal: &crate::kernel::CClaimGoal,
+        goal: &crate::kernel::ContractClaimGoal,
         surface: &ClickProposition,
     ) -> Result<Proof<'a>, ClickError> {
         let root = self
@@ -608,7 +608,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     /// before its own steps without copying the enclosing execution history.
     pub(in crate::surface::proof) fn open_contract_claim_without_lowering_facts(
         &self,
-        goal: &crate::kernel::CClaimGoal,
+        goal: &crate::kernel::ContractClaimGoal,
         surface: &ClickProposition,
     ) -> Result<Proof<'a>, ClickError> {
         let checkpoint = self.proof.checkpoint();

@@ -18,7 +18,7 @@
 //! or a single symbolic one. Every operation touches the entries of the one
 //! block it names, positioned in O(log n).
 
-use super::{CValue, Pointer, PointerBlock, PointerOffsetTerm, SnapshotMap};
+use super::{Pointer, PointerBlock, PointerOffsetTerm, ProgramValue, SnapshotMap};
 use crate::kernel::effective_type::CAccessClass;
 
 /// The widest scalar a store writes, which bounds how far before a store an
@@ -37,7 +37,7 @@ pub(crate) struct HeapEffectiveTypes {
 struct HeapEffectiveType {
     width: u32,
     class: CAccessClass,
-    value: CValue,
+    value: ProgramValue,
 }
 
 fn constant_start(block: &PointerBlock, offset: i64) -> Pointer {
@@ -71,7 +71,7 @@ impl HeapEffectiveTypes {
         pointer: &Pointer,
         width: u32,
         class: Option<CAccessClass>,
-        value: &CValue,
+        value: &ProgramValue,
     ) -> bool {
         if !matches!(pointer.block, PointerBlock::Heap(_)) {
             return false;
@@ -117,7 +117,7 @@ impl HeapEffectiveTypes {
     pub(crate) fn map_entries(
         &self,
         mut rewrite_pointer: impl FnMut(&Pointer) -> Pointer,
-        mut rewrite_value: impl FnMut(&CValue) -> CValue,
+        mut rewrite_value: impl FnMut(&ProgramValue) -> ProgramValue,
     ) -> Self {
         crate::instrumentation::record_deterministic_work(self.entries.len() + 1);
         Self {
@@ -175,7 +175,7 @@ impl HeapEffectiveTypes {
     pub(crate) fn class_at(
         &self,
         pointer: &Pointer,
-        current: Option<&CValue>,
+        current: Option<&ProgramValue>,
     ) -> Option<CAccessClass> {
         crate::instrumentation::record_deterministic_work(1);
         let entry = self.entries.get(pointer)?;
@@ -192,8 +192,8 @@ mod tests {
         constant_start(&PointerBlock::Heap(7), offset)
     }
 
-    fn int(value: u32) -> CValue {
-        CValue::Int32(super::super::MachineTerm::constant(value))
+    fn int(value: u32) -> ProgramValue {
+        ProgramValue::Int32(super::super::MachineTerm::constant(value))
     }
 
     const INT: CAccessClass = CAccessClass::Scalar(CScalarClass::Int);

@@ -182,7 +182,7 @@ mod tests {
     #[test]
     fn retained_load_differences_preserve_native_operator_and_binder_rules() {
         let _session = VerificationSession::enter();
-        let memory = intern_c_memory(CMemory::new());
+        let memory = intern_memory(Memory::new());
         let pointer = Pointer {
             block: PointerBlock::Symbolic(Variable(1005600)),
             offset: PointerOffsetTerm::Constant(0),
@@ -264,7 +264,7 @@ mod tests {
                             Proposition::ForAll {
                                 name: Default::default(),
                                 var: Variable(1005601),
-                                sort: Sort::CInt32,
+                                sort: Sort::ProgramInt32,
                                 body: Box::new(body),
                             }
                         } else {
@@ -300,7 +300,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let binder = Variable(1005699);
         let read = MachineTerm::MemoryLoad(
-            intern_c_memory(CMemory::new()),
+            intern_memory(Memory::new()),
             Box::new(Pointer::symbolic(binder)),
             LoadKind::Int32,
         );
@@ -311,7 +311,7 @@ mod tests {
         let bind = |body| Proposition::ForAll {
             name: Default::default(),
             var: binder,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(body),
         };
         assert!(
@@ -338,7 +338,7 @@ mod tests {
     fn mixed_read_evidence_refuses_opaque_mismatch_without_export() {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let x = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1007330));
+        let x = KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1007330));
         let sum = KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [x.clone(), x]);
         let opaque = MachineTerm::PureFunctionApplication {
             name: "read_evidence_opaque".into(),
@@ -368,7 +368,7 @@ mod tests {
         let ty = MachineIntegerType::Int32;
         let pointer = Pointer::symbolic(Variable(1007340));
         let load = MachineTerm::MemoryLoad(
-            intern_c_memory(CMemory::new()),
+            intern_memory(Memory::new()),
             pointer.into(),
             LoadKind::Int32,
         );
@@ -395,18 +395,18 @@ mod tests {
     fn shared_read_evidence_preserves_stored_and_origin_chain_sources() {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let pointer = CMemory::global_pointer("shared-read-source");
+        let pointer = Memory::global_pointer("shared-read-source");
         let sum = MachineTerm::add(
             MachineTerm::Variable(Variable(1007350)),
             MachineTerm::Variable(Variable(1007350)),
         );
-        let initial = CMemory::new().with_block("shared-read-source", 4);
+        let initial = Memory::new().with_block("shared-read-source", 4);
         let stored = initial
             .clone()
-            .store(pointer.clone(), CValue::Int32(sum.clone()));
+            .store(pointer.clone(), ProgramValue::Int32(sum.clone()));
         let load = |memory| {
             MachineTerm::MemoryLoad(
-                intern_c_memory(memory),
+                intern_memory(memory),
                 pointer.clone().into(),
                 LoadKind::Int32,
             )
@@ -444,9 +444,10 @@ mod tests {
                 .with_checked_rewritten_loads(&later, &arithmetic)
                 .is_none()
         );
-        let overwritten = observe(load(
-            initial.store(pointer.clone(), CValue::Int32(MachineTerm::constant(7))),
-        ));
+        let overwritten = observe(load(initial.store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(7)),
+        )));
         assert!(
             facts
                 .with_checked_rewritten_loads(&overwritten, &arithmetic)

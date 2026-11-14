@@ -14,10 +14,10 @@ pub(in crate::kernel) use statements::{
     end_scope_automatic_lifetimes, missing_aggregate_copy_read_resource,
     rebase_resolved_allocation, refresh_scalar_local_after_memory_store,
     refresh_scalar_local_from_memory, retire_automatic_storage_owner, return_authority_refusal,
-    uint64_heap_extent_bytes_are_exact,
+    uint64_heap_extent_bytes_are_exact, without_read_call_results,
 };
 pub(crate) use undefined_site::{
-    CUndefinedBehaviorSite, locate_undefined_behavior, locate_undefined_behavior_in_condition,
+    UndefinedBehaviorSite, locate_undefined_behavior, locate_undefined_behavior_in_condition,
 };
 
 /// Retain each sequential volatile access as a unique, kernel-certified fact.
@@ -36,17 +36,17 @@ fn volatile_access_fact(
     budget: &mut ExecutionBudget,
     write: bool,
     pointer: Pointer,
-    value_type: CType,
-    value: CValue,
+    value_type: ProgramType,
+    value: ProgramValue,
 ) -> ExecutionResult<ExecutionPureFact> {
     let event_id = budget.allocate_kernel_variable()?.0;
     let operation = if write { "write" } else { "read" };
-    let pointer_type = value_type.pointer_to().unwrap_or(CType::UInt8Pointer);
+    let pointer_type = value_type.pointer_to().unwrap_or(ProgramType::UInt8Pointer);
     Ok(ExecutionPureFact::certified(Proposition::Predicate {
         name: format!("__click_volatile_{operation}_{event_id}"),
         arguments: vec![
-            Term::CValue(CValue::typed_pointer(pointer, pointer_type)),
-            Term::CValue(value),
+            Term::ProgramValue(ProgramValue::typed_pointer(pointer, pointer_type)),
+            Term::ProgramValue(value),
         ],
     }))
 }
@@ -88,7 +88,7 @@ pub(crate) use memory_loads::load_variable_for_term;
 pub(crate) use memory_loads::loaded_pointer_predates_block;
 pub(crate) use memory_loads::offsets_have_same_canonical_form;
 pub(crate) use memory_loads::proposition_mentions_scalar_read;
-pub(crate) use memory_loads::read_over_write_c_value;
+pub(crate) use memory_loads::read_over_write_program_value;
 pub(in crate::kernel) use memory_loads::record_load_access_width;
 #[cfg(test)]
 pub(crate) use memory_loads::record_load_variable_defining_fact;
@@ -116,7 +116,7 @@ pub(in crate::kernel) use memory_loads::{
 };
 pub(crate) use memory_loads::{canonical_cell_load, canonical_form_of_load};
 pub(super) use memory_loads::{
-    canonical_offset_term, evaluate_c_memory_load_paths, evaluate_logical_memory_load_paths,
+    canonical_offset_term, evaluate_logical_memory_load_paths, evaluate_memory_load_paths,
     evaluate_spec_memory_load_paths, symbolic_load_value,
 };
 pub(crate) use memory_loads::{
@@ -140,19 +140,21 @@ pub(crate) use memory_loads::{
 };
 pub(super) use operators::pointer_offset_by_bytes_paths;
 pub(super) use operators::*;
-pub(super) use statements::execute_c_realloc_assign_paths;
 #[cfg(test)]
-pub(super) use statements::execute_c_statement;
+pub(super) use statements::execute_execution_statement;
+pub(super) use statements::execute_program_realloc_assign_paths;
 pub(super) use statements::memory_write_permission_outcome;
 pub(crate) use statements::resolve_pending_heap_allocations;
 pub(super) use statements::{
-    StatementJudgment, execute_c_statement_paths, execute_statement_paths,
+    StatementJudgment, execute_execution_statement_paths, execute_statement_paths,
     execute_statement_paths_with_prefix, paths_after_scope_exit, scope_declared_names,
 };
 pub(super) use statements::{sync_retained_stack_local, sync_stack_local};
 
-pub(crate) use memory_loads::{pointer_read_over_immediate_store, pointer_read_over_write_c_value};
+pub(crate) use memory_loads::{
+    pointer_read_over_immediate_store, pointer_read_over_write_program_value,
+};
 
 pub(crate) use memory_loads::loaded_pointer_stored_block;
 
-pub(in crate::kernel) type ExecutionValuePath = CExpressionPath<ExecutionValue>;
+pub(in crate::kernel) type ExecutionValuePath = ExpressionPath<ExecutionValue>;

@@ -11,12 +11,12 @@ use super::*;
 /// The part of a statement whose evaluation has the reported undefined
 /// behavior.
 #[derive(Clone, Debug)]
-pub(crate) enum CUndefinedBehaviorSite {
+pub(crate) enum UndefinedBehaviorSite {
     /// An expression the statement evaluates.
-    Expression(CExpression),
+    Expression(ProgramExpression),
     /// The store through this pointer expression, when no operand of the
     /// store has the behavior itself.
-    Store(CExpression),
+    Store(ProgramExpression),
 }
 
 /// The innermost operation of `statement` that has `kind` at `state`, or
@@ -28,21 +28,21 @@ pub(crate) enum CUndefinedBehaviorSite {
 /// statement does not run. Such an operand is reported through the
 /// expression that contains it.
 pub(crate) fn locate_undefined_behavior(
-    state: &CState,
-    statement: &CStatement,
+    state: &ExecutionState,
+    statement: &ProgramStatement,
     assumptions: &PureFactContext,
-    kind: &CUndefinedBehavior,
-) -> Option<CUndefinedBehaviorSite> {
+    kind: &UndefinedBehavior,
+) -> Option<UndefinedBehaviorSite> {
     let mut expressions = Vec::new();
     statement_expressions(statement, &mut expressions);
     for (expression, condition) in expressions {
         if let Some(site) = innermost_site(state, expression, condition, assumptions, kind) {
-            return Some(CUndefinedBehaviorSite::Expression(site.clone()));
+            return Some(UndefinedBehaviorSite::Expression(site.clone()));
         }
     }
     match statement {
-        CStatement::Store { pointer, .. } | CStatement::TypedStore { pointer, .. } => {
-            Some(CUndefinedBehaviorSite::Store(pointer.clone()))
+        ProgramStatement::Store { pointer, .. } | ProgramStatement::TypedStore { pointer, .. } => {
+            Some(UndefinedBehaviorSite::Store(pointer.clone()))
         }
         _ => None,
     }
@@ -51,77 +51,80 @@ pub(crate) fn locate_undefined_behavior(
 /// [`locate_undefined_behavior`] for a controlling expression evaluated on
 /// its own, as a branch or loop condition is.
 pub(crate) fn locate_undefined_behavior_in_condition(
-    state: &CState,
-    condition: &CExpression,
+    state: &ExecutionState,
+    condition: &ProgramExpression,
     assumptions: &PureFactContext,
-    kind: &CUndefinedBehavior,
-) -> Option<CUndefinedBehaviorSite> {
+    kind: &UndefinedBehavior,
+) -> Option<UndefinedBehaviorSite> {
     innermost_site(state, condition, true, assumptions, kind)
-        .map(|site| CUndefinedBehaviorSite::Expression(site.clone()))
+        .map(|site| UndefinedBehaviorSite::Expression(site.clone()))
 }
 
 /// The expressions `statement` evaluates itself, each with whether its value
 /// is tested for truth. Nested statement bodies are not stepped with it.
-fn statement_expressions<'a>(
-    statement: &'a CStatement,
-    expressions: &mut Vec<(&'a CExpression, bool)>,
+pub(super) fn statement_expressions<'a>(
+    statement: &'a ProgramStatement,
+    expressions: &mut Vec<(&'a ProgramExpression, bool)>,
 ) {
     match statement {
-        CStatement::Declare {
+        ProgramStatement::Declare {
             initializer: Some(expression),
             ..
         }
-        | CStatement::Assign { expression, .. }
-        | CStatement::HeapAllocate {
+        | ProgramStatement::Assign { expression, .. }
+        | ProgramStatement::HeapAllocate {
             bytes: expression, ..
         }
-        | CStatement::HeapFree {
+        | ProgramStatement::HeapFree {
             pointer: expression,
         }
-        | CStatement::Return(expression)
-        | CStatement::Throw(expression)
-        | CStatement::Switch { expression, .. } => expressions.push((expression, false)),
-        CStatement::Assert { condition, .. }
-        | CStatement::LoopTest { condition }
-        | CStatement::If { condition, .. }
-        | CStatement::While { condition, .. } => expressions.push((condition, true)),
-        CStatement::CallAssign { arguments, .. } | CStatement::Call { arguments, .. } => {
+        | ProgramStatement::Return(expression)
+        | ProgramStatement::Throw(expression)
+        | ProgramStatement::Switch { expression, .. } => expressions.push((expression, false)),
+        ProgramStatement::Assert { condition, .. }
+        | ProgramStatement::LoopTest { condition }
+        | ProgramStatement::If { condition, .. }
+        | ProgramStatement::While { condition, .. } => expressions.push((condition, true)),
+        ProgramStatement::CallAssign { arguments, .. }
+        | ProgramStatement::Call { arguments, .. }
+        | ProgramStatement::CallResult { arguments, .. } => {
             expressions.extend(arguments.iter().map(|argument| (argument, false)));
         }
-        CStatement::Store { pointer, value } | CStatement::TypedStore { pointer, value, .. } => {
+        ProgramStatement::Store { pointer, value }
+        | ProgramStatement::TypedStore { pointer, value, .. } => {
             expressions.push((pointer, false));
             expressions.push((value, false));
         }
-        CStatement::CopyAggregate { target, source, .. }
-        | CStatement::InitializeScalarArray { target, source, .. } => {
+        ProgramStatement::CopyAggregate { target, source, .. }
+        | ProgramStatement::InitializeScalarArray { target, source, .. } => {
             expressions.push((target, false));
             expressions.push((source, false));
         }
-        CStatement::Update { operand, .. } => expressions.push((operand, false)),
-        CStatement::ForStep { step, .. } => statement_expressions(step, expressions),
-        CStatement::Seq(statements) => statement_expressions(statements.first(), expressions),
-        CStatement::Skip
-        | CStatement::EndScalarReference(_)
-        | CStatement::ScalarReferenceScope(_)
-        | CStatement::Break
-        | CStatement::Continue
-        | CStatement::Goto { .. }
-        | CStatement::Declare {
+        ProgramStatement::Update { operand, .. } => expressions.push((operand, false)),
+        ProgramStatement::ForStep { step, .. } => statement_expressions(step, expressions),
+        ProgramStatement::Seq(statements) => statement_expressions(statements.first(), expressions),
+        ProgramStatement::Skip
+        | ProgramStatement::EndScalarReference(_)
+        | ProgramStatement::ScalarReferenceScope(_)
+        | ProgramStatement::Break
+        | ProgramStatement::Continue
+        | ProgramStatement::Goto { .. }
+        | ProgramStatement::Declare {
             initializer: None, ..
         }
-        | CStatement::DeclareAggregate { .. }
-        | CStatement::TryCatchInt32 { .. }
-        | CStatement::EndAutomaticLifetimes { .. } => {}
+        | ProgramStatement::DeclareAggregate { .. }
+        | ProgramStatement::TryCatchInt32 { .. }
+        | ProgramStatement::EndAutomaticLifetimes { .. } => {}
     }
 }
 
 fn innermost_site<'a>(
-    state: &CState,
-    expression: &'a CExpression,
+    state: &ExecutionState,
+    expression: &'a ProgramExpression,
     condition: bool,
     assumptions: &PureFactContext,
-    kind: &CUndefinedBehavior,
-) -> Option<&'a CExpression> {
+    kind: &UndefinedBehavior,
+) -> Option<&'a ProgramExpression> {
     let mut children = Vec::new();
     unconditional_operands(expression, &mut children);
     for child in children {
@@ -133,79 +136,85 @@ fn innermost_site<'a>(
 }
 
 fn has_undefined_behavior(
-    state: &CState,
-    expression: &CExpression,
+    state: &ExecutionState,
+    expression: &ProgramExpression,
     condition: bool,
     assumptions: &PureFactContext,
-    kind: &CUndefinedBehavior,
+    kind: &UndefinedBehavior,
 ) -> bool {
     let mut budget = ExecutionBudget::beside_live_state();
     let paths = if condition {
-        evaluate_c_condition_paths(state, expression, assumptions, &mut budget)
+        evaluate_program_condition_paths(state, expression, assumptions, &mut budget)
     } else {
-        evaluate_c_expression_paths(state, expression, assumptions, &mut budget)
+        evaluate_program_expression_paths(state, expression, assumptions, &mut budget)
     };
     paths.is_ok_and(|paths| {
         paths.iter().any(|path| {
-            matches!(&path.outcome, CExpressionOutcome::UndefinedBehavior(found)
+            matches!(&path.outcome, ExpressionOutcome::UndefinedBehavior(found)
                 if std::mem::discriminant(found) == std::mem::discriminant(kind))
         })
     })
 }
 
 /// The operands of `expression` that are evaluated whenever it is.
-fn unconditional_operands<'a>(expression: &'a CExpression, operands: &mut Vec<&'a CExpression>) {
+fn unconditional_operands<'a>(
+    expression: &'a ProgramExpression,
+    operands: &mut Vec<&'a ProgramExpression>,
+) {
     match expression {
-        CExpression::Value(_) | CExpression::Variable(_) | CExpression::FunctionAddress(_) => {}
-        CExpression::Cast { expression, .. }
-        | CExpression::FloatNegate(expression)
-        | CExpression::FloatClassification { expression, .. }
-        | CExpression::EnumField {
+        ProgramExpression::Value(_)
+        | ProgramExpression::Variable(_)
+        | ProgramExpression::FunctionAddress(_)
+        | ProgramExpression::CallResult { .. } => {}
+        ProgramExpression::Cast { expression, .. }
+        | ProgramExpression::FloatNegate(expression)
+        | ProgramExpression::FloatClassification { expression, .. }
+        | ProgramExpression::EnumField {
             value: expression, ..
         }
-        | CExpression::EnumIs {
+        | ProgramExpression::EnumIs {
             value: expression, ..
         }
-        | CExpression::Not(expression)
-        | CExpression::BitwiseNot(expression)
-        | CExpression::Load(expression)
-        | CExpression::TypedLoad {
+        | ProgramExpression::Not(expression)
+        | ProgramExpression::BitwiseNot(expression)
+        | ProgramExpression::Load(expression)
+        | ProgramExpression::TypedLoad {
             pointer: expression,
             ..
         }
-        | CExpression::PointerOffsetBytes {
+        | ProgramExpression::PointerOffsetBytes {
             pointer: expression,
             ..
         }
-        | CExpression::Subobject {
+        | ProgramExpression::Subobject {
             pointer: expression,
             ..
         } => operands.push(expression),
-        CExpression::Conditional { condition, .. } => operands.push(condition),
-        CExpression::EnumConstruct { fields, .. } => operands.extend(fields),
-        CExpression::And(left, _) | CExpression::Or(left, _) => operands.push(left),
-        CExpression::AddressOf(place) | CExpression::CheckedObjectAddress(place) => {
+        ProgramExpression::Conditional { condition, .. } => operands.push(condition),
+        ProgramExpression::EnumConstruct { fields, .. } => operands.extend(fields),
+        ProgramExpression::And(left, _) | ProgramExpression::Or(left, _) => operands.push(left),
+        ProgramExpression::AddressOf(place) | ProgramExpression::CheckedObjectAddress(place) => {
             place_address_operands(place, operands);
         }
-        CExpression::LessThan(left, right)
-        | CExpression::LessEqual(left, right)
-        | CExpression::GreaterThan(left, right)
-        | CExpression::GreaterEqual(left, right)
-        | CExpression::Equal(left, right)
-        | CExpression::NotEqual(left, right)
-        | CExpression::Add(left, right)
-        | CExpression::Subtract(left, right)
-        | CExpression::Multiply(left, right)
-        | CExpression::Divide(left, right)
-        | CExpression::Remainder(left, right)
-        | CExpression::ShiftLeft(left, right)
-        | CExpression::RustShiftLeft(left, right)
-        | CExpression::ShiftRight(left, right)
-        | CExpression::RustShiftRight(left, right)
-        | CExpression::BitwiseAnd(left, right)
-        | CExpression::BitwiseOr(left, right)
-        | CExpression::BitwiseXor(left, right)
-        | CExpression::Index(left, right) => {
+        ProgramExpression::LessThan(left, right)
+        | ProgramExpression::LessEqual(left, right)
+        | ProgramExpression::GreaterThan(left, right)
+        | ProgramExpression::GreaterEqual(left, right)
+        | ProgramExpression::Equal(left, right)
+        | ProgramExpression::NotEqual(left, right)
+        | ProgramExpression::Add(left, right)
+        | ProgramExpression::Subtract(left, right)
+        | ProgramExpression::Multiply(left, right)
+        | ProgramExpression::Divide(left, right)
+        | ProgramExpression::Remainder(left, right)
+        | ProgramExpression::ShiftLeft(left, right)
+        | ProgramExpression::RustShiftLeft(left, right)
+        | ProgramExpression::ShiftRight(left, right)
+        | ProgramExpression::RustShiftRight(left, right)
+        | ProgramExpression::BitwiseAnd(left, right)
+        | ProgramExpression::BitwiseOr(left, right)
+        | ProgramExpression::BitwiseXor(left, right)
+        | ProgramExpression::Index(left, right) => {
             operands.push(left);
             operands.push(right);
         }
@@ -214,12 +223,15 @@ fn unconditional_operands<'a>(expression: &'a CExpression, operands: &mut Vec<&'
 
 /// The operands evaluated to form the address of `place` without reading
 /// it: the pointer of `*p`, and the base and index of `a[i]`.
-fn place_address_operands<'a>(place: &'a CExpression, operands: &mut Vec<&'a CExpression>) {
+fn place_address_operands<'a>(
+    place: &'a ProgramExpression,
+    operands: &mut Vec<&'a ProgramExpression>,
+) {
     match place {
-        CExpression::Load(pointer) | CExpression::TypedLoad { pointer, .. } => {
+        ProgramExpression::Load(pointer) | ProgramExpression::TypedLoad { pointer, .. } => {
             operands.push(pointer);
         }
-        CExpression::Index(base, index) => {
+        ProgramExpression::Index(base, index) => {
             operands.push(base);
             operands.push(index);
         }

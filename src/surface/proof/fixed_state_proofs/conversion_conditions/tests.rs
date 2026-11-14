@@ -10,8 +10,8 @@ use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 
 /// `probe(p, index)` with `p` an external `int32*` argument and `index`
 /// symbolic: the shape a pure theorem's parameters reach a lowering in.
-fn indexed_pointer_site() -> (BTreeMap<String, CValue>, CState) {
-    let pointer = CValue::typed_pointer(
+fn indexed_pointer_site() -> (BTreeMap<String, ProgramValue>, ExecutionState) {
+    let pointer = ProgramValue::typed_pointer(
         Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::scaled_int32_node(
@@ -19,28 +19,28 @@ fn indexed_pointer_site() -> (BTreeMap<String, CValue>, CState) {
                 4,
             ),
         },
-        CType::Int32Pointer,
+        ProgramType::Int32Pointer,
     );
     let values = BTreeMap::from([
         ("p".to_string(), pointer),
         (
             "index".to_string(),
-            CValue::Int32(MachineTerm::Variable(Variable(1))),
+            ProgramValue::Int32(MachineTerm::Variable(Variable(1))),
         ),
     ]);
-    (values, CState::new())
+    (values, ExecutionState::new())
 }
 
 /// The pointer `p` was passed, as the kernel holds it.
-fn pointer_base(values: &BTreeMap<String, CValue>) -> Pointer {
-    let CValue::Pointer(pointer) = &values["p"] else {
+fn pointer_base(values: &BTreeMap<String, ProgramValue>) -> Pointer {
+    let ProgramValue::Pointer(pointer) = &values["p"] else {
         unreachable!("the probe binds `p` to a pointer");
     };
     pointer.pointer().clone()
 }
 
 /// The cell `(p + index) as (int32 *)[0]`, as the kernel indexes it.
-fn indexed_cell(values: &BTreeMap<String, CValue>) -> Pointer {
+fn indexed_cell(values: &BTreeMap<String, ProgramValue>) -> Pointer {
     Pointer {
         block: pointer_base(values).block,
         offset: PointerOffsetTerm::Add(
@@ -69,21 +69,23 @@ fn an_expression_form_names_itself_its_cell_and_its_repair() {
     let (values, state) = indexed_pointer_site();
     let expression = ContractExpression::Call {
         name: "to_integer".to_string(),
-        arguments: vec![ContractExpression::CFragment(CExpression::TypedLoad {
-            pointer: Box::new(CExpression::Add(
-                Box::new(CExpression::Variable("p".to_string())),
-                Box::new(CExpression::Variable("index".to_string())),
-            )),
-            value_type: CType::Int32,
-            volatile: false,
-            pointee_constant: false,
-            access_class: None,
-            source: Default::default(),
-        })],
+        arguments: vec![ContractExpression::ProgramExpression(
+            ProgramExpression::TypedLoad {
+                pointer: Box::new(ProgramExpression::Add(
+                    Box::new(ProgramExpression::Variable("p".to_string())),
+                    Box::new(ProgramExpression::Variable("index".to_string())),
+                )),
+                value_type: ProgramType::Int32,
+                volatile: false,
+                pointee_constant: false,
+                access_class: None,
+                source: Default::default(),
+            },
+        )],
     };
     let site = StatedSite::new(StatedForm::Expression(&expression), &state, &values);
     let message = refuse_unproved_conversion_bounds(
-        &unproved(Proposition::CMemoryLoadable {
+        &unproved(Proposition::MemoryLoadable {
             memory: state.memory().clone(),
             base: indexed_cell(&values),
             bytes: MachineTerm::constant(4),
@@ -114,10 +116,10 @@ fn an_expression_form_names_itself_its_cell_and_its_repair() {
 /// A segment bound or resource quantity is a C fragment. Its refusal reads the
 /// same, and the premises it consulted are listed in the user's names.
 #[test]
-fn a_c_fragment_form_lists_the_premises_it_consulted() {
+fn a_program_expression_form_lists_the_premises_it_consulted() {
     let (values, state) = indexed_pointer_site();
-    let expression = CExpression::Variable("index".to_string());
-    let site = StatedSite::new(StatedForm::CFragment(&expression), &state, &values);
+    let expression = ProgramExpression::Variable("index".to_string());
+    let site = StatedSite::new(StatedForm::ProgramExpression(&expression), &state, &values);
     let assumptions = PureFactContext::new()
         .assume_proposition(Proposition::ConditionIs(
             ConditionTerm::Compare {
@@ -128,7 +130,7 @@ fn a_c_fragment_form_lists_the_premises_it_consulted() {
             },
             true,
         ))
-        .assume_proposition(Proposition::CMemoryLoadable {
+        .assume_proposition(Proposition::MemoryLoadable {
             memory: state.memory().clone(),
             base: pointer_base(&values),
             bytes: binary_node!(
@@ -140,7 +142,7 @@ fn a_c_fragment_form_lists_the_premises_it_consulted() {
             wide: false,
         });
     let message = refuse_unproved_conversion_bounds(
-        &unproved(Proposition::CMemoryLoadable {
+        &unproved(Proposition::MemoryLoadable {
             memory: state.memory().clone(),
             base: indexed_cell(&values),
             bytes: MachineTerm::constant(4),
@@ -166,8 +168,8 @@ fn a_c_fragment_form_lists_the_premises_it_consulted() {
 #[test]
 fn an_overflow_guard_names_its_operation_without_wrapping_parentheses() {
     let (values, state) = indexed_pointer_site();
-    let expression = CExpression::Variable("index".to_string());
-    let site = StatedSite::new(StatedForm::CFragment(&expression), &state, &values);
+    let expression = ProgramExpression::Variable("index".to_string());
+    let site = StatedSite::new(StatedForm::ProgramExpression(&expression), &state, &values);
     let message = refuse_unproved_conversion_bounds(
         &unproved(Proposition::ConditionIs(
             ConditionTerm::Overflows {
@@ -194,8 +196,8 @@ fn an_overflow_guard_names_its_operation_without_wrapping_parentheses() {
 #[test]
 fn established_conditions_are_named_beside_the_missing_one() {
     let (values, state) = indexed_pointer_site();
-    let expression = CExpression::Variable("index".to_string());
-    let site = StatedSite::new(StatedForm::CFragment(&expression), &state, &values);
+    let expression = ProgramExpression::Variable("index".to_string());
+    let site = StatedSite::new(StatedForm::ProgramExpression(&expression), &state, &values);
     let guard = Proposition::ConditionIs(
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
@@ -205,7 +207,7 @@ fn established_conditions_are_named_beside_the_missing_one() {
         },
         false,
     );
-    let loadable = Proposition::CMemoryLoadable {
+    let loadable = Proposition::MemoryLoadable {
         memory: state.memory().clone(),
         base: indexed_cell(&values),
         bytes: MachineTerm::constant(4),
@@ -241,8 +243,8 @@ fn established_conditions_are_named_beside_the_missing_one() {
 #[test]
 fn every_refusal_says_no_span_is_available() {
     let (values, state) = indexed_pointer_site();
-    let expression = CExpression::Variable("index".to_string());
-    let site = StatedSite::new(StatedForm::CFragment(&expression), &state, &values);
+    let expression = ProgramExpression::Variable("index".to_string());
+    let site = StatedSite::new(StatedForm::ProgramExpression(&expression), &state, &values);
     let message = refuse_unproved_conversion_bounds(
         &unproved(Proposition::ConditionIs(
             ConditionTerm::Constant(false),
@@ -263,10 +265,10 @@ fn every_refusal_says_no_span_is_available() {
 #[test]
 fn an_assumable_obligation_is_not_refused() {
     let (values, state) = indexed_pointer_site();
-    let expression = CExpression::Variable("index".to_string());
-    let site = StatedSite::new(StatedForm::CFragment(&expression), &state, &values);
+    let expression = ProgramExpression::Variable("index".to_string());
+    let site = StatedSite::new(StatedForm::ProgramExpression(&expression), &state, &values);
     let assumable = vec![crate::kernel::ProofObligation::new(
-        Proposition::CMemoryLoadable {
+        Proposition::MemoryLoadable {
             memory: state.memory().clone(),
             base: indexed_cell(&values),
             bytes: MachineTerm::constant(4),
@@ -280,19 +282,19 @@ fn an_assumable_obligation_is_not_refused() {
 /// the defining equation a function `unfold` lowers.
 fn fold_defining_equation() -> ClickProposition {
     let read = ContractExpression::ArrayIndex {
-        base: Box::new(ContractExpression::CFragment(CExpression::Variable(
-            "p".to_string(),
-        ))),
-        indexes: vec![ContractExpression::CFragment(CExpression::Variable(
-            "k".to_string(),
-        ))],
+        base: Box::new(ContractExpression::ProgramExpression(
+            ProgramExpression::Variable("p".to_string()),
+        )),
+        indexes: vec![ContractExpression::ProgramExpression(
+            ProgramExpression::Variable("k".to_string()),
+        )],
         dimensions: vec![1],
-        lowered: CExpression::TypedLoad {
-            pointer: Box::new(CExpression::Add(
-                Box::new(CExpression::Variable("p".to_string())),
-                Box::new(CExpression::Variable("k".to_string())),
+        lowered: ProgramExpression::TypedLoad {
+            pointer: Box::new(ProgramExpression::Add(
+                Box::new(ProgramExpression::Variable("p".to_string())),
+                Box::new(ProgramExpression::Variable("k".to_string())),
             )),
-            value_type: CType::Int32,
+            value_type: ProgramType::Int32,
             volatile: false,
             pointee_constant: false,
             access_class: None,
@@ -303,17 +305,19 @@ fn fold_defining_equation() -> ClickProposition {
         left: ContractExpression::Call {
             name: "icount".to_string(),
             arguments: vec![
-                ContractExpression::CFragment(CExpression::Variable("p".to_string())),
+                ContractExpression::ProgramExpression(ProgramExpression::Variable("p".to_string())),
                 ContractExpression::IntegerLiteral("0".to_string()),
-                ContractExpression::CFragment(CExpression::Variable("index".to_string())),
+                ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                    "index".to_string(),
+                )),
             ],
         },
         operator: ComparisonOperator::Equal,
         right: ContractExpression::RangeFold {
             start: Box::new(ContractExpression::IntegerLiteral("0".to_string())),
-            end: Box::new(ContractExpression::CFragment(CExpression::Variable(
-                "index".to_string(),
-            ))),
+            end: Box::new(ContractExpression::ProgramExpression(
+                ProgramExpression::Variable("index".to_string()),
+            )),
             initial: Box::new(ContractExpression::IntegerLiteral("0".to_string())),
             accumulator: "acc".to_string(),
             item: "k".to_string(),
@@ -406,23 +410,23 @@ fn a_conditional_fold_body_quotes_the_condition_it_carried_out() {
 
 #[test]
 fn one_outer_parenthesis_pair_is_dropped_and_a_composed_one_is_kept() {
-    let sum = ContractExpression::CFragment(CExpression::Add(
-        Box::new(CExpression::Variable("a".to_string())),
-        Box::new(CExpression::Variable("b".to_string())),
+    let sum = ContractExpression::ProgramExpression(ProgramExpression::Add(
+        Box::new(ProgramExpression::Variable("a".to_string())),
+        Box::new(ProgramExpression::Variable("b".to_string())),
     ));
     assert_eq!(spelled_alone(&sum), "a + b");
-    let nested = ContractExpression::CFragment(CExpression::Add(
-        Box::new(CExpression::Add(
-            Box::new(CExpression::Variable("a".to_string())),
-            Box::new(CExpression::Variable("b".to_string())),
+    let nested = ContractExpression::ProgramExpression(ProgramExpression::Add(
+        Box::new(ProgramExpression::Add(
+            Box::new(ProgramExpression::Variable("a".to_string())),
+            Box::new(ProgramExpression::Variable("b".to_string())),
         )),
-        Box::new(CExpression::Add(
-            Box::new(CExpression::Variable("c".to_string())),
-            Box::new(CExpression::Variable("d".to_string())),
+        Box::new(ProgramExpression::Add(
+            Box::new(ProgramExpression::Variable("c".to_string())),
+            Box::new(ProgramExpression::Variable("d".to_string())),
         )),
     ));
     assert_eq!(spelled_alone(&nested), "(a + b) + (c + d)");
-    let bare = ContractExpression::CFragment(CExpression::Variable("a".to_string()));
+    let bare = ContractExpression::ProgramExpression(ProgramExpression::Variable("a".to_string()));
     assert_eq!(spelled_alone(&bare), "a");
 }
 
@@ -447,7 +451,7 @@ fn quantified_reflexive_domain_guard_needs_no_search_or_ambient_fact() {
     let guard = |conclusion| Proposition::ForAll {
         name: Default::default(),
         var: Variable(760_000),
-        sort: crate::kernel::Sort::CInt32,
+        sort: crate::kernel::Sort::ProgramInt32,
         body: Box::new(Proposition::Implies(
             Box::new(premise.clone()),
             Box::new(conclusion),

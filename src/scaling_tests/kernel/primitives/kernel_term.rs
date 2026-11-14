@@ -48,7 +48,7 @@ fn machine_term_bridge_is_linear_in_explicit_tree_size() {
                     right: Box::new(MachineTerm::constant(1)),
                 };
             }
-            let source = PureFunctionArgument::Value(CValue::Int32(bits));
+            let source = PureFunctionArgument::Value(ProgramValue::Int32(bits));
             let (restored, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let term = KernelTermImport::default().argument(&source);
                 KernelTermExport::default().argument(&term).unwrap()
@@ -79,7 +79,7 @@ fn specialized_cast_bridge_is_linear_beside_unrelated_terms() {
                     )),
                 );
             }
-            let source = PureFunctionArgument::Value(CValue::UInt32(bits));
+            let source = PureFunctionArgument::Value(ProgramValue::UInt32(bits));
             let (restored, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let term = KernelTermImport::default().argument(&source);
                 KernelTermExport::default().argument(&term).unwrap()
@@ -141,7 +141,7 @@ fn integer_conversion_bridge_scales_with_shared_operand() {
                 value = IntegerTerm::Add(value.clone(), value).into();
             }
             let source =
-                PureFunctionArgument::Value(CValue::Int32(MachineTerm::IntegerToMachine {
+                PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::IntegerToMachine {
                     value,
                     destination: MachineIntegerType::Int32,
                 }));
@@ -173,7 +173,7 @@ fn boolean_conversion_bridge_is_linear_in_explicit_conditions() {
                     else_condition: Box::new(ConditionTerm::Constant(false)),
                 };
             }
-            let source = PureFunctionArgument::Value(CValue::Int32(MachineTerm::BoolCast {
+            let source = PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::BoolCast {
                 to: MachineIntegerType::Int32,
                 value: Box::new(condition),
             }));
@@ -226,7 +226,8 @@ fn observing_every_shared_machine_prefix_does_not_materialize_operands() {
             .collect::<Vec<_>>();
         for size in [16, 64, 256] {
             let format = MachineIntegerType::Int64;
-            let mut term = KernelTerm::variable(KernelType::C(CType::Int64), Variable(952000));
+            let mut term =
+                KernelTerm::variable(KernelType::Program(ProgramType::Int64), Variable(952000));
             let mut retained = Vec::new();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for _ in 0..size {
@@ -274,7 +275,8 @@ fn machine_root_checking_views_keep_shared_prefixes_unboxed() {
             .collect::<Vec<_>>();
         for size in [16, 64, 256] {
             let format = MachineIntegerType::Int64;
-            let mut term = KernelTerm::variable(KernelType::C(CType::Int64), Variable(956000));
+            let mut term =
+                KernelTerm::variable(KernelType::Program(ProgramType::Int64), Variable(956000));
             let mut retained = Vec::new();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for _ in 0..size {
@@ -305,7 +307,7 @@ fn machine_root_checking_views_keep_shared_prefixes_unboxed() {
                             .is_some()
                     );
                     let quotient = KernelTerm::intern(
-                        KernelType::C(format.c_type()),
+                        KernelType::Program(format.program_type()),
                         KernelTermNode::MachineBinary {
                             format,
                             operator: MachineBinaryOp::Divide,
@@ -355,14 +357,15 @@ fn machine_root_checking_views_keep_shared_prefixes_unboxed() {
 #[test]
 fn retained_load_terms_grow_without_rewalking_snapshots_or_prior_arithmetic() {
     for unrelated in [0, 128, 512] {
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         for index in 0..unrelated {
             memory = memory.with_block(format!("unrelated-read-{index}"), 4);
         }
-        let memory = intern_c_memory(memory);
+        let memory = intern_memory(memory);
         let mut samples = Vec::new();
         for size in [16, 64, 256] {
-            let mut root = KernelTerm::variable(KernelType::C(CType::Int32), Variable(993200));
+            let mut root =
+                KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(993200));
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for index in 0..size {
@@ -407,7 +410,7 @@ fn retained_named_reads_do_not_rewalk_their_address_on_each_import() {
             );
         }
         let raw = MachineTerm::MemoryLoad(
-            intern_c_memory(CMemory::new()),
+            intern_memory(Memory::new()),
             Box::new(Pointer {
                 block: PointerBlock::Symbolic(Variable(993499)),
                 offset,
@@ -439,7 +442,7 @@ fn shared_read_selection_reuses_growing_arithmetic_prefixes() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let raw = MachineTerm::MemoryLoad(
-            intern_c_memory(CMemory::new()),
+            intern_memory(Memory::new()),
             Box::new(Pointer::symbolic(Variable(994110))),
             LoadKind::Int32,
         );
@@ -479,14 +482,14 @@ fn shared_read_selection_reuses_growing_arithmetic_prefixes() {
 fn nested_read_address_import_is_linear_beside_unrelated_memory() {
     for unrelated in [0, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         for index in 0..unrelated {
             memory = memory.store(
                 Pointer::symbolic(Variable(997000 + index)),
-                CValue::Int32(MachineTerm::constant(index as u32)),
+                ProgramValue::Int32(MachineTerm::constant(index as u32)),
             );
         }
-        let memory = intern_c_memory(memory);
+        let memory = intern_memory(memory);
         for depth in [16, 64, 256] {
             let mut raw = MachineTerm::constant(0);
             for _ in 0..depth {

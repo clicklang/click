@@ -7,9 +7,9 @@ fn returned_borrows_keep_checked_entry_arguments_when_clauses_are_reordered() {
             block: format!("parent:{name}").into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        CExpression::TypedLoad {
-            pointer: Box::new(CExpression::Value(CValue::pointer(address))),
-            value_type: CType::Int32Pointer,
+        ProgramExpression::TypedLoad {
+            pointer: Box::new(ProgramExpression::Value(ProgramValue::pointer(address))),
+            value_type: ProgramType::Int32Pointer,
             volatile: false,
             pointee_constant: false,
             access_class: None,
@@ -17,25 +17,25 @@ fn returned_borrows_keep_checked_entry_arguments_when_clauses_are_reordered() {
         }
     };
     let clause = |name: &str| {
-        CResourceSpec::declared(
+        ResourceSpec::declared(
             ResourceFamily::Composite,
-            CResourceAccessMode::Own,
+            ResourceAccessMode::Own,
             "child_ref".into(),
             vec![field(name)],
-            vec![CType::Int32Pointer],
-            CResourceTransferRole::Borrow,
-            CResourceSnapshot::Entry,
+            vec![ProgramType::Int32Pointer],
+            ResourceTransferRole::Borrow,
+            ResourceSnapshot::Entry,
         )
         .unwrap()
     };
     let left = clause("left");
     let right = clause("right");
-    let function = c_function(CType::Void, "borrow", Vec::new(), c_skip())
+    let function = program_function(ProgramType::Void, "borrow", Vec::new(), program_skip())
         .with_resource_summary(vec![left.clone(), right.clone()], vec![right, left]);
     let children = ["child:left", "child:right"].map(|name| {
-        CResourceFact::own_composite(
+        ResourceFact::own_composite(
             "child_ref".into(),
-            vec![CValue::pointer(Pointer {
+            vec![ProgramValue::pointer(Pointer {
                 block: name.into(),
                 offset: PointerOffsetTerm::Constant(0),
             })],
@@ -44,10 +44,10 @@ fn returned_borrows_keep_checked_entry_arguments_when_clauses_are_reordered() {
     let checked = children
         .iter()
         .enumerate()
-        .map(|(index, fact)| CCheckedResourceFact {
+        .map(|(index, fact)| CheckedResourceFact {
             fact: fact.clone(),
-            role: CResourceTransferRole::Borrow,
-            snapshot: CResourceSnapshot::Entry,
+            role: ResourceTransferRole::Borrow,
+            snapshot: ResourceSnapshot::Entry,
             clause_position: None,
             section_index: Some(index),
             selected_mutex_source: None,
@@ -55,7 +55,7 @@ fn returned_borrows_keep_checked_entry_arguments_when_clauses_are_reordered() {
         .collect::<Vec<_>>();
     // Neither field has a materialized cell. Re-evaluating either return
     // clause would fail, even though its exact borrowed owner was checked.
-    let state = CState::new();
+    let state = ExecutionState::new();
     let returned = evaluate_contract_return_resource_context(
         function.contract_interface(),
         &[],

@@ -144,7 +144,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
         .map(|definition| (definition.name(), definition))
         .collect::<BTreeMap<_, _>>();
     let predicate_environment = PredicateEnvironment::new(&predicate_definitions)
-        .with_contracts(file.contract_definitions(), &file.c_function_names);
+        .with_contracts(file.contract_definitions(), &file.program_function_names);
     let click_function_environment = ClickFunctionEnvironment::with_algebraic_types(
         &click_function_definitions,
         &combined_algebraic_type_definitions(file)?,
@@ -180,8 +180,8 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
             .filter_map(|parameter| {
                 parameter
                     .click_type()
-                    .c_type()
-                    .map(|c_type| (parameter.name().to_string(), c_type))
+                    .interface_type()
+                    .map(|interface_type| (parameter.name().to_string(), interface_type))
             })
             .collect::<BTreeMap<_, _>>();
         validate_predicate_calls_in_proposition(
@@ -211,7 +211,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
             click_functions,
             &format!("function `{}`", definition.name()),
         )?;
-        validate_c_valued_function_folds(definition, &click_function_types)?;
+        validate_program_valued_function_folds(definition, &click_function_types)?;
         let mut calls = BTreeSet::new();
         collect_click_function_calls(body, &mut calls);
         function_calls.insert(definition.name().to_string(), calls);
@@ -382,7 +382,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
                 validate_contract_proposition_names(
                     proposition,
                     &requires_type_environment,
-                    &function.c_object_names,
+                    &function.program_object_names,
                     "requires",
                     &context,
                 )?;
@@ -426,7 +426,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
                     validate_contract_proposition_names(
                         proposition,
                         &ensures_type_environment,
-                        &function.c_object_names,
+                        &function.program_object_names,
                         "ensures",
                         &context,
                     )?;
@@ -450,7 +450,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
                         &click_function_types,
                         &context,
                     )?;
-                    if function.signature().return_type() == C0Type::Void {
+                    if function.signature().return_type() == InterfaceType::Void {
                         // The Integer-aware entry point, not the C-only one.
                         // A `void` function's `ensures` may name an Integer
                         // Click function exactly as every other clause may,
@@ -507,15 +507,15 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
 /// objects are resolved by the source-aware parser rather than this scope.
 fn validate_contract_proposition_names(
     proposition: &ClickProposition,
-    variables: &BTreeMap<String, C0Type>,
-    c_objects: &BTreeSet<String>,
+    variables: &BTreeMap<String, InterfaceType>,
+    program_objects: &BTreeSet<String>,
     clause: &str,
     context: &str,
 ) -> Result<(), ClickError> {
     let mut names = BTreeSet::new();
     crate::surface::lowering::collect_click_proposition_referenced_names(proposition, &mut names);
     if let Some(name) = names.iter().find(|name| {
-        !variables.contains_key(*name) && !c_objects.contains(*name) && !name.contains("::")
+        !variables.contains_key(*name) && !program_objects.contains(*name) && !name.contains("::")
     }) {
         if name == "result" && clause == "ensures" {
             return Err(ClickError::new(format!(
@@ -569,7 +569,7 @@ fn refuse_a_place_returned_twice(function: &FunctionBlock) -> Result<(), ClickEr
             }
             let fixed_place = [&left.base, &left.start, &left.end]
                 .into_iter()
-                .all(c_expression_reads_no_memory);
+                .all(program_expression_reads_no_memory);
             if !same_state && !fixed_place {
                 continue;
             }
@@ -655,11 +655,11 @@ fn resource_names_one_place_at_entry_and_exit(resource: &ResourceClause) -> bool
     let fixed_segment = |segment: &ContractSegment| {
         [&segment.base, &segment.start, &segment.end]
             .into_iter()
-            .all(c_expression_reads_no_memory)
+            .all(program_expression_reads_no_memory)
     };
     let fixed_expression = |expression: &ContractExpression| {
-        contract_expression_as_c_fragment(expression)
-            .is_some_and(|expression| c_expression_reads_no_memory(&expression))
+        contract_expression_as_program_expression(expression)
+            .is_some_and(|expression| program_expression_reads_no_memory(&expression))
     };
     match resource {
         ResourceClause::OwnMemory(segment) => fixed_segment(segment),
@@ -690,21 +690,28 @@ fn resource_names_one_place_at_entry_and_exit(resource: &ResourceClause) -> bool
 
 /// Whether an expression is built from parameters and constants alone, so
 /// that it denotes the same value at a function's entry and exit.
-pub(in crate::surface) fn c_expression_reads_no_memory(expression: &CExpression) -> bool {
+pub(in crate::surface) fn program_expression_reads_no_memory(
+    expression: &ProgramExpression,
+) -> bool {
     match expression {
-        CExpression::Variable(_) | CExpression::Value(_) => true,
-        CExpression::Add(left, right)
-        | CExpression::Subtract(left, right)
-        | CExpression::Multiply(left, right) => {
-            c_expression_reads_no_memory(left) && c_expression_reads_no_memory(right)
+        ProgramExpression::Variable(_) | ProgramExpression::Value(_) => true,
+        ProgramExpression::Add(left, right)
+        | ProgramExpression::Subtract(left, right)
+        | ProgramExpression::Multiply(left, right) => {
+            program_expression_reads_no_memory(left) && program_expression_reads_no_memory(right)
         }
-        CExpression::PointerOffsetBytes { pointer, .. }
-        | CExpression::Subobject { pointer, .. } => c_expression_reads_no_memory(pointer),
-        CExpression::Cast { expression, .. } => c_expression_reads_no_memory(expression),
+        ProgramExpression::PointerOffsetBytes { pointer, .. }
+        | ProgramExpression::Subobject { pointer, .. } => {
+            program_expression_reads_no_memory(pointer)
+        }
+        ProgramExpression::Cast { expression, .. } => {
+            program_expression_reads_no_memory(expression)
+        }
         // `&q[i]` is an address computed from `q` and `i`; nothing is loaded.
-        CExpression::AddressOf(place) => match place.as_ref() {
-            CExpression::Index(base, index) => {
-                c_expression_reads_no_memory(base) && c_expression_reads_no_memory(index)
+        ProgramExpression::AddressOf(place) => match place.as_ref() {
+            ProgramExpression::Index(base, index) => {
+                program_expression_reads_no_memory(base)
+                    && program_expression_reads_no_memory(index)
             }
             _ => false,
         },
@@ -714,8 +721,8 @@ pub(in crate::surface) fn c_expression_reads_no_memory(expression: &CExpression)
 
 fn validate_contract_applications_in_proposition(
     proposition: &ClickProposition,
-    contracts: &BTreeMap<String, C0Type>,
-    variables: &BTreeMap<String, C0Type>,
+    contracts: &BTreeMap<String, InterfaceType>,
+    variables: &BTreeMap<String, InterfaceType>,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     context: &str,
 ) -> Result<(), ClickError> {
@@ -744,8 +751,8 @@ fn validate_contract_applications_in_proposition(
 
 fn validate_contract_applications_in_proposition_one(
     proposition: &ClickProposition,
-    contracts: &BTreeMap<String, C0Type>,
-    variables: &BTreeMap<String, C0Type>,
+    contracts: &BTreeMap<String, InterfaceType>,
+    variables: &BTreeMap<String, InterfaceType>,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     context: &str,
 ) -> Result<(), ClickError> {
@@ -760,7 +767,7 @@ fn validate_contract_applications_in_proposition_one(
                 };
                 let actual =
                     infer_contract_expression_type(mutex, variables, click_functions, context)?;
-                if !actual.is_some_and(C0Type::is_object_pointer) {
+                if !actual.is_some_and(InterfaceType::is_object_pointer) {
                     return Err(ClickError::new(format!(
                         "held expects a mutex pointer in {context}"
                     )));
@@ -788,10 +795,13 @@ fn validate_contract_applications_in_proposition_one(
                         click_functions,
                         context,
                     )?;
-                    if !actual.is_some_and(C0Type::is_object_pointer) {
+                    if !actual.is_some_and(InterfaceType::is_object_pointer) {
                         return Err(ClickError::new(format!(
                             "same_object expects pointer arguments in {context}, got {}",
-                            actual.map_or_else(|| "an unknown type".to_string(), describe_c0_type)
+                            actual.map_or_else(
+                                || "an unknown type".to_string(),
+                                describe_interface_type
+                            )
                         )));
                     }
                 }
@@ -814,7 +824,8 @@ fn validate_contract_applications_in_proposition_one(
                 if actual.is_some_and(|actual| actual.is_pointer()) {
                     return Err(ClickError::new(format!(
                         "contract `{name}` value parameters are scalars, got {} in {context}",
-                        actual.map_or_else(|| "an unknown type".to_string(), describe_c0_type)
+                        actual
+                            .map_or_else(|| "an unknown type".to_string(), describe_interface_type)
                     )));
                 }
             }
@@ -832,8 +843,8 @@ fn validate_contract_applications_in_proposition_one(
             if actual != Some(*expected) {
                 return Err(ClickError::new(format!(
                     "contract `{name}` expects {}, got {} in {context}",
-                    describe_c0_type(*expected),
-                    actual.map_or_else(|| "an unknown type".to_string(), describe_c0_type),
+                    describe_interface_type(*expected),
+                    actual.map_or_else(|| "an unknown type".to_string(), describe_interface_type),
                 )));
             }
             Ok(())
@@ -867,24 +878,25 @@ fn validate_contract_applications_in_proposition_one(
             context,
         ),
         ClickProposition::ForAll {
-            click_type: c_type,
+            click_type: interface_type,
             name,
             body,
             ..
         }
         | ClickProposition::Exists {
-            click_type: c_type,
+            click_type: interface_type,
             name,
             body,
             ..
         } => {
             let mut variables = variables.clone();
-            match c_type {
+            match interface_type {
                 ClickType::Resource => {
                     variables.remove(name);
                 }
-                ClickType::C(c_type) | ClickType::CObjectPointer { c_type, .. } => {
-                    variables.insert(name.clone(), *c_type);
+                ClickType::Program(interface_type)
+                | ClickType::CObjectPointer { interface_type, .. } => {
+                    variables.insert(name.clone(), *interface_type);
                 }
                 ClickType::Integer => {
                     variables.remove(name);
@@ -909,7 +921,7 @@ fn validate_contract_applications_in_proposition_one(
         ClickProposition::RangeAll { item, body, .. }
         | ClickProposition::RangeAny { item, body, .. } => {
             let mut variables = variables.clone();
-            variables.insert(item.clone(), C0Type::Int32);
+            variables.insert(item.clone(), InterfaceType::Int32);
             validate_contract_applications_in_proposition(
                 body,
                 contracts,
@@ -987,7 +999,7 @@ fn reject_held_outside_execution(
 fn validate_theorem_definition(
     theorem: &TheoremDefinition,
     predicates: &BTreeMap<String, usize>,
-    contracts: &BTreeMap<String, C0Type>,
+    contracts: &BTreeMap<String, InterfaceType>,
     click_functions: &BTreeMap<String, usize>,
     click_function_types: &BTreeMap<String, ClickFunctionType>,
 ) -> Result<(), ClickError> {
@@ -1086,7 +1098,7 @@ fn validate_resource_definition<'a>(
     resources: &BTreeMap<String, usize>,
     recursive_resources: &BTreeSet<String>,
     predicates: &BTreeMap<String, usize>,
-    contracts: &BTreeMap<String, C0Type>,
+    contracts: &BTreeMap<String, InterfaceType>,
     click_functions: &BTreeMap<String, usize>,
     click_function_types: &BTreeMap<String, ClickFunctionType>,
     predicate_definitions: &BTreeMap<&str, &PredicateDefinition>,
@@ -1158,11 +1170,11 @@ fn validate_resource_definition<'a>(
     let mut variables = definition
         .parameters()
         .iter()
-        .map(|parameter| (parameter.name().to_string(), parameter.c_type()))
+        .map(|parameter| (parameter.name().to_string(), parameter.interface_type()))
         .collect::<BTreeMap<_, _>>();
     for witness in composite_body.witnesses() {
         if variables
-            .insert(witness.name().to_string(), witness.c_type())
+            .insert(witness.name().to_string(), witness.interface_type())
             .is_some()
         {
             return Err(ClickError::new(format!(
@@ -1301,7 +1313,7 @@ fn validate_resource_definition<'a>(
 fn validate_iterated_resource_clauses(
     definition: &ResourceDefinition,
     composite_body: &CompositeResourceBody,
-    variables: &BTreeMap<String, C0Type>,
+    variables: &BTreeMap<String, InterfaceType>,
     click_function_types: &BTreeMap<String, ClickFunctionType>,
     predicate_definitions: &BTreeMap<&str, &PredicateDefinition>,
     click_function_definitions: &BTreeMap<&str, &ClickFunctionDefinition>,
@@ -1356,7 +1368,7 @@ fn validate_iterated_resource_clauses(
         // a fold consumes both from one context, where owned memory is a
         // partition, so no cell is ever held twice.
         let mut scoped = variables.clone();
-        scoped.insert(index.to_string(), C0Type::Int32);
+        scoped.insert(index.to_string(), InterfaceType::Int32);
         let clause_guard = clause
             .guard
             .as_ref()
@@ -1383,11 +1395,11 @@ fn validate_iterated_resource_clauses(
                 else {
                     continue;
                 };
-                if ty != C0Type::Int32 {
+                if ty != InterfaceType::Int32 {
                     return Err(ClickError::new(format!(
                         "{context}: the guard compares `int32` cells in this slice, but `{}` has type `{}`",
                         crate::surface::diagnostics::describe_contract_expression(side),
-                        describe_c0_type(ty)
+                        describe_interface_type(ty)
                     )));
                 }
             }
@@ -1397,7 +1409,7 @@ fn validate_iterated_resource_clauses(
         // same read-authority check a body fact gets. A guard over a cell the
         // body does not own could change while the resource is folded.
         let guard_fact = ClickProposition::ForAll {
-            click_type: ClickType::C(C0Type::Int32),
+            click_type: ClickType::Program(InterfaceType::Int32),
             name: index.to_string(),
             written_name: None,
             body: Box::new(ClickProposition::Implies(
@@ -1408,7 +1420,7 @@ fn validate_iterated_resource_clauses(
         let no_values = BTreeMap::new();
         let guard_fact = crate::surface::lowering::substitute_click_proposition_in(
             &guard_fact,
-            &crate::surface::lowering::ContractSubstitutions::with_body_fields_as_c_names(
+            &crate::surface::lowering::ContractSubstitutions::with_body_fields_as_program_names(
                 &no_values,
             ),
         )
@@ -1447,7 +1459,7 @@ fn resource_body_fields_as_parameters(
         return Ok(None);
     };
     let (scalar, other): (Vec<_>, Vec<_>) = body.fields.iter().cloned().partition(|field| {
-        matches!(field.click_type, ClickType::C(_))
+        matches!(field.click_type, ClickType::Program(_))
             && !definition
                 .parameters()
                 .iter()
@@ -1457,7 +1469,7 @@ fn resource_body_fields_as_parameters(
         return Ok(None);
     }
     let no_values = BTreeMap::new();
-    let substitutions = ContractSubstitutions::with_body_fields_as_c_names(&no_values);
+    let substitutions = ContractSubstitutions::with_body_fields_as_program_names(&no_values);
     let mut parameters = definition.parameters.clone();
     parameters.extend(scalar.iter().map(|field| FunctionParameter {
         name: field.name.clone(),
@@ -1506,10 +1518,10 @@ fn resource_body_fields_as_parameters(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ResourceFactRead {
-    base: CExpression,
-    index: CExpression,
+    base: ProgramExpression,
+    index: ProgramExpression,
     expression: String,
-    enclosing_range: Option<(CExpression, CExpression)>,
+    enclosing_range: Option<(ProgramExpression, ProgramExpression)>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1551,9 +1563,9 @@ fn validate_resource_fact_memory_read_authority(
     for (index, witness) in composite_body.witnesses().iter().enumerate() {
         values.insert(
             witness.name().to_string(),
-            crate::kernel::CValue::typed_pointer(
+            crate::kernel::ProgramValue::typed_pointer(
                 crate::kernel::Pointer::symbolic(crate::kernel::Variable(4_100_000 + index as u64)),
-                witness.c_type().to_kernel_type(),
+                witness.interface_type().to_kernel_type(),
             ),
         );
     }
@@ -1563,7 +1575,7 @@ fn validate_resource_fact_memory_read_authority(
         .map(|parameter| {
             (
                 parameter.name().to_string(),
-                parameter.c_type(),
+                parameter.interface_type(),
                 parameter.struct_name().map(str::to_string),
             )
         })
@@ -1571,13 +1583,13 @@ fn validate_resource_fact_memory_read_authority(
             composite_body
                 .witnesses()
                 .iter()
-                .map(|witness| (witness.name().to_string(), witness.c_type(), None)),
+                .map(|witness| (witness.name().to_string(), witness.interface_type(), None)),
         )
         .collect::<Vec<_>>();
     let arguments = bound_names
         .iter()
         .map(|(name, _, _)| {
-            CExpression::Value(
+            ProgramExpression::Value(
                 values
                     .get(name)
                     .expect("resource parameter value should exist")
@@ -1590,14 +1602,18 @@ fn validate_resource_fact_memory_read_authority(
         .map(|(name, _, _)| {
             (
                 name.clone(),
-                ContractExpression::CFragment(CExpression::Variable(name.clone())),
+                ContractExpression::ProgramExpression(ProgramExpression::Variable(name.clone())),
             )
         })
         .collect::<BTreeMap<_, _>>();
     let validation_parameters = bound_names
         .iter()
-        .map(|(name, c_type, struct_name)| {
-            syntax::C0Parameter::new(*c_type, name.clone(), struct_name.clone())
+        .map(|(name, interface_type, struct_name)| {
+            crate::languages::interface::ImportedParameter::new(
+                *interface_type,
+                name.clone(),
+                struct_name.clone(),
+            )
         })
         .collect::<Vec<_>>();
     // A contained resource's formation domains are part of the assumed body
@@ -1608,7 +1624,7 @@ fn validate_resource_fact_memory_read_authority(
             composite_body,
             &substitutions,
             ParameterBinding::new(&validation_parameters, &arguments),
-            CMemory::new(),
+            Memory::new(),
             &PureFactContext::new(),
         )
     });
@@ -1640,7 +1656,7 @@ fn validate_resource_fact_memory_read_authority(
             definition.name(),
         )?;
     }
-    let empty_memory = CMemory::new();
+    let empty_memory = Memory::new();
     let empty_array_refs = pure_theorem_array_refs(definition.parameters(), &values, &empty_memory);
     collect_resource_fact_scalar_assumptions_from_proposition(
         fact,
@@ -1682,7 +1698,7 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
     proposition: &ClickProposition,
     predicate_definitions: &BTreeMap<&str, &PredicateDefinition>,
     contract_environment: ContractEnvironment<'_>,
-    memory: &CMemory,
+    memory: &Memory,
     spec_definitions: SpecDefinitions<'_>,
     visited_predicates: &mut Vec<String>,
     assumptions: &mut Vec<ResourceFactScalarAssumption>,
@@ -1694,7 +1710,7 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
         | ClickProposition::Loadable { .. }
         | ClickProposition::Defined { .. } => {
             let source = describe_click_proposition(proposition);
-            let state = CState::new().with_memory(memory.clone());
+            let state = ExecutionState::new().with_memory(memory.clone());
             if let Ok(proposition) =
                 crate::surface::proof::lower_fixed_state_proposition_through_kernel(
                     proposition,
@@ -1999,7 +2015,7 @@ fn collect_resource_fact_reads_from_proposition(
                 )?;
                 if let Some((start, end)) = quantified_index_interval(body, name, click_type) {
                     for read in &mut reads[first_consequent_read..] {
-                        if read.index == CExpression::Variable(name.clone()) {
+                        if read.index == ProgramExpression::Variable(name.clone()) {
                             read.enclosing_range = Some((start.clone(), end.clone()));
                         }
                     }
@@ -2052,18 +2068,18 @@ fn collect_resource_fact_reads_from_proposition(
                 reads,
                 resource_name,
             )?;
-            let start = contract_expression_as_c_fragment(start).ok_or_else(|| {
+            let start = contract_expression_as_program_expression(start).ok_or_else(|| {
                 ClickError::new(format!(
                     "resource `{resource_name}` range fact has a non-C start"
                 ))
             })?;
-            let end = contract_expression_as_c_fragment(end).ok_or_else(|| {
+            let end = contract_expression_as_program_expression(end).ok_or_else(|| {
                 ClickError::new(format!(
                     "resource `{resource_name}` range fact has a non-C end"
                 ))
             })?;
             for read in &mut reads[first_body_read..] {
-                if read.index == CExpression::Variable(item.clone()) {
+                if read.index == ProgramExpression::Variable(item.clone()) {
                     read.enclosing_range = Some((start.clone(), end.clone()));
                 }
             }
@@ -2151,15 +2167,15 @@ fn quantified_index_interval(
     body: &ClickProposition,
     name: &str,
     binder_type: &ClickType,
-) -> Option<(CExpression, CExpression)> {
+) -> Option<(ProgramExpression, ProgramExpression)> {
     let ClickProposition::Implies(antecedent, _) = body else {
         return None;
     };
     fn visit(
         proposition: &ClickProposition,
         name: &str,
-        lower: &mut Option<CExpression>,
-        upper: &mut Option<CExpression>,
+        lower: &mut Option<ProgramExpression>,
+        upper: &mut Option<ProgramExpression>,
     ) {
         match proposition {
             ClickProposition::And(left, right) => {
@@ -2189,20 +2205,21 @@ fn quantified_index_interval(
                     (Some(left), Some(right)) => (left, right),
                     _ => (left, right),
                 };
-                let variable =
-                    ContractExpression::CFragment(CExpression::Variable(name.to_string()));
+                let variable = ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                    name.to_string(),
+                ));
                 match operator {
                     ComparisonOperator::LessEqual if right == &variable => {
-                        *lower = contract_expression_as_c_fragment(left);
+                        *lower = contract_expression_as_program_expression(left);
                     }
                     ComparisonOperator::GreaterEqual if left == &variable => {
-                        *lower = contract_expression_as_c_fragment(right);
+                        *lower = contract_expression_as_program_expression(right);
                     }
                     ComparisonOperator::LessThan if left == &variable => {
-                        *upper = contract_expression_as_c_fragment(right);
+                        *upper = contract_expression_as_program_expression(right);
                     }
                     ComparisonOperator::GreaterThan if right == &variable => {
-                        *upper = contract_expression_as_c_fragment(left);
+                        *upper = contract_expression_as_program_expression(left);
                     }
                     _ => {}
                 }
@@ -2219,14 +2236,14 @@ fn quantified_index_interval(
 
 /// The zero of an unsigned binder's type, spelled as the matching typed
 /// literal, or `None` for a type whose values may be negative.
-fn unsigned_binder_zero(binder_type: &ClickType) -> Option<CExpression> {
-    let value = match binder_type.c_type()? {
-        C0Type::UInt8 => crate::kernel::uint8(0),
-        C0Type::UInt32 => CValue::UInt32(MachineTerm::uint32_constant(0)),
-        C0Type::UInt64(_) => CValue::UInt64(MachineTerm::uint64_constant(0)),
+fn unsigned_binder_zero(binder_type: &ClickType) -> Option<ProgramExpression> {
+    let value = match binder_type.interface_type()? {
+        InterfaceType::UInt8 => crate::kernel::uint8(0),
+        InterfaceType::UInt32 => ProgramValue::UInt32(MachineTerm::uint32_constant(0)),
+        InterfaceType::UInt64(_) => ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
         _ => return None,
     };
-    Some(CExpression::Value(value))
+    Some(ProgramExpression::Value(value))
 }
 
 fn collect_resource_fact_reads_from_contract_segment(
@@ -2240,7 +2257,7 @@ fn collect_resource_fact_reads_from_contract_segment(
 ) -> Result<(), ClickError> {
     for expression in [&segment.base, &segment.start, &segment.end] {
         collect_resource_fact_reads_from_contract_expression(
-            &ContractExpression::CFragment(expression.clone()),
+            &ContractExpression::ProgramExpression(expression.clone()),
             predicate_definitions,
             click_function_definitions,
             visited_predicates,
@@ -2431,12 +2448,12 @@ fn collect_resource_fact_reads_from_contract_expression(
             lowered: expression,
             ..
         }
-        | ContractExpression::CFragment(expression)
+        | ContractExpression::ProgramExpression(expression)
         | ContractExpression::Field {
             lowered: expression,
             ..
         } => {
-            collect_resource_fact_reads_from_c_expression(expression, reads);
+            collect_resource_fact_reads_from_program_expression(expression, reads);
             Ok(())
         }
         ContractExpression::CBinding(_) => Ok(()),
@@ -2531,13 +2548,13 @@ fn collect_resource_fact_reads_from_contract_expression(
                 reads,
                 resource_name,
             )?;
-            let Some(base) = contract_expression_as_c_fragment(base) else {
+            let Some(base) = contract_expression_as_program_expression(base) else {
                 return Err(ClickError::new(format!(
                     "resource `{resource_name}` fact reads `{}` in a form that cannot be matched to a contained memory resource with current read authority",
                     describe_contract_expression(expression)
                 )));
             };
-            let Some(index) = contract_expression_as_c_fragment(index) else {
+            let Some(index) = contract_expression_as_program_expression(index) else {
                 return Err(ClickError::new(format!(
                     "resource `{resource_name}` fact reads `{}` in a form that cannot be matched to a contained memory resource with current read authority",
                     describe_contract_expression(expression)
@@ -2770,78 +2787,81 @@ fn collect_resource_fact_reads_from_contract_expression(
     }
 }
 
-fn collect_resource_fact_reads_from_c_expression(
-    expression: &CExpression,
+fn collect_resource_fact_reads_from_program_expression(
+    expression: &ProgramExpression,
     reads: &mut Vec<ResourceFactRead>,
 ) {
     match expression {
-        CExpression::Value(_) | CExpression::Variable(_) | CExpression::FunctionAddress(_) => {}
-        CExpression::Cast { expression, .. } => {
-            collect_resource_fact_reads_from_c_expression(expression, reads);
+        ProgramExpression::Value(_)
+        | ProgramExpression::Variable(_)
+        | ProgramExpression::FunctionAddress(_)
+        | ProgramExpression::CallResult { .. } => {}
+        ProgramExpression::Cast { expression, .. } => {
+            collect_resource_fact_reads_from_program_expression(expression, reads);
         }
-        CExpression::FloatNegate(expression)
-        | CExpression::FloatClassification { expression, .. }
-        | CExpression::EnumField {
+        ProgramExpression::FloatNegate(expression)
+        | ProgramExpression::FloatClassification { expression, .. }
+        | ProgramExpression::EnumField {
             value: expression, ..
         }
-        | CExpression::EnumIs {
+        | ProgramExpression::EnumIs {
             value: expression, ..
         } => {
-            collect_resource_fact_reads_from_c_expression(expression, reads);
+            collect_resource_fact_reads_from_program_expression(expression, reads);
         }
-        CExpression::EnumConstruct { fields, .. } => {
+        ProgramExpression::EnumConstruct { fields, .. } => {
             for field in fields {
-                collect_resource_fact_reads_from_c_expression(field, reads);
+                collect_resource_fact_reads_from_program_expression(field, reads);
             }
         }
-        CExpression::Conditional {
+        ProgramExpression::Conditional {
             condition,
             then_branch,
             else_branch,
         } => {
-            collect_resource_fact_reads_from_c_expression(condition, reads);
-            collect_resource_fact_reads_from_c_expression(then_branch, reads);
-            collect_resource_fact_reads_from_c_expression(else_branch, reads);
+            collect_resource_fact_reads_from_program_expression(condition, reads);
+            collect_resource_fact_reads_from_program_expression(then_branch, reads);
+            collect_resource_fact_reads_from_program_expression(else_branch, reads);
         }
-        CExpression::AddressOf(_) | CExpression::CheckedObjectAddress(_) => {}
-        CExpression::PointerOffsetBytes { pointer, .. }
-        | CExpression::Subobject { pointer, .. } => {
-            collect_resource_fact_reads_from_c_expression(pointer, reads);
+        ProgramExpression::AddressOf(_) | ProgramExpression::CheckedObjectAddress(_) => {}
+        ProgramExpression::PointerOffsetBytes { pointer, .. }
+        | ProgramExpression::Subobject { pointer, .. } => {
+            collect_resource_fact_reads_from_program_expression(pointer, reads);
         }
-        CExpression::Load(pointer) => {
-            collect_resource_fact_reads_from_c_expression(pointer, reads);
+        ProgramExpression::Load(pointer) => {
+            collect_resource_fact_reads_from_program_expression(pointer, reads);
             reads.push(ResourceFactRead {
                 base: pointer.as_ref().clone(),
-                index: CExpression::Value(CValue::Int32(MachineTerm::constant(0))),
-                expression: describe_c_expression(expression),
+                index: ProgramExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
+                expression: describe_program_expression(expression),
                 enclosing_range: None,
             });
         }
-        CExpression::TypedLoad { pointer, .. } => {
-            collect_resource_fact_reads_from_c_expression(pointer, reads);
+        ProgramExpression::TypedLoad { pointer, .. } => {
+            collect_resource_fact_reads_from_program_expression(pointer, reads);
             reads.push(ResourceFactRead {
                 base: pointer.as_ref().clone(),
-                index: CExpression::Value(CValue::Int32(MachineTerm::constant(0))),
-                expression: describe_c_expression(expression),
+                index: ProgramExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
+                expression: describe_program_expression(expression),
                 enclosing_range: None,
             });
         }
-        CExpression::Index(base, index) => {
-            collect_resource_fact_reads_from_c_expression(base, reads);
-            collect_resource_fact_reads_from_c_expression(index, reads);
+        ProgramExpression::Index(base, index) => {
+            collect_resource_fact_reads_from_program_expression(base, reads);
+            collect_resource_fact_reads_from_program_expression(index, reads);
             reads.push(ResourceFactRead {
                 base: base.as_ref().clone(),
                 index: index.as_ref().clone(),
-                expression: describe_c_expression(expression),
+                expression: describe_program_expression(expression),
                 enclosing_range: None,
             });
         }
         crate::kernel::binary_c_operation!(left, right) => {
-            collect_resource_fact_reads_from_c_expression(left, reads);
-            collect_resource_fact_reads_from_c_expression(right, reads);
+            collect_resource_fact_reads_from_program_expression(left, reads);
+            collect_resource_fact_reads_from_program_expression(right, reads);
         }
-        CExpression::Not(expression) | CExpression::BitwiseNot(expression) => {
-            collect_resource_fact_reads_from_c_expression(expression, reads);
+        ProgramExpression::Not(expression) | ProgramExpression::BitwiseNot(expression) => {
+            collect_resource_fact_reads_from_program_expression(expression, reads);
         }
     }
 }
@@ -2851,7 +2871,7 @@ fn analyze_resource_fact_read_authority(
     contained: &[ResourceClause],
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
-    memory: &CMemory,
+    memory: &Memory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> ResourceFactReadAuthorityAnalysis {
     let mut notes = Vec::new();
@@ -2916,9 +2936,9 @@ fn analyze_resource_fact_read_authority(
             }
             notes.push(format!(
                 "`{resource_description}` has the right base, but the available scalar facts do not prove `{}` <= `{}` < `{}`",
-                describe_c_expression(&segment.start),
-                describe_c_expression(&read.index),
-                describe_c_expression(&segment.end)
+                describe_program_expression(&segment.start),
+                describe_program_expression(&read.index),
+                describe_program_expression(&segment.end)
             ));
             continue;
         }
@@ -2984,11 +3004,11 @@ fn evaluated_segment_covers_resource_fact_read(
     read: &ResourceFactRead,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
-    memory: &CMemory,
+    memory: &Memory,
 ) -> bool {
-    let state = CState::new().with_memory(memory.clone());
-    let evaluate = |expression: &CExpression| {
-        crate::surface::proof::evaluate_c_fragment_through_kernel(
+    let state = ExecutionState::new().with_memory(memory.clone());
+    let evaluate = |expression: &ProgramExpression| {
+        crate::surface::proof::evaluate_program_expression_through_kernel(
             expression,
             assumptions,
             contract_environment,
@@ -2996,19 +3016,19 @@ fn evaluated_segment_covers_resource_fact_read(
             None,
         )
     };
-    let Ok(CValue::Pointer(base)) = evaluate(&segment.base) else {
+    let Ok(ProgramValue::Pointer(base)) = evaluate(&segment.base) else {
         return false;
     };
-    let Ok(CValue::Int32(start)) = evaluate(&segment.start) else {
+    let Ok(ProgramValue::Int32(start)) = evaluate(&segment.start) else {
         return false;
     };
-    let Ok(CValue::Int32(end)) = evaluate(&segment.end) else {
+    let Ok(ProgramValue::Int32(end)) = evaluate(&segment.end) else {
         return false;
     };
-    let Ok(CValue::Pointer(read_base)) = evaluate(&read.base) else {
+    let Ok(ProgramValue::Pointer(read_base)) = evaluate(&read.base) else {
         return false;
     };
-    let Ok(CValue::Int32(index)) = evaluate(&read.index) else {
+    let Ok(ProgramValue::Int32(index)) = evaluate(&read.index) else {
         return false;
     };
     // A field's segment counts elements of the field's width, `owns c.len`
@@ -3025,19 +3045,19 @@ fn evaluated_segment_covers_resource_fact_read(
 }
 
 fn symbolic_segment_covers_range(
-    available_start: &CExpression,
-    available_end: &CExpression,
-    required_start: &CExpression,
-    required_end: &CExpression,
+    available_start: &ProgramExpression,
+    available_end: &ProgramExpression,
+    required_start: &ProgramExpression,
+    required_end: &ProgramExpression,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
-    memory: &CMemory,
+    memory: &Memory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> bool {
-    let state = CState::new().with_memory(memory.clone());
-    let evaluate = |expression: &CExpression| {
+    let state = ExecutionState::new().with_memory(memory.clone());
+    let evaluate = |expression: &ProgramExpression| {
         crate::surface::proof::evaluate_fixed_state_expression_through_kernel(
-            &ContractExpression::CFragment(expression.clone()),
+            &ContractExpression::ProgramExpression(expression.clone()),
             &PureFactContext::new(),
             contract_environment,
             FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
@@ -3074,18 +3094,18 @@ fn symbolic_segment_covers_range(
 }
 
 fn symbolic_segment_covers_index(
-    start: &CExpression,
-    end: &CExpression,
-    index: &CExpression,
+    start: &ProgramExpression,
+    end: &ProgramExpression,
+    index: &ProgramExpression,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
-    memory: &CMemory,
+    memory: &Memory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> bool {
-    let state = CState::new().with_memory(memory.clone());
-    let evaluate = |expression: &CExpression| {
+    let state = ExecutionState::new().with_memory(memory.clone());
+    let evaluate = |expression: &ProgramExpression| {
         crate::surface::proof::evaluate_fixed_state_expression_through_kernel(
-            &ContractExpression::CFragment(expression.clone()),
+            &ContractExpression::ProgramExpression(expression.clone()),
             &PureFactContext::new(),
             contract_environment,
             FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
@@ -3115,35 +3135,35 @@ fn symbolic_segment_covers_index(
 }
 
 fn constant_segment_covers_index(
-    start: &CExpression,
-    end: &CExpression,
-    index: &CExpression,
+    start: &ProgramExpression,
+    end: &ProgramExpression,
+    index: &ProgramExpression,
 ) -> bool {
-    let Some(start) = constant_c_expression_i64(start) else {
+    let Some(start) = constant_program_expression_i64(start) else {
         return false;
     };
-    let Some(end) = constant_c_expression_i64(end) else {
+    let Some(end) = constant_program_expression_i64(end) else {
         return false;
     };
-    let Some(index) = constant_c_expression_i64(index) else {
+    let Some(index) = constant_program_expression_i64(index) else {
         return false;
     };
     start <= index && index < end
 }
 
-fn constant_c_expression_i64(expression: &CExpression) -> Option<i64> {
+fn constant_program_expression_i64(expression: &ProgramExpression) -> Option<i64> {
     match expression {
-        CExpression::Value(CValue::Int32(bits32_constant!(value))) => {
+        ProgramExpression::Value(ProgramValue::Int32(bits32_constant!(value))) => {
             Some(constant_u32(*value) as i32 as i64)
         }
-        CExpression::Value(CValue::UInt8(bits32_constant!(value))) => {
+        ProgramExpression::Value(ProgramValue::UInt8(bits32_constant!(value))) => {
             Some(i64::from(constant_u32(*value)))
         }
-        CExpression::Add(left, right) => {
-            Some(constant_c_expression_i64(left)? + constant_c_expression_i64(right)?)
+        ProgramExpression::Add(left, right) => {
+            Some(constant_program_expression_i64(left)? + constant_program_expression_i64(right)?)
         }
-        CExpression::Subtract(left, right) => {
-            Some(constant_c_expression_i64(left)? - constant_c_expression_i64(right)?)
+        ProgramExpression::Subtract(left, right) => {
+            Some(constant_program_expression_i64(left)? - constant_program_expression_i64(right)?)
         }
         _ => None,
     }
@@ -3263,17 +3283,17 @@ mod read_authority_tests {
 
     fn segment(
         state: ContractSegmentState,
-        base: CExpression,
-        start: CExpression,
-        end: CExpression,
+        base: ProgramExpression,
+        start: ProgramExpression,
+        end: ProgramExpression,
     ) -> ContractSegment {
         ContractSegment {
             uninitialized: false,
             state,
             surface: ContractSegmentSurface::Range {
-                base: ContractExpression::CFragment(base.clone()),
-                start: ContractExpression::CFragment(start.clone()),
-                end: ContractExpression::CFragment(end.clone()),
+                base: ContractExpression::ProgramExpression(base.clone()),
+                start: ContractExpression::ProgramExpression(start.clone()),
+                end: ContractExpression::ProgramExpression(end.clone()),
             },
             base,
             start,
@@ -3281,7 +3301,7 @@ mod read_authority_tests {
         }
     }
 
-    fn read(base: CExpression, index: CExpression) -> ResourceFactRead {
+    fn read(base: ProgramExpression, index: ProgramExpression) -> ResourceFactRead {
         ResourceFactRead {
             base,
             index,
@@ -3294,14 +3314,14 @@ mod read_authority_tests {
         read: &ResourceFactRead,
         contained: &[ResourceClause],
         assumptions: &PureFactContext,
-        values: &BTreeMap<String, CValue>,
+        values: &BTreeMap<String, ProgramValue>,
     ) -> ResourceFactReadAuthorityAnalysis {
         analyze_resource_fact_read_authority(
             read,
             contained,
             assumptions,
             ContractEnvironment::new(values, &BTreeMap::new()),
-            &CMemory::new(),
+            &Memory::new(),
             SpecDefinitions::new(
                 &PredicateEnvironment::new(&[]),
                 &ClickFunctionEnvironment::new(&[]),
@@ -3311,15 +3331,15 @@ mod read_authority_tests {
 
     #[test]
     fn current_view_covers_a_zero_valued_cell() {
-        let base = CExpression::Variable("cell".to_string());
+        let base = ProgramExpression::Variable("cell".to_string());
         let clause = ResourceClause::ViewMemory(segment(
             ContractSegmentState::Current,
             base.clone(),
-            CExpression::Value(int32(0)),
-            CExpression::Value(int32(1)),
+            ProgramExpression::Value(int32(0)),
+            ProgramExpression::Value(int32(1)),
         ));
         let result = analysis(
-            &read(base, CExpression::Value(int32(0))),
+            &read(base, ProgramExpression::Value(int32(0))),
             &[clause],
             &PureFactContext::new(),
             &BTreeMap::new(),
@@ -3332,13 +3352,13 @@ mod read_authority_tests {
 
     #[test]
     fn current_view_accepts_a_symbolic_in_bounds_read() {
-        let base = CExpression::Variable("cell".to_string());
-        let index = CExpression::Variable("index".to_string());
-        let bound = CExpression::Variable("bound".to_string());
+        let base = ProgramExpression::Variable("cell".to_string());
+        let index = ProgramExpression::Variable("index".to_string());
+        let bound = ProgramExpression::Variable("bound".to_string());
         let clause = ResourceClause::ViewMemory(segment(
             ContractSegmentState::Current,
             base.clone(),
-            CExpression::Value(int32(0)),
+            ProgramExpression::Value(int32(0)),
             bound.clone(),
         ));
         let index_value = MachineTerm::Variable(Variable(12_001));
@@ -3363,8 +3383,8 @@ mod read_authority_tests {
                 true,
             ));
         let values = BTreeMap::from([
-            ("index".to_string(), CValue::Int32(index_value)),
-            ("bound".to_string(), CValue::Int32(bound_value)),
+            ("index".to_string(), ProgramValue::Int32(index_value)),
+            ("bound".to_string(), ProgramValue::Int32(bound_value)),
         ]);
         let result = analysis(&read(base, index), &[clause], &assumptions, &values);
         assert!(
@@ -3375,15 +3395,15 @@ mod read_authority_tests {
 
     #[test]
     fn current_view_does_not_cover_its_neighbor() {
-        let base = CExpression::Variable("cell".to_string());
+        let base = ProgramExpression::Variable("cell".to_string());
         let clause = ResourceClause::ViewMemory(segment(
             ContractSegmentState::Current,
             base.clone(),
-            CExpression::Value(int32(0)),
-            CExpression::Value(int32(1)),
+            ProgramExpression::Value(int32(0)),
+            ProgramExpression::Value(int32(1)),
         ));
         let result = analysis(
-            &read(base, CExpression::Value(int32(1))),
+            &read(base, ProgramExpression::Value(int32(1))),
             &[clause],
             &PureFactContext::new(),
             &BTreeMap::new(),
@@ -3393,15 +3413,15 @@ mod read_authority_tests {
 
     #[test]
     fn old_view_does_not_cover_a_current_resource_fact() {
-        let base = CExpression::Variable("cell".to_string());
+        let base = ProgramExpression::Variable("cell".to_string());
         let clause = ResourceClause::ViewMemory(segment(
             ContractSegmentState::Old,
             base.clone(),
-            CExpression::Value(int32(0)),
-            CExpression::Value(int32(1)),
+            ProgramExpression::Value(int32(0)),
+            ProgramExpression::Value(int32(1)),
         ));
         let result = analysis(
-            &read(base, CExpression::Value(int32(0))),
+            &read(base, ProgramExpression::Value(int32(0))),
             &[clause],
             &PureFactContext::new(),
             &BTreeMap::new(),
@@ -3533,7 +3553,8 @@ mod resource_function_composition_tests {
             .map(|definition| (definition.name(), definition))
             .collect::<BTreeMap<_, _>>();
         for depth in [16, 64, 256] {
-            let mut expression = ContractExpression::CFragment(CExpression::Value(int32(0)));
+            let mut expression =
+                ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0)));
             for _ in 0..depth {
                 expression = ContractExpression::Call {
                     name: "identity".into(),

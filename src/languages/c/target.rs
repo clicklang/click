@@ -7,7 +7,7 @@
 //! support for every kernel compiler option, extension, or execution
 //! behavior.
 
-use super::syntax::{C0Type, CAbi};
+use super::syntax::{CAbi, InterfaceType};
 use crate::kernel::ByteOrder;
 
 /// The signedness a target gives plain `char`.
@@ -26,10 +26,10 @@ pub enum PlainChar {
 impl PlainChar {
     /// The character type whose range and representation plain `char` has:
     /// `unsigned char` (`uint8`) or `signed char` (`int8`).
-    pub const fn byte_type(self) -> C0Type {
+    pub const fn byte_type(self) -> InterfaceType {
         match self {
-            Self::Unsigned => C0Type::UInt8,
-            Self::Signed => C0Type::Int8,
+            Self::Unsigned => InterfaceType::UInt8,
+            Self::Signed => InterfaceType::Int8,
         }
     }
 
@@ -409,8 +409,8 @@ mod tests {
         assert_eq!(PlainChar::Unsigned.character_value(0xC8), 200);
         assert_eq!(PlainChar::Signed.character_value(0xC8), -56);
         assert_eq!(PlainChar::Signed.character_value(b'a'), 97);
-        assert_eq!(PlainChar::Unsigned.byte_type(), C0Type::UInt8);
-        assert_eq!(PlainChar::Signed.byte_type(), C0Type::Int8);
+        assert_eq!(PlainChar::Unsigned.byte_type(), InterfaceType::UInt8);
+        assert_eq!(PlainChar::Signed.byte_type(), InterfaceType::Int8);
     }
 
     #[test]

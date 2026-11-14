@@ -6,7 +6,7 @@ fn retained_rewritten_loads_share_syntax_but_recheck_authority() {
             for size in [16, 64, 256] {
                 let _session = VerificationSession::enter();
                 let format = MachineIntegerType::Int32;
-                let memory = intern_c_memory(CMemory::new());
+                let memory = intern_memory(Memory::new());
                 let pointer = Pointer {
                     block: PointerBlock::Symbolic(Variable(1005500)),
                     offset: PointerOffsetTerm::Constant(0),
@@ -18,7 +18,8 @@ fn retained_rewritten_loads_share_syntax_but_recheck_authority() {
                     ConditionTerm::equal(MachineTerm::Variable(variable), one.clone()),
                     true,
                 )]);
-                let mut left = KernelTerm::variable(KernelType::C(CType::Int32), variable);
+                let mut left =
+                    KernelTerm::variable(KernelType::Program(ProgramType::Int32), variable);
                 let mut right = KernelTermImport::default().machine(format, &one);
                 let guard = |value: MachineTerm| {
                     KernelTermImport::default().condition(&ConditionTerm::Compare {
@@ -80,7 +81,7 @@ fn retained_rewritten_loads_share_syntax_but_recheck_authority() {
                 let bind = |body| Proposition::ForAll {
                     name: Default::default(),
                     var: Variable(1005501),
-                    sort: Sort::CInt32,
+                    sort: Sort::ProgramInt32,
                     body: Box::new(body),
                 };
                 assert!(
@@ -109,7 +110,8 @@ fn mixed_read_mismatch_keeps_large_shared_operands_unexported() {
     for depth in [16, 64, 256] {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1007350));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1007350));
         for _ in 0..depth {
             root =
                 KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [root.clone(), root]);

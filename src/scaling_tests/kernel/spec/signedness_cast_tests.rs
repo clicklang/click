@@ -13,12 +13,12 @@ fn signedness_casts_retain_growing_prefixes_without_exports() {
                 for _ in 0..size {
                     root = shared_machine::cast_signedness(
                         &SpecValue::Shared(root.clone()),
-                        unsigned.c_type(),
+                        unsigned.program_type(),
                     )
                     .unwrap();
                     root = shared_machine::cast_signedness(
                         &SpecValue::Shared(root.clone()),
-                        signed.c_type(),
+                        signed.program_type(),
                     )
                     .unwrap();
                     let one =
@@ -62,13 +62,15 @@ fn opaque_signedness_cast_chains_keep_shared_parents() {
                 for _ in 0..size {
                     root = shared_machine::cast_signedness(
                         &SpecValue::Shared(root),
-                        unsigned.c_type(),
+                        unsigned.program_type(),
                     )
                     .unwrap();
                     assert!(!matches!(root.node(), KernelTermNode::Legacy(_)));
-                    root =
-                        shared_machine::cast_signedness(&SpecValue::Shared(root), signed.c_type())
-                            .unwrap();
+                    root = shared_machine::cast_signedness(
+                        &SpecValue::Shared(root),
+                        signed.program_type(),
+                    )
+                    .unwrap();
                 }
             });
             assert_eq!(KernelTermExport::machine_export_count(), exports);

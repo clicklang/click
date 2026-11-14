@@ -12,7 +12,7 @@ fn copy_after_call_project() -> Project {
 fn charon_array_copy_after_checked_call_preserves_an_independent_snapshot() {
     let p = copy_after_call_project();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(COPY_AFTER_CALL, &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared(COPY_AFTER_CALL, &prepared).unwrap();
     for (before, after) in [
         ("ensures result == 5u32;", "ensures result == 1u32;"),
         ("ensures result == 5u32;", "ensures result == 9u32;"),
@@ -24,7 +24,7 @@ fn charon_array_copy_after_checked_call_preserves_an_independent_snapshot() {
     ] {
         let invalid = COPY_AFTER_CALL.replace(before, after);
         assert_ne!(invalid, COPY_AFTER_CALL);
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        let error = ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
             .err()
             .expect("false value or insufficient authority must fail");
         assert!(!format!("{error:?}").contains("budget exhausted"));
@@ -62,7 +62,7 @@ fn copy_source_after_call_project() -> Project {
 fn charon_array_copy_preserves_symbolic_source_across_by_value_call() {
     let p = copy_source_after_call_project();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(COPY_SOURCE_AFTER_CALL, &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared(COPY_SOURCE_AFTER_CALL, &prepared).unwrap();
     for (before, after) in [
         (
             "ensures result == value;",
@@ -76,7 +76,7 @@ fn charon_array_copy_preserves_symbolic_source_across_by_value_call() {
     ] {
         let invalid = COPY_SOURCE_AFTER_CALL.replace(before, after);
         assert_ne!(invalid, COPY_SOURCE_AFTER_CALL);
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        let error = ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
             .err()
             .expect("false values or missing write authority must fail");
         assert!(!format!("{error:?}").contains("budget exhausted"));
@@ -114,7 +114,7 @@ fn project() -> Project {
 fn charon_array_reference_assignments_check_values_and_independent_snapshots() {
     let p = project();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(SIDECAR, &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared(SIDECAR, &prepared).unwrap();
     // The full original check covers the unchanged bodies. Each refusal
     // still checks the complete changed function, including every claim.
     for (owners, before, after) in [
@@ -193,7 +193,7 @@ fn charon_array_values_unchanged_fixture_verifies_external_snapshots() {
     );
     fs::write(p.root.join("borrow.click"), sidecar.as_bytes()).unwrap();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     for owner in ["copy_reference", "copy_into", "repeat_call"] {
         verify_rust_function(sidecar, &prepared, owner).unwrap();
     }
@@ -254,7 +254,7 @@ fn charon_array_values_unchanged_fixture_verifies_external_snapshots() {
 fn charon_array_reference_assignments_live_refresh_and_borrow_rejections() {
     let p = project();
     p.refresh().unwrap();
-    C0VerificationSession::new_program_prepared(SIDECAR, p.prepared().unwrap()).unwrap();
+    ProgramVerificationSession::new_program_prepared(SIDECAR, p.prepared().unwrap()).unwrap();
     for (source, diagnostic) in [
         ("pub fn bad(x: &[u32;2]) { *x = [1,2]; }", "E0594"),
         (
@@ -297,7 +297,7 @@ fn charon_external_array_copies_and_fills_verify_and_reject_false_bytes() {
     let p = external_project();
     let sidecar = fs::read_to_string(p.root.join("borrow.click")).unwrap();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     // The full original check covers the unchanged bodies. Each refusal
     // still checks the complete changed function, including every claim.
     for (owners, before, after) in [
@@ -350,7 +350,7 @@ fn charon_external_array_copies_and_fills_verify_and_reject_false_bytes() {
 fn charon_external_array_copies_live_refresh() {
     let p = external_project();
     p.refresh().unwrap();
-    C0VerificationSession::new_program_prepared(
+    ProgramVerificationSession::new_program_prepared(
         &fs::read_to_string(p.root.join("borrow.click")).unwrap(),
         p.prepared().unwrap(),
     )
@@ -365,7 +365,7 @@ fn charon_whole_array_copy_live_refresh_checks_full_authority() {
         .replace("arrays.rs", "borrow.rs");
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     for (before, after) in [
         ("views source[0..2];", "views source[0..1];"),
         ("owns target[0..2];", "views target[0..2];"),
@@ -373,6 +373,6 @@ fn charon_whole_array_copy_live_refresh_checks_full_authority() {
     ] {
         let invalid = sidecar.replace(before, after);
         assert_ne!(invalid, sidecar);
-        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+        assert!(ProgramVerificationSession::new_program_prepared(&invalid, &prepared).is_err());
     }
 }

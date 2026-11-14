@@ -65,10 +65,10 @@ fn resolved_four_byte_load_graph_queries_scale_without_fact_index() {
             offset: PointerOffsetTerm::Constant(0),
         };
         let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
-        let memory = intern_c_memory(
-            CMemory::new()
+        let memory = intern_memory(
+            Memory::new()
                 .with_block("resolved-int32-scale", 4)
-                .store(pointer.clone(), CValue::Int32(sum(var(0)))),
+                .store(pointer.clone(), ProgramValue::Int32(sum(var(0)))),
         );
         let load = MachineTerm::Variable(load_variable_for_cell_with_origin(
             &memory,
@@ -102,11 +102,11 @@ fn two_resolved_four_byte_load_queries_scale_without_fact_index() {
             offset: PointerOffsetTerm::Constant(offset),
         };
         let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
-        let memory = intern_c_memory(
-            CMemory::new()
+        let memory = intern_memory(
+            Memory::new()
                 .with_block("two-resolved-int32-scale", 8)
-                .store(pointer(0), CValue::Int32(sum(var(0))))
-                .store(pointer(4), CValue::Int32(sum(var(size)))),
+                .store(pointer(0), ProgramValue::Int32(sum(var(0))))
+                .store(pointer(4), ProgramValue::Int32(sum(var(size)))),
         );
         let load = |offset| {
             MachineTerm::Variable(load_variable_for_cell_with_origin(
@@ -139,9 +139,9 @@ fn direct_composite_int32_argument_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = VerificationSession::enter();
         let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
-        let resource = |value| CResource::Composite {
+        let resource = |value| Resource::Composite {
             name: "indexed-value-scale".into(),
-            arguments: vec![CValue::Int32(sum(value)).into()].into(),
+            arguments: vec![ProgramValue::Int32(sum(value)).into()].into(),
         };
         let left = resource(var(0));
         let mut context = PureFactContext::new();
@@ -152,13 +152,11 @@ fn direct_composite_int32_argument_graph_queries_scale_without_fact_index() {
         PureFactContext::reset_bitvector_equality_index_fact_visits();
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 1..=size {
-                assert!(
-                    crate::kernel::memory_provenance::c_resources_directly_match(
-                        &left,
-                        &resource(var(index)),
-                        &context,
-                    )
-                );
+                assert!(crate::kernel::memory_provenance::resources_directly_match(
+                    &left,
+                    &resource(var(index)),
+                    &context,
+                ));
             }
         });
         assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
@@ -170,18 +168,20 @@ fn direct_composite_int32_argument_graph_queries_scale_without_fact_index() {
 fn resource_instance_int32_argument_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = VerificationSession::enter();
-        let schema =
-            ResourceFieldSchema::new(vec![("stamp".into(), ResourceFieldType::C(CType::Int32))])
-                .unwrap();
+        let schema = ResourceFieldSchema::new(vec![(
+            "stamp".into(),
+            ResourceFieldType::Program(ProgramType::Int32),
+        )])
+        .unwrap();
         let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
         let instance = |value| {
-            CResource::Instance(
+            Resource::Instance(
                 ResourceInstance::new(
                     Variable(6200),
                     "instance-value-scale".into(),
-                    vec![CValue::Int32(sum(value)).into()].into(),
+                    vec![ProgramValue::Int32(sum(value)).into()].into(),
                     schema.clone(),
-                    vec![CValue::Int32(MachineTerm::constant(3)).into()].into(),
+                    vec![ProgramValue::Int32(MachineTerm::constant(3)).into()].into(),
                 )
                 .unwrap(),
             )
@@ -195,13 +195,11 @@ fn resource_instance_int32_argument_graph_queries_scale_without_fact_index() {
         PureFactContext::reset_bitvector_equality_index_fact_visits();
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 1..=size {
-                assert!(
-                    crate::kernel::memory_provenance::c_resources_directly_match(
-                        &left,
-                        &instance(var(index)),
-                        &context,
-                    )
-                );
+                assert!(crate::kernel::memory_provenance::resources_directly_match(
+                    &left,
+                    &instance(var(index)),
+                    &context,
+                ));
             }
         });
         assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
@@ -214,7 +212,7 @@ fn typed_int32_value_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = VerificationSession::enter();
         let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
-        let left = CValue::Int32(sum(var(0)));
+        let left = ProgramValue::Int32(sum(var(0)));
         let mut context = PureFactContext::new();
         for index in 0..size {
             context = context.assume_condition(eq(&var(index), &var(index + 1)), true);
@@ -223,8 +221,8 @@ fn typed_int32_value_graph_queries_scale_without_fact_index() {
         PureFactContext::reset_bitvector_equality_index_fact_visits();
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 1..=size {
-                let right = CValue::Int32(sum(var(index)));
-                assert!(crate::kernel::reasoning::memory_resolution::c_values_proven_equal_for_memory_resolution(
+                let right = ProgramValue::Int32(sum(var(index)));
+                assert!(crate::kernel::reasoning::memory_resolution::program_values_proven_equal_for_memory_resolution(
                     &left, &right, &context,
                 ));
             }
@@ -338,13 +336,14 @@ fn scalar_support_tracking_does_not_compare_unrelated_snapshot_contents_across_a
                 block: "selected".into(),
                 offset: PointerOffsetTerm::Constant(0),
             };
-            let mut memory = CMemory::new().with_block("selected", 4);
+            let mut memory = Memory::new().with_block("selected", 4);
             for i in 0..size {
                 memory = memory.with_block(format!("unrelated-{i}"), 4);
             }
-            let memory = intern_c_memory(
-                memory.store(address.clone(), CValue::Int32(MachineTerm::constant(7))),
-            );
+            let memory = intern_memory(memory.store(
+                address.clone(),
+                ProgramValue::Int32(MachineTerm::constant(7)),
+            ));
             let load =
                 MachineTerm::MemoryLoad(memory, Box::new(address), crate::kernel::LoadKind::Int32);
             crate::instrumentation::measure_deterministic_work(|| {
@@ -499,7 +498,7 @@ fn unrelated_wide_inputs_do_not_disable_selected_atomic_matching() {
 
 #[test]
 fn unrelated_offset_inputs_preserve_the_selected_parameter_partition() {
-    use crate::kernel::{CMemoryRange, CResourceFact, ResourceContext};
+    use crate::kernel::{MemoryRange, ResourceContext, ResourceFact};
     let mut baseline = None;
     for size in [4u64, 16, 64, 256] {
         let _session = VerificationSession::enter();
@@ -508,11 +507,11 @@ fn unrelated_offset_inputs_preserve_the_selected_parameter_partition() {
             offset: PointerOffsetTerm::scale_int32(var(i), 4),
         };
         let write = parameter(990_000);
-        let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
-            CMemoryRange::new(write.clone(), 0u32.into(), 1u32.into()),
+        let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
+            MemoryRange::new(write.clone(), 0u32.into(), 1u32.into()),
         ));
         let mut context =
-            PureFactContext::new().assume_proposition(Proposition::CResourceComposition(resources));
+            PureFactContext::new().assume_proposition(Proposition::ResourceComposition(resources));
         for i in 0..size {
             context = context.assume_condition(
                 ConditionTerm::pointer_offset_equal(
@@ -544,12 +543,12 @@ fn complete_pointer_scalar_evidence_ignores_unrelated_inputs() {
             context = context.assume_condition(eq(&var(index * 2), &var(index * 2 + 1)), true);
         }
         let pointer = |id| {
-            CPointerValue::new(
+            PointerValue::new(
                 Pointer {
                     block: PointerBlock::ExternalArgument,
                     offset: PointerOffsetTerm::scale_int32(var(id), 4),
                 },
-                CType::Int32Pointer,
+                ProgramType::Int32Pointer,
             )
         };
         for (a, b) in [(941_010, 941_011), (941_011, 941_012)] {
@@ -582,7 +581,7 @@ fn constant_queries_ignore_other_snapshot_candidates() {
             let query = var(880_000);
             let mut context = PureFactContext::new();
             let mut memory =
-                CMemory::new().with_block("constant-bridge-scale", 4 * (size as u32 + 1));
+                Memory::new().with_block("constant-bridge-scale", 4 * (size as u32 + 1));
             let mut unknown_reads = Vec::new();
             // Every snapshot is separated by a call that may write the cell.
             // The postconditions can consistently equate the first N reads to
@@ -594,7 +593,7 @@ fn constant_queries_ignore_other_snapshot_candidates() {
                 }
                 memory = memory.with_call_memory_havoc(
                     Variable(881_000 + index),
-                    &[CMemoryRange::new_with_element_width(
+                    &[MemoryRange::new_with_element_width(
                         address.clone(),
                         0u32.into(),
                         1u32.into(),
@@ -604,7 +603,7 @@ fn constant_queries_ignore_other_snapshot_candidates() {
                     None,
                 );
                 let load = MachineTerm::MemoryLoad(
-                    intern_c_memory(memory.clone()),
+                    intern_memory(memory.clone()),
                     Box::new(address),
                     LoadKind::Int32,
                 );

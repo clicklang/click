@@ -397,11 +397,11 @@ mod tests {
     #[test]
     fn fresh_shared_sign_division_uses_structural_mask_bounds_without_export() {
         use crate::kernel::{
-            CType, KernelTerm, KernelTermExport, KernelTermImport, KernelType,
-            MachineCastSpelling as Encoding,
+            KernelTerm, KernelTermExport, KernelTermImport, KernelType,
+            MachineCastSpelling as Encoding, ProgramType,
         };
         let _session = crate::kernel::VerificationSession::enter();
-        let x = KernelTerm::variable(KernelType::C(CType::UInt32), Variable(189113));
+        let x = KernelTerm::variable(KernelType::Program(ProgramType::UInt32), Variable(189113));
         let prefix = KernelTerm::machine_binary_shared(Ty::UInt32, Op::Add, [x.clone(), x]);
         let literal = |format, value| {
             KernelTermImport::default()

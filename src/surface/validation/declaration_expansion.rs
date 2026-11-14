@@ -8,7 +8,7 @@ mod tests;
 struct DeclaredResourceInfo {
     fields: std::sync::Arc<BTreeMap<String, (usize, ClickType)>>,
     field_schema: Option<crate::kernel::ResourceFieldSchema>,
-    parameter_types: Vec<C0Type>,
+    parameter_types: Vec<InterfaceType>,
     resource_parameter_families: Vec<String>,
     kind: ResourceKind,
     has_fields: bool,
@@ -78,7 +78,7 @@ impl DeclaredResourceScope {
     fn expand_arguments(
         &self,
         arguments: Vec<ContractExpression>,
-        parameter_types: &[C0Type],
+        parameter_types: &[InterfaceType],
     ) -> Result<Vec<ContractExpression>, ClickError> {
         let character_parameters = self.character_parameters.borrow();
         arguments
@@ -86,15 +86,16 @@ impl DeclaredResourceScope {
             .enumerate()
             .map(|(index, argument)| {
                 let named = match &argument {
-                    ContractExpression::CFragment(CExpression::Variable(name))
+                    ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
                     | ContractExpression::Binding(name)
                     | ContractExpression::CBinding(name) => Some(name.as_str()),
                     _ => None,
                 };
                 match (named, parameter_types.get(index)) {
-                    (Some(name), Some(C0Type::UInt8Pointer | C0Type::UInt8Array(_)))
-                        if character_parameters.contains(name) =>
-                    {
+                    (
+                        Some(name),
+                        Some(InterfaceType::UInt8Pointer | InterfaceType::UInt8Array(_)),
+                    ) if character_parameters.contains(name) => {
                         Ok(crate::surface::lowering::character_byte_view(name))
                     }
                     _ => expand_declared_resource_expression(argument, self),
@@ -365,7 +366,7 @@ fn library_modules() -> Result<&'static [LibraryModule], ClickError> {
 /// The `let` value parameters of the Click library's declaration of the C
 /// function `name`: `strlen`'s `let n: uint64;` is `n`. A call map in a
 /// program's sidecar names them.
-pub(in crate::surface) fn library_c_function_value_parameters(
+pub(in crate::surface) fn library_program_function_value_parameters(
     name: &str,
 ) -> Result<Vec<String>, ClickError> {
     Ok(library_modules()?
@@ -767,9 +768,9 @@ fn load_standard_library(modules: &[(&str, &str)]) -> Result<ClickFile, ClickErr
 /// Appends one library module's declarations after the earlier modules', so
 /// the library keeps one declaration order across its files.
 fn append_library_module(file: &mut ClickFile, module: ClickFile) {
-    std::sync::Arc::make_mut(&mut file.c_function_names).extend(
+    std::sync::Arc::make_mut(&mut file.program_function_names).extend(
         module
-            .c_function_names
+            .program_function_names
             .iter()
             .map(|(spelling, name)| (spelling.clone(), name.clone())),
     );
@@ -895,7 +896,7 @@ fn expand_declared_resource_clauses_with_rules(
                         .parameters()
                         .iter()
                         .map(|parameter| {
-                            parameter.click_type().c_type().ok_or_else(|| {
+                            parameter.click_type().interface_type().ok_or_else(|| {
                                 ClickError::new(format!(
                                     "resource `{}` parameter `{}` uses an algebraic type; algebraic resource arguments are not supported yet",
                                     definition.name(),
@@ -925,14 +926,14 @@ fn expand_declared_resource_clauses_with_rules(
         })
         .collect::<Result<BTreeMap<_, _>, ClickError>>()?;
     resource_definitions
-        .entry(CResourceFact::ALLOCATION_RESOURCE_NAME.to_string())
+        .entry(ResourceFact::ALLOCATION_RESOURCE_NAME.to_string())
         .or_insert_with(|| DeclaredResourceInfo {
             fields: Default::default(),
             field_schema: None,
             has_fields: false,
             authorized: false,
             resource_parameter_families: Vec::new(),
-            parameter_types: vec![C0Type::Int32Pointer, C0Type::Int32],
+            parameter_types: vec![InterfaceType::Int32Pointer, InterfaceType::Int32],
             kind: ResourceKind::Token,
             child_slots: Default::default(),
             arm_child_slots: Default::default(),
@@ -945,7 +946,7 @@ fn expand_declared_resource_clauses_with_rules(
             has_fields: false,
             authorized: false,
             resource_parameter_families: Vec::new(),
-            parameter_types: vec![C0Type::VoidPointer],
+            parameter_types: vec![InterfaceType::VoidPointer],
             kind: ResourceKind::Token,
             child_slots: Default::default(),
             arm_child_slots: Default::default(),
@@ -959,7 +960,7 @@ fn expand_declared_resource_clauses_with_rules(
             has_fields: false,
             authorized: false,
             resource_parameter_families: Vec::new(),
-            parameter_types: vec![C0Type::VoidPointer],
+            parameter_types: vec![InterfaceType::VoidPointer],
             kind: ResourceKind::Token,
             child_slots: Default::default(),
             arm_child_slots: Default::default(),
@@ -973,7 +974,7 @@ fn expand_declared_resource_clauses_with_rules(
             has_fields: false,
             authorized: false,
             resource_parameter_families: Vec::new(),
-            parameter_types: vec![C0Type::VoidPointer],
+            parameter_types: vec![InterfaceType::VoidPointer],
             kind: ResourceKind::Token,
             child_slots: Default::default(),
             arm_child_slots: Default::default(),
@@ -988,7 +989,7 @@ fn expand_declared_resource_clauses_with_rules(
                 has_fields: false,
                 authorized: false,
                 resource_parameter_families: Vec::new(),
-                parameter_types: vec![C0Type::VoidPointer],
+                parameter_types: vec![InterfaceType::VoidPointer],
                 kind: ResourceKind::Token,
                 child_slots: Default::default(),
                 arm_child_slots: Default::default(),
@@ -1195,10 +1196,10 @@ fn expand_declared_resources_in_function_block(
     resource_definitions.constructors.enter_declaration(
         declaration_parameter_types(function.signature().parameters())
             .chain(
-                (function.signature().return_type() != C0Type::Void).then(|| {
+                (function.signature().return_type() != InterfaceType::Void).then(|| {
                     (
                         "result".to_string(),
-                        ClickType::C(function.signature().return_type()),
+                        ClickType::Program(function.signature().return_type()),
                     )
                 }),
             )
@@ -1211,8 +1212,8 @@ fn expand_declared_resources_in_function_block(
         .iter()
         .filter(|parameter| {
             crate::surface::lowering::needs_character_byte_view(
-                parameter.c_type(),
-                crate::kernel::CType::UInt8Pointer,
+                parameter.interface_type(),
+                crate::kernel::ProgramType::UInt8Pointer,
             )
         })
         .map(|parameter| parameter.name().to_string())
@@ -1231,15 +1232,15 @@ fn expand_declared_resources_in_function_block(
         .decreases
         .take()
         .map(|decreases| match decreases {
-            CFunctionDecrease::Unresolved(expression) => {
+            FunctionDecrease::Unresolved(expression) => {
                 classify_function_decrease(expression, &declared_binders, resource_definitions)
             }
-            CFunctionDecrease::Numeric(expression) => Ok(CFunctionDecrease::Numeric(
+            FunctionDecrease::Numeric(expression) => Ok(FunctionDecrease::Numeric(
                 expand_declared_resource_expression(expression, resource_definitions)?,
             )),
             // Every component of a tuple is numeric: a structural measure
             // is one resource, never a component of a tuple.
-            CFunctionDecrease::Lexicographic(components) => Ok(CFunctionDecrease::Lexicographic(
+            FunctionDecrease::Lexicographic(components) => Ok(FunctionDecrease::Lexicographic(
                 components
                     .into_iter()
                     .map(|component| {
@@ -1247,10 +1248,10 @@ fn expand_declared_resources_in_function_block(
                     })
                     .collect::<Result<Vec<_>, _>>()?,
             )),
-            CFunctionDecrease::Resource(resource) => Ok(CFunctionDecrease::Resource(
+            FunctionDecrease::Resource(resource) => Ok(FunctionDecrease::Resource(
                 expand_declared_resource_clause(resource, resource_definitions)?,
             )),
-            CFunctionDecrease::Binder(name) => Ok(CFunctionDecrease::Binder(name)),
+            FunctionDecrease::Binder(name) => Ok(FunctionDecrease::Binder(name)),
         })
         .transpose()?;
     function.requires = function
@@ -2137,7 +2138,9 @@ fn theorem_argument_is_value(argument: &ContractExpression) -> bool {
         | ContractExpression::Binding(_)
         | ContractExpression::CBinding(_)
         | ContractExpression::AlgebraicVariable { .. }
-        | ContractExpression::CFragment(CExpression::Value(_) | CExpression::Variable(_)) => true,
+        | ContractExpression::ProgramExpression(
+            ProgramExpression::Value(_) | ProgramExpression::Variable(_),
+        ) => true,
         ContractExpression::AlgebraicConstructor { arguments, .. }
         | ContractExpression::SequenceLiteral(arguments) => {
             arguments.iter().all(theorem_argument_is_value)
@@ -2609,33 +2612,31 @@ fn classify_function_decrease(
     expression: ContractExpression,
     declared_binders: &BTreeSet<String>,
     resource_definitions: &DeclaredResourceScope,
-) -> Result<CFunctionDecrease, ClickError> {
+) -> Result<FunctionDecrease, ClickError> {
     match &expression {
         ContractExpression::Call { name, arguments } if resource_definitions.contains_key(name) => {
-            Ok(CFunctionDecrease::Resource(
-                expand_declared_resource_clause(
-                    ResourceClause::Declared {
-                        type_schema: None,
-                        resource_type_arguments: Vec::new(),
-                        resource_arguments: Vec::new(),
-                        access: ResourceAccessMode::View,
-                        kind: ResourceKind::Token,
-                        name: name.clone(),
-                        arguments: arguments.clone(),
-                        parameter_types: Vec::new(),
-                    },
-                    resource_definitions,
-                )?,
-            ))
+            Ok(FunctionDecrease::Resource(expand_declared_resource_clause(
+                ResourceClause::Declared {
+                    type_schema: None,
+                    resource_type_arguments: Vec::new(),
+                    resource_arguments: Vec::new(),
+                    access: ResourceAccessMode::View,
+                    kind: ResourceKind::Token,
+                    name: name.clone(),
+                    arguments: arguments.clone(),
+                    parameter_types: Vec::new(),
+                },
+                resource_definitions,
+            )?))
         }
         ContractExpression::Binding(name)
         | ContractExpression::CBinding(name)
-        | ContractExpression::CFragment(CExpression::Variable(name))
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
             if declared_binders.contains(name) =>
         {
-            Ok(CFunctionDecrease::Binder(name.clone()))
+            Ok(FunctionDecrease::Binder(name.clone()))
         }
-        _ => Ok(CFunctionDecrease::Numeric(
+        _ => Ok(FunctionDecrease::Numeric(
             expand_declared_resource_expression(expression, resource_definitions)?,
         )),
     }
@@ -2785,7 +2786,7 @@ fn expand_declared_resource_clause(
                                 "`{slot}` is a field of `{parent}`, not a child slot; supply it in the fold's field map"
                             )));
                         }
-                        if !matches!(field_type, ClickType::C(_)) {
+                        if !matches!(field_type, ClickType::Program(_)) {
                             return Err(ClickError::new(format!(
                                 "field `{slot}` of `{parent}` is not C-typed; an unfold pattern binds only C scalar and pointer fields, so read an algebraic field's payload with a proof `match` on `{}.{slot}` before the unfold",
                                 binding.name
@@ -2907,7 +2908,7 @@ fn expand_declared_resource_clause(
                 &info,
                 resource_definitions,
             )?;
-            if (name == CResourceFact::ALLOCATION_RESOURCE_NAME
+            if (name == ResourceFact::ALLOCATION_RESOURCE_NAME
                 || name == "mutex_guard"
                 || name == "mutex_live"
                 || name == "mutex_use"
@@ -2947,9 +2948,10 @@ fn declared_resource_type_schema(
         .iter()
         .map(|(name, (index, ty))| {
             let ty = match ty {
-                ClickType::C(ty) | ClickType::CObjectPointer { c_type: ty, .. } => {
-                    crate::kernel::ResourceFieldType::C(ty.to_kernel_type())
-                }
+                ClickType::Program(ty)
+                | ClickType::CObjectPointer {
+                    interface_type: ty, ..
+                } => crate::kernel::ResourceFieldType::Program(ty.to_kernel_type()),
                 ClickType::Integer => crate::kernel::ResourceFieldType::Integer,
                 _ => {
                     return Err(ClickError::new(
@@ -3427,12 +3429,12 @@ fn expand_declared_resource_proposition_one(
             )?),
         }),
         ClickProposition::ForAll {
-            click_type: c_type,
+            click_type: interface_type,
             name,
             written_name,
             body,
         } => Ok(ClickProposition::ForAll {
-            click_type: c_type,
+            click_type: interface_type,
             name,
             written_name,
             body: Box::new(expand_declared_resource_proposition(
@@ -3441,12 +3443,12 @@ fn expand_declared_resource_proposition_one(
             )?),
         }),
         ClickProposition::Exists {
-            click_type: c_type,
+            click_type: interface_type,
             name,
             written_name,
             body,
         } => Ok(ClickProposition::Exists {
-            click_type: c_type,
+            click_type: interface_type,
             name,
             written_name,
             body: Box::new(expand_declared_resource_proposition(
@@ -3714,7 +3716,7 @@ fn expand_declared_resource_expression_node(
                         | "publisher"
                         | "subscriber"
                 )
-                && name != CResourceFact::ALLOCATION_RESOURCE_NAME
+                && name != ResourceFact::ALLOCATION_RESOURCE_NAME
             {
                 return Err(unauthorized_family_error("count", name));
             }

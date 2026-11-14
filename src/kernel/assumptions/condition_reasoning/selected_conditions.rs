@@ -323,11 +323,11 @@ mod memory_condition_match_tests {
     #[test]
     fn compound_memory_condition_candidates_preserve_snapshots() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = CMemory::new();
+        let memory = Memory::new();
         let pointer = Pointer::symbolic(Variable(999_000));
-        let load = |memory: &CMemory| {
+        let load = |memory: &Memory| {
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory_ref(memory),
+                crate::kernel::intern_memory_ref(memory),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             )
@@ -337,7 +337,7 @@ mod memory_condition_match_tests {
             MachineTerm::Variable(crate::kernel::eval::load_variable_for_term(&raw).unwrap().0);
         let changed = memory
             .clone()
-            .store(pointer.clone(), CValue::Int32(9u32.into()));
+            .store(pointer.clone(), ProgramValue::Int32(9u32.into()));
         let condition = |kind, term| {
             let left = MachineTerm::add(term, 1u32.into());
             let right = MachineTerm::Variable(Variable(999_001));
@@ -1059,7 +1059,7 @@ mod retained_order_tests {
 
     fn root(id: u64) -> KernelTerm {
         let x = KernelTerm::variable(
-            KernelType::C(MachineIntegerType::Int32.c_type()),
+            KernelType::Program(MachineIntegerType::Int32.program_type()),
             Variable(id),
         );
         KernelTerm::machine_binary_shared(
@@ -1149,7 +1149,7 @@ mod retained_order_tests {
         let ty = MachineIntegerType::Int32;
         let [a, b] = [root(993541), root(993542)];
         let k = Variable(993543);
-        let binder = KernelTerm::variable(KernelType::C(ty.c_type()), k);
+        let binder = KernelTerm::variable(KernelType::Program(ty.program_type()), k);
         let body = KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [a.clone(), binder]);
         let guard = Proposition::And(
             Box::new(Proposition::ConditionIs(
@@ -1167,7 +1167,7 @@ mod retained_order_tests {
         let source = Proposition::ForAll {
             name: Default::default(),
             var: k,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(Proposition::Implies(
                 Box::new(guard),
                 Box::new(Proposition::ConditionIs(bound(&body, &b, false), true)),

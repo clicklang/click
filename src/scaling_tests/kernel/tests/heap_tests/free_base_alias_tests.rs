@@ -4,32 +4,34 @@ fn alias_free_work(selected: u32, unrelated: u32) -> usize {
     let _session = crate::kernel::VerificationSession::enter();
     let mut resources = ResourceContext::new();
     let mut facts = PureFactContext::new();
-    let mut state = CState::new();
+    let mut state = ExecutionState::new();
     for index in 0..selected + unrelated {
         let base = Pointer {
             block: PointerBlock::Heap(974_000 + u64::from(index)),
             offset: PointerOffsetTerm::Constant(0),
         };
-        resources = resources.unchecked_with_fact(CResourceFact::own_allocation(base.clone(), 4));
+        resources = resources.unchecked_with_fact(ResourceFact::own_allocation(base.clone(), 4));
         if index < selected {
             let alias = Pointer::symbolic(Variable(975_000 + u64::from(index)));
             facts = facts.assume_proposition(Proposition::ConditionIs(
                 ConditionTerm::pointer_value_equal(
-                    CPointerValue::new(alias.clone(), CType::Int32Pointer),
-                    CPointerValue::new(base.clone(), CType::Int32Pointer),
+                    PointerValue::new(alias.clone(), ProgramType::Int32Pointer),
+                    PointerValue::new(base.clone(), ProgramType::Int32Pointer),
                 ),
                 true,
             ));
-            resources = resources.unchecked_with_fact(CResourceFact::own_memory(
-                CMemoryRange::new(base, 0.into(), 1.into()),
-            ));
-            state = state.with_local(format!("q{index}"), CValue::pointer(alias));
+            resources = resources.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
+                base,
+                0.into(),
+                1.into(),
+            )));
+            state = state.with_local(format!("q{index}"), ProgramValue::pointer(alias));
         }
     }
     state = state.with_resource_context(resources);
     let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
         for index in 0..selected {
-            let CStatementOutcome::Normal(after) = free_once(&state, &format!("q{index}"), &facts)
+            let StatementOutcome::Normal(after) = free_once(&state, &format!("q{index}"), &facts)
             else {
                 panic!("alias free refused");
             };

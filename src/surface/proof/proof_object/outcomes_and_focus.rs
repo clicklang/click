@@ -53,14 +53,14 @@ impl<'a> Proof<'a> {
     }
 
     /// The line naming the C statement checked path `path_index` ended at,
-    /// as [`describe_c_statement_site`] spells a stepped statement, or
+    /// as [`describe_execution_statement_site`] spells a stepped statement, or
     /// nothing when the path recorded no statement.
     ///
     /// This is diagnostics only. The statement is the one whose snapshot the
     /// path recorded last, read from the presentation data the outcome
     /// already carries.
     ///
-    /// [`describe_c_statement_site`]: crate::surface::diagnostics::describe_c_statement_site
+    /// [`describe_execution_statement_site`]: crate::surface::diagnostics::describe_execution_statement_site
     pub(in crate::surface::proof) fn describe_outcome_statement_site(
         &self,
         path_index: usize,
@@ -85,19 +85,19 @@ impl<'a> Proof<'a> {
 
     pub(in crate::surface::proof) fn focused_outcome_snapshot(
         &self,
-    ) -> Result<CFunctionOutcome, ClickError> {
+    ) -> Result<FunctionOutcome, ClickError> {
         let Some(Obligation::FunctionOutcome(goal)) = self.focused_obligation() else {
             return Err(self.step_error("an outcome snapshot requires a focused outcome goal"));
         };
         let value = (*goal.data.core.result).clone();
         let state = (*goal.data.core.state).clone();
         Ok(if goal.data.core.is_exceptional {
-            CFunctionOutcome::Throw {
+            FunctionOutcome::Throw {
                 value: value.into(),
                 state: Box::new(state),
             }
         } else {
-            CFunctionOutcome::Return {
+            FunctionOutcome::Return {
                 value: value.into(),
                 state: Box::new(state),
             }
@@ -106,7 +106,7 @@ impl<'a> Proof<'a> {
 
     pub(in crate::surface::proof) fn with_contract_return_counts(
         &self,
-        execution: &CCheckedFunctionExecution,
+        execution: &CheckedFunctionExecution,
     ) -> Result<Self, ClickError> {
         let Some(Obligation::FunctionOutcome(goal)) = self.focused_obligation() else {
             return Err(self.step_error("return counts require an outcome goal"));
@@ -115,7 +115,7 @@ impl<'a> Proof<'a> {
             .paths()
             .get(goal.path_index)
             .ok_or_else(|| self.step_error("return counts have no checked path"))?;
-        let Proposition::CFunctionVerifies { outcome, .. } =
+        let Proposition::ProgramFunctionVerifies { outcome, .. } =
             implication_body(path.theorem().proposition())
         else {
             return Err(self.step_error("return counts have no checked execution outcome"));
@@ -154,8 +154,8 @@ impl<'a> Proof<'a> {
 
     pub(in crate::surface::proof) fn apply_outcome_contract_resources(
         &self,
-        pre_state: &CState,
-        _function: &CFunction,
+        pre_state: &ExecutionState,
+        _function: &ProgramFunction,
     ) -> Result<Self, ClickError> {
         let ProofContext::Execution(_) = self.context.as_ref() else {
             return Err(self.step_error("contract resource effects require an execution proof"));
@@ -203,7 +203,7 @@ impl<'a> Proof<'a> {
 
     pub(in crate::surface::proof) fn check_outcome_resource_claim<'e>(
         &self,
-        checked_execution: &'e CCheckedFunctionExecution,
+        checked_execution: &'e CheckedFunctionExecution,
         claim: FunctionClaimRef<'_>,
     ) -> Result<CheckedResourceClaim<'e>, ClickError> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
@@ -219,7 +219,7 @@ impl<'a> Proof<'a> {
             .execution()
             .ok_or_else(|| self.step_error("resource claim lost its execution"))?;
         let (guard_active, guard_deferred) = match claim.key() {
-            CFunctionContractClaimKey::Ensure(index) => {
+            FunctionContractClaimKey::Ensure(index) => {
                 let guard = checked_execution
                     .function()
                     .resource_ensures()
@@ -272,11 +272,11 @@ impl<'a> Proof<'a> {
                                 .execution_start_state(&execution.core.state)
                         });
                     let guard_post_state = match self.focused_outcome_snapshot() {
-                        Ok(CFunctionOutcome::Return { state, .. }) => {
+                        Ok(FunctionOutcome::Return { state, .. }) => {
                             // Function exits restore caller locals. Rebind the
                             // callee parameters before lowering a guard, whose
                             // old-memory pointer still uses those names.
-                            c_function_entry_state(
+                            program_function_entry_state(
                                 &state,
                                 checked_execution.function(),
                                 context.arguments,
@@ -299,9 +299,9 @@ impl<'a> Proof<'a> {
                 };
                 (decision, decision.is_none())
             }
-            CFunctionContractClaimKey::BodySafety
-            | CFunctionContractClaimKey::ExceptionalEnsure(_)
-            | CFunctionContractClaimKey::Effect(_) => (None, false),
+            FunctionContractClaimKey::BodySafety
+            | FunctionContractClaimKey::ExceptionalEnsure(_)
+            | FunctionContractClaimKey::Effect(_) => (None, false),
         };
         prove_ensure_resource(
             checked_execution,
@@ -335,10 +335,11 @@ impl<'a> Proof<'a> {
 
     /// Updates the focused branch outcome goal's immutable result/state snapshot
     /// after a separately checked resource transition.
-    fn with_outcome_snapshot(&self, outcome: &CFunctionOutcome) -> Result<Self, ClickError> {
+    fn with_outcome_snapshot(&self, outcome: &FunctionOutcome) -> Result<Self, ClickError> {
         let (value, state) = match outcome {
-            CFunctionOutcome::Return { value, state }
-            | CFunctionOutcome::Throw { value, state } => (value, state),
+            FunctionOutcome::Return { value, state } | FunctionOutcome::Throw { value, state } => {
+                (value, state)
+            }
             _ => return Err(self.step_error("an outcome snapshot requires a completed outcome")),
         };
         let outcome_data = match self.focused_obligation() {
@@ -351,14 +352,14 @@ impl<'a> Proof<'a> {
             }
         };
         let mut data = outcome_data.clone();
-        if data.core.is_exceptional != matches!(outcome, CFunctionOutcome::Throw { .. }) {
+        if data.core.is_exceptional != matches!(outcome, FunctionOutcome::Throw { .. }) {
             return Err(self.step_error("an outcome snapshot cannot change its outcome family"));
         }
         // Resource-producing post-execution tactics can replace the outcome
         // state after this goal was derived. Carry that persistent snapshot
         // root forward; otherwise later
         // checked fixed-state operations lower resource counts against the stale
-        // pre-fold state. CState's components are shared immutable roots, so
+        // pre-fold state. ExecutionState's components are shared immutable roots, so
         // this update is constant-size rather than a resource/history
         // materialization.
         data.core.result = Arc::new(value.clone().into_native());
@@ -398,11 +399,11 @@ impl<'a> Proof<'a> {
     /// outcome opens closed.
     pub(in crate::surface::proof) fn open_contract_claim_goals(
         &self,
-        closing_context: &Arc<crate::kernel::CContractClosingContext>,
+        closing_context: &Arc<crate::kernel::ContractClosingContext>,
         claims: impl IntoIterator<
             Item = (
-                CFunctionContractClaimKey,
-                Option<CFunctionContractClaimTarget>,
+                FunctionContractClaimKey,
+                Option<FunctionContractClaimTarget>,
             ),
         >,
     ) -> Result<Self, ClickError> {
@@ -421,20 +422,23 @@ impl<'a> Proof<'a> {
         self.with_focused_outcome_obligation(goal)
     }
 
-    /// The implicit closer discharges the joint resource/lifetime and write
-    /// footprint goals before any function theorem is published.
-    pub(in crate::surface::proof) fn complete_contract_exit_obligations(
+    /// One ordinary proof operation discharges one selected closing goal.
+    pub(in crate::surface::proof) fn prove_contract_closing_goal(
         &self,
-        execution: &CCheckedFunctionExecution,
-        path: &crate::kernel::SymbolicCExecutionPath,
+        kind: crate::kernel::proof::ContractClosingGoal,
+        execution: &CheckedFunctionExecution,
+        path: &crate::kernel::SymbolicExecutionPath,
         specification: &crate::kernel::CheckedPathSpecification,
-    ) -> Result<(Self, crate::kernel::CClosedContractExit), ClickError> {
-        let ProofContext::Execution(context) = self.context.as_ref() else {
-            return Err(self.step_error("contract closing requires an execution proof"));
-        };
+    ) -> Result<Self, ClickError> {
         let Some(Obligation::FunctionOutcome(goal)) = self.focused_obligation() else {
             return Err(self.step_error("contract closing requires an outcome goal"));
         };
+        if !matches!(goal.first_open_goal(), Ok(Some(crate::kernel::proof::OutcomeGoal::Closing(selected))) if selected == kind)
+        {
+            return Err(
+                self.step_error("contract closing must follow the pending source obligations")
+            );
+        }
         let closing = goal
             .closing
             .as_ref()
@@ -443,35 +447,97 @@ impl<'a> Proof<'a> {
             .claims
             .as_ref()
             .ok_or_else(|| self.step_error("contract claim obligations were not generated"))?;
-        let (closing, completion) = closing.close(execution, path, specification, &goal.data.core, claims, self.facts())
-            .map_err(|refusal| {
-                use crate::kernel::CContractClosingRefusal as Refusal;
-                let binding = context.parameter_binding();
-                let label = context.claim_label;
-                let index = goal.path_index;
-                let message = match refusal {
-                    Refusal::Claim(key) => {
-                        let claim = match key {
-                            CFunctionContractClaimKey::Ensure(index) => FunctionClaimRef::Ensure(index, &context.function_block.ensures()[index]),
-                            _ => return self.step_error(format!("contract closing for `{label}` path {index}: unproved boundary claim {key:?}")),
-                        };
-                        let clause = match claim.clause().ensure() {
-                            Ensure::Resource(resource) => crate::surface::validation::describe_resource_clause(resource),
-                            Ensure::Proposition(proposition) => crate::surface::diagnostics::describe_click_proposition(proposition),
-                        };
-                        format!("contract closing for `{label}` path {index}: unproved resource obligation {} `{clause}`", function_claim_label(context.function_block, &claim))
-                    }
-                    Refusal::Resource(reason) => format!("contract closing for `{label}` path {index}: resource/lifetime obligation: {reason}"),
-                    Refusal::Runtime(error) => format!("`{label}` path {index}: C operation could not be verified: {}{}", describe_runtime_error(&error, binding), self.describe_outcome_statement_site(index)),
-                    Refusal::Write(pointer) => format!("`{}.implicit_effect` failed on path {index}: write to `{}` is outside the mutable footprint", context.function_block.signature().name(), describe_pointer(&pointer, binding)),
-                    Refusal::Range(range) => format!("`{}.implicit_effect` failed on path {index}: write range `{}` is outside the mutable footprint", context.function_block.signature().name(), describe_memory_range(&range, binding)),
-                    Refusal::Storage(outside) => format!("`{label}` path {index}: write to storage outside the owned footprint: {}; own the written cells", crate::surface::diagnostics::describe_storage_writes_outside_footprint(&outside, binding)),
-                };
-                self.step_error(message)
-            })?;
+        let closing = closing
+            .prove_goal(
+                kind,
+                execution,
+                path,
+                specification,
+                &goal.data.core,
+                claims,
+                self.facts(),
+            )
+            .map_err(|refusal| self.contract_closing_error(refusal))?;
         let mut goal = goal.clone();
         goal.closing = Some(closing);
-        Ok((self.with_focused_outcome_obligation(goal)?, completion))
+        self.with_focused_outcome_obligation(goal)
+    }
+
+    /// Package completed evidence without discovering or checking obligations.
+    pub(in crate::surface::proof) fn contract_exit_completion(
+        &self,
+        path: &crate::kernel::SymbolicExecutionPath,
+    ) -> Result<crate::kernel::ClosedContractExit, ClickError> {
+        let Some(Obligation::FunctionOutcome(goal)) = self.focused_obligation() else {
+            return Err(self.step_error("contract closing requires an outcome goal"));
+        };
+        goal.closing
+            .as_ref()
+            .ok_or_else(|| self.step_error("contract closing obligations were not generated"))?
+            .completion(path)
+            .map_err(|refusal| self.contract_closing_error(refusal))
+    }
+
+    fn contract_closing_error(&self, refusal: crate::kernel::ContractClosingRefusal) -> ClickError {
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            return self.step_error("contract closing requires an execution proof");
+        };
+        let Some(Obligation::FunctionOutcome(goal)) = self.focused_obligation() else {
+            return self.step_error("contract closing requires an outcome goal");
+        };
+        use crate::kernel::ContractClosingRefusal as Refusal;
+        let binding = context.parameter_binding();
+        let label = context.claim_label;
+        let index = goal.path_index;
+        let message = match refusal {
+            Refusal::Claim(key) => {
+                let claim = match key {
+                            FunctionContractClaimKey::Ensure(clause_index) => match context.function_block.ensures().get(clause_index) { Some(clause) => FunctionClaimRef::Ensure(clause_index, clause), None => return self.step_error(format!("contract closing for `{label}` path {index}: unproved generated returned-storage obligation")) },
+                            _ => return self.step_error(format!("contract closing for `{label}` path {index}: unproved boundary claim {key:?}")),
+                        };
+                let clause = match claim.clause().ensure() {
+                    Ensure::Resource(resource) => {
+                        crate::surface::validation::describe_resource_clause(resource)
+                    }
+                    Ensure::Proposition(proposition) => {
+                        crate::surface::diagnostics::describe_click_proposition(proposition)
+                    }
+                };
+                format!(
+                    "contract closing for `{label}` path {index}: unproved resource obligation {} `{clause}`",
+                    function_claim_label(context.function_block, &claim)
+                )
+            }
+            Refusal::Pending(kind) => format!(
+                "contract closing for `{label}` path {index}: unproved {} obligation; prove it explicitly with `assumption()` or supply the facts and resources needed by the implicit solver",
+                kind.description()
+            ),
+            Refusal::Resource(reason) => {
+                format!("contract closing for `{label}` path {index}: {reason}")
+            }
+            Refusal::Runtime(error) => format!(
+                "`{label}` path {index}: C operation could not be verified: {}{}",
+                describe_runtime_error(&error, binding),
+                self.describe_outcome_statement_site(index)
+            ),
+            Refusal::Write(pointer) => format!(
+                "`{}.implicit_effect` failed on path {index}: write to `{}` is outside the mutable footprint",
+                context.function_block.signature().name(),
+                describe_pointer(&pointer, binding)
+            ),
+            Refusal::Range(range) => format!(
+                "`{}.implicit_effect` failed on path {index}: write range `{}` is outside the mutable footprint",
+                context.function_block.signature().name(),
+                describe_memory_range(&range, binding)
+            ),
+            Refusal::Storage(outside) => format!(
+                "`{label}` path {index}: write to storage outside the owned footprint: {}; own the written cells",
+                crate::surface::diagnostics::describe_storage_writes_outside_footprint(
+                    &outside, binding
+                )
+            ),
+        };
+        self.step_error(message)
     }
 
     pub(in crate::surface::proof) fn first_open_outcome_goal(
@@ -510,7 +576,7 @@ impl<'a> Proof<'a> {
     /// claim.
     pub(in crate::surface::proof) fn close_claim_goal(
         &self,
-        key: &CFunctionContractClaimKey,
+        key: &FunctionContractClaimKey,
         evidence: ClaimGoalEvidence,
     ) -> Result<Self, ClickError> {
         let Some(Obligation::FunctionOutcome(goal)) = self.focused_obligation() else {
@@ -604,7 +670,7 @@ impl<'a> Proof<'a> {
         let mut facts = self.facts().clone();
         let outcome = self.focused_outcome_snapshot()?;
         for case in &execution.presentation.case_assumptions {
-            let CFunctionOutcome::Return { value, state } = &outcome else {
+            let FunctionOutcome::Return { value, state } = &outcome else {
                 return Err(self.step_error("proof-level `if` requires a return outcome"));
             };
             let fact = if let Some(fact) = &case.fact {
@@ -700,7 +766,7 @@ impl<'a> Proof<'a> {
     /// scheduling their proofs belongs to the driver.
     pub(in crate::surface::proof) fn begin_contract_claim(
         &self,
-        goal: &crate::kernel::CClaimGoal,
+        goal: &crate::kernel::ContractClaimGoal,
         surface: &ClickProposition,
     ) -> Result<Self, ClickError> {
         #[cfg(test)]
@@ -904,11 +970,11 @@ impl<'a> Proof<'a> {
                 continue;
             }
             let (result, state, is_exceptional) = match path.outcome() {
-                CFunctionOutcome::Return { value, state } => (value.clone(), state.clone(), false),
-                CFunctionOutcome::Throw { value, state } => (value.clone(), state.clone(), true),
+                FunctionOutcome::Return { value, state } => (value.clone(), state.clone(), false),
+                FunctionOutcome::Throw { value, state } => (value.clone(), state.clone(), true),
                 // A path proved non-returning owes no outcome judgment.
-                CFunctionOutcome::VerificationDiverges => continue,
-                CFunctionOutcome::UndefinedBehavior(_) | CFunctionOutcome::RuntimeError(_) => {
+                FunctionOutcome::VerificationDiverges => continue,
+                FunctionOutcome::UndefinedBehavior(_) | FunctionOutcome::RuntimeError(_) => {
                     let ProofContext::Execution(context) = self.context.as_ref() else {
                         unreachable!()
                     };
@@ -1050,7 +1116,7 @@ impl<'a> Proof<'a> {
         let Some(execution) = self.execution() else {
             return Ok(false);
         };
-        let Ok((_, _, CStatement::If { condition, .. }, _)) =
+        let Ok((_, _, ProgramStatement::If { condition, .. }, _)) =
             next_top_level_statement_from_frontier_position(
                 execution.view(context),
                 &execution.core.state,
@@ -1064,10 +1130,10 @@ impl<'a> Proof<'a> {
             return Ok(false);
         };
         let mut test = &condition;
-        while let CExpression::Or(left, _) = test {
+        while let ProgramExpression::Or(left, _) = test {
             test = left;
         }
-        Ok(matches!(test, CExpression::EnumIs { .. }))
+        Ok(matches!(test, ProgramExpression::EnumIs { .. }))
     }
 
     /// Whether this frontier has the source shape handled by the explicit
@@ -1102,8 +1168,9 @@ impl<'a> Proof<'a> {
             // like a C `if`'s. A callee whose contract throws nothing has
             // one successor, as the kernel's call has, even inside a `try`:
             // a destructible local's unwind cleanup wraps every call.
-            if let CStatement::Call { function_name, .. }
-            | CStatement::CallAssign { function_name, .. } = &statement
+            if let ProgramStatement::Call { function_name, .. }
+            | ProgramStatement::CallAssign { function_name, .. }
+            | ProgramStatement::CallResult { function_name, .. } = &statement
             {
                 return Ok(context
                     .function_environment
@@ -1112,7 +1179,7 @@ impl<'a> Proof<'a> {
                         !callee.exceptional_signature().is_empty()
                     }));
             }
-            let CStatement::TryCatchInt32 { try_body, .. } = statement else {
+            let ProgramStatement::TryCatchInt32 { try_body, .. } = statement else {
                 return Ok(false);
             };
             let SourceStatementKind::Try {
@@ -1207,7 +1274,7 @@ impl<'a> Proof<'a> {
 }
 
 /// The line naming the C statement a path stepped last, in the form
-/// `describe_c_statement_site` gives a stepped statement, or nothing when the
+/// `describe_execution_statement_site` gives a stepped statement, or nothing when the
 /// path recorded none or the layout has no site for it.
 fn describe_last_statement_site(
     layout: &crate::surface::lowering::SourceExecutionLayout,

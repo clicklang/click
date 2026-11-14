@@ -2,9 +2,12 @@ use super::*;
 
 #[test]
 fn missing_argument_read_retains_the_actual_snapshot_and_permission() {
-    let state =
-        CState::new().with_local("p", CValue::pointer(Pointer::symbolic(Variable(985_910))));
-    let expression = c_load(c_variable("p"));
+    let state = ExecutionState::new().with_local(
+        "p",
+        ProgramValue::pointer(Pointer::symbolic(Variable(985_910))),
+    );
+    let expression =
+        crate::kernel::program_expression::load(crate::kernel::program_expression::variable("p"));
     let assumptions = PureFactContext::new();
     let mut budget = ExecutionBudget::default();
     let mut diagnostic = None;
@@ -27,7 +30,7 @@ fn missing_argument_read_retains_the_actual_snapshot_and_permission() {
     .unwrap();
     assert_eq!(captured, ordinary);
     assert!(captured.is_err());
-    let Some(CRuntimeError::ContractResourceDiagnostic {
+    let Some(RuntimeError::ContractResourceDiagnostic {
         memory: Some(memory),
         required,
         held: None,
@@ -37,8 +40,5 @@ fn missing_argument_read_retains_the_actual_snapshot_and_permission() {
         panic!("the failed read must retain its operands")
     };
     assert_eq!(*memory, *state.memory());
-    assert!(matches!(
-        *required,
-        CResourceFact::View(CResource::Memory(_))
-    ));
+    assert!(matches!(*required, ResourceFact::View(Resource::Memory(_))));
 }

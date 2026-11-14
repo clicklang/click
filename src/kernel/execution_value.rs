@@ -2,14 +2,29 @@
 //! Compatibility reads are explicit; a shared value owns only its common root.
 use super::prelude::*;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq)]
 pub enum ExecutionValue {
-    Native(CValue),
+    Native(ProgramValue),
     Shared(KernelTerm),
 }
 
-impl From<CValue> for ExecutionValue {
-    fn from(value: CValue) -> Self {
+impl PartialEq for ExecutionValue {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Native(a), Self::Native(b)) => a == b,
+            (Self::Shared(a), Self::Shared(b)) => {
+                a == b
+                    || (a.ty() == b.ty()
+                        && (a.has_machine_matches() || b.has_machine_matches())
+                        && crate::kernel::shared_machine_syntax_equal(a, b))
+            }
+            _ => false,
+        }
+    }
+}
+
+impl From<ProgramValue> for ExecutionValue {
+    fn from(value: ProgramValue) -> Self {
         Self::Native(value)
     }
 }
@@ -25,24 +40,24 @@ impl ExecutionValue {
             Self::Native(_) => None,
         }
     }
-    pub fn native_payload(&self) -> Option<&CValue> {
+    pub fn native_payload(&self) -> Option<&ProgramValue> {
         match self {
             Self::Native(value) => Some(value),
             Self::Shared(_) => None,
         }
     }
-    pub fn pointer(&self) -> Option<&CPointerValue> {
+    pub fn pointer(&self) -> Option<&PointerValue> {
         match self.native_payload()? {
-            CValue::Pointer(pointer) => Some(pointer),
+            ProgramValue::Pointer(pointer) => Some(pointer),
             _ => None,
         }
     }
     pub fn byte_width(&self) -> u32 {
-        self.c_type().byte_width()
+        self.program_type().byte_width()
     }
     /// Import a native machine producer's result once at its execution boundary.
     /// Other result families keep their exact native payloads.
-    pub(in crate::kernel) fn retain_native(value: CValue) -> Self {
+    pub(in crate::kernel) fn retain_native(value: ProgramValue) -> Self {
         if let crate::kernel::integer_c_value!(term) = &value {
             // Scalar leaves have no expression prefix to retain. Keep their
             // existing cheap reading, including condition truth values.
@@ -52,7 +67,7 @@ impl ExecutionValue {
             ) {
                 return Self::Native(value);
             }
-            let format = MachineIntegerType::from_c_type(value.c_type()).unwrap();
+            let format = MachineIntegerType::from_program_type(value.program_type()).unwrap();
             if let Some(root) = KernelTermImport::default().machine_arithmetic(format, term) {
                 return Self::Shared(root);
             }
@@ -60,16 +75,16 @@ impl ExecutionValue {
         Self::Native(value)
     }
 
-    pub fn into_native(self) -> CValue {
+    pub fn into_native(self) -> ProgramValue {
         match self {
             Self::Native(value) => value,
             Self::Shared(term) => {
                 if matches!(term.node(), KernelTermNode::Call { .. }) {
-                    let KernelType::C(ty) = term.ty() else {
+                    let KernelType::Program(ty) = term.ty() else {
                         unreachable!()
                     };
-                    let format =
-                        MachineIntegerType::from_c_type(*ty).expect("machine call result type");
+                    let format = MachineIntegerType::from_program_type(*ty)
+                        .expect("machine call result type");
                     // The native result carrier needs only this call root.
                     // Keep numeric argument DAGs shared across the handoff;
                     // explicit KernelTermExport remains the structural export.
@@ -89,17 +104,17 @@ impl ExecutionValue {
             }
         }
     }
-    pub fn native(&self) -> std::borrow::Cow<'_, CValue> {
+    pub fn native(&self) -> std::borrow::Cow<'_, ProgramValue> {
         match self {
             Self::Native(value) => std::borrow::Cow::Borrowed(value),
             Self::Shared(_) => std::borrow::Cow::Owned(self.clone().into_native()),
         }
     }
-    pub fn c_type(&self) -> CType {
+    pub fn program_type(&self) -> ProgramType {
         match self {
-            Self::Native(value) => value.c_type(),
+            Self::Native(value) => value.program_type(),
             Self::Shared(term) => match term.ty() {
-                KernelType::C(ty) => *ty,
+                KernelType::Program(ty) => *ty,
                 _ => unreachable!(),
             },
         }
@@ -107,7 +122,7 @@ impl ExecutionValue {
     pub(in crate::kernel) fn machine(
         &self,
     ) -> Option<(MachineIntegerType, MachineOperandView<'_>)> {
-        let format = MachineIntegerType::from_c_type(self.c_type())?;
+        let format = MachineIntegerType::from_program_type(self.program_type())?;
         match self {
             Self::Native(value) => {
                 let (crate::kernel::integer_c_value!(term)) = value else {
@@ -120,9 +135,9 @@ impl ExecutionValue {
     }
 }
 
-impl<V> CExpressionPath<V> {
-    pub(in crate::kernel) fn map_value<W>(self, map: impl FnOnce(V) -> W) -> CExpressionPath<W> {
-        CExpressionPath {
+impl<V> ExpressionPath<V> {
+    pub(in crate::kernel) fn map_value<W>(self, map: impl FnOnce(V) -> W) -> ExpressionPath<W> {
+        ExpressionPath {
             outcome: self.outcome.map_value(map),
             facts: self.facts,
             obligations: self.obligations,
@@ -130,14 +145,14 @@ impl<V> CExpressionPath<V> {
     }
 }
 
-impl CExpressionPath<ExecutionValue> {
-    pub(in crate::kernel) fn into_native(self) -> CExpressionPath {
+impl ExpressionPath<ExecutionValue> {
+    pub(in crate::kernel) fn into_native(self) -> ExpressionPath {
         self.map_value(ExecutionValue::into_native)
     }
 }
 
-impl From<CExpressionPath> for CExpressionPath<ExecutionValue> {
-    fn from(path: CExpressionPath) -> Self {
+impl From<ExpressionPath> for ExpressionPath<ExecutionValue> {
+    fn from(path: ExpressionPath) -> Self {
         path.map_value(ExecutionValue::retain_native)
     }
 }
@@ -155,14 +170,15 @@ struct StoredValueData {
 #[derive(Eq, PartialEq, Hash, Ord, PartialOrd)]
 enum StoredIdentity<'a> {
     Machine(&'a SharedMachineIntegerTerm),
-    Native(&'a CValue),
+    Native(&'a ProgramValue),
 }
 impl StoredExecutionValue {
     fn identity(&self) -> StoredIdentity<'_> {
         match self.0.identity.get_or_init(|| match &self.0.value {
             ExecutionValue::Shared(root) => Some(
                 SharedMachineIntegerTerm::observe_shared(
-                    MachineIntegerType::from_c_type(self.c_type()).expect("machine storage"),
+                    MachineIntegerType::from_program_type(self.program_type())
+                        .expect("machine storage"),
                     root.clone(),
                 )
                 .expect("retained machine storage"),
@@ -172,7 +188,7 @@ impl StoredExecutionValue {
                     return None;
                 };
                 Some(SharedMachineIntegerTerm::intern(
-                    MachineIntegerType::from_c_type(value.c_type()).unwrap(),
+                    MachineIntegerType::from_program_type(value.program_type()).unwrap(),
                     term.clone(),
                 ))
             }
@@ -181,7 +197,7 @@ impl StoredExecutionValue {
             None => StoredIdentity::Native(self.native_payload().expect("native storage")),
         }
     }
-    pub fn matches_native(&self, value: &CValue) -> bool {
+    pub fn matches_native(&self, value: &ProgramValue) -> bool {
         self == &Self::from(value.clone())
     }
     pub fn into_value(self) -> ExecutionValue {
@@ -190,7 +206,7 @@ impl StoredExecutionValue {
             Err(data) => data.value.clone(),
         }
     }
-    pub fn into_native(self) -> CValue {
+    pub fn into_native(self) -> ProgramValue {
         self.into_value().into_native()
     }
 }
@@ -216,8 +232,8 @@ impl From<ExecutionValue> for StoredExecutionValue {
         }))
     }
 }
-impl From<CValue> for StoredExecutionValue {
-    fn from(value: CValue) -> Self {
+impl From<ProgramValue> for StoredExecutionValue {
+    fn from(value: ProgramValue) -> Self {
         ExecutionValue::from(value).into()
     }
 }
@@ -261,7 +277,7 @@ mod tests {
             MachineTerm::Variable(Variable(998320)),
             MachineTerm::uint32_constant(3),
         );
-        let native = ExecutionValue::from(CValue::UInt32(term.clone()));
+        let native = ExecutionValue::from(ProgramValue::UInt32(term.clone()));
         let root = KernelTermImport::default().machine(MachineIntegerType::UInt32, &term);
         let shared = ExecutionValue::from(root.clone());
         assert_ne!(native, shared, "producer equality stays exact");
@@ -283,14 +299,14 @@ mod tests {
 
     #[test]
     fn execution_outcomes_preserve_native_values_and_refusals() {
-        let value = CValue::Int32(MachineTerm::constant(7));
-        let outcome = CExpressionOutcome::Value(value.clone()).map_value(ExecutionValue::from);
+        let value = ProgramValue::Int32(MachineTerm::constant(7));
+        let outcome = ExpressionOutcome::Value(value.clone()).map_value(ExecutionValue::from);
         assert_eq!(
             outcome.map_value(ExecutionValue::into_native),
-            CExpressionOutcome::Value(value)
+            ExpressionOutcome::Value(value)
         );
         let undefined =
-            CExpressionOutcome::<CValue>::UndefinedBehavior(CUndefinedBehavior::SignedOverflow);
+            ExpressionOutcome::<ProgramValue>::UndefinedBehavior(UndefinedBehavior::SignedOverflow);
         assert_eq!(
             undefined
                 .clone()

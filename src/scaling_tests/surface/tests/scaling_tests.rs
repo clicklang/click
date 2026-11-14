@@ -14,7 +14,7 @@ fn trivial_disjuncts_do_not_spell_unrelated_premises() {
         let source = format!(
             "theorem trivial(n: uint64{parameters}) {{ {premises} ensures true or n == 1u64 by solve(); }}"
         );
-        let (result, sample) = scaling_sample(size, || verify_c0_sources(&source, &[]));
+        let (result, sample) = scaling_sample(size, || verify_c_sources(&source, &[]));
         result.expect("the true disjunct closes without exploring the other side");
         assert_eq!(
             sample
@@ -77,7 +77,7 @@ int32 probe(int32* p) {{
         let sources = [("probe.c", c.as_str())];
         eprintln!("constructor guard: {size} stores");
         let ((verified, tactics), sample) = scaling_sample(size, || {
-            crate::instrumentation::collect_tactic_work(|| verify_c0_sources(&source, &sources))
+            crate::instrumentation::collect_tactic_work(|| verify_c_sources(&source, &sources))
         });
         verified.unwrap_or_else(|error| panic!("{size} stores: {}", error.message()));
         let guards = tactics
@@ -100,13 +100,11 @@ int32 probe(int32* p) {{
             let offset = source.find("solve();").unwrap();
             let position = super::super::expansion::position_at_offset(&source, offset);
             let expanded =
-                expand_c0_tactic_source_at(&source, &sources, position.line, position.column)
+                expand_c_tactic_source_at(&source, &sources, position.line, position.column)
                     .expect("the selected constructor guard expands");
             assert!(!expanded.contains("solve();"), "{expanded}");
-            crate::surface::proof::without_implicit_solve(|| {
-                verify_c0_sources(&expanded, &sources)
-            })
-            .expect("the explicit guard refutation cold-replays");
+            crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &sources))
+                .expect("the explicit guard refutation cold-replays");
             // The opposite guard holds for this nonempty constructor, while
             // the returned value is 1. Reject it with and without the certificate.
             for (proof, explicit) in [(&source, false), (&expanded, true)] {
@@ -115,7 +113,7 @@ int32 probe(int32* p) {{
                     "old(before.items) != List<int32>::Nil",
                 );
                 assert_ne!(&invalid, proof);
-                let verify = || verify_c0_sources(&invalid, &sources);
+                let verify = || verify_c_sources(&invalid, &sources);
                 let result = if explicit {
                     crate::surface::proof::without_implicit_solve(verify)
                 } else {
@@ -195,7 +193,7 @@ theorem count_step(n: uint64{parameters}) {{
 #[ignore = "nightly: multi-size quantified frame refusal and positive controls"]
 fn false_quantified_frames_do_not_materialize_the_constant_domain() {
     use crate::instrumentation::measure_deterministic_work;
-    verify_c0_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
+    verify_c_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
     let program = "int32 untouched_element(int32* a) { unsigned char* b; b = (unsigned char*)(void*) a; b[5] = 7; return a[2]; }";
     let mut samples = Vec::new();
     for size in [16, 1024, 1_000_000, 100_000_000] {
@@ -210,7 +208,7 @@ fn false_quantified_frames_do_not_materialize_the_constant_domain() {
                 "verifying \"probe.c\"; int32 untouched_element(int32* a) {{ owns a[0..{size}]; ensures result == old(a[2]); {frame} }}"
             );
             let (result, work) =
-                measure_deterministic_work(|| verify_c0_sources(&source, &[("probe.c", program)]));
+                measure_deterministic_work(|| verify_c_sources(&source, &[("probe.c", program)]));
             if false_frame {
                 let error = result.expect_err("the byte store invalidates the whole-range frame");
                 assert!(error.message().contains(".all"), "{}", error.message());
@@ -239,7 +237,7 @@ fn false_quantified_frames_do_not_materialize_the_constant_domain() {
 #[ignore = "nightly: multi-size reference-call refusal and positive controls"]
 fn refusing_a_false_literal_result_after_calls_scales_with_the_true_result() {
     use crate::instrumentation::{VerificationEvent, collect, measure_deterministic_work};
-    verify_c0_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
+    verify_c_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
     let mut samples = Vec::new();
     for size in [4, 8, 16, 32] {
         let parameters = (0..size)
@@ -264,7 +262,7 @@ fn refusing_a_false_literal_result_after_calls_scales_with_the_true_result() {
             "#
             );
             let ((result, events), total) = measure_deterministic_work(|| {
-                collect(|| verify_c0_sources(&source, &[("calls.c", program.as_str())]))
+                collect(|| verify_c_sources(&source, &[("calls.c", program.as_str())]))
             });
             if value == 7 {
                 result.expect("the unchanged reference value should verify");
@@ -332,12 +330,12 @@ fn expanded_loop_claims_preserve_the_audit_work_bound() {
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
         let expanded =
-            crate::surface::expand_c0_claim_source_by_label(source, &sources, claim).unwrap();
+            crate::surface::expand_c_claim_source_by_label(source, &sources, claim).unwrap();
         let samples = [source, expanded.as_str()].map(|source| {
             let position =
-                crate::surface::c0_tactic_source_position(source, &sources, claim, 0).unwrap();
+                crate::surface::c_tactic_source_position(source, &sources, claim, 0).unwrap();
             let (result, sample) = scaling_sample(0, || {
-                crate::surface::verify_c0_sources_at(
+                crate::surface::verify_c_sources_at(
                     source,
                     &sources,
                     position.line,
@@ -427,7 +425,7 @@ fn repeated_execution_matches_keep_terminal_case_evidence_and_scale_linearly() {
         .spawn(|| {
             // Initialize shared library definitions before measuring the
             // selected proof, consistently with the other scaling fixtures.
-            verify_c0_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
+            verify_c_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
             let c = [("unit.c", "int32 unit(void) { return 0; }")];
             let mut samples = Vec::new();
             for depth in [1, 2, 4, 8] {
@@ -441,17 +439,17 @@ spec enum Kind {{ A, B }}
 resource marker() {{ field model: Kind; fact true; }}
 int32 unit() {{ owns m: marker(); ensures result == 0; }} by {{ {body} }}"
                 );
-                let (verified, sample) = scaling_sample(depth, || verify_c0_sources(&source, &c));
+                let (verified, sample) = scaling_sample(depth, || verify_c_sources(&source, &c));
                 let verified = verified.expect("nested constructor arms verify on the CLI stack");
                 samples.push(sample);
                 if depth == 8 {
                     let expanded =
                         expand_checked_function_claim(&source, &verified, "unit.contract")
                             .expect("the nested claim expands");
-                    without_implicit_solve(|| verify_c0_sources(&expanded, &c))
+                    without_implicit_solve(|| verify_c_sources(&expanded, &c))
                         .expect("the nested expansion verifies independently");
                     let invalid = source.replace("ensures result == 0", "ensures result == 1");
-                    assert!(verify_c0_sources(&invalid, &c).is_err());
+                    assert!(verify_c_sources(&invalid, &c).is_err());
                 }
             }
             assert_near_linear_scaling_with_increment_bound("repeated execution match case evidence", &samples);
@@ -471,7 +469,7 @@ fn nested_execution_matches_fit_the_cli_stack_and_scale_linearly() {
         .spawn(|| {
             // Initialize shared library definitions before measuring the
             // selected proof, consistently with the other scaling fixtures.
-            verify_c0_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
+            verify_c_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
             let c = [("unit.c", "int32 unit(void) { return 0; }")];
             let mut samples = Vec::new();
             for depth in [1, 2, 4, 8, 10] {
@@ -485,7 +483,7 @@ spec enum Unit {{ Only }}
 resource marker() {{ field model: Unit; fact true; }}
 int32 unit() {{ owns m: marker(); ensures result == 0; }} by {{ {body} }}"
                 );
-                let (verified, sample) = scaling_sample(depth, || verify_c0_sources(&source, &c));
+                let (verified, sample) = scaling_sample(depth, || verify_c_sources(&source, &c));
                 let verified = verified.expect("nested constructor arms verify on the CLI stack");
                 if depth <= 8 {
                     samples.push(sample);
@@ -494,10 +492,10 @@ int32 unit() {{ owns m: marker(); ensures result == 0; }} by {{ {body} }}"
                     let expanded =
                         expand_checked_function_claim(&source, &verified, "unit.contract")
                             .expect("the nested claim expands");
-                    without_implicit_solve(|| verify_c0_sources(&expanded, &c))
+                    without_implicit_solve(|| verify_c_sources(&expanded, &c))
                         .expect("the nested expansion verifies independently");
                     let invalid = source.replace("ensures result == 0", "ensures result == 1");
-                    assert!(verify_c0_sources(&invalid, &c).is_err());
+                    assert!(verify_c_sources(&invalid, &c).is_err());
                 }
             }
             assert_near_linear_scaling_with_increment_bound("nested execution matches", &samples);
@@ -734,7 +732,7 @@ fn shared_imported_proof_bodies_stay_unselected_across_entry_scaling() {
                         ),
                     ],
                 );
-                verify_c0_project(&project, &[])?;
+                verify_c_project(&project, &[])?;
             }
             Ok::<_, ClickError>(())
         });
@@ -911,7 +909,7 @@ fn bounded_statement_successor_exclusion_ignores_unrelated_ambient_facts() {
             "the ambient facts were not inserted"
         );
         let (verified, sample) = scaling_sample(size, || {
-            verify_c0_sources(
+            verify_c_sources(
                 &click_source,
                 &[
                     ("replace_allocated_cell.c", replace_source),
@@ -973,7 +971,7 @@ fn specification_conditional_lowering_ignores_unrelated_ambient_facts() {
              }} by {{\n{unrelated}    step_until(function.exit);\n    solve();\n}}\n"
         );
         let (verified, sample) = scaling_sample(size, || {
-            verify_c0_sources(
+            verify_c_sources(
                 &click_source,
                 &[
                     (
@@ -1053,7 +1051,7 @@ fn verified_call_ensure_premises_ignore_unrelated_ambient_facts() {
              }} by {{\n{unrelated}    step_until(function.exit);\n    solve();\n}}\n"
         );
         let (verified, sample) = scaling_sample(size, || {
-            verify_c0_sources(
+            verify_c_sources(
                 &click_source,
                 &[
                     (
@@ -1380,7 +1378,7 @@ fn simple_unrelated_functions_have_a_deterministic_scaling_control() {
                 .map(|(name, source)| (name.as_str(), source.as_str()))
                 .collect::<Vec<_>>();
             let (verified, sample) =
-                scaling_sample(size, || verify_c0_sources(&click_source, &source_refs));
+                scaling_sample(size, || verify_c_sources(&click_source, &source_refs));
             let verified = verified.unwrap_or_else(|error| {
                 panic!(
                     "size {size} simple scaling fixture failed: {}",
@@ -1428,7 +1426,7 @@ fn targeted_simple_verification_does_not_verify_unrelated_theorems() {
         .map(|size| {
             let click_source = target_with_unrelated_theorems(size);
             let (verified, sample) = scaling_sample(size, || {
-                verify_c0_sources_functions(
+                verify_c_sources_functions(
                     &click_source,
                     &[("target.c", c_source)],
                     ["scaling_target".to_string()],
@@ -1469,7 +1467,7 @@ fn verification_copies_only_its_own_theorem_declarations() {
         .len();
     // A file's library selection is built once per process and shared, like
     // the library itself; build it before counting.
-    verify_c0_sources(
+    verify_c_sources(
         &target_with_unrelated_theorems(1),
         &[("target.c", c_source)],
     )
@@ -1477,7 +1475,7 @@ fn verification_copies_only_its_own_theorem_declarations() {
     for size in [4, 8, 16, 32] {
         let click_source = target_with_unrelated_theorems(size);
         let before = theorem_definition_copies();
-        verify_c0_sources(&click_source, &[("target.c", c_source)])
+        verify_c_sources(&click_source, &[("target.c", c_source)])
             .expect("the target and its theorems should verify");
         let copies = theorem_definition_copies() - before;
         assert!(
@@ -1505,7 +1503,7 @@ fn targeted_certification_keeps_an_explicit_theorem_dependency() {
             assumption();
         }
     "#;
-    verify_c0_sources_functions(
+    verify_c_sources_functions(
         click_source,
         &[("target.c", c_source)],
         ["scaling_target".to_string()],
@@ -1523,7 +1521,7 @@ fn straight_line_proof_steps_scale_near_linearly_with_retained_snapshots() {
                 let (c_source, click_source) = straight_line_project(size, snapshot_claim);
                 let ((verified, view_count), sample) = scaling_sample(size, || {
                     proof::count_finalization_view_constructions(|| {
-                        verify_c0_sources(&click_source, &[("straight.c", c_source.as_str())])
+                        verify_c_sources(&click_source, &[("straight.c", c_source.as_str())])
                     })
                 });
                 verified.unwrap_or_else(|error| {
@@ -1567,7 +1565,7 @@ fn load_variable_construction_scales_near_linearly_with_statements() {
             .map(|size| {
                 let (c_source, click_source) = load_variable_project(size, axis);
                 let (verified, sample) = scaling_sample(size, || {
-                    verify_c0_sources(&click_source, &[("load_line.c", c_source.as_str())])
+                    verify_c_sources(&click_source, &[("load_line.c", c_source.as_str())])
                 });
                 verified.unwrap_or_else(|error| {
                     panic!(
@@ -1632,7 +1630,7 @@ fn explicit_step_scales_near_linearly_with_unrelated_ambient_facts() {
             let (c_source, click_source) =
                 function_with_unrelated_facts(size, "    step();\n    assumption();\n");
             let (verified, sample) = scaling_sample(size, || {
-                verify_c0_sources(&click_source, &[("exact_fact_target.c", c_source.as_str())])
+                verify_c_sources(&click_source, &[("exact_fact_target.c", c_source.as_str())])
             });
             verified.unwrap_or_else(|error| {
                 panic!(
@@ -1660,7 +1658,7 @@ fn step_with_written_obligation_proof_scales_near_linearly_with_unrelated_ambien
             let (c_source, click_source) = call_with_unrelated_facts(size);
             let (verified, sample) = scaling_sample(size, || {
                 crate::surface::proof::without_implicit_solve(|| {
-                    verify_c0_sources(&click_source, &[("call_target.c", c_source.as_str())])
+                    verify_c_sources(&click_source, &[("call_target.c", c_source.as_str())])
                 })
             });
             verified.unwrap_or_else(|error| {
@@ -1686,7 +1684,7 @@ fn explicit_transport_scales_near_linearly_with_unrelated_ambient_facts() {
                 "    step();\n    transport(target == 7, result == 7) using {\n        target == 7;\n    }\n    assumption();\n",
             );
             let (verified, sample) = scaling_sample(size, || {
-                verify_c0_sources(
+                verify_c_sources(
                     &click_source,
                     &[("exact_fact_target.c", c_source.as_str())],
                 )
@@ -1735,7 +1733,7 @@ fn explicit_separation_alias_transport_has_constant_selected_work() {
 }}"
         );
         let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
-            verify_c0_sources(&source, &[("alias.c", c)])
+            verify_c_sources(&source, &[("alias.c", c)])
         });
         result.unwrap_or_else(|error| panic!("{size}: {}", error.message()));
         let selected = samples
@@ -1767,7 +1765,7 @@ fn symbolic_index_into_a_file_scope_array_scales_near_linearly_with_its_length()
                 "verifying \"table.c\";\nint32 get(int32 i) {{\n    requires 0 <= i;\n    requires i < {size};\n    requires table[i] == 7;\n    ensures result == 7;\n}}\n"
             );
             let (verified, sample) = scaling_sample(size, || {
-                verify_c0_sources(&click_source, &[("table.c", c_source.as_str())])
+                verify_c_sources(&click_source, &[("table.c", c_source.as_str())])
             });
             verified.unwrap_or_else(|error| {
                 panic!(
@@ -1809,7 +1807,7 @@ fn grouped_claims_share_one_execution_with_near_linear_work() {
         .map(|size| {
             let (c_source, click_source) = grouped_claim_project(size);
             let (verified, sample) = scaling_sample(size, || {
-                verify_c0_sources(&click_source, &[("shared_claims.c", c_source.as_str())])
+                verify_c_sources(&click_source, &[("shared_claims.c", c_source.as_str())])
             });
             let verified = verified.unwrap_or_else(|error| {
                 panic!(
@@ -1833,7 +1831,7 @@ fn composite_definition_members_keep_separation_work_compact() {
         .map(|size| {
             let (c_source, click_source) = resource_member_project(size);
             let (verified, sample) = scaling_sample(size, || {
-                verify_c0_sources(&click_source, &[("preserve_bundle.c", c_source.as_str())])
+                verify_c_sources(&click_source, &[("preserve_bundle.c", c_source.as_str())])
             });
             let verified = verified.unwrap_or_else(|error| {
                 panic!(
@@ -1985,10 +1983,10 @@ fn condition_premise_selection_walks_a_reversed_chain_once() {
 fn loadable_candidate_selection_ignores_facts_about_other_objects() {
     use crate::kernel::search::proposition_search::{candidate_visits, reset_candidate_visits};
     use crate::kernel::{
-        CMemory, MachineTerm, Pointer, PointerOffsetTerm, Proposition, PureFactContext, Variable,
+        MachineTerm, Memory, Pointer, PointerOffsetTerm, Proposition, PureFactContext, Variable,
     };
 
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let at = |block: &str, element: u32| {
         Pointer {
             block: block.into(),
@@ -1996,7 +1994,7 @@ fn loadable_candidate_selection_ignores_facts_about_other_objects() {
         }
         .offset_by_bytes(4 * element)
     };
-    let loadable = |base: Pointer, bytes: u32| Proposition::CMemoryLoadable {
+    let loadable = |base: Pointer, bytes: u32| Proposition::MemoryLoadable {
         memory: memory.clone(),
         base,
         bytes: MachineTerm::constant(bytes),
@@ -2104,29 +2102,29 @@ fn loadable_candidate_selection_ignores_facts_about_other_objects() {
 fn read_defined_and_separation_selection_try_indexed_sources_first() {
     use crate::kernel::search::proposition_search::{candidate_visits, reset_candidate_visits};
     use crate::kernel::{
-        CMemory, CMemoryRange, CResource, CType, ConditionTerm, MachineTerm, Pointer,
-        PointerOffsetTerm, Proposition, PureFactContext, Variable,
+        ConditionTerm, MachineTerm, Memory, MemoryRange, Pointer, PointerOffsetTerm, ProgramType,
+        Proposition, PureFactContext, Resource, Variable,
     };
 
-    let memory = CMemory::new().with_block("goal", 64);
-    let read_defined = |pointer: Pointer| Proposition::CMemoryReadDefined {
+    let memory = Memory::new().with_block("goal", 64);
+    let read_defined = |pointer: Pointer| Proposition::MemoryReadDefined {
         memory: memory.clone(),
         pointer,
-        value_type: CType::Int32,
+        value_type: ProgramType::Int32,
     };
     let at = |block: String, variable: u64| Pointer {
         block: block.as_str().into(),
         offset: PointerOffsetTerm::Variable(Variable(variable)),
     };
     let range = |base: Pointer, start: u32, end: u32| {
-        CResource::Memory(CMemoryRange::new(
+        Resource::Memory(MemoryRange::new(
             base,
             MachineTerm::constant(start),
             MachineTerm::constant(end),
         ))
     };
     let separate =
-        |block: String, variable: u64, start: u32, end: u32| Proposition::CResourceSeparate {
+        |block: String, variable: u64, start: u32, end: u32| Proposition::ResourceSeparate {
             left: Box::new(range(at(block.clone(), variable), start, end)),
             right: Box::new(range(at(block, variable + 1), start, end)),
         };
@@ -2239,7 +2237,7 @@ fn scaling_assertion_rejects_a_quadratic_curve() {
 #[ignore = "nightly: 9s in the parallel gate"]
 fn recorded_snapshot_history_drops_without_recursing() {
     let build = |size: usize| {
-        let state = CState::new();
+        let state = ExecutionState::new();
         let mut snapshots = RecordedSnapshots::new();
         for index in 0..size {
             snapshots.insert(
@@ -2264,7 +2262,10 @@ fn recorded_snapshot_history_drops_without_recursing() {
             drop(build(200_000));
             let shared = build(100_000);
             let mut longer = shared.clone();
-            longer.insert(SnapshotSelector::Mark("tip".to_string()), CState::new());
+            longer.insert(
+                SnapshotSelector::Mark("tip".to_string()),
+                ExecutionState::new(),
+            );
             drop(longer);
             assert!(shared.contains_key(&SnapshotSelector::Mark("step-000000".to_string())));
             drop(shared);
@@ -2280,20 +2281,23 @@ fn recorded_snapshot_branch_merge_visits_only_fork_local_changes() {
     let common_selector = mark_selector("common".to_string());
     let left_only = mark_selector("left-only".to_string());
     let right_only = mark_selector("right-only".to_string());
-    let common_state = CState::new();
+    let common_state = ExecutionState::new();
     let mut samples = Vec::new();
 
     for size in [16_usize, 64, 256, 1024, 4096] {
         let mut ancestor = RecordedSnapshots::new();
         for index in 0..size {
-            ancestor.insert(mark_selector(format!("ambient-{index:05}")), CState::new());
+            ancestor.insert(
+                mark_selector(format!("ambient-{index:05}")),
+                ExecutionState::new(),
+            );
         }
         let mut left = ancestor.clone();
         let mut right = ancestor.clone();
         left.insert(common_selector.clone(), common_state.clone());
         right.insert(common_selector.clone(), common_state.clone());
-        left.insert(left_only.clone(), CState::new());
-        right.insert(right_only.clone(), CState::new());
+        left.insert(left_only.clone(), ExecutionState::new());
+        right.insert(right_only.clone(), ExecutionState::new());
 
         let before = recorded_snapshot_node_allocations();
         let merged = left
@@ -2311,7 +2315,7 @@ fn recorded_snapshot_branch_merge_visits_only_fork_local_changes() {
         assert!(merged.get(&right_only).is_none());
         assert_eq!(
             merged.get(&mark_selector(format!("ambient-{:05}", size / 2))),
-            Some(&CState::new())
+            Some(&ExecutionState::new())
         );
         assert_eq!(ancestor.iter().count(), size);
 
@@ -2371,7 +2375,7 @@ fn ranked_loop_bundle_scales_near_linearly_with_unrelated_inequalities() {
             let (c_source, click_source) = ranked_loop_with_unrelated_inequalities(size);
             let sources = [("ranked_drain.c", c_source.as_str())];
             let (verified, sample) =
-                scaling_sample(size, || verify_c0_sources(&click_source, &sources));
+                scaling_sample(size, || verify_c_sources(&click_source, &sources));
             verified.unwrap_or_else(|error| {
                 panic!(
                     "size {size} ranked-loop scaling fixture failed: {}",
@@ -2494,7 +2498,7 @@ fn model_ranked_loops_scale_near_linearly_with_their_back_edges() {
             let (c_source, click_source) = model_ranked_loops(size);
             let sources = [("model_ranked.c", c_source.as_str())];
             let (verified, sample) =
-                scaling_sample(size, || verify_c0_sources(&click_source, &sources));
+                scaling_sample(size, || verify_c_sources(&click_source, &sources));
             verified.unwrap_or_else(|error| {
                 panic!(
                     "size {size} model-ranked loop scaling fixture failed: {}",
@@ -2561,7 +2565,7 @@ fn repeated_tactic_applications_scale_near_linearly() {
             let (c_source, click_source) = repeated_tactic_applications(size);
             let sources = [("applications.c", c_source.as_str())];
             let (verified, sample) =
-                scaling_sample(size, || verify_c0_sources(&click_source, &sources));
+                scaling_sample(size, || verify_c_sources(&click_source, &sources));
             verified.unwrap_or_else(|error| {
                 panic!(
                     "size {size} repeated tactic application fixture failed: {}",
@@ -2618,7 +2622,7 @@ fn smart_ranked_loop_bundle_scales_near_linearly_with_unrelated_inequalities() {
             let (c_source, click_source) = smart_ranked_loop_with_unrelated_inequalities(size);
             let sources = [("ranked_drain.c", c_source.as_str())];
             let (verified, sample) =
-                scaling_sample(size, || verify_c0_sources(&click_source, &sources));
+                scaling_sample(size, || verify_c_sources(&click_source, &sources));
             verified.unwrap_or_else(|error| {
                 panic!(
                     "size {size} smart ranked-loop scaling fixture failed: {}",
@@ -2706,7 +2710,7 @@ fn smart_guarded_member_bundle_scales_near_linearly_with_conjuncts() {
             let (c_source, click_source) = guarded_member_bundle(size);
             let sources = [("guarded_bundle.c", c_source.as_str())];
             let (verified, sample) =
-                scaling_sample(size, || verify_c0_sources(&click_source, &sources));
+                scaling_sample(size, || verify_c_sources(&click_source, &sources));
             verified.unwrap_or_else(|error| {
                 panic!(
                     "size {size} guarded-member bundle fixture failed: {}",
@@ -2765,7 +2769,7 @@ fn back_edge_closure_over_separately_declared_invariants_is_bounded_by_the_bundl
             let (c_source, click_source) = separately_declared_member_bundle(size);
             let sources = [("guarded_bundle.c", c_source.as_str())];
             let (verified, sample) =
-                scaling_sample(size, || verify_c0_sources(&click_source, &sources));
+                scaling_sample(size, || verify_c_sources(&click_source, &sources));
             verified.unwrap_or_else(|error| {
                 panic!(
                     "size {size} separately declared bundle fixture failed: {}",
@@ -2814,7 +2818,7 @@ fn call_requirement_checking_scales_near_linearly_with_unrelated_caller_facts() 
         .map(|size| {
             let (c_source, click_source) = call_with_structured_precondition(size);
             let (verified, sample) = scaling_sample(size, || {
-                verify_c0_sources(
+                verify_c_sources(
                     &click_source,
                     &[("structured_precondition_caller.c", c_source.as_str())],
                 )
@@ -2854,7 +2858,7 @@ fn explicit_simple_tactics_scale_with_source_while_ambient_facts_grow() {
         .map(|size| {
             let (c_source, click_source) = explicit_simple_project_with_ambient_facts(size);
             let (verified, sample) = scaling_sample(size, || {
-                verify_c0_sources(&click_source, &[("straight.c", c_source.as_str())])
+                verify_c_sources(&click_source, &[("straight.c", c_source.as_str())])
             });
             verified.unwrap_or_else(|error| {
                 panic!(
@@ -2912,7 +2916,7 @@ fn wide_execution_match_join_has_near_linear_width_work() {
     for width in [2, 4, 8, 16] {
         let (click_source, c_source) = wide_execution_match_project(width);
         let (verified, sample) = scaling_sample(width, || {
-            verify_c0_sources(&click_source, &[("read.c", c_source.as_str())])
+            verify_c_sources(&click_source, &[("read.c", c_source.as_str())])
         });
         let verified = verified.unwrap_or_else(|error| {
             panic!(
@@ -3072,7 +3076,7 @@ fn wide_execution_match_project(width: usize) -> (String, String) {
 #[ignore = "nightly: 1.8s in the parallel gate"]
 fn outcome_haves_and_resource_folds_do_not_reimport_ambient_facts() {
     assert_outcome_operations_do_not_reimport_ambient_facts(|source, sources| {
-        verify_c0_sources(source, sources).map(|_| ())
+        verify_c_sources(source, sources).map(|_| ())
     });
 }
 
@@ -3091,7 +3095,7 @@ fn authority_outcome_haves_and_resource_folds_do_not_reimport_ambient_facts() {
             target: None,
             runtime: None,
         });
-        verify_c0_project(&project, sources).map(|_| ())
+        verify_c_project(&project, sources).map(|_| ())
     });
 }
 
@@ -3242,7 +3246,7 @@ fn exceptional_cleanup_edges_scale_near_linearly_with_unrelated_context() {
     for size in [2, 8, 16] {
         let (c_source, click_source) = exceptional_cleanup_chain_project(size, size, size);
         let (verified, sample) = scaling_sample(size, || {
-            verify_c0_sources(&click_source, &[("cleanup.c", c_source.as_str())])
+            verify_c_sources(&click_source, &[("cleanup.c", c_source.as_str())])
         });
         verified.unwrap_or_else(|error| {
             panic!(
@@ -3278,7 +3282,7 @@ fn exceptional_cleanup_edges_scale_near_linearly_with_unrelated_context() {
     for unrelated in [4, 32] {
         let (c_source, click_source) = exceptional_cleanup_chain_project(8, unrelated, unrelated);
         let (verified, sample) = scaling_sample(8, || {
-            verify_c0_sources(&click_source, &[("cleanup.c", c_source.as_str())])
+            verify_c_sources(&click_source, &[("cleanup.c", c_source.as_str())])
         });
         verified.unwrap_or_else(|error| {
             panic!(
@@ -3375,7 +3379,7 @@ fn block_version_walk_curve(
         .map(|size| {
             let (c_source, click_source) = fixture(size);
             let (verified, sample) = scaling_sample(size, || {
-                verify_c0_sources(&click_source, &[(file, c_source.as_str())])
+                verify_c_sources(&click_source, &[(file, c_source.as_str())])
             });
             verified.unwrap_or_else(|error| {
                 panic!("size {size} {label} fixture failed: {}", error.message())
@@ -3432,7 +3436,7 @@ fn an_array_fact_carried_across_local_stores_scales_linearly() {
         .map(|size| {
             let (c_source, click_source) = array_fact_across_local_stores(size);
             let (verified, sample) = scaling_sample(size, || {
-                verify_c0_sources(&click_source, &[("bump.c", c_source.as_str())])
+                verify_c_sources(&click_source, &[("bump.c", c_source.as_str())])
             });
             verified.unwrap_or_else(|error| {
                 panic!(
@@ -3507,7 +3511,7 @@ fn stores_beside_many_owned_ranges_scale_near_linearly() {
         .map(|size| {
             let (c_source, click_source) = stores_beside_many_owned_ranges(size);
             let (verified, sample) = scaling_sample(size, || {
-                verify_c0_sources(&click_source, &[("acquire.c", c_source.as_str())])
+                verify_c_sources(&click_source, &[("acquire.c", c_source.as_str())])
             });
             verified.unwrap_or_else(|error| {
                 panic!(
@@ -3559,7 +3563,7 @@ fn stores_beside_many_owned_size_t_ranges_scale_near_linearly() {
         .map(|size| {
             let (c_source, click_source) = stores_beside_many_owned_size_t_ranges(size);
             let (verified, sample) = scaling_sample(size, || {
-                verify_c0_sources(&click_source, &[("acquire.c", c_source.as_str())])
+                verify_c_sources(&click_source, &[("acquire.c", c_source.as_str())])
             });
             verified.unwrap_or_else(|error| {
                 panic!(
@@ -3595,7 +3599,7 @@ fn stores_beside_many_owned_64_bit_blocks_scale_near_linearly() {
         .map(|size| {
             let (c_source, click_source) = stores_beside_many_owned_64_bit_blocks(size);
             let (verified, sample) = scaling_sample(size, || {
-                verify_c0_sources(&click_source, &[("acquire.c", c_source.as_str())])
+                verify_c_sources(&click_source, &[("acquire.c", c_source.as_str())])
             });
             verified.unwrap_or_else(|error| {
                 panic!(
@@ -3637,7 +3641,7 @@ fn calls_borrowing_a_64_bit_block_scale_near_linearly() {
         .map(|calls| {
             let (c_source, click_source) = calls_borrowing_a_64_bit_block(calls);
             let (verified, sample) = scaling_sample(calls, || {
-                verify_c0_sources(&click_source, &[("keep.c", c_source.as_str())])
+                verify_c_sources(&click_source, &[("keep.c", c_source.as_str())])
             });
             verified.unwrap_or_else(|error| {
                 panic!(
@@ -3742,7 +3746,7 @@ fn roundtrip_sample(unrelated: usize, extra_copies: usize) -> ScalingSample {
 fn roundtrip_sample_on_this_thread(unrelated: usize, extra_copies: usize) -> ScalingSample {
     let c = roundtrip_with_unrelated_allocations(unrelated, extra_copies);
     let (verified, sample) = scaling_sample(unrelated, || {
-        verify_c0_sources(ROUNDTRIP_CLICK, &[("rep_copy.c", c.as_str())])
+        verify_c_sources(ROUNDTRIP_CLICK, &[("rep_copy.c", c.as_str())])
     });
     verified.unwrap_or_else(|error| {
         panic!(
@@ -3830,7 +3834,7 @@ fn expanded_roundtrip_sample(unrelated: usize, extra_copies: usize) -> (usize, S
             // first real statement and let the implicit tail prove the rest.
             let proof = format!("{ROUNDTRIP_CLICK} by {{ step(); }}");
             let expanded =
-                expand_c0_claim_source(&proof, &sources, "f", CProofClaim::Grouped)
+                expand_c_claim_source(&proof, &sources, "f", ContractProofClaim::Grouped)
                     .unwrap_or_else(|error| {
                         panic!(
                             "round trip beside {unrelated} allocations with {extra_copies} extra copies should expand: {}",
@@ -3840,7 +3844,7 @@ fn expanded_roundtrip_sample(unrelated: usize, extra_copies: usize) -> (usize, S
             assert!(!expanded.contains("execute()"), "{expanded}");
             assert!(!expanded.contains("solve()"), "{expanded}");
             let (verified, sample) =
-                scaling_sample(unrelated, || verify_c0_sources(&expanded, &sources));
+                scaling_sample(unrelated, || verify_c_sources(&expanded, &sources));
             verified.unwrap_or_else(|error| {
                 panic!(
                     "expanded round trip beside {unrelated} allocations with {extra_copies} extra copies failed: {}\n{expanded}",
@@ -3893,7 +3897,7 @@ fn expanded_roundtrip_samples(sizes: &[usize]) -> Vec<[(usize, ScalingSample); 2
 /// the largest family member the checked proof drivers' nesting bound admits
 /// (see [`EXPANDED_ROUNDTRIP_MAX_UNRELATED`]). Measured marginals on
 /// 2026-09-23 for 1 through 7 allocations: 912, 912, 912, 912, 916, 920, and
-/// 920 units. The only growth is two `CMemory::eq_relative_to` comparisons
+/// 920 units. The only growth is two `Memory::eq_relative_to` comparisons
 /// at each path's end (`proof completion`, re-deriving the memory without
 /// the function's local block), whose persistent-map walk deepens with the
 /// heap. Before finalization visited a grouped proof's shared execution once,
@@ -4124,7 +4128,7 @@ struct holder {
         let click_source =
             format!("{RESOURCES}\nverifying \"order.c\";\n\n{big_proof}{FIXED_PROOF}");
         let (result, events) = crate::instrumentation::collect(|| {
-            verify_c0_sources(&click_source, &[("order.c", &c_source)])
+            verify_c_sources(&click_source, &[("order.c", &c_source)])
         });
         result.unwrap_or_else(|error| {
             panic!(
@@ -4235,7 +4239,7 @@ fn framed_field_cells_back_edge_closure_follows_its_certificate() {
             let (c_source, click_source) = framed_field_cells_loop(size);
             let sources = [("mark_tail.c", c_source.as_str())];
             let (verified, sample) =
-                scaling_sample(size, || verify_c0_sources(&click_source, &sources));
+                scaling_sample(size, || verify_c_sources(&click_source, &sources));
             verified.unwrap_or_else(|error| {
                 panic!(
                     "size {size} framed field cells fixture failed: {}",
@@ -4306,7 +4310,7 @@ fn many_clause_bundle_grows_at_most_quadratically() {
             let (c_source, click_source) = many_clause_loop(size);
             let sources = [("count.c", c_source.as_str())];
             let (verified, sample) =
-                scaling_sample(size, || verify_c0_sources(&click_source, &sources));
+                scaling_sample(size, || verify_c_sources(&click_source, &sources));
             verified.unwrap_or_else(|error| {
                 panic!(
                     "size {size} many-clause fixture failed: {}",
@@ -4368,7 +4372,7 @@ fn solve_equality_chain_is_linear_and_unrelated_queries_are_flat() {
         ] {
             let (c_source, click_source) = sources(size, &goal);
             let (verified, sample) = scaling_sample(size, || {
-                verify_c0_sources(&click_source, &[("chain.c", c_source.as_str())])
+                verify_c_sources(&click_source, &[("chain.c", c_source.as_str())])
             });
             verified.unwrap_or_else(|error| panic!("`{goal}` closes: {}", error.message()));
             samples.push(solve_work(&sample));
@@ -4556,7 +4560,7 @@ fn grouped_proof_theorems_share_one_proof_text() {
         .map(|size| {
             let (c_source, click_source) = branching_grouped_claim_project(size);
             let (verified, sample) = scaling_sample(size, || {
-                verify_c0_sources(&click_source, &[("branching_claims.c", c_source.as_str())])
+                verify_c_sources(&click_source, &[("branching_claims.c", c_source.as_str())])
             });
             let verified = verified.unwrap_or_else(|error| {
                 panic!(
@@ -4646,7 +4650,7 @@ fn counter_call_chain_ensure_lowering_stays_flat_per_call() {
         let (c_source, click_source) = counter_call_chain(size);
         let ((verified, work), events) = crate::instrumentation::collect(|| {
             crate::instrumentation::measure_deterministic_work(|| {
-                verify_c0_sources(&click_source, &[("drive.c", c_source.as_str())])
+                verify_c_sources(&click_source, &[("drive.c", c_source.as_str())])
             })
         });
         verified.unwrap_or_else(|error| {
@@ -4736,7 +4740,7 @@ fn call_ensure_lowering_is_linear_in_the_ensure_count() {
         );
         let rebuilds_before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
         let (verified, sample) = scaling_sample(size, || {
-            verify_c0_sources(
+            verify_c_sources(
                 &click_source,
                 &[(
                     "many_ensures.c",
@@ -4815,7 +4819,7 @@ fn call_requirement_checking_is_linear_in_the_requirement_count() {
         );
         let rebuilds_before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
         let (verified, sample) = scaling_sample(size, || {
-            verify_c0_sources(
+            verify_c_sources(
                 &click_source,
                 &[(
                     "many_requires.c",
@@ -4916,7 +4920,7 @@ fn call_separation_requirements_ignore_unrelated_owned_objects() {
                  }} by {{\n    step();\n    step();\n}}\n"
             );
             let (verified, sample) = scaling_sample(size, || {
-                verify_c0_sources(&click_source, &[("owners.c", &c_source)])
+                verify_c_sources(&click_source, &[("owners.c", &c_source)])
             });
             (verified, sample.named_work.get(SPAN).copied().unwrap_or(0))
         };
@@ -5040,7 +5044,7 @@ fn failing_fact_transport_plan_ignores_unrelated_candidates() {
         let click_source = copy_loop_with_unrelated_requirements(size);
         let ((verified, work), events) = crate::instrumentation::collect(|| {
             crate::instrumentation::measure_deterministic_work(|| {
-                verify_c0_sources(&click_source, &[("transport_copy.c", COPY_SOURCE)])
+                verify_c_sources(&click_source, &[("transport_copy.c", COPY_SOURCE)])
             })
         });
         verified.unwrap_or_else(|error| {
@@ -5140,7 +5144,7 @@ fn explicit_fold_read_transport_along_a_store_sequence_is_near_linear() {
              }} by {{\n{steps}    step_until(function.exit);\n    solve();\n}}\n"
         );
         let (verified, sample) = scaling_sample(size, || {
-            verify_c0_sources(&click_source, &[("mark.c", c_source.as_str())])
+            verify_c_sources(&click_source, &[("mark.c", c_source.as_str())])
         });
         verified.unwrap_or_else(|error| {
             panic!(
@@ -5205,7 +5209,7 @@ fn collecting_a_states_variables_visits_a_global_array_once() {
     ]
     .map(|(length, statements)| {
         let (verified, visits) = crate::kernel::count_cells_collected(|| {
-            verify_c0_sources(
+            verify_c_sources(
                 &click_source(statements),
                 &[("inc.c", &c_source(length, statements))],
             )
@@ -5253,11 +5257,11 @@ fn a_constant_view_costs_the_same_whatever_its_length() {
     // One unmeasured verification first: what the first verification on a
     // thread pays once (parsing the prelude, filling shared caches) is not
     // a cost of the range.
-    verify_c0_sources(&click_source(8), &[("get.c", c_source)]).expect("warm-up verifies");
+    verify_c_sources(&click_source(8), &[("get.c", c_source)]).expect("warm-up verifies");
     let samples = [8u64, 1_000, 1_000_000, 1_000_000_000].map(|length| {
         let measure = || {
             let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
-                verify_c0_sources(&click_source(length), &[("get.c", c_source)])
+                verify_c_sources(&click_source(length), &[("get.c", c_source)])
             });
             verified.unwrap_or_else(|error| {
                 panic!(
@@ -5339,7 +5343,7 @@ fn the_back_edge_without_the_explicit_transport_costs_a_small_multiple() {
     let implicit = format!("{}{}", &explicit[..start], &explicit[end..]);
     let measure = |source: &str| {
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
-            verify_c0_sources(source, &c_sources)
+            verify_c_sources(source, &c_sources)
         });
         verified.unwrap_or_else(|error| panic!("{}", error.message()));
         work
@@ -5406,7 +5410,7 @@ fn quantified_frame_samples(
     for size in sizes {
         let (c_source, click_source) = project(size);
         let (verified, sample) = scaling_sample(size, || {
-            verify_c0_sources(&click_source, &[("mark.c", c_source.as_str())])
+            verify_c_sources(&click_source, &[("mark.c", c_source.as_str())])
         });
         verified.unwrap_or_else(|error| {
             panic!("{axis} at size {size} should verify: {}", error.message())
@@ -5529,7 +5533,7 @@ fn contract_entry_with_many_views_beside_an_owner_is_not_cubic() {
         .map(|size| {
             let (c_source, click_source) = many_viewed_arrays(size, true);
             let (verified, sample) = scaling_sample(size, || {
-                verify_c0_sources(&click_source, &[("f.c", c_source.as_str())])
+                verify_c_sources(&click_source, &[("f.c", c_source.as_str())])
             });
             verified.unwrap_or_else(|error| {
                 panic!("size {size} many-views fixture failed: {}", error.message())
@@ -5578,7 +5582,7 @@ fn an_unfolded_constant_composite_range_costs_the_same_whatever_its_length() {
             "verifying \"put.c\";\n\nresource block(p: int32*) {{ owns p[0..{length}]; }}\nresource pointers(p: int32**) {{ owns p[0..{length}]; }}\n\nint32 put(int32 *a) {{\n    owns block(a);\n    ensures result == 5;\n    ensures a[4] == old(a[4]);\n}} by {{\n    unfold(block(a));\n    step_until(function.exit);\n    fold(block(a));\n    solve();\n}}\n\nvoid put_pointer(int32 **p, int32 *q) {{\n    owns pointers(p);\n    ensures p[2] == old(p[2]);\n    ensures p[1] == q;\n}} by {{\n    unfold(pointers(p));\n    step_until(function.exit);\n    fold(pointers(p));\n    solve();\n}}\n"
         )
     };
-    verify_c0_sources(&click_source(8), &[("put.c", c_source)]).expect("warm-up verifies");
+    verify_c_sources(&click_source(8), &[("put.c", c_source)]).expect("warm-up verifies");
     // A byte-count overflow makes the entry assumptions inconsistent. Its
     // contradiction certificate has a different fixed cost from the ordinary
     // store proof. Compare lengths within each proof shape, retaining the
@@ -5591,7 +5595,7 @@ fn an_unfolded_constant_composite_range_costs_the_same_whatever_its_length() {
             .iter()
             .map(|&length| {
                 let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
-                    verify_c0_sources(&click_source(length), &[("put.c", c_source)])
+                    verify_c_sources(&click_source(length), &[("put.c", c_source)])
                 });
                 verified.unwrap_or_else(|error| {
                     panic!(
@@ -5629,7 +5633,7 @@ fn symbolic_read_refold_and_refusal_do_not_enumerate_range_elements() {
     let c_source = "int32 read_after_store(int32 *a, int32 k) { a[3] = 5; return a[k]; }";
     // Initialize the shared frontend/stdlib caches outside the work samples,
     // as in the constant-index run regression above.
-    verify_c0_sources(
+    verify_c_sources(
         "verifying \"read.c\"; int32 read_after_store(int32 *a, int32 k) {
             owns a[0..16]; requires 0 <= k; requires k < 16;
             ensures result == a[k]; }",
@@ -5653,7 +5657,7 @@ fn symbolic_read_refold_and_refusal_do_not_enumerate_range_elements() {
                  }} by {{ unfold(block(a)); step_until(function.exit); fold(block(a)); solve(); }}"
             );
             let (result, sample) = scaling_sample(length, || {
-                verify_c0_sources(&source, &[("read.c", c_source)])
+                verify_c_sources(&source, &[("read.c", c_source)])
             });
             if old_value && !distinct_index {
                 let error = result.expect_err("the symbolic index may be the changed element");
@@ -5751,7 +5755,7 @@ fn stores_to_bounded_unordered_indices_are_near_linear() {
         .map(|size| {
             let (c_source, click_source) = bounded_index_stores(size);
             let (verified, sample) = scaling_sample(size, || {
-                verify_c0_sources(&click_source, &[("mark.c", c_source.as_str())])
+                verify_c_sources(&click_source, &[("mark.c", c_source.as_str())])
             });
             verified.unwrap_or_else(|error| {
                 panic!(
@@ -5838,7 +5842,7 @@ fn stores_to_bounded_unordered_size_t_indices_are_near_linear() {
         .map(|size| {
             let (c_source, click_source) = bounded_size_t_index_stores(size);
             let (verified, sample) = scaling_sample(size, || {
-                verify_c0_sources(&click_source, &[("mark.c", c_source.as_str())])
+                verify_c_sources(&click_source, &[("mark.c", c_source.as_str())])
             });
             verified.unwrap_or_else(|error| {
                 panic!(
@@ -5907,7 +5911,7 @@ fn owned_size_t_window_calls_are_near_linear() {
         .map(|size| {
             let (c_source, click_source) = owned_size_t_window_calls(size);
             let (verified, sample) = scaling_sample(size, || {
-                verify_c0_sources(&click_source, &[("write.c", c_source.as_str())])
+                verify_c_sources(&click_source, &[("write.c", c_source.as_str())])
             });
             verified.unwrap_or_else(|error| {
                 panic!(
@@ -5995,7 +5999,7 @@ fn store_line_samples(
         .map(|size| {
             let (c_source, click_source) = fixture(size);
             let (verified, sample) = scaling_sample(size, || {
-                verify_c0_sources(&click_source, &[("mark.c", c_source.as_str())])
+                verify_c_sources(&click_source, &[("mark.c", c_source.as_str())])
             });
             verified.unwrap_or_else(|error| {
                 panic!("{size} {label} stores should verify: {}", error.message())
@@ -6104,7 +6108,7 @@ fn resource_reference_entry_setup_has_near_linear_work() {
                 crate::surface::lowering::resource_context_from_requirements(
                     file.function_blocks()[0].requires(),
                     ParameterBinding::default(),
-                    &crate::kernel::CState::new(),
+                    &crate::kernel::ExecutionState::new(),
                     &crate::kernel::PureFactContext::new(),
                 )
                 .unwrap()
@@ -6143,10 +6147,11 @@ fn entry_resource_clauses_do_not_rebuild_every_parameter() {
         source.push_str("}\n");
         let file = parser::parse(&source).unwrap();
         let function = &file.function_blocks()[0];
-        let c_function = syntax::parse_function(&format!("void f({parameters}) {{ }}")).unwrap();
+        let program_function =
+            syntax::parse_function(&format!("void f({parameters}) {{ }}")).unwrap();
         let arguments = (0..count as u64)
             .map(|index| {
-                CExpression::Value(CValue::Int32(MachineTerm::Variable(Variable(
+                ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(
                     9_100_000 + index,
                 ))))
             })
@@ -6154,8 +6159,8 @@ fn entry_resource_clauses_do_not_rebuild_every_parameter() {
         let (context, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::surface::lowering::resource_context_from_requirements(
                 function.requires(),
-                ParameterBinding::new(c_function.parameters(), &arguments),
-                &crate::kernel::CState::new(),
+                ParameterBinding::new(program_function.parameters(), &arguments),
+                &crate::kernel::ExecutionState::new(),
                 &crate::kernel::PureFactContext::new(),
             )
             .unwrap()
@@ -6203,7 +6208,7 @@ fn listed_order_chain_arithmetic_is_near_linear_in_the_chain() {
                 "theorem chained({parameters}) {{ {requires}ensures v0 < {bound} by {{ solve() using {{ {listed}}} }} }}"
             );
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-                verify_c0_sources(&source, &[])
+                verify_c_sources(&source, &[])
             });
             result.unwrap_or_else(|error| panic!("{edges}-edge chain: {}", error.message()));
             (edges, work)
@@ -6259,7 +6264,7 @@ void fill(int32* p, int32 n) {{
             "            step();\n".repeat(stores + 1)
         );
         let (result, events) = crate::instrumentation::collect(|| {
-            verify_c0_sources(&click_source, &[("fill.c", &c_source)])
+            verify_c_sources(&click_source, &[("fill.c", &c_source)])
         });
         result.unwrap_or_else(|error| {
             panic!("the {stores}-store loop should verify: {}", error.message())
@@ -6385,7 +6390,7 @@ void paint(struct node* p, int32 k) {{
 fn loop_with_break_exits_work(exits: usize, c_branches: bool) -> usize {
     let (c_source, click_source) = loop_with_break_exits(exits, c_branches);
     let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-        verify_c0_sources(&click_source, &[("paint.c", &c_source)])
+        verify_c_sources(&click_source, &[("paint.c", &c_source)])
     });
     result.unwrap_or_else(|error| {
         panic!(
@@ -6504,7 +6509,7 @@ fn loop_exit_join_scaling_on_this_thread() {
         .map(|size| {
             let (c_source, click_source) = loop_with_break_exits_project(size);
             let (verified, mut sample) = scaling_sample(size, || {
-                verify_c0_sources(&click_source, &[("exits.c", c_source.as_str())])
+                verify_c_sources(&click_source, &[("exits.c", c_source.as_str())])
             });
             verified.unwrap_or_else(|error| {
                 panic!("{size}-exit loop fixture failed: {}", error.message())
@@ -6548,7 +6553,7 @@ fn post_execution_ifs_with_earlier_haves_have_near_linear_work() {
             "if a > b {{ step_until(function.exit); {reasoning} }} else {{ step_until(function.exit); {reasoning} }} }}"
         ));
         let (verified, sample) =
-            scaling_sample(size, || verify_c0_sources(&source, &[("pick.c", c_source)]));
+            scaling_sample(size, || verify_c_sources(&source, &[("pick.c", c_source)]));
         verified.unwrap_or_else(|error| panic!("{size} post-execution ifs: {}", error.message()));
         samples.push(sample);
     }
@@ -6585,7 +6590,7 @@ fn sequential_proof_ifs_rejoin_instead_of_doubling_the_rest_of_the_proof() {
         .map(|size| {
             let (c_source, click_source) = sequential_reasoning_ifs_project(size);
             let (verified, sample) = scaling_sample(size, || {
-                verify_c0_sources(&click_source, &[("ifs.c", c_source.as_str())])
+                verify_c_sources(&click_source, &[("ifs.c", c_source.as_str())])
             });
             verified
                 .unwrap_or_else(|error| panic!("{size}-`if` fixture failed: {}", error.message()));
@@ -6623,7 +6628,7 @@ fn sequential_proof_ifs_that_step_c_rejoin_instead_of_doubling() {
         .map(|size| {
             let (c_source, click_source) = sequential_stepping_ifs_project(size);
             let (verified, sample) = scaling_sample(size, || {
-                verify_c0_sources(&click_source, &[("ifs.c", c_source.as_str())])
+                verify_c_sources(&click_source, &[("ifs.c", c_source.as_str())])
             });
             verified
                 .unwrap_or_else(|error| panic!("{size}-`if` fixture failed: {}", error.message()));
@@ -6670,7 +6675,7 @@ fn sequential_interface_joins_scale_with_their_number() {
         .map(|size| {
             let (c_source, click_source) = sequential_interface_joins_project(size);
             let (verified, sample) = scaling_sample(size, || {
-                verify_c0_sources(&click_source, &[("joins.c", c_source.as_str())])
+                verify_c_sources(&click_source, &[("joins.c", c_source.as_str())])
             });
             verified
                 .unwrap_or_else(|error| panic!("{size}-join fixture failed: {}", error.message()));
@@ -6714,7 +6719,7 @@ fn stepping_a_store_does_not_rewrite_the_memory_its_fact_carries() {
     for size in [16, 64] {
         let (c_source, click_source) = field_stores_project(size);
         let (verified, sample) = scaling_sample(size, || {
-            verify_c0_sources(&click_source, &[("stores.c", c_source.as_str())])
+            verify_c_sources(&click_source, &[("stores.c", c_source.as_str())])
         });
         verified.unwrap_or_else(|error| panic!("{size}-store fixture failed: {}", error.message()));
         let rewrites = sample
@@ -6760,7 +6765,7 @@ fn sequential_proof_ifs_in_a_loop_body_rejoin_instead_of_doubling() {
         .map(|size| {
             let (c_source, click_source) = loop_body_reasoning_ifs_project(size);
             let (verified, sample) = scaling_sample(size, || {
-                verify_c0_sources(&click_source, &[("ifs.c", c_source.as_str())])
+                verify_c_sources(&click_source, &[("ifs.c", c_source.as_str())])
             });
             verified
                 .unwrap_or_else(|error| panic!("{size}-`if` fixture failed: {}", error.message()));
@@ -6805,7 +6810,7 @@ fn the_automatic_loop_closer_joins_c_branches_instead_of_walking_every_path() {
         .map(|size| {
             let (c_source, click_source) = loop_body_c_ifs_project(size);
             let (verified, sample) = scaling_sample(size, || {
-                verify_c0_sources(&click_source, &[("scan.c", c_source.as_str())])
+                verify_c_sources(&click_source, &[("scan.c", c_source.as_str())])
             });
             verified
                 .unwrap_or_else(|error| panic!("{size}-`if` fixture failed: {}", error.message()));
@@ -6822,17 +6827,17 @@ fn the_automatic_loop_closer_joins_c_branches_instead_of_walking_every_path() {
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn atomic_memory_evidence_cites_only_connected_conditions() {
     use crate::kernel::{
-        CMemory, ConditionTerm, MachineTerm, Pointer, PointerOffsetTerm, Proposition,
+        ConditionTerm, MachineTerm, Memory, Pointer, PointerOffsetTerm, Proposition,
         PureFactContext, Variable,
     };
 
-    let memory = CMemory::new();
+    let memory = Memory::new();
     // The address of element `variable` of the goal's array.
     let at = |variable: u64| Pointer {
         block: "goal".into(),
         offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
     };
-    let loadable = |base: Pointer, bytes: u32| Proposition::CMemoryLoadable {
+    let loadable = |base: Pointer, bytes: u32| Proposition::MemoryLoadable {
         memory: memory.clone(),
         base,
         bytes: MachineTerm::constant(bytes),
@@ -6900,7 +6905,7 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
                             ),
                             false,
                         ))
-                        .assume_proposition(Proposition::CMemoryLoadable {
+                        .assume_proposition(Proposition::MemoryLoadable {
                             memory: memory.clone(),
                             base: Pointer {
                                 block: format!("other{index}").as_str().into(),
@@ -6979,7 +6984,7 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
 #[test]
 fn atomic_load_dependencies_ignore_other_snapshot_cells() {
     use crate::kernel::{
-        CMemory, CValue, ConditionTerm, MachineTerm, Pointer, PointerOffsetTerm, Proposition,
+        ConditionTerm, MachineTerm, Memory, Pointer, PointerOffsetTerm, ProgramValue, Proposition,
         PureFactContext, Variable,
     };
 
@@ -6999,7 +7004,8 @@ fn atomic_load_dependencies_ignore_other_snapshot_cells() {
     );
     let mut samples = Vec::new();
     for size in [8usize, 16, 32, 64] {
-        let mut memory = CMemory::new().store(index_cell.clone(), CValue::Int32(index.clone()));
+        let mut memory =
+            Memory::new().store(index_cell.clone(), ProgramValue::Int32(index.clone()));
         let mut context = PureFactContext::new();
         for i in 0..size {
             let value = MachineTerm::Variable(Variable(491_000 + i as u64));
@@ -7008,7 +7014,7 @@ fn atomic_load_dependencies_ignore_other_snapshot_cells() {
                     block: format!("other-cell-{i}").as_str().into(),
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                CValue::Int32(value.clone()),
+                ProgramValue::Int32(value.clone()),
             );
             context = context.assume_proposition(Proposition::ConditionIs(
                 ConditionTerm::Compare {
@@ -7024,13 +7030,13 @@ fn atomic_load_dependencies_ignore_other_snapshot_cells() {
             block: "selected-array".into(),
             offset: PointerOffsetTerm::scaled_int32_node(value, 4),
         };
-        let source = Proposition::CMemoryLoadable {
+        let source = Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: at(MachineTerm::constant(2)),
             bytes: MachineTerm::constant(4),
             wide: false,
         };
-        let goal = Proposition::CMemoryLoadable {
+        let goal = Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: at(MachineTerm::MemoryLoad(
                 memory.into(),
@@ -7074,14 +7080,14 @@ fn atomic_load_dependencies_ignore_other_snapshot_cells() {
 #[test]
 fn atomic_evidence_without_one_source_cites_connected_facts() {
     use crate::kernel::{
-        CMemory, ConditionTerm, MachineTerm, Pointer, PointerOffsetTerm, Proposition,
+        ConditionTerm, MachineTerm, Memory, Pointer, PointerOffsetTerm, Proposition,
         PureFactContext, Sort, Variable,
     };
 
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let load = |offset: PointerOffsetTerm| {
         MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory_ref(&memory),
+            crate::kernel::intern_memory_ref(&memory),
             Box::new(Pointer {
                 block: "data".into(),
                 offset,
@@ -7117,7 +7123,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
     let quantified = Proposition::ForAll {
         name: Default::default(),
         var: index,
-        sort: Sort::CInt32,
+        sort: Sort::ProgramInt32,
         body: Box::new(Proposition::Implies(
             Box::new(less(variable(480_000), variable(480_001), true)),
             Box::new(equal(
@@ -7141,7 +7147,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
                     variable(481_001 + 2 * index),
                     true,
                 ))
-                .assume_proposition(Proposition::CMemoryLoadable {
+                .assume_proposition(Proposition::MemoryLoadable {
                     memory: memory.clone(),
                     base: Pointer {
                         block: format!("other{index}").as_str().into(),
@@ -7220,7 +7226,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
                         variable(483_001 + 2 * step as u64),
                         true,
                     ))
-                    .assume_proposition(Proposition::CMemoryLoadable {
+                    .assume_proposition(Proposition::MemoryLoadable {
                         memory: memory.clone(),
                         base: Pointer {
                             block: format!("extension{step}").as_str().into(),
@@ -7310,7 +7316,7 @@ fn atomic_retained_evidence_expands_without_unrelated_conditions() {
             verification.push(sample);
             let position = expansion::position_at_offset(&source, source.find("solve();").unwrap());
             let (expanded, sample) = scaling_sample(size, || {
-                expand_c0_tactic_source_at(&source, &[], position.line, position.column)
+                expand_c_tactic_source_at(&source, &[], position.line, position.column)
             });
             let expanded = expanded
                 .unwrap_or_else(|error| panic!("{name}/{size} expansion: {}", error.message()));
@@ -7389,7 +7395,7 @@ fn failing_solve_work_is_flat_along_a_variable_chain() {
     for size in [4, 8, 32] {
         let (c_source, click_source) = sources(size);
         let (verified, sample) = scaling_sample(size, || {
-            verify_c0_sources(&click_source, &[("chain.c", c_source.as_str())])
+            verify_c_sources(&click_source, &[("chain.c", c_source.as_str())])
         });
         assert!(
             verified.is_err(),
@@ -7494,7 +7500,7 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
         let ((verified, sample), storage) =
             crate::kernel::ExecutionFacts::measure_published_storage(|| {
                 scaling_sample(returns, || {
-                    verify_c0_sources(&click, &[("fan_out.c", c.as_str())])
+                    verify_c_sources(&click, &[("fan_out.c", c.as_str())])
                 })
             });
         for sample in &storage {
@@ -7738,7 +7744,7 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
         let c = early_return_fan_out(64);
         let false_click =
             "verifying \"fan_out.c\";\nint g(int a) { ensures result == a or result == -2; }";
-        let error = verify_c0_sources(false_click, &[("fan_out.c", c.as_str())])
+        let error = verify_c_sources(false_click, &[("fan_out.c", c.as_str())])
             .expect_err("indexed premises cannot prove an incorrect postcondition");
         assert!(!error.message().contains("budget"), "{}", error.message());
     }
@@ -7776,14 +7782,14 @@ fn check_early_return_execution_expansion(returns: usize) {
                 .unwrap_or_else(|error| panic!("{returns} returns expand: {}", error.message()));
             assert_ne!(expanded, click, "the implicit proof must become explicit");
             assert!(!expanded.contains("execute()"));
-            verify_c0_sources(&expanded, &sources)
+            verify_c_sources(&expanded, &sources)
                 .unwrap_or_else(|error| panic!("{returns} returns reverify: {}", error.message()));
             let false_c = c.replace("    return -1;\n}", "    return -2;\n}");
             assert_ne!(false_c, c);
             let false_sources = [("fan_out.c", false_c.as_str())];
-            verify_c0_sources(&expanded, &false_sources)
+            verify_c_sources(&expanded, &false_sources)
                 .expect_err("the last path still owes its postcondition");
-            verify_c0_sources(&early_return_fan_out_explicit_proof(returns), &false_sources)
+            verify_c_sources(&early_return_fan_out_explicit_proof(returns), &false_sources)
                 .expect_err("an explicit proof cannot accept a false final path");
         })
         .unwrap()
@@ -7927,10 +7933,13 @@ fn nearest_statement_snapshots_are_lazy_ordered_and_logarithmic() {
     for size in [16usize, 64, 256, 1024, 4096] {
         let mut snapshots = RecordedSnapshots::new();
         for index in 0..size {
-            snapshots.insert(point(index, ProgramPointKind::Entry), CState::new());
-            snapshots.insert(point(index, ProgramPointKind::Exit), CState::new());
+            snapshots.insert(point(index, ProgramPointKind::Entry), ExecutionState::new());
+            snapshots.insert(point(index, ProgramPointKind::Exit), ExecutionState::new());
         }
-        snapshots.insert(SnapshotSelector::Mark("unrelated".into()), CState::new());
+        snapshots.insert(
+            SnapshotSelector::Mark("unrelated".into()),
+            ExecutionState::new(),
+        );
         let anchor = size / 2;
         let (nearest, work) = crate::instrumentation::measure_deterministic_work(|| {
             snapshots
@@ -7985,7 +7994,7 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
     let value = |index: usize| MachineTerm::Variable(Variable(700_000 + index as u64));
     let schema = crate::kernel::ResourceFieldSchema::new(vec![(
         "size".into(),
-        crate::kernel::ResourceFieldType::C(CType::Int32),
+        crate::kernel::ResourceFieldType::Program(ProgramType::Int32),
     )])
     .unwrap();
     let block_pointer = |index: usize| crate::kernel::Pointer {
@@ -7994,37 +8003,40 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
     };
     for size in [16usize, 64, 256, 1024] {
         let mut snapshots = RecordedSnapshots::new();
-        let mut state = CState::new()
-            .with_memory(crate::kernel::CMemory::new().with_block("cells", 4 * size as u32));
+        let mut state = ExecutionState::new()
+            .with_memory(crate::kernel::Memory::new().with_block("cells", 4 * size as u32));
         let mut insert_work = Vec::new();
         for index in 0..size {
             // Each point binds one new local, and from the second on also
             // gives local `x0` a new value: with `p` below, three changed
             // locals, one new instance and one stored cell per point.
-            state = state.with_local(format!("x{}", index + 1), CValue::Int32(value(2 * index)));
+            state = state.with_local(
+                format!("x{}", index + 1),
+                ProgramValue::Int32(value(2 * index)),
+            );
             if index > 0 {
-                state = state.with_local("x0", CValue::Int32(value(2 * index + 1)));
+                state = state.with_local("x0", ProgramValue::Int32(value(2 * index + 1)));
             }
             // And local `p` a pointer into a block of its own, and a new
             // resource instance with one field.
             state = state.with_local(
                 "p",
-                CValue::typed_pointer(block_pointer(index), CType::Int32Pointer),
+                ProgramValue::typed_pointer(block_pointer(index), ProgramType::Int32Pointer),
             );
             let resources =
                 state
                     .resources()
                     .clone()
-                    .unchecked_with_fact(crate::kernel::CResourceFact::own(
-                        crate::kernel::CResource::Instance(
+                    .unchecked_with_fact(crate::kernel::ResourceFact::own(
+                        crate::kernel::Resource::Instance(
                             crate::kernel::ResourceInstance::new(
                                 Variable(900_000 + index as u64),
                                 "object".into(),
                                 vec![].into(),
                                 schema.clone(),
-                                vec![crate::kernel::AlgebraicValue::C(CValue::Int32(value(
-                                    4 * size + index,
-                                )))]
+                                vec![crate::kernel::AlgebraicValue::Program(ProgramValue::Int32(
+                                    value(4 * size + index),
+                                ))]
                                 .into(),
                             )
                             .unwrap(),
@@ -8037,7 +8049,7 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
                     block: crate::kernel::PointerBlock::Concrete("cells".into()),
                     offset: crate::kernel::PointerOffsetTerm::Constant(4 * index as i64),
                 },
-                CValue::Int32(value(6 * size + index)),
+                ProgramValue::Int32(value(6 * size + index)),
             );
             state = state.with_memory(memory);
             let (((), work), persistent) = crate::persistent::measure_persistent_work(|| {
@@ -8103,7 +8115,7 @@ fn nearest_statement_snapshots_stop_at_an_exhausted_deadline() {
                 region: CodeRegionRef::Region(index),
                 kind: ProgramPointKind::Entry,
             },
-            CState::new(),
+            ExecutionState::new(),
         );
     }
     let mut entries = snapshots.statement_entries_nearest(128);
@@ -8128,7 +8140,7 @@ fn callback_parsing_and_explicit_steps_scale_with_written_calls() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    verify_c0_sources(&click, &baseline_sources).unwrap();
+    verify_c_sources(&click, &baseline_sources).unwrap();
     let samples = [1, 2, 4, 8].map(|count| {
         let statements = "    augment->propagate(parent, 0);\n".repeat(count);
         let sources = fixture
@@ -8150,7 +8162,7 @@ fn callback_parsing_and_explicit_steps_scale_with_written_calls() {
             &"step(); ".repeat(3 * (count + 2) + 1),
         );
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            verify_c0_sources(&source, &sources)
+            verify_c_sources(&source, &sources)
         });
         result.unwrap_or_else(|error| panic!("{count} callback statements: {}", error.message()));
         work
@@ -8212,7 +8224,7 @@ fn explicit_byte_view_narrowing_keeps_large_seeded_ranges_compact() {
             .replace("22208", &size.to_string())
             .replace("22204", &(size - 4).to_string());
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            verify_c0_sources(&source, &[("range-narrowing.c", c_source)])
+            verify_c_sources(&source, &[("range-narrowing.c", c_source)])
         });
         result.unwrap_or_else(|error| panic!("size {size}: {}", error.message()));
         (size, work)
@@ -8241,7 +8253,7 @@ fn explicit_byte_view_narrowing_rejects_missing_authority_and_bounds() {
     ] {
         let invalid = contract.replace(before, after);
         assert_ne!(invalid, contract);
-        let error = verify_c0_sources(&invalid, &[("range-narrowing.c", c_source)])
+        let error = verify_c_sources(&invalid, &[("range-narrowing.c", c_source)])
             .expect_err("invalid range authority was accepted");
         assert!(
             !error.message().contains("budget exhausted"),
@@ -8298,7 +8310,7 @@ fn explicit_frame_refusal_scales_with_unrelated_facts() {
                     control: 250_000,
                     ..crate::instrumentation::TacticWorkLimits::default()
                 },
-                || verify_c0_sources(&source, &c_refs),
+                || verify_c_sources(&source, &c_refs),
             )
         });
         let error = result.expect_err("a missing frame is still refused");
@@ -8361,7 +8373,7 @@ fn consecutive_resource_closers_attempt_one_transition() {
             &format!("\n    step(); {}", "assumption(); ".repeat(8 + 2 * size)),
         );
         let (verified, events) = crate::instrumentation::collect(|| {
-            verify_c0_sources(&source, &[(c_name.as_str(), c_source.as_str())])
+            verify_c_sources(&source, &[(c_name.as_str(), c_source.as_str())])
         });
         verified.unwrap_or_else(|error| panic!("size={size}: {}", error.message()));
         let checks = events
@@ -8421,7 +8433,7 @@ fn repeated_retains_of_one_child_scale_with_their_number() {
         .map(|size| {
             let (c_source, click_source) = repeated_retain_project(size);
             let (verified, sample) = scaling_sample(size, || {
-                verify_c0_sources(&click_source, &[("retain.c", c_source.as_str())])
+                verify_c_sources(&click_source, &[("retain.c", c_source.as_str())])
             });
             verified.unwrap_or_else(|error| {
                 panic!("{size}-retain fixture failed: {}", error.message())
@@ -8474,7 +8486,7 @@ fn assert_retain_ignores_unrelated_live_children(sizes: [usize; 5]) -> Vec<Scali
     let c_helper = &base_c[..base_c.find(CALLER).unwrap()];
     let click_helper = &base_click[..base_click.find(CALLER).unwrap()];
     {
-        let checked = crate::surface::verify_c0_sources_functions(
+        let checked = crate::surface::verify_c_sources_functions(
             &base_click,
             &[("retain.c", base_c.as_str())],
             [HELPER.to_string()],
@@ -8499,7 +8511,7 @@ fn assert_retain_ignores_unrelated_live_children(sizes: [usize; 5]) -> Vec<Scali
                 click_helper
             );
             let (verified, sample) = scaling_sample(size, || {
-                crate::surface::verify_c0_sources_functions(
+                crate::surface::verify_c_sources_functions(
                     &click_source,
                     &[("retain.c", c_source.as_str())],
                     [CALLER.to_string()],
@@ -8602,7 +8614,7 @@ fn owned_pointer_parameters_scale_with_their_number() {
         .map(|size| {
             let (c_source, click_source) = owned_parameters_project(size);
             let (verified, sample) = scaling_sample(size, || {
-                verify_c0_sources(&click_source, &[("touch.c", c_source.as_str())])
+                verify_c_sources(&click_source, &[("touch.c", c_source.as_str())])
             });
             verified.unwrap_or_else(|error| {
                 panic!("{size}-parameter fixture failed: {}", error.message())
@@ -8681,7 +8693,7 @@ void inspect(struct node* parent, struct node* child{parameters}) {{
 }}"
         );
         let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
-            verify_c0_sources(&click_source, &[("held.c", &c_source)])
+            verify_c_sources(&click_source, &[("held.c", &c_source)])
         });
         result.unwrap_or_else(|error| panic!("{size}: {}", error.message()));
         let selected = samples
@@ -8730,9 +8742,9 @@ resource callbacks0(cb: const struct callbacks*) {
         source.push_str("solve(); }");
         if depth == 2 {
             // Initialize shared frontend tables outside the scaling samples.
-            verify_c0_sources(&source, &[("callback.c", c)]).unwrap();
+            verify_c_sources(&source, &[("callback.c", c)]).unwrap();
         }
-        let verify = || verify_c0_sources(&source, &[("callback.c", c)]);
+        let verify = || verify_c_sources(&source, &[("callback.c", c)]);
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             if let Some(previous) = previous_work {
                 // Enforce the same growth law while running: a regression
@@ -8794,7 +8806,7 @@ fn guarded_unfold_cell_preparation_scales_linearly_with_surrounding_owners() {
             &format!("struct cell* root{parameters})"),
         );
         let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
-            verify_c0_sources(&source, &[("frame.c", &c_source)])
+            verify_c_sources(&source, &[("frame.c", &c_source)])
         });
         result.unwrap_or_else(|error| panic!("{size}: {}", error.message()));
         let selected = samples
@@ -8838,7 +8850,7 @@ fn signed_increment_overflow_checks_stay_flat_per_assignment() {
         source.push_str("solve();\n}");
         let ((verified, work), events) = crate::instrumentation::collect(|| {
             crate::instrumentation::measure_deterministic_work(|| {
-                verify_c0_sources(&source, &[("increment.c", c.as_str())])
+                verify_c_sources(&source, &[("increment.c", c.as_str())])
             })
         });
         verified.unwrap_or_else(|error| panic!("size {size}: {}", error.message()));
@@ -8875,7 +8887,7 @@ fn signed_increment_overflow_checks_stay_flat_per_assignment() {
     assert_near_linear_scaling_with_increment_bound("checked increment chains", &totals);
     let invalid = "verifying \"unbounded.c\"; int32 f(int32 x) { ensures result == x + 1; } by { step(); solve(); }";
     assert!(
-        verify_c0_sources(
+        verify_c_sources(
             invalid,
             &[("unbounded.c", "int32 f(int32 x) { return x + 1; }")]
         )
@@ -8907,7 +8919,7 @@ fn unrelated_call_work_stays_flat_with_kept_pointer_aliases() {
             "verifying \"aliases.c\"; void touch(int32* flags, int32* data, int32 k) {{ owns flags[0..k]; owns data[0..k]; }} int32 caller(int32* flags, int32* data, int32 k, struct box* b{parameters}) {{ owns flags[0..k]; owns data[0..k]; owns *b; {requirements} ensures result == {size}; }} by {{ step(); step(); step(); step(); step(); solve(); }}"
         );
         let (verified, events) = crate::instrumentation::collect(|| {
-            verify_c0_sources(&source, &[("aliases.c", c.as_str())])
+            verify_c_sources(&source, &[("aliases.c", c.as_str())])
         });
         verified.unwrap_or_else(|error| panic!("{size} aliases: {}", error.message()));
         let call = events
@@ -8958,7 +8970,7 @@ fn symbolic_index_store_work_is_flat_across_recorded_order_chains() {
         );
         let ((verified, work), events) = crate::instrumentation::collect(|| {
             crate::instrumentation::measure_deterministic_work(|| {
-                verify_c0_sources(&source, &[("ordered.c", c.as_str())])
+                verify_c_sources(&source, &[("ordered.c", c.as_str())])
             })
         });
         verified.unwrap_or_else(|error| panic!("size {size}: {}", error.message()));
@@ -9060,7 +9072,7 @@ ensures result == {expected};
             );
             let ((result, samples), events) = crate::instrumentation::collect(|| {
                 crate::instrumentation::collect_tactic_work(|| {
-                    verify_c0_sources(&source, &[("fields.c", c.as_str())])
+                    verify_c_sources(&source, &[("fields.c", c.as_str())])
                 })
             });
             result.unwrap_or_else(|error| {
@@ -9159,7 +9171,7 @@ fn source_only_transport_does_not_reconstruct_unrelated_integer_facts() {
             );
         }
         let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
-            verify_c0_sources(&source, &[("exact_fact_target.c", c)])
+            verify_c_sources(&source, &[("exact_fact_target.c", c)])
         });
         result.unwrap_or_else(|error| panic!("{size}: {}", error.message()));
         let selected = samples
@@ -9214,7 +9226,7 @@ fn pointer_field_call_branch_join_scales_with_unrelated_caller_facts() {
     let source_helpers = &source[..source.find(CALLER).unwrap()];
     let c_helpers = &c_source[..c_source.find(CALLER).unwrap()];
     {
-        let helpers = crate::surface::verify_c0_sources_functions(
+        let helpers = crate::surface::verify_c_sources_functions(
             &source,
             &[("vector.c", c_source.as_str())],
             ["vector_get".to_string(), "vector_set".to_string()],
@@ -9259,7 +9271,7 @@ fn pointer_field_call_branch_join_scales_with_unrelated_caller_facts() {
         assert_eq!(&source[..source.find(CALLER).unwrap()], source_helpers);
         assert_eq!(&c_source[..c_source.find(CALLER).unwrap()], c_helpers);
         let (result, sample) = scaling_sample(size, || {
-            crate::surface::verify_c0_sources_functions(
+            crate::surface::verify_c_sources_functions(
                 &source,
                 &[("vector.c", c_source.as_str())],
                 [CALLER.to_string()],
@@ -9323,7 +9335,7 @@ fn proof_if_split_ignores_earlier_unrelated_facts() {
         let c_source = "int32 count_once(int32 flag) {\n    int32 i;\n    i = 0;\n    \
                         while (i < 1) { i = i + 1; }\n    return i;\n}\n";
         let before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
-        verify_c0_sources(&click_source, &[("split.c", c_source)]).unwrap_or_else(|error| {
+        verify_c_sources(&click_source, &[("split.c", c_source)]).unwrap_or_else(|error| {
             panic!("size {size} split={split} failed: {}", error.message())
         });
         crate::kernel::reasoning::path_facts::context_rebuild_entries() - before
@@ -9357,7 +9369,7 @@ transport(at(filled, dst[0]) == 7, dst[0] == 7);
         );
         let before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
         let (result, _) = collect(|| {
-            verify_c0_sources(
+            verify_c_sources(
                 &source,
                 &[(
                     "fill.c",
@@ -9409,7 +9421,7 @@ fn branch_interface_fact_publication_extends_one_indexed_context() {
         "#
         );
         let (verified, sample) = scaling_sample(size, || {
-            verify_c0_sources(&click_source, &[("joins.c", c_source)])
+            verify_c_sources(&click_source, &[("joins.c", c_source)])
         });
         verified.unwrap_or_else(|error| panic!("{}", error.message()));
         samples.push(sample);
@@ -9420,14 +9432,14 @@ fn branch_interface_fact_publication_extends_one_indexed_context() {
 #[test]
 fn mixed_width_owned_entry_work_is_independent_of_segment_length() {
     let program = "void entry(unsigned long *word, unsigned char *bytes) {}";
-    verify_c0_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
+    verify_c_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
     let mut baseline = None;
     for length in [32, 1_024, 65_536, 2_147_483_647] {
         let source = format!(
             "verifying \"entry.c\"; void entry(uint64* word, uint8* bytes) {{ owns word[0..1]; owns bytes[0..{length}]; }}"
         );
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            verify_c0_sources(&source, &[("entry.c", program)])
+            verify_c_sources(&source, &[("entry.c", program)])
         });
         result.expect("the original empty function must verify at every byte length");
         assert_eq!(
@@ -9441,7 +9453,7 @@ fn mixed_width_owned_entry_work_is_independent_of_segment_length() {
 #[test]
 fn native_read_equality_refusal_does_not_restart_snapshot_search_as_integer() {
     let c = "int32 read_after_store(int32 *a, int32 k) { a[3] = 5; return a[k]; }";
-    verify_c0_sources(
+    verify_c_sources(
         "verifying \"read.c\"; int32 read_after_store(int32 *a, int32 k) {
             owns a[0..16]; requires 0 <= k; requires k < 16;
             ensures result == a[k]; }",
@@ -9459,7 +9471,7 @@ fn native_read_equality_refusal_does_not_restart_snapshot_search_as_integer() {
                ensures result == y;
              }}"
         );
-        verify_c0_sources(&source, &[("integer_input.c", c.as_str())]).unwrap_or_else(|error| {
+        verify_c_sources(&source, &[("integer_input.c", c.as_str())]).unwrap_or_else(|error| {
             panic!(
                 "{ty} Integer-to-native equality control: {}",
                 error.message()
@@ -9476,7 +9488,7 @@ fn native_read_equality_refusal_does_not_restart_snapshot_search_as_integer() {
              }} by {{ unfold(block(a)); step_until(function.exit); fold(block(a)); solve(); }}"
         );
         let (result, events) =
-            crate::instrumentation::collect(|| verify_c0_sources(&source, &[("read.c", c)]));
+            crate::instrumentation::collect(|| verify_c_sources(&source, &[("read.c", c)]));
         let error = result.expect_err("the read may alias the changed cell");
         assert!(
             error
@@ -9515,7 +9527,7 @@ fn composite_native_read_equality_refusal_keeps_one_snapshot_search() {
              }} by {{ unfold(block(a)); step_until(function.exit); fold(block(a)); solve(); }}"
         );
         let (result, events) =
-            crate::instrumentation::collect(|| verify_c0_sources(&source, &[("read.c", c)]));
+            crate::instrumentation::collect(|| verify_c_sources(&source, &[("read.c", c)]));
         let error = result.expect_err("zero offsets cannot hide a potentially changed read");
         assert!(!error.message().contains("budget exhausted"), "{error}");
         let searches = events
@@ -9561,7 +9573,7 @@ fn completing_early_return_paths_borrows_their_shared_traces() {
         let (click, c) = early_return_project(returns);
         let ((verified, copies), sample) = scaling_sample(returns, || {
             crate::kernel::proof::measure_sequence_copies(|| {
-                verify_c0_sources(&click, &[("mark.c", c.as_str())])
+                verify_c_sources(&click, &[("mark.c", c.as_str())])
             })
         });
         verified.unwrap_or_else(|error| panic!("{returns} returns: {}", error.message()));
@@ -9603,7 +9615,7 @@ fn brace_depth(source: &str) -> usize {
 /// expansion again from its text, on a thread with the fixture stack.
 fn expanded_early_return_proof(returns: usize) -> (String, String) {
     let (click, c) = early_return_project(returns);
-    let verified = verify_c0_sources(&click, &[("mark.c", c.as_str())])
+    let verified = verify_c_sources(&click, &[("mark.c", c.as_str())])
         .unwrap_or_else(|error| panic!("{returns} returns: {}", error.message()));
     let expanded = expand_checked_grouped_claim(&click, &verified, "mark")
         .unwrap_or_else(|error| panic!("{returns} returns expand: {}", error.message()));
@@ -9628,7 +9640,7 @@ fn early_return_expansions_stay_flat_and_join_without_copying_paths() {
                 depths.push(brace_depth(&expanded));
                 crate::surface::proof::take_terminal_join_materialized_facts();
                 crate::surface::proof::without_implicit_solve(|| {
-                    verify_c0_sources(&expanded, &[("mark.c", c.as_str())])
+                    verify_c_sources(&expanded, &[("mark.c", c.as_str())])
                 })
                 .unwrap_or_else(|error| panic!("{returns} returns reverify: {}", error.message()));
                 assert_eq!(
@@ -9659,13 +9671,13 @@ fn one_hundred_twenty_eight_early_returns_expand_and_reverify() {
             let (expanded, c) = expanded_early_return_proof(128);
             assert!(brace_depth(&expanded) <= 4, "{}", brace_depth(&expanded));
             crate::surface::proof::without_implicit_solve(|| {
-                verify_c0_sources(&expanded, &[("mark.c", c.as_str())])
+                verify_c_sources(&expanded, &[("mark.c", c.as_str())])
             })
             .unwrap_or_else(|error| panic!("128 returns reverify: {}", error.message()));
             let false_c = c.replace("    return 0;\n}", "    return -1;\n}");
             assert_ne!(false_c, c);
             crate::surface::proof::without_implicit_solve(|| {
-                verify_c0_sources(&expanded, &[("mark.c", false_c.as_str())])
+                verify_c_sources(&expanded, &[("mark.c", false_c.as_str())])
             })
             .expect_err("the last path still owes its postcondition");
         })
@@ -9684,12 +9696,12 @@ fn early_return_expanded_closers(returns: usize) -> String {
     for index in 0..returns {
         let statement = 1 + 4 * index;
         let last = if index + 1 == returns {
-            "        assumption();\n        normalize();\n"
+            "        assumption();\n        normalize();\n        assumption();\n        assumption();\n        assumption();\n"
         } else {
             ""
         };
         proof.push_str(&format!(
-            "    if at(region({statement}).entry, x) == at(region({statement}).entry, {index}) {{\n        step();\n        step();\n        assumption();\n        normalize();\n    }} else {{\n        step();\n        step();\n        step();\n{last}    }}\n"
+            "    if at(region({statement}).entry, x) == at(region({statement}).entry, {index}) {{\n        step();\n        step();\n        assumption();\n        normalize();\n        assumption();\n        assumption();\n        assumption();\n    }} else {{\n        step();\n        step();\n        step();\n{last}    }}\n"
         ));
     }
     proof.push_str("}\n");
@@ -9718,7 +9730,7 @@ fn early_return_finishing_curves(sizes: &[usize]) -> Vec<(&'static str, Vec<usiz
                         let indexed = crate::kernel::indexed_execution_facts();
                         let (verified, sample) = scaling_sample(returns, || {
                             crate::surface::proof::without_implicit_solve(|| {
-                                verify_c0_sources(&expanded, &[("mark.c", c.as_str())])
+                                verify_c_sources(&expanded, &[("mark.c", c.as_str())])
                             })
                         });
                         verified.unwrap_or_else(|error| {
@@ -9882,7 +9894,7 @@ fn post_return_function_equations_scale_with_explicit_unfolds() {
             .join("\n");
         let source = source.replace("unfold(first(Shape::Pair(x, 3)));", &unfolds);
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            verify_c0_sources(&source, &sources)
+            verify_c_sources(&source, &sources)
         });
         result.unwrap();
         work
@@ -9900,7 +9912,7 @@ fn recorded_call_results_scale_and_replace_execution_occurrences() {
     for size in [16usize, 64, 256, 1024] {
         let mut snapshots = RecordedSnapshots::new();
         let value = |index| {
-            CValue::Bool(MachineTerm::bool_cast(
+            ProgramValue::Bool(MachineTerm::bool_cast(
                 MachineIntegerType::UInt8,
                 ConditionTerm::Variable(Variable(700_000 + index)),
             ))
@@ -9911,7 +9923,7 @@ fn recorded_call_results_scale_and_replace_execution_occurrences() {
             });
             assert!(work <= 2, "{size}: insertion {work}");
         }
-        let CValue::Bool(first) = value(0) else {
+        let ProgramValue::Bool(first) = value(0) else {
             unreachable!()
         };
         let (region, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -9957,7 +9969,7 @@ fn recorded_algebraic_field_names_use_changed_instances_and_direct_lookups() {
     .unwrap();
     for size in [16usize, 64, 256, 1024] {
         let mut snapshots = RecordedSnapshots::new();
-        let mut state = CState::new();
+        let mut state = ExecutionState::new();
         for index in 0..size {
             let variable = Variable(900_000 + index as u64);
             let identity = Variable(800_000 + index as u64);
@@ -9988,8 +10000,8 @@ fn recorded_algebraic_field_names_use_changed_instances_and_direct_lookups() {
                 state
                     .resources()
                     .clone()
-                    .unchecked_with_fact(crate::kernel::CResourceFact::own(
-                        crate::kernel::CResource::Instance(instance),
+                    .unchecked_with_fact(crate::kernel::ResourceFact::own(
+                        crate::kernel::Resource::Instance(instance),
                     ));
             state = state.with_resource_context(resources);
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -10023,7 +10035,7 @@ fn explicit_claim_closers_have_near_linear_finishing_work() {
             let click_source =
                 click_source.replace("    normalize();", &"    normalize();\n".repeat(size));
             let (verified, sample) = scaling_sample(size, || {
-                verify_c0_sources(&click_source, &[("shared_claims.c", c_source.as_str())])
+                verify_c_sources(&click_source, &[("shared_claims.c", c_source.as_str())])
             });
             assert_eq!(verified.unwrap().len(), size);
             sample
@@ -10069,12 +10081,12 @@ fn multi_statement_transport_replay_scales_with_explicit_links() {
         "#
         );
         let sources = [("chain.c", c.as_str())];
-        let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
         assert_eq!(expanded.matches("preserve(separate(").count(), size);
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
-            crate::surface::proof::without_implicit_solve(|| verify_c0_sources(&expanded, &sources))
+            crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &sources))
         });
         verified.unwrap();
         costs.push(work);
@@ -10116,12 +10128,12 @@ fn inequality_transport_replay_scales_with_explicit_links() {
         "#
         );
         let sources = [("chain.c", c.as_str())];
-        let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
         assert_eq!(expanded.matches("preserve(separate(").count(), size);
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
-            crate::surface::proof::without_implicit_solve(|| verify_c0_sources(&expanded, &sources))
+            crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &sources))
         });
         verified.unwrap();
         costs.push(work);
@@ -10163,12 +10175,12 @@ fn known_value_transport_replay_scales_with_explicit_links() {
         "#
         );
         let sources = [("chain.c", c.as_str())];
-        let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
         assert_eq!(expanded.matches("preserve(separate(").count(), size);
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
-            crate::surface::proof::without_implicit_solve(|| verify_c0_sources(&expanded, &sources))
+            crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &sources))
         });
         verified.unwrap();
         costs.push(work);
@@ -10210,12 +10222,12 @@ fn snapshot_comparison_transport_replay_scales_with_explicit_links() {
         "#
         );
         let sources = [("chain.c", c.as_str())];
-        let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
         assert_eq!(expanded.matches("preserve(separate(").count(), size);
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
-            crate::surface::proof::without_implicit_solve(|| verify_c0_sources(&expanded, &sources))
+            crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &sources))
         });
         verified.unwrap();
         costs.push(work);
@@ -10283,12 +10295,12 @@ fn two_read_transport_replay_cost(indexed: bool) {
             source
         };
         let sources = [("chain.c", c.as_str())];
-        let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
         assert_eq!(expanded.matches("preserve(separate(").count(), 2 * size);
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
-            crate::surface::proof::without_implicit_solve(|| verify_c0_sources(&expanded, &sources))
+            crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &sources))
         });
         verified.unwrap();
         costs.push(work);
@@ -10338,12 +10350,12 @@ fn conjunction_transport_replay_scales_with_explicit_links() {
         "#
         );
         let sources = [("chain.c", c.as_str())];
-        let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
         assert_eq!(expanded.matches("preserve(separate(").count(), 2 * size);
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
-            crate::surface::proof::without_implicit_solve(|| verify_c0_sources(&expanded, &sources))
+            crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &sources))
         });
         verified.unwrap();
         costs.push(work);
@@ -10411,7 +10423,7 @@ fn nested_conjunction_transport_scales_with_written_leaves() {
             );
             let files = [("nested.c", c.as_str())];
             let (expanded, work) = crate::instrumentation::measure_deterministic_work(|| {
-                expand_c0_claim_source_by_label(&source, &files, "keep.contract")
+                expand_c_claim_source_by_label(&source, &files, "keep.contract")
             });
             let expanded = expanded.unwrap();
             planning.push(work);
@@ -10421,7 +10433,7 @@ fn nested_conjunction_transport_scales_with_written_leaves() {
             assert!(!expanded.contains("transport_certificate"));
             let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
                 crate::surface::proof::without_implicit_solve(|| {
-                    verify_c0_sources(&expanded, &files)
+                    verify_c_sources(&expanded, &files)
                 })
             });
             verified.unwrap();
@@ -10484,7 +10496,7 @@ fn conjunction_projection_transport_scales_with_written_source() {
         );
         let files = [("projection.c", "void keep(int *p, int *q) { *p = 0; }")];
         let (expanded, work) = crate::instrumentation::measure_deterministic_work(|| {
-            expand_c0_claim_source_by_label(&source, &files, "keep.contract")
+            expand_c_claim_source_by_label(&source, &files, "keep.contract")
         });
         let expanded = expanded.unwrap();
         expansion.push(work);
@@ -10493,7 +10505,7 @@ fn conjunction_projection_transport_scales_with_written_source() {
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
-            crate::surface::proof::without_implicit_solve(|| verify_c0_sources(&expanded, &files))
+            crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &files))
         });
         verified.unwrap();
         replay.push(work);
@@ -10557,7 +10569,7 @@ fn conjunction_selection_transport_scales_with_sources_targets_and_premises() {
         );
         let files = [("selection.c", c.as_str())];
         let (expanded, work) = crate::instrumentation::measure_deterministic_work(|| {
-            expand_c0_claim_source_by_label(&source, &files, "keep.contract")
+            expand_c_claim_source_by_label(&source, &files, "keep.contract")
         });
         let expanded = expanded.unwrap();
         expansion.push(work);
@@ -10566,7 +10578,7 @@ fn conjunction_selection_transport_scales_with_sources_targets_and_premises() {
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
-            crate::surface::proof::without_implicit_solve(|| verify_c0_sources(&expanded, &files))
+            crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &files))
         });
         verified.unwrap();
         replay.push(work);
@@ -10615,12 +10627,12 @@ fn implication_transport_replay_scales_with_explicit_links() {
         "#
         );
         let sources = [("chain.c", c.as_str())];
-        let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
         assert_eq!(expanded.matches("preserve(separate(").count(), 2 * size);
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
-            crate::surface::proof::without_implicit_solve(|| verify_c0_sources(&expanded, &sources))
+            crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &sources))
         });
         verified.unwrap();
         costs.push(work);
@@ -10707,7 +10719,7 @@ fn compound_implication_transport_scales_with_reads_and_logical_depth() {
             );
             let files = [("compound.c", c.as_str())];
             let (expanded, work) = crate::instrumentation::measure_deterministic_work(|| {
-                expand_c0_claim_source_by_label(&source, &files, "keep.contract")
+                expand_c_claim_source_by_label(&source, &files, "keep.contract")
             });
             let expanded = expanded.unwrap();
             expansion.push(work);
@@ -10717,7 +10729,7 @@ fn compound_implication_transport_scales_with_reads_and_logical_depth() {
             assert!(!expanded.contains("transport_certificate"));
             let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
                 crate::surface::proof::without_implicit_solve(|| {
-                    verify_c0_sources(&expanded, &files)
+                    verify_c_sources(&expanded, &files)
                 })
             });
             verified.unwrap();
@@ -10740,13 +10752,14 @@ fn volatile_read_results_use_selected_event_indexes() {
         let mut points = RecordedSnapshots::new();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 0..size {
-                let value = CValue::Int32(MachineTerm::Variable(Variable(800000 + index as u64)));
+                let value =
+                    ProgramValue::Int32(MachineTerm::Variable(Variable(800000 + index as u64)));
                 points.record_read_event_values(index, std::iter::once(&value));
                 assert!(points.read_event_naming_value(&value).is_some());
             }
         });
         samples.push(work);
-        let first = CValue::Int32(MachineTerm::Variable(Variable(800000)));
+        let first = ProgramValue::Int32(MachineTerm::Variable(Variable(800000)));
         let branch = points.clone();
         points.record_read_event_values(0, std::iter::empty());
         assert!(points.read_event_naming_value(&first).is_none());
@@ -10779,7 +10792,7 @@ fn volatile_read_results_use_selected_event_indexes() {
                 region: CodeRegionRef::Region(0),
                 kind: ProgramPointKind::Exit,
             },
-            crate::kernel::CState::new(),
+            crate::kernel::ExecutionState::new(),
         );
         points.record_read_event_values(0, std::iter::once(&first));
         points.remove(&ProgramPointRef {
@@ -10833,7 +10846,7 @@ fn entry_separation_samples() {
              have separate(plain(p0), memory(*slot)) by {{ assumption(); }}\n}}\n"
         );
         let sources = [("owned.c", c.as_str())];
-        let (result, sample) = scaling_sample(size, || verify_c0_sources(&source, &sources));
+        let (result, sample) = scaling_sample(size, || verify_c_sources(&source, &sources));
         result.expect("an owned unconditional resource is separate from another owned cell");
         samples.push(sample);
     }
@@ -10896,7 +10909,7 @@ fn instance_separation_samples() {
             let (c, source) = fixture(clauses, steps);
             let sources = [("owned.c", c.as_str())];
             let (result, sample) =
-                scaling_sample(clauses.max(steps), || verify_c0_sources(&source, &sources));
+                scaling_sample(clauses.max(steps), || verify_c_sources(&source, &sources));
             result.expect("an owned instance is separate from another owned cell");
             samples.push(sample);
         }
@@ -10969,7 +10982,7 @@ fn folded_instance_separation_samples() {
             } else {
                 folds
             };
-            let (result, sample) = scaling_sample(size, || verify_c0_sources(&source, &sources));
+            let (result, sample) = scaling_sample(size, || verify_c_sources(&source, &sources));
             result.expect("a folded instance is separate from another owned cell");
             samples.push(sample);
         }
@@ -11037,7 +11050,7 @@ fn consuming_call_bound_samples() {
              let {{ {outputs} }} = step(touch, {{ {bindings} }});\n}}\n"
         );
         let sources = [("consuming.c", c.as_str())];
-        let (result, sample) = scaling_sample(size, || verify_c0_sources(&source, &sources));
+        let (result, sample) = scaling_sample(size, || verify_c_sources(&source, &sources));
         result.expect("a consuming call with many inputs verifies");
         samples.push(sample);
     }
@@ -11060,13 +11073,16 @@ fn a_loop_exit_reads_only_the_points_its_pass_recorded() {
     let pass_work = |before: usize, during: usize| {
         let mut snapshots = RecordedSnapshots::new();
         for index in 0..before {
-            snapshots.insert(region(index, ProgramPointKind::Entry), CState::new());
+            snapshots.insert(
+                region(index, ProgramPointKind::Entry),
+                ExecutionState::new(),
+            );
         }
         let mark = snapshots.history_mark();
         for index in 0..during {
             snapshots.insert(
                 region(before + index, ProgramPointKind::Exit),
-                CState::new(),
+                ExecutionState::new(),
             );
         }
         let (points, work) = measure_deterministic_work(|| snapshots.recorded_since(&mark));
@@ -11085,4 +11101,34 @@ fn a_loop_exit_reads_only_the_points_its_pass_recorded() {
             "the walk must grow linearly with the pass's points: {related:?}"
         );
     }
+}
+
+/// A call inside an expression is its own step, and its result lives in the
+/// path state only until the statement that reads it: checking `n` such
+/// statements is work linear in `n`, with no result carried past its
+/// statement.
+#[test]
+fn nested_call_results_scale_with_the_statements_that_read_them() {
+    use crate::instrumentation::measure_deterministic_work;
+    let sidecar = "verifying \"probe.c\";
+        extern int32 id(int32 v) { ensures result == v; }
+        int32 f(int32 x) { ensures result == result; }";
+    let mut samples = Vec::new();
+    for size in [8, 16, 32] {
+        let body = "    x = id(x) ^ 1;\n".repeat(size);
+        let program = format!("int id(int v);\nint f(int x) {{\n{body}    return x;\n}}\n");
+        let (result, work) = measure_deterministic_work(|| {
+            verify_c_sources(sidecar, &[("probe.c", program.as_str())])
+        });
+        result.expect("each call step's result is read by its own statement");
+        samples.push((size, work));
+    }
+    let per_statement = |(size, work): (usize, usize)| work / size;
+    let smallest = per_statement(samples[0]);
+    assert!(
+        samples
+            .iter()
+            .all(|sample| per_statement(*sample) <= smallest * 3 / 2),
+        "nested call results grew per statement: {samples:?}"
+    );
 }

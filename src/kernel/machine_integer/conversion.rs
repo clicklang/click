@@ -31,7 +31,7 @@
 use super::representation;
 use crate::kernel::MachineCastSpelling;
 use crate::kernel::binary_term;
-use crate::kernel::{CValue, IntegerTerm, MachineIntegerType, MachineTerm};
+use crate::kernel::{IntegerTerm, MachineIntegerType, MachineTerm, ProgramValue};
 use crate::kernel::{bits32_constant, constant_u32};
 
 /// What a language conversion asks of its operand.
@@ -243,19 +243,22 @@ pub(crate) fn convert_term(
 /// value. A root constant folds exactly; a 128-bit conversion first checks
 /// its operand's root (`accepts_cast_operand`). `None` for a value that is
 /// not an integer.
-pub(crate) fn convert_value(value: CValue, destination: MachineIntegerType) -> Option<CValue> {
+pub(crate) fn convert_value(
+    value: ProgramValue,
+    destination: MachineIntegerType,
+) -> Option<ProgramValue> {
     crate::instrumentation::record_deterministic_work(1);
     let value = value.numeric_value().clone();
     // Rule C1: a `Bool` converted to an integer is its cast at the
     // destination's format, 1 when it holds and 0 otherwise. It owes
     // nothing under either policy.
-    if let CValue::Bool(word) = &value {
-        return CValue::from_bitvector_term(
-            destination.c_type(),
+    if let ProgramValue::Bool(word) = &value {
+        return ProgramValue::from_bitvector_term(
+            destination.program_type(),
             crate::kernel::MachineTerm::bool_word_as(destination, word),
         );
     }
-    let source = MachineIntegerType::from_c_type(value.c_type())?;
+    let source = MachineIntegerType::from_program_type(value.program_type())?;
     let wide = source.format().bits() == 128 || destination.format().bits() == 128;
     if !wide {
         if let Some(constant) = source.constant_from_value(&value) {
@@ -608,12 +611,12 @@ fn matches_kernel(
 
 fn matches_converted_value(
     machine: &crate::kernel::SharedMachineIntegerTerm,
-    value: &CValue,
+    value: &ProgramValue,
 ) -> bool {
     if let Some(literal) = machine.operand_view().literal() {
         return *value == machine.ty().value_from_term(literal);
     }
-    matches!(value, crate::kernel::integer_c_value!(word) if value.c_type() == machine.ty().c_type() && matches_word(machine, word))
+    matches!(value, crate::kernel::integer_c_value!(word) if value.program_type() == machine.ty().program_type() && matches_word(machine, word))
 }
 
 fn masked_narrowing(

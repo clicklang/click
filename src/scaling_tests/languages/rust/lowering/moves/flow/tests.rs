@@ -61,15 +61,15 @@ fn split_while_headers_preserve_order_and_have_linear_work_and_emitted_size() {
         while let Some(statement) = pending.pop() {
             nodes += 1;
             match statement {
-                CStatement::Seq(statements) => {
+                ProgramStatement::Seq(statements) => {
                     pending.extend(statements.iter().map(|statement| statement.as_ref()))
                 }
-                CStatement::While { body, .. } => {
+                ProgramStatement::While { body, .. } => {
                     loops += 1;
                     pending.push(body);
                 }
-                CStatement::Assign { name, .. } if name == "marker" => assignments += 1,
-                CStatement::Break => panic!("do not manufacture a break"),
+                ProgramStatement::Assign { name, .. } if name == "marker" => assignments += 1,
+                ProgramStatement::Break => panic!("do not manufacture a break"),
                 _ => (),
             }
         }
@@ -129,14 +129,14 @@ fn nested_while_regions_have_linear_analysis_work_and_emitted_size() {
         let (mut count, mut assignments) = (0, 0);
         while let Some(s) = pending.pop() {
             match s {
-                CStatement::Seq(statements) => {
+                ProgramStatement::Seq(statements) => {
                     pending.extend(statements.iter().map(|statement| statement.as_ref()))
                 }
-                CStatement::While { body, .. } => {
+                ProgramStatement::While { body, .. } => {
                     count += 1;
                     pending.push(body);
                 }
-                CStatement::Assign { name, .. } if name == "marker" => assignments += 1,
+                ProgramStatement::Assign { name, .. } if name == "marker" => assignments += 1,
                 _ => (),
             }
         }

@@ -12,7 +12,7 @@ pub(in crate::surface) struct EvaluatedContractSegment {
 
 pub(in crate::surface) fn evaluate_requirement_segment(
     parameter_binding: ParameterBinding<'_>,
-    entry_state: &CState,
+    entry_state: &ExecutionState,
     segment: &ContractSegment,
 ) -> Result<EvaluatedContractSegment, String> {
     if segment.state != ContractSegmentState::Current {
@@ -42,7 +42,7 @@ pub(in crate::surface) fn evaluate_requirement_segment(
 /// need not be `int32`.
 pub(in crate::surface) fn evaluate_requirement_segment_base(
     parameter_binding: ParameterBinding<'_>,
-    entry_state: &CState,
+    entry_state: &ExecutionState,
     segment: &ContractSegment,
 ) -> Result<Pointer, String> {
     let parameter_values = parameter_values_named(
@@ -52,13 +52,14 @@ pub(in crate::surface) fn evaluate_requirement_segment_base(
     .map_err(|error| error.message)?;
     let array_refs =
         array_refs_for_values(parameter_binding, &parameter_values, entry_state.memory());
-    let CValue::Pointer(base) = crate::surface::proof::evaluate_c_fragment_through_kernel(
-        &segment.base,
-        &PureFactContext::new(),
-        ContractEnvironment::new(&parameter_values, &array_refs),
-        entry_state,
-        None,
-    )?
+    let ProgramValue::Pointer(base) =
+        crate::surface::proof::evaluate_program_expression_through_kernel(
+            &segment.base,
+            &PureFactContext::new(),
+            ContractEnvironment::new(&parameter_values, &array_refs),
+            entry_state,
+            None,
+        )?
     else {
         return Err("segment base did not evaluate to a pointer".to_string());
     };
@@ -71,11 +72,11 @@ fn evaluate_segment_bounds(
     segment: &ContractSegment,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
-    state: &CState,
+    state: &ExecutionState,
     element_width: u32,
 ) -> Result<EvaluatedContractSegment, String> {
-    let evaluate = |expression: &CExpression| {
-        crate::surface::proof::evaluate_c_fragment_through_kernel(
+    let evaluate = |expression: &ProgramExpression| {
+        crate::surface::proof::evaluate_program_expression_through_kernel(
             expression,
             assumptions,
             contract_environment,
@@ -83,13 +84,13 @@ fn evaluate_segment_bounds(
             None,
         )
     };
-    let CValue::Pointer(base) = evaluate(&segment.base)? else {
+    let ProgramValue::Pointer(base) = evaluate(&segment.base)? else {
         return Err("segment base did not evaluate to a pointer".to_string());
     };
-    let CValue::Int32(start) = evaluate(&segment.start)? else {
+    let ProgramValue::Int32(start) = evaluate(&segment.start)? else {
         return Err("segment start did not evaluate to int32".to_string());
     };
-    let CValue::Int32(end) = evaluate(&segment.end)? else {
+    let ProgramValue::Int32(end) = evaluate(&segment.end)? else {
         return Err("segment end did not evaluate to int32".to_string());
     };
     Ok(EvaluatedContractSegment {
@@ -185,7 +186,7 @@ fn pointer_offsets_equal_for_effect(
     right: &PointerOffsetTerm,
     assumptions: &PureFactContext,
 ) -> bool {
-    c_pointer_offsets_proven_equal_for_effect(left, right, assumptions)
+    program_pointer_offsets_proven_equal_for_effect(left, right, assumptions)
 }
 
 fn element_index_from_pointer_offset(

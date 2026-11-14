@@ -5,7 +5,7 @@ use super::*;
 impl crate::kernel::search::ProofSearch<ResourceContext> {
     pub(crate) fn ownership_validity_candidates(
         proof_input: &ResourceContext,
-        range: &CMemoryRange,
+        range: &MemoryRange,
         skip_block: Option<&PointerBlock>,
         assumptions: &PureFactContext,
     ) -> BTreeSet<ResourceEntryId> {

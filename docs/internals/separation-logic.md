@@ -5,7 +5,7 @@ notation is explanatory; function contracts use the resource verbs described
 in the language guide.
 
 Click is not a full Iris implementation. It has a concrete `ResourceContext`
-containing `CResourceFact` values and a `ResourceFamilyAlgebra` interface that
+containing `ResourceFact` values and a `ResourceFamilyAlgebra` interface that
 defines validity, entailment, consumption, normalization, core, and observable
 facts for each built-in family.
 
@@ -22,7 +22,7 @@ The kernel distinguishes resources from resource facts. A resource is the bare
 thing being described, such as `memory(range)` or
 `composite(name, arguments)`. A resource fact is the thing held in the proof
 context: a resource plus an access mode. Internally, the Rust type for a
-resource fact is currently `CResourceFact`.
+resource fact is currently `ResourceFact`.
 
 ```text
 view(memory(range))
@@ -131,7 +131,7 @@ satisfies `views p[...]` from `owns p[...]` is a lend: it suspends the owner
 for the borrow and recovers it at the return, and an owner is never held
 alongside an independent view of the same memory.
 
-In the current code `CResourceFact::core()` returns `Option<CResourceFact>`,
+In the current code `ResourceFact::core()` returns `Option<ResourceFact>`,
 and the loan ledger is its one consumer: escrowing an owner records the viewed
 description the borrower reads through. Nothing composes an owner with its own
 core.
@@ -209,7 +209,7 @@ derived from its continuation stack rather than maintained as an independent
 flag.
 
 The loop preservation execution proof packages its abstract exit transitions as an
-opaque kernel `CVerifiedLoopRule`. The symbolic values in its entry state stand
+opaque kernel `VerifiedLoopRule`. The symbolic values in its entry state stand
 for arbitrary values constrained by the rule's required assumptions. Later
 execution may strengthen those assumptions, but it must apply the registered
 rule when crossing an annotated loop. A missing or incompatible rule is a
@@ -217,7 +217,7 @@ proof failure, not a request to run automatic loop verification again.
 
 Function contracts are packaged similarly. Each checked clause produces kernel
 evidence keyed to that exact effect or postcondition. Only a complete evidence
-set can construct a `CVerifiedFunctionRule`; a theorem about
+set can construct a `VerifiedFunctionRule`; a theorem about
 the same function is not sufficient by itself.
 Crossing a call instantiates that rule at the caller's arguments and entry
 state, checks its pure and resource premises, constructs a fresh abstract
@@ -230,16 +230,16 @@ an invitation to inline its body.
 
 Termination evidence is intentionally not part of this opaque call rule. A
 checked `decreases` plan can additionally produce a
-`CVerifiedFunctionTerminationRule`, but partial contract application remains
+`VerifiedFunctionTerminationRule`, but partial contract application remains
 valid without it and never manufactures a return frontier for a diverging
 callee. Clients that need a total-correctness or reachability fact must request
 the separate evidence explicitly.
 
 This is an explicit execution mode, not behavior inferred from which entries
 happen to be present in the execution environment. Click selects
-`CExecutionSemantics::APPLY_VERIFIED_RULES`, so a missing function or loop rule
+`ExecutionSemantics::APPLY_VERIFIED_RULES`, so a missing function or loop rule
 fails the proof and never falls back to body execution. The kernel's low-level
-evaluator can instead select `CExecutionSemantics::EXECUTE_BODIES`; that mode
+evaluator can instead select `ExecutionSemantics::EXECUTE_BODIES`; that mode
 ignores verified rules even when they are available.
 
 Each loop-rule premise can be automatic or explicit. Explicit `initialize` is a

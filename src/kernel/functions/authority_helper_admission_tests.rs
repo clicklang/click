@@ -3,25 +3,25 @@ use super::*;
 #[test]
 fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
     let samples = [(2, 16), (64, 64), (65536, 256)].map(|(amount, unrelated)| {
-        let pointer = CValue::typed_pointer(
+        let pointer = ProgramValue::typed_pointer(
             Pointer {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
         );
         let description = ResourceDescription::new(
             "member".into(),
             vec![pointer.clone().into()].into(),
             ResourceFieldSchema::new(vec![]).unwrap(),
         );
-        let authority = CResourceFact::own(CResource::PopulationAuthority(description.clone()));
-        let resource = CResource::Composite {
+        let authority = ResourceFact::own(Resource::PopulationAuthority(description.clone()));
+        let resource = Resource::Composite {
             name: "member".into(),
             arguments: vec![pointer.clone().into()].into(),
         };
-        let member = CResourceFact::own_quantity(resource, MachineTerm::constant(amount));
-        let mut entry = CState::new()
+        let member = ResourceFact::own_quantity(resource, MachineTerm::constant(amount));
+        let mut entry = ExecutionState::new()
             .with_population_creation_tracking()
             .with_local("p", pointer)
             .with_resource_context(
@@ -33,7 +33,7 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
             let other = ResourceDescription::new(
                 "unrelated".into(),
                 vec![
-                    CValue::pointer(Pointer {
+                    ProgramValue::pointer(Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: PointerOffsetTerm::Variable(Variable(950_000 + index as u64)),
                     })
@@ -42,7 +42,7 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
                 .into(),
                 ResourceFieldSchema::new(vec![]).unwrap(),
             );
-            let authority = CResourceFact::own(CResource::PopulationAuthority(other));
+            let authority = ResourceFact::own(Resource::PopulationAuthority(other));
             entry = entry
                 .clone()
                 .with_resource_context(
@@ -54,56 +54,56 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
                 .import_opaque_population(&authority, 0)
                 .unwrap();
         }
-        let member_spec = CResourceSpec::composite(
-            CResourceAccessMode::Own,
+        let member_spec = ResourceSpec::composite(
+            ResourceAccessMode::Own,
             "member".into(),
-            vec![c_variable("p")],
-            vec![CType::Int32Pointer],
+            vec![crate::kernel::program_expression::variable("p")],
+            vec![ProgramType::Int32Pointer],
         );
-        let authority_spec = CResourceSpec::new(
-            CResourceTerm::PopulationAuthority {
-                protected: Box::new(CResourceTypeSpec {
+        let authority_spec = ResourceSpec::new(
+            ResourceTerm::PopulationAuthority {
+                protected: Box::new(ResourceTypeSpec {
                     resource: Box::new(member_spec.clone()),
                     schema: ResourceFieldSchema::new(vec![]).unwrap(),
                 }),
                 population_arity: None,
-                snapshot: CResourceSnapshot::Current,
+                snapshot: ResourceSnapshot::Current,
             },
-            CResourceAccessMode::Own,
-            CResourceQuantity::One,
-            CResourceTransferRole::Borrow,
-            CResourceSnapshot::Entry,
+            ResourceAccessMode::Own,
+            ResourceQuantity::One,
+            ResourceTransferRole::Borrow,
+            ResourceSnapshot::Entry,
         )
         .unwrap();
-        let consumed = CResourceSpec::new(
+        let consumed = ResourceSpec::new(
             member_spec.term().clone(),
-            CResourceAccessMode::Own,
-            CResourceQuantity::Count(c_int32_literal(amount)),
-            CResourceTransferRole::Consume,
-            CResourceSnapshot::Entry,
+            ResourceAccessMode::Own,
+            ResourceQuantity::Count(crate::kernel::program_expression::int32_literal(amount)),
+            ResourceTransferRole::Consume,
+            ResourceSnapshot::Entry,
         )
         .unwrap();
-        let produced = CResourceSpec::new(
+        let produced = ResourceSpec::new(
             member_spec.term().clone(),
-            CResourceAccessMode::Own,
-            CResourceQuantity::Count(c_int32_literal(amount - 1)),
-            CResourceTransferRole::Produce,
-            CResourceSnapshot::Post,
+            ResourceAccessMode::Own,
+            ResourceQuantity::Count(crate::kernel::program_expression::int32_literal(amount - 1)),
+            ResourceTransferRole::Produce,
+            ResourceSnapshot::Post,
         )
         .unwrap();
-        let function = c_function(
-            CType::Void,
+        let function = program_function(
+            ProgramType::Void,
             "shrink",
-            vec![c_parameter("p", CType::Int32Pointer)],
-            c_return(c_void_value()),
+            vec![program_parameter("p", ProgramType::Int32Pointer)],
+            program_return(program_void_value()),
         )
         .with_resource_summary(
             vec![authority_spec.clone(), consumed],
             vec![authority_spec, produced],
         )
-        .with_composite_resource_definitions(vec![CCompositeResourceDefinition::new(
+        .with_composite_resource_definitions(vec![CompositeResourceDefinition::new(
             "member",
-            vec![c_parameter("p", CType::Int32Pointer)],
+            vec![program_parameter("p", ProgramType::Int32Pointer)],
             None,
             false,
             vec![],
@@ -202,22 +202,23 @@ fn contained_transfer_frontier_scales_with_selected_depth_and_indexed_definition
         block: "payload".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = CMemory::new().with_block("payload", 4);
+    let memory = Memory::new().with_block("payload", 4);
     let assumptions = PureFactContext::new();
-    let root = CResourceFact::own_composite("wrapper-0000".into(), vec![CValue::pointer(pointer)]);
+    let root =
+        ResourceFact::own_composite("wrapper-0000".into(), vec![ProgramValue::pointer(pointer)]);
     let definition = |name: String, next: Option<String>| {
-        CCompositeResourceDefinition::new(
+        CompositeResourceDefinition::new(
             name,
-            vec![c_parameter("p", CType::Int32Pointer)],
+            vec![program_parameter("p", ProgramType::Int32Pointer)],
             None,
             false,
             next.into_iter()
                 .map(|next| {
-                    CResourceSpec::composite(
-                        CResourceAccessMode::Own,
+                    ResourceSpec::composite(
+                        ResourceAccessMode::Own,
                         next,
-                        vec![c_variable("p")],
-                        vec![CType::Int32Pointer],
+                        vec![crate::kernel::program_expression::variable("p")],
+                        vec![ProgramType::Int32Pointer],
                     )
                 })
                 .collect(),
@@ -277,14 +278,14 @@ fn contained_transfer_frontier_scales_with_selected_depth_and_indexed_definition
 
 #[test]
 fn boundary_receipt_rejects_other_callers_functions_and_arguments() {
-    let caller = CState::new().with_local("kept", int32(7));
-    let function = Arc::new(c_function(
-        CType::Void,
+    let caller = ExecutionState::new().with_local("kept", int32(7));
+    let function = Arc::new(program_function(
+        ProgramType::Void,
         "entry_receipt",
-        vec![c_parameter("value", CType::Int32)],
-        CStatement::Skip,
+        vec![program_parameter("value", ProgramType::Int32)],
+        ProgramStatement::Skip,
     ));
-    let arguments = vec![CExpression::Value(int32(3))];
+    let arguments = vec![ProgramExpression::Value(int32(3))];
     let receipt = capture_checked_boundary_resource_transfer(
         &caller,
         function.clone(),
@@ -308,7 +309,7 @@ fn boundary_receipt_rejects_other_callers_functions_and_arguments() {
     assert_ne!(receipt, recaptured);
     let other_function = function.as_ref().clone();
     let other_caller = caller.clone().with_local("kept", int32(8));
-    let other_arguments = vec![CExpression::Value(int32(4))];
+    let other_arguments = vec![ProgramExpression::Value(int32(4))];
     for (candidate_caller, candidate_function, candidate_arguments) in [
         (&other_caller, function.as_ref(), arguments.as_slice()),
         (&caller, &other_function, arguments.as_slice()),
@@ -318,7 +319,7 @@ fn boundary_receipt_rejects_other_callers_functions_and_arguments() {
             candidate_caller,
             candidate_function,
             candidate_arguments,
-            CStatementOutcome::Normal(Box::new(caller.clone())),
+            StatementOutcome::Normal(Box::new(caller.clone())),
             Vec::new(),
             &PureFactContext::new(),
             &mut ExecutionBudget::beside_live_state(),
@@ -327,14 +328,14 @@ fn boundary_receipt_rejects_other_callers_functions_and_arguments() {
         )
         .unwrap();
         assert!(
-            matches!(result, Err(CRuntimeError::FunctionContract(message))
+            matches!(result, Err(RuntimeError::FunctionContract(message))
                 if message == "function boundary resource receipt belongs to another entry")
         );
         let deferred = resolve_deferred_contract_exit(
             candidate_caller,
             candidate_function,
             candidate_arguments,
-            &CFunctionOutcome::Return {
+            &FunctionOutcome::Return {
                 value: int32(0).into(),
                 state: Box::new(caller.clone()),
             },
@@ -344,7 +345,7 @@ fn boundary_receipt_rejects_other_callers_functions_and_arguments() {
         )
         .unwrap();
         assert!(
-            matches!(deferred, Err(CRuntimeError::FunctionContract(message))
+            matches!(deferred, Err(RuntimeError::FunctionContract(message))
                 if message == "function boundary resource receipt belongs to another entry")
         );
     }
@@ -352,18 +353,18 @@ fn boundary_receipt_rejects_other_callers_functions_and_arguments() {
 
 #[test]
 fn authority_helper_rejects_resource_constructors() {
-    let mut interface = CFunctionContractInterface::new(CType::Int32, Vec::new());
-    interface.resource_constructors = vec![CResourceSpec::owned_memory(CMemorySegment::new(
-        c_int32_literal(0),
-        c_int32_literal(0),
-        c_int32_literal(1),
+    let mut interface = FunctionContractInterface::new(ProgramType::Int32, Vec::new());
+    interface.resource_constructors = vec![ResourceSpec::owned_memory(MemorySegment::new(
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(1),
     ))];
     assert!(!authority_preserves_resource_contract(&interface));
 }
 #[test]
 fn assumed_authority_contracts_preserve_named_identity_without_lifecycle_rights() {
     assert!(!authority_preserves_assumed_resource_contract(
-        &CFunctionContractInterface::new(CType::Void, Vec::new())
+        &FunctionContractInterface::new(ProgramType::Void, Vec::new())
     ));
     let mut interface = companion_interface("reference");
     interface
@@ -373,22 +374,24 @@ fn assumed_authority_contracts_preserve_named_identity_without_lifecycle_rights(
         .resource_ensures
         .retain(|spec| spec.family() == ResourceFamily::PopulationAuthority);
     let identity = Variable::allocate_fresh().unwrap();
-    let schema =
-        ResourceFieldSchema::new(vec![("serial".into(), ResourceFieldType::C(CType::Int32))])
-            .unwrap();
-    let member = CResourceSpec::composite(
-        CResourceAccessMode::Own,
+    let schema = ResourceFieldSchema::new(vec![(
+        "serial".into(),
+        ResourceFieldType::Program(ProgramType::Int32),
+    )])
+    .unwrap();
+    let member = ResourceSpec::composite(
+        ResourceAccessMode::Own,
         "ticket".into(),
-        vec![c_variable("p")],
-        vec![CType::Int32Pointer],
+        vec![crate::kernel::program_expression::variable("p")],
+        vec![ProgramType::Int32Pointer],
     );
-    let named = CResourceSpec::instance(
+    let named = ResourceSpec::instance(
         identity,
         "member".into(),
         schema.clone(),
         member.clone(),
-        CResourceTransferRole::Borrow,
-        CResourceSnapshot::Current,
+        ResourceTransferRole::Borrow,
+        ResourceSnapshot::Current,
     )
     .unwrap();
     interface.resource_requires.push(named.clone());
@@ -405,12 +408,9 @@ fn assumed_authority_contracts_preserve_named_identity_without_lifecycle_rights(
         authority_preserves_assumed_resource_contract(&logical),
         "ordinary named models do not need artificial population authority"
     );
-    for role in [
-        CResourceTransferRole::Consume,
-        CResourceTransferRole::Produce,
-    ] {
+    for role in [ResourceTransferRole::Consume, ResourceTransferRole::Produce] {
         let mut changed = interface.clone();
-        if role == CResourceTransferRole::Consume {
+        if role == ResourceTransferRole::Consume {
             let last = changed.resource_requires.last_mut().unwrap();
             *last = last.clone().with_role(role);
             changed.resource_ensures.pop();
@@ -424,13 +424,13 @@ fn assumed_authority_contracts_preserve_named_identity_without_lifecycle_rights(
     let mut changed = interface.clone();
     changed.resource_ensures.pop();
     changed.resource_ensures.push(
-        CResourceSpec::instance(
+        ResourceSpec::instance(
             Variable::allocate_fresh().unwrap(),
             "member".into(),
             schema,
             member,
-            CResourceTransferRole::Borrow,
-            CResourceSnapshot::Current,
+            ResourceTransferRole::Borrow,
+            ResourceSnapshot::Current,
         )
         .unwrap(),
     );
@@ -439,63 +439,63 @@ fn assumed_authority_contracts_preserve_named_identity_without_lifecycle_rights(
     assert!(!authority_preserves_assumed_resource_contract(&interface));
 }
 
-fn companion_interface(member_family: &str) -> CFunctionContractInterface {
-    let member = CResourceSpec::composite(
-        CResourceAccessMode::Own,
+fn companion_interface(member_family: &str) -> FunctionContractInterface {
+    let member = ResourceSpec::composite(
+        ResourceAccessMode::Own,
         member_family.into(),
-        vec![c_variable("p")],
-        vec![CType::Int32Pointer],
+        vec![crate::kernel::program_expression::variable("p")],
+        vec![ProgramType::Int32Pointer],
     );
-    let authority = CResourceSpec::new(
-        CResourceTerm::PopulationAuthority {
+    let authority = ResourceSpec::new(
+        ResourceTerm::PopulationAuthority {
             population_arity: None,
-            protected: Box::new(CResourceTypeSpec {
+            protected: Box::new(ResourceTypeSpec {
                 resource: Box::new(member.clone()),
                 schema: ResourceFieldSchema::new(vec![]).unwrap(),
             }),
-            snapshot: CResourceSnapshot::Current,
+            snapshot: ResourceSnapshot::Current,
         },
-        CResourceAccessMode::Own,
-        CResourceQuantity::One,
-        CResourceTransferRole::Borrow,
-        CResourceSnapshot::Entry,
+        ResourceAccessMode::Own,
+        ResourceQuantity::One,
+        ResourceTransferRole::Borrow,
+        ResourceSnapshot::Entry,
     )
     .unwrap();
-    let memory = CResourceSpec::owned_memory(CMemorySegment::new(
-        c_variable("slot"),
-        c_int32_literal(0),
-        c_int32_literal(1),
+    let memory = ResourceSpec::owned_memory(MemorySegment::new(
+        crate::kernel::program_expression::variable("slot"),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(1),
     ));
-    let parent = CResourceSpec::instance(
+    let parent = ResourceSpec::instance(
         Variable(991_010),
         "link".into(),
         ResourceFieldSchema::new(vec![("tag".into(), ResourceFieldType::Integer)]).unwrap(),
-        CResourceSpec::composite(
-            CResourceAccessMode::Own,
+        ResourceSpec::composite(
+            ResourceAccessMode::Own,
             "parent".into(),
-            vec![c_variable("slot")],
-            vec![CType::Int32Pointer],
+            vec![crate::kernel::program_expression::variable("slot")],
+            vec![ProgramType::Int32Pointer],
         ),
-        CResourceTransferRole::Produce,
-        CResourceSnapshot::Post,
+        ResourceTransferRole::Produce,
+        ResourceSnapshot::Post,
     )
     .unwrap();
-    c_function(
-        CType::Void,
+    program_function(
+        ProgramType::Void,
         "retain_with_companions",
         vec![],
-        CStatement::Skip,
+        ProgramStatement::Skip,
     )
     .with_resource_summary(
         vec![
             memory,
-            member.clone().with_role(CResourceTransferRole::Borrow),
+            member.clone().with_role(ResourceTransferRole::Borrow),
             authority.clone(),
         ],
         vec![
             parent,
-            member.clone().with_role(CResourceTransferRole::Produce),
-            member.with_role(CResourceTransferRole::Borrow),
+            member.clone().with_role(ResourceTransferRole::Produce),
+            member.with_role(ResourceTransferRole::Borrow),
             authority,
         ],
     )
@@ -508,57 +508,58 @@ fn member_effect_is_independent_of_companion_positions_and_borrowed_survivor() {
     let interface = companion_interface("reference");
     let (produce, selected) = authority_member_effect(&interface).unwrap();
     assert!(produce);
-    assert!(
-        matches!(selected.term(), CResourceTerm::Composite { name, .. } if name == "reference")
-    );
+    assert!(matches!(selected.term(), ResourceTerm::Composite { name, .. } if name == "reference"));
     assert!(authority_supports_resource_contract(&interface));
 }
 
 #[test]
 fn member_move_admission_requires_two_scoped_authorities_and_one_unchanged_member() {
     let member = |anchor, trailing| {
-        CResourceSpec::composite(
-            CResourceAccessMode::Own,
+        ResourceSpec::composite(
+            ResourceAccessMode::Own,
             "slot".into(),
-            vec![c_variable(anchor), c_variable(trailing)],
-            vec![CType::Int32Pointer, CType::Int32Pointer],
+            vec![
+                crate::kernel::program_expression::variable(anchor),
+                crate::kernel::program_expression::variable(trailing),
+            ],
+            vec![ProgramType::Int32Pointer, ProgramType::Int32Pointer],
         )
     };
     let authority = |anchor| {
-        CResourceSpec::new(
-            CResourceTerm::PopulationAuthority {
+        ResourceSpec::new(
+            ResourceTerm::PopulationAuthority {
                 population_arity: Some(2),
-                protected: Box::new(CResourceTypeSpec {
-                    resource: Box::new(CResourceSpec::composite(
-                        CResourceAccessMode::Own,
+                protected: Box::new(ResourceTypeSpec {
+                    resource: Box::new(ResourceSpec::composite(
+                        ResourceAccessMode::Own,
                         "slot".into(),
-                        vec![c_variable(anchor)],
-                        vec![CType::Int32Pointer],
+                        vec![crate::kernel::program_expression::variable(anchor)],
+                        vec![ProgramType::Int32Pointer],
                     )),
                     schema: ResourceFieldSchema::new(vec![]).unwrap(),
                 }),
-                snapshot: CResourceSnapshot::Current,
+                snapshot: ResourceSnapshot::Current,
             },
-            CResourceAccessMode::Own,
-            CResourceQuantity::One,
-            CResourceTransferRole::Borrow,
-            CResourceSnapshot::Entry,
+            ResourceAccessMode::Own,
+            ResourceQuantity::One,
+            ResourceTransferRole::Borrow,
+            ResourceSnapshot::Entry,
         )
         .unwrap()
     };
     let source = authority("source");
     let destination = authority("destination");
-    let interface = c_function(CType::Void, "move", vec![], CStatement::Skip)
+    let interface = program_function(ProgramType::Void, "move", vec![], ProgramStatement::Skip)
         .with_resource_summary(
             vec![
                 source.clone(),
                 destination.clone(),
-                member("source", "p").with_role(CResourceTransferRole::Consume),
+                member("source", "p").with_role(ResourceTransferRole::Consume),
             ],
             vec![
                 source,
                 destination,
-                member("destination", "p").with_role(CResourceTransferRole::Produce),
+                member("destination", "p").with_role(ResourceTransferRole::Produce),
             ],
         )
         .contract_interface()
@@ -571,7 +572,7 @@ fn member_move_admission_requires_two_scoped_authorities_and_one_unchanged_membe
     assert!(!authority_supports_resource_contract(&missing));
     let mut changed_member = interface.clone();
     changed_member.resource_ensures[2] =
-        member("destination", "q").with_role(CResourceTransferRole::Produce);
+        member("destination", "q").with_role(ResourceTransferRole::Produce);
     assert!(!authority_supports_resource_contract(&changed_member));
     let mut duplicate = interface.clone();
     duplicate
@@ -579,7 +580,7 @@ fn member_move_admission_requires_two_scoped_authorities_and_one_unchanged_membe
         .push(duplicate.resource_ensures[2].clone());
     assert!(!authority_supports_resource_contract(&duplicate));
     let mut same_pool = interface.clone();
-    same_pool.resource_ensures[2] = member("source", "p").with_role(CResourceTransferRole::Produce);
+    same_pool.resource_ensures[2] = member("source", "p").with_role(ResourceTransferRole::Produce);
     assert!(!authority_supports_resource_contract(&same_pool));
     let mut lost_authority = interface;
     lost_authority.resource_ensures.remove(1);
@@ -588,46 +589,63 @@ fn member_move_admission_requires_two_scoped_authorities_and_one_unchanged_membe
 
 #[test]
 fn family_exchange_admission_requires_both_exact_authorities_and_one_effect_each() {
-    let member = |name: &str, arguments: Vec<CExpression>| {
-        let types = vec![CType::Int32Pointer; arguments.len()];
-        CResourceSpec::composite(CResourceAccessMode::Own, name.into(), arguments, types)
+    let member = |name: &str, arguments: Vec<ProgramExpression>| {
+        let types = vec![ProgramType::Int32Pointer; arguments.len()];
+        ResourceSpec::composite(ResourceAccessMode::Own, name.into(), arguments, types)
     };
     let authority = |name: &str, arity| {
-        CResourceSpec::new(
-            CResourceTerm::PopulationAuthority {
-                protected: Box::new(CResourceTypeSpec {
-                    resource: Box::new(member(name, vec![c_variable("pool")])),
+        ResourceSpec::new(
+            ResourceTerm::PopulationAuthority {
+                protected: Box::new(ResourceTypeSpec {
+                    resource: Box::new(member(
+                        name,
+                        vec![crate::kernel::program_expression::variable("pool")],
+                    )),
                     schema: ResourceFieldSchema::new(vec![]).unwrap(),
                 }),
                 population_arity: arity,
-                snapshot: CResourceSnapshot::Current,
+                snapshot: ResourceSnapshot::Current,
             },
-            CResourceAccessMode::Own,
-            CResourceQuantity::One,
-            CResourceTransferRole::Borrow,
-            CResourceSnapshot::Entry,
+            ResourceAccessMode::Own,
+            ResourceQuantity::One,
+            ResourceTransferRole::Borrow,
+            ResourceSnapshot::Entry,
         )
         .unwrap()
     };
     let capacity = authority("capacity", None);
     let item = authority("item", Some(2));
-    let interface = c_function(CType::Void, "checkout", vec![], CStatement::Skip)
-        .with_resource_summary(
-            vec![
-                capacity.clone(),
-                item.clone(),
-                member("capacity", vec![c_variable("pool")])
-                    .with_role(CResourceTransferRole::Consume),
-            ],
-            vec![
-                capacity,
-                item,
-                member("item", vec![c_variable("pool"), c_variable("p")])
-                    .with_role(CResourceTransferRole::Produce),
-            ],
-        )
-        .contract_interface()
-        .clone();
+    let interface = program_function(
+        ProgramType::Void,
+        "checkout",
+        vec![],
+        ProgramStatement::Skip,
+    )
+    .with_resource_summary(
+        vec![
+            capacity.clone(),
+            item.clone(),
+            member(
+                "capacity",
+                vec![crate::kernel::program_expression::variable("pool")],
+            )
+            .with_role(ResourceTransferRole::Consume),
+        ],
+        vec![
+            capacity,
+            item,
+            member(
+                "item",
+                vec![
+                    crate::kernel::program_expression::variable("pool"),
+                    crate::kernel::program_expression::variable("p"),
+                ],
+            )
+            .with_role(ResourceTransferRole::Produce),
+        ],
+    )
+    .contract_interface()
+    .clone();
     assert!(authority_exchanges_member_contract(&interface));
     for index in [0, 1] {
         let mut missing = interface.clone();
@@ -648,35 +666,41 @@ fn family_exchange_admission_requires_both_exact_authorities_and_one_effect_each
         .push(duplicate.resource_ensures[2].clone());
     assert!(!authority_supports_resource_contract(&duplicate));
     let mut wrong_anchor = interface;
-    wrong_anchor.resource_ensures[2] = member("item", vec![c_variable("other"), c_variable("p")])
-        .with_role(CResourceTransferRole::Produce);
+    wrong_anchor.resource_ensures[2] = member(
+        "item",
+        vec![
+            crate::kernel::program_expression::variable("other"),
+            crate::kernel::program_expression::variable("p"),
+        ],
+    )
+    .with_role(ResourceTransferRole::Produce);
     assert!(!authority_supports_resource_contract(&wrong_anchor));
 }
 
 #[test]
 fn four_effect_exchange_admission_checks_every_scope_quantity_and_exact_identity() {
     let member = |family: &str, anchor: &str, item: bool| {
-        let mut arguments = vec![c_variable(anchor)];
+        let mut arguments = vec![crate::kernel::program_expression::variable(anchor)];
         if item {
-            arguments.push(c_variable("p"));
+            arguments.push(crate::kernel::program_expression::variable("p"));
         }
-        let types = vec![CType::Int32Pointer; arguments.len()];
-        CResourceSpec::composite(CResourceAccessMode::Own, family.into(), arguments, types)
+        let types = vec![ProgramType::Int32Pointer; arguments.len()];
+        ResourceSpec::composite(ResourceAccessMode::Own, family.into(), arguments, types)
     };
     let authority = |family: &str, anchor: &str, item: bool| {
-        CResourceSpec::new(
-            CResourceTerm::PopulationAuthority {
+        ResourceSpec::new(
+            ResourceTerm::PopulationAuthority {
                 population_arity: item.then_some(2),
-                protected: Box::new(CResourceTypeSpec {
+                protected: Box::new(ResourceTypeSpec {
                     resource: Box::new(member(family, anchor, false)),
                     schema: ResourceFieldSchema::new(vec![]).unwrap(),
                 }),
-                snapshot: CResourceSnapshot::Current,
+                snapshot: ResourceSnapshot::Current,
             },
-            CResourceAccessMode::Own,
-            CResourceQuantity::One,
-            CResourceTransferRole::Borrow,
-            CResourceSnapshot::Entry,
+            ResourceAccessMode::Own,
+            ResourceQuantity::One,
+            ResourceTransferRole::Borrow,
+            ResourceSnapshot::Entry,
         )
         .unwrap()
     };
@@ -688,18 +712,23 @@ fn four_effect_exchange_admission_checks_every_scope_quantity_and_exact_identity
     ];
     let mut inputs = authorities.clone();
     inputs.extend([
-        member("item", "source", true).with_role(CResourceTransferRole::Consume),
-        member("slot", "destination", false).with_role(CResourceTransferRole::Consume),
+        member("item", "source", true).with_role(ResourceTransferRole::Consume),
+        member("slot", "destination", false).with_role(ResourceTransferRole::Consume),
     ]);
     let mut outputs = authorities;
     outputs.extend([
-        member("item", "destination", true).with_role(CResourceTransferRole::Produce),
-        member("slot", "source", false).with_role(CResourceTransferRole::Produce),
+        member("item", "destination", true).with_role(ResourceTransferRole::Produce),
+        member("slot", "source", false).with_role(ResourceTransferRole::Produce),
     ]);
-    let interface = c_function(CType::Void, "exchange", vec![], CStatement::Skip)
-        .with_resource_summary(inputs, outputs)
-        .contract_interface()
-        .clone();
+    let interface = program_function(
+        ProgramType::Void,
+        "exchange",
+        vec![],
+        ProgramStatement::Skip,
+    )
+    .with_resource_summary(inputs, outputs)
+    .contract_interface()
+    .clone();
     assert!(authority_supports_resource_contract(&interface));
     let effects = authority_checked_member_effects(&interface);
     assert_eq!(effects.iter().filter(|(produce, _)| !produce).count(), 2);
@@ -723,10 +752,10 @@ fn four_effect_exchange_admission_checks_every_scope_quantity_and_exact_identity
     for index in [4, 5] {
         let mut nonunit = interface.clone();
         let original = &nonunit.resource_ensures[index];
-        nonunit.resource_ensures[index] = CResourceSpec::new(
+        nonunit.resource_ensures[index] = ResourceSpec::new(
             original.term().clone(),
             original.access(),
-            CResourceQuantity::Count(c_int32_literal(2)),
+            ResourceQuantity::Count(crate::kernel::program_expression::int32_literal(2)),
             original.role(),
             original.snapshot(),
         )
@@ -734,13 +763,16 @@ fn four_effect_exchange_admission_checks_every_scope_quantity_and_exact_identity
         assert!(!authority_supports_resource_contract(&nonunit));
     }
     let mut changed_item = interface.clone();
-    changed_item.resource_ensures[4] = CResourceSpec::composite(
-        CResourceAccessMode::Own,
+    changed_item.resource_ensures[4] = ResourceSpec::composite(
+        ResourceAccessMode::Own,
         "item".into(),
-        vec![c_variable("destination"), c_variable("q")],
-        vec![CType::Int32Pointer; 2],
+        vec![
+            crate::kernel::program_expression::variable("destination"),
+            crate::kernel::program_expression::variable("q"),
+        ],
+        vec![ProgramType::Int32Pointer; 2],
     )
-    .with_role(CResourceTransferRole::Produce);
+    .with_role(ResourceTransferRole::Produce);
     assert!(!authority_supports_resource_contract(&changed_item));
     let mut extra = interface.clone();
     extra
@@ -749,49 +781,49 @@ fn four_effect_exchange_admission_checks_every_scope_quantity_and_exact_identity
     assert!(!authority_supports_resource_contract(&extra));
     let mut wrong_anchor = interface;
     wrong_anchor.resource_ensures[5] =
-        member("slot", "other", false).with_role(CResourceTransferRole::Produce);
+        member("slot", "other", false).with_role(ResourceTransferRole::Produce);
     assert!(!authority_supports_resource_contract(&wrong_anchor));
 }
 
 #[test]
 fn two_control_births_require_each_scope_return_and_unit_effect() {
     let composite = |name: &str, anchor: &str| {
-        CResourceSpec::composite(
-            CResourceAccessMode::Own,
+        ResourceSpec::composite(
+            ResourceAccessMode::Own,
             name.into(),
-            vec![c_variable(anchor)],
-            vec![CType::Int32Pointer],
+            vec![crate::kernel::program_expression::variable(anchor)],
+            vec![ProgramType::Int32Pointer],
         )
     };
-    let authority = CResourceSpec::new(
-        CResourceTerm::PopulationAuthority {
+    let authority = ResourceSpec::new(
+        ResourceTerm::PopulationAuthority {
             population_arity: None,
-            protected: Box::new(CResourceTypeSpec {
+            protected: Box::new(ResourceTypeSpec {
                 resource: Box::new(composite("slot", "p")),
                 schema: ResourceFieldSchema::new(vec![]).unwrap(),
             }),
-            snapshot: CResourceSnapshot::Current,
+            snapshot: ResourceSnapshot::Current,
         },
-        CResourceAccessMode::Own,
-        CResourceQuantity::One,
-        CResourceTransferRole::Borrow,
-        CResourceSnapshot::Entry,
+        ResourceAccessMode::Own,
+        ResourceQuantity::One,
+        ResourceTransferRole::Borrow,
+        ResourceSnapshot::Entry,
     )
     .unwrap();
     let definition = |name: &str| {
-        CCompositeResourceDefinition::new(
+        CompositeResourceDefinition::new(
             name,
-            vec![c_parameter("p", CType::Int32Pointer)],
+            vec![program_parameter("p", ProgramType::Int32Pointer)],
             None,
             false,
             vec![authority.clone()],
             vec![],
         )
     };
-    let input = |anchor| composite("storage", anchor).with_role(CResourceTransferRole::Consume);
-    let output = |anchor| composite("control", anchor).with_role(CResourceTransferRole::Produce);
-    let birth = |anchor| composite("slot", anchor).with_role(CResourceTransferRole::Produce);
-    let interface = c_function(CType::Void, "pair", vec![], CStatement::Skip)
+    let input = |anchor| composite("storage", anchor).with_role(ResourceTransferRole::Consume);
+    let output = |anchor| composite("control", anchor).with_role(ResourceTransferRole::Produce);
+    let birth = |anchor| composite("slot", anchor).with_role(ResourceTransferRole::Produce);
+    let interface = program_function(ProgramType::Void, "pair", vec![], ProgramStatement::Skip)
         .with_resource_summary(
             vec![input("first"), input("second")],
             vec![
@@ -823,10 +855,10 @@ fn two_control_births_require_each_scope_return_and_unit_effect() {
         assert!(authority_two_control_births(&wrong).is_none());
         let mut nonunit = interface.clone();
         let old = &nonunit.resource_ensures[index];
-        nonunit.resource_ensures[index] = CResourceSpec::new(
+        nonunit.resource_ensures[index] = ResourceSpec::new(
             old.term().clone(),
             old.access(),
-            CResourceQuantity::Count(c_int32_literal(2)),
+            ResourceQuantity::Count(crate::kernel::program_expression::int32_literal(2)),
             old.role(),
             old.snapshot(),
         )
@@ -856,13 +888,13 @@ fn multiple_member_effects_cannot_pass_as_ordinary_companions() {
 #[test]
 fn member_effect_requires_its_own_authority_family() {
     let mut interface = companion_interface("reference");
-    interface.resource_ensures[1] = CResourceSpec::composite(
-        CResourceAccessMode::Own,
+    interface.resource_ensures[1] = ResourceSpec::composite(
+        ResourceAccessMode::Own,
         "different".into(),
-        vec![c_variable("p")],
-        vec![CType::Int32Pointer],
+        vec![crate::kernel::program_expression::variable("p")],
+        vec![ProgramType::Int32Pointer],
     )
-    .with_role(CResourceTransferRole::Produce);
+    .with_role(ResourceTransferRole::Produce);
     assert!(authority_member_effect(&interface).is_none());
     assert!(!authority_produces_member_contract(&interface));
     assert!(!authority_supports_resource_contract(&interface));
@@ -871,13 +903,13 @@ fn member_effect_requires_its_own_authority_family() {
 fn effect_cannot_hide_an_unprotected_composite_birth() {
     let mut interface = companion_interface("reference");
     interface.resource_ensures.push(
-        CResourceSpec::composite(
-            CResourceAccessMode::Own,
+        ResourceSpec::composite(
+            ResourceAccessMode::Own,
             "unprotected".into(),
-            vec![c_variable("p")],
-            vec![CType::Int32Pointer],
+            vec![crate::kernel::program_expression::variable("p")],
+            vec![ProgramType::Int32Pointer],
         )
-        .with_role(CResourceTransferRole::Produce),
+        .with_role(ResourceTransferRole::Produce),
     );
     assert!(!authority_supports_resource_contract(&interface));
 }
@@ -894,9 +926,9 @@ fn neutral_authority_requires_the_exact_borrowed_return() {
 #[test]
 fn resource_expansion_diagnostics_bound_the_named_frontier() {
     let resources = ResourceContext::new().unchecked_with_facts((0..32).map(|id| {
-        CResourceFact::own(CResource::Composite {
+        ResourceFact::own(Resource::Composite {
             name: format!("resource_{id}_{}", "x".repeat(1000)),
-            arguments: vec![CValue::pointer(Pointer::null()).into()].into(),
+            arguments: vec![ProgramValue::pointer(Pointer::null()).into()].into(),
         })
     }));
     let diagnostic = bounded_contract_resource_frontier(&resources);

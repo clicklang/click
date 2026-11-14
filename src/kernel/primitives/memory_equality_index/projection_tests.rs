@@ -16,9 +16,9 @@ pub(super) fn record_context(context: &ResourceContext) {
 }
 
 fn projection_context(
-    head: &CResourceFact,
-    definition: &CCompositeResourceDefinition,
-    memory: &CMemory,
+    head: &ResourceFact,
+    definition: &CompositeResourceDefinition,
+    memory: &Memory,
     facts: &PureFactContext,
 ) -> ResourceContext {
     capture_context(|| {
@@ -48,9 +48,9 @@ fn capture_context(operation: impl FnOnce()) -> ResourceContext {
 }
 
 fn owned_frontier_context(
-    head: &CResourceFact,
-    definition: &CCompositeResourceDefinition,
-    state: &CState,
+    head: &ResourceFact,
+    definition: &CompositeResourceDefinition,
+    state: &ExecutionState,
     facts: &PureFactContext,
 ) -> ResourceContext {
     capture_context(|| {
@@ -62,12 +62,12 @@ fn owned_frontier_context(
         )
         .expect("the owned body must expand");
         assert_eq!(frontier.len(), 2);
-        assert!(frontier.iter().all(CResourceFact::is_own));
+        assert!(frontier.iter().all(ResourceFact::is_own));
     })
 }
 
-fn prior_child(context: ResourceContext, head: &CResourceFact) -> ResourceContext {
-    let child = CResourceFact::own_memory(CMemoryRange::new(
+fn prior_child(context: ResourceContext, head: &ResourceFact) -> ResourceContext {
+    let child = ResourceFact::own_memory(MemoryRange::new(
         Pointer::symbolic(Variable(881_000)),
         MachineTerm::constant(0),
         MachineTerm::constant(1),
@@ -79,16 +79,16 @@ fn prior_child(context: ResourceContext, head: &CResourceFact) -> ResourceContex
 }
 
 fn fixture() -> (
-    CResourceFact,
-    CCompositeResourceDefinition,
-    CMemory,
+    ResourceFact,
+    CompositeResourceDefinition,
+    Memory,
     PureFactContext,
     PureFactContext,
 ) {
     let at = |id| Pointer::symbolic(Variable(id));
     let (slot, middle, alias, target) = (at(881_000), at(881_001), at(881_002), at(881_003));
-    let typed = |pointer| CValue::typed_pointer(pointer, CType::Int32Pointer);
-    let head = CResourceFact::view_composite(
+    let typed = |pointer| ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer);
+    let head = ResourceFact::view_composite(
         "dependent_projection".into(),
         vec![
             typed(slot.clone()),
@@ -96,30 +96,32 @@ fn fixture() -> (
             typed(target.clone()),
         ],
     );
-    let definition = CCompositeResourceDefinition::new(
+    let definition = CompositeResourceDefinition::new(
         "dependent_projection",
         vec![
-            c_parameter("slot", CType::Int32Pointer),
-            c_parameter("alias", CType::Int32Pointer),
-            c_parameter("target", CType::Int32Pointer),
+            program_parameter("slot", ProgramType::Int32Pointer),
+            program_parameter("alias", ProgramType::Int32Pointer),
+            program_parameter("target", ProgramType::Int32Pointer),
         ],
         None,
         false,
         vec![
-            CResourceSpec::owned_memory(CMemorySegment::new(
-                c_variable("slot"),
-                c_int32_literal(0),
-                c_int32_literal(1),
+            ResourceSpec::owned_memory(MemorySegment::new(
+                crate::kernel::program_expression::variable("slot"),
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::program_expression::int32_literal(1),
             )),
-            CResourceSpec::owned_memory(CMemorySegment::new(
-                c_variable("target"),
-                c_int32_literal(0),
-                c_load(c_variable("alias")),
+            ResourceSpec::owned_memory(MemorySegment::new(
+                crate::kernel::program_expression::variable("target"),
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::program_expression::load(
+                    crate::kernel::program_expression::variable("alias"),
+                ),
             )),
         ],
         Vec::new(),
     );
-    let memory = CMemory::new()
+    let memory = Memory::new()
         .with_block(slot.block.clone(), 4)
         .with_block(target.block, 8)
         .store(slot.clone(), int32(2u32));
@@ -162,13 +164,13 @@ fn dependent_composite_projection_selects_the_prior_child_by_graph_address() {
     assert!(!sibling_children.permits_memory_read(&alias, 4, &sibling));
     // Querying another fork cannot contaminate either branch's payload.
     assert!(children.permits_memory_read(&alias, 4, &branch));
-    assert!(sibling_children.facts().iter().all(CResourceFact::is_own));
+    assert!(sibling_children.facts().iter().all(ResourceFact::is_own));
 }
 
 #[test]
 fn projection_evidence_still_requires_a_viewed_head_and_matching_definition() {
     let (head, definition, memory, facts, _) = fixture();
-    let owned = CResourceFact::own(head.resource().clone());
+    let owned = ResourceFact::own(head.resource().clone());
     assert!(
         crate::kernel::functions::checked_composite_projection_evidence(
             &owned,
@@ -192,8 +194,8 @@ fn projection_evidence_still_requires_a_viewed_head_and_matching_definition() {
 #[test]
 fn owned_composite_frontier_selects_the_prior_child_by_graph_address() {
     let (viewed, definition, memory, branch, sibling) = fixture();
-    let head = CResourceFact::own(viewed.resource().clone());
-    let state = CState::new().with_memory(memory);
+    let head = ResourceFact::own(viewed.resource().clone());
+    let state = ExecutionState::new().with_memory(memory);
     let context = owned_frontier_context(&head, &definition, &state, &branch);
     let children = prior_child(context, &head);
     let alias = Pointer::symbolic(Variable(881_002));
@@ -216,8 +218,8 @@ fn owned_composite_frontier_selects_the_prior_child_by_graph_address() {
 }
 
 fn coverage_context(
-    available: Vec<CResourceFact>,
-    required: &[CResourceFact],
+    available: Vec<ResourceFact>,
+    required: &[ResourceFact],
     facts: &PureFactContext,
 ) -> (ResourceContext, Option<ResourceContext>) {
     let mut residual = None;
@@ -227,8 +229,8 @@ fn coverage_context(
     (input, residual)
 }
 
-fn coverage_piece(id: u64, start: u32, end: u32) -> CResourceFact {
-    CResourceFact::own_memory(CMemoryRange::new(
+fn coverage_piece(id: u64, start: u32, end: u32) -> ResourceFact {
+    ResourceFact::own_memory(MemoryRange::new(
         Pointer::symbolic(Variable(id)),
         MachineTerm::constant(start),
         MachineTerm::constant(end),
@@ -275,7 +277,7 @@ fn frontier_coverage_selects_and_consumes_through_transitive_address_equality() 
     );
     assert!(
         coverage_context(
-            vec![CResourceFact::View(owner.resource().clone())],
+            vec![ResourceFact::View(owner.resource().clone())],
             &[coverage_piece(881_002, 0, 1)],
             &branch
         )
@@ -336,14 +338,14 @@ fn resource_satisfaction_uses_transitive_addresses_without_restoring_consumed_ow
     assert!(!residual.satisfies_fact(&coverage_piece(881_002, 0, 1), &facts));
     assert!(!residual.satisfies_fact(&coverage_piece(881_002, 1, 4), &facts));
     let alias = Pointer::symbolic(Variable(881_002));
-    let shifted = CResourceFact::own_memory(CMemoryRange::new(
+    let shifted = ResourceFact::own_memory(MemoryRange::new(
         alias.offset_by_elements(MachineTerm::constant(1), 4),
         MachineTerm::constant(0),
         MachineTerm::constant(2),
     ));
     assert!(residual.satisfies_fact(&shifted, &facts));
     let bytes = |end| {
-        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        ResourceFact::own_memory(MemoryRange::new_with_element_width(
             alias.clone(),
             MachineTerm::constant(4),
             MachineTerm::constant(end),
@@ -352,12 +354,12 @@ fn resource_satisfaction_uses_transitive_addresses_without_restoring_consumed_ow
     };
     assert!(residual.satisfies_fact(&bytes(12), &facts));
     assert!(!residual.satisfies_fact(&bytes(13), &facts));
-    assert!(residual.satisfies_fact(&CResourceFact::View(wanted.resource().clone()), &facts));
+    assert!(residual.satisfies_fact(&ResourceFact::View(wanted.resource().clone()), &facts));
     assert!(original.satisfies_fact(&coverage_piece(881_002, 0, 3), &facts));
     assert_eq!(residual.facts(), &[coverage_piece(881_000, 1, 3)]);
     let viewed = ResourceContext::new()
         .try_compose_with_fact(
-            CResourceFact::View(coverage_piece(881_000, 1, 3).resource().clone()),
+            ResourceFact::View(coverage_piece(881_000, 1, 3).resource().clone()),
             &facts,
         )
         .unwrap();
@@ -367,11 +369,11 @@ fn resource_satisfaction_uses_transitive_addresses_without_restoring_consumed_ow
 #[test]
 fn framing_producer_leaves_non_direct_ownership_opaque() {
     let (head, definition, memory, facts, sibling) = fixture();
-    let head = CResourceFact::own(head.resource().clone());
+    let head = ResourceFact::own(head.resource().clone());
     let residual = ResourceContext::new()
         .try_compose_with_fact(head, &facts)
         .unwrap();
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_memory(memory)
         .with_resource_context(residual.clone());
     let kept = crate::kernel::functions::call_kept_ownership(

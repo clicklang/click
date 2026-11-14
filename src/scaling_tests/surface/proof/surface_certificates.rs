@@ -5,8 +5,8 @@ fn sequence_child_spelling_visits_only_the_written_elements() {
     let mut samples = Vec::new();
     for length in [32, 128, 512] {
         let singleton = |index| {
-            ContractExpression::SequenceLiteral(vec![ContractExpression::CFragment(
-                CExpression::Variable(format!("v{index}")),
+            ContractExpression::SequenceLiteral(vec![ContractExpression::ProgramExpression(
+                ProgramExpression::Variable(format!("v{index}")),
             )])
         };
         // Deliberately skewed source concatenation must not make flattening
@@ -46,8 +46,8 @@ fn sequence_child_spelling_visits_only_the_written_elements() {
 #[test]
 fn computed_transport_read_selection_is_linear_in_written_expression() {
     for length in [32, 128, 512] {
-        let read = ContractExpression::CFragment(CExpression::Load(Box::new(
-            CExpression::Variable("p".into()),
+        let read = ContractExpression::ProgramExpression(ProgramExpression::Load(Box::new(
+            ProgramExpression::Variable("p".into()),
         )));
         let expression = (1..length).fold(read.clone(), |left, _| {
             ContractExpression::Add(Box::new(left), Box::new(read.clone()))

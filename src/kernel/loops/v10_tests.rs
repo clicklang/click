@@ -1,7 +1,7 @@
 use super::*;
 
-fn memory_range(base: u32, end: u32) -> CMemoryRange {
-    CMemoryRange::new(
+fn memory_range(base: u32, end: u32) -> MemoryRange {
+    MemoryRange::new(
         Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
@@ -13,7 +13,7 @@ fn memory_range(base: u32, end: u32) -> CMemoryRange {
 
 #[test]
 fn loop_havoc_requires_a_checked_set_disjoint_from_active_loans() {
-    let escrow = CResourceFact::own_memory(memory_range(0, 1));
+    let escrow = ResourceFact::own_memory(memory_range(0, 1));
     let support = ResourceContext::new()
         .unchecked_with_fact(escrow.clone())
         .unique_owned_occurrence_for_fact(&escrow)
@@ -41,8 +41,8 @@ fn owned_entry_footprint_names_memory_owners_and_refuses_unnameable_ones() {
     let empty = ResourceContext::new();
     assert_eq!(checked_owned_entry_footprint(&empty), Some(Vec::new()));
 
-    let owned = CResourceFact::own_memory(memory_range(2, 3));
-    let viewed = CResourceFact::view_memory(memory_range(0, 1));
+    let owned = ResourceFact::own_memory(memory_range(2, 3));
+    let viewed = ResourceFact::view_memory(memory_range(0, 1));
     let memory_only = ResourceContext::new()
         .unchecked_with_fact(owned)
         .unchecked_with_fact(viewed);
@@ -56,8 +56,8 @@ fn owned_entry_footprint_names_memory_owners_and_refuses_unnameable_ones() {
     // write set unknown, so the barrier stays closed rather than shrinking
     // to the memory owners that happen to be nameable.
     let folded = ResourceContext::new()
-        .unchecked_with_fact(CResourceFact::own_memory(memory_range(2, 3)))
-        .unchecked_with_fact(CResourceFact::own(CResource::Token {
+        .unchecked_with_fact(ResourceFact::own_memory(memory_range(2, 3)))
+        .unchecked_with_fact(ResourceFact::own(Resource::Token {
             name: "tokens".to_string(),
             arguments: Vec::new().into(),
         }));
@@ -67,48 +67,53 @@ fn owned_entry_footprint_names_memory_owners_and_refuses_unnameable_ones() {
 #[test]
 fn restoring_a_loop_frame_retains_complete_pointer_reads_but_not_written_cells() {
     let _session = crate::kernel::VerificationSession::enter();
-    let field = CPointerValue::new(Pointer::symbolic(Variable(916_200)), CType::Int32Pointer);
-    let data = CPointerValue::new(Pointer::symbolic(Variable(916_201)), CType::Int32Pointer);
-    let field_range = CMemoryRange::from_pointer_value(&field, 0u32.into(), 2u32.into(), 4);
-    let data_range = CMemoryRange::from_pointer_value(&data, 0u32.into(), 4u32.into(), 4);
-    let initial = CMemory::new();
+    let field = PointerValue::new(
+        Pointer::symbolic(Variable(916_200)),
+        ProgramType::Int32Pointer,
+    );
+    let data = PointerValue::new(
+        Pointer::symbolic(Variable(916_201)),
+        ProgramType::Int32Pointer,
+    );
+    let field_range = MemoryRange::from_pointer_value(&field, 0u32.into(), 2u32.into(), 4);
+    let data_range = MemoryRange::from_pointer_value(&data, 0u32.into(), 4u32.into(), 4);
+    let initial = Memory::new();
     // Restore scalar cache cells covering one complete pointer.
     let memory = initial
-        .materialize_symbolic_cell(field.pointer().clone(), CType::Int32)
-        .materialize_symbolic_cell(field.pointer().offset_by_bytes(4), CType::Int32);
-    let state = CState::new()
-        .with_local("field", CValue::Pointer(field.clone()))
-        .with_local("data", CValue::Pointer(data))
+        .materialize_symbolic_cell(field.pointer().clone(), ProgramType::Int32)
+        .materialize_symbolic_cell(field.pointer().offset_by_bytes(4), ProgramType::Int32);
+    let state = ExecutionState::new()
+        .with_local("field", ProgramValue::Pointer(field.clone()))
+        .with_local("data", ProgramValue::Pointer(data))
         .with_memory(memory)
         .with_resource_context(
             ResourceContext::new()
-                .unchecked_with_fact(CResourceFact::own_memory(field_range.clone()))
-                .unchecked_with_fact(CResourceFact::own_memory(data_range.clone())),
+                .unchecked_with_fact(ResourceFact::own_memory(field_range.clone()))
+                .unchecked_with_fact(ResourceFact::own_memory(data_range.clone())),
         );
-    let assumptions = PureFactContext::new().assume_proposition(Proposition::CResourceSeparate {
+    let assumptions = PureFactContext::new().assume_proposition(Proposition::ResourceSeparate {
         left: Box::new(
-            crate::kernel::region_footprint::byte_resource(&CResource::Memory(field_range))
-                .unwrap(),
+            crate::kernel::region_footprint::byte_resource(&Resource::Memory(field_range)).unwrap(),
         ),
         right: Box::new(
-            crate::kernel::region_footprint::byte_resource(&CResource::Memory(data_range)).unwrap(),
+            crate::kernel::region_footprint::byte_resource(&Resource::Memory(data_range)).unwrap(),
         ),
     });
-    let scalar = |value: u32| CExpression::Value(CValue::Int32(value.into()));
+    let scalar = |value: u32| ProgramExpression::Value(ProgramValue::Int32(value.into()));
     for (name, length, kept) in [("data", 4, true), ("field", 2, false)] {
-        let spec = CResourceSpec::owned_memory(CMemorySegment::new(
-            CExpression::Variable(name.into()),
+        let spec = ResourceSpec::owned_memory(MemorySegment::new(
+            ProgramExpression::Variable(name.into()),
             scalar(0),
             scalar(length),
         ));
-        let effect = CLoopEffectCheck::new_with_origin(
-            CLoopEffect::Mutable(vec![]),
-            CLoopEffectSpan::Whole,
-            CLoopEffectOrigin::DeclaredResource,
+        let effect = LoopEffectCheck::new_with_origin(
+            LoopEffect::Mutable(vec![]),
+            LoopEffectSpan::Whole,
+            LoopEffectOrigin::DeclaredResource,
             None,
         );
-        let body = CStatement::Store {
-            pointer: CExpression::Variable(name.into()),
+        let body = ProgramStatement::Store {
+            pointer: ProgramExpression::Variable(name.into()),
             value: scalar(1),
         };
         let head = prepare_loop_top_state(
@@ -128,7 +133,7 @@ fn restoring_a_loop_frame_retains_complete_pointer_reads_but_not_written_cells()
             state.memory(),
             head.top.memory(),
             field.pointer(),
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
             &head.summaries,
             &assumptions,
         );
@@ -138,7 +143,8 @@ fn restoring_a_loop_frame_retains_complete_pointer_reads_but_not_written_cells()
             "only a field outside the loop's explicit write footprint is preserved"
         );
         if let Some((before, after, equality)) = preservation {
-            let (CValue::Pointer(before), CValue::Pointer(after)) = (before, after) else {
+            let (ProgramValue::Pointer(before), ProgramValue::Pointer(after)) = (before, after)
+            else {
                 panic!("complete pointer observations");
             };
             assert!(

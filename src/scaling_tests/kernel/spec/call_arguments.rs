@@ -3,7 +3,8 @@ fn call_argument_paths_retain_shared_prefixes_without_exporting() {
     for depth in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::UInt32;
-        let mut root = KernelTerm::variable(KernelType::C(CType::UInt32), Variable(998700));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ProgramType::UInt32), Variable(998700));
         for _ in 0..depth {
             root = KernelTerm::machine_binary_shared(
                 format,
@@ -13,13 +14,13 @@ fn call_argument_paths_retain_shared_prefixes_without_exporting() {
         }
         let mut values = crate::persistent::PersistentMap::default();
         values.insert("x".to_string(), root.clone());
-        let state = CState::new();
+        let state = ExecutionState::new();
         let scope = SpecScope {
             values: Some(&values),
             ..SpecScope::unbound(&state, None)
         };
-        let argument = SpecPureFunctionArgument::Value(SpecExpression::CExpression(
-            CExpression::Variable("x".into()),
+        let argument = SpecPureFunctionArgument::Value(SpecExpression::ProgramExpression(
+            ProgramExpression::Variable("x".into()),
         ));
         let exports = KernelTermExport::machine_export_count();
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -47,7 +48,7 @@ fn call_argument_paths_retain_shared_prefixes_without_exporting() {
                 scope,
                 "retained_argument",
                 std::slice::from_ref(&argument),
-                CType::UInt32,
+                ProgramType::UInt32,
                 None,
                 None,
                 None,
@@ -66,7 +67,10 @@ fn call_argument_paths_retain_shared_prefixes_without_exporting() {
 
         // The declared pointer origin selects only argument 1. Determining a
         // null result must not materialize the unrelated exponential DAG.
-        let null = CValue::Pointer(CPointerValue::new(Pointer::null(), CType::Int32Pointer));
+        let null = ProgramValue::Pointer(PointerValue::new(
+            Pointer::null(),
+            ProgramType::Int32Pointer,
+        ));
         let arguments = [
             argument,
             SpecPureFunctionArgument::Value(SpecExpression::Value(null.clone())),
@@ -81,7 +85,7 @@ fn call_argument_paths_retain_shared_prefixes_without_exporting() {
                 scope,
                 "selected_origin",
                 &arguments,
-                CType::Int32Pointer,
+                ProgramType::Int32Pointer,
                 Some(&origins),
                 None,
                 None,
@@ -100,22 +104,22 @@ fn call_argument_paths_retain_shared_prefixes_without_exporting() {
 #[test]
 fn retained_constant_call_arguments_keep_existing_decision_identity() {
     let _session = crate::kernel::VerificationSession::enter();
-    let state = CState::new();
+    let state = ExecutionState::new();
     let scope = SpecScope::unbound(&state, None);
     let argument = SpecPureFunctionArgument::Value(SpecExpression::Subtract(
-        Box::new(SpecExpression::Value(CValue::Int32(MachineTerm::constant(
-            2,
-        )))),
-        Box::new(SpecExpression::Value(CValue::Int32(MachineTerm::constant(
-            1,
-        )))),
+        Box::new(SpecExpression::Value(ProgramValue::Int32(
+            MachineTerm::constant(2),
+        ))),
+        Box::new(SpecExpression::Value(ProgramValue::Int32(
+            MachineTerm::constant(1),
+        ))),
     ));
     let mut execution = ExecutionBudget::new();
     let calls = evaluate_spec_pure_function_application_paths_in(
         scope,
         "retained_steps",
         &[argument],
-        CType::Int32,
+        ProgramType::Int32,
         None,
         None,
         None,
@@ -129,14 +133,14 @@ fn retained_constant_call_arguments_keep_existing_decision_identity() {
     let produced = root.machine_conversion_leaf().unwrap();
     let native = MachineTerm::ClickFunctionApplication {
         name: "retained_steps".into(),
-        arguments: vec![PureFunctionArgument::Value(CValue::Int32(
+        arguments: vec![PureFunctionArgument::Value(ProgramValue::Int32(
             MachineTerm::constant(1),
         ))],
     };
     let MachineTerm::ClickFunctionApplication { arguments, .. } = produced else {
         panic!("call");
     };
-    let expected = PureFunctionArgument::Value(CValue::Int32(MachineTerm::constant(1)));
+    let expected = PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::constant(1)));
     assert_eq!(
         arguments[0].machine_identity(),
         expected.machine_identity(),

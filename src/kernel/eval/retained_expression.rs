@@ -3,7 +3,7 @@
 //! pointer arithmetic; they retain their original metadata and definedness.
 use super::*;
 use crate::kernel::execution_value::ExecutionValue;
-type ExecutionValuePath = CExpressionPath<ExecutionValue>;
+type ExecutionValuePath = ExpressionPath<ExecutionValue>;
 use crate::kernel::MachineBinaryOp as Op;
 
 #[derive(Clone, Copy)]
@@ -11,21 +11,21 @@ enum Binary {
     Machine(Op),
     RustShift(Op),
     Narrow(MachineIntegerType, Op),
-    Comparison(CComparisonOperator),
+    Comparison(ComparisonOperator),
 }
 
 pub(in crate::kernel) fn evaluate_expression_value_paths(
-    state: &CState,
-    expression: &CExpression,
+    state: &ExecutionState,
+    expression: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<ExecutionValuePath>> {
-    if let CExpression::Variable(name) = expression
+    if let ProgramExpression::Variable(name) = expression
         && !state.locals.is_array_object(name)
         && !state.locals.is_aggregate_object(name)
         && !matches!(
             state.locals.object_type(name),
-            Some(CType::Int128 | CType::UInt128)
+            Some(ProgramType::Int128 | ProgramType::UInt128)
         )
     {
         budget.consume_expression_step()?;
@@ -36,7 +36,7 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
             budget,
         );
     }
-    if let CExpression::Conditional {
+    if let ProgramExpression::Conditional {
         condition,
         then_branch,
         else_branch,
@@ -52,23 +52,23 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
             budget,
         );
     }
-    let narrow = if let CExpression::Cast {
+    let narrow = if let ProgramExpression::Cast {
         expression,
         target_type,
-        integer_mode: CIntegerCastMode::NarrowArithmetic,
+        integer_mode: IntegerCastMode::NarrowArithmetic,
         ..
     } = expression
     {
-        MachineIntegerType::from_c_type(*target_type)
+        MachineIntegerType::from_program_type(*target_type)
             .filter(|format| super::operators::is_narrow_format(*format))
             .and_then(|format| {
                 let (op, left, right) = match expression.as_ref() {
-                    CExpression::Add(a, b) => (Op::Add, a, b),
-                    CExpression::Subtract(a, b) => (Op::Subtract, a, b),
-                    CExpression::Multiply(a, b) => (Op::Multiply, a, b),
-                    CExpression::BitwiseAnd(a, b) => (Op::BitwiseAnd, a, b),
-                    CExpression::BitwiseOr(a, b) => (Op::BitwiseOr, a, b),
-                    CExpression::BitwiseXor(a, b) => (Op::BitwiseXor, a, b),
+                    ProgramExpression::Add(a, b) => (Op::Add, a, b),
+                    ProgramExpression::Subtract(a, b) => (Op::Subtract, a, b),
+                    ProgramExpression::Multiply(a, b) => (Op::Multiply, a, b),
+                    ProgramExpression::BitwiseAnd(a, b) => (Op::BitwiseAnd, a, b),
+                    ProgramExpression::BitwiseOr(a, b) => (Op::BitwiseOr, a, b),
+                    ProgramExpression::BitwiseXor(a, b) => (Op::BitwiseXor, a, b),
                     _ => return None,
                 };
                 Some((Binary::Narrow(format, op), left, right))
@@ -80,36 +80,46 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
         narrow
     } else {
         match expression {
-            CExpression::RustShiftLeft(left, right) => {
+            ProgramExpression::RustShiftLeft(left, right) => {
                 (Binary::RustShift(Op::ShiftLeft), left, right)
             }
-            CExpression::RustShiftRight(left, right) => {
+            ProgramExpression::RustShiftRight(left, right) => {
                 (Binary::RustShift(Op::ShiftRight), left, right)
             }
-            CExpression::Add(left, right) => (Binary::Machine(Op::Add), left, right),
-            CExpression::Subtract(left, right) => (Binary::Machine(Op::Subtract), left, right),
-            CExpression::Multiply(left, right) => (Binary::Machine(Op::Multiply), left, right),
-            CExpression::Divide(left, right) => (Binary::Machine(Op::Divide), left, right),
-            CExpression::BitwiseAnd(left, right) => (Binary::Machine(Op::BitwiseAnd), left, right),
-            CExpression::BitwiseOr(left, right) => (Binary::Machine(Op::BitwiseOr), left, right),
-            CExpression::BitwiseXor(left, right) => (Binary::Machine(Op::BitwiseXor), left, right),
-            CExpression::LessThan(left, right) => (
-                Binary::Comparison(CComparisonOperator::LessThan),
+            ProgramExpression::Add(left, right) => (Binary::Machine(Op::Add), left, right),
+            ProgramExpression::Subtract(left, right) => {
+                (Binary::Machine(Op::Subtract), left, right)
+            }
+            ProgramExpression::Multiply(left, right) => {
+                (Binary::Machine(Op::Multiply), left, right)
+            }
+            ProgramExpression::Divide(left, right) => (Binary::Machine(Op::Divide), left, right),
+            ProgramExpression::BitwiseAnd(left, right) => {
+                (Binary::Machine(Op::BitwiseAnd), left, right)
+            }
+            ProgramExpression::BitwiseOr(left, right) => {
+                (Binary::Machine(Op::BitwiseOr), left, right)
+            }
+            ProgramExpression::BitwiseXor(left, right) => {
+                (Binary::Machine(Op::BitwiseXor), left, right)
+            }
+            ProgramExpression::LessThan(left, right) => (
+                Binary::Comparison(ComparisonOperator::LessThan),
                 left,
                 right,
             ),
-            CExpression::LessEqual(left, right) => (
-                Binary::Comparison(CComparisonOperator::LessEqual),
+            ProgramExpression::LessEqual(left, right) => (
+                Binary::Comparison(ComparisonOperator::LessEqual),
                 left,
                 right,
             ),
-            CExpression::GreaterThan(left, right) => (
-                Binary::Comparison(CComparisonOperator::GreaterThan),
+            ProgramExpression::GreaterThan(left, right) => (
+                Binary::Comparison(ComparisonOperator::GreaterThan),
                 left,
                 right,
             ),
-            CExpression::GreaterEqual(left, right) => (
-                Binary::Comparison(CComparisonOperator::GreaterEqual),
+            ProgramExpression::GreaterEqual(left, right) => (
+                Binary::Comparison(ComparisonOperator::GreaterEqual),
                 left,
                 right,
             ),
@@ -132,8 +142,8 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
         Binary::Machine(Op::Add | Op::Subtract) | Binary::Comparison(_)
     ) {
         (
-            c_expression_pointer_step_width(state, left),
-            c_expression_pointer_step_width(state, right),
+            program_expression_pointer_step_width(state, left),
+            program_expression_pointer_step_width(state, right),
         )
     } else {
         (None, None)
@@ -141,7 +151,7 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
     let mut paths = Vec::new();
     for mut left_path in evaluate_expression_value_paths(state, left, assumptions, budget)? {
         refuse_freed_pointer(state, &mut left_path, assumptions);
-        let CExpressionOutcome::Value(left_value) = left_path.outcome else {
+        let ExpressionOutcome::Value(left_value) = left_path.outcome else {
             paths.push(left_path);
             continue;
         };
@@ -162,7 +172,7 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
             ) else {
                 continue;
             };
-            let CExpressionOutcome::Value(right_value) = right_path.outcome else {
+            let ExpressionOutcome::Value(right_value) = right_path.outcome else {
                 paths.push(ExecutionValuePath {
                     facts,
                     obligations,
@@ -182,7 +192,7 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
                         )
                     }));
                     paths.push(ExecutionValuePath {
-                        outcome: CExpressionOutcome::Value(root.into()),
+                        outcome: ExpressionOutcome::Value(root.into()),
                         facts,
                         obligations,
                     });
@@ -213,10 +223,8 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
                     &left_value,
                     &right_value,
                 )
-                .map(|value| CExpressionOutcome::Value(value.into()))
-                .unwrap_or(CExpressionOutcome::RuntimeError(
-                    CRuntimeError::TypeMismatch,
-                ));
+                .map(|value| ExpressionOutcome::Value(value.into()))
+                .unwrap_or(ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch));
                 paths.push(ExecutionValuePath {
                     outcome,
                     facts,
@@ -228,9 +236,9 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
                 let native_paths = if let Some(condition) =
                     retained_comparison(operator, &left_value, &right_value)
                 {
-                    condition_as_c_int32_paths(condition, facts, obligations, assumptions)
+                    condition_as_program_int32_paths(condition, facts, obligations, assumptions)
                 } else {
-                    super::operators::apply_c_comparison(
+                    super::operators::apply_program_comparison(
                         state,
                         operator,
                         left_value.clone().into_native(),
@@ -259,18 +267,18 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
                     )));
                 }
                 paths.push(ExecutionValuePath {
-                    outcome: CExpressionOutcome::Value(value),
+                    outcome: ExpressionOutcome::Value(value),
                     facts,
                     obligations,
                 });
                 continue;
             }
-            // Full CValue payloads cross this boundary, including pointer
+            // Full ProgramValue payloads cross this boundary, including pointer
             // provenance and qualifications. No numeric projection is used.
             let left_value = left_value.clone().into_native();
             let right_value = right_value.into_native();
             let native = match op {
-                Op::Add => apply_c_add(
+                Op::Add => apply_program_add(
                     state,
                     left_value,
                     right_value,
@@ -281,9 +289,9 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
                     assumptions,
                 )
                 .into_iter()
-                .map(super::operators::fold_c_int32_constant_increment)
+                .map(super::operators::fold_program_int32_constant_increment)
                 .collect(),
-                Op::Subtract => apply_c_subtract(
+                Op::Subtract => apply_program_subtract(
                     state,
                     left_value,
                     right_value,
@@ -294,21 +302,21 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
                     assumptions,
                 ),
                 Op::Multiply => {
-                    apply_c_multiply(left_value, right_value, facts, obligations, assumptions)
+                    apply_program_multiply(left_value, right_value, facts, obligations, assumptions)
                 }
                 Op::Divide => {
-                    apply_c_divide(left_value, right_value, facts, obligations, assumptions)
+                    apply_program_divide(left_value, right_value, facts, obligations, assumptions)
                 }
-                Op::BitwiseAnd | Op::BitwiseOr | Op::BitwiseXor => apply_c_bitwise_binary(
+                Op::BitwiseAnd | Op::BitwiseOr | Op::BitwiseXor => apply_program_bitwise_binary(
                     left_value,
                     right_value,
                     facts,
                     obligations,
                     assumptions,
                     match op {
-                        Op::BitwiseAnd => CBitwiseOperation::And,
-                        Op::BitwiseOr => CBitwiseOperation::Or,
-                        Op::BitwiseXor => CBitwiseOperation::Xor,
+                        Op::BitwiseAnd => BitwiseOperation::And,
+                        Op::BitwiseOr => BitwiseOperation::Or,
+                        Op::BitwiseXor => BitwiseOperation::Xor,
                         _ => unreachable!(),
                     },
                 ),
@@ -322,7 +330,7 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
 }
 
 fn retained_comparison(
-    operator: CComparisonOperator,
+    operator: ComparisonOperator,
     left: &ExecutionValue,
     right: &ExecutionValue,
 ) -> Option<ConditionTerm> {
@@ -340,10 +348,10 @@ fn retained_comparison(
         return None;
     }
     let relation = match operator {
-        CComparisonOperator::LessThan => CompareRelation::LessThan,
-        CComparisonOperator::LessEqual => CompareRelation::LessEqual,
-        CComparisonOperator::GreaterThan => CompareRelation::GreaterThan,
-        CComparisonOperator::GreaterEqual => CompareRelation::GreaterEqual,
+        ComparisonOperator::LessThan => CompareRelation::LessThan,
+        ComparisonOperator::LessEqual => CompareRelation::LessEqual,
+        ComparisonOperator::GreaterThan => CompareRelation::GreaterThan,
+        ComparisonOperator::GreaterEqual => CompareRelation::GreaterEqual,
         _ => return None,
     };
     Some(
@@ -356,20 +364,21 @@ fn retained_comparison(
 }
 
 fn conditional_paths(
-    state: &CState,
-    condition: &CExpression,
-    then_branch: &CExpression,
-    else_branch: &CExpression,
+    state: &ExecutionState,
+    condition: &ProgramExpression,
+    then_branch: &ProgramExpression,
+    else_branch: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<ExecutionValuePath>> {
     let mut paths = Vec::new();
-    for path in evaluate_c_condition_paths(state, condition, assumptions, budget)? {
-        let CExpressionOutcome::Value(value) = path.outcome else {
+    for path in evaluate_program_condition_paths(state, condition, assumptions, budget)? {
+        let ExpressionOutcome::Value(value) = path.outcome else {
             paths.push(path.into());
             continue;
         };
-        for truthiness in c_truthiness_paths(value, path.facts, path.obligations, assumptions) {
+        for truthiness in program_truthiness_paths(value, path.facts, path.obligations, assumptions)
+        {
             let branch = if truthiness.is_true {
                 then_branch
             } else {
@@ -404,24 +413,24 @@ fn conditional_paths(
 }
 
 pub(super) fn freed_expression_value_pointer_use(
-    state: &CState,
+    state: &ExecutionState,
     value: &ExecutionValue,
     assumptions: &PureFactContext,
-) -> Option<CUndefinedBehavior> {
+) -> Option<UndefinedBehavior> {
     value
         .native_payload()
         .and_then(|native| freed_pointer_use(state, native, assumptions))
 }
 
 fn refuse_freed_pointer(
-    state: &CState,
+    state: &ExecutionState,
     path: &mut ExecutionValuePath,
     assumptions: &PureFactContext,
 ) {
-    if let CExpressionOutcome::Value(ExecutionValue::Native(value)) = &path.outcome
+    if let ExpressionOutcome::Value(ExecutionValue::Native(value)) = &path.outcome
         && let Some(undefined) = freed_pointer_use(state, value, assumptions)
     {
-        path.outcome = CExpressionOutcome::UndefinedBehavior(undefined);
+        path.outcome = ExpressionOutcome::UndefinedBehavior(undefined);
     }
 }
 
@@ -465,9 +474,9 @@ fn retained_binary(
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn evaluate(expression: &CExpression) -> Vec<ExecutionValuePath> {
+    fn evaluate(expression: &ProgramExpression) -> Vec<ExecutionValuePath> {
         evaluate_expression_value_paths(
-            &CState::new(),
+            &ExecutionState::new(),
             expression,
             &PureFactContext::new(),
             &mut ExecutionBudget::new(),
@@ -478,8 +487,8 @@ mod tests {
     fn retained_execution_unsigned_operators_match_native_roots() {
         for format in [MachineIntegerType::UInt32, MachineIntegerType::UInt64] {
             let wrap = |term| match format {
-                MachineIntegerType::UInt32 => CValue::UInt32(term),
-                MachineIntegerType::UInt64 => CValue::UInt64(term),
+                MachineIntegerType::UInt32 => ProgramValue::UInt32(term),
+                MachineIntegerType::UInt64 => ProgramValue::UInt64(term),
                 _ => unreachable!(),
             };
             let constant = |n| {
@@ -522,24 +531,26 @@ mod tests {
 
     #[test]
     fn retained_execution_conditional_keeps_selected_value_without_export() {
-        let expression = CExpression::Conditional {
-            condition: Box::new(CExpression::Value(CValue::Int32(MachineTerm::constant(1)))),
-            then_branch: Box::new(CExpression::BitwiseXor(
-                Box::new(CExpression::Value(CValue::UInt32(MachineTerm::Variable(
-                    Variable(991103),
-                )))),
-                Box::new(CExpression::Value(CValue::UInt32(
+        let expression = ProgramExpression::Conditional {
+            condition: Box::new(ProgramExpression::Value(ProgramValue::Int32(
+                MachineTerm::constant(1),
+            ))),
+            then_branch: Box::new(ProgramExpression::BitwiseXor(
+                Box::new(ProgramExpression::Value(ProgramValue::UInt32(
+                    MachineTerm::Variable(Variable(991103)),
+                ))),
+                Box::new(ProgramExpression::Value(ProgramValue::UInt32(
                     MachineTerm::uint32_constant(7),
                 ))),
             )),
-            else_branch: Box::new(CExpression::Variable("not_evaluated".into())),
+            else_branch: Box::new(ProgramExpression::Variable("not_evaluated".into())),
         };
         let exports = KernelTermExport::machine_export_count();
         let paths = evaluate(&expression);
         assert_eq!(paths.len(), 1);
         assert!(matches!(
             paths[0].outcome,
-            CExpressionOutcome::Value(ref value) if matches!(value, ExecutionValue::Shared(_))
+            ExpressionOutcome::Value(ref value) if matches!(value, ExecutionValue::Shared(_))
         ));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
@@ -555,13 +566,13 @@ mod tests {
             let left = format.symbolic_value(Variable(991104));
             let right = format.symbolic_value(Variable(991105));
             for (op, operation) in [
-                (Op::BitwiseAnd, CBitwiseOperation::And),
-                (Op::BitwiseOr, CBitwiseOperation::Or),
-                (Op::BitwiseXor, CBitwiseOperation::Xor),
+                (Op::BitwiseAnd, BitwiseOperation::And),
+                (Op::BitwiseOr, BitwiseOperation::Or),
+                (Op::BitwiseXor, BitwiseOperation::Xor),
             ] {
                 let retained =
                     retained_binary(op, &left.clone().into(), &right.clone().into()).unwrap();
-                let expected = apply_c_bitwise_binary(
+                let expected = apply_program_bitwise_binary(
                     left.clone(),
                     right.clone(),
                     ExecutionFacts::new(),
@@ -570,7 +581,7 @@ mod tests {
                     operation,
                 );
                 assert_eq!(
-                    CExpressionOutcome::Value(retained.into_native()),
+                    ExpressionOutcome::Value(retained.into_native()),
                     expected[0].outcome
                 );
             }
@@ -582,21 +593,27 @@ mod tests {
         for (left, right) in [(0, 1), (1, 0), (u32::MAX, 0), (7, 7)] {
             for (operator, expression) in [
                 (
-                    CComparisonOperator::LessThan,
-                    CExpression::LessThan as fn(_, _) -> _,
+                    ComparisonOperator::LessThan,
+                    ProgramExpression::LessThan as fn(_, _) -> _,
                 ),
-                (CComparisonOperator::LessEqual, CExpression::LessEqual),
-                (CComparisonOperator::GreaterThan, CExpression::GreaterThan),
-                (CComparisonOperator::GreaterEqual, CExpression::GreaterEqual),
+                (ComparisonOperator::LessEqual, ProgramExpression::LessEqual),
+                (
+                    ComparisonOperator::GreaterThan,
+                    ProgramExpression::GreaterThan,
+                ),
+                (
+                    ComparisonOperator::GreaterEqual,
+                    ProgramExpression::GreaterEqual,
+                ),
             ] {
-                let left = CValue::UInt32(MachineTerm::uint32_constant(left));
-                let right = CValue::UInt32(MachineTerm::uint32_constant(right));
+                let left = ProgramValue::UInt32(MachineTerm::uint32_constant(left));
+                let right = ProgramValue::UInt32(MachineTerm::uint32_constant(right));
                 let result = evaluate(&expression(
-                    Box::new(CExpression::Value(left.clone())),
-                    Box::new(CExpression::Value(right.clone())),
+                    Box::new(ProgramExpression::Value(left.clone())),
+                    Box::new(ProgramExpression::Value(right.clone())),
                 ));
-                let expected = super::super::operators::apply_c_comparison(
-                    &CState::new(),
+                let expected = super::super::operators::apply_program_comparison(
+                    &ExecutionState::new(),
                     operator,
                     left,
                     right,
@@ -625,16 +642,16 @@ mod tests {
             left = retained_binary(
                 Op::Multiply,
                 &left,
-                &ExecutionValue::from(CValue::UInt32(MachineTerm::uint32_constant(3))),
+                &ExecutionValue::from(ProgramValue::UInt32(MachineTerm::uint32_constant(3))),
             )
             .unwrap();
         }
         let exports = KernelTermExport::machine_export_count();
         assert!(
             retained_comparison(
-                CComparisonOperator::LessThan,
+                ComparisonOperator::LessThan,
                 &left,
-                &ExecutionValue::from(CValue::UInt32(MachineTerm::uint32_constant(10)))
+                &ExecutionValue::from(ProgramValue::UInt32(MachineTerm::uint32_constant(10)))
             )
             .is_some()
         );
@@ -643,30 +660,32 @@ mod tests {
 
     #[test]
     fn retained_execution_preserves_signed_overflow_and_unbound_errors() {
-        let overflow = CExpression::Add(
-            Box::new(CExpression::Value(CValue::Int32(MachineTerm::constant(
-                i32::MAX as u32,
-            )))),
-            Box::new(CExpression::Value(CValue::Int32(MachineTerm::constant(1)))),
+        let overflow = ProgramExpression::Add(
+            Box::new(ProgramExpression::Value(ProgramValue::Int32(
+                MachineTerm::constant(i32::MAX as u32),
+            ))),
+            Box::new(ProgramExpression::Value(ProgramValue::Int32(
+                MachineTerm::constant(1),
+            ))),
         );
         assert!(
             evaluate(&overflow)
                 .iter()
-                .any(|path| matches!(path.outcome, CExpressionOutcome::UndefinedBehavior(_)))
+                .any(|path| matches!(path.outcome, ExpressionOutcome::UndefinedBehavior(_)))
         );
-        let missing = CExpression::Multiply(
-            Box::new(CExpression::Variable("missing".into())),
-            Box::new(CExpression::Value(CValue::UInt32(
+        let missing = ProgramExpression::Multiply(
+            Box::new(ProgramExpression::Variable("missing".into())),
+            Box::new(ProgramExpression::Value(ProgramValue::UInt32(
                 MachineTerm::uint32_constant(2),
             ))),
         );
         assert!(matches!(&evaluate(&missing)[0].outcome,
-            CExpressionOutcome::RuntimeError(CRuntimeError::UnboundVariable(name)) if name == "missing"));
+            ExpressionOutcome::RuntimeError(RuntimeError::UnboundVariable(name)) if name == "missing"));
         assert!(
             retained_binary(
                 Op::Add,
-                &CValue::Int32(MachineTerm::constant(1)).into(),
-                &CValue::UInt32(MachineTerm::uint32_constant(1)).into()
+                &ProgramValue::Int32(MachineTerm::constant(1)).into(),
+                &ProgramValue::UInt32(MachineTerm::uint32_constant(1)).into()
             )
             .is_none()
         );
@@ -683,12 +702,12 @@ mod tests {
         let nonnegative = empty.clone().assume_condition(lower, true);
         let bounded = nonnegative.clone().assume_condition(upper.clone(), true);
         let upper_only = empty.clone().assume_condition(upper, true);
-        let left = CValue::UInt64(MachineTerm::uint64_bitwise_or(
+        let left = ProgramValue::UInt64(MachineTerm::uint64_bitwise_or(
             word.clone(),
             MachineTerm::uint64_from_int32(tag),
         ));
-        let right = CValue::UInt64(MachineTerm::uint64_constant(!3));
-        let added = CValue::UInt64(MachineTerm::uint64_add(
+        let right = ProgramValue::UInt64(MachineTerm::uint64_constant(!3));
+        let added = ProgramValue::UInt64(MachineTerm::uint64_add(
             word.clone(),
             MachineTerm::uint64_constant(1),
         ));
@@ -707,21 +726,21 @@ mod tests {
             (added.clone(), &empty, 0),
             (added, &clear, 1),
         ] {
-            let expression = CExpression::BitwiseAnd(
-                Box::new(CExpression::Value(left.clone())),
-                Box::new(CExpression::Value(right.clone())),
+            let expression = ProgramExpression::BitwiseAnd(
+                Box::new(ProgramExpression::Value(left.clone())),
+                Box::new(ProgramExpression::Value(right.clone())),
             );
-            let expected = apply_c_bitwise_binary(
+            let expected = apply_program_bitwise_binary(
                 left.clone(),
                 right.clone(),
                 ExecutionFacts::new(),
                 Vec::new(),
                 context,
-                CBitwiseOperation::And,
+                BitwiseOperation::And,
             );
             let exports = KernelTermExport::machine_export_count();
             let actual = evaluate_expression_value_paths(
-                &CState::new(),
+                &ExecutionState::new(),
                 &expression,
                 context,
                 &mut ExecutionBudget::new(),
@@ -748,11 +767,14 @@ mod tests {
         }
     }
 
-    fn narrow_expression(expression: CExpression, target_type: CType) -> CExpression {
-        CExpression::Cast {
+    fn narrow_expression(
+        expression: ProgramExpression,
+        target_type: ProgramType,
+    ) -> ProgramExpression {
+        ProgramExpression::Cast {
             expression: Box::new(expression),
             target_type,
-            integer_mode: CIntegerCastMode::NarrowArithmetic,
+            integer_mode: IntegerCastMode::NarrowArithmetic,
             pointee_struct: None,
             pointee_volatile: false,
             pointee_constant: false,
@@ -773,17 +795,26 @@ mod tests {
             MachineIntegerType::Int64,
             MachineIntegerType::UInt64,
         ] {
-            let left =
-                CExpression::Value(format.value_from_term(MachineTerm::Variable(Variable(998300))));
+            let left = ProgramExpression::Value(
+                format.value_from_term(MachineTerm::Variable(Variable(998300))),
+            );
             for count in [-1i32, 0, 1, 7, 8, 16, 32, 64] {
-                let right = CExpression::Value(CValue::Int32(MachineTerm::constant(count as u32)));
+                let right = ProgramExpression::Value(ProgramValue::Int32(MachineTerm::constant(
+                    count as u32,
+                )));
                 for expression in [
-                    CExpression::RustShiftLeft(Box::new(left.clone()), Box::new(right.clone())),
-                    CExpression::RustShiftRight(Box::new(left.clone()), Box::new(right.clone())),
+                    ProgramExpression::RustShiftLeft(
+                        Box::new(left.clone()),
+                        Box::new(right.clone()),
+                    ),
+                    ProgramExpression::RustShiftRight(
+                        Box::new(left.clone()),
+                        Box::new(right.clone()),
+                    ),
                 ] {
                     let actual = evaluate(&expression);
                     let expected = super::super::expression::evaluate_native_expression_paths(
-                        &CState::new(),
+                        &ExecutionState::new(),
                         &expression,
                         &PureFactContext::new(),
                         &mut ExecutionBudget::new(),
@@ -810,22 +841,22 @@ mod tests {
         ] {
             for right in [
                 format.value_from_term(MachineTerm::Variable(Variable(998301))),
-                CValue::Int32(MachineTerm::constant(3)),
-                CValue::Int32(MachineTerm::constant(70000)),
-                CValue::UInt64(MachineTerm::uint64_constant(3)),
+                ProgramValue::Int32(MachineTerm::constant(3)),
+                ProgramValue::Int32(MachineTerm::constant(70000)),
+                ProgramValue::UInt64(MachineTerm::uint64_constant(3)),
             ] {
                 let expression = narrow_expression(
-                    CExpression::Add(
-                        Box::new(CExpression::Value(
+                    ProgramExpression::Add(
+                        Box::new(ProgramExpression::Value(
                             format.value_from_term(MachineTerm::Variable(Variable(998300))),
                         )),
-                        Box::new(CExpression::Value(right)),
+                        Box::new(ProgramExpression::Value(right)),
                     ),
-                    format.c_type(),
+                    format.program_type(),
                 );
                 let actual = evaluate(&expression);
                 let expected = super::super::expression::evaluate_native_expression_paths(
-                    &CState::new(),
+                    &ExecutionState::new(),
                     &expression,
                     &PureFactContext::new(),
                     &mut ExecutionBudget::new(),
@@ -848,11 +879,11 @@ mod tests {
         let count = MachineTerm::Variable(Variable(998302));
         let bound =
             ConditionTerm::unsigned_less_than(count.clone(), MachineTerm::uint32_constant(8));
-        let expression = CExpression::RustShiftLeft(
-            Box::new(CExpression::Value(CValue::Int8(MachineTerm::Variable(
-                Variable(998303),
-            )))),
-            Box::new(CExpression::Value(CValue::UInt32(count))),
+        let expression = ProgramExpression::RustShiftLeft(
+            Box::new(ProgramExpression::Value(ProgramValue::Int8(
+                MachineTerm::Variable(Variable(998303)),
+            ))),
+            Box::new(ProgramExpression::Value(ProgramValue::UInt32(count))),
         );
         let empty = PureFactContext::new();
         let valid = empty.clone().assume_condition(bound.clone(), true);
@@ -860,7 +891,7 @@ mod tests {
         let mut roots = Vec::new();
         for (context, pending) in [(&empty, 1), (&valid, 0), (&invalid, 1)] {
             let paths = evaluate_expression_value_paths(
-                &CState::new(),
+                &ExecutionState::new(),
                 &expression,
                 context,
                 &mut ExecutionBudget::new(),
@@ -877,53 +908,59 @@ mod tests {
         rust: bool,
         size: usize,
         declared: bool,
-    ) -> (CExecutionEnvironment, CStatement) {
+    ) -> (ExecutionEnvironment, ProgramStatement) {
         let format = if rust {
             MachineIntegerType::UInt8
         } else {
             MachineIntegerType::UInt32
         };
-        let c_type = format.c_type();
+        let program_type = format.program_type();
         let three = if rust {
             MachineTerm::narrow_constant(format, 3)
         } else {
             MachineTerm::uint32_constant(3)
         };
-        let multiply = CExpression::Multiply(
-            Box::new(c_variable("held")),
-            Box::new(CExpression::Value(format.value_from_term(three))),
+        let multiply = ProgramExpression::Multiply(
+            Box::new(crate::kernel::program_expression::variable("held")),
+            Box::new(ProgramExpression::Value(format.value_from_term(three))),
         );
         let expression = if rust {
-            narrow_expression(multiply, c_type)
+            narrow_expression(multiply, program_type)
         } else {
             multiply
         };
-        let mut body = c_return(c_variable("held"));
+        let mut body = program_return(crate::kernel::program_expression::variable("held"));
         for _ in 0..size {
-            body = c_seq(c_assign("held", expression.clone()), body);
+            body = program_seq(program_assign("held", expression.clone()), body);
         }
         if declared {
-            body = c_seq(
-                c_declare("held", c_type),
-                c_seq(c_assign("held", c_variable("x")), body),
+            body = program_seq(
+                program_declare("held", program_type),
+                program_seq(
+                    program_assign("held", crate::kernel::program_expression::variable("x")),
+                    body,
+                ),
             );
         }
-        let helper = c_function(
-            c_type,
+        let helper = program_function(
+            program_type,
             "machine_handoff",
-            vec![c_parameter(if declared { "x" } else { "held" }, c_type)],
+            vec![program_parameter(
+                if declared { "x" } else { "held" },
+                program_type,
+            )],
             body,
         );
-        let environment = CExecutionEnvironment::new().with_function(helper);
-        let statement = c_seq(
-            c_call_assign(
+        let environment = ExecutionEnvironment::new().with_function(helper);
+        let statement = program_seq(
+            program_call_assign(
                 "received",
                 "machine_handoff",
-                vec![CExpression::Value(
+                vec![ProgramExpression::Value(
                     format.value_from_term(MachineTerm::Variable(Variable(998341))),
                 )],
             ),
-            c_return(c_variable("received")),
+            program_return(crate::kernel::program_expression::variable("received")),
         );
         (environment, statement)
     }
@@ -935,18 +972,18 @@ mod tests {
                 let _session = crate::kernel::VerificationSession::enter();
                 let (environment, statement) = complete_machine_handoff_program(rust, size, true);
                 let exports = KernelTermExport::machine_export_count();
-                let paths = super::super::statements::execute_c_statement_paths(
-                    &CState::new(),
+                let paths = super::super::statements::execute_execution_statement_paths(
+                    &ExecutionState::new(),
                     &statement,
                     &PureFactContext::new(),
-                    CExecutionContext::execute_bodies(&environment),
+                    ExecutionContext::execute_bodies(&environment),
                     &mut ExecutionBudget::new(),
                 )
                 .unwrap();
                 let [path] = paths.as_slice() else {
                     panic!("one complete declared-local path");
                 };
-                let CStatementOutcome::Return { value, state } = &path.outcome else {
+                let StatementOutcome::Return { value, state } = &path.outcome else {
                     panic!("return: {:?}", path.outcome);
                 };
                 assert!(path.obligations.is_empty());
@@ -964,42 +1001,47 @@ mod tests {
     #[test]
     fn retained_execution_return_and_function_handoff_keep_the_root() {
         let _session = crate::kernel::VerificationSession::enter();
-        let statement = CStatement::Return(CExpression::Multiply(
-            Box::new(CExpression::Value(CValue::UInt32(MachineTerm::Variable(
-                Variable(998330),
-            )))),
-            Box::new(CExpression::Value(CValue::UInt32(
+        let statement = ProgramStatement::Return(ProgramExpression::Multiply(
+            Box::new(ProgramExpression::Value(ProgramValue::UInt32(
+                MachineTerm::Variable(Variable(998330)),
+            ))),
+            Box::new(ProgramExpression::Value(ProgramValue::UInt32(
                 MachineTerm::uint32_constant(3),
             ))),
         ));
         let exports = KernelTermExport::machine_export_count();
-        let outcome = super::super::statements::execute_c_statement(
-            &CState::new(),
+        let outcome = super::super::statements::execute_execution_statement(
+            &ExecutionState::new(),
             &statement,
             &PureFactContext::new(),
         )
         .unwrap();
-        let CStatementOutcome::Return { value, .. } = outcome else {
+        let StatementOutcome::Return { value, .. } = outcome else {
             panic!("return result");
         };
         let root = value.shared().expect("retained return root").clone();
         assert_eq!(KernelTermExport::machine_export_count(), exports);
-        let function = c_function(CType::UInt32, "retained_return", Vec::new(), statement);
-        let environment = CExecutionEnvironment::new();
-        let paths = execute_c_function_paths(
-            &CState::new(),
+        let function = program_function(
+            ProgramType::UInt32,
+            "retained_return",
+            Vec::new(),
+            statement,
+        );
+        let environment = ExecutionEnvironment::new();
+        let paths = execute_program_function_paths(
+            &ExecutionState::new(),
             &function,
             &[],
             &PureFactContext::new(),
-            CExecutionContext::execute_bodies(&environment),
+            ExecutionContext::execute_bodies(&environment),
             &mut ExecutionBudget::new(),
         )
         .unwrap();
-        let CFunctionOutcome::Return { value, .. } = &paths[0].outcome else {
+        let FunctionOutcome::Return { value, .. } = &paths[0].outcome else {
             panic!("function result");
         };
         assert_eq!(value.shared(), Some(&root));
-        let mut caller = CState::new();
+        let mut caller = ExecutionState::new();
         let mut obligations = Vec::new();
         crate::kernel::loops::assign_call_result(
             &mut caller,
@@ -1021,37 +1063,38 @@ mod tests {
             format,
             Op::Multiply,
             [
-                KernelTerm::variable(KernelType::C(CType::UInt32), Variable(998322)),
+                KernelTerm::variable(KernelType::Program(ProgramType::UInt32), Variable(998322)),
                 KernelTerm::retained_native_machine_operand(
                     format,
                     &MachineTerm::uint32_constant(3),
                 ),
             ],
         );
-        let mut state = CState::new();
+        let mut state = ExecutionState::new();
         let exports = KernelTermExport::machine_export_count();
         state.locals.set_retained_typed_with_all_qualifiers(
             "source",
             ExecutionValue::from(root.clone()),
-            CType::UInt32,
+            ProgramType::UInt32,
             false,
             false,
             false,
             false,
         );
         let saved = state.locals.binding("source").unwrap().clone();
-        state
-            .locals
-            .set("source", CValue::UInt32(MachineTerm::uint32_constant(7)));
+        state.locals.set(
+            "source",
+            ProgramValue::UInt32(MachineTerm::uint32_constant(7)),
+        );
         state.locals.restore_binding("source", saved);
         let paths = evaluate_expression_value_paths(
             &state,
-            &CExpression::Variable("source".into()),
+            &ProgramExpression::Variable("source".into()),
             &PureFactContext::new(),
             &mut ExecutionBudget::new(),
         )
         .unwrap();
-        let CExpressionOutcome::Value(value) = &paths[0].outcome else {
+        let ExpressionOutcome::Value(value) = &paths[0].outcome else {
             panic!("local read");
         };
         assert_eq!(value.shared(), Some(&root));
@@ -1064,19 +1107,19 @@ mod tests {
         );
         state.locals.set_typed_with_all_qualifiers(
             "target",
-            CValue::UInt32(MachineTerm::uint32_constant(0)),
-            CType::UInt32,
+            ProgramValue::UInt32(MachineTerm::uint32_constant(0)),
+            ProgramType::UInt32,
             false,
             false,
             true,
             false,
         );
-        let assignment = CStatement::Assign {
+        let assignment = ProgramStatement::Assign {
             name: "target".into(),
-            expression: CExpression::Variable("source".into()),
+            expression: ProgramExpression::Variable("source".into()),
             source: Default::default(),
         };
-        let outcome = super::super::statements::execute_c_statement(
+        let outcome = super::super::statements::execute_execution_statement(
             &state,
             &assignment,
             &PureFactContext::new(),
@@ -1084,7 +1127,7 @@ mod tests {
         .unwrap();
         assert!(matches!(
             outcome,
-            CStatementOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory)
+            StatementOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory)
         ));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
@@ -1093,9 +1136,10 @@ mod tests {
     fn retained_local_call_and_conditional_names_use_the_existing_index() {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::UInt32;
-        let value = KernelTerm::variable(KernelType::C(CType::UInt32), Variable(998323));
+        let value =
+            KernelTerm::variable(KernelType::Program(ProgramType::UInt32), Variable(998323));
         let call = KernelTerm::checked_call(
-            KernelType::C(CType::UInt32),
+            KernelType::Program(ProgramType::UInt32),
             "held_call".into(),
             vec![value.clone()],
         );
@@ -1107,13 +1151,13 @@ mod tests {
                 value,
             ],
         );
-        let mut state = CState::new();
+        let mut state = ExecutionState::new();
         let exports = KernelTermExport::machine_export_count();
         for (name, root) in [("call", call), ("conditional", conditional)] {
             state.locals.set_retained_typed_with_all_qualifiers(
                 name,
                 ExecutionValue::from(root.clone()),
-                CType::UInt32,
+                ProgramType::UInt32,
                 false,
                 false,
                 false,
@@ -1141,14 +1185,14 @@ mod tests {
         ] {
             let term = MachineTerm::bool_cast(format, ConditionTerm::Variable(Variable(998325)));
             let expected =
-                crate::kernel::c_bool_cast_range_facts(&format.value_from_term(term.clone()))
+                crate::kernel::program_bool_cast_range_facts(&format.value_from_term(term.clone()))
                     .unwrap();
             let root = KernelTermImport::default().machine(format, &term);
-            let mut state = CState::new();
+            let mut state = ExecutionState::new();
             state.locals.set_retained_typed_with_all_qualifiers(
                 "flag",
                 ExecutionValue::from(root),
-                format.c_type(),
+                format.program_type(),
                 false,
                 false,
                 false,
@@ -1157,7 +1201,7 @@ mod tests {
             let exports = KernelTermExport::machine_export_count();
             let paths = evaluate_expression_value_paths(
                 &state,
-                &CExpression::Variable("flag".into()),
+                &ProgramExpression::Variable("flag".into()),
                 &PureFactContext::new(),
                 &mut ExecutionBudget::new(),
             )

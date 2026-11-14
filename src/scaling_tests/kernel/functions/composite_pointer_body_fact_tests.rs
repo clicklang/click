@@ -184,9 +184,9 @@ fn fold_nonnull_fact_uses_an_exact_composite_pointer_alias() {
                 relation: CompareRelation::Equal,
                 left: Box::new(MachineTerm::ClickFunctionApplication {
                     name: "parent_is".into(),
-                    arguments: vec![PureFunctionArgument::Value(CValue::typed_pointer(
+                    arguments: vec![PureFunctionArgument::Value(ProgramValue::typed_pointer(
                         pointer.clone(),
-                        CType::Int32Pointer,
+                        ProgramType::Int32Pointer,
                     ))],
                 }),
                 right: Box::new(MachineTerm::constant(value)),
@@ -202,8 +202,8 @@ fn fold_nonnull_fact_uses_an_exact_composite_pointer_alias() {
     // alias suffices for nonnull above, but cannot rewrite this argument.
     let context = context.assume_condition(
         ConditionTerm::pointer_value_equal(
-            CPointerValue::new(model.clone(), CType::Int32Pointer),
-            CPointerValue::new(program.clone(), CType::Int32Pointer),
+            PointerValue::new(model.clone(), ProgramType::Int32Pointer),
+            PointerValue::new(program.clone(), ProgramType::Int32Pointer),
         ),
         true,
     );
@@ -263,9 +263,11 @@ fn binding_free_scalar_facts_do_not_prepare_unused_arm_memory() {
     for size in [16u64, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Pointer::symbolic(Variable(718_000));
-        let state =
-            CState::new().with_local("p", CValue::typed_pointer(pointer, CType::Int32Pointer));
-        let arm = CResourceMatchArm {
+        let state = ExecutionState::new().with_local(
+            "p",
+            ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer),
+        );
+        let arm = ResourceMatchArm {
             variant: "Held".into(),
             bindings: vec![],
             binding_types: vec![],
@@ -273,20 +275,24 @@ fn binding_free_scalar_facts_do_not_prepare_unused_arm_memory() {
             children: vec![],
             contains: (0..size)
                 .map(|index| {
-                    CResourceSpec::owned_memory(CMemorySegment::new(
-                        CExpression::Value(CValue::typed_pointer(
+                    ResourceSpec::owned_memory(MemorySegment::new(
+                        ProgramExpression::Value(ProgramValue::typed_pointer(
                             Pointer::symbolic(Variable(719_000 + index)),
-                            CType::Int32Pointer,
+                            ProgramType::Int32Pointer,
                         )),
-                        c_int32_literal(0),
-                        c_int32_literal(1),
+                        crate::kernel::program_expression::int32_literal(0),
+                        crate::kernel::program_expression::int32_literal(1),
                     ))
                 })
                 .collect(),
             facts: vec![SpecProposition::Comparison {
-                left: SpecExpression::CExpression(c_variable("p")),
-                operator: CComparisonOperator::NotEqual,
-                right: SpecExpression::CExpression(c_int32_literal(0)),
+                left: SpecExpression::ProgramExpression(
+                    crate::kernel::program_expression::variable("p"),
+                ),
+                operator: ComparisonOperator::NotEqual,
+                right: SpecExpression::ProgramExpression(
+                    crate::kernel::program_expression::int32_literal(0),
+                ),
             }],
         };
         let (facts, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -302,11 +308,11 @@ fn binding_free_scalar_facts_do_not_prepare_unused_arm_memory() {
 fn arm_refutation_stops_before_unneeded_memory_facts() {
     for size in [16u64, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
-        let state = CState::new().with_local(
+        let state = ExecutionState::new().with_local(
             "p",
-            CValue::typed_pointer(Pointer::null(), CType::Int32Pointer),
+            ProgramValue::typed_pointer(Pointer::null(), ProgramType::Int32Pointer),
         );
-        let arm = CResourceMatchArm {
+        let arm = ResourceMatchArm {
             variant: "Held".into(),
             bindings: vec![],
             binding_types: vec![],
@@ -314,26 +320,34 @@ fn arm_refutation_stops_before_unneeded_memory_facts() {
             children: vec![],
             contains: (0..size)
                 .map(|index| {
-                    CResourceSpec::owned_memory(CMemorySegment::new(
-                        CExpression::Value(CValue::typed_pointer(
+                    ResourceSpec::owned_memory(MemorySegment::new(
+                        ProgramExpression::Value(ProgramValue::typed_pointer(
                             Pointer::symbolic(Variable(719_000 + index)),
-                            CType::Int32Pointer,
+                            ProgramType::Int32Pointer,
                         )),
-                        c_int32_literal(0),
-                        c_int32_literal(1),
+                        crate::kernel::program_expression::int32_literal(0),
+                        crate::kernel::program_expression::int32_literal(1),
                     ))
                 })
                 .collect(),
             facts: vec![
                 SpecProposition::Comparison {
-                    left: SpecExpression::CExpression(c_variable("p")),
-                    operator: CComparisonOperator::NotEqual,
-                    right: SpecExpression::CExpression(c_int32_literal(0)),
+                    left: SpecExpression::ProgramExpression(
+                        crate::kernel::program_expression::variable("p"),
+                    ),
+                    operator: ComparisonOperator::NotEqual,
+                    right: SpecExpression::ProgramExpression(
+                        crate::kernel::program_expression::int32_literal(0),
+                    ),
                 },
                 SpecProposition::Comparison {
-                    left: SpecExpression::CExpression(CExpression::Load(Box::new(c_variable("p")))),
-                    operator: CComparisonOperator::Equal,
-                    right: SpecExpression::CExpression(c_int32_literal(0)),
+                    left: SpecExpression::ProgramExpression(ProgramExpression::Load(Box::new(
+                        crate::kernel::program_expression::variable("p"),
+                    ))),
+                    operator: ComparisonOperator::Equal,
+                    right: SpecExpression::ProgramExpression(
+                        crate::kernel::program_expression::int32_literal(0),
+                    ),
                 },
             ],
         };
@@ -364,27 +378,28 @@ fn numeric_resource_facts_do_not_repeat_the_canonical_read_walk() {
             .allow_symbolic_contract_loads()
             .keep_spec_loads_symbolic()
             .prefer_symbolic_external_loads();
-        let definition = CCompositeResourceDefinition::new(
+        let definition = CompositeResourceDefinition::new(
             "unrelated_word",
-            vec![c_parameter("slot", CType::UInt64Pointer)],
+            vec![program_parameter("slot", ProgramType::UInt64Pointer)],
             None,
             false,
-            vec![CResourceSpec::owned_memory(CMemorySegment {
+            vec![ResourceSpec::owned_memory(MemorySegment {
                 uninitialized: false,
                 value_runs: Default::default(),
-                base: c_variable("slot"),
-                start: c_int32_literal(0),
-                end: c_int32_literal(1),
+                base: crate::kernel::program_expression::variable("slot"),
+                start: crate::kernel::program_expression::int32_literal(0),
+                end: crate::kernel::program_expression::int32_literal(1),
                 element_width: 8,
                 guard: None,
             })],
             vec![],
         );
         let residual = ResourceContext::new().unchecked_with_facts((0..size).map(|i| {
-            CResourceFact::own(CResource::Composite {
+            ResourceFact::own(Resource::Composite {
                 name: "unrelated_word".into(),
                 arguments: vec![
-                    CValue::typed_pointer(input(720_000 + i), CType::UInt64Pointer).into(),
+                    ProgramValue::typed_pointer(input(720_000 + i), ProgramType::UInt64Pointer)
+                        .into(),
                 ]
                 .into(),
             })
@@ -398,9 +413,9 @@ fn numeric_resource_facts_do_not_repeat_the_canonical_read_walk() {
             ),
             &context,
         );
-        let memory = CMemory::new().with_call_memory_havoc(
+        let memory = Memory::new().with_call_memory_havoc(
             Variable(719_101),
-            &[CMemoryRange::new_with_element_width(
+            &[MemoryRange::new_with_element_width(
                 input(719_102),
                 0u32.into(),
                 1u32.into(),
@@ -413,40 +428,43 @@ fn numeric_resource_facts_do_not_repeat_the_canonical_read_walk() {
         // so the canonical walk cannot be warmed by the preceding measurement.
         let (_, canonical_work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::memory_provenance::canonicalize_atomic_loads(&MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory_ref(&memory),
+                crate::kernel::intern_memory_ref(&memory),
                 Box::new(input(719_104)),
                 LoadKind::Bits64,
             ))
         });
-        let state = CState::new()
-            .with_memory(memory)
-            .with_local("p", CValue::typed_pointer(word, CType::UInt64Pointer));
-        let arm = CResourceMatchArm {
+        let state = ExecutionState::new().with_memory(memory).with_local(
+            "p",
+            ProgramValue::typed_pointer(word, ProgramType::UInt64Pointer),
+        );
+        let arm = ResourceMatchArm {
             variant: "Held".into(),
             bindings: vec![],
             binding_types: vec![],
             binding_variables: vec![],
             children: vec![],
-            contains: vec![CResourceSpec::owned_memory(CMemorySegment {
+            contains: vec![ResourceSpec::owned_memory(MemorySegment {
                 uninitialized: false,
                 value_runs: Default::default(),
-                base: c_variable("p"),
-                start: c_int32_literal(0),
-                end: c_int32_literal(1),
+                base: crate::kernel::program_expression::variable("p"),
+                start: crate::kernel::program_expression::int32_literal(0),
+                end: crate::kernel::program_expression::int32_literal(1),
                 element_width: 8,
                 guard: None,
             })],
             facts: vec![SpecProposition::Comparison {
-                left: SpecExpression::CExpression(CExpression::Load(Box::new(c_variable("p")))),
-                operator: CComparisonOperator::Equal,
-                right: SpecExpression::CExpression(CExpression::Value(CValue::UInt64(
-                    MachineTerm::uint64_constant(0),
+                left: SpecExpression::ProgramExpression(ProgramExpression::Load(Box::new(
+                    crate::kernel::program_expression::variable("p"),
                 ))),
+                operator: ComparisonOperator::Equal,
+                right: SpecExpression::ProgramExpression(ProgramExpression::Value(
+                    ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
+                )),
             }],
         };
         let publishing_state = state.clone().with_local(
             "p",
-            CValue::typed_pointer(input(719_103), CType::UInt64Pointer),
+            ProgramValue::typed_pointer(input(719_103), ProgramType::UInt64Pointer),
         );
         let (published, publication_work) =
             crate::instrumentation::measure_deterministic_work(|| {

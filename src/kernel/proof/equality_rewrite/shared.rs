@@ -255,10 +255,10 @@ fn leaf(term: &KernelTerm) -> Option<MachineTerm> {
     }
 }
 fn format(term: &KernelTerm) -> T {
-    let KernelType::C(ty) = term.ty() else {
+    let KernelType::Program(ty) = term.ty() else {
         unreachable!("shared machine carrier")
     };
-    T::from_c_type(*ty).expect("machine format")
+    T::from_program_type(*ty).expect("machine format")
 }
 fn children(term: &KernelTerm) -> Vec<&KernelTerm> {
     match term.node() {
@@ -495,7 +495,10 @@ fn canonical(root: &KernelTerm) -> Option<(HashMap<u64, KernelTerm>, HashMap<u64
             pending.extend(nodes.into_iter().map(|child| (child, false)));
             continue;
         }
-        let has_load = if matches!(term.node(), KernelTermNode::Fold(_)) {
+        let has_load = if matches!(
+            term.node(),
+            KernelTermNode::Fold(_) | KernelTermNode::Match(_)
+        ) {
             true
         } else if nodes.is_empty() {
             leaf(term).is_some_and(|value| crate::kernel::eval::term_mentions_a_memory_load(&value))
@@ -513,7 +516,7 @@ fn canonical(root: &KernelTerm) -> Option<(HashMap<u64, KernelTerm>, HashMap<u64
             };
         loads.insert(term.id(), has_load);
         let value = match term.node() {
-            KernelTermNode::Fold(_) => term.clone(),
+            KernelTermNode::Fold(_) | KernelTermNode::Match(_) => term.clone(),
             KernelTermNode::MachineIf { arguments } => {
                 let guard = MachineTerm::BoolCast {
                     to: T::UInt8,
@@ -635,10 +638,12 @@ pub(super) fn rewrite(
             })?
             .iter()
             .any(|(_, node)| {
-                matches!(node.node(), KernelTermNode::Fold(_))
-                    || node
-                        .machine_conversion_leaf()
-                        .is_some_and(crate::kernel::eval::term_mentions_a_memory_load)
+                matches!(
+                    node.node(),
+                    KernelTermNode::Fold(_) | KernelTermNode::Match(_)
+                ) || node
+                    .machine_conversion_leaf()
+                    .is_some_and(crate::kernel::eval::term_mentions_a_memory_load)
             })
         } else {
             false
@@ -735,6 +740,17 @@ pub(super) fn rewrite(
             continue;
         }
         let value = match term.node() {
+            KernelTermNode::Match(matched) => {
+                let mut rewrite = super::super::term_rewrite::TermRewrite::for_bits(from, to);
+                match rewrite.retained_match(matched) {
+                    Ok(matched) => match rewrite.reduce_retained_match(&matched) {
+                        Ok(Some(value)) => value,
+                        Ok(None) => matched.into_term(),
+                        Err(_) => term.clone(),
+                    },
+                    Err(_) => term.clone(),
+                }
+            }
             KernelTermNode::Fold(fold) => {
                 let mut rewrite = super::super::term_rewrite::TermRewrite::for_bits(from, to);
                 match rewrite.retained_fold(fold) {
@@ -827,7 +843,8 @@ fn static_syntax(root: &KernelTerm) -> Option<bool> {
                 | KernelTermNode::IntegerToMachine { .. }
                 | KernelTermNode::MemoryLoad { .. }
                 | KernelTermNode::Legacy(_)
-                | KernelTermNode::Fold(_) => false,
+                | KernelTermNode::Fold(_)
+                | KernelTermNode::Match(_) => false,
                 _ => nodes.iter().all(|node| cache[&node.id()]),
             };
             cache.insert(term.id(), value);
@@ -842,7 +859,7 @@ mod tests {
 
     #[test]
     fn common_call_exact_rewriting_preserves_common_results_and_noops() {
-        use crate::kernel::{CValue, PureFunctionArgument, SharedPureApplication};
+        use crate::kernel::{ProgramValue, PureFunctionArgument, SharedPureApplication};
         let _session = VerificationSession::enter();
         let from = MachineTerm::Variable(Variable(995880));
         let to = MachineTerm::Variable(Variable(995881));
@@ -850,7 +867,9 @@ mod tests {
         for format in crate::kernel::machine_integer::FORMATS {
             let application = SharedPureApplication::intern(
                 "exact_call".into(),
-                vec![PureFunctionArgument::Value(CValue::Int32(from.clone()))],
+                vec![PureFunctionArgument::Value(ProgramValue::Int32(
+                    from.clone(),
+                ))],
             );
             let root = KernelTermImport::default().machine_call(format, &application);
             let native = KernelTermExport::machine(&root).unwrap();
@@ -1030,13 +1049,13 @@ mod tests {
     #[test]
     fn opaque_sources_match_canonical_reads_without_export() {
         let _session = VerificationSession::enter();
-        let memory = intern_c_memory(CMemory::new().with_block("opaque-canonical", 16));
-        let pointer = CMemory::global_pointer("opaque-canonical");
-        let later = intern_c_memory(memory.memory().clone().store(
+        let memory = intern_memory(Memory::new().with_block("opaque-canonical", 16));
+        let pointer = Memory::global_pointer("opaque-canonical");
+        let later = intern_memory(memory.memory().clone().store(
             pointer.clone(),
-            CValue::Int32(MachineTerm::Variable(Variable(1006433))),
+            ProgramValue::Int32(MachineTerm::Variable(Variable(1006433))),
         ));
-        let sum = |memory: SharedCMemory, literal| MachineTerm::Binary {
+        let sum = |memory: SharedMemory, literal| MachineTerm::Binary {
             format: T::Int32,
             op: O::Add,
             left: MachineTerm::If {
@@ -1263,8 +1282,8 @@ mod tests {
     #[test]
     fn exact_rewrite_shared_reads_match_canonical_sources_and_retain_addresses() {
         let _session = VerificationSession::enter();
-        let pointer = CMemory::global_pointer("shared-exact-load");
-        let memory = intern_c_memory(CMemory::new().with_block("shared-exact-load", 16));
+        let pointer = Memory::global_pointer("shared-exact-load");
+        let memory = intern_memory(Memory::new().with_block("shared-exact-load", 16));
         let raw =
             MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), LoadKind::Int32);
         let named = crate::kernel::eval::canonical_term(&raw);

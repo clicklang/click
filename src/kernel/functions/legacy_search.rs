@@ -2,11 +2,11 @@
 //! Each entry remains reachable only through its inventoried compatibility caller.
 use super::*;
 
-impl crate::kernel::search::ProofSearch<CFunction> {
+impl crate::kernel::search::ProofSearch<ProgramFunction> {
     pub(in crate::kernel) fn call_frame(
         residual: &ResourceContext,
-        definitions: &[CCompositeResourceDefinition],
-        _state: &CState,
+        definitions: &[CompositeResourceDefinition],
+        _state: &ExecutionState,
         assumptions: &PureFactContext,
     ) -> CallKeptOwnership {
         #[cfg(test)]
@@ -30,7 +30,7 @@ impl crate::kernel::search::ProofSearch<CFunction> {
             {
                 if direct
                     .last()
-                    .is_none_or(|last: &CCompositeResourceDefinition| last.name() != name)
+                    .is_none_or(|last: &CompositeResourceDefinition| last.name() != name)
                 {
                     direct.push(found.clone());
                 }

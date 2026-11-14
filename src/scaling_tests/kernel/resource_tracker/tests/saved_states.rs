@@ -22,7 +22,7 @@ fn a_saved_state_version_costs_one_lookup_per_point() {
                 state
                     .clone()
                     .with_resource_context(state.resources().clone().unchecked_with_fact(
-                        CResourceFact::own(CResource::Instance(instance(100 + other, 7, 7))),
+                        ResourceFact::own(Resource::Instance(instance(100 + other, 7, 7))),
                     ));
         }
         state

@@ -104,7 +104,7 @@ impl<'a> SpecNode<'a> {
             },
             N::Expression(expression) => match expression {
                 SpecExpression::Value(_)
-                | SpecExpression::CExpression(_)
+                | SpecExpression::ProgramExpression(_)
                 | SpecExpression::ResourceField { .. } => {}
                 SpecExpression::IntegerToMachine { value, .. } => visit(N::Integer(value)),
                 SpecExpression::AlgebraicMatch { scrutinee, arms } => {
@@ -228,7 +228,7 @@ impl<'a> SpecNode<'a> {
                         .iter()
                         .for_each(|field| visit(N::AlgebraicValue(field)));
                 }
-                SpecAlgebraicExpressionNode::CValue(value) => visit(N::Expression(value)),
+                SpecAlgebraicExpressionNode::ProgramValue(value) => visit(N::Expression(value)),
                 SpecAlgebraicExpressionNode::Match { scrutinee, arms } => {
                     visit(N::Algebraic(scrutinee));
                     arms.iter().for_each(|arm| visit(N::Algebraic(&arm.body)));
@@ -249,7 +249,7 @@ impl<'a> SpecNode<'a> {
                 }
             },
             N::AlgebraicValue(value) => match value {
-                SpecAlgebraicValue::C(expression) => visit(N::Expression(expression)),
+                SpecAlgebraicValue::Program(expression) => visit(N::Expression(expression)),
                 SpecAlgebraicValue::Integer(integer) => visit(N::Integer(integer)),
                 SpecAlgebraicValue::Algebraic(algebraic) => visit(N::Algebraic(algebraic)),
             },
@@ -400,13 +400,13 @@ mod tests {
     use super::*;
 
     fn int(value: u32) -> SpecExpression {
-        SpecExpression::Value(CValue::Int32(MachineTerm::constant(value)))
+        SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(value)))
     }
 
     fn comparison(left: SpecExpression, right: SpecExpression) -> SpecProposition {
         SpecProposition::Comparison {
             left,
-            operator: CComparisonOperator::Equal,
+            operator: ComparisonOperator::Equal,
             right,
         }
     }
@@ -426,7 +426,8 @@ mod tests {
             SpecNode::Proposition(&tree),
             WalkBudget::Unmetered,
             |node| {
-                if let SpecNode::Expression(SpecExpression::Value(CValue::Int32(bits))) = node {
+                if let SpecNode::Expression(SpecExpression::Value(ProgramValue::Int32(bits))) = node
+                {
                     values.push(bits.as_const().unwrap());
                 }
                 Visit::<()>::Descend
@@ -449,7 +450,7 @@ mod tests {
             WalkBudget::Unmetered,
             |node| match node {
                 SpecNode::Proposition(SpecProposition::Comparison {
-                    left: SpecExpression::Value(CValue::Int32(bits)),
+                    left: SpecExpression::Value(ProgramValue::Int32(bits)),
                     ..
                 }) if bits.as_const() == Some(1) => Visit::Skip,
                 SpecNode::Expression(_) => {

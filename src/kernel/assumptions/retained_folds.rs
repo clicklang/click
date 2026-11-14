@@ -6,17 +6,17 @@ use crate::kernel::{KernelFold, KernelTermNode, KernelType};
 
 pub(super) fn collect_fold_memory_loads(
     fold: &KernelFold,
-    current_memory: &CMemory,
+    current_memory: &Memory,
     loads: &mut Vec<(Pointer, u32)>,
     width: Option<u32>,
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
     let endpoint_width = match fold.index.ty() {
-        KernelType::C(ty) => Some(ty.byte_width()),
+        KernelType::Program(ty) => Some(ty.byte_width()),
         _ => width,
     };
     let result_width = match fold.result_type() {
-        KernelType::C(ty) => Some(ty.byte_width()),
+        KernelType::Program(ty) => Some(ty.byte_width()),
         _ => width,
     };
     let pending = vec![
@@ -30,7 +30,7 @@ pub(super) fn collect_fold_memory_loads(
 
 pub(super) fn collect_common_memory_loads(
     mut pending: Vec<(&KernelTerm, Option<u32>)>,
-    current_memory: &CMemory,
+    current_memory: &Memory,
     loads: &mut Vec<(Pointer, u32)>,
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
@@ -46,9 +46,13 @@ pub(super) fn collect_common_memory_loads(
         // arithmetic parent separately would revisit a fold shared by the
         // initial value and body, recursively doubling the same dependency work.
         if !term.has_machine_folds()
-            && !matches!(term.node(), KernelTermNode::Fold(_))
-            && let KernelType::C(ty) = term.ty()
-            && let Some(format) = MachineIntegerType::from_c_type(*ty)
+            && !term.has_machine_matches()
+            && !matches!(
+                term.node(),
+                KernelTermNode::Fold(_) | KernelTermNode::Match(_)
+            )
+            && let KernelType::Program(ty) = term.ty()
+            && let Some(format) = MachineIntegerType::from_program_type(*ty)
             && let Some(value) = SharedMachineIntegerTerm::from_shared(format, term.clone())
         {
             collect_shared_machine_memory_loads(
@@ -61,13 +65,26 @@ pub(super) fn collect_common_memory_loads(
             continue;
         }
         match term.node() {
+            KernelTermNode::Match(matched) => {
+                for (arm, body) in matched.arms.iter().zip(&matched.arguments[1..]).rev() {
+                    pending.push((body, width));
+                    for binding in arm.bindings.iter().rev() {
+                        let width = match binding.ty() {
+                            KernelType::Program(ty) => Some(ty.byte_width()),
+                            _ => None,
+                        };
+                        pending.push((binding, width));
+                    }
+                }
+                pending.push((&matched.arguments[0], None));
+            }
             KernelTermNode::Fold(fold) => {
                 let endpoint_width = match fold.index.ty() {
-                    KernelType::C(ty) => Some(ty.byte_width()),
+                    KernelType::Program(ty) => Some(ty.byte_width()),
                     _ => width,
                 };
                 let width = match fold.result_type() {
-                    KernelType::C(ty) => Some(ty.byte_width()),
+                    KernelType::Program(ty) => Some(ty.byte_width()),
                     _ => width,
                 };
                 pending.push((&fold.arguments[3], width));
@@ -187,7 +204,7 @@ mod tests {
             MachineIntegerType::UInt64,
         ] {
             let _session = crate::kernel::VerificationSession::enter();
-            let current = CMemory::new();
+            let current = Memory::new();
             let pointer = Pointer::symbolic(Variable(991510));
             let source = IntegerTerm::RangeFold {
                 index: IntegerRangeFoldIndex::Integer {
@@ -202,7 +219,7 @@ mod tests {
                         format,
                         relation: CompareRelation::LessThan,
                         left: Box::new(MachineTerm::MemoryLoad(
-                            crate::kernel::intern_c_memory_ref(&current),
+                            crate::kernel::intern_memory_ref(&current),
                             Box::new(pointer.clone()),
                             LoadKind::Int32,
                         )),
@@ -235,8 +252,8 @@ mod tests {
     #[test]
     fn retained_fold_read_collection_preserves_snapshots_widths_and_opaque_refusals() {
         let _session = crate::kernel::VerificationSession::enter();
-        let current = CMemory::new();
-        let memory = crate::kernel::intern_c_memory_ref(&current);
+        let current = Memory::new();
+        let memory = crate::kernel::intern_memory_ref(&current);
         let pointer = Pointer::symbolic(Variable(991501));
         let read = MachineTerm::MemoryLoad(memory, Box::new(pointer), LoadKind::Bits64);
         let bound = SharedIntegerRangeEndpoint::intern(read.clone());

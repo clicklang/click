@@ -188,7 +188,7 @@ pub(crate) enum PropositionIntroduction {
     /// checked goal now mentions.
     Universal {
         variable: crate::kernel::Variable,
-        pointer: Option<crate::kernel::CType>,
+        pointer: Option<crate::kernel::ProgramType>,
         object_class: Option<crate::kernel::effective_type::CAccessClass>,
         algebraic: Option<crate::kernel::AlgebraicType>,
     },
@@ -593,7 +593,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
     /// no separately supplied context can reuse a domain-discharge receipt.
     pub(crate) fn focus_contract_claim(
         &self,
-        goal: &crate::kernel::CClaimGoal,
+        goal: &crate::kernel::ContractClaimGoal,
         presentation: P,
     ) -> Result<Self, Vec<crate::kernel::ProofObligation>> {
         #[cfg(test)]
@@ -912,11 +912,11 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             if !matches!(
                 sort,
                 Sort::Integer
-                    | Sort::CInt32
-                    | Sort::CInt64
-                    | Sort::CMachineInteger(_)
-                    | Sort::CPointer(_)
-                    | Sort::CObjectPointer(_, _)
+                    | Sort::ProgramInt32
+                    | Sort::ProgramInt64
+                    | Sort::ProgramInteger(_)
+                    | Sort::ProgramPointer(_)
+                    | Sort::ProgramObjectPointer(_, _)
                     | Sort::Algebraic(_)
             ) {
                 return Err(PropositionCloseError::IntegerChoiceWrongSort);
@@ -931,19 +931,21 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                     )
                     .map_err(|_| PropositionCloseError::IntegerChoiceFresheningExhausted)?
                 }
-                Sort::CInt32 | Sort::CInt64 | Sort::CMachineInteger(_) => {
+                Sort::ProgramInt32 | Sort::ProgramInt64 | Sort::ProgramInteger(_) => {
                     crate::kernel::substitute_int32_variable_in_proposition(
                         &body,
                         var,
                         crate::kernel::MachineTerm::Variable(chosen),
                     )
                 }
-                Sort::CPointer(c_type) | Sort::CObjectPointer(c_type, _) => {
-                    let pointer = if matches!(c_type, crate::kernel::CType::FunctionPointer(_)) {
-                        crate::kernel::Pointer::symbolic_function(chosen)
-                    } else {
-                        crate::kernel::Pointer::symbolic(chosen)
-                    };
+                Sort::ProgramPointer(program_type)
+                | Sort::ProgramObjectPointer(program_type, _) => {
+                    let pointer =
+                        if matches!(program_type, crate::kernel::ProgramType::FunctionPointer(_)) {
+                            crate::kernel::Pointer::symbolic_function(chosen)
+                        } else {
+                            crate::kernel::Pointer::symbolic(chosen)
+                        };
                     crate::kernel::substitute_pointer_variable_in_proposition(&body, var, &pointer)
                 }
                 Sort::Algebraic(algebraic_type) => {
@@ -1096,11 +1098,12 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                 var, sort, body, ..
             } => {
                 let (variable, body, pointer, algebraic) = match sort {
-                    Sort::CPointer(c_type) | Sort::CObjectPointer(c_type, _) => {
+                    Sort::ProgramPointer(program_type)
+                    | Sort::ProgramObjectPointer(program_type, _) => {
                         let (variable, body) = facts
-                            .freshen_pointer_forall_body(*var, *c_type, body)
+                            .freshen_pointer_forall_body(*var, *program_type, body)
                             .ok_or(PropositionCloseError::UniversalWitnessFresheningExhausted)?;
-                        (variable, body, Some(*c_type), None)
+                        (variable, body, Some(*program_type), None)
                     }
                     Sort::Integer => {
                         let (variable, body) = facts
@@ -1683,13 +1686,13 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
     /// language supplies presentation only, never obligations or assumptions.
     pub(crate) fn open_invariant_body(
         &self,
-        loop_entry: &crate::kernel::CState,
-        iteration_entry: &crate::kernel::CState,
+        loop_entry: &crate::kernel::ExecutionState,
+        iteration_entry: &crate::kernel::ExecutionState,
         head_iterations: &crate::kernel::IntegerTerm,
-        checks: &[crate::kernel::CLoopInvariantCheck],
-        ranking_measures: &[crate::kernel::CRankingComponent],
-        binders: &[crate::kernel::CLoopBinder],
-        definitions: &[crate::kernel::CCompositeResourceDefinition],
+        checks: &[crate::kernel::LoopInvariantCheck],
+        ranking_measures: &[crate::kernel::RankingComponent],
+        binders: &[crate::kernel::LoopBinder],
+        definitions: &[crate::kernel::CompositeResourceDefinition],
         presentation: impl FnOnce(
             &Proposition,
             &[Option<Arc<crate::kernel::LoweringIntroductions>>],
@@ -1735,7 +1738,7 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
         // The loop's names are bound again before any invariant reads a
         // binder field: the body may have refolded its instance under another
         // name, and the binder follows the family and arguments, not the name.
-        let back_edge_state = crate::kernel::c_loop_state_with_loop_binders_rebound(
+        let back_edge_state = crate::kernel::loop_state_with_loop_binders_rebound(
             iteration_entry,
             &execution.core.state,
             binders,
@@ -1763,7 +1766,7 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
             "loop invariant bundle",
             "invariant bundle: lower obligations",
         );
-        let mut obligations = crate::kernel::c_loop_invariant_obligations_at_back_edge(
+        let mut obligations = crate::kernel::loop_invariant_obligations_at_back_edge(
             &back_edge_state,
             loop_entry,
             checks,
@@ -1775,7 +1778,7 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
         // the bundle a retained certificate closed is the same list at every
         // site that rechecks it.
         obligations.extend(
-            crate::kernel::c_loop_ranking_obligations_at_back_edge(
+            crate::kernel::loop_ranking_obligations_at_back_edge(
                 &back_edge_state,
                 iteration_entry,
                 head_iterations,
@@ -2036,8 +2039,8 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
     /// discovery are deliberately absent from the closure boundary.
     pub(crate) fn validate_checked_invariant_lowerings(
         &self,
-        checks: &[crate::kernel::CLoopInvariantCheck],
-        ranking_measures: &[crate::kernel::CRankingComponent],
+        checks: &[crate::kernel::LoopInvariantCheck],
+        ranking_measures: &[crate::kernel::RankingComponent],
     ) -> Result<(), String> {
         let (branch, execution) = self
             .focused_frontier_execution()
@@ -2704,7 +2707,7 @@ mod tests {
         let source = Proposition::Exists {
             name: "machine".into(),
             var: Variable(43),
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(inner),
         };
         let proof = integer_choice_proof(
@@ -2819,7 +2822,7 @@ mod tests {
     /// about the range and not about which identities a particular fact set
     /// happens to hold.
     #[test]
-    fn a_freshened_universal_witness_never_takes_a_c_identity() {
+    fn a_freshened_universal_witness_never_takes_a_program_identity() {
         let bound = Variable(2_000_000);
         let body = Proposition::ConditionIs(
             crate::kernel::ConditionTerm::signed_less_equal(
@@ -2834,7 +2837,7 @@ mod tests {
         let reserving = Proposition::ForAll {
             name: Default::default(),
             var: bound,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(body.clone()),
         };
         let facts = ProofFacts::from_ordered(std::slice::from_ref(&reserving));
@@ -2872,7 +2875,7 @@ mod tests {
     /// for the same reason: `Pointer::symbolic(v)` over a C identity is a
     /// pointer the function already has a name for.
     #[test]
-    fn a_freshened_pointer_witness_never_takes_a_c_identity() {
+    fn a_freshened_pointer_witness_never_takes_a_program_identity() {
         let bound = Variable(2_000_000);
         let body = Proposition::Predicate {
             name: "witness_body".into(),
@@ -2881,12 +2884,12 @@ mod tests {
         let reserving = Proposition::ForAll {
             name: Default::default(),
             var: bound,
-            sort: Sort::CPointer(crate::kernel::CType::Int32),
+            sort: Sort::ProgramPointer(crate::kernel::ProgramType::Int32),
             body: Box::new(body.clone()),
         };
         let facts = ProofFacts::from_ordered(std::slice::from_ref(&reserving));
         let (witness, _) = facts
-            .freshen_pointer_forall_body(bound, crate::kernel::CType::Int32, &body)
+            .freshen_pointer_forall_body(bound, crate::kernel::ProgramType::Int32, &body)
             .expect("the witness range holds an identity");
         assert!(
             crate::kernel::ExecutionBudget::is_universal_witness_variable(witness),
@@ -2900,8 +2903,8 @@ mod tests {
             ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind, FrontierPosition,
         };
         use crate::kernel::{
-            CMemory, CState, CValue, ConditionTerm, IntegerRangeFoldIndex, IntegerTerm,
-            MachineIntegerType, Pointer, PointerOffsetTerm, SharedIntegerRangeEndpoint,
+            ConditionTerm, ExecutionState, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType,
+            Memory, Pointer, PointerOffsetTerm, ProgramValue, SharedIntegerRangeEndpoint,
         };
         type TestProof = ProofObject<
             (),
@@ -2918,7 +2921,7 @@ mod tests {
                         unfolded_predicates: PersistentOrderedSet::default(),
                         execution: Some(Arc::new(ProofExecutionState::new(
                             ExecutionProofCore::at_entry(
-                                CState::new(),
+                                ExecutionState::new(),
                                 ExecutionFrontier {
                                     region: ExecutionRegionKind::LoopBody,
                                     position: FrontierPosition::RegionBoundary,
@@ -2931,11 +2934,11 @@ mod tests {
                 ),
             )
         };
-        let before = CMemory::new().with_block("alpha", 16);
-        let loadable = |memory: CMemory, variable| Proposition::ForAll {
+        let before = Memory::new().with_block("alpha", 16);
+        let loadable = |memory: Memory, variable| Proposition::ForAll {
             name: Default::default(),
             var: variable,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(Proposition::Implies(
                 Box::new(Proposition::And(
                     Box::new(Proposition::ConditionIs(
@@ -2957,7 +2960,7 @@ mod tests {
                         true,
                     )),
                 )),
-                Box::new(Proposition::CMemoryLoadable {
+                Box::new(Proposition::MemoryLoadable {
                     memory,
                     base: Pointer {
                         block: "alpha".into(),
@@ -3036,7 +3039,7 @@ mod tests {
                 block: "alpha".into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(MachineTerm::constant(7)),
         );
         assert!(
             root(
@@ -3054,8 +3057,8 @@ mod tests {
             ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind, FrontierPosition,
         };
         use crate::kernel::{
-            CLoopInvariantCheck, CState, CType, CValue, Pointer, PointerOffsetTerm, SpecExpression,
-            SpecMemory, SpecProposition,
+            ExecutionState, LoopInvariantCheck, Pointer, PointerOffsetTerm, ProgramType,
+            ProgramValue, SpecExpression, SpecMemory, SpecProposition,
         };
         type TestProof = ProofObject<
             (),
@@ -3064,20 +3067,20 @@ mod tests {
         >;
         let load = SpecExpression::MemoryLoad {
             memory: SpecMemory::Current,
-            pointer: Box::new(SpecExpression::Value(CValue::Pointer(
-                crate::kernel::CPointerValue::new(
+            pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
+                crate::kernel::PointerValue::new(
                     Pointer {
                         block: "unallocated".into(),
                         offset: PointerOffsetTerm::Constant(0),
                     },
-                    CType::Int32Pointer,
+                    ProgramType::Int32Pointer,
                 ),
             ))),
-            value_type: CType::Int32,
+            value_type: ProgramType::Int32,
         };
         // An explicit validity claim needs evidence even though logical
         // reflexivity at this address would hold without memory permission.
-        let checks = [CLoopInvariantCheck::new(
+        let checks = [LoopInvariantCheck::new(
             SpecProposition::Defined(load),
             None,
             None,
@@ -3091,7 +3094,7 @@ mod tests {
                     unfolded_predicates: PersistentOrderedSet::default(),
                     execution: Some(Arc::new(ProofExecutionState::new(
                         ExecutionProofCore::at_entry(
-                            CState::new(),
+                            ExecutionState::new(),
                             ExecutionFrontier {
                                 region: ExecutionRegionKind::LoopBody,
                                 position: FrontierPosition::RegionBoundary,
@@ -3105,8 +3108,8 @@ mod tests {
         );
         let (body, scope) = frontier
             .open_invariant_body(
-                &CState::new(),
-                &CState::new(),
+                &ExecutionState::new(),
+                &ExecutionState::new(),
                 &crate::kernel::IntegerTerm::var(crate::kernel::Variable(9_999)),
                 &checks,
                 &[],
@@ -3196,7 +3199,7 @@ mod tests {
         let goal = Proposition::Exists {
             name: "x".into(),
             var: variable,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(body.clone()),
         };
         let proof: ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()> =
@@ -3221,7 +3224,7 @@ mod tests {
                         Some(&Proposition::ForAll {
                             name: crate::kernel::BinderName::written("x"),
                             var: variable,
-                            sort: Sort::CInt32,
+                            sort: Sort::ProgramInt32,
                             body: Box::new(Proposition::Not(Box::new(body.clone()))),
                         })
                     );
@@ -3246,7 +3249,7 @@ mod tests {
         let goal = Proposition::ForAll {
             name: Default::default(),
             var: binder,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(body.clone()),
         };
         let branch = ProofBranch::new(

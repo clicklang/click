@@ -66,6 +66,8 @@ void copy_pos(struct cursor *target, struct cursor *source) {
         }
     }
     step();
+    assumption();
+    assumption(); assumption(); assumption();
 }
 ```
 

@@ -2,7 +2,7 @@ use super::*;
 
 fn authority_test_scope(
     kind: ResourceKind,
-    parameter_type: C0Type,
+    parameter_type: InterfaceType,
     has_fields: bool,
 ) -> DeclaredResourceScope {
     DeclaredResourceScope {
@@ -36,7 +36,7 @@ fn authority_test_scope(
 /// bind keeps theirs, and one the arms give different resources is refused.
 #[test]
 fn alternative_arms_join_the_resources_they_give_an_instance() {
-    let scope = authority_test_scope(ResourceKind::Composite, C0Type::Int32Pointer, true);
+    let scope = authority_test_scope(ResourceKind::Composite, InterfaceType::Int32Pointer, true);
     let (agreed, partial, conflicting) = (Variable(0), Variable(1), Variable(2));
     let alternatives = scope.begin_alternatives();
     scope
@@ -84,7 +84,7 @@ fn inferred_constructor_type_arguments_are_written_into_the_declaration() {
     else {
         panic!("the body is a constructor");
     };
-    let int32_list = vec![ClickType::C(C0Type::Int32)];
+    let int32_list = vec![ClickType::Program(InterfaceType::Int32)];
     assert_eq!(algebraic_type.arguments, int32_list);
     let ContractExpression::AlgebraicConstructor { algebraic_type, .. } = &arguments[1] else {
         panic!("the tail is a constructor");
@@ -107,11 +107,12 @@ fn authority_test_protected(argument: ContractExpression) -> ResourceClause {
 
 #[test]
 fn authority_type_argument_requires_exact_unary_pointer_family() {
-    let pointer = ContractExpression::CFragment(CExpression::Variable("p".to_string()));
+    let pointer =
+        ContractExpression::ProgramExpression(ProgramExpression::Variable("p".to_string()));
     let accepted = expand_resource_type_arguments(
         "authority",
         vec![authority_test_protected(pointer.clone())],
-        &authority_test_scope(ResourceKind::Composite, C0Type::Int32Pointer, false),
+        &authority_test_scope(ResourceKind::Composite, InterfaceType::Int32Pointer, false),
     )
     .expect("exact field-free pointer family");
     assert!(matches!(
@@ -136,24 +137,24 @@ fn authority_type_argument_requires_exact_unary_pointer_family() {
         .expect("checked source authority lowers to a kernel resource term");
     assert!(matches!(
         spec.term(),
-        crate::kernel::CResourceTerm::PopulationAuthority { .. }
+        crate::kernel::ResourceTerm::PopulationAuthority { .. }
     ));
     assert!(
         expand_resource_type_arguments(
             "authority",
             vec![authority_test_protected(pointer.clone())],
-            &authority_test_scope(ResourceKind::Token, C0Type::Int32Pointer, false),
+            &authority_test_scope(ResourceKind::Token, InterfaceType::Int32Pointer, false),
         )
         .is_ok(),
         "abstract token resource families are valid protected types"
     );
     for (scope, argument) in [
         (
-            authority_test_scope(ResourceKind::Composite, C0Type::Int32, false),
+            authority_test_scope(ResourceKind::Composite, InterfaceType::Int32, false),
             pointer.clone(),
         ),
         (
-            authority_test_scope(ResourceKind::Composite, C0Type::Int32Pointer, false),
+            authority_test_scope(ResourceKind::Composite, InterfaceType::Int32Pointer, false),
             ContractExpression::ResourceWildcard,
         ),
     ] {
@@ -170,7 +171,7 @@ fn authority_type_argument_requires_exact_unary_pointer_family() {
         expand_resource_type_arguments(
             "authority",
             Vec::new(),
-            &authority_test_scope(ResourceKind::Composite, C0Type::Int32Pointer, false)
+            &authority_test_scope(ResourceKind::Composite, InterfaceType::Int32Pointer, false)
         )
         .is_err()
     );
@@ -187,7 +188,7 @@ fn check_isolated_program(value: i32, expected: i32) {
         }}
         "#
     );
-    let result = verify_c0_sources(&click_source, &[("answer.c", &c_source)]);
+    let result = verify_c_sources(&click_source, &[("answer.c", &c_source)]);
     if value == expected {
         result.expect("each program must use its own wanted predicate");
     } else {
@@ -358,7 +359,7 @@ fn certification_checks_only_the_cited_library_theorem() {
         }
     "#;
     let proved = proved_theorems_during(|| {
-        verify_c0_sources(click_source, &[("keep.c", c_source)])
+        verify_c_sources(click_source, &[("keep.c", c_source)])
             .unwrap_or_else(|error| panic!("C proof failed: {}", error.message()));
     });
     assert_eq!(proved, ["click::integer::int32_remainder_to_integer"]);
@@ -366,12 +367,13 @@ fn certification_checks_only_the_cited_library_theorem() {
 
 #[test]
 fn authority_field_schema_and_count_admission_are_independent_of_instance_fields() {
-    let pointer = ContractExpression::CFragment(CExpression::Variable("p".into()));
-    let mut scope = authority_test_scope(ResourceKind::Composite, C0Type::Int32Pointer, true);
+    let pointer = ContractExpression::ProgramExpression(ProgramExpression::Variable("p".into()));
+    let mut scope =
+        authority_test_scope(ResourceKind::Composite, InterfaceType::Int32Pointer, true);
     scope.definitions.get_mut("reference").unwrap().fields =
         std::sync::Arc::new(BTreeMap::from([(
             "serial".into(),
-            (0, ClickType::C(C0Type::Int32)),
+            (0, ClickType::Program(InterfaceType::Int32)),
         )]));
     let accepted = expand_resource_type_arguments(
         "authority",
@@ -398,19 +400,22 @@ fn authority_field_schema_and_count_admission_are_independent_of_instance_fields
 /// `authorized`, whether or not it declares fields.
 #[test]
 fn authorization_not_field_presence_selects_countability() {
-    let pointer = ContractExpression::CFragment(CExpression::Variable("p".into()));
+    let pointer = ContractExpression::ProgramExpression(ProgramExpression::Variable("p".into()));
     let count = ContractExpression::ResourceCount(Box::new(authority_test_protected(pointer)));
     for has_fields in [false, true] {
         for authorized in [false, true] {
-            let mut scope =
-                authority_test_scope(ResourceKind::Composite, C0Type::Int32Pointer, has_fields);
+            let mut scope = authority_test_scope(
+                ResourceKind::Composite,
+                InterfaceType::Int32Pointer,
+                has_fields,
+            );
             scope.family_rules = true;
             let info = scope.definitions.get_mut("reference").unwrap();
             info.authorized = authorized;
             if has_fields {
                 info.fields = std::sync::Arc::new(BTreeMap::from([(
                     "serial".into(),
-                    (0, ClickType::C(C0Type::Int32)),
+                    (0, ClickType::Program(InterfaceType::Int32)),
                 )]));
             }
             assert_eq!(

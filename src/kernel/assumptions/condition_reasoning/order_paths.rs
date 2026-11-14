@@ -3217,7 +3217,8 @@ mod slice_index_tests {
         let _session = crate::kernel::VerificationSession::enter();
         for ty in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
             let make = |id| {
-                let variable = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(id));
+                let variable =
+                    KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(id));
                 SharedMachineIntegerTerm::from_shared(
                     ty,
                     KernelTerm::machine_binary_shared(
@@ -4008,14 +4009,14 @@ mod shared_read_equality_rule_tests {
             ConditionTerm::signed_less_than(read_index, write_index),
             true,
         );
-        let before = CMemory::new().with_block("selected-word", 64);
+        let before = Memory::new().with_block("selected-word", 64);
         let after = before.clone().store_with_context(
             written,
-            CValue::Int32(MachineTerm::constant(9)),
+            ProgramValue::Int32(MachineTerm::constant(9)),
             &context,
         );
-        let read = |memory: CMemory, at: &Pointer| {
-            let memory = crate::kernel::intern_c_memory(memory);
+        let read = |memory: Memory, at: &Pointer| {
+            let memory = crate::kernel::intern_memory(memory);
             MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
                 &memory,
                 at,
@@ -4031,9 +4032,10 @@ mod shared_read_equality_rule_tests {
         };
         let wrong_address = read(after.clone(), &unrelated);
         let wrong_snapshot = read(
-            after
-                .clone()
-                .store(pointer.clone(), CValue::Int32(MachineTerm::constant(31))),
+            after.clone().store(
+                pointer.clone(),
+                ProgramValue::Int32(MachineTerm::constant(31)),
+            ),
             &pointer,
         );
         assert!(
@@ -4121,15 +4123,15 @@ mod shared_read_order_bridge_tests {
         crate::kernel::eval::declare_load_access_width(&pointer, 4);
         let separation = ConditionTerm::signed_less_than(read_index, write_index);
         let separated = PureFactContext::new().assume_condition(separation, true);
-        let before = CMemory::new().with_block("order-read-bridge", 64);
+        let before = Memory::new().with_block("order-read-bridge", 64);
         let after = before.clone().store_with_context(
             write,
-            CValue::Int32(MachineTerm::constant(9)),
+            ProgramValue::Int32(MachineTerm::constant(9)),
             &separated,
         );
         let read = |memory| {
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(memory),
+                crate::kernel::intern_memory(memory),
                 Box::new(pointer.clone()),
                 LoadKind::Int32,
             )

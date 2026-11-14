@@ -7,13 +7,13 @@ pub(super) fn payload_is_empty(storage: &ResourceContextStorage) -> bool {
     storage.index.memory_by_block.is_empty() && storage.index.exact_shapes.is_empty()
 }
 
-fn shape_pointer(fact: &CResourceFact) -> Option<(Shape, &Pointer)> {
-    let (CResource::Token { name, arguments } | CResource::Composite { name, arguments }) =
+fn shape_pointer(fact: &ResourceFact) -> Option<(Shape, &Pointer)> {
+    let (Resource::Token { name, arguments } | Resource::Composite { name, arguments }) =
         fact.resource()
     else {
         return None;
     };
-    let Some(AlgebraicValue::C(CValue::Pointer(pointer))) = arguments.first() else {
+    let Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) = arguments.first() else {
         return None;
     };
     Some((
@@ -35,7 +35,7 @@ pub(super) struct ShapePoints {
 }
 
 impl ShapePoints {
-    pub(super) fn register(fact: &CResourceFact, graph: &EqualityGraph) {
+    pub(super) fn register(fact: &ResourceFact, graph: &EqualityGraph) {
         if let Some((_, pointer)) = shape_pointer(fact) {
             graph.address_class(pointer);
         }
@@ -66,7 +66,7 @@ impl ShapePoints {
         &mut self,
         entry: ResourceEntryId,
         insert: bool,
-        fact: &CResourceFact,
+        fact: &ResourceFact,
         graph: &EqualityGraph,
     ) {
         let Some((shape, pointer)) = shape_pointer(fact) else {
@@ -112,7 +112,7 @@ impl ResourceContext {
     /// retains its structural index and is never registered by a lookup.
     pub(in crate::kernel::primitives) fn class_shape_candidates(
         &self,
-        fact: &CResourceFact,
+        fact: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> Option<ResourceEntryIds> {
         let (shape, pointer) = shape_pointer(fact)?;

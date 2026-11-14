@@ -6,7 +6,7 @@ fn representation_axiom_has_fixed_work_at_distant_word_addresses() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Pointer::symbolic(Variable(8_390_002)).offset_by_bytes(offset);
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            prove_uint32_from_le_bytes(CPointerValue::new(pointer, CType::UInt32Pointer))
+            prove_uint32_from_le_bytes(PointerValue::new(pointer, ProgramType::UInt32Pointer))
         });
         result.expect("representation axiom");
         work
@@ -20,21 +20,21 @@ fn target_fact_lowering_ignores_unrelated_state_and_store_history() {
     let costs = [4, 16, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Pointer::symbolic(Variable(8_390_003));
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         for index in 0..size {
             memory = memory.store(
                 base.offset_by_bytes(index * 4),
-                CValue::UInt32(index.into()),
+                ProgramValue::UInt32(index.into()),
             );
         }
-        let state = CState::new().with_memory(memory);
+        let state = ExecutionState::new().with_memory(memory);
         let proposition = SpecProposition::Predicate {
             resource_state_dependent: false,
             name: LITTLE_ENDIAN_PREDICATE_NAME.into(),
             arguments: vec![],
         };
         let (lowered, work) = crate::instrumentation::measure_deterministic_work(|| {
-            crate::kernel::c_lower_spec_proposition_at_state(
+            crate::kernel::program_lower_spec_proposition_at_state(
                 &state,
                 &proposition,
                 Some(&state),
@@ -42,10 +42,10 @@ fn target_fact_lowering_ignores_unrelated_state_and_store_history() {
             )
         });
         let (fact, _, _) = lowered.unwrap();
-        assert_eq!(fact, CExecutionEnvironment::new().byte_order_fact());
+        assert_eq!(fact, ExecutionEnvironment::new().byte_order_fact());
         assert_ne!(
             fact,
-            CExecutionEnvironment::new()
+            ExecutionEnvironment::new()
                 .with_byte_order(ByteOrder::Big)
                 .byte_order_fact()
         );

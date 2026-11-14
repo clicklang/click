@@ -339,10 +339,12 @@ fn oriented_forms(
                 | ContractExpression::Subtract(..)
                 | ContractExpression::Multiply(..)
                 | ContractExpression::Negate(_) => return true,
-                ContractExpression::CFragment(
-                    CExpression::Add(..) | CExpression::Subtract(..) | CExpression::Multiply(..),
+                ContractExpression::ProgramExpression(
+                    ProgramExpression::Add(..)
+                    | ProgramExpression::Subtract(..)
+                    | ProgramExpression::Multiply(..),
                 ) => return true,
-                ContractExpression::CFragment(CExpression::Value(value)) => {
+                ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
                     return matches!(
                     value.numeric_value(), crate::kernel::integer_c_value!(term) if machine_arithmetic(term));
                 }
@@ -384,10 +386,10 @@ fn explicit_native_rewrite_equality(
     ) -> ContractExpression {
         ContractExpression::CUnary {
             operand: Box::new(operand.clone()),
-            lowered: CExpression::Cast {
-                expression: Box::new(CExpression::Value(int32(0))),
-                target_type: format.c_type(),
-                integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+            lowered: ProgramExpression::Cast {
+                expression: Box::new(ProgramExpression::Value(int32(0))),
+                target_type: format.program_type(),
+                integer_mode: crate::kernel::IntegerCastMode::CConversion,
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
@@ -619,7 +621,10 @@ mod tests {
                 IntegerTerm::Machine(
                     SharedMachineIntegerTerm::from_shared(
                         format,
-                        KernelTerm::variable(KernelType::C(format.c_type()), Variable(id)),
+                        KernelTerm::variable(
+                            KernelType::Program(format.program_type()),
+                            Variable(id),
+                        ),
                     )
                     .unwrap(),
                 )
@@ -671,7 +676,7 @@ theorem shift_bound(v: uint64) {{
                 .unwrap();
             let column = source.lines().nth(line).unwrap().find("solve()").unwrap();
             let expanded =
-                crate::surface::expand_c0_tactic_source_at(&source, &[], line + 1, column + 1)
+                crate::surface::expand_c_tactic_source_at(&source, &[], line + 1, column + 1)
                     .unwrap();
             assert!(expanded.contains("operation_bound"), "{expanded}");
             without_implicit_solve(|| crate::surface::verify_click_theorems(&expanded)).unwrap();
@@ -702,7 +707,7 @@ theorem narrowed_length_result(n: uint64, result: int32) {
             .unwrap();
         let column = source.lines().nth(line).unwrap().find("solve()").unwrap();
         let expanded =
-            crate::surface::expand_c0_tactic_source_at(source, &[], line + 1, column + 1).unwrap();
+            crate::surface::expand_c_tactic_source_at(source, &[], line + 1, column + 1).unwrap();
         assert!(expanded.contains("rewrite("), "{expanded}");
         without_implicit_solve(|| crate::surface::verify_click_theorems(&expanded)).unwrap();
         let missing = source
@@ -730,7 +735,7 @@ theorem identity(x: {ty}) {{
             .unwrap();
         let column = source.lines().nth(line).unwrap().find("solve()").unwrap();
         let expanded =
-            crate::surface::expand_c0_tactic_source_at(&source, &[], line + 1, column + 1).unwrap();
+            crate::surface::expand_c_tactic_source_at(&source, &[], line + 1, column + 1).unwrap();
         assert!(
             expanded.contains("integer_operation_identity"),
             "{expanded}"
@@ -787,7 +792,7 @@ theorem product_identity(a: uint16, b: uint16) {
             .unwrap();
         let column = source.lines().nth(line).unwrap().find("solve()").unwrap();
         let expanded =
-            crate::surface::expand_c0_tactic_source_at(source, &[], line + 1, column + 1).unwrap();
+            crate::surface::expand_c_tactic_source_at(source, &[], line + 1, column + 1).unwrap();
         for rule in ["integer_product_bounds", "integer_operation_identity"] {
             assert_eq!(expanded.matches(rule).count(), 1, "{rule}: {expanded}");
         }
@@ -824,7 +829,7 @@ theorem strict(a: {ty}, b: {ty}) {{
                 .unwrap();
             let column = source.lines().nth(line).unwrap().find("solve()").unwrap();
             let expanded =
-                crate::surface::expand_c0_tactic_source_at(&source, &[], line + 1, column + 1)
+                crate::surface::expand_c_tactic_source_at(&source, &[], line + 1, column + 1)
                     .unwrap();
             assert!(
                 expanded.contains("less_than_from_not_equal") && !expanded.contains("signed_int32"),
@@ -860,7 +865,7 @@ theorem successor_identity(x: int32) {
             .unwrap();
         let column = source.lines().nth(line).unwrap().find("solve()").unwrap();
         let expanded =
-            crate::surface::expand_c0_tactic_source_at(source, &[], line + 1, column + 1).unwrap();
+            crate::surface::expand_c_tactic_source_at(source, &[], line + 1, column + 1).unwrap();
         assert_eq!(
             expanded.matches("integer_operation_identity").count(),
             1,
@@ -892,7 +897,7 @@ theorem low_bit_is_the_color_bit(bits: uint64, color: Color) {
             .unwrap();
         let column = source.lines().nth(line).unwrap().find("solve()").unwrap();
         let expanded =
-            crate::surface::expand_c0_tactic_source_at(source, &[], line + 1, column + 1).unwrap();
+            crate::surface::expand_c_tactic_source_at(source, &[], line + 1, column + 1).unwrap();
         assert!(!expanded.contains("equal_from_bounds"), "{expanded}");
         crate::surface::verify_click_theorems(&expanded).unwrap();
     }
@@ -961,7 +966,9 @@ theorem black_color_is_black(color: Color) {
             },
             true,
         );
-        let name = |name: &str| ContractExpression::CFragment(CExpression::Variable(name.into()));
+        let name = |name: &str| {
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(name.into()))
+        };
         let surface = ClickProposition::Comparison {
             left: name("capacity"),
             operator: ComparisonOperator::Equal,

@@ -9,15 +9,16 @@ fn transport_certificate_preserves_byte_reads_without_search() {
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
-    without_implicit_solve(|| verify_c0_sources(&source, &sources)).unwrap();
-    let expanded = expand_c0_claim_source(&source, &sources, "keep", CProofClaim::Grouped).unwrap();
-    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    without_implicit_solve(|| verify_c_sources(&source, &sources)).unwrap();
+    let expanded =
+        expand_c_claim_source(&source, &sources, "keep", ContractProofClaim::Grouped).unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     // Separation of q cannot carry a read of the cell actually written.
     let overlapping = source.replace(
         "*q == at(statement(0).entry, *q)",
         "*p == at(statement(0).entry, *p)",
     );
-    assert!(without_implicit_solve(|| verify_c0_sources(&overlapping, &sources)).is_err());
+    assert!(without_implicit_solve(|| verify_c_sources(&overlapping, &sources)).is_err());
 }
 
 #[test]
@@ -29,7 +30,7 @@ fn transport_certificate_preserves_pointer_read() {
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
     with_proof_trace("copy_pos", || {
-        if let Err(error) = without_implicit_solve(|| verify_c0_sources(&source, &sources)) {
+        if let Err(error) = without_implicit_solve(|| verify_c_sources(&source, &sources)) {
             panic!(
                 "{}\n{}",
                 error.report(),
@@ -38,11 +39,11 @@ fn transport_certificate_preserves_pointer_read() {
         }
     });
     let expanded =
-        expand_c0_claim_source(&source, &sources, "copy_pos", CProofClaim::Grouped).unwrap();
+        expand_c_claim_source(&source, &sources, "copy_pos", ContractProofClaim::Grouped).unwrap();
     assert!(expanded.contains("transport_certificate"));
-    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     let scalar_source = source.replace("source->data", "source->len");
-    without_implicit_solve(|| verify_c0_sources(&scalar_source, &sources)).unwrap();
+    without_implicit_solve(|| verify_c_sources(&scalar_source, &sources)).unwrap();
     for (from, to) in [
         ("memory(target->pos))", "memory(target->len))"),
         ("preserve 0 =>", "preserve 1 =>"),
@@ -50,7 +51,7 @@ fn transport_certificate_preserves_pointer_read() {
     ] {
         let invalid = source.replace(from, to);
         assert_ne!(invalid, source);
-        assert!(verify_c0_sources(&invalid, &sources).is_err(), "{invalid}");
+        assert!(verify_c_sources(&invalid, &sources).is_err(), "{invalid}");
     }
 }
 
@@ -86,8 +87,9 @@ fn transport_certificate_transitive_and_bad_indices() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_00")]
 fn transport_certificate_preserves_signed_and_unsigned_64_bit_reads() {
-    for (c_type, click_type) in [("long", "int64"), ("unsigned long", "uint64")] {
-        let c = format!("void write(int *dest, {c_type} *kept) {{ *dest = 1; *dest = 2; }}");
+    for (interface_type, click_type) in [("long", "int64"), ("unsigned long", "uint64")] {
+        let c =
+            format!("void write(int *dest, {interface_type} *kept) {{ *dest = 1; *dest = 2; }}");
         let source = format!(
             r#"
             verifying "wide.c";
@@ -125,10 +127,11 @@ fn transport_certificate_preserves_signed_and_unsigned_64_bit_reads() {
                     }}
                 }}
                 step();
+                assumption(); assumption(); assumption(); assumption();
             }}
         "#
         );
-        without_implicit_solve(|| verify_c0_sources(&source, &[("wide.c", &c)])).unwrap();
+        without_implicit_solve(|| verify_c_sources(&source, &[("wide.c", &c)])).unwrap();
     }
 }
 
@@ -136,10 +139,10 @@ fn transport_certificate_preserves_signed_and_unsigned_64_bit_reads() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_01")]
 fn region_footprint_refuses_unrecorded_memory_changes() {
     let _session = crate::kernel::VerificationSession::enter();
-    let before = CState::new();
+    let before = ExecutionState::new();
     let after = before.clone().with_memory(before.memory().clone().store(
         crate::kernel::Pointer::symbolic(Variable(8_390_200)),
-        CValue::Int32(7u32.into()),
+        ProgramValue::Int32(7u32.into()),
     ));
     let mut snapshots = RecordedSnapshots::new();
     snapshots.insert(
@@ -163,7 +166,7 @@ fn region_footprint_refuses_unrecorded_memory_changes() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_01")]
 fn region_footprint_identity_survives_unrelated_snapshots() {
     let _session = crate::kernel::VerificationSession::enter();
-    let state = CState::new();
+    let state = ExecutionState::new();
     let mut snapshots = RecordedSnapshots::new();
     snapshots.insert(
         ProgramPointRef {
@@ -207,17 +210,17 @@ fn region_footprint_free_and_call_certificates_expand_without_search() {
             .iter()
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
-        without_implicit_solve(|| verify_c0_sources(&source, &sources)).unwrap();
+        without_implicit_solve(|| verify_c_sources(&source, &sources)).unwrap();
         let expanded =
-            expand_c0_claim_source(&source, &sources, claim, CProofClaim::Grouped).unwrap();
+            expand_c_claim_source(&source, &sources, claim, ContractProofClaim::Grouped).unwrap();
         assert!(expanded.contains("transport_certificate"));
-        without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+        without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
         if claim == "beside_call" {
             // The contract still supplies this separation. A selected proof
             // must not silently find it in the ambient context.
             let missing = source.replace("            separate(memory(*q), memory(*r));\n", "");
             assert_ne!(missing, source);
-            assert!(verify_c0_sources(&missing, &sources).is_err());
+            assert!(verify_c_sources(&missing, &sources).is_err());
         }
     }
 }
@@ -245,10 +248,10 @@ fn cell_source_removal_repairs_expand_and_replay_without_implicit_search() {
             .iter()
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
-        let expanded = expand_c0_claim_source(&source, &sources, claim, CProofClaim::Grouped)
+        let expanded = expand_c_claim_source(&source, &sources, claim, ContractProofClaim::Grouped)
             .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
         assert!(expanded.contains("transport_certificate"), "{fixture}");
-        without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap_or_else(|error| {
+        without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap_or_else(|error| {
             panic!(
                 "{fixture}: {}\nExpanded source:\n{expanded}",
                 error.report()
@@ -269,10 +272,11 @@ fn check_resource_field_certificate(ty: &str) {
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
-    without_implicit_solve(|| verify_c0_sources(&source, &sources))
+    without_implicit_solve(|| verify_c_sources(&source, &sources))
         .unwrap_or_else(|e| panic!("{ty}: {}", e.report()));
-    let expanded = expand_c0_claim_source(&source, &sources, "keep", CProofClaim::Grouped).unwrap();
-    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    let expanded =
+        expand_c_claim_source(&source, &sources, "keep", ContractProofClaim::Grouped).unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
 }
 
 #[test]
@@ -315,11 +319,12 @@ fn transport_certificate_resource_descriptors_follow_call_bindings() {
         } by {
             step() { requires separate(memory(*p), other) by assumption(); }
             step();
+            assumption(); assumption(); assumption(); assumption(); assumption();
         }
     "#
     );
     let c = format!("{}\nvoid call_keep(int *p) {{ keep(p); }}", sources[0].1);
-    without_implicit_solve(|| verify_c0_sources(&caller, &[("resource_frame.c", &c)]))
+    without_implicit_solve(|| verify_c_sources(&caller, &[("resource_frame.c", &c)]))
         .unwrap_or_else(|e| panic!("{}", e.report()));
 }
 
@@ -334,8 +339,7 @@ fn transport_certificate_refuses_other_or_modified_resource() {
     let wrong_instance = source
         .replace("owns m: model();", "owns m: model(); owns n: model();")
         .replace("m.value", "n.value");
-    let error =
-        without_implicit_solve(|| verify_c0_sources(&wrong_instance, &sources)).unwrap_err();
+    let error = without_implicit_solve(|| verify_c_sources(&wrong_instance, &sources)).unwrap_err();
     assert!(
         error.report().contains("selected field"),
         "{}",
@@ -347,7 +351,7 @@ fn transport_certificate_refuses_other_or_modified_resource() {
     );
     let changed_c = "void update(int *p); void keep(int *p) { update(p); }";
     let error = without_implicit_solve(|| {
-        verify_c0_sources(&changed_source, &[("resource_frame.c", changed_c)])
+        verify_c_sources(&changed_source, &[("resource_frame.c", changed_c)])
     })
     .unwrap_err();
     assert!(error.report().contains("normalize"), "{}", error.report());
@@ -379,10 +383,11 @@ fn transport_certificate_named_resource_is_a_theorem_argument() {
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
-    without_implicit_solve(|| verify_c0_sources(&source, &sources))
+    without_implicit_solve(|| verify_c_sources(&source, &sources))
         .unwrap_or_else(|e| panic!("{}", e.report()));
-    let expanded = expand_c0_claim_source(&source, &sources, "keep", CProofClaim::Grouped).unwrap();
-    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    let expanded =
+        expand_c_claim_source(&source, &sources, "keep", ContractProofClaim::Grouped).unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
 }
 
 #[test]
@@ -440,9 +445,10 @@ fn pointer_rejection_prefixes_expand_and_replay() {
             .iter()
             .map(|(n, s)| (n.as_str(), s.as_str()))
             .collect::<Vec<_>>();
-        let expanded = expand_c0_claim_source(&repaired, &inputs, claim, CProofClaim::Grouped)
-            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
-        without_implicit_solve(|| verify_c0_sources(&expanded, &inputs))
+        let expanded =
+            expand_c_claim_source(&repaired, &inputs, claim, ContractProofClaim::Grouped)
+                .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
+        without_implicit_solve(|| verify_c_sources(&expanded, &inputs))
             .unwrap_or_else(|error| panic!("{fixture}: {}\n{expanded}", error.report()));
     }
 }
@@ -455,17 +461,18 @@ fn preserve_step_carries_a_fact_with_ordinary_rewriting() {
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
-    without_implicit_solve(|| verify_c0_sources(&source, &sources)).unwrap();
-    let expanded = expand_c0_claim_source(&source, &sources, "keep", CProofClaim::Grouped).unwrap();
+    without_implicit_solve(|| verify_c_sources(&source, &sources)).unwrap();
+    let expanded =
+        expand_c_claim_source(&source, &sources, "keep", ContractProofClaim::Grouped).unwrap();
     assert!(expanded.contains("preserve(separate("), "{expanded}");
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(!expanded.contains("transport_certificate"), "{expanded}");
-    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     let overlap = source.replace(
         "have *q == at(statement(0).entry, *q)",
         "have *p == at(statement(0).entry, *p)",
     );
-    assert!(without_implicit_solve(|| verify_c0_sources(&overlap, &sources)).is_err());
+    assert!(without_implicit_solve(|| verify_c_sources(&overlap, &sources)).is_err());
 }
 
 #[test]
@@ -502,7 +509,7 @@ fn preserve_step_supports_memory_and_resource_observations() {
             .iter()
             .map(|(n, s)| (n.as_str(), s.as_str()))
             .collect::<Vec<_>>();
-        without_implicit_solve(|| verify_c0_sources(&rewritten, &sources)).unwrap();
+        without_implicit_solve(|| verify_c_sources(&rewritten, &sources)).unwrap();
     }
 }
 
@@ -518,9 +525,9 @@ fn resource_viewability_restriction_expands_without_transport() {
             .iter()
             .map(|(n, s)| (n.as_str(), s.as_str()))
             .collect::<Vec<_>>();
-        without_implicit_solve(|| verify_c0_sources(&source, &sources))
+        without_implicit_solve(|| verify_c_sources(&source, &sources))
             .unwrap_or_else(|e| panic!("{fixture}: {}", e.report()));
-        let expanded = expand_c0_claim_source_by_label(
+        let expanded = expand_c_claim_source_by_label(
             &source,
             &sources,
             if claim == "first" {
@@ -531,7 +538,7 @@ fn resource_viewability_restriction_expands_without_transport() {
         )
         .unwrap();
         assert!(!expanded.contains("transport("), "{expanded}");
-        without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+        without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     }
 }
 
@@ -543,8 +550,8 @@ fn viewability_transport_expands_to_ordinary_restriction() {
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
-    verify_c0_sources(&source, &sources).unwrap();
-    let expanded = expand_c0_claim_source_by_label(&source, &sources, "first.contract").unwrap();
+    verify_c_sources(&source, &sources).unwrap();
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "first.contract").unwrap();
     assert!(
         expanded.contains("separation::viewable_restrict"),
         "{expanded}"
@@ -552,7 +559,7 @@ fn viewability_transport_expands_to_ordinary_restriction() {
     assert!(expanded.contains("separation::subrange"), "{expanded}");
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(!expanded.contains("transport_certificate"), "{expanded}");
-    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
 }
 
 #[test]
@@ -563,15 +570,14 @@ fn generic_viewability_transport_expands_to_ordinary_restriction() {
         "apply(separation::viewable_restrict(A, B))",
         "transport(viewable(A), viewable(B))",
     );
-    verify_c0_sources(&source, &[]).unwrap();
-    let expanded =
-        expand_c0_claim_source_by_label(&source, &[], "restrict_view.ensures_0").unwrap();
+    verify_c_sources(&source, &[]).unwrap();
+    let expanded = expand_c_claim_source_by_label(&source, &[], "restrict_view.ensures_0").unwrap();
     assert!(
         expanded.contains("separation::viewable_restrict"),
         "{expanded}"
     );
     assert!(!expanded.contains("transport("), "{expanded}");
-    without_implicit_solve(|| verify_c0_sources(&expanded, &[])).unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
 }
 
 #[test]
@@ -582,15 +588,15 @@ fn single_write_transport_expands_to_preserve_without_search() {
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
-    verify_c0_sources(&source, &sources).unwrap();
-    let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+    verify_c_sources(&source, &sources).unwrap();
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
     assert!(expanded.contains("preserve(separate("), "{expanded}");
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(!expanded.contains("transport_certificate"), "{expanded}");
-    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     let overlap = source.replace("have *q == at(statement(0).entry, *q)", "have *p == at(statement(0).entry, *p)")
         .replace("transport(at(statement(0).entry, *q) == at(statement(0).entry, *q),\n            *q == at(statement(0).entry, *q))", "transport(at(statement(0).entry, *p) == at(statement(0).entry, *p),\n            *p == at(statement(0).entry, *p))");
-    assert!(verify_c0_sources(&overlap, &sources).is_err());
+    assert!(verify_c_sources(&overlap, &sources).is_err());
 }
 
 #[test]
@@ -601,12 +607,12 @@ fn single_write_resource_transport_expands_to_preserve_without_search() {
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
-    verify_c0_sources(&source, &sources).unwrap();
-    let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+    verify_c_sources(&source, &sources).unwrap();
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
     assert!(expanded.contains("preserve(separate("), "{expanded}");
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(!expanded.contains("transport_certificate"), "{expanded}");
-    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
 }
 
 #[test]
@@ -621,12 +627,12 @@ fn multiple_write_transport_expands_to_ordinary_equalities() {
         "separate(statement(0).footprint, memory(*q));\n            separate(statement(1).footprint, memory(*q));",
         "separate(statement(1).footprint, memory(*q));\n            separate(statement(0).footprint, memory(*q));",
     )] {
-        verify_c0_sources(&source, &sources).unwrap();
-        let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+        verify_c_sources(&source, &sources).unwrap();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
         assert_eq!(expanded.matches("preserve(separate(").count(), 2, "{expanded}");
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
-        without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+        without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     }
 }
 
@@ -638,7 +644,7 @@ fn multiple_write_resource_transport_expands_to_ordinary_equalities() {
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
-    let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
     assert_eq!(
         expanded.matches("preserve(separate(").count(),
         2,
@@ -646,7 +652,7 @@ fn multiple_write_resource_transport_expands_to_ordinary_equalities() {
     );
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(!expanded.contains("transport_certificate"), "{expanded}");
-    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
 }
 
 #[test]
@@ -657,10 +663,10 @@ fn multiple_write_transport_rejects_changed_reads_and_invalid_separation() {
     let missing = source
         .replace("    have *q ==", "    step();\n    have *q ==")
         .replace("views *q;", "owns *q;");
-    assert!(verify_c0_sources(&missing, &[(sources[0].0.as_str(), c.as_str())]).is_err());
+    assert!(verify_c_sources(&missing, &[(sources[0].0.as_str(), c.as_str())]).is_err());
     let c = sources[0].1.replace("*p = 1;", "*q = 1;");
     let overlapping = source.replace("views *q;", "owns *q;");
-    assert!(verify_c0_sources(&overlapping, &[(sources[0].0.as_str(), c.as_str())]).is_err());
+    assert!(verify_c_sources(&overlapping, &[(sources[0].0.as_str(), c.as_str())]).is_err());
     let invalid = source.replace(
         "            separate(statement(1).footprint, memory(*q));",
         "            separate(statement(1).footprint, memory(*p));",
@@ -669,7 +675,7 @@ fn multiple_write_transport_rejects_changed_reads_and_invalid_separation() {
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
-    assert!(verify_c0_sources(&invalid, &sources).is_err());
+    assert!(verify_c_sources(&invalid, &sources).is_err());
 }
 
 #[test]
@@ -681,19 +687,19 @@ fn inequality_transport_expands_to_preserve_rewrite_and_assumption() {
         .collect::<Vec<_>>();
     for relation in [">", ">=", "<", "<=", "!="] {
         let source = source.replace("> 0", &format!("{relation} 0"));
-        let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
         assert!(expanded.contains("preserve(separate("), "{expanded}");
         assert!(expanded.contains("rewrite("), "{expanded}");
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
-        without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+        without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     }
     let missing_source = source.replace("    requires *q > 0;\n", "");
-    assert!(verify_c0_sources(&missing_source, &sources).is_err());
+    assert!(verify_c_sources(&missing_source, &sources).is_err());
     let changed_goal = source
         .replace("have *q > 0", "have *q > 1")
         .replace(", *q > 0)", ", *q > 1)");
-    assert!(verify_c0_sources(&changed_goal, &sources).is_err());
+    assert!(verify_c_sources(&changed_goal, &sources).is_err());
 }
 
 #[test]
@@ -722,7 +728,7 @@ fn inequality_transport_handles_multiple_statements_and_resource_fields() {
     );
     for source in [source, resource, reversed] {
         let sources = [(sources[0].0.as_str(), c.as_str())];
-        let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
         assert_eq!(
             expanded.matches("preserve(separate(").count(),
             2,
@@ -730,7 +736,7 @@ fn inequality_transport_handles_multiple_statements_and_resource_fields() {
         );
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
-        without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+        without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     }
 }
 
@@ -747,19 +753,19 @@ fn known_value_transport_expands_to_ordinary_steps() {
         "7 == at(statement(0).entry, *q)",
     );
     for source in [source.clone(), reversed] {
-        let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
         assert!(expanded.contains("preserve(separate("), "{expanded}");
         assert!(expanded.contains("rewrite("), "{expanded}");
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
-        without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+        without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     }
     let missing_source = source.replace("    requires *q == 7;\n", "");
-    assert!(verify_c0_sources(&missing_source, &sources).is_err());
+    assert!(verify_c_sources(&missing_source, &sources).is_err());
     let changed_value = source
         .replace("have *q == 7", "have *q == 8")
         .replace(", *q == 7)", ", *q == 8)");
-    assert!(verify_c0_sources(&changed_value, &sources).is_err());
+    assert!(verify_c_sources(&changed_value, &sources).is_err());
 }
 
 #[test]
@@ -783,7 +789,7 @@ fn known_value_transport_preserves_resource_fields_across_statements() {
         .replace("*q", "m.value");
     for source in [source, resource] {
         let sources = [(sources[0].0.as_str(), c.as_str())];
-        let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
         assert_eq!(
             expanded.matches("preserve(separate(").count(),
             2,
@@ -791,7 +797,7 @@ fn known_value_transport_preserves_resource_fields_across_statements() {
         );
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
-        without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+        without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     }
 }
 
@@ -804,19 +810,19 @@ fn snapshot_comparison_transport_expands_without_search() {
         .collect::<Vec<_>>();
     for relation in ["==", "!=", "<", "<=", ">", ">="] {
         let source = source.replace("== 7", &format!("{relation} 7"));
-        let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
         assert!(expanded.contains("preserve(separate("), "{expanded}");
         assert!(expanded.contains("rewrite("), "{expanded}");
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
-        without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+        without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     }
     let reversed = source.replace("*q == 7", "7 == *q");
-    let expanded = expand_c0_claim_source_by_label(&reversed, &sources, "keep.contract").unwrap();
+    let expanded = expand_c_claim_source_by_label(&reversed, &sources, "keep.contract").unwrap();
     assert!(!expanded.contains("transport("), "{expanded}");
-    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     let missing = source.replace("    requires *q == 7;\n", "");
-    assert!(verify_c0_sources(&missing, &sources).is_err());
+    assert!(verify_c_sources(&missing, &sources).is_err());
 }
 
 #[test]
@@ -841,11 +847,11 @@ fn snapshot_comparison_transport_retains_the_other_operands_snapshot() {
             ", *q == 7) using",
             ", *q == at(statement(0).entry, *p)) using",
         );
-    let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
     assert!(expanded.contains("preserve(separate("), "{expanded}");
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(!expanded.contains("transport_certificate"), "{expanded}");
-    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     // The write changes p from 7 to 0. Its old value may not become its current value.
     let wrong = source
         .replace("have *q == at(statement(0).entry, *p)", "have *q == *p")
@@ -853,7 +859,7 @@ fn snapshot_comparison_transport_retains_the_other_operands_snapshot() {
             ", *q == at(statement(0).entry, *p)) using",
             ", *q == *p) using",
         );
-    assert!(verify_c0_sources(&wrong, &sources).is_err());
+    assert!(verify_c_sources(&wrong, &sources).is_err());
 }
 
 #[test]
@@ -877,7 +883,7 @@ fn snapshot_comparison_transport_handles_resource_fields_across_statements() {
         .replace("*q", "m.value");
     for source in [source, resource] {
         let sources = [(sources[0].0.as_str(), c.as_str())];
-        let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
         assert_eq!(
             expanded.matches("preserve(separate(").count(),
             2,
@@ -885,7 +891,7 @@ fn snapshot_comparison_transport_handles_resource_fields_across_statements() {
         );
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
-        without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+        without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     }
 }
 
@@ -906,7 +912,7 @@ fn two_read_transport_expands_both_operands_without_search() {
         "at(statement(0).entry, *q) == at(statement(0).entry, *r)",
     ));
     for source in variants {
-        let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
         assert_eq!(
             expanded.matches("preserve(separate(").count(),
             2,
@@ -914,7 +920,7 @@ fn two_read_transport_expands_both_operands_without_search() {
         );
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
-        without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+        without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     }
 }
 
@@ -925,15 +931,15 @@ fn two_read_transport_refuses_changed_reads_and_missing_source() {
     for read in ["q", "r"] {
         let c = sources[0].1.replace("*p = 0;", &format!("*{read} = 0;"));
         let invalid = source.replace(&format!("views *{read};"), &format!("owns *{read};"));
-        assert!(verify_c0_sources(&invalid, &[(sources[0].0.as_str(), c.as_str())]).is_err());
+        assert!(verify_c_sources(&invalid, &[(sources[0].0.as_str(), c.as_str())]).is_err());
     }
     let sources = sources
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
-    assert!(verify_c0_sources(&source.replace("    requires *q == *r;\n", ""), &sources).is_err());
+    assert!(verify_c_sources(&source.replace("    requires *q == *r;\n", ""), &sources).is_err());
     let invalid = source.replace("            separate(statement(0).footprint, memory(*r));", "            separate(statement(0).footprint, memory(*r));\n            separate(statement(0).footprint, memory(*p));");
-    assert!(verify_c0_sources(&invalid, &sources).is_err());
+    assert!(verify_c_sources(&invalid, &sources).is_err());
 }
 
 #[test]
@@ -963,7 +969,7 @@ fn two_read_transport_handles_resources_and_multiple_statements() {
         .replace("*r", "b.value");
     for source in [source, resource] {
         let sources = [(sources[0].0.as_str(), c.as_str())];
-        let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
         assert_eq!(
             expanded.matches("preserve(separate(").count(),
             4,
@@ -971,7 +977,7 @@ fn two_read_transport_handles_resources_and_multiple_statements() {
         );
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
-        without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+        without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     }
 }
 
@@ -992,7 +998,7 @@ fn conjunction_transport_expands_with_ordinary_both() {
         ),
     ];
     for source in variants {
-        let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
         assert!(expanded.contains("both {"), "{expanded}");
         assert_eq!(
             expanded.matches("preserve(separate(").count(),
@@ -1001,7 +1007,7 @@ fn conjunction_transport_expands_with_ordinary_both() {
         );
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
-        without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+        without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     }
 }
 
@@ -1012,7 +1018,7 @@ fn conjunction_transport_requires_both_facts_and_preservations() {
     for read in ["q", "r"] {
         let c = sources[0].1.replace("*p = 0;", &format!("*{read} = 0;"));
         let invalid = source.replace(&format!("views *{read};"), &format!("owns *{read};"));
-        assert!(verify_c0_sources(&invalid, &[(sources[0].0.as_str(), c.as_str())]).is_err());
+        assert!(verify_c_sources(&invalid, &[(sources[0].0.as_str(), c.as_str())]).is_err());
     }
     let sources = sources
         .iter()
@@ -1023,10 +1029,10 @@ fn conjunction_transport_requires_both_facts_and_preservations() {
             "requires *q == 7 and *r == 8;",
             &format!("requires {remaining};"),
         );
-        assert!(verify_c0_sources(&missing, &sources).is_err());
+        assert!(verify_c_sources(&missing, &sources).is_err());
     }
     let invalid = source.replace("            separate(statement(0).footprint, memory(*r));", "            separate(statement(0).footprint, memory(*r));\n            separate(statement(0).footprint, memory(*p));");
-    assert!(verify_c0_sources(&invalid, &sources).is_err());
+    assert!(verify_c_sources(&invalid, &sources).is_err());
 }
 
 #[test]
@@ -1056,7 +1062,7 @@ fn conjunction_transport_handles_resources_and_multiple_statements() {
         .replace("*r", "b.value");
     for source in [source, resource] {
         let sources = [(sources[0].0.as_str(), c.as_str())];
-        let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
         assert_eq!(
             expanded.matches("preserve(separate(").count(),
             4,
@@ -1064,7 +1070,7 @@ fn conjunction_transport_handles_resources_and_multiple_statements() {
         );
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
-        without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+        without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     }
 }
 
@@ -1100,11 +1106,11 @@ fn nested_conjunction_transport_expands_and_replays() {
         ),
         resource,
     ] {
-        let expanded = expand_c0_claim_source_by_label(&source, &files, "keep.contract").unwrap();
+        let expanded = expand_c_claim_source_by_label(&source, &files, "keep.contract").unwrap();
         assert!(expanded.matches("both {").count() >= 2, "{expanded}");
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
-        without_implicit_solve(|| verify_c0_sources(&expanded, &files)).unwrap();
+        without_implicit_solve(|| verify_c_sources(&expanded, &files)).unwrap();
     }
 }
 
@@ -1115,7 +1121,7 @@ fn nested_conjunction_transport_checks_deep_leaves_and_all_evidence() {
     for read in ["q", "r", "s"] {
         let c = files[0].1.replace("*p = 0;", &format!("*{read} = 0;"));
         let invalid = source.replace(&format!("views *{read};"), &format!("owns *{read};"));
-        assert!(verify_c0_sources(&invalid, &[(files[0].0.as_str(), c.as_str())]).is_err());
+        assert!(verify_c_sources(&invalid, &[(files[0].0.as_str(), c.as_str())]).is_err());
     }
     let files = files
         .iter()
@@ -1126,7 +1132,7 @@ fn nested_conjunction_transport_checks_deep_leaves_and_all_evidence() {
         source.replace("            separate(statement(0).footprint, memory(*s));",
             "            separate(statement(0).footprint, memory(*s));\n            separate(statement(0).footprint, memory(*p));"),
     ] {
-        assert!(verify_c0_sources(&invalid, &files).is_err());
+        assert!(verify_c_sources(&invalid, &files).is_err());
     }
 }
 
@@ -1153,12 +1159,12 @@ fn conjunction_projection_transport_expands_only_the_selected_leaf() {
         source.replace("            separate(statement(0).footprint", "            at(statement(0).entry, *p == 8 and *q == 7);\n            separate(statement(0).footprint"),
         resource,
     ] {
-        let expanded = expand_c0_claim_source_by_label(&source, &files, "keep.contract").unwrap();
+        let expanded = expand_c_claim_source_by_label(&source, &files, "keep.contract").unwrap();
         assert_eq!(expanded.matches("preserve(separate(").count(), 1, "{expanded}");
         assert!(!expanded.contains("both {"), "{expanded}");
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
-        without_implicit_solve(|| verify_c0_sources(&expanded, &files)).unwrap();
+        without_implicit_solve(|| verify_c_sources(&expanded, &files)).unwrap();
     }
 }
 
@@ -1167,7 +1173,7 @@ fn conjunction_projection_transport_checks_source_and_preservation() {
     let (source, files) = mdtest_sources("mdtests/conjunction_projection_transport_expansion.md");
     let changed_c = files[0].1.replace("*p = 0;", "*q = 0;");
     let changed = source.replace("views *q;", "owns *q;");
-    assert!(verify_c0_sources(&changed, &[(files[0].0.as_str(), changed_c.as_str())]).is_err());
+    assert!(verify_c_sources(&changed, &[(files[0].0.as_str(), changed_c.as_str())]).is_err());
     let files = files
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
@@ -1177,7 +1183,7 @@ fn conjunction_projection_transport_checks_source_and_preservation() {
         source.replace("at(statement(0).entry, *p == 8 and *q == 7)", "at(statement(0).entry, *p == 8 and *q == 9)"),
         source.replace("            separate(statement(0).footprint, memory(*q));", "            separate(statement(0).footprint, memory(*q));\n            separate(statement(0).footprint, memory(*p));"),
     ] {
-        assert!(verify_c0_sources(&invalid, &files).is_err());
+        assert!(verify_c_sources(&invalid, &files).is_err());
     }
 }
 
@@ -1192,11 +1198,11 @@ fn conjunction_projection_transport_crosses_multiple_statements() {
     }
     have *q == 7 by"#).replace("            separate(statement(0).footprint, memory(*q));", "            separate(statement(0).footprint, memory(*q));\n            separate(statement(1).footprint, memory(*q));");
     let files = [(files[0].0.as_str(), c.as_str())];
-    let expanded = expand_c0_claim_source_by_label(&source, &files, "keep.contract").unwrap();
+    let expanded = expand_c_claim_source_by_label(&source, &files, "keep.contract").unwrap();
     assert_eq!(expanded.matches("preserve(separate(").count(), 2);
     assert!(!expanded.contains("transport("));
     assert!(!expanded.contains("transport_certificate"));
-    without_implicit_solve(|| verify_c0_sources(&expanded, &files)).unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &files)).unwrap();
 }
 
 #[test]
@@ -1227,11 +1233,11 @@ fn conjunction_selection_transport_expands_and_replays() {
         source.replace("            separate(statement(0).footprint, memory(*q));", "            at(statement(0).entry, *q == 7 and (*p == 8 and *r == 8));\n            separate(statement(0).footprint, memory(*q));"),
         resource,
     ] {
-        let expanded = expand_c0_claim_source_by_label(&source, &files, "keep.contract").unwrap();
+        let expanded = expand_c_claim_source_by_label(&source, &files, "keep.contract").unwrap();
         assert!(expanded.contains("both {"), "{expanded}");
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
-        without_implicit_solve(|| verify_c0_sources(&expanded, &files)).unwrap();
+        without_implicit_solve(|| verify_c_sources(&expanded, &files)).unwrap();
     }
 }
 
@@ -1241,7 +1247,7 @@ fn conjunction_selection_transport_checks_every_selected_leaf() {
     for read in ["q", "r"] {
         let c = files[0].1.replace("*p = 0;", &format!("*{read} = 0;"));
         let invalid = source.replace(&format!("views *{read};"), &format!("owns *{read};"));
-        assert!(verify_c0_sources(&invalid, &[(files[0].0.as_str(), c.as_str())]).is_err());
+        assert!(verify_c_sources(&invalid, &[(files[0].0.as_str(), c.as_str())]).is_err());
     }
     let files = files
         .iter()
@@ -1252,7 +1258,7 @@ fn conjunction_selection_transport_checks_every_selected_leaf() {
         source.replace("*q == 7 and *r == 8", "*q == 7 and *r == 9"),
         source.replace("            separate(statement(0).footprint, memory(*q));", "            separate(statement(0).footprint, memory(*q));\n            separate(statement(0).footprint, memory(*p));"),
     ] {
-        assert!(verify_c0_sources(&invalid, &files).is_err());
+        assert!(verify_c_sources(&invalid, &files).is_err());
     }
 }
 
@@ -1270,11 +1276,11 @@ fn conjunction_selection_transport_crosses_multiple_statements() {
     }
     have *q == 7 and *r == 8 by"#).replace("            separate(statement(0).footprint, memory(*r));", "            separate(statement(0).footprint, memory(*r));\n            separate(statement(1).footprint, memory(*q));\n            separate(statement(1).footprint, memory(*r));");
     let files = [(files[0].0.as_str(), c.as_str())];
-    let expanded = expand_c0_claim_source_by_label(&source, &files, "keep.contract").unwrap();
+    let expanded = expand_c_claim_source_by_label(&source, &files, "keep.contract").unwrap();
     assert_eq!(expanded.matches("preserve(separate(").count(), 4);
     assert!(!expanded.contains("transport("));
     assert!(!expanded.contains("transport_certificate"));
-    without_implicit_solve(|| verify_c0_sources(&expanded, &files)).unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &files)).unwrap();
 }
 
 #[test]
@@ -1308,11 +1314,11 @@ fn implication_transport_expands_by_preserving_guard_and_conclusion() {
         (resource, 2),
         (shared, 1),
     ] {
-        let expanded = expand_c0_claim_source_by_label(&source, &files, "keep.contract").unwrap();
+        let expanded = expand_c_claim_source_by_label(&source, &files, "keep.contract").unwrap();
         assert_eq!(expanded.matches("preserve(separate(").count(), preserves, "{expanded}");
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
-        without_implicit_solve(|| verify_c0_sources(&expanded, &files)).unwrap();
+        without_implicit_solve(|| verify_c_sources(&expanded, &files)).unwrap();
     }
 }
 
@@ -1329,11 +1335,11 @@ fn implication_transport_handles_four_distinct_reads() {
             .replace("            separate(statement(0).footprint, memory(*q));", &format!("            separate(statement(0).footprint, memory(*{read}));\n            separate(statement(0).footprint, memory(*q));"));
     }
     let files = [(files[0].0.as_str(), c.as_str())];
-    let expanded = expand_c0_claim_source_by_label(&source, &files, "keep.contract").unwrap();
+    let expanded = expand_c_claim_source_by_label(&source, &files, "keep.contract").unwrap();
     assert_eq!(expanded.matches("preserve(separate(").count(), 4);
     assert!(!expanded.contains("transport("));
     assert!(!expanded.contains("transport_certificate"));
-    without_implicit_solve(|| verify_c0_sources(&expanded, &files)).unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &files)).unwrap();
 }
 
 #[test]
@@ -1366,7 +1372,7 @@ fn implication_transport_rejects_changed_guard_and_conclusion() {
                 "normalize() using { separate(memory(*p), memory(*r)); };",
                 "normalize() using { separate(memory(*q), memory(*r)); };",
             );
-        assert!(verify_c0_sources(&invalid, &[(files[0].0.as_str(), c.as_str())]).is_err());
+        assert!(verify_c_sources(&invalid, &[(files[0].0.as_str(), c.as_str())]).is_err());
     }
     let files = files
         .iter()
@@ -1376,7 +1382,7 @@ fn implication_transport_rejects_changed_guard_and_conclusion() {
         source.replace("    requires *q == 7 implies *r == 8;", ""),
         source.replace("            separate(statement(0).footprint, memory(*q));", "            separate(statement(0).footprint, memory(*q));\n            separate(statement(0).footprint, memory(*p));"),
     ] {
-        assert!(verify_c0_sources(&invalid, &files).is_err());
+        assert!(verify_c_sources(&invalid, &files).is_err());
     }
 }
 
@@ -1394,11 +1400,11 @@ fn implication_transport_crosses_multiple_statements() {
     }
     have *q == 7 implies *r == 8 by"#).replace("            separate(statement(0).footprint, memory(*r));", "            separate(statement(0).footprint, memory(*r));\n            separate(statement(1).footprint, memory(*q));\n            separate(statement(1).footprint, memory(*r));");
     let files = [(files[0].0.as_str(), c.as_str())];
-    let expanded = expand_c0_claim_source_by_label(&source, &files, "keep.contract").unwrap();
+    let expanded = expand_c_claim_source_by_label(&source, &files, "keep.contract").unwrap();
     assert_eq!(expanded.matches("preserve(separate(").count(), 4);
     assert!(!expanded.contains("transport("));
     assert!(!expanded.contains("transport_certificate"));
-    without_implicit_solve(|| verify_c0_sources(&expanded, &files)).unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &files)).unwrap();
 }
 
 #[test]
@@ -1432,7 +1438,7 @@ fn compound_implication_transport_expands_without_whole_goal_rewrites() {
         variants.push(source.replace(original, formula));
     }
     for source in variants {
-        let expanded = expand_c0_claim_source_by_label(&source, &files, "keep.contract").unwrap();
+        let expanded = expand_c_claim_source_by_label(&source, &files, "keep.contract").unwrap();
         assert_eq!(
             expanded.matches("preserve(separate(").count(),
             2,
@@ -1441,7 +1447,7 @@ fn compound_implication_transport_expands_without_whole_goal_rewrites() {
         assert!(!expanded.contains("rewrite("), "{expanded}");
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
-        without_implicit_solve(|| verify_c0_sources(&expanded, &files)).unwrap();
+        without_implicit_solve(|| verify_c_sources(&expanded, &files)).unwrap();
     }
 }
 
@@ -1461,7 +1467,7 @@ fn compound_implication_transport_rejects_changed_nested_guards() {
             .replace("    have separate(statement(0).footprint, memory(*q)) by {\n        normalize() using { separate(memory(*p), memory(*q)); };\n    }\n", "")
             .replace("normalize() using { separate(memory(*p), memory(*r)); };", "normalize() using { separate(memory(*q), memory(*r)); };")
             .replace("            separate(statement(0).footprint, memory(*q));", &format!("            at(statement(0).entry, {formula});"));
-        assert!(verify_c0_sources(&invalid, &[(files[0].0.as_str(), c.as_str())]).is_err());
+        assert!(verify_c_sources(&invalid, &[(files[0].0.as_str(), c.as_str())]).is_err());
     }
     let files = files
         .iter()
@@ -1470,7 +1476,7 @@ fn compound_implication_transport_rejects_changed_nested_guards() {
     for invalid in [
         source.replace(&format!("    requires {original};"), ""),
         source.replace("            separate(statement(0).footprint, memory(*r));", "            separate(statement(0).footprint, memory(*r));\n            separate(statement(0).footprint, memory(*p));"),
-    ] { assert!(verify_c0_sources(&invalid, &files).is_err()); }
+    ] { assert!(verify_c_sources(&invalid, &files).is_err()); }
 }
 
 #[test]
@@ -1487,12 +1493,12 @@ fn compound_implication_transport_crosses_multiple_statements() {
     }
     have (*q == 7 and *r > 0) implies"#).replace("            separate(statement(0).footprint, memory(*r));", "            separate(statement(0).footprint, memory(*r));\n            separate(statement(1).footprint, memory(*q));\n            separate(statement(1).footprint, memory(*r));");
     let files = [(files[0].0.as_str(), c.as_str())];
-    let expanded = expand_c0_claim_source_by_label(&source, &files, "keep.contract").unwrap();
+    let expanded = expand_c_claim_source_by_label(&source, &files, "keep.contract").unwrap();
     assert_eq!(expanded.matches("preserve(separate(").count(), 4);
     assert!(!expanded.contains("rewrite("));
     assert!(!expanded.contains("transport("));
     assert!(!expanded.contains("transport_certificate"));
-    without_implicit_solve(|| verify_c0_sources(&expanded, &files)).unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &files)).unwrap();
 }
 
 #[cfg(feature = "fast-gate")]
@@ -1562,7 +1568,7 @@ fn computed_scalar_transport_expands_read_preservation() {
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
-    let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
     assert!(!expanded.contains("transport("), "{expanded}");
     assert_eq!(
         expanded.matches("preserve(separate(").count(),
@@ -1570,16 +1576,16 @@ fn computed_scalar_transport_expands_read_preservation() {
         "{expanded}"
     );
     assert!(!expanded.contains("transport_certificate"), "{expanded}");
-    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     let missing = source.replace("    requires *q + 1 == 8;\n", "");
-    assert!(verify_c0_sources(&missing, &sources).is_err());
+    assert!(verify_c_sources(&missing, &sources).is_err());
     let changed = expanded.replacen(
         "have (to_integer(*q) + 1) == 8",
         "have (to_integer(*q) + 1) == 9",
         1,
     );
     assert_ne!(changed, expanded);
-    assert!(without_implicit_solve(|| verify_c0_sources(&changed, &sources)).is_err());
+    assert!(without_implicit_solve(|| verify_c_sources(&changed, &sources)).is_err());
 }
 
 #[test]
@@ -1595,14 +1601,14 @@ fn indexed_read_transport_expands_to_selected_preservation() {
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
-    let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
     assert!(!expanded.contains("transport("), "{expanded}");
     assert_eq!(
         expanded.matches("preserve(separate(").count(),
         2,
         "{expanded}"
     );
-    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
 }
 
 #[test]
@@ -1620,15 +1626,15 @@ fn a_returned_have_expands_the_same_single_preservation() {
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
-    let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
     assert!(!expanded.contains("transport("), "{expanded}");
     assert_eq!(
         expanded.matches("preserve(separate(").count(),
         1,
         "{expanded}"
     );
-    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     let changed = expanded.replace("at(statement(0).exit, *q)", "at(statement(0).exit, *p)");
     assert_ne!(changed, expanded, "the preservation names its exit read");
-    assert!(without_implicit_solve(|| verify_c0_sources(&changed, &sources)).is_err());
+    assert!(without_implicit_solve(|| verify_c_sources(&changed, &sources)).is_err());
 }

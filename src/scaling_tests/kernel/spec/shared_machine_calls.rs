@@ -18,7 +18,7 @@ fn common_call_numeric_consumers_keep_growing_arguments_shared() {
                     vec![PureFunctionArgument::SharedMachine(observed)],
                 );
                 let call = KernelTermImport::default().machine_call(format, &application);
-                let widened = cast(&call.clone().into(), CType::Int64).unwrap();
+                let widened = cast(&call.clone().into(), ProgramType::Int64).unwrap();
                 assert!(
                     MachineOperandView::Shared(&widened)
                         .observe(MachineIntegerType::Int64)
@@ -82,14 +82,15 @@ fn actual_nested_call_production_and_native_handoffs_scale_linearly() {
     let mut samples = Vec::new();
     for size in [16, 64, 256] {
         let _session = VerificationSession::enter();
-        let state = CState::new();
+        let state = ExecutionState::new();
         let mut values = crate::persistent::PersistentMap::default();
-        let mut root = KernelTerm::variable(KernelType::C(CType::UInt32), Variable(995831));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ProgramType::UInt32), Variable(995831));
         let expression = call_expression(
             MachineIntegerType::UInt32,
-            vec![SpecExpression::CExpression(CExpression::Variable(
-                "x".into(),
-            ))],
+            vec![SpecExpression::ProgramExpression(
+                ProgramExpression::Variable("x".into()),
+            )],
         );
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -114,8 +115,9 @@ fn actual_nested_call_production_and_native_handoffs_scale_linearly() {
                 };
                 assert_eq!(next.children(), &[root.clone()]);
                 let next = next.clone();
-                let CValue::UInt32(MachineTerm::ClickFunctionApplication { arguments, .. }) =
-                    value.into_native()
+                let ProgramValue::UInt32(MachineTerm::ClickFunctionApplication {
+                    arguments, ..
+                }) = value.into_native()
                 else {
                     panic!()
                 };

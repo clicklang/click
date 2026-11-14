@@ -152,12 +152,14 @@ fn remainder_guard_lookup_ignores_unrelated_conditions() {
 #[test]
 fn division_guards_retain_shared_prefixes_in_linear_work() {
     use crate::kernel::machine_integer::comparison::condition_for_operand_views;
-    use crate::kernel::{CType, KernelTerm, KernelTermExport, KernelType, MachineOperandView as V};
+    use crate::kernel::{
+        KernelTerm, KernelTermExport, KernelType, MachineOperandView as V, ProgramType,
+    };
     let samples = [16usize, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let mut n = KernelTerm::variable(KernelType::C(CType::Int32), Variable(990201));
-        let d = KernelTerm::variable(KernelType::C(CType::Int32), Variable(990202));
+        let mut n = KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(990201));
+        let d = KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(990202));
         let zero = B::constant(0);
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -203,15 +205,16 @@ fn division_guards_retain_shared_prefixes_in_linear_work() {
 fn division_guard_casts_reuse_growing_composition_prefixes() {
     use crate::kernel::machine_integer::comparison::condition_for_operand_views;
     use crate::kernel::{
-        CType, KernelTerm, KernelTermExport, KernelType, MachineCastSpelling as Encoding,
-        MachineOperandView as V,
+        KernelTerm, KernelTermExport, KernelType, MachineCastSpelling as Encoding,
+        MachineOperandView as V, ProgramType,
     };
     let samples = [16usize, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
         let unsigned = MachineIntegerType::UInt32;
         let signed = MachineIntegerType::Int32;
-        let mut n = KernelTerm::variable(KernelType::C(CType::UInt32), Variable(990211));
-        let d = KernelTerm::variable(KernelType::C(CType::UInt32), Variable(990212));
+        let mut n =
+            KernelTerm::variable(KernelType::Program(ProgramType::UInt32), Variable(990211));
+        let d = KernelTerm::variable(KernelType::Program(ProgramType::UInt32), Variable(990212));
         let zero = B::constant(0);
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {

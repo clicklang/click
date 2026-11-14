@@ -9,8 +9,8 @@ use std::sync::Arc;
 
 use super::storage::SharedValue;
 use crate::kernel::{
-    CFunctionContractClaimKey, CFunctionContractClaimTarget, CResourceFact, CState, CValue,
-    Proposition,
+    ExecutionState, FunctionContractClaimKey, FunctionContractClaimTarget, ProgramValue,
+    Proposition, ResourceFact,
 };
 
 /// Diagnostic evidence returned when an allocation-lifetime obligation could
@@ -20,20 +20,20 @@ use crate::kernel::{
 /// obligation below: a successful check has no leaked-allocation payload.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct LiveAllocationObligation {
-    allocation: CResourceFact,
-    holder: Option<CResourceFact>,
+    allocation: ResourceFact,
+    holder: Option<ResourceFact>,
 }
 
 impl LiveAllocationObligation {
-    pub(crate) fn new(allocation: CResourceFact, holder: Option<CResourceFact>) -> Self {
+    pub(crate) fn new(allocation: ResourceFact, holder: Option<ResourceFact>) -> Self {
         Self { allocation, holder }
     }
 
-    pub(crate) fn allocation(&self) -> &CResourceFact {
+    pub(crate) fn allocation(&self) -> &ResourceFact {
         &self.allocation
     }
 
-    pub(crate) fn holder(&self) -> Option<&CResourceFact> {
+    pub(crate) fn holder(&self) -> Option<&ResourceFact> {
         self.holder.as_ref()
     }
 }
@@ -53,7 +53,7 @@ pub(crate) struct PropositionObligation<S, O> {
     pub(crate) outcome: Option<O>,
     /// The contract claim this obligation states, when it was opened from
     /// the kernel's goal for that claim.
-    claim: Option<crate::kernel::CFunctionContractClaimTarget>,
+    claim: Option<crate::kernel::FunctionContractClaimTarget>,
 }
 
 impl<S, O> PropositionObligation<S, O> {
@@ -79,7 +79,7 @@ impl<S, O> PropositionObligation<S, O> {
     /// proposition is the goal's own, so the claim it records is the claim
     /// it states.
     pub(super) fn for_claim_goal(
-        goal: &crate::kernel::CClaimGoal,
+        goal: &crate::kernel::ContractClaimGoal,
         presentation: S,
         outcome: Option<O>,
     ) -> Self {
@@ -91,7 +91,7 @@ impl<S, O> PropositionObligation<S, O> {
         }
     }
 
-    pub(crate) fn claim(&self) -> Option<&crate::kernel::CFunctionContractClaimTarget> {
+    pub(crate) fn claim(&self) -> Option<&crate::kernel::FunctionContractClaimTarget> {
         self.claim.as_ref()
     }
 
@@ -145,9 +145,9 @@ impl OutcomeIdentity {
 #[derive(Clone)]
 pub(crate) struct OutcomeProofCore {
     pub(crate) identity: OutcomeIdentity,
-    pub(crate) result: Arc<CValue>,
+    pub(crate) result: Arc<ProgramValue>,
     pub(crate) store_consequences_available: bool,
-    pub(crate) state: SharedValue<CState>,
+    pub(crate) state: SharedValue<ExecutionState>,
     pub(crate) is_exceptional: bool,
     pub(crate) effect_facts: OutcomeExecutionFacts,
 }
@@ -222,7 +222,7 @@ pub(crate) struct CheckedProposition {
     proposition: Arc<Proposition>,
     root_assumptions: super::ProofFacts,
     outcome: Option<OutcomeProofCore>,
-    claim: Option<crate::kernel::CFunctionContractClaimTarget>,
+    claim: Option<crate::kernel::FunctionContractClaimTarget>,
 }
 
 impl CheckedProposition {
@@ -230,7 +230,7 @@ impl CheckedProposition {
         proposition: Proposition,
         root_assumptions: super::ProofFacts,
         outcome: Option<OutcomeProofCore>,
-        claim: Option<crate::kernel::CFunctionContractClaimTarget>,
+        claim: Option<crate::kernel::FunctionContractClaimTarget>,
     ) -> Self {
         Self {
             proposition: Arc::new(proposition),
@@ -241,7 +241,7 @@ impl CheckedProposition {
     }
 
     /// The contract claim whose kernel-issued goal this proof closed.
-    pub(crate) fn claim(&self) -> Option<&crate::kernel::CFunctionContractClaimTarget> {
+    pub(crate) fn claim(&self) -> Option<&crate::kernel::FunctionContractClaimTarget> {
         self.claim.as_ref()
     }
 
@@ -336,6 +336,8 @@ impl ContractClosingGoal {
         Self::WriteFootprint,
     ];
 
+    pub(crate) const COUNT: usize = Self::ORDER.len();
+
     pub(crate) fn description(self) -> &'static str {
         match self {
             Self::ReturnedResources => "joint returned resources",
@@ -364,7 +366,7 @@ impl ContractClosingGoals {
         crate::instrumentation::record_deterministic_work(1);
         ContractClosingGoal::ORDER
             .into_iter()
-            .find(|goal| self.open & goal.bit() != 0)
+            .find(|goal| !self.is_closed(*goal))
     }
 
     pub(crate) fn is_closed(self, goal: ContractClosingGoal) -> bool {
@@ -390,7 +392,7 @@ impl ContractClosingGoals {
 pub(crate) enum OutcomeGoal {
     Claim {
         position: usize,
-        key: CFunctionContractClaimKey,
+        key: FunctionContractClaimKey,
     },
     Closing(ContractClosingGoal),
 }
@@ -404,7 +406,7 @@ pub(crate) struct FunctionOutcomeObligation<S> {
     /// The contract claims this path owes, once opened at function exit.
     pub(crate) claims: Option<OutcomeClaimGoals>,
     /// Joint resource/lifetime and write-footprint goals generated by closing.
-    pub(crate) closing: Option<crate::kernel::CContractExitObligations>,
+    pub(crate) closing: Option<crate::kernel::ContractExitObligations>,
 }
 
 impl<S> FunctionOutcomeObligation<S> {
@@ -484,15 +486,15 @@ pub(crate) struct ClaimResourceReceipt {
 /// closed.
 #[derive(Clone)]
 pub(crate) struct OutcomeClaimGoals {
-    claims: crate::persistent::PersistentMap<CFunctionContractClaimKey, OutcomeClaimGoal>,
-    open: crate::persistent::PersistentMap<usize, CFunctionContractClaimKey>,
+    claims: crate::persistent::PersistentMap<FunctionContractClaimKey, OutcomeClaimGoal>,
+    open: crate::persistent::PersistentMap<usize, FunctionContractClaimKey>,
 }
 
 struct OutcomeClaimGoal {
     position: usize,
     /// The kernel claim the goal stands for. A clause the kernel files no
     /// claim for (a `consumes` transition) has none.
-    target: Option<CFunctionContractClaimTarget>,
+    target: Option<FunctionContractClaimTarget>,
     state: ClaimGoalState,
 }
 
@@ -520,8 +522,8 @@ impl OutcomeClaimGoals {
     pub(crate) fn open(
         claims: impl IntoIterator<
             Item = (
-                CFunctionContractClaimKey,
-                Option<CFunctionContractClaimTarget>,
+                FunctionContractClaimKey,
+                Option<FunctionContractClaimTarget>,
             ),
         >,
         is_exceptional: bool,
@@ -534,8 +536,8 @@ impl OutcomeClaimGoals {
             crate::instrumentation::record_deterministic_work(1);
             let vacuous = matches!(
                 (&key, is_exceptional),
-                (CFunctionContractClaimKey::Ensure(_), true)
-                    | (CFunctionContractClaimKey::ExceptionalEnsure(_), false)
+                (FunctionContractClaimKey::Ensure(_), true)
+                    | (FunctionContractClaimKey::ExceptionalEnsure(_), false)
             );
             if !vacuous {
                 result.open.insert(position, key.clone());
@@ -556,7 +558,7 @@ impl OutcomeClaimGoals {
         result
     }
 
-    fn first_open_goal(&self) -> Option<(usize, &CFunctionContractClaimKey)> {
+    fn first_open_goal(&self) -> Option<(usize, &FunctionContractClaimKey)> {
         crate::instrumentation::record_deterministic_work(1);
         self.open
             .iter()
@@ -566,7 +568,7 @@ impl OutcomeClaimGoals {
 
     /// The claim a closer acts on, retaining the contract's input order.
     #[cfg(test)]
-    pub(crate) fn first_open(&self) -> Option<&CFunctionContractClaimKey> {
+    pub(crate) fn first_open(&self) -> Option<&FunctionContractClaimKey> {
         crate::instrumentation::record_deterministic_work(1);
         self.open.iter().next().map(|(_, key)| key)
     }
@@ -579,14 +581,14 @@ impl OutcomeClaimGoals {
 
     pub(crate) fn target(
         &self,
-        key: &CFunctionContractClaimKey,
-    ) -> Option<&CFunctionContractClaimTarget> {
+        key: &FunctionContractClaimKey,
+    ) -> Option<&FunctionContractClaimTarget> {
         crate::instrumentation::record_deterministic_work(1);
         self.claims.get(key)?.target.as_ref()
     }
 
     /// The evidence that closed `key`. A vacuous or open claim has none.
-    pub(crate) fn evidence(&self, key: &CFunctionContractClaimKey) -> Option<&ClaimGoalEvidence> {
+    pub(crate) fn evidence(&self, key: &FunctionContractClaimKey) -> Option<&ClaimGoalEvidence> {
         crate::instrumentation::record_deterministic_work(1);
         match &self.claims.get(key)?.state {
             ClaimGoalState::Closed(evidence) => Some(evidence),
@@ -599,7 +601,7 @@ impl OutcomeClaimGoals {
     /// completion of its own kernel-created contract obligation.
     pub(crate) fn close(
         &self,
-        key: &CFunctionContractClaimKey,
+        key: &FunctionContractClaimKey,
         evidence: ClaimGoalEvidence,
         outcome: &OutcomeIdentity,
     ) -> Result<Self, ClaimGoalError> {
@@ -611,8 +613,8 @@ impl OutcomeClaimGoals {
         let proposition_claim = matches!(
             goal.target,
             Some(
-                CFunctionContractClaimTarget::EnsureProposition(_)
-                    | CFunctionContractClaimTarget::ExceptionalEnsureProposition(_)
+                FunctionContractClaimTarget::EnsureProposition(_)
+                    | FunctionContractClaimTarget::ExceptionalEnsureProposition(_)
             )
         );
         if proposition_claim && matches!(evidence, ClaimGoalEvidence::Resource(_)) {
@@ -656,14 +658,14 @@ pub(crate) enum ProofObligation<P, O> {
 #[cfg(test)]
 mod outcome_claim_goal_tests {
     use super::*;
-    use crate::kernel::CFunctionContractClaimTarget as Target;
+    use crate::kernel::FunctionContractClaimTarget as Target;
     use crate::kernel::{ExecutionFacts, ResourceContext, api::int32};
 
     fn outcome() -> OutcomeProofCore {
         OutcomeProofCore {
             identity: OutcomeIdentity::fresh(),
             result: Arc::new(int32(0)),
-            state: CState::new().into(),
+            state: ExecutionState::new().into(),
             store_consequences_available: false,
             is_exceptional: false,
             effect_facts: ExecutionFacts::new().into(),
@@ -694,18 +696,18 @@ mod outcome_claim_goal_tests {
         OutcomeClaimGoals::open(
             [
                 (
-                    CFunctionContractClaimKey::Ensure(0),
+                    FunctionContractClaimKey::Ensure(0),
                     Some(Target::EnsureProposition(0)),
                 ),
                 (
-                    CFunctionContractClaimKey::Ensure(1),
+                    FunctionContractClaimKey::Ensure(1),
                     Some(Target::EnsureResource(0)),
                 ),
                 (
-                    CFunctionContractClaimKey::ExceptionalEnsure(0),
+                    FunctionContractClaimKey::ExceptionalEnsure(0),
                     Some(Target::ExceptionalEnsureProposition(0)),
                 ),
-                (CFunctionContractClaimKey::Ensure(2), None),
+                (FunctionContractClaimKey::Ensure(2), None),
             ],
             is_exceptional,
         )
@@ -720,28 +722,28 @@ mod outcome_claim_goal_tests {
         let returning = goals(false);
         assert_eq!(
             returning.first_open(),
-            Some(&CFunctionContractClaimKey::Ensure(0))
+            Some(&FunctionContractClaimKey::Ensure(0))
         );
         let returning = returning
             .close(
-                &CFunctionContractClaimKey::Ensure(0),
+                &FunctionContractClaimKey::Ensure(0),
                 completion(&outcome, Some(Target::EnsureProposition(0))),
                 &outcome.identity,
             )
             .unwrap();
         assert_eq!(
             returning.first_open(),
-            Some(&CFunctionContractClaimKey::Ensure(1))
+            Some(&FunctionContractClaimKey::Ensure(1))
         );
         let returning = returning
             .close(
-                &CFunctionContractClaimKey::Ensure(1),
+                &FunctionContractClaimKey::Ensure(1),
                 receipt(),
                 &outcome.identity,
             )
             .and_then(|goals| {
                 goals.close(
-                    &CFunctionContractClaimKey::Ensure(2),
+                    &FunctionContractClaimKey::Ensure(2),
                     completion(&outcome, None),
                     &outcome.identity,
                 )
@@ -749,23 +751,23 @@ mod outcome_claim_goal_tests {
             .unwrap();
         assert_eq!(returning.first_open(), None);
         assert!(matches!(
-            returning.evidence(&CFunctionContractClaimKey::Ensure(0)),
+            returning.evidence(&FunctionContractClaimKey::Ensure(0)),
             Some(ClaimGoalEvidence::Proposition(_))
         ));
         assert!(matches!(
-            returning.evidence(&CFunctionContractClaimKey::Ensure(1)),
+            returning.evidence(&FunctionContractClaimKey::Ensure(1)),
             Some(ClaimGoalEvidence::Resource(_))
         ));
         assert!(
             returning
-                .evidence(&CFunctionContractClaimKey::ExceptionalEnsure(0))
+                .evidence(&FunctionContractClaimKey::ExceptionalEnsure(0))
                 .is_none()
         );
 
         let throwing = goals(true);
         assert_eq!(
             throwing.first_open(),
-            Some(&CFunctionContractClaimKey::ExceptionalEnsure(0))
+            Some(&FunctionContractClaimKey::ExceptionalEnsure(0))
         );
     }
 
@@ -776,8 +778,8 @@ mod outcome_claim_goal_tests {
         let outcome = outcome();
         let sibling = self::outcome();
         let goals = goals(false);
-        let key = CFunctionContractClaimKey::Ensure(0);
-        let refusal = |key: &CFunctionContractClaimKey, evidence| {
+        let key = FunctionContractClaimKey::Ensure(0);
+        let refusal = |key: &FunctionContractClaimKey, evidence| {
             goals
                 .close(key, evidence, &outcome.identity)
                 .err()
@@ -799,17 +801,17 @@ mod outcome_claim_goal_tests {
         );
         assert_eq!(
             refusal(
-                &CFunctionContractClaimKey::Ensure(2),
+                &FunctionContractClaimKey::Ensure(2),
                 completion(&outcome, Some(Target::EnsureProposition(0)))
             ),
             ClaimGoalError::WrongClaim
         );
         assert_eq!(
-            refusal(&CFunctionContractClaimKey::ExceptionalEnsure(0), receipt()),
+            refusal(&FunctionContractClaimKey::ExceptionalEnsure(0), receipt()),
             ClaimGoalError::AlreadyClosed
         );
         assert_eq!(
-            refusal(&CFunctionContractClaimKey::Ensure(9), receipt()),
+            refusal(&FunctionContractClaimKey::Ensure(9), receipt()),
             ClaimGoalError::Unknown
         );
         assert_eq!(
@@ -832,21 +834,21 @@ mod outcome_claim_goal_tests {
             ClaimGoalError::AlreadyClosed
         );
     }
-    fn closing_execution() -> crate::kernel::CCheckedFunctionExecution {
+    fn closing_execution() -> crate::kernel::CheckedFunctionExecution {
         use crate::kernel::*;
-        prove_checked_c_function_execution_with_environment(
-            CState::new(),
-            c_function(
-                CType::Int32,
+        prove_checked_program_function_execution_with_environment(
+            ExecutionState::new(),
+            program_function(
+                ProgramType::Int32,
                 "closing_goals",
                 vec![],
-                c_return(c_int32_literal(0)),
+                program_return(crate::kernel::program_expression::int32_literal(0)),
             ),
             vec![],
             PureFactContext::new(),
-            CExecutionEnvironment::new(),
-            CExecutionSemantics::APPLY_VERIFIED_RULES,
-            CFunctionContractExecutionMode::VerifyLoops,
+            ExecutionEnvironment::new(),
+            ExecutionSemantics::APPLY_VERIFIED_RULES,
+            FunctionContractExecutionMode::VerifyLoops,
         )
     }
 
@@ -878,7 +880,7 @@ mod outcome_claim_goal_tests {
                 .is_err()
         );
         goal.claims = Some(OutcomeClaimGoals::open([], false));
-        let context = crate::kernel::CContractClosingContext::new(&execution);
+        let context = crate::kernel::ContractClosingContext::new(&execution);
         let closing = context.open(0, &core);
         goal.closing = Some(closing.clone());
         assert_eq!(
@@ -898,12 +900,30 @@ mod outcome_claim_goal_tests {
         );
         let (transitioned, _) = closing
             .apply_resource_transition(
-                &crate::kernel::CState::new(),
-                crate::kernel::CFunctionOutcome::Return {
+                &crate::kernel::ExecutionState::new(),
+                crate::kernel::FunctionOutcome::Return {
                     value: crate::kernel::api::int32(0).into(),
-                    state: Box::new(crate::kernel::CState::new()),
+                    state: Box::new(crate::kernel::ExecutionState::new()),
                 },
                 &crate::kernel::PureFactContext::new(),
+            )
+            .unwrap();
+        assert_eq!(
+            transitioned.first_open_goal(),
+            Some(ContractClosingGoal::ReturnedResources)
+        );
+        let path = &execution.paths()[0];
+        let specification =
+            crate::kernel::CheckedPathSpecification::new(execution.function(), path).unwrap();
+        let transitioned = transitioned
+            .prove_goal(
+                ContractClosingGoal::ReturnedResources,
+                &execution,
+                path,
+                &specification,
+                &core,
+                goal.claims.as_ref().unwrap(),
+                &super::super::ProofFacts::from_ordered(&[]),
             )
             .unwrap();
         goal.closing = Some(transitioned.clone());
@@ -921,16 +941,21 @@ mod outcome_claim_goal_tests {
         let path = &execution.paths()[0];
         let specification =
             crate::kernel::CheckedPathSpecification::new(execution.function(), path).unwrap();
-        let (closed, _) = transitioned
-            .close(
-                &execution,
-                path,
-                &specification,
-                &core,
-                goal.claims.as_ref().unwrap(),
-                &super::super::ProofFacts::from_ordered(&[]),
-            )
-            .unwrap();
+        let mut closed = transitioned;
+        while let Some(kind) = closed.first_open_goal() {
+            closed = closed
+                .prove_goal(
+                    kind,
+                    &execution,
+                    path,
+                    &specification,
+                    &core,
+                    goal.claims.as_ref().unwrap(),
+                    &super::super::ProofFacts::from_ordered(&[]),
+                )
+                .unwrap();
+        }
+        assert!(closed.completion(path).unwrap().matches_path(path));
         goal.closing = Some(closed.clone());
         assert_eq!(goal.first_open_goal(), Ok(None));
         let completed = outcome_root(goal.clone())

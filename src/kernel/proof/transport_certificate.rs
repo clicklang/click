@@ -58,9 +58,8 @@ impl TransportCertificate {
                 } => {
                     let separation = prior(*separation)?;
                     if effect.is_none() {
-                        let derived = if let Proposition::CMemoryReadDefined {
-                            value_type, ..
-                        } = result
+                        let derived = if let Proposition::MemoryReadDefined { value_type, .. } =
+                            result
                         {
                             let (before, after) = preserve_definedness(separation, *value_type)
                                 .ok_or("preserve definedness requires a footprint separated from a complete typed cell")?;
@@ -96,8 +95,8 @@ impl TransportCertificate {
                         // observation to true. Introduce that constant fact;
                         // there is no remaining read to preserve or discover.
                         Proposition::ConditionIs(ConditionTerm::Constant(true), true)
-                            if matches!(effect, Proposition::CMemoryMutatesOnly { .. })
-                                && matches!(separation, Proposition::CResourceSeparate { .. }) =>
+                            if matches!(effect, Proposition::MemoryMutatesOnly { .. })
+                                && matches!(separation, Proposition::ResourceSeparate { .. }) =>
                         {
                             Proposition::ConditionIs(ConditionTerm::Constant(true), true)
                         }
@@ -151,9 +150,9 @@ fn read_type(result: &Proposition) -> Option<ReadType> {
             Some(ReadType::PointerAddress)
         }
         Proposition::ConditionIs(ConditionTerm::PointerValueEqual(a, b), true)
-            if a.c_type() == b.c_type() =>
+            if a.program_type() == b.program_type() =>
         {
-            Some(ReadType::Pointer(a.c_type()))
+            Some(ReadType::Pointer(a.program_type()))
         }
         Proposition::ConditionIs(
             ConditionTerm::Compare {
@@ -184,7 +183,7 @@ fn read_type(result: &Proposition) -> Option<ReadType> {
 /// The read producer supplied its value, including pointer provenance; apply
 /// this law directly to those values, without inspecting the memory DAG.
 fn preserve(effect: &Proposition, separation: &Proposition, kind: ReadType) -> Option<Proposition> {
-    let Proposition::CMemoryMutatesOnly {
+    let Proposition::MemoryMutatesOnly {
         before,
         after,
         writes,
@@ -195,11 +194,10 @@ fn preserve(effect: &Proposition, separation: &Proposition, kind: ReadType) -> O
     let [(written, write_bytes)] = writes.as_slice() else {
         return None;
     };
-    let Proposition::CResourceSeparate { left, right } = separation else {
+    let Proposition::ResourceSeparate { left, right } = separation else {
         return None;
     };
-    let (CResource::Memory(left), CResource::Memory(right)) = (left.as_ref(), right.as_ref())
-    else {
+    let (Resource::Memory(left), Resource::Memory(right)) = (left.as_ref(), right.as_ref()) else {
         return None;
     };
     let left_footprint = left.byte_footprint();
@@ -219,12 +217,12 @@ fn preserve(effect: &Proposition, separation: &Proposition, kind: ReadType) -> O
 }
 
 fn preserve_footprint(separation: &Proposition, kind: ReadType) -> Option<Proposition> {
-    let Proposition::CResourceSeparate { left, right } = separation else {
+    let Proposition::ResourceSeparate { left, right } = separation else {
         return None;
     };
     let (footprint, kept) = match (left.as_ref(), right.as_ref()) {
-        (CResource::Footprint(fp), CResource::Memory(kept))
-        | (CResource::Memory(kept), CResource::Footprint(fp)) => (fp, kept),
+        (Resource::Footprint(fp), Resource::Memory(kept))
+        | (Resource::Memory(kept), Resource::Footprint(fp)) => (fp, kept),
         _ => return None,
     };
     if kept.wide_bounds().is_some() {
@@ -239,15 +237,15 @@ fn preserve_footprint(separation: &Proposition, kind: ReadType) -> Option<Propos
 /// only the read type; it cannot supply a different address or snapshot.
 fn preserve_definedness(
     separation: &Proposition,
-    value_type: CType,
+    value_type: ProgramType,
 ) -> Option<(Proposition, Proposition)> {
     crate::instrumentation::record_deterministic_work(1);
-    let Proposition::CResourceSeparate { left, right } = separation else {
+    let Proposition::ResourceSeparate { left, right } = separation else {
         return None;
     };
     let (footprint, kept) = match (left.as_ref(), right.as_ref()) {
-        (CResource::Footprint(fp), CResource::Memory(kept))
-        | (CResource::Memory(kept), CResource::Footprint(fp)) => (fp, kept),
+        (Resource::Footprint(fp), Resource::Memory(kept))
+        | (Resource::Memory(kept), Resource::Footprint(fp)) => (fp, kept),
         _ => return None,
     };
     if kept.wide_bounds().is_some() {
@@ -257,7 +255,7 @@ fn preserve_definedness(
     if bytes.as_const()? != value_type.byte_width() {
         return None;
     }
-    let defined = |memory: &CMemory| Proposition::CMemoryReadDefined {
+    let defined = |memory: &Memory| Proposition::MemoryReadDefined {
         memory: memory.clone(),
         pointer: pointer.clone(),
         value_type,
@@ -272,12 +270,12 @@ fn preserve_field(
     separation: &Proposition,
     field: typed_reads::FieldSelection,
 ) -> Option<Proposition> {
-    let Proposition::CResourceSeparate { left, right } = separation else {
+    let Proposition::ResourceSeparate { left, right } = separation else {
         return None;
     };
     let (footprint, kept) = match (left.as_ref(), right.as_ref()) {
-        (CResource::Footprint(fp), CResource::Instance(kept))
-        | (CResource::Instance(kept), CResource::Footprint(fp)) => (fp, kept),
+        (Resource::Footprint(fp), Resource::Instance(kept))
+        | (Resource::Instance(kept), Resource::Footprint(fp)) => (fp, kept),
         _ => return None,
     };
     if kept.identity() != field.identity {
@@ -301,32 +299,39 @@ fn preserve_field(
         (AlgebraicValue::Integer(a), AlgebraicValue::Integer(b)) => {
             ConditionTerm::integer_equal(a.clone(), b.clone())
         }
-        (AlgebraicValue::C(CValue::Parameter(a)), AlgebraicValue::C(CValue::Parameter(b)))
-            if a.algebraic_type == b.algebraic_type =>
-        {
+        (
+            AlgebraicValue::Program(ProgramValue::Parameter(a)),
+            AlgebraicValue::Program(ProgramValue::Parameter(b)),
+        ) if a.algebraic_type == b.algebraic_type => {
             ConditionTerm::AlgebraicEqual(a.clone(), b.clone())
         }
-        (AlgebraicValue::C(CValue::Pointer(a)), AlgebraicValue::C(CValue::Pointer(b)))
-            if a.c_type() == b.c_type() =>
-        {
+        (
+            AlgebraicValue::Program(ProgramValue::Pointer(a)),
+            AlgebraicValue::Program(ProgramValue::Pointer(b)),
+        ) if a.program_type() == b.program_type() => {
             ConditionTerm::pointer_value_equal(a.clone(), b.clone())
         }
-        (AlgebraicValue::C(CValue::Int32(a)), AlgebraicValue::C(CValue::Int32(b))) => {
-            ConditionTerm::equal(a.clone(), b.clone())
-        }
+        (
+            AlgebraicValue::Program(ProgramValue::Int32(a)),
+            AlgebraicValue::Program(ProgramValue::Int32(b)),
+        ) => ConditionTerm::equal(a.clone(), b.clone()),
         // An 8-bit field value is native: its equality is at its own format.
-        (AlgebraicValue::C(CValue::UInt8(a)), AlgebraicValue::C(CValue::UInt8(b))) => {
-            integer_equality(MachineIntegerType::UInt8, a.clone(), b.clone())?
-        }
-        (AlgebraicValue::C(CValue::UInt32(a)), AlgebraicValue::C(CValue::UInt32(b))) => {
-            ConditionTerm::uint32_equal(a.clone(), b.clone())
-        }
-        (AlgebraicValue::C(CValue::Int64(a)), AlgebraicValue::C(CValue::Int64(b))) => {
-            ConditionTerm::int64_equal(a.clone(), b.clone())
-        }
-        (AlgebraicValue::C(CValue::UInt64(a)), AlgebraicValue::C(CValue::UInt64(b))) => {
-            ConditionTerm::uint64_equal(a.clone(), b.clone())
-        }
+        (
+            AlgebraicValue::Program(ProgramValue::UInt8(a)),
+            AlgebraicValue::Program(ProgramValue::UInt8(b)),
+        ) => integer_equality(MachineIntegerType::UInt8, a.clone(), b.clone())?,
+        (
+            AlgebraicValue::Program(ProgramValue::UInt32(a)),
+            AlgebraicValue::Program(ProgramValue::UInt32(b)),
+        ) => ConditionTerm::uint32_equal(a.clone(), b.clone()),
+        (
+            AlgebraicValue::Program(ProgramValue::Int64(a)),
+            AlgebraicValue::Program(ProgramValue::Int64(b)),
+        ) => ConditionTerm::int64_equal(a.clone(), b.clone()),
+        (
+            AlgebraicValue::Program(ProgramValue::UInt64(a)),
+            AlgebraicValue::Program(ProgramValue::UInt64(b)),
+        ) => ConditionTerm::uint64_equal(a.clone(), b.clone()),
         _ => return None,
     };
     Some(Proposition::ConditionIs(condition, true))
@@ -349,8 +354,8 @@ fn observation_type(comparison: ReadType, bytes: u32) -> Option<ReadType> {
 }
 
 fn observation_equality(
-    before: &CMemory,
-    after: &CMemory,
+    before: &Memory,
+    after: &Memory,
     address: Pointer,
     kind: ReadType,
     comparison: ReadType,
@@ -370,13 +375,13 @@ fn observation_equality(
         ));
     }
     let condition = match (kind, after, before) {
-        (ReadType::Pointer(_), CValue::Pointer(a), CValue::Pointer(b)) => {
+        (ReadType::Pointer(_), ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
             ConditionTerm::pointer_value_equal(a, b)
         }
-        (ReadType::PointerAddress, CValue::Pointer(a), CValue::Pointer(b)) => {
+        (ReadType::PointerAddress, ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
             ConditionTerm::pointer_equal(a.pointer().clone(), b.pointer().clone())
         }
-        (ReadType::Abstract, CValue::Parameter(a), CValue::Parameter(b))
+        (ReadType::Abstract, ProgramValue::Parameter(a), ProgramValue::Parameter(b))
             if a.algebraic_type == b.algebraic_type =>
         {
             ConditionTerm::AlgebraicEqual(a, b)
@@ -389,16 +394,16 @@ fn observation_equality(
     Some(Proposition::ConditionIs(condition, true))
 }
 
-fn integer_bits(value: CValue) -> Option<MachineTerm> {
+fn integer_bits(value: ProgramValue) -> Option<MachineTerm> {
     match value {
-        CValue::Int8(t)
-        | CValue::UInt8(t)
-        | CValue::Int16(t)
-        | CValue::UInt16(t)
-        | CValue::Int32(t)
-        | CValue::UInt32(t)
-        | CValue::Int64(t)
-        | CValue::UInt64(t) => Some(t),
+        ProgramValue::Int8(t)
+        | ProgramValue::UInt8(t)
+        | ProgramValue::Int16(t)
+        | ProgramValue::UInt16(t)
+        | ProgramValue::Int32(t)
+        | ProgramValue::UInt32(t)
+        | ProgramValue::Int64(t)
+        | ProgramValue::UInt64(t) => Some(t),
         _ => None,
     }
 }
@@ -510,8 +515,14 @@ mod tests {
 
     #[test]
     fn reflexive_address_equality_composes_with_complete_pointer_equality() {
-        let a = CPointerValue::new(Pointer::symbolic(Variable(8_390_890)), CType::Int32Pointer);
-        let b = CPointerValue::new(Pointer::symbolic(Variable(8_390_891)), CType::Int32Pointer);
+        let a = PointerValue::new(
+            Pointer::symbolic(Variable(8_390_890)),
+            ProgramType::Int32Pointer,
+        );
+        let b = PointerValue::new(
+            Pointer::symbolic(Variable(8_390_891)),
+            ProgramType::Int32Pointer,
+        );
         let identity = Proposition::ConditionIs(
             ConditionTerm::PointerEqual(
                 Box::new(a.pointer().clone()),
@@ -537,25 +548,25 @@ mod tests {
 
     pub(super) fn definedness_fixture(
         history: u64,
-        ty: CType,
+        ty: ProgramType,
     ) -> (TransportCertificate, Proposition, Proposition, Proposition) {
         let pointer = Pointer::symbolic(Variable(8_410_000));
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         for i in 0..history {
             // Grow both related history and unrelated memory.
             memory = memory.store(
                 pointer.clone(),
-                CValue::Int32(MachineTerm::constant(i as u32)),
+                ProgramValue::Int32(MachineTerm::constant(i as u32)),
             );
             memory = memory.store(
                 Pointer::symbolic(Variable(8_420_000 + i)),
-                CValue::Int32(MachineTerm::constant(i as u32)),
+                ProgramValue::Int32(MachineTerm::constant(i as u32)),
             );
         }
-        let before = CState::new().with_memory(memory.clone());
-        let after = CState::new().with_memory(memory.store(
+        let before = ExecutionState::new().with_memory(memory.clone());
+        let after = ExecutionState::new().with_memory(memory.store(
             Pointer::symbolic(Variable(8_430_000)),
-            CValue::Int32(1u32.into()),
+            ProgramValue::Int32(1u32.into()),
         ));
         let footprint = crate::kernel::RegionFootprint::transition(
             "selected".into(),
@@ -563,21 +574,21 @@ mod tests {
             &after,
             &Vec::<ExecutionPureFact>::new(),
         );
-        let separation = Proposition::CResourceSeparate {
-            left: Box::new(CResource::Footprint(footprint)),
-            right: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+        let separation = Proposition::ResourceSeparate {
+            left: Box::new(Resource::Footprint(footprint)),
+            right: Box::new(Resource::Memory(MemoryRange::new_with_element_width(
                 pointer.clone(),
                 0u32.into(),
                 1u32.into(),
                 ty.byte_width(),
             ))),
         };
-        let old = Proposition::CMemoryReadDefined {
+        let old = Proposition::MemoryReadDefined {
             memory: before.memory().clone(),
             pointer: pointer.clone(),
             value_type: ty,
         };
-        let goal = Proposition::CMemoryReadDefined {
+        let goal = Proposition::MemoryReadDefined {
             memory: after.memory().clone(),
             pointer,
             value_type: ty,
@@ -608,10 +619,10 @@ mod tests {
     fn preserve_definedness_requires_exact_entry_evidence_and_complete_cell() {
         let _session = crate::kernel::VerificationSession::enter();
         for ty in [
-            CType::UInt8,
-            CType::Int32,
-            CType::UInt64,
-            CType::Int32Pointer,
+            ProgramType::UInt8,
+            ProgramType::Int32,
+            ProgramType::UInt64,
+            ProgramType::Int32Pointer,
         ] {
             let (mut certificate, separation, old, goal) = definedness_fixture(4, ty);
             let available = |p: &Proposition| p == &separation || p == &old;
@@ -625,7 +636,7 @@ mod tests {
             assert!(certificate.apply(|p| p == &old).is_err());
             for corruption in 0..3 {
                 let mut bad = goal.clone();
-                let Proposition::CMemoryReadDefined {
+                let Proposition::MemoryReadDefined {
                     memory,
                     pointer,
                     value_type,
@@ -634,13 +645,13 @@ mod tests {
                     unreachable!()
                 };
                 match corruption {
-                    0 => *memory = CMemory::new(),
+                    0 => *memory = Memory::new(),
                     1 => *pointer = Pointer::symbolic(Variable(8_499_000)),
                     _ => {
-                        *value_type = if ty == CType::UInt8 {
-                            CType::Int32
+                        *value_type = if ty == ProgramType::UInt8 {
+                            ProgramType::Int32
                         } else {
-                            CType::UInt8
+                            ProgramType::UInt8
                         }
                     }
                 }
@@ -654,7 +665,7 @@ mod tests {
                 );
             }
             let mut swapped = separation.clone();
-            let Proposition::CResourceSeparate { left, right } = &mut swapped else {
+            let Proposition::ResourceSeparate { left, right } = &mut swapped else {
                 unreachable!()
             };
             std::mem::swap(left, right);
@@ -663,18 +674,20 @@ mod tests {
     }
 
     pub(super) fn resource_fixture(size: u64) -> (TransportCertificate, Proposition) {
-        let schema =
-            ResourceFieldSchema::new(vec![("value".into(), ResourceFieldType::C(CType::Int32))])
-                .unwrap();
+        let schema = ResourceFieldSchema::new(vec![(
+            "value".into(),
+            ResourceFieldType::Program(ProgramType::Int32),
+        )])
+        .unwrap();
         let instance = |identity, value| {
             ResourceInstance::new(
                 Variable(identity),
                 "model".into(),
                 vec![].into(),
                 schema.clone(),
-                vec![AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(
-                    Variable(value),
-                )))]
+                vec![AlgebraicValue::Program(ProgramValue::Int32(
+                    MachineTerm::Variable(Variable(value)),
+                ))]
                 .into(),
             )
             .unwrap()
@@ -682,17 +695,17 @@ mod tests {
         let kept = instance(8_390_900, 8_390_901);
         let mut resources = ResourceContext::new();
         for i in 0..size {
-            resources = resources.unchecked_with_fact(CResourceFact::own(CResource::Instance(
+            resources = resources.unchecked_with_fact(ResourceFact::own(Resource::Instance(
                 instance(9_000_000 + i, 10_000_000 + i),
             )));
         }
-        let before = CState::new().with_resource_context(
+        let before = ExecutionState::new().with_resource_context(
             resources
                 .clone()
-                .unchecked_with_fact(CResourceFact::own(CResource::Instance(kept.clone()))),
+                .unchecked_with_fact(ResourceFact::own(Resource::Instance(kept.clone()))),
         );
-        let after = CState::new().with_resource_context(resources.unchecked_with_fact(
-            CResourceFact::own(CResource::Instance(instance(8_390_900, 8_390_902))),
+        let after = ExecutionState::new().with_resource_context(resources.unchecked_with_fact(
+            ResourceFact::own(Resource::Instance(instance(8_390_900, 8_390_902))),
         ));
         // A supplied frame premise relates these symbolic endpoint values.
         // As with the memory fixture, establishing the premise is a separate
@@ -703,9 +716,9 @@ mod tests {
             &after,
             &Vec::<ExecutionPureFact>::new(),
         );
-        let separation = Proposition::CResourceSeparate {
-            left: Box::new(CResource::Footprint(footprint)),
-            right: Box::new(CResource::Instance(kept)),
+        let separation = Proposition::ResourceSeparate {
+            left: Box::new(Resource::Footprint(footprint)),
+            right: Box::new(Resource::Instance(kept)),
         };
         let goal = Proposition::ConditionIs(
             ConditionTerm::equal(
@@ -746,26 +759,26 @@ mod tests {
         else {
             unreachable!()
         };
-        let Proposition::CResourceSeparate { left, right } = proposition else {
+        let Proposition::ResourceSeparate { left, right } = proposition else {
             unreachable!()
         };
-        let CResource::Footprint(fp) = left.as_ref() else {
+        let Resource::Footprint(fp) = left.as_ref() else {
             unreachable!()
         };
-        let CResource::Instance(kept) = right.as_ref() else {
+        let Resource::Instance(kept) = right.as_ref() else {
             unreachable!()
         };
         let mut resources = fp.before_resources.clone();
         for _ in 0..history {
-            let fact = CResourceFact::own(CResource::Instance(kept.clone()));
+            let fact = ResourceFact::own(Resource::Instance(kept.clone()));
             resources = resources
                 .without_exact_representation(&fact)
                 .unwrap()
                 .unchecked_with_fact(fact);
         }
-        let before = CState::new().with_resource_context(resources);
-        let after = CState::new().with_resource_context(fp.after_resources.clone());
-        **left = CResource::Footprint(crate::kernel::RegionFootprint::transition(
+        let before = ExecutionState::new().with_resource_context(resources);
+        let after = ExecutionState::new().with_resource_context(fp.after_resources.clone());
+        **left = Resource::Footprint(crate::kernel::RegionFootprint::transition(
             "selected".into(),
             &before,
             &after,
@@ -817,7 +830,7 @@ mod tests {
         );
     }
 
-    pub(super) fn observe(memory: &CMemory, address: &Pointer, ty: CType) -> CValue {
+    pub(super) fn observe(memory: &Memory, address: &Pointer, ty: ProgramType) -> ProgramValue {
         let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
             memory,
             address.clone(),
@@ -829,7 +842,7 @@ mod tests {
         let [path] = paths.as_slice() else {
             panic!("one logical read");
         };
-        let CExpressionOutcome::Value(value) = &path.outcome else {
+        let ExpressionOutcome::Value(value) = &path.outcome else {
             panic!("logical value");
         };
         value.clone()
@@ -838,46 +851,56 @@ mod tests {
     pub(super) fn fixture(history: u64, cached: bool) -> (TransportCertificate, Proposition) {
         let address = Pointer::symbolic(Variable(8_310_000));
         let changed = Pointer::symbolic(Variable(8_310_001));
-        let mut before = CMemory::new();
+        let mut before = Memory::new();
         for i in 0..history {
             before = before.store(
                 Pointer::symbolic(Variable(8_320_000 + i)),
-                CValue::Int32(MachineTerm::constant(i as u32)),
+                ProgramValue::Int32(MachineTerm::constant(i as u32)),
             );
         }
         if cached {
             before = before.store(
                 address.clone(),
-                CValue::typed_pointer(Pointer::symbolic(Variable(8_310_002)), CType::Int32Pointer),
+                ProgramValue::typed_pointer(
+                    Pointer::symbolic(Variable(8_310_002)),
+                    ProgramType::Int32Pointer,
+                ),
             );
         }
         let after = before
             .clone()
             .without_possible_aliasing_cells(&changed, 4, &PureFactContext::new())
-            .store(changed.clone(), CValue::Int32(MachineTerm::constant(1)));
+            .store(
+                changed.clone(),
+                ProgramValue::Int32(MachineTerm::constant(1)),
+            );
         let resource = |p, bytes| {
-            Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+            Box::new(Resource::Memory(MemoryRange::new_with_element_width(
                 p,
                 0u32.into(),
                 1u32.into(),
                 bytes,
             )))
         };
-        let separation = Proposition::CResourceSeparate {
+        let separation = Proposition::ResourceSeparate {
             left: resource(changed.clone(), 4),
             right: resource(address.clone(), C_POINTER_BYTE_WIDTH),
         };
-        let CValue::Pointer(before_value) = observe(&before, &address, CType::Int32Pointer) else {
+        let ProgramValue::Pointer(before_value) =
+            observe(&before, &address, ProgramType::Int32Pointer)
+        else {
             unreachable!()
         };
-        let CValue::Pointer(after_value) = observe(&after, &address, CType::Int32Pointer) else {
+        let ProgramValue::Pointer(after_value) =
+            observe(&after, &address, ProgramType::Int32Pointer)
+        else {
             unreachable!()
         };
         let result = Proposition::ConditionIs(
             ConditionTerm::pointer_value_equal(after_value, before_value),
             true,
         );
-        let effect = Proposition::CMemoryMutatesOnly {
+        let effect = Proposition::MemoryMutatesOnly {
             before,
             after,
             writes: vec![(changed, 4)],
@@ -907,18 +930,18 @@ mod tests {
     pub(super) fn abstract_fixture(history: u64) -> (TransportCertificate, Proposition) {
         let (mut certificate, _) = fixture(history, false);
         let TransportNode::Premise {
-            proposition: Proposition::CMemoryMutatesOnly { before, after, .. },
+            proposition: Proposition::MemoryMutatesOnly { before, after, .. },
             ..
         } = &certificate.nodes[0]
         else {
             unreachable!()
         };
         let address = Pointer::symbolic(Variable(8_310_000));
-        let ty = CType::Parameter(TypeParameterName::intern("TransportValue"));
-        let CValue::Parameter(a) = observe(after, &address, ty) else {
+        let ty = ProgramType::Parameter(TypeParameterName::intern("TransportValue"));
+        let ProgramValue::Parameter(a) = observe(after, &address, ty) else {
             unreachable!()
         };
-        let CValue::Parameter(b) = observe(before, &address, ty) else {
+        let ProgramValue::Parameter(b) = observe(before, &address, ty) else {
             unreachable!()
         };
         let goal = Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(a, b), true);
@@ -1018,14 +1041,14 @@ mod tests {
     #[test]
     fn typed_read_observations_are_scoped_and_keep_the_selected_width() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = CMemory::new();
+        let memory = Memory::new();
         let address = Pointer::symbolic(Variable(8_399_010));
         let kind = ReadType::Integer(MachineIntegerType::Int64);
-        observe(&memory, &address, CType::UInt64);
+        observe(&memory, &address, ProgramType::UInt64);
         assert!(typed_reads::get(&memory, &address, kind).is_none());
         {
             let _outer = typed_reads::ReadScope::enter();
-            let value = observe(&memory, &address, CType::UInt64);
+            let value = observe(&memory, &address, ProgramType::UInt64);
             assert_eq!(
                 typed_reads::get(&memory, &address, kind),
                 Some(value.numeric_value().clone())
@@ -1042,7 +1065,7 @@ mod tests {
             {
                 let _inner = typed_reads::ReadScope::enter();
                 assert!(typed_reads::get(&memory, &address, kind).is_none());
-                observe(&memory, &address, CType::Int32);
+                observe(&memory, &address, ProgramType::Int32);
             }
             assert_eq!(
                 typed_reads::get(&memory, &address, kind),
@@ -1079,14 +1102,14 @@ mod tests {
             else {
                 unreachable!()
             };
-            let Proposition::CResourceSeparate { right, .. } = proposition else {
+            let Proposition::ResourceSeparate { right, .. } = proposition else {
                 unreachable!()
             };
-            let CResource::Memory(range) = right.as_ref() else {
+            let Resource::Memory(range) = right.as_ref() else {
                 unreachable!()
             };
             let (address, _) = range.byte_footprint();
-            **right = CResource::Memory(CMemoryRange::new_with_element_width(
+            **right = Resource::Memory(MemoryRange::new_with_element_width(
                 address,
                 0u32.into(),
                 1u32.into(),
@@ -1106,7 +1129,7 @@ mod tests {
                 else {
                     unreachable!()
                 };
-                let Proposition::CMemoryMutatesOnly {
+                let Proposition::MemoryMutatesOnly {
                     before,
                     after,
                     writes,
@@ -1119,8 +1142,8 @@ mod tests {
                     1 => writes.push(writes[0].clone()),
                     2 => writes[0].0 = Pointer::symbolic(Variable(8_310_099)),
                     _ => {
-                        *before = CMemory::new();
-                        *after = CMemory::new();
+                        *before = Memory::new();
+                        *after = Memory::new();
                     }
                 }
                 *result = proposition.clone();

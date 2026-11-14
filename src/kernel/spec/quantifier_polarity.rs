@@ -61,7 +61,7 @@ fn binder(proposition: &SpecProposition) -> Option<(Binder, &SpecProposition)> {
             matches!(proposition, ForAllInt32 { .. }),
             name,
             *variable,
-            Sort::CInt32,
+            Sort::ProgramInt32,
             body,
         ),
         ForAllMachineInteger {
@@ -85,19 +85,19 @@ fn binder(proposition: &SpecProposition) -> Option<(Binder, &SpecProposition)> {
         ForAllPointer {
             name,
             variable,
-            c_type,
+            program_type,
             body,
         }
         | ExistsPointer {
             name,
             variable,
-            c_type,
+            program_type,
             body,
         } => (
             matches!(proposition, ForAllPointer { .. }),
             name,
             *variable,
-            Sort::CPointer(*c_type),
+            Sort::ProgramPointer(*program_type),
             body,
         ),
         _ => return None,
@@ -108,7 +108,7 @@ fn binder(proposition: &SpecProposition) -> Option<(Binder, &SpecProposition)> {
             data: SpecUniversalBinder {
                 name: name.clone(),
                 variable,
-                pointer: matches!(&sort, Sort::CPointer(_)),
+                pointer: matches!(&sort, Sort::ProgramPointer(_)),
                 integer: matches!(&sort, Sort::Integer),
                 sort,
             },

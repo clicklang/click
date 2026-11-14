@@ -7,10 +7,10 @@ use super::*;
 #[test]
 fn direct_loadable_extent_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
-        let memory = CMemory::new();
+        let memory = Memory::new();
         let base = Pointer::symbolic(Variable(9_320_010));
         let range_bytes = extent(var(0));
-        let fact = Proposition::CMemoryLoadable {
+        let fact = Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
             bytes: range_bytes.clone(),
@@ -50,8 +50,8 @@ fn direct_loadable_extent_graph_queries_scale_without_fact_index() {
 /// its parent instead of copying an index that grows with the path.
 #[test]
 fn filing_a_loadable_fact_in_a_fork_shares_every_other_block() {
-    let memory = CMemory::new();
-    let loadable = |id: u64| Proposition::CMemoryLoadable {
+    let memory = Memory::new();
+    let loadable = |id: u64| Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: Pointer::symbolic(Variable(9_330_000 + id)),
         bytes: extent(var(id)),
@@ -107,12 +107,12 @@ fn filing_a_load_condition_in_a_fork_shares_every_other_load() {
     let load_condition = |id: u64| {
         ConditionTerm::float64_compare(
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(CMemory::new()),
+                crate::kernel::intern_memory(Memory::new()),
                 Box::new(pointer(id)),
                 crate::kernel::LoadKind::Float64,
             ),
             var(id),
-            crate::kernel::CComparisonOperator::Equal,
+            crate::kernel::ComparisonOperator::Equal,
         )
     };
     let key = |id: u64| {
@@ -157,7 +157,7 @@ fn filing_a_load_condition_in_a_fork_shares_every_other_load() {
 #[test]
 fn integer_read_facts_do_not_grow_load_time_transport_work() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = crate::kernel::intern_c_memory(CMemory::new());
+    let memory = crate::kernel::intern_memory(Memory::new());
     let pointer = Pointer::symbolic(Variable(9_330_000));
     let read = MachineTerm::MemoryLoad(
         memory,

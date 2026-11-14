@@ -67,12 +67,12 @@ fn requirement_source_bindings(
 }
 
 pub(super) struct TheoremApplicationContext<'a> {
-    pub(super) values: &'a BTreeMap<String, CValue>,
+    pub(super) values: &'a BTreeMap<String, ProgramValue>,
     pub(super) array_refs: &'a ClickArrayRefs,
     pub(super) algebraic_values: &'a BTreeMap<String, SpecAlgebraicExpression>,
-    pub(super) pre_state: &'a CState,
-    pub(super) post_state: &'a CState,
-    pub(super) result: Option<&'a CValue>,
+    pub(super) pre_state: &'a ExecutionState,
+    pub(super) post_state: &'a ExecutionState,
+    pub(super) result: Option<&'a ProgramValue>,
     pub(super) recorded_snapshots: &'a RecordedSnapshots,
     pub(super) integer_values:
         &'a crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
@@ -211,7 +211,7 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
     // parameters bound and lowered by the kernel.
     // The theorem's parameters shadow any C local of the same name: the
     // application binds them, not the state.
-    let bind = |state: &CState| {
+    let bind = |state: &ExecutionState| {
         values.iter().fold(state.clone(), |state, (name, value)| {
             state.with_local(name.clone(), value.clone())
         })
@@ -859,7 +859,7 @@ pub(in crate::surface::proof) fn instantiate_generic_theorem_application_definit
             .get(index)
             .and_then(generics::TypeArgument::value)
         {
-            Some(ClickType::C(actual)) => formats
+            Some(ClickType::Program(actual)) => formats
                 .iter()
                 .any(|allowed| allowed.to_kernel_type() == actual.to_kernel_type()),
             _ => false,
@@ -886,7 +886,7 @@ pub(in crate::surface::proof) fn instantiate_generic_theorem_application_definit
     ) {
         let parameter = &concrete.parameters()[0];
         let element = parameter
-            .c_type()
+            .interface_type()
             .pointee_type()
             .ok_or_else(|| "expected a sized pointer element".to_string())?;
         let width = match parameter.struct_name().filter(|_| !element.is_pointer()) {
@@ -951,8 +951,10 @@ fn theorem_application_argument_type(
             generics::instantiate_click_type(function.return_type(), &substitution)?
         };
         return Ok(Some(
-            match (return_type.c_type(), function.return_object_class()) {
-                (Some(c_type), Some(class)) => ClickType::from_object_pointer_class(c_type, class),
+            match (return_type.interface_type(), function.return_object_class()) {
+                (Some(interface_type), Some(class)) => {
+                    ClickType::from_object_pointer_class(interface_type, class)
+                }
                 _ => return_type,
             },
         ));
@@ -962,13 +964,13 @@ fn theorem_application_argument_type(
         | ContractExpression::AlgebraicConstructor { algebraic_type, .. } => {
             return Ok(Some(ClickType::Algebraic(algebraic_type.clone())));
         }
-        ContractExpression::CFragment(CExpression::Value(value)) => {
-            return Ok(Some(generics::click_type_from_c_value(value)));
+        ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
+            return Ok(Some(generics::click_type_from_program_value(value)));
         }
         ContractExpression::Binding(name)
-        | ContractExpression::CFragment(CExpression::Variable(name)) => {
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
             if let Some(value) = context.values.get(name) {
-                return Ok(Some(generics::click_type_from_c_value(value)));
+                return Ok(Some(generics::click_type_from_program_value(value)));
             }
         }
         _ => {}
@@ -998,7 +1000,7 @@ fn theorem_application_argument_type(
         spec_definitions,
         &active_functions,
     )
-    .map(|value| Some(generics::click_type_from_c_value(&value)))
+    .map(|value| Some(generics::click_type_from_program_value(&value)))
 }
 
 // Native arguments can contain checked Integer conversions. Lower them in
@@ -1009,7 +1011,7 @@ fn evaluate_native_theorem_argument(
     assumptions: &PureFactContext,
     spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: &BTreeSet<String>,
-) -> Result<CValue, String> {
+) -> Result<ProgramValue, String> {
     let algebraic_values = contract_expression_referenced_names(argument)
         .into_iter()
         .filter_map(|name| {
@@ -1045,7 +1047,7 @@ pub(super) fn theorem_application_bindings(
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<
     (
-        BTreeMap<String, CValue>,
+        BTreeMap<String, ProgramValue>,
         ClickArrayRefs,
         BTreeMap<String, SpecAlgebraicExpression>,
         crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
@@ -1104,7 +1106,7 @@ pub(super) fn theorem_application_bindings(
             integer_values = integer_values.with_inserted(parameter.name().to_string(), value);
             continue;
         }
-        let Some(parameter_type) = parameter.click_type().c_type() else {
+        let Some(parameter_type) = parameter.click_type().interface_type() else {
             let ClickType::Algebraic(expected_type) = parameter.click_type() else {
                 return Err(format!(
                     "theorem `{}` parameter `{}` has unresolved type {}",
@@ -1148,15 +1150,15 @@ pub(super) fn theorem_application_bindings(
                             || generics::is_primitive_instance(name, expected)
                     }
                     (
-                        expected @ ClickType::CObjectPointer { c_type, .. },
+                        expected @ ClickType::CObjectPointer { interface_type, .. },
                         crate::kernel::AlgebraicValueType::ObjectPointer(actual, class),
                     ) => {
-                        c_type.to_kernel_type() == *actual
+                        interface_type.to_kernel_type() == *actual
                             && expected.pointer_object_class().as_ref() == Some(class)
                     }
                     (
-                        ClickType::C(expected),
-                        crate::kernel::AlgebraicValueType::C(actual)
+                        ClickType::Program(expected),
+                        crate::kernel::AlgebraicValueType::Program(actual)
                         | crate::kernel::AlgebraicValueType::ObjectPointer(actual, _),
                     ) => expected.to_kernel_type() == *actual,
                     (
@@ -1223,7 +1225,7 @@ pub(super) fn theorem_application_bindings(
         // pointer parameter, so a whole-tree claim can be stated at the null
         // parent (`parent_consistent(t, 0)`).
         if crate::surface::lowering::argument_is_null_pointer_constant(argument, parameter_type) {
-            let pointer = CValue::typed_pointer(
+            let pointer = ProgramValue::typed_pointer(
                 crate::kernel::Pointer::null(),
                 parameter_type.to_kernel_type(),
             );
@@ -1302,7 +1304,7 @@ pub(super) fn theorem_application_bindings(
                 }
                 value.retag_pointer(parameter_type.to_kernel_type())
             } else {
-                CValue::Pointer(
+                ProgramValue::Pointer(
                     pointer_value.with_type(expected_element_type.pointer_to().unwrap()),
                 )
             };
@@ -1316,19 +1318,19 @@ pub(super) fn theorem_application_bindings(
                 spec_definitions,
                 &active_functions,
             )?;
-            if !c_value_matches_click_type(&value, parameter_type) {
+            if !program_value_matches_click_type(&value, parameter_type) {
                 let (naming_parameters, naming_arguments) =
                     crate::surface::diagnostics::value_naming_tables(context.values);
                 return Err(format!(
                     "theorem `{}` parameter `{}` expects {}, got `{}` of type `{}`",
                     theorem.name(),
                     parameter.name(),
-                    describe_c0_type(parameter_type),
-                    crate::surface::diagnostics::describe_c_value(
+                    describe_interface_type(parameter_type),
+                    crate::surface::diagnostics::describe_program_value(
                         &value,
                         ParameterBinding::new(&naming_parameters, &naming_arguments)
                     ),
-                    crate::kernel::c_type_spelling(value.c_type())
+                    crate::kernel::program_type_spelling(value.program_type())
                 ));
             }
             values.insert(parameter.name().to_string(), value);
@@ -1350,12 +1352,12 @@ pub(super) fn theorem_application_pointer_element_widths(
         .filter_map(|(parameter, argument)| {
             let declared_width = parameter.struct_name().and_then(|name| {
                 if parameter
-                    .c_type()
+                    .interface_type()
                     .pointee_type()
                     .is_some_and(|ty| ty.is_pointer())
                 {
                     parameter
-                        .c_type()
+                        .interface_type()
                         .pointee_type()
                         .map(|ty| ty.to_kernel_type().byte_width())
                 } else {
@@ -1375,7 +1377,7 @@ pub(super) fn theorem_application_pointer_element_widths(
                         .contains(parameter.name())
                         .then(|| {
                             parameter
-                                .c_type()
+                                .interface_type()
                                 .pointee_type()
                                 .map(|ty| ty.to_kernel_type().byte_width())
                         })
@@ -1437,7 +1439,7 @@ fn pointer_element_width_for_argument(
         ContractExpression::Binding(name) | ContractExpression::CBinding(name) => {
             known.get(name).copied()
         }
-        ContractExpression::CFragment(expression)
+        ContractExpression::ProgramExpression(expression)
         | ContractExpression::QualifiedC {
             lowered: expression,
             ..
@@ -1445,7 +1447,7 @@ fn pointer_element_width_for_argument(
         | ContractExpression::Field {
             lowered: expression,
             ..
-        } => pointer_element_width_for_c_expression(expression, known),
+        } => pointer_element_width_for_program_expression(expression, known),
         ContractExpression::Add(left, right) => pointer_element_width_for_argument(left, known)
             .or_else(|| pointer_element_width_for_argument(right, known)),
         ContractExpression::Subtract(left, _)
@@ -1460,20 +1462,22 @@ fn pointer_element_width_for_argument(
     }
 }
 
-fn pointer_element_width_for_c_expression(
-    expression: &CExpression,
+fn pointer_element_width_for_program_expression(
+    expression: &ProgramExpression,
     known: &BTreeMap<String, u32>,
 ) -> Option<u32> {
     match expression {
-        CExpression::Variable(name) => known.get(name).copied(),
-        CExpression::Add(left, right) => pointer_element_width_for_c_expression(left, known)
-            .or_else(|| pointer_element_width_for_c_expression(right, known)),
-        CExpression::Subtract(left, _)
-        | CExpression::PointerOffsetBytes { pointer: left, .. }
-        | CExpression::Subobject { pointer: left, .. }
-        | CExpression::Cast {
+        ProgramExpression::Variable(name) => known.get(name).copied(),
+        ProgramExpression::Add(left, right) => {
+            pointer_element_width_for_program_expression(left, known)
+                .or_else(|| pointer_element_width_for_program_expression(right, known))
+        }
+        ProgramExpression::Subtract(left, _)
+        | ProgramExpression::PointerOffsetBytes { pointer: left, .. }
+        | ProgramExpression::Subobject { pointer: left, .. }
+        | ProgramExpression::Cast {
             expression: left, ..
-        } => pointer_element_width_for_c_expression(left, known),
+        } => pointer_element_width_for_program_expression(left, known),
         _ => None,
     }
 }
@@ -1531,7 +1535,7 @@ mod observed_integer_argument_tests {
                 }
             }
         "#;
-        verify_c0_sources(source, &[]).unwrap();
+        verify_c_sources(source, &[]).unwrap();
         for label in [
             "reverse_requirement",
             "reverse_citation",
@@ -1539,9 +1543,8 @@ mod observed_integer_argument_tests {
             "reverse_observations",
         ] {
             let expanded =
-                expand_c0_claim_source_by_label(source, &[], &format!("{label}.ensures_0"))
-                    .unwrap();
-            verify_c0_sources(&expanded, &[]).unwrap();
+                expand_c_claim_source_by_label(source, &[], &format!("{label}.ensures_0")).unwrap();
+            verify_c_sources(&expanded, &[]).unwrap();
         }
         for (before, after) in [
             ("requires b == a;", ""),
@@ -1557,7 +1560,7 @@ mod observed_integer_argument_tests {
             let invalid = source.replace(before, after);
             assert_ne!(source, invalid);
             assert!(
-                verify_c0_sources(&invalid, &[]).is_err(),
+                verify_c_sources(&invalid, &[]).is_err(),
                 "accepted {before} -> {after}"
             );
         }
@@ -1573,17 +1576,17 @@ mod observed_integer_argument_tests {
                 ensures x == x by { apply(identity(x + 1)); assumption(); }
             }
         "#;
-        verify_c0_sources(source, &[]).unwrap();
+        verify_c_sources(source, &[]).unwrap();
         let expanded =
-            expand_c0_claim_source_by_label(source, &[], "use_argument.ensures_0").unwrap();
+            expand_c_claim_source_by_label(source, &[], "use_argument.ensures_0").unwrap();
         assert!(expanded.contains("have "), "{expanded}");
-        crate::surface::without_implicit_solve(|| verify_c0_sources(&expanded, &[])).unwrap();
-        assert!(verify_c0_sources(&source.replace("requires x < 10;", ""), &[]).is_err());
+        crate::surface::without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
+        assert!(verify_c_sources(&source.replace("requires x < 10;", ""), &[]).is_err());
         let explicit_without_guard = source.replace(
             "apply(identity(x + 1));",
             "apply(identity(x + 1)) using {}; ",
         );
-        assert!(verify_c0_sources(&explicit_without_guard, &[]).is_err());
+        assert!(verify_c_sources(&explicit_without_guard, &[]).is_err());
     }
 
     #[test]
@@ -1595,9 +1598,9 @@ mod observed_integer_argument_tests {
                 ensures x == x by { apply(reflexive(x + 1)); solve(); }
             }
         "#;
-        verify_c0_sources(source, &[]).unwrap();
-        let expanded = expand_c0_claim_source_by_label(source, &[], "observed.ensures_0").unwrap();
-        crate::surface::without_implicit_solve(|| verify_c0_sources(&expanded, &[])).unwrap();
+        verify_c_sources(source, &[]).unwrap();
+        let expanded = expand_c_claim_source_by_label(source, &[], "observed.ensures_0").unwrap();
+        crate::surface::without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
         let apply_start = expanded.find("apply(reflexive(").unwrap();
         let using_start = apply_start + expanded[apply_start..].find("using {").unwrap();
         let using_end = using_start + expanded[using_start..].find('}').unwrap() + 1;
@@ -1606,10 +1609,8 @@ mod observed_integer_argument_tests {
             &expanded[..using_start],
             &expanded[using_end..]
         );
-        assert!(
-            crate::surface::without_implicit_solve(|| verify_c0_sources(&erased, &[])).is_err()
-        );
-        assert!(verify_c0_sources(&source.replace("requires defined(x + 1);", ""), &[]).is_err());
+        assert!(crate::surface::without_implicit_solve(|| verify_c_sources(&erased, &[])).is_err());
+        assert!(verify_c_sources(&source.replace("requires defined(x + 1);", ""), &[]).is_err());
     }
 
     #[test]
@@ -1623,11 +1624,11 @@ mod observed_integer_argument_tests {
             let source = format!(
                 "{prefix} theorem observed(x: {ty}) {{ requires {guard}; ensures to_integer({expression}) == to_integer({expression}) by {{ apply(reflexive(to_integer({expression}))); }} }}"
             );
-            verify_c0_sources(&source, &[])
+            verify_c_sources(&source, &[])
                 .unwrap_or_else(|error| panic!("{ty}: {}", error.message()));
             let expanded =
-                expand_c0_claim_source_by_label(&source, &[], "observed.ensures_0").unwrap();
-            verify_c0_sources(&expanded, &[]).unwrap();
+                expand_c_claim_source_by_label(&source, &[], "observed.ensures_0").unwrap();
+            verify_c_sources(&expanded, &[]).unwrap();
             if ty != "int128" {
                 let apply_start = expanded.find("apply(reflexive(").unwrap();
                 let using_start = apply_start + expanded[apply_start..].find("using {").unwrap();
@@ -1638,11 +1639,11 @@ mod observed_integer_argument_tests {
                     &expanded[using_end..]
                 );
                 assert!(
-                    verify_c0_sources(&erased, &[]).is_err(),
+                    verify_c_sources(&erased, &[]).is_err(),
                     "erased argument guard was accepted"
                 );
                 let missing = source.replace(&format!("requires {guard};"), "");
-                assert!(verify_c0_sources(&missing, &[]).is_err());
+                assert!(verify_c_sources(&missing, &[]).is_err());
             }
         }
         for argument in [
@@ -1656,7 +1657,7 @@ mod observed_integer_argument_tests {
             let source = format!(
                 "{prefix} theorem refused(x: int32) {{ ensures x == x by {{ apply(reflexive({argument})); solve(); }} }}"
             );
-            let Err(error) = verify_c0_sources(&source, &[]) else {
+            let Err(error) = verify_c_sources(&source, &[]) else {
                 panic!("invalid argument accepted: {argument}");
             };
             assert!(error.message().len() < 8000);
@@ -1689,11 +1690,11 @@ theorem nested_count(value: int32) {
     }
 }
 "#;
-        verify_c0_sources(source, &[])
+        verify_c_sources(source, &[])
             .expect("nested model argument must retain its known overflow guard");
         let expanded =
-            expand_c0_claim_source_by_label(source, &[], "nested_count.ensures_0").unwrap();
-        crate::surface::without_implicit_solve(|| verify_c0_sources(&expanded, &[]))
+            expand_c_claim_source_by_label(source, &[], "nested_count.ensures_0").unwrap();
+        crate::surface::without_implicit_solve(|| verify_c_sources(&expanded, &[]))
             .expect("the explicit application must cold-check with its selected guard");
         let apply_start = expanded.find("apply(count_less(").unwrap();
         let using_start = apply_start + expanded[apply_start..].find("using {").unwrap();
@@ -1704,11 +1705,11 @@ theorem nested_count(value: int32) {
             &expanded[using_end..]
         );
         assert!(
-            crate::surface::without_implicit_solve(|| verify_c0_sources(&erased, &[])).is_err(),
+            crate::surface::without_implicit_solve(|| verify_c_sources(&erased, &[])).is_err(),
             "the theorem's requirement alone must not supply the argument's overflow guard"
         );
         let missing = source.replace("requires defined(value - 1);", "");
-        assert!(verify_c0_sources(&missing, &[]).is_err());
+        assert!(verify_c_sources(&missing, &[]).is_err());
     }
 
     #[test]
@@ -1736,10 +1737,10 @@ theorem nested_count(value: int32) {
                 }}
             "#
             );
-            verify_c0_sources(&source, &[]).unwrap_or_else(|error| panic!("{argument}: {error}"));
+            verify_c_sources(&source, &[]).unwrap_or_else(|error| panic!("{argument}: {error}"));
             let expanded =
-                expand_c0_claim_source_by_label(&source, &[], "guarded.ensures_0").unwrap();
-            crate::surface::without_implicit_solve(|| verify_c0_sources(&expanded, &[])).unwrap();
+                expand_c_claim_source_by_label(&source, &[], "guarded.ensures_0").unwrap();
+            crate::surface::without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
             let apply_start = expanded.find("apply(known_count(").unwrap();
             let using_start = apply_start + expanded[apply_start..].find("using {").unwrap();
             let using_end = using_start + expanded[using_start..].find('}').unwrap() + 1;
@@ -1749,7 +1750,7 @@ theorem nested_count(value: int32) {
                 &expanded[using_end..]
             );
             assert!(
-                crate::surface::without_implicit_solve(|| verify_c0_sources(&erased, &[])).is_err(),
+                crate::surface::without_implicit_solve(|| verify_c_sources(&erased, &[])).is_err(),
                 "{argument}: accepted erased evaluation guards"
             );
         }
@@ -1762,7 +1763,7 @@ theorem nested_count(value: int32) {
         )
         .unwrap();
         let theorem = &parsed.theorem_definitions()[0];
-        let pre_state = CState::new().with_local("x", int32(7u32));
+        let pre_state = ExecutionState::new().with_local("x", int32(7u32));
         let post_state = pre_state.clone().with_local("x", int32(9u32));
         let values = BTreeMap::new();
         let arrays = BTreeMap::new();
@@ -1903,8 +1904,8 @@ pub(in crate::surface::proof) fn observe_machine_parameters(
     let machine = parameters
         .iter()
         .filter(|parameter| {
-            matches!(parameter.click_type(), ClickType::C(c_type)
-                if crate::surface::integer_conversions::machine_integer_source_type(*c_type))
+            matches!(parameter.click_type(), ClickType::Program(interface_type)
+                if crate::surface::integer_conversions::machine_integer_source_type(*interface_type))
         })
         .map(|parameter| parameter.name())
         .collect::<BTreeSet<_>>();
@@ -1912,7 +1913,7 @@ pub(in crate::surface::proof) fn observe_machine_parameters(
     let parameter = |side: &ContractExpression| match side {
         ContractExpression::Binding(name)
         | ContractExpression::CBinding(name)
-        | ContractExpression::CFragment(CExpression::Variable(name))
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
             if machine.contains(name.as_str()) =>
         {
             Some(name.clone())
@@ -1925,7 +1926,7 @@ pub(in crate::surface::proof) fn observe_machine_parameters(
     // `100u64 < n - k`.
     let literal = |side: &ContractExpression| match side {
         ContractExpression::IntegerLiteral(_) => true,
-        ContractExpression::CFragment(CExpression::Value(value)) => {
+        ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
             super::resources::is_integer_constant(value)
         }
         ContractExpression::Negate(inner) => {
@@ -1951,7 +1952,7 @@ pub(in crate::surface::proof) fn observe_machine_parameters(
     }
     let machine_tree = |side: &ContractExpression| tree(side, &parameter, &literal);
     let observe = |side: &ContractExpression| {
-        if literal(side) && !matches!(side, ContractExpression::CFragment(_)) {
+        if literal(side) && !matches!(side, ContractExpression::ProgramExpression(_)) {
             side.clone()
         } else {
             ContractExpression::Call {
@@ -2047,7 +2048,7 @@ pub(super) fn theorem_resource_argument_bindings(
                 ..Default::default()
             },
         )?;
-        let Proposition::CResourceContains { parent, .. } = lowered else {
+        let Proposition::ResourceContains { parent, .. } = lowered else {
             return Err("resource argument has unresolved extent requirements".into());
         };
         bindings.insert(

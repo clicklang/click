@@ -1,7 +1,7 @@
 //! Exact object binding for construction returns and ordinary constructors.
 use super::*;
 
-fn valid_layout(layout: &CAggregateLayout) -> bool {
+fn valid_layout(layout: &AggregateLayout) -> bool {
     if layout.size_bytes() == 0
         || !layout.size_bytes().is_multiple_of(layout.alignment_bytes())
         || !layout.unions().is_empty()
@@ -11,23 +11,23 @@ fn valid_layout(layout: &CAggregateLayout) -> bool {
     let mut end = 0;
     for field in layout.fields() {
         crate::instrumentation::record_deterministic_work(1);
-        let ty = field.c_type();
+        let ty = field.program_type();
         let scalar = ty.is_pointer()
             || matches!(
                 ty,
-                CType::Bool
-                    | CType::Int8
-                    | CType::UInt8
-                    | CType::Int16
-                    | CType::UInt16
-                    | CType::Int32
-                    | CType::UInt32
-                    | CType::Int64
-                    | CType::UInt64
-                    | CType::Int128
-                    | CType::UInt128
-                    | CType::Float32
-                    | CType::Float64
+                ProgramType::Bool
+                    | ProgramType::Int8
+                    | ProgramType::UInt8
+                    | ProgramType::Int16
+                    | ProgramType::UInt16
+                    | ProgramType::Int32
+                    | ProgramType::UInt32
+                    | ProgramType::Int64
+                    | ProgramType::UInt64
+                    | ProgramType::Int128
+                    | ProgramType::UInt128
+                    | ProgramType::Float32
+                    | ProgramType::Float64
             );
         if !scalar
             || field.offset_bytes() < end
@@ -48,20 +48,20 @@ fn valid_layout(layout: &CAggregateLayout) -> bool {
 }
 
 fn destination<'a>(
-    state: &'a CState,
-    interface: &CFunctionContractInterface,
-) -> Option<&'a CAggregateDestination> {
+    state: &'a ExecutionState,
+    interface: &FunctionContractInterface,
+) -> Option<&'a AggregateDestination> {
     let selected = state.aggregate_destination.as_deref()?;
     let layout = if let Some((_, layout)) = interface.construction_parameter() {
-        if interface.aggregate_return_mode() != CAggregateReturnMode::Copy
-            || interface.return_type() != CType::Void
+        if interface.aggregate_return_mode() != AggregateReturnMode::Copy
+            || interface.return_type() != ProgramType::Void
             || interface.return_aggregate_layout().is_some()
         {
             return None;
         }
         layout
     } else {
-        if interface.aggregate_return_mode() != CAggregateReturnMode::Construction
+        if interface.aggregate_return_mode() != AggregateReturnMode::Construction
             || !interface.return_type().is_pointer()
         {
             return None;
@@ -123,14 +123,14 @@ fn destination<'a>(
 }
 
 pub(super) fn bind(
-    caller: &CState,
-    interface: &CFunctionContractInterface,
-    callee: &mut CState,
+    caller: &ExecutionState,
+    interface: &FunctionContractInterface,
+    callee: &mut ExecutionState,
 ) -> Option<()> {
     let parameter_destination;
     let selected_state = if let Some((index, layout)) = interface.construction_parameter() {
         let parameter = interface.parameters().get(index)?;
-        if !parameter.c_type().is_pointer() || parameter.aggregate_layout().is_some() {
+        if !parameter.program_type().is_pointer() || parameter.aggregate_layout().is_some() {
             return None;
         }
         let value = callee.locals.get(parameter.name())?.pointer()?;
@@ -138,7 +138,7 @@ pub(super) fn bind(
             .clone()
             .with_aggregate_return_destination(value.pointer().clone(), layout.clone());
         &parameter_destination
-    } else if interface.aggregate_return_mode() == CAggregateReturnMode::Copy {
+    } else if interface.aggregate_return_mode() == AggregateReturnMode::Copy {
         return Some(());
     } else {
         caller
@@ -171,7 +171,7 @@ pub(super) fn bind(
             crate::instrumentation::record_deterministic_work(1);
             writable(
                 &selected.pointer.offset_by_bytes(field.offset_bytes()),
-                field.c_type().byte_width(),
+                field.program_type().byte_width(),
             )
         })
     } else {
@@ -192,12 +192,12 @@ pub(super) fn bind(
 }
 
 pub(super) fn complete(
-    state: &CState,
-    interface: &CFunctionContractInterface,
-    value: CValue,
-) -> Result<CValue, AggregateReturnRefusal> {
+    state: &ExecutionState,
+    interface: &FunctionContractInterface,
+    value: ProgramValue,
+) -> Result<ProgramValue, AggregateReturnRefusal> {
     let selected = destination(state, interface).ok_or(AggregateReturnRefusal::InvalidValue)?;
-    let CValue::Pointer(pointer) = &value else {
+    let ProgramValue::Pointer(pointer) = &value else {
         return Err(AggregateReturnRefusal::InvalidValue);
     };
     if pointer.pointer() != &selected.pointer
@@ -216,26 +216,26 @@ pub(super) fn complete(
 
 /// Check the entry-bound destination, even if the body reassigns its parameter.
 pub(super) fn complete_parameter(
-    state: &CState,
-    interface: &CFunctionContractInterface,
-) -> Option<CRuntimeError> {
+    state: &ExecutionState,
+    interface: &FunctionContractInterface,
+) -> Option<RuntimeError> {
     interface.construction_parameter()?;
     let Some(selected) = destination(state, interface) else {
-        return Some(CRuntimeError::FunctionContract(
+        return Some(RuntimeError::FunctionContract(
             "constructor destination is no longer live".into(),
         ));
     };
     aggregate_copy_reads_uninitialized(&state.memory, &selected.pointer, &selected.layout).then(
-        || CRuntimeError::FunctionContract("constructor must initialize every value field".into()),
+        || RuntimeError::FunctionContract("constructor must initialize every value field".into()),
     )
 }
 
 pub(super) fn summary_result(
-    state: &CState,
-    interface: &CFunctionContractInterface,
-) -> Option<CValue> {
+    state: &ExecutionState,
+    interface: &FunctionContractInterface,
+) -> Option<ProgramValue> {
     let selected = destination(state, interface)?;
-    Some(CValue::typed_pointer(
+    Some(ProgramValue::typed_pointer(
         selected.pointer.clone(),
         interface.return_type(),
     ))
@@ -244,7 +244,7 @@ pub(super) fn summary_result(
 /// A certified construction rule, or an explicit external construction-return
 /// assumption, justifies these initialized fields. Ordinary owns clauses do not.
 /// The call's existing effect transition forgets their old values first.
-pub(super) fn initialize_summary(state: &mut CState, entry: &CState) {
+pub(super) fn initialize_summary(state: &mut ExecutionState, entry: &ExecutionState) {
     let selected = entry
         .aggregate_destination
         .as_ref()
@@ -256,7 +256,7 @@ pub(super) fn initialize_summary(state: &mut CState, entry: &CState) {
             state
                 .memory
                 .clone()
-                .with_initialized_object(&pointer, field.c_type().byte_width()),
+                .with_initialized_object(&pointer, field.program_type().byte_width()),
         );
     }
 }

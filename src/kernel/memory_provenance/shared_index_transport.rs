@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 pub(super) fn transport_framed_index(
     value: &SharedMachineIntegerTerm,
-    after: &CMemory,
+    after: &Memory,
     assumptions: Option<(&PureFactContext, bool)>,
 ) -> Option<SharedMachineIntegerTerm> {
     map_index_with_descent(
@@ -84,10 +84,18 @@ pub(in crate::kernel) fn map_index_with_fold(
         if results.contains_key(&node.id()) {
             continue;
         }
-        if matches!(node.node(), KernelTermNode::Fold(_))
-            && let Some(mapped) = map_fold(node).ok()?
+        if matches!(
+            node.node(),
+            KernelTermNode::Fold(_) | KernelTermNode::Match(_)
+        ) && let Some(mapped) = map_fold(node).ok()?
         {
             results.insert(node.id(), mapped);
+            continue;
+        }
+        // Native matches are opaque to memory transport; explicit scoped
+        // substitutions above may still rewrite them.
+        if matches!(node.node(), KernelTermNode::Match(_)) {
+            results.insert(node.id(), node.clone());
             continue;
         }
         let children: Vec<_> = match node.node() {
@@ -114,10 +122,10 @@ pub(in crate::kernel) fn map_index_with_fold(
                 .map(std::borrow::Cow::Owned)
                 .or_else(|| view.read_source())?;
             let next = map_leaf(&leaf)?;
-            let KernelType::C(ty) = node.ty() else {
+            let KernelType::Program(ty) = node.ty() else {
                 return None;
             };
-            node.rewritten_machine_leaf(MachineIntegerType::from_c_type(*ty)?, &leaf, &next)
+            node.rewritten_machine_leaf(MachineIntegerType::from_program_type(*ty)?, &leaf, &next)
         } else {
             let children: Vec<_> = children
                 .iter()
@@ -137,11 +145,11 @@ pub(in crate::kernel) fn map_index_with_fold(
                     crate::kernel::KernelTermImport::default()
                         .condition(&ConditionTerm::truth_of_bool_word(&mapped))
                 };
-                let KernelType::C(ty) = node.ty() else {
+                let KernelType::Program(ty) = node.ty() else {
                     return None;
                 };
                 let updated = KernelTerm::machine_if_shared(
-                    MachineIntegerType::from_c_type(*ty)?,
+                    MachineIntegerType::from_program_type(*ty)?,
                     [condition, arguments[1].clone(), arguments[2].clone()],
                 );
                 rebuild(&updated, &children)?
@@ -252,15 +260,15 @@ mod tests {
     fn common_call_indices_keep_roots_and_original_read_snapshots() {
         use crate::kernel::{KernelTermImport, PureFunctionArgument, SharedPureApplication};
         let _session = VerificationSession::enter();
-        let before = crate::kernel::intern_c_memory(CMemory::new().with_block("call-snapshot", 8));
-        let address = CMemory::global_pointer("call-snapshot");
+        let before = crate::kernel::intern_memory(Memory::new().with_block("call-snapshot", 8));
+        let address = Memory::global_pointer("call-snapshot");
         let after = before
             .memory()
             .clone()
-            .store(address.clone(), CValue::Int32(7u32.into()));
+            .store(address.clone(), ProgramValue::Int32(7u32.into()));
         let application = SharedPureApplication::intern(
             "snapshot_call".into(),
-            vec![PureFunctionArgument::Value(CValue::Int32(
+            vec![PureFunctionArgument::Value(ProgramValue::Int32(
                 MachineTerm::MemoryLoad(before.clone(), address.into(), LoadKind::Int32),
             ))],
         );
@@ -385,7 +393,7 @@ mod tests {
     fn parity(
         ty: MachineIntegerType,
         term: &MachineTerm,
-        after: &CMemory,
+        after: &Memory,
         facts: Option<(&PureFactContext, bool)>,
     ) {
         let empty = PureFactContext::new();
@@ -459,7 +467,7 @@ mod tests {
     #[test]
     fn framed_index_transport_preserves_native_constructor_rules() {
         let _session = VerificationSession::enter();
-        let after = CMemory::new();
+        let after = Memory::new();
         let x = MachineTerm::Variable(Variable(1018901));
         for ty in [
             MachineIntegerType::Int8,
@@ -550,11 +558,12 @@ mod tests {
             block: "transport-index".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let before = CMemory::new()
-            .with_block("transport-index", 16)
-            .store(pointer.clone(), CValue::Int32(MachineTerm::constant(7)));
+        let before = Memory::new().with_block("transport-index", 16).store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(7)),
+        );
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(before.clone()),
+            crate::kernel::intern_memory(before.clone()),
             Box::new(pointer.clone()),
             LoadKind::Int32,
         );
@@ -564,18 +573,19 @@ mod tests {
             before.clone(),
             before.clone().store(
                 pointer.offset_by_bytes(8),
-                CValue::Int32(MachineTerm::constant(9)),
+                ProgramValue::Int32(MachineTerm::constant(9)),
             ),
-            before
-                .clone()
-                .store(pointer.clone(), CValue::Int32(MachineTerm::constant(9))),
+            before.clone().store(
+                pointer.clone(),
+                ProgramValue::Int32(MachineTerm::constant(9)),
+            ),
             before.clone().with_loop_memory_havoc_preserving_loans(
                 Variable(1018911),
                 &BTreeSet::new(),
                 None,
                 None,
             ),
-            CMemory::new(),
+            Memory::new(),
         ] {
             for policy in [None, Some((&facts, true)), Some((&facts, false))] {
                 parity(MachineIntegerType::Int32, &term, &after, policy);
@@ -583,7 +593,7 @@ mod tests {
         }
         let unchanged = transport_framed_index(
             &retained(MachineIntegerType::Int32, &term),
-            &CMemory::new(),
+            &Memory::new(),
             None,
         )
         .unwrap();
@@ -597,9 +607,9 @@ mod tests {
             block: "registered-index".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let before = CMemory::new().with_block("registered-index", 16);
+        let before = Memory::new().with_block("registered-index", 16);
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(before.clone()),
+            crate::kernel::intern_memory(before.clone()),
             Box::new(pointer.clone()),
             LoadKind::Int32,
         );
@@ -610,7 +620,7 @@ mod tests {
         );
         let after = before.clone().store(
             pointer.offset_by_bytes(8),
-            CValue::Int32(MachineTerm::constant(9)),
+            ProgramValue::Int32(MachineTerm::constant(9)),
         );
         let facts = PureFactContext::new();
         parity(
@@ -630,11 +640,11 @@ mod tests {
             else_term: Box::new(MachineTerm::constant(2)),
         };
         let term = MachineTerm::add(term, MachineTerm::Variable(Variable(1018902)));
-        parity(MachineIntegerType::Int32, &term, &CMemory::new(), None);
+        parity(MachineIntegerType::Int32, &term, &Memory::new(), None);
         assert!(
             transport_framed_index(
                 &retained(MachineIntegerType::Int32, &term),
-                &CMemory::new(),
+                &Memory::new(),
                 None
             )
             .is_none()
@@ -644,7 +654,7 @@ mod tests {
     #[test]
     fn framed_index_transport_keeps_opaque_constant_readings() {
         let _session = VerificationSession::enter();
-        let after = CMemory::new();
+        let after = Memory::new();
         let null = MachineTerm::PointerAddress(
             Box::new(Pointer::null()),
             crate::kernel::AddressObjectClass::NONE,
@@ -820,22 +830,24 @@ mod tests {
     #[test]
     fn exact_index_normalization_keeps_snapshot_kind_and_context_authority() {
         let _session = VerificationSession::enter();
-        let pointer = CMemory::global_pointer("exact-index");
-        let initial = CMemory::new().with_block("exact-index", 16);
-        let stored = initial
-            .clone()
-            .store(pointer.clone(), CValue::Int32(MachineTerm::constant(7)));
+        let pointer = Memory::global_pointer("exact-index");
+        let initial = Memory::new().with_block("exact-index", 16);
+        let stored = initial.clone().store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(7)),
+        );
         let empty = PureFactContext::new();
         for memory in [
             initial.clone(),
             stored.clone(),
             stored.clone().store(
                 pointer.offset_by_bytes(8),
-                CValue::Int32(MachineTerm::constant(9)),
+                ProgramValue::Int32(MachineTerm::constant(9)),
             ),
-            stored
-                .clone()
-                .store(pointer.clone(), CValue::Int32(MachineTerm::constant(9))),
+            stored.clone().store(
+                pointer.clone(),
+                ProgramValue::Int32(MachineTerm::constant(9)),
+            ),
             stored.with_loop_memory_havoc_preserving_loans(
                 Variable(1018950),
                 &BTreeSet::new(),
@@ -845,7 +857,7 @@ mod tests {
         ] {
             for kind in [LoadKind::Int32, LoadKind::UInt32, LoadKind::UInt8] {
                 let load = MachineTerm::MemoryLoad(
-                    crate::kernel::intern_c_memory(memory.clone()),
+                    crate::kernel::intern_memory(memory.clone()),
                     Box::new(pointer.clone()),
                     kind,
                 );
@@ -872,8 +884,8 @@ mod tests {
             offset: PointerOffsetTerm::scaled_int32_node(index.clone(), 4),
         };
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(
-                initial.store(pointer, CValue::Int32(MachineTerm::constant(5))),
+            crate::kernel::intern_memory(
+                initial.store(pointer, ProgramValue::Int32(MachineTerm::constant(5))),
             ),
             Box::new(query),
             LoadKind::Int32,
@@ -922,7 +934,7 @@ mod tests {
         for _ in 0..8 {
             assert_eq!(normalize_exact_index(&value, &empty), Some(value.clone()));
             assert_eq!(
-                transport_framed_index(&value, &CMemory::new(), None),
+                transport_framed_index(&value, &Memory::new(), None),
                 Some(value.clone())
             );
         }

@@ -19,10 +19,10 @@ fn c_constant_spellings_preserve_declared_identifiers_in_both_source_paths() {
              int local() {{ ensures result == 7; }}\n\
              int global() {{ ensures result == 9; }}\n"
         );
-        verify_c0_sources(&proof, &[("names.c", &source)])
+        verify_c_sources(&proof, &[("names.c", &source)])
             .unwrap_or_else(|error| panic!("ordinary {name}: {}", error.message()));
         let imports = [PreparedCImport::for_test("names.c", &source)];
-        verify_c0_prepared_sources(&proof, &imports)
+        verify_c_prepared_sources(&proof, &imports)
             .unwrap_or_else(|error| panic!("prepared {name}: {}", error.message()));
     }
 }
@@ -37,10 +37,10 @@ fn c_constant_spellings_preserve_enumerators_and_functions() {
         int combined(void) { return NAN + INFINITY(); }\n";
     let proof = "verifying \"declarations.c\";\n\
         int combined() { ensures result == 7; }\n";
-    verify_c0_sources(proof, &[("declarations.c", source)])
+    verify_c_sources(proof, &[("declarations.c", source)])
         .expect("ordinary enum and function declarations");
     let imports = [PreparedCImport::for_test("declarations.c", source)];
-    verify_c0_prepared_sources(proof, &imports).expect("prepared enum and function declarations");
+    verify_c_prepared_sources(proof, &imports).expect("prepared enum and function declarations");
 }
 
 #[test]
@@ -53,12 +53,12 @@ fn c_constant_spellings_do_not_prove_a_false_parameter_contract() {
         int positive(int INFINITY) { ensures result == 1; }";
     let correct = "verifying \"positive.c\";\n\
         int positive(int INFINITY) { requires INFINITY <= 0; ensures result == 0; }";
-    assert!(verify_c0_sources(incorrect, &[("positive.c", source)]).is_err());
-    verify_c0_sources(correct, &[("positive.c", source)])
+    assert!(verify_c_sources(incorrect, &[("positive.c", source)]).is_err());
+    verify_c_sources(correct, &[("positive.c", source)])
         .expect("ordinary parameter-dependent contract");
     let imports = [PreparedCImport::for_test("positive.c", source)];
-    assert!(verify_c0_prepared_sources(incorrect, &imports).is_err());
-    verify_c0_prepared_sources(correct, &imports).expect("prepared parameter-dependent contract");
+    assert!(verify_c_prepared_sources(incorrect, &imports).is_err());
+    verify_c_prepared_sources(correct, &imports).expect("prepared parameter-dependent contract");
 }
 
 #[test]
@@ -73,7 +73,7 @@ fn c_constant_spellings_keep_actual_macro_expansion_authoritative() {
     let proof = "verifying \"macros.c\";\n\
         int expanded() { ensures result == 7; }\n\
         int identity(int INFINITY) { ensures result == INFINITY; }\n";
-    verify_c0_sources(proof, &[("macros.c", source)])
+    verify_c_sources(proof, &[("macros.c", source)])
         .expect("macros expand before resolving surviving identifiers");
     let imports = [PreparedCImport::for_test(
         "macros.c",
@@ -82,7 +82,7 @@ fn c_constant_spellings_keep_actual_macro_expansion_authoritative() {
          # 4 \"macros.c\"\n\
          int identity(int INFINITY) { return INFINITY; }\n",
     )];
-    verify_c0_prepared_sources(proof, &imports)
+    verify_c_prepared_sources(proof, &imports)
         .expect("prepared expanded tokens and surviving parameter references retain their meaning");
 }
 
@@ -115,9 +115,9 @@ int32 bad(int32 x) {
     let selected = click_source.find("ensures result == x;").unwrap();
     let position = expansion::position_at_offset(click_source, selected);
 
-    verify_c0_sources(click_source, &sources)
+    verify_c_sources(click_source, &sources)
         .expect_err("complete verification should reject the bad function");
-    let verified = verify_c0_sources_at(click_source, &sources, position.line, position.column)
+    let verified = verify_c_sources_at(click_source, &sources, position.line, position.column)
         .expect("location verification should skip the unrelated bad proof");
     assert!(
         verified
@@ -177,10 +177,10 @@ int32 count_to(int32 n) {
 }
 "#;
     let sources = [("ranked.c", c_source)];
-    verify_c0_sources(click_source, &sources).expect("the whole file should verify");
+    verify_c_sources(click_source, &sources).expect("the whole file should verify");
     let selected = click_source.find("ensures result == x;").unwrap();
     let position = expansion::position_at_offset(click_source, selected);
-    let verified = verify_c0_sources_at(click_source, &sources, position.line, position.column)
+    let verified = verify_c_sources_at(click_source, &sources, position.line, position.column)
         .expect("a scoped run must not demand a loop rule it was never going to build");
     assert!(
         verified
@@ -226,14 +226,14 @@ int32 caller(int32 x) {
     let caller_proof = click_source.rfind("step_until(function.exit)").unwrap();
     let position = expansion::position_at_offset(click_source, caller_proof);
 
-    let verified = verify_c0_sources_at(click_source, &sources, position.line, position.column)
+    let verified = verify_c_sources_at(click_source, &sources, position.line, position.column)
         .expect("targeted caller verification should assume its callee contract");
     assert!(
         verified
             .iter()
             .all(|theorem| { theorem.function_block.signature().name() == "caller" })
     );
-    verify_c0_sources(click_source, &sources)
+    verify_c_sources(click_source, &sources)
         .expect_err("file selection must execute and reject the callee's failing proof");
 }
 
@@ -269,7 +269,7 @@ int32 caller(int32 x) {
     ensures result == x;
 }
 "#;
-    let dependencies = c0_external_dependencies(
+    let dependencies = c_external_dependencies(
         click_source,
         &[("helper.c", helper_c), ("caller.c", caller_c)],
     )
@@ -331,7 +331,7 @@ int32 caller() {
     let caller_proof = click_source.rfind("ensures result == 40;").unwrap();
     let position = expansion::position_at_offset(click_source, caller_proof);
 
-    let verified = verify_c0_sources_at(click_source, &sources, position.line, position.column)
+    let verified = verify_c_sources_at(click_source, &sources, position.line, position.column)
         .expect("the caller selection should assume the unselected helper contract");
     assert_eq!(verified.len(), 1);
     assert_eq!(
@@ -343,7 +343,7 @@ int32 caller() {
         &["compare".to_string(), "apply".to_string()]
     );
 
-    let error = verify_c0_sources(click_source, &sources)
+    let error = verify_c_sources(click_source, &sources)
         .expect_err("whole-project verification must still inspect the helper callback body");
     assert!(
         error.message().contains(
@@ -380,7 +380,7 @@ int32 caller(int32 x) { ensures result == x + x; } by {
 }
 "#;
     let source_map = sources.iter().copied().collect::<BTreeMap<_, _>>();
-    let file = parse_c0_click_file(click_source, &sources).unwrap();
+    let file = parse_click_file_with_c_sources(click_source, &sources).unwrap();
     let parsed = parse_verified_sources(&file, &source_map).unwrap();
     let required = tactic_expansion_required_functions(
         &file,
@@ -388,7 +388,7 @@ int32 caller(int32 x) { ensures result == x + x; } by {
         (
             ProofSite::FunctionClaim {
                 function_name: "caller".to_string(),
-                claim: CProofClaim::Grouped,
+                claim: ContractProofClaim::Grouped,
             },
             Some(0),
         ),
@@ -521,7 +521,7 @@ int32 box_pipeline(struct box* owner, int32 data[], int32 value) {
 }
 "#;
 
-    verify_c0_sources(
+    verify_c_sources(
         click_source,
         &[
             ("box_init.c", init_c),
@@ -635,13 +635,13 @@ int32 box_pipeline(struct box* owner, int32 data[]) {
         ("box_pipeline.c", pipeline_c),
     ];
 
-    verify_c0_sources(click_source, &sources)
+    verify_c_sources(click_source, &sources)
         .expect("the snapshot-bridged restricted solve certificate should check");
 
     let selected = click_source.find("have owner->data == data by {").unwrap();
     let position = expansion::position_at_offset(click_source, selected);
     let expanded =
-        expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
+        expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("the snapshot-bridged restricted solve should expand");
     // The calls explicitly establish equalities between the load snapshots.
     // Their transitive chain now closes through the trusted offset fragment,
@@ -657,7 +657,7 @@ int32 box_pipeline(struct box* owner, int32 data[]) {
             "missing checked premise {premise}:\n{expanded}"
         );
     }
-    verify_c0_sources(&expanded, &sources)
+    verify_c_sources(&expanded, &sources)
         .expect("the explicit bridged-premise certificate should check");
 }
 
@@ -749,14 +749,14 @@ int32 pipeline(struct counter* owner) {
     ];
 
     let (verified, _events) =
-        crate::instrumentation::collect(|| verify_c0_sources(click_source, &sources));
+        crate::instrumentation::collect(|| verify_c_sources(click_source, &sources));
     verified.expect("the original smart proof should verify");
 
     let frontier_have = click_source
         .find("have owner->value == 1 by solve()")
         .unwrap();
     let have_position = expansion::position_at_offset(click_source, frontier_have);
-    let have_expanded = expand_c0_tactic_source_at(
+    let have_expanded = expand_c_tactic_source_at(
         click_source,
         &sources,
         have_position.line,
@@ -766,16 +766,16 @@ int32 pipeline(struct counter* owner) {
     assert!(!have_expanded.contains("have owner->value == 1 by solve()"));
     // Value-only proofs can now cite the current logical read directly;
     // only validity transport needs the historical read's source anchor.
-    verify_c0_sources(&have_expanded, &sources)
+    verify_c_sources(&have_expanded, &sources)
         .expect("the mixed-snapshot frontier-local expansion should check");
 
     let selected = click_source.find("step_until(region(3));").unwrap();
     let position = expansion::position_at_offset(click_source, selected);
     let expanded =
-        expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
+        expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("mixed-snapshot smart execution should expand");
     assert!(!expanded.contains("step_until(region(3));"));
-    verify_c0_sources(&expanded, &sources)
+    verify_c_sources(&expanded, &sources)
         .expect("the mixed-snapshot smart execution expansion should check");
 }
 
@@ -938,16 +938,16 @@ int32 buffer_pipeline(
     ];
 
     let (verified, _events) =
-        crate::instrumentation::collect(|| verify_c0_sources(click_source, &sources));
+        crate::instrumentation::collect(|| verify_c_sources(click_source, &sources));
     verified.expect("the original vector-shaped proof should verify");
 
     let selected = click_source.rfind("step_until").unwrap();
     let position = expansion::position_at_offset(click_source, selected);
     let expanded =
-        expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
+        expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("vector-shaped mixed-snapshot smart execution should expand");
     assert!(!expanded.contains("step_until(region(3));"));
-    verify_c0_sources(&expanded, &sources)
+    verify_c_sources(&expanded, &sources)
         .expect("the vector-shaped mixed-snapshot expansion should check");
 }
 
@@ -987,7 +987,7 @@ int32 caller(int32 x) {
     let position = expansion::position_at_offset(click_source, selected);
 
     let expanded =
-        expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
+        expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("the endpoint call dependency should be verified before expansion");
     assert!(!expanded.contains("step_until(region(1));"));
 }
@@ -1019,7 +1019,7 @@ int32 bump(int32* p) {
     let position =
         expansion::position_at_offset(click_source, click_source.find("ensures").unwrap());
     let (session, _) =
-        C0VerificationSession::new(click_source, &sources).expect("baseline should verify");
+        ProgramVerificationSession::new(click_source, &sources).expect("baseline should verify");
     let mut counts = Vec::new();
     for _ in 0..4 {
         session
@@ -1048,7 +1048,7 @@ int32 identity(int32 x) throws int32 {
         "\n} by { step(); have result == x by { normalize(); } assumption(); }\n",
     );
     let position = expansion::position_at_offset(&rewritten, rewritten.find("step();").unwrap());
-    let (session, _) = C0VerificationSession::new(
+    let (session, _) = ProgramVerificationSession::new(
         source,
         &[("identity.c", "int32 identity(int32 x) { return x; }")],
     )
@@ -1126,14 +1126,14 @@ int32 caller(int32 x) {
     let caller_solve = click_source.rfind("solve();").unwrap();
     let position = expansion::position_at_offset(click_source, caller_solve);
     let expanded =
-        expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
+        expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("caller solve should expand");
     let expanded_position =
-        c0_tactic_source_position(&expanded, &sources, "caller.contract", 0).unwrap();
+        c_tactic_source_position(&expanded, &sources, "caller.contract", 0).unwrap();
     // Expansion verifies on fresh kernel tables, so it runs before the
     // session is built: a session's environment names its own tables.
     let (session, _) =
-        C0VerificationSession::new(click_source, &sources).expect("baseline should verify");
+        ProgramVerificationSession::new(click_source, &sources).expect("baseline should verify");
 
     let verified = session
         .verify_at(&expanded, expanded_position.line, expanded_position.column)
@@ -1173,7 +1173,7 @@ int32 caller(int32 x) {
 
     let shifted = expanded.replacen("int32 caller", "\n\nint32 caller", 1);
     let shifted_position =
-        c0_tactic_source_position(&shifted, &sources, "caller.contract", 0).unwrap();
+        c_tactic_source_position(&shifted, &sources, "caller.contract", 0).unwrap();
     assert_ne!(shifted_position.line, position.line);
     session
         .verify_at(&shifted, shifted_position.line, shifted_position.column)
@@ -1212,11 +1212,11 @@ int32 same(int32 x) {
 }
 "#;
     let sources = [("same.c", c_source)];
-    let position = c0_tactic_source_position(click_source, &sources, "same.contract", 0).unwrap();
+    let position = c_tactic_source_position(click_source, &sources, "same.contract", 0).unwrap();
     let theorem_offset = click_source.find("solve();").unwrap();
     let theorem_position = expansion::position_at_offset(click_source, theorem_offset);
     let (session, _) =
-        C0VerificationSession::new(click_source, &sources).expect("baseline should verify");
+        ProgramVerificationSession::new(click_source, &sources).expect("baseline should verify");
     // A theorem target starts no retained environment; it still checks
     // inside the session's tables instead of replacing them.
     session
@@ -1225,7 +1225,7 @@ int32 same(int32 x) {
     session
         .verify_at(click_source, position.line, position.column)
         .expect("the session reuses its own kernel tables");
-    verify_c0_sources(click_source, &sources).expect("an unrelated verification succeeds");
+    verify_c_sources(click_source, &sources).expect("an unrelated verification succeeds");
     let error = session
         .verify_at(click_source, position.line, position.column)
         .expect_err("the session's kernel tables were replaced");
@@ -1270,8 +1270,8 @@ int32 stuck(int32 n) diverges {
     ensures result == 0;
 }"#;
     let sources = [("countdown.c", good_c), ("stuck.c", partial_c)];
-    let (session, _) =
-        C0VerificationSession::new(click_source, &sources).expect("both contracts should verify");
+    let (session, _) = ProgramVerificationSession::new(click_source, &sources)
+        .expect("both contracts should verify");
 
     assert!(session.function_termination_is_verified("countdown"));
     assert!(!session.function_termination_is_verified("stuck"));
@@ -1319,7 +1319,7 @@ int32 caller(int32 x) {
     let both = format!("verifying \"wait.c\";\n\n{wait_contract}\n{caller_contract}");
     let sources = [("wait.c", c_source)];
 
-    let error = C0VerificationSession::new(&both, &sources)
+    let error = ProgramVerificationSession::new(&both, &sources)
         .err()
         .expect("an unranked loop is refused");
     assert!(
@@ -1373,7 +1373,7 @@ int32 caller(int32 x) {
 }
 "#;
     let sources = [("wait.c", c_source)];
-    let error = C0VerificationSession::new(click_source, &sources)
+    let error = ProgramVerificationSession::new(click_source, &sources)
         .err()
         .expect("an unmarked caller of a diverging function is refused");
     assert!(
@@ -1388,7 +1388,7 @@ int32 caller(int32 x) {
         "int32 caller(int32 x) {",
         "int32 caller(int32 x) diverges {",
     );
-    let (session, _) = C0VerificationSession::new(&marked, &sources)
+    let (session, _) = ProgramVerificationSession::new(&marked, &sources)
         .expect("marking the caller admits the divergence");
     assert!(!session.function_termination_is_verified("caller"));
 }
@@ -1417,7 +1417,7 @@ int32 two() {
     ensures result == 2;
 }
 "#;
-    let (session, _) = C0VerificationSession::new(click_source, &[("two.c", c_source)])
+    let (session, _) = ProgramVerificationSession::new(click_source, &[("two.c", c_source)])
         .expect("a call DAG with no loops terminates by height alone");
     assert!(session.function_termination_is_verified("one"));
     assert!(session.function_termination_is_verified("two"));
@@ -1466,7 +1466,7 @@ int32 drain(int32 n) {
     solve();
 }
 "#;
-    let (session, _) = C0VerificationSession::new(click_source, &[("drain.c", c_source)])
+    let (session, _) = ProgramVerificationSession::new(click_source, &[("drain.c", c_source)])
         .expect("the ranked loop verifies");
     assert!(session.function_termination_is_verified("drain"));
 }
@@ -1587,7 +1587,7 @@ fn unfolding_composite_rejects_concretely_overlapping_owned_children() {
         }
     "#;
 
-    let error = verify_c0_sources(click_source, &[("preserve.c", c_source)])
+    let error = verify_c_sources(click_source, &[("preserve.c", c_source)])
         .expect_err("a composite fact must not authorize overlapping owned children");
     assert!(
         error.message().contains(
@@ -1625,7 +1625,7 @@ fn unfolding_composite_accepts_propositionally_equal_arguments() {
         }
     "#;
 
-    verify_c0_sources(click_source, &[("preserve.c", c_source)])
+    verify_c_sources(click_source, &[("preserve.c", c_source)])
         .expect("unfold should retain its equality-aware resource-consumption fallback");
 }
 
@@ -1655,13 +1655,13 @@ int32 top(int32 x) { ensures result == x; }
 int32 unrelated(int32 x) { ensures result == x; }
 "#;
     let changed = baseline.replacen("} by solve();", "}", 1);
-    let selection = c0_incremental_selection(&changed, &sources, baseline, &sources).unwrap();
+    let selection = c_incremental_selection(&changed, &sources, baseline, &sources).unwrap();
     assert_eq!(selection.selected_functions, ["leaf", "middle", "top"]);
     assert_eq!(selection.reused_functions, ["unrelated"]);
     assert!(!selection.full_rebuild);
     let incremental =
-        verify_c0_sources_functions(&changed, &sources, selection.selected_functions.clone());
-    let clean = verify_c0_sources(&changed, &sources);
+        verify_c_sources_functions(&changed, &sources, selection.selected_functions.clone());
+    let clean = verify_c_sources(&changed, &sources);
     assert!(clean.is_ok(), "clean verification failed: {clean:?}");
     assert_eq!(incremental.is_ok(), clean.is_ok(), "{incremental:?}");
 
@@ -1675,7 +1675,7 @@ int32 unrelated(int32 x) { ensures result == x; }
         sources[3],
     ];
     let unchanged =
-        c0_incremental_selection(baseline, &commented_sources, baseline, &sources).unwrap();
+        c_incremental_selection(baseline, &commented_sources, baseline, &sources).unwrap();
     assert!(unchanged.selected_functions.is_empty(), "{unchanged:?}");
     assert_eq!(unchanged.reused_functions.len(), 4);
 }
@@ -1695,7 +1695,7 @@ int32 first(int32 x) { ensures result == x; } by solve();
 int32 second(int32 x) { ensures result == x; } by solve();
 "#;
     let changed = baseline.replace("x == x", "x == 0");
-    let selection = c0_incremental_selection(&changed, &sources, baseline, &sources).unwrap();
+    let selection = c_incremental_selection(&changed, &sources, baseline, &sources).unwrap();
     assert!(selection.full_rebuild);
     assert_eq!(selection.selected_functions, ["first", "second"]);
     assert!(selection.reused_functions.is_empty());
@@ -1738,7 +1738,7 @@ int32 apply(int32 (*callback)(int32, int32), int32 left, int32 right) {
 }
 "#;
     let changed = baseline.replace("ensures result == left - right;", "ensures result >= 0;");
-    let selection = c0_incremental_selection(&changed, &sources, baseline, &sources).unwrap();
+    let selection = c_incremental_selection(&changed, &sources, baseline, &sources).unwrap();
     assert!(selection.full_rebuild, "{selection:?}");
     assert_eq!(selection.selected_functions, ["apply", "compare"]);
     assert!(selection.reused_functions.is_empty(), "{selection:?}");
@@ -1754,7 +1754,7 @@ spec enum Flag { Off, On }
 int32 first(int32 x) { ensures result == x; } by solve();
 "#;
     let changed = baseline.replace("Off, On", "Off, On, Unset");
-    let selection = c0_incremental_selection(&changed, &sources, baseline, &sources).unwrap();
+    let selection = c_incremental_selection(&changed, &sources, baseline, &sources).unwrap();
     assert!(selection.full_rebuild, "{selection:?}");
     assert_eq!(selection.selected_functions, ["first"]);
 }
@@ -1779,7 +1779,7 @@ int32 read_cap() { ensures result == 0; } by solve();
 int32 unrelated() { ensures result == 0; } by solve();
 "#;
 
-    let selection = c0_incremental_selection(
+    let selection = c_incremental_selection(
         click_source,
         &current_sources,
         click_source,
@@ -1834,14 +1834,14 @@ fn perpetual_service_example_verifies_stably_across_repeated_runs() {
             .expect("the example C sources should resolve");
         let sources = crate::cli::source_refs(&c_sources);
         let (verified, _events) =
-            crate::instrumentation::collect(|| verify_c0_sources(&click_source, &sources));
+            crate::instrumentation::collect(|| verify_c_sources(&click_source, &sources));
         verified.unwrap_or_else(|error| {
             panic!("`{}` failed: {}", click_path.display(), error.message())
         });
         // The flaky fold lives in `service_step`; repeat its verification to
         // pin cross-run determinism of the shared caches and interners.
         for round in 0..4 {
-            verify_c0_sources_functions(&click_source, &sources, ["service_step".to_string()])
+            verify_c_sources_functions(&click_source, &sources, ["service_step".to_string()])
                 .unwrap_or_else(|error| {
                     panic!(
                         "repeat round {round}: `{}` failed: {}",
@@ -1874,7 +1874,7 @@ fn truncated_service_step_reports_the_budget_not_a_missing_fact() {
             ..Default::default()
         };
         let result = crate::instrumentation::with_tactic_work_limits(limits, || {
-            verify_c0_sources_functions(&click_source, &sources, ["service_step".to_string()])
+            verify_c_sources_functions(&click_source, &sources, ["service_step".to_string()])
         });
         let Err(error) = result else {
             continue;
@@ -1904,7 +1904,7 @@ fn example_project_creates_only_canonical_terms(project: &str, sidecar: &str) {
         .unwrap_or_else(|error| panic!("failed to load `{}`: {error}", path.display()));
     let c_sources = crate::cli::source_refs(&sources);
     let (verified, violations) = crate::kernel::count_canonical_at_creation_violations(|| {
-        verify_c0_sources(&click_source, &c_sources)
+        verify_c_sources(&click_source, &c_sources)
     });
     verified.unwrap_or_else(|error| panic!("`{}` failed: {error:?}", path.display()));
     assert_eq!(
@@ -1929,7 +1929,7 @@ fn owned_split_buffer_carried_load_facts_stay_on_direct_proof_path() {
     let sources = crate::cli::read_verifying_sources(&path, &click_source)
         .unwrap_or_else(|error| panic!("failed to load `{}`: {error}", path.display()));
     let c_sources = crate::cli::source_refs(&sources);
-    let verified = verify_c0_sources(&click_source, &c_sources);
+    let verified = verify_c_sources(&click_source, &c_sources);
     verified.unwrap_or_else(|error| panic!("`{}` failed: {error:?}", path.display()));
 }
 
@@ -2000,7 +2000,7 @@ fn verifications_on_one_thread_are_independent() {
         let path = manifest.join("examples").join(project).join(sidecar);
         let click_source = std::fs::read_to_string(&path).unwrap();
         let sources = crate::cli::read_verifying_sources(&path, &click_source).unwrap();
-        verify_c0_sources(&click_source, &crate::cli::source_refs(&sources))
+        verify_c_sources(&click_source, &crate::cli::source_refs(&sources))
             .unwrap_or_else(|error| panic!("`{project}` failed: {error:?}"));
     }
 }
@@ -2070,9 +2070,9 @@ pub(super) fn combine_names_and_work_in_order(
             let sources = [("pipe.c", c_source.as_str())];
             let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
                 if selected {
-                    verify_c0_sources_functions(&click_source, &sources, ["combine".to_string()])
+                    verify_c_sources_functions(&click_source, &sources, ["combine".to_string()])
                 } else {
-                    verify_c0_sources(&click_source, &sources)
+                    verify_c_sources(&click_source, &sources)
                 }
             });
             result.unwrap_or_else(|error| {
@@ -2116,7 +2116,7 @@ int32 f() {ensures result==4;} by {
     step(); have x==4 by {solve();}
     step_until(function.exit); solve();
 }"#;
-    verify_c0_sources(proof, &[("assignment.c", source)]).unwrap();
+    verify_c_sources(proof, &[("assignment.c", source)]).unwrap();
     for (from, to, diagnostic) in [
         (
             "assignment(x, 0)",
@@ -2132,7 +2132,7 @@ int32 f() {ensures result==4;} by {
         ("have x==3", "have x==4", "x"),
     ] {
         let error =
-            verify_c0_sources(&proof.replace(from, to), &[("assignment.c", source)]).unwrap_err();
+            verify_c_sources(&proof.replace(from, to), &[("assignment.c", source)]).unwrap_err();
         assert!(error.message().contains(diagnostic), "{error:?}");
     }
 }
@@ -2148,12 +2148,12 @@ int32 f() {ensures result==4;} by {
     step_until(assignment(x, 1)); have x==3 by {solve();}
     step(); step_until(function.exit); solve();
 }"#;
-    verify_c0_sources(proof, &[("assignment.c", source)]).unwrap();
+    verify_c_sources(proof, &[("assignment.c", source)]).unwrap();
     let exited = proof.replace(
         "step(); step_until(function.exit); solve();",
         "step(); step_until(function.exit); step_until(assignment(x, 1)); solve();",
     );
-    let error = verify_c0_sources(&exited, &[("assignment.c", source)]).unwrap_err();
+    let error = verify_c_sources(&exited, &[("assignment.c", source)]).unwrap_err();
     assert!(error.message().contains("assignment(x, 1)"), "{error:?}");
     assert!(error.message().contains("function exit"), "{error:?}");
     for source in [
@@ -2162,10 +2162,10 @@ int32 f() {ensures result==4;} by {
     ] {
         let proof = r#"verifying "assignment.c";
 int32 f(int32 n) {ensures result==1; } by {step_until(assignment(x, 0)); step(); step_until(function.exit); solve();}"#;
-        assert!(verify_c0_sources(proof, &[("assignment.c", source)]).is_err());
+        assert!(verify_c_sources(proof, &[("assignment.c", source)]).is_err());
     }
     let snapshots = proof.replace("have x==3", "have at(assignment(x, 0).entry, x==3)");
-    assert!(verify_c0_sources(&snapshots, &[("assignment.c", source)]).is_err());
+    assert!(verify_c_sources(&snapshots, &[("assignment.c", source)]).is_err());
 }
 
 #[test]
@@ -2177,17 +2177,17 @@ fn execute_until_read_checks_access_and_retains_real_loaded_bounds() {
 int32 f(const uint8* p) {views p[0..1]; ensures 0<=result and result<=255;} by {
     step_until(read(0)); step(); have 0<=x and x<=255 by {solve();} step_until(function.exit); solve();
 }"#;
-    verify_c0_sources(proof, &[("read.c", source)]).unwrap();
+    verify_c_sources(proof, &[("read.c", source)]).unwrap();
     for (from, to) in [
         ("views p[0..1];", ""),
         ("read(0)", "read(1)"),
         ("have 0<=x and x<=255", "have x==256"),
     ] {
-        assert!(verify_c0_sources(&proof.replace(from, to), &[("read.c", source)]).is_err());
+        assert!(verify_c_sources(&proof.replace(from, to), &[("read.c", source)]).is_err());
     }
     let backwards = proof.replace("step(); have", "step(); step_until(read(0)); have");
     assert!(
-        verify_c0_sources(&backwards, &[("read.c", source)])
+        verify_c_sources(&backwards, &[("read.c", source)])
             .unwrap_err()
             .message()
             .contains("backward")
@@ -2211,7 +2211,7 @@ int32 f(const uint8* p) {views p[0..1]; ensures result==0;} by {
     have 0<=value as int32 and 255>=value as int32 by {solve();}
     step_until(function.exit); solve();
 }"#;
-    verify_c0_sources(proof, &[("read.c", source)]).unwrap();
+    verify_c_sources(proof, &[("read.c", source)]).unwrap();
     for invalid in [
         proof.replace("views p[0..1];", ""),
         proof.replace("255>=value as int32", "256==value as int32"),
@@ -2229,7 +2229,7 @@ int32 f(const uint8* p) {views p[0..1]; ensures result==0;} by {
             "step_until(read(0)); step(); step();",
         ),
     ] {
-        assert!(verify_c0_sources(&invalid, &[("read.c", source)]).is_err());
+        assert!(verify_c_sources(&invalid, &[("read.c", source)]).is_err());
     }
 }
 

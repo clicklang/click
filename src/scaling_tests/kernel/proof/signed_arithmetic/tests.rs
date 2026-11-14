@@ -400,7 +400,8 @@ fn exact_definedness_refuses_small_mismatch_without_expanding_shared_guard() {
     let mut measurements = Vec::new();
     for size in [8, 32, 96] {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut root = KernelTerm::variable(KernelType::C(format.c_type()), Variable(982300));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(format.program_type()), Variable(982300));
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {
                 root = KernelTerm::arithmetic_binary(
@@ -463,8 +464,10 @@ fn definedness_source_matching_reuses_shared_prefixes() {
         let mut import = KernelTermImport::default();
         let mut left = import.machine(format, &MachineTerm::constant(1));
         let mut right = import.machine(format, &MachineTerm::uint32_constant(1));
-        let variable =
-            KernelTerm::variable(KernelType::C(crate::kernel::CType::Int32), Variable(982500));
+        let variable = KernelTerm::variable(
+            KernelType::Program(crate::kernel::ProgramType::Int32),
+            Variable(982500),
+        );
         left = KernelTerm::machine_binary_shared(
             format,
             MachineBinaryOp::Add,

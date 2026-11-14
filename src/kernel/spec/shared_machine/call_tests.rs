@@ -13,7 +13,7 @@ const FORMATS: [MachineIntegerType; 8] = [
 fn call(format: MachineIntegerType, name: &str) -> KernelTerm {
     let application = SharedPureApplication::intern(
         name.into(),
-        vec![PureFunctionArgument::Value(CValue::Int32(
+        vec![PureFunctionArgument::Value(ProgramValue::Int32(
             MachineTerm::Variable(Variable(995810)),
         ))],
     );
@@ -35,7 +35,7 @@ fn native_term(value: &MachineTerm) -> MachineTerm {
                         PureFunctionArgument::Value(value) => {
                             if let crate::kernel::integer_c_value!(term) = value {
                                 PureFunctionArgument::Value(
-                                    MachineIntegerType::from_c_type(value.c_type())
+                                    MachineIntegerType::from_program_type(value.program_type())
                                         .unwrap()
                                         .value_from_term(native_term(term)),
                                 )
@@ -158,7 +158,7 @@ fn common_call_arithmetic_preserves_native_values_and_domains() {
                 for defined in [false, true] {
                     let mut execution = ExecutionBudget::new();
                     let mut budget = SpecEvaluation::logical(&mut execution);
-                    budget.c_definedness = defined;
+                    budget.program_definedness = defined;
                     let expected = crate::kernel::eval::apply_spec_machine_arithmetic(
                         op,
                         if defined {
@@ -177,7 +177,7 @@ fn common_call_arithmetic_preserves_native_values_and_domains() {
                         apply_values(Some(op), &l.clone().into(), &r.clone().into(), &budget)
                             .unwrap();
                     assert_eq!(KernelTermExport::machine_export_count(), exports);
-                    let CExpressionOutcome::Value(expected_value) = expected.outcome else {
+                    let ExpressionOutcome::Value(expected_value) = expected.outcome else {
                         panic!()
                     };
                     assert_eq!(
@@ -236,7 +236,7 @@ fn common_call_root_readings_keep_wide_refusals_and_borrow_arguments() {
             format.format().bits() != 128
         );
         if format.format().bits() == 128 {
-            assert!(cast(&root.clone().into(), CType::Int32).is_none());
+            assert!(cast(&root.clone().into(), ProgramType::Int32).is_none());
             let mut execution = ExecutionBudget::new();
             let budget = SpecEvaluation::logical(&mut execution);
             assert!(
@@ -261,16 +261,16 @@ mod scaling_tests {
 fn wide_call_identity_casts_keep_the_native_type_refusal() {
     let _session = VerificationSession::enter();
     for source in [MachineIntegerType::Int128, MachineIntegerType::UInt128] {
-        for target in [CType::Int128, CType::UInt128, CType::Int32] {
+        for target in [ProgramType::Int128, ProgramType::UInt128, ProgramType::Int32] {
             for count in [1, 3] {
                 let root = call(source, "wide_call");
                 let native = SpecValue::Shared(root.clone()).into_native();
-                let state = CState::new();
+                let state = ExecutionState::new();
                 let mut values = crate::persistent::PersistentMap::default();
                 values.insert("x".to_string(), root);
                 for shared in [false, true] {
                     let mut expression = if shared {
-                        SpecExpression::CExpression(CExpression::Variable("x".into()))
+                        SpecExpression::ProgramExpression(ProgramExpression::Variable("x".into()))
                     } else {
                         SpecExpression::Value(native.clone())
                     };
@@ -294,7 +294,7 @@ fn wide_call_identity_casts_keep_the_native_type_refusal() {
                     assert!(paths.is_empty());
                     assert_eq!(
                         budget.dropped_runtime_error,
-                        Some(CRuntimeError::TypeMismatch)
+                        Some(RuntimeError::TypeMismatch)
                     );
                     if shared {
                         assert_eq!(KernelTermExport::machine_export_count(), exports);
@@ -312,7 +312,7 @@ fn call_expression(format: MachineIntegerType, arguments: Vec<SpecExpression>) -
             .into_iter()
             .map(SpecPureFunctionArgument::Value)
             .collect(),
-        result_type: format.c_type(),
+        result_type: format.program_type(),
         pointer_result: None,
         result_object_class: None,
         projection: None,
@@ -325,7 +325,7 @@ fn produced_paths(expression: &SpecExpression, legacy: bool) -> Vec<SpecExpressi
     budget.machine_preparation_disabled = legacy;
     budget.machine_result_production_disabled = legacy;
     evaluate_spec_expression_paths_with_algebraic_bindings_in(
-        SpecScope::unbound(&CState::new(), None),
+        SpecScope::unbound(&ExecutionState::new(), None),
         expression,
         &PureFactContext::new(),
         &mut budget,
@@ -336,7 +336,7 @@ fn produced_paths(expression: &SpecExpression, legacy: bool) -> Vec<SpecExpressi
 #[test]
 fn actual_call_producers_keep_all_integer_types_and_nested_arguments() {
     let _session = VerificationSession::enter();
-    let input = SpecExpression::Value(CValue::Int32(MachineTerm::Variable(Variable(995830))));
+    let input = SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(995830))));
     for format in FORMATS
         .into_iter()
         .chain([MachineIntegerType::Int128, MachineIntegerType::UInt128])
@@ -352,7 +352,7 @@ fn actual_call_producers_keep_all_integer_types_and_nested_arguments() {
             let SpecValue::Shared(root) = &paths[0].value else {
                 panic!("common call result")
             };
-            assert_eq!(root.ty(), &KernelType::C(format.c_type()));
+            assert_eq!(root.ty(), &KernelType::Program(format.program_type()));
             assert!(matches!(root.node(), KernelTermNode::Call { .. }));
             assert!(paths[0].facts.is_empty());
             assert!(paths[0].obligations.is_empty());
@@ -361,7 +361,7 @@ fn actual_call_producers_keep_all_integer_types_and_nested_arguments() {
             let native = expected[0].value.clone().into_native();
             assert_eq!(
                 KernelTermExport::machine(root).unwrap(),
-                native_term(&c_value_bitvector_term(&native).unwrap())
+                native_term(&program_value_bitvector_term(&native).unwrap())
             );
         }
     }
@@ -378,7 +378,7 @@ fn actual_call_results_keep_deferred_bindings_and_wide_cast_refusals() {
         let bound = SpecExpression::Let {
             name: "result".into(),
             value: Box::new(call.clone()),
-            body: Box::new(SpecExpression::CExpression(CExpression::Variable(
+            body: Box::new(SpecExpression::ProgramExpression(ProgramExpression::Variable(
                 "result".into(),
             ))),
         };
@@ -386,14 +386,14 @@ fn actual_call_results_keep_deferred_bindings_and_wide_cast_refusals() {
         assert_eq!(produced_paths(&bound, false), produced_paths(&call, false));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         if format.format().bits() == 128 {
-            for target in [CType::Int128, CType::UInt128, CType::Int32] {
+            for target in [ProgramType::Int128, ProgramType::UInt128, ProgramType::Int32] {
                 let cast = SpecExpression::Cast(Box::new(call.clone()), target);
                 for legacy in [false, true] {
                     let mut execution = ExecutionBudget::new();
                     let mut budget = SpecEvaluation::logical(&mut execution);
                     budget.machine_result_production_disabled = legacy;
                     let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                        SpecScope::unbound(&CState::new(), None),
+                        SpecScope::unbound(&ExecutionState::new(), None),
                         &cast,
                         &PureFactContext::new(),
                         &mut budget,
@@ -402,7 +402,7 @@ fn actual_call_results_keep_deferred_bindings_and_wide_cast_refusals() {
                     assert!(paths.is_empty());
                     assert_eq!(
                         budget.dropped_runtime_error,
-                        Some(CRuntimeError::TypeMismatch)
+                        Some(RuntimeError::TypeMismatch)
                     );
                 }
             }
@@ -424,7 +424,7 @@ fn actual_call_native_handoff_retains_nested_call_arguments() {
     let child = root.children()[0].clone();
     let exports = KernelTermExport::machine_export_count();
     let native = paths.pop().unwrap().value.into_native();
-    let CValue::Int32(MachineTerm::ClickFunctionApplication { arguments, .. }) = native else {
+    let ProgramValue::Int32(MachineTerm::ClickFunctionApplication { arguments, .. }) = native else {
         panic!()
     };
     let [PureFunctionArgument::SharedMachine(value)] = arguments.as_slice() else {
@@ -438,11 +438,11 @@ fn actual_call_native_handoff_retains_nested_call_arguments() {
 fn actual_call_arithmetic_keeps_native_values_and_definedness() {
     let _session = VerificationSession::enter();
     let call = call_expression(MachineIntegerType::Int32, vec![]);
-    let one = SpecExpression::Value(CValue::Int32(MachineTerm::constant(1)));
+    let one = SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(1)));
     for expression in [
         SpecExpression::Add(Box::new(call.clone()), Box::new(one.clone())),
         SpecExpression::Divide(Box::new(one.clone()), Box::new(call.clone())),
-        SpecExpression::Cast(Box::new(call.clone()), CType::UInt64),
+        SpecExpression::Cast(Box::new(call.clone()), ProgramType::UInt64),
         call_expression(
             MachineIntegerType::Int32,
             vec![SpecExpression::Add(Box::new(call), Box::new(one))],
@@ -454,9 +454,9 @@ fn actual_call_arithmetic_keeps_native_values_and_definedness() {
                 let mut budget = SpecEvaluation::logical(&mut execution);
                 budget.machine_preparation_disabled = legacy;
                 budget.machine_result_production_disabled = legacy;
-                budget.c_definedness = defined;
+                budget.program_definedness = defined;
                 evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                    SpecScope::unbound(&CState::new(), None),
+                    SpecScope::unbound(&ExecutionState::new(), None),
                     &expression,
                     &PureFactContext::new(),
                     &mut budget,
@@ -475,7 +475,7 @@ fn actual_call_arithmetic_keeps_native_values_and_definedness() {
             let native = expected[0].value.clone().into_native();
             assert_eq!(
                 KernelTermExport::machine(root).unwrap(),
-                c_value_bitvector_term(&native).unwrap()
+                program_value_bitvector_term(&native).unwrap()
             );
             assert_eq!(actual[0].facts, expected[0].facts);
             assert_eq!(actual[0].obligations.len(), expected[0].obligations.len());
@@ -506,12 +506,12 @@ fn actual_call_comparisons_preserve_native_fact_forms() {
         let other =
             SpecValue::Native(format.value_from_term(MachineTerm::Variable(Variable(995832))));
         for op in [
-            CComparisonOperator::Equal,
-            CComparisonOperator::NotEqual,
-            CComparisonOperator::LessThan,
-            CComparisonOperator::LessEqual,
-            CComparisonOperator::GreaterThan,
-            CComparisonOperator::GreaterEqual,
+            ComparisonOperator::Equal,
+            ComparisonOperator::NotEqual,
+            ComparisonOperator::LessThan,
+            ComparisonOperator::LessEqual,
+            ComparisonOperator::GreaterThan,
+            ComparisonOperator::GreaterEqual,
         ] {
             let exports = KernelTermExport::machine_export_count();
             assert_eq!(

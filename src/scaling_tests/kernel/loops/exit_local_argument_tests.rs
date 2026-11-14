@@ -9,10 +9,10 @@ use super::*;
 #[test]
 fn exit_local_argument_lookup_skips_unrelated_locals() {
     let _session = crate::kernel::VerificationSession::enter();
-    let (binder, instances) = fixture(CResourceSnapshot::Current);
+    let (binder, instances) = fixture(ResourceSnapshot::Current);
     let mut costs = Vec::new();
     for size in [16, 64, 256, 1024] {
-        let mut ambient = CState::new();
+        let mut ambient = ExecutionState::new();
         for index in 0..size {
             ambient = ambient.with_local(format!("other{index}"), int32(index));
         }
@@ -30,7 +30,7 @@ fn exit_local_argument_lookup_skips_unrelated_locals() {
                 &[PureFactContext::new(), PureFactContext::new()],
             )
         });
-        assert_eq!(arguments, vec![Some(AlgebraicValue::C(int32(3)))]);
+        assert_eq!(arguments, vec![Some(AlgebraicValue::Program(int32(3)))]);
         costs.push(work);
     }
     assert!(
@@ -42,12 +42,12 @@ fn exit_local_argument_lookup_skips_unrelated_locals() {
 #[test]
 fn exit_local_argument_context_indexing_is_linear_and_shared() {
     let _session = crate::kernel::VerificationSession::enter();
-    let (binder, instances) = fixture(CResourceSnapshot::Current);
+    let (binder, instances) = fixture(ResourceSnapshot::Current);
     let exits = [
-        CState::new().with_local("cur", int32(1)),
-        CState::new().with_local("cur", int32(2)),
+        ExecutionState::new().with_local("cur", int32(1)),
+        ExecutionState::new().with_local("cur", int32(2)),
     ];
-    let successor = CState::new().with_local("cur", int32(3));
+    let successor = ExecutionState::new().with_local("cur", int32(3));
     for size in [4, 16, 64, 256] {
         let facts = (0..size)
             .map(|index| {
@@ -68,7 +68,7 @@ fn exit_local_argument_context_indexing_is_linear_and_shared() {
         for _ in 0..size {
             assert_eq!(
                 loop_exit_local_arguments(&successor, &exits, &binder, &instances, &contexts),
-                vec![Some(AlgebraicValue::C(int32(3)))]
+                vec![Some(AlgebraicValue::Program(int32(3)))]
             );
         }
         assert_eq!(
@@ -99,7 +99,7 @@ fn exit_argument_checks_reuse_the_checked_path_context() {
             root = root.with_fact(fact(931_000 + index, index as u32));
         }
         let path = root.with_fact(selected.clone());
-        let exit = CLoopBreakExit::from_proof_facts(CState::new(), &path);
+        let exit = LoopBreakExit::from_proof_facts(ExecutionState::new(), &path);
         let facts = exit
             .pure_facts()
             .iter()

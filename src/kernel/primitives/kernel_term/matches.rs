@@ -28,7 +28,9 @@ pub struct KernelConstructor {
 
 fn import_value(import: &mut KernelTermImport, value: &AlgebraicValue) -> KernelTerm {
     match value {
-        AlgebraicValue::C(value) => import.argument(&PureFunctionArgument::Value(value.clone())),
+        AlgebraicValue::Program(value) => {
+            import.argument(&PureFunctionArgument::Value(value.clone()))
+        }
         AlgebraicValue::Integer(value) => import.integer(&value.clone().into()),
         AlgebraicValue::Algebraic(value) => {
             import.argument(&PureFunctionArgument::Algebraic(value.clone()))
@@ -41,7 +43,7 @@ fn export_value(
     value: &KernelTerm,
 ) -> Result<AlgebraicValue, &'static str> {
     match export.argument(value)? {
-        PureFunctionArgument::Value(value) => Ok(AlgebraicValue::C(value)),
+        PureFunctionArgument::Value(value) => Ok(AlgebraicValue::Program(value)),
         PureFunctionArgument::Integer(value) => Ok(AlgebraicValue::Integer(value.as_ref().clone())),
         PureFunctionArgument::Algebraic(value) => Ok(AlgebraicValue::Algebraic(value)),
         _ => Err("unsupported match field carrier"),
@@ -49,7 +51,7 @@ fn export_value(
 }
 
 impl KernelMatchArm {
-    fn import(
+    pub(crate) fn import(
         import: &mut KernelTermImport,
         variant: &str,
         bindings: &[AlgebraicValue],
@@ -77,12 +79,12 @@ impl KernelMatchArm {
             .map(|value| {
                 // A word variable declaration has no expression tree to
                 // export. Reify its existing typed descriptor directly.
-                if let (KernelType::C(ty), KernelTermNode::Variable(variable)) =
+                if let (KernelType::Program(ty), KernelTermNode::Variable(variable)) =
                     (value.ty(), value.node())
-                    && let Some(format) = MachineIntegerType::from_c_type(*ty)
+                    && let Some(format) = MachineIntegerType::from_program_type(*ty)
                 {
                     crate::instrumentation::record_deterministic_work(1);
-                    return Ok(AlgebraicValue::C(machine::wrap_exact(
+                    return Ok(AlgebraicValue::Program(machine::wrap_exact(
                         format,
                         MachineTerm::Variable(*variable),
                     )));
@@ -94,6 +96,10 @@ impl KernelMatchArm {
 }
 
 impl KernelMatch {
+    pub(crate) fn into_term(self) -> KernelTerm {
+        KernelTerm::intern(self.result_type.clone(), KernelTermNode::Match(self))
+    }
+
     pub(crate) fn new(
         result_type: KernelType,
         scrutinee: KernelTerm,
@@ -156,7 +162,12 @@ impl KernelMatch {
         let arms = arms
             .iter()
             .map(|arm| {
-                let body = import.machine(format, &arm.body);
+                // Arithmetic carriers retain unsupported syntax as opaque
+                // leaves, just as they do outside a match arm.
+                let body = KernelTerm::retained_machine_operand(
+                    format,
+                    MachineOperandView::Legacy(&arm.body),
+                );
                 KernelMatchArm::import(
                     import,
                     &arm.variant,
@@ -167,7 +178,7 @@ impl KernelMatch {
             })
             .collect();
         Some(
-            Self::new(KernelType::C(format.c_type()), scrutinee, arms)
+            Self::new(KernelType::Program(format.program_type()), scrutinee, arms)
                 .expect("native machine match types"),
         )
     }
@@ -238,10 +249,10 @@ impl KernelMatch {
         &self,
         export: &mut KernelTermExport,
     ) -> Result<MachineTerm, &'static str> {
-        let KernelType::C(ty) = self.result_type else {
+        let KernelType::Program(ty) = self.result_type else {
             return Err("expected machine match");
         };
-        if MachineIntegerType::from_c_type(ty).is_none() {
+        if MachineIntegerType::from_program_type(ty).is_none() {
             return Err("expected machine integer match");
         }
         Ok(MachineTerm::AlgebraicMatch {
@@ -259,35 +270,6 @@ impl KernelMatch {
                     })
                 })
                 .collect::<Result<_, &'static str>>()?,
-        })
-    }
-    pub(crate) fn export_algebraic(
-        &self,
-        export: &mut KernelTermExport,
-    ) -> Result<AlgebraicTerm, &'static str> {
-        let KernelType::Algebraic(ty) = &self.result_type else {
-            return Err("expected algebraic match");
-        };
-        let scrutinee = self.export_scrutinee(export)?;
-        let arms = self
-            .arms
-            .iter()
-            .zip(&self.arguments[1..])
-            .map(|(arm, body)| {
-                let PureFunctionArgument::Algebraic(body) = export.argument(body)? else {
-                    return Err("expected algebraic arm");
-                };
-                Ok(AlgebraicResultMatchArm {
-                    variant: arm.variant.clone(),
-                    bindings: arm.export_bindings(export)?,
-                    body,
-                    binding_names: arm.binding_names.clone(),
-                })
-            })
-            .collect::<Result<_, &'static str>>()?;
-        Ok(AlgebraicTerm {
-            algebraic_type: ty.clone(),
-            node: AlgebraicTermNode::Match { scrutinee, arms },
         })
     }
 }
@@ -360,6 +342,110 @@ mod tests {
         BindingNames::written(&["field".into()])
     }
     #[test]
+    fn numeric_match_roots_preserve_observation_identity_and_typed_arms() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let native = MachineTerm::AlgebraicMatch {
+            scrutinee: Box::new(scrutinee()),
+            arms: vec![AlgebraicBitvectorMatchArm {
+                variant: "Box".into(),
+                bindings: binding(),
+                binding_names: names(),
+                body: MachineTerm::add(
+                    MachineTerm::Variable(Variable(991981)),
+                    MachineTerm::constant(1),
+                ),
+            }],
+        };
+        for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
+            let a = KernelTermImport::default().machine(format, &native);
+            let b = KernelTermImport::default().machine(format, &native);
+            assert!(matches!(a.node(), KernelTermNode::Match(_)));
+            let exports = KernelTermExport::machine_export_count();
+            let observed = SharedMachineIntegerTerm::observe_shared(format, a.clone()).unwrap();
+            assert_eq!(
+                observed,
+                SharedMachineIntegerTerm::observe_shared(format, b.clone()).unwrap()
+            );
+            assert_eq!(
+                observed,
+                SharedMachineIntegerTerm::intern(format, native.clone())
+            );
+            assert!(crate::kernel::shared_machine_syntax_equal(&a, &b));
+            let other = if format == MachineIntegerType::Int32 {
+                MachineIntegerType::UInt64
+            } else {
+                MachineIntegerType::Int32
+            };
+            let reread = a.with_machine_observation_type(other);
+            assert_eq!(
+                SharedMachineIntegerTerm::observe_shared(other, reread).unwrap(),
+                SharedMachineIntegerTerm::intern(other, native.clone())
+            );
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert_eq!(KernelTermExport::machine(&a).unwrap(), native);
+        }
+    }
+
+    #[test]
+    fn numeric_match_arms_retain_boolean_casts_in_arithmetic_storage() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
+            let cast = MachineTerm::BoolCast {
+                to: format,
+                value: Box::new(ConditionTerm::Variable(Variable(991982))),
+            };
+            for body in [
+                cast.clone(),
+                MachineTerm::add(cast, MachineTerm::constant(1)),
+            ] {
+                let native = MachineTerm::AlgebraicMatch {
+                    scrutinee: Box::new(scrutinee()),
+                    arms: vec![AlgebraicBitvectorMatchArm {
+                        variant: "Box".into(),
+                        bindings: binding(),
+                        binding_names: names(),
+                        body,
+                    }],
+                };
+                let root = KernelTermImport::default().machine(format, &native);
+                let observed = SharedMachineIntegerTerm::observe_shared(format, root.clone())
+                    .expect("opaque arm leaves fit arithmetic storage");
+                assert_eq!(
+                    observed,
+                    SharedMachineIntegerTerm::intern(format, native.clone())
+                );
+                assert_eq!(KernelTermExport::machine(&root).unwrap(), native);
+            }
+        }
+    }
+
+    #[test]
+    fn numeric_match_imports_share_opaque_body_observation_identity() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let native = MachineTerm::AlgebraicMatch {
+            scrutinee: Box::new(scrutinee()),
+            arms: vec![AlgebraicBitvectorMatchArm {
+                variant: "Box".into(),
+                bindings: binding(),
+                binding_names: names(),
+                body: MachineTerm::ClickFunctionApplication {
+                    name: "opaque_body".into(),
+                    arguments: vec![],
+                },
+            }],
+        };
+        let format = MachineIntegerType::Int32;
+        let root = KernelTermImport::default().machine(format, &native);
+        let exports = KernelTermExport::machine_export_count();
+        let observed = SharedMachineIntegerTerm::observe_shared(format, root).unwrap();
+        // Exercise a cold arithmetic import before `intern` records an alias.
+        let imported = SharedMachineIntegerTerm::import_arithmetic(format, &native).unwrap();
+        assert_eq!(observed, imported);
+        assert_eq!(observed, SharedMachineIntegerTerm::intern(format, native));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    #[test]
     fn match_payload_round_trips_each_result_family_and_binding_names() {
         let mut import = KernelTermImport::default();
         let mut export = KernelTermExport::default();
@@ -388,7 +474,10 @@ mod tests {
                 }],
             };
             let common = KernelMatch::import_machine(&mut import, format, &native).unwrap();
-            assert_eq!(common.arguments[1].ty(), &KernelType::C(format.c_type()));
+            assert_eq!(
+                common.arguments[1].ty(),
+                &KernelType::Program(format.program_type())
+            );
             assert_eq!(common.export_machine(&mut export).unwrap(), native);
         }
         let native = AlgebraicTerm {
@@ -404,7 +493,7 @@ mod tests {
             },
         };
         let common = KernelMatch::import_algebraic(&mut import, &native).unwrap();
-        assert_eq!(common.export_algebraic(&mut export).unwrap(), native);
+        assert_eq!(export.algebraic(&common.into_term()).unwrap(), native);
     }
     #[test]
     fn match_payload_preserves_arm_order_and_rejects_mixed_result_sorts() {
@@ -446,7 +535,7 @@ mod tests {
             KernelMatch::new(
                 KernelType::Integer,
                 scrutinee,
-                vec![arm("Box", KernelType::C(CType::Int32))]
+                vec![arm("Box", KernelType::Program(ProgramType::Int32))]
             )
             .is_err()
         );

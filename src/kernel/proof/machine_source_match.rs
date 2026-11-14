@@ -11,6 +11,7 @@ use std::hash::{Hash, Hasher};
 enum Shape {
     Atom(KernelTerm),
     Fold(Variable, Variable, [usize; 4]),
+    Match(AlgebraicTerm, Vec<(String, Vec<AlgebraicValue>, usize)>),
     If(ConditionTerm, [usize; 2]),
     Native(MachineTerm),
     Application(SharedPureApplication),
@@ -84,6 +85,7 @@ impl<'a> MachineSourceMatcher<'a> {
                 continue;
             }
             let children: Vec<_> = match term.node() {
+                KernelTermNode::Match(matched) => matched.arguments[1..].iter().collect(),
                 KernelTermNode::Fold(fold) => fold.arguments.iter().collect(),
                 KernelTermNode::MachineIf { arguments } => arguments[1..].iter().collect(),
                 KernelTermNode::MachineBinary { arguments, .. } => arguments.iter().collect(),
@@ -97,6 +99,27 @@ impl<'a> MachineSourceMatcher<'a> {
                 continue;
             }
             let shape = match term.node() {
+                KernelTermNode::Match(matched) => {
+                    let mut export = KernelTermExport::default();
+                    let PureFunctionArgument::Algebraic(scrutinee) =
+                        export.argument(&matched.arguments[0]).ok()?
+                    else {
+                        return None;
+                    };
+                    let arms = matched
+                        .arms
+                        .iter()
+                        .zip(&matched.arguments[1..])
+                        .map(|(arm, body)| {
+                            Some((
+                                arm.variant.clone(),
+                                arm.export_bindings(&mut export).ok()?,
+                                self.nodes[&body.id()],
+                            ))
+                        })
+                        .collect::<Option<Vec<_>>>()?;
+                    Shape::Match(scrutinee, arms)
+                }
                 KernelTermNode::Fold(fold) => Shape::Fold(
                     fold.accumulator,
                     fold.item,
@@ -167,10 +190,10 @@ mod tests {
     #[test]
     fn selected_opaque_sources_keep_types_snapshots_and_refusals() {
         let _session = VerificationSession::enter();
-        let memory = intern_c_memory(CMemory::new().with_block("opaque-source", 16));
-        let later = intern_c_memory(memory.memory().clone().with_block("later", 16));
-        let pointer = CMemory::global_pointer("opaque-source");
-        let opaque = |memory: SharedCMemory, name| MachineTerm::If {
+        let memory = intern_memory(Memory::new().with_block("opaque-source", 16));
+        let later = intern_memory(memory.memory().clone().with_block("later", 16));
+        let pointer = Memory::global_pointer("opaque-source");
+        let opaque = |memory: SharedMemory, name| MachineTerm::If {
             condition: ConditionTerm::Variable(Variable(name)).into(),
             then_term: MachineTerm::MemoryLoad(memory, pointer.clone().into(), LoadKind::Int32)
                 .into(),

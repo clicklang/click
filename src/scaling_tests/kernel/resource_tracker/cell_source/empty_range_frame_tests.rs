@@ -10,7 +10,7 @@ fn empty_range_frames_ignore_related_and_unrelated_separation_candidates() {
             let base = Pointer::symbolic(Variable(9_952_000));
             let read = Pointer::symbolic(Variable(9_952_001));
             let bound = MachineTerm::Variable(Variable(9_952_002));
-            let range = CMemoryRange::new(base.clone(), bound.clone(), bound);
+            let range = MemoryRange::new(base.clone(), bound.clone(), bound);
             let mut context = PureFactContext::new();
             for index in 0..size {
                 let candidate_base = if related {
@@ -18,13 +18,13 @@ fn empty_range_frames_ignore_related_and_unrelated_separation_candidates() {
                 } else {
                     Pointer::symbolic(Variable(9_953_000 + index))
                 };
-                context = context.assume_proposition(Proposition::CResourceSeparate {
-                    left: Box::new(CResource::Memory(CMemoryRange::new(
+                context = context.assume_proposition(Proposition::ResourceSeparate {
+                    left: Box::new(Resource::Memory(MemoryRange::new(
                         candidate_base,
                         ((index * 2) as u32).into(),
                         ((index * 2 + 1) as u32).into(),
                     ))),
-                    right: Box::new(CResource::Memory(CMemoryRange::new(
+                    right: Box::new(Resource::Memory(MemoryRange::new(
                         read.clone(),
                         0u32.into(),
                         1u32.into(),

@@ -65,7 +65,7 @@ impl<'a> Proof<'a> {
                 definition.contains().iter().any(|spec| {
                     matches!(
                         spec.term(),
-                        crate::kernel::CResourceTerm::PopulationAuthority { .. }
+                        crate::kernel::ResourceTerm::PopulationAuthority { .. }
                     )
                 })
             })
@@ -431,7 +431,8 @@ impl<'a> Proof<'a> {
                 None
             }
         };
-        let before: &CState = outcome.map_or(&*execution.core.state, |goal| &*goal.data.core.state);
+        let before: &ExecutionState =
+            outcome.map_or(&*execution.core.state, |goal| &*goal.data.core.state);
         let pre_state = context.old_reference_state(&execution.core.frontier, before);
         let constructed;
         let instance = if let Some(fields) = &binding.fold_fields {
@@ -454,7 +455,7 @@ impl<'a> Proof<'a> {
                 outcome.map(|goal| &*goal.data.core.result),
                 self.facts().assumptions(),
             )?;
-            let CResourceFact::Own(CResource::Composite { name, arguments }, _) = lowered else {
+            let ResourceFact::Own(Resource::Composite { name, arguments }, _) = lowered else {
                 return Err(self.step_error("fold construction requires an owned resource"));
             };
             let definition = context
@@ -553,7 +554,7 @@ impl<'a> Proof<'a> {
             .function
             .composite_resource_definition(instance.name())
             .ok_or_else(|| self.step_error("resource instance has no registered body"))?;
-        let selected = CResourceFact::own(CResource::Instance(instance.clone()));
+        let selected = ResourceFact::own(Resource::Instance(instance.clone()));
         // `let { field: name } = unfold(instance)` names the folded value of a
         // scalar field, as a matched constructor payload names its value. The
         // instance is consumed by this unfold, so the binder is the only
@@ -742,7 +743,7 @@ impl<'a> Proof<'a> {
                     ..
                 } => {
                     let term = |value: &AlgebraicValue| match value {
-                        AlgebraicValue::C(value) => Term::CValue(value.clone()),
+                        AlgebraicValue::Program(value) => Term::ProgramValue(value.clone()),
                         AlgebraicValue::Integer(value) => Term::Integer(value.clone()),
                         AlgebraicValue::Algebraic(value) => Term::Algebraic(value.clone()),
                     };
@@ -1121,10 +1122,10 @@ impl<'a> Proof<'a> {
     /// completed map and checks it exactly as a written one.
     fn fold_children_with_defaults(
         &self,
-        before: &CState,
+        before: &ExecutionState,
         instance: &crate::kernel::ResourceInstance,
-        definition: &crate::kernel::CCompositeResourceDefinition,
-        definitions: &[crate::kernel::CCompositeResourceDefinition],
+        definition: &crate::kernel::CompositeResourceDefinition,
+        definitions: &[crate::kernel::CompositeResourceDefinition],
         explicit: Arc<[(String, Variable)]>,
         defaults: &[(String, String, Variable)],
     ) -> Result<Arc<[(String, Variable)]>, ClickError> {
@@ -1202,10 +1203,12 @@ impl<'a> Proof<'a> {
                 );
             }
             match &instance.fields()[index] {
-                AlgebraicValue::C(value) => {
+                AlgebraicValue::Program(value) => {
                     locals.values = locals.values.with_inserted(
                         name.clone(),
-                        ContractExpression::CFragment(CExpression::Value(value.clone())),
+                        ContractExpression::ProgramExpression(ProgramExpression::Value(
+                            value.clone(),
+                        )),
                     );
                 }
                 // Declaration expansion admits only C-typed field binders.
@@ -1265,7 +1268,8 @@ impl<'a> Proof<'a> {
                         integer_values = integer_values.with_inserted(name.clone(), value.clone());
                     }
                 }
-                let state = CState::new().with_memory(context.theorem_context.memory.clone());
+                let state =
+                    ExecutionState::new().with_memory(context.theorem_context.memory.clone());
                 self.apply_function_unfold_in_state(
                     application,
                     premises,
@@ -1374,7 +1378,7 @@ impl<'a> Proof<'a> {
         &self,
         application: &ClickFunctionApplication,
         premises: Option<&[ClickProposition]>,
-        values: BTreeMap<String, CValue>,
+        values: BTreeMap<String, ProgramValue>,
         array_refs: ClickArrayRefs,
         algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
         integer_values: &crate::persistent::PersistentMap<
@@ -1784,7 +1788,7 @@ impl<'a> Proof<'a> {
         definition: &ClickFunctionDefinition,
         premises: &[ClickProposition],
         equality: &Proposition,
-        values: &BTreeMap<String, CValue>,
+        values: &BTreeMap<String, ProgramValue>,
         array_refs: &ClickArrayRefs,
         algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
         integer_values: &crate::persistent::PersistentMap<
@@ -2205,7 +2209,7 @@ impl<'a> Proof<'a> {
                 parameters
                     .iter()
                     .find(|parameter| parameter.name() == name)
-                    .map(syntax::C0Parameter::c_type)
+                    .map(crate::languages::interface::ImportedParameter::interface_type)
             })
         });
         unfold_structural_invariant_proposition(
@@ -2434,7 +2438,7 @@ impl<'a> Proof<'a> {
         let state = &*execution.core.state;
         let parameters = context.parsed_function.parameters();
         let element =
-            |element: &IteratedElement| -> Result<crate::kernel::CMemoryRange, ClickError> {
+            |element: &IteratedElement| -> Result<crate::kernel::MemoryRange, ClickError> {
                 let captured;
                 let segment = match element {
                     IteratedElement::Current(segment) => segment,
@@ -2461,7 +2465,7 @@ impl<'a> Proof<'a> {
                                 context.spec_definitions,
                                 &BTreeSet::new(),
                             )
-                            .map(CExpression::Value)
+                            .map(ProgramExpression::Value)
                             .map_err(|message| {
                                 self.step_error(format!("`{name}` operand: {message}"))
                             })
@@ -2472,9 +2476,9 @@ impl<'a> Proof<'a> {
                         captured = ContractSegment {
                             state: ContractSegmentState::Current,
                             surface: ContractSegmentSurface::Range {
-                                base: ContractExpression::CFragment(base.clone()),
-                                start: ContractExpression::CFragment(start.clone()),
-                                end: ContractExpression::CFragment(end.clone()),
+                                base: ContractExpression::ProgramExpression(base.clone()),
+                                start: ContractExpression::ProgramExpression(start.clone()),
+                                end: ContractExpression::ProgramExpression(end.clone()),
                             },
                             base,
                             start,
@@ -2684,7 +2688,7 @@ impl<'a> Proof<'a> {
             }
             transition.locals.values = transition.locals.values.with_inserted(
                 name.clone(),
-                ContractExpression::CFragment(CExpression::Value(value.clone())),
+                ContractExpression::ProgramExpression(ProgramExpression::Value(value.clone())),
             );
         }
         Ok(transition)
@@ -2797,7 +2801,7 @@ impl<'a> Proof<'a> {
                 .values
                 .iter()
                 .filter_map(|(name, value)| match value {
-                    ContractExpression::CFragment(CExpression::Value(value)) => {
+                    ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
                         Some((value.clone(), name.clone()))
                     }
                     _ => None,
@@ -2952,7 +2956,9 @@ impl<'a> Proof<'a> {
             resource,
             &BTreeMap::from([(
                 "result".to_string(),
-                ContractExpression::CFragment(CExpression::Value((*goal.data.core.result).clone())),
+                ContractExpression::ProgramExpression(ProgramExpression::Value(
+                    (*goal.data.core.result).clone(),
+                )),
             )]),
         )
         .map_err(|message| self.step_error(message))?;
@@ -3081,7 +3087,7 @@ impl<'a> Proof<'a> {
             .core
             .frontier
             .execution_start_state(&execution.core.state);
-        let outcome = CFunctionOutcome::Return {
+        let outcome = FunctionOutcome::Return {
             value: (*goal.data.core.result).clone().into(),
             state: Box::new((*goal.data.core.state).clone()),
         };
@@ -3101,7 +3107,7 @@ impl<'a> Proof<'a> {
             closure,
             family_reaches_population,
         )?;
-        let CFunctionOutcome::Return { value, state } = checked.outcome else {
+        let FunctionOutcome::Return { value, state } = checked.outcome else {
             unreachable!("folding a return outcome preserves its outcome kind")
         };
         // Ordinary macro folds keep their final contract-definition law.
@@ -3110,15 +3116,15 @@ impl<'a> Proof<'a> {
         // ordinary refold, including a static wrapper with no guarded body.
         // Contracts with only ordinary outputs retain their definition law.
         let operational_exchange = match checked.selected.resource() {
-            CResource::Composite { name, .. } => context
+            Resource::Composite { name, .. } => context
                 .function
                 .composite_resource_definition(name)
                 .is_some_and(|definition| {
                     definition.contains().iter().any(|spec| {
                         matches!(
                             spec.term(),
-                            crate::kernel::CResourceTerm::PopulationAuthority { .. }
-                                | crate::kernel::CResourceTerm::Iterated(_)
+                            crate::kernel::ResourceTerm::PopulationAuthority { .. }
+                                | crate::kernel::ResourceTerm::Iterated(_)
                         )
                     })
                 }),
@@ -3138,7 +3144,7 @@ impl<'a> Proof<'a> {
                     .any(|spec| spec.is_instance())
                 || (self.is_authority_transfer_wrapper(resource) && family_reaches_population))
         {
-            let viewed = CResourceFact::View(checked.selected.resource().clone());
+            let viewed = ResourceFact::View(checked.selected.resource().clone());
             let selected = if state
                 .resources()
                 .directly_supporting_fact(&checked.selected, self.facts().assumptions())
@@ -3229,7 +3235,7 @@ impl<'a> Proof<'a> {
             &value,
         )?;
         let assumptions = self.facts().assumptions();
-        let state = crate::kernel::construct_c_function_resource(
+        let state = crate::kernel::construct_program_function_resource(
             &state,
             context.function,
             context.arguments,
@@ -3307,7 +3313,9 @@ fn fold_end_parameter_name(end: &ContractExpression) -> Option<&String> {
     match end {
         ContractExpression::Binding(binding)
         | ContractExpression::CBinding(binding)
-        | ContractExpression::CFragment(CExpression::Variable(binding)) => Some(binding),
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(binding)) => {
+            Some(binding)
+        }
         _ => None,
     }
 }

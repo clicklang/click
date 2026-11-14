@@ -17,14 +17,14 @@ fn retained_contract_result_storage_and_exit_memory_skip_expression_prefixes() {
             );
         }
         let value = StoredExecutionValue::from(ExecutionValue::from(root.clone()));
-        let function = c_function(
-            CType::UInt32,
+        let function = program_function(
+            ProgramType::UInt32,
             "result",
             Vec::new(),
-            c_return(c_uint32_literal(0)),
+            program_return(crate::kernel::program_expression::uint32_literal(0)),
         );
-        let mut state = CState::new();
-        let caller = CState::new();
+        let mut state = ExecutionState::new();
+        let caller = ExecutionState::new();
         let exports = KernelTermExport::machine_export_count();
         let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {

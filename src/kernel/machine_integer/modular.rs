@@ -200,7 +200,8 @@ mod tests {
     use crate::kernel::*;
 
     fn shared(ty: MachineIntegerType, depth: usize) -> IntegerTerm {
-        let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1007100));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1007100));
         for _ in 0..depth {
             root =
                 KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [root.clone(), root]);

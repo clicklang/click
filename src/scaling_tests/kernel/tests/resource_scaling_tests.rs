@@ -27,21 +27,21 @@ fn heap_base(identity: u64) -> Pointer {
     }
 }
 
-fn owned_range(base: Pointer, start: u32, end: u32) -> CResourceFact {
-    CResourceFact::own_memory(CMemoryRange::new(
+fn owned_range(base: Pointer, start: u32, end: u32) -> ResourceFact {
+    ResourceFact::own_memory(MemoryRange::new(
         base,
         MachineTerm::constant(start),
         MachineTerm::constant(end),
     ))
 }
 
-fn owned_instance(identity: u64) -> CResourceFact {
+fn owned_instance(identity: u64) -> ResourceFact {
     let schema = ResourceFieldSchema::new(vec![(
         "revision".into(),
-        ResourceFieldType::C(CType::Int32),
+        ResourceFieldType::Program(ProgramType::Int32),
     )])
     .unwrap();
-    CResourceFact::own(CResource::Instance(
+    ResourceFact::own(Resource::Instance(
         ResourceInstance::new(
             Variable(identity),
             "counter".into(),
@@ -120,53 +120,61 @@ fn private_local_copy_ignores_unrelated_resources() {
                         .chain((0..size).map(|index| format!("beside_{index}")))
                         .collect(),
                 );
-                let declare = |state: &CState, name: &str, c_type: CType| {
-                    let mut paths = execute_c_statement_paths(
+                let declare = |state: &ExecutionState, name: &str, interface_type: ProgramType| {
+                    let mut paths = execute_execution_statement_paths(
                         state,
-                        &c_declare(name, c_type),
+                        &program_declare(name, interface_type),
                         &PureFactContext::new(),
-                        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+                        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
                         &mut ExecutionBudget::default(),
                     )
                     .expect("the private local declares");
                     assert_eq!(paths.len(), 1);
-                    let CStatementOutcome::Normal(next) = paths.remove(0).outcome else {
+                    let StatementOutcome::Normal(next) = paths.remove(0).outcome else {
                         panic!("declaration did not have a normal outcome");
                     };
                     *next
                 };
-                let (c_type, initial, value, expression) = if pointer_copy {
-                    let value = CValue::typed_pointer(heap_base(TARGET_HEAP), CType::UInt8Pointer);
+                let (interface_type, initial, value, expression) = if pointer_copy {
+                    let value = ProgramValue::typed_pointer(
+                        heap_base(TARGET_HEAP),
+                        ProgramType::UInt8Pointer,
+                    );
                     (
-                        CType::UInt8Pointer,
+                        ProgramType::UInt8Pointer,
                         value.clone(),
                         value.clone(),
-                        CExpression::Value(value),
+                        ProgramExpression::Value(value),
                     )
                 } else {
-                    (CType::Int32, int32(0), int32(9), c_int32_literal(9))
+                    (
+                        ProgramType::Int32,
+                        int32(0),
+                        int32(9),
+                        crate::kernel::program_expression::int32_literal(9),
+                    )
                 };
                 let mut state = if address_backed {
-                    declare(&CState::new(), "target", c_type)
+                    declare(&ExecutionState::new(), "target", interface_type)
                 } else {
-                    CState::new().with_local("target", initial)
+                    ExecutionState::new().with_local("target", initial)
                 };
                 for index in 0..size {
-                    state = declare(&state, &format!("beside_{index}"), CType::Int32);
+                    state = declare(&state, &format!("beside_{index}"), ProgramType::Int32);
                 }
                 let resources = state.resources().clone();
                 let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
-                    execute_c_statement_paths(
+                    execute_execution_statement_paths(
                         &state,
-                        &c_assign("target", expression.clone()),
+                        &program_assign("target", expression.clone()),
                         &PureFactContext::new(),
-                        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+                        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
                         &mut ExecutionBudget::default(),
                     )
                     .expect("the scalar assignment executes")
                 });
                 assert_eq!(paths.len(), 1);
-                let CStatementOutcome::Normal(next) = &paths[0].outcome else {
+                let StatementOutcome::Normal(next) = &paths[0].outcome else {
                     panic!("assignment did not have a normal outcome");
                 };
                 assert_eq!(next.locals().get_native("target").as_deref(), Some(&value));
@@ -202,12 +210,12 @@ fn private_owner_projection_does_not_republish_discarded_pairings() {
             );
         }
         let base = ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+            .unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
                 heap_base(1),
                 0u32.into(),
                 1u32.into(),
             )))
-            .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+            .unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
                 heap_base(2),
                 0u32.into(),
                 1u32.into(),
@@ -215,12 +223,11 @@ fn private_owner_projection_does_not_republish_discarded_pairings() {
         let expected = base.observable_facts_assuming_valid(&assumptions);
         let mut resources = base;
         for index in 0..size {
-            resources =
-                resources.unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
-                    CMemory::local_pointer(&format!("hidden_{index}")),
-                    0u32.into(),
-                    1u32.into(),
-                )));
+            resources = resources.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
+                Memory::local_pointer(&format!("hidden_{index}")),
+                0u32.into(),
+                1u32.into(),
+            )));
         }
         resources.synchronize_memory_equalities(&assumptions);
         let (observed, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -340,8 +347,7 @@ fn indexed_validity_still_finds_every_violation_kind() {
             "a duplicate instance beside {size} allocations"
         );
 
-        let invalid_access =
-            CResourceFact::View(owned_instance(2 * TARGET_HEAP).resource().clone());
+        let invalid_access = ResourceFact::View(owned_instance(2 * TARGET_HEAP).resource().clone());
         assert_eq!(
             frame
                 .clone()
@@ -388,43 +394,50 @@ fn indexed_validity_still_finds_every_violation_kind() {
 /// field, and a parent `holder(p)` whose field `at` sets that child's
 /// `start` and whose child is passed `p`: the body shapes of a plain-field
 /// endpoint and a field-to-field child equation.
-fn field_endpoint_definitions() -> Vec<CCompositeResourceDefinition> {
-    let suffix_schema =
-        ResourceFieldSchema::new(vec![("start".into(), ResourceFieldType::C(CType::Int32))])
-            .unwrap();
-    let holder_schema =
-        ResourceFieldSchema::new(vec![("at".into(), ResourceFieldType::C(CType::Int32))]).unwrap();
-    let suffix = CCompositeResourceDefinition::new(
+fn field_endpoint_definitions() -> Vec<CompositeResourceDefinition> {
+    let suffix_schema = ResourceFieldSchema::new(vec![(
+        "start".into(),
+        ResourceFieldType::Program(ProgramType::Int32),
+    )])
+    .unwrap();
+    let holder_schema = ResourceFieldSchema::new(vec![(
+        "at".into(),
+        ResourceFieldType::Program(ProgramType::Int32),
+    )])
+    .unwrap();
+    let suffix = CompositeResourceDefinition::new(
         "suffix",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
-        vec![CResourceSpec::owned_memory(CMemorySegment {
+        vec![ResourceSpec::owned_memory(MemorySegment {
             uninitialized: false,
             value_runs: Default::default(),
-            base: c_variable("p"),
-            start: c_variable("start"),
-            end: c_int32_literal(8),
+            base: crate::kernel::program_expression::variable("p"),
+            start: crate::kernel::program_expression::variable("start"),
+            end: crate::kernel::program_expression::int32_literal(8),
             element_width: 4,
             guard: None,
         })],
         vec![],
     )
     .with_instance_schema(Some(suffix_schema));
-    let holder = CCompositeResourceDefinition::new(
+    let holder = CompositeResourceDefinition::new(
         "holder",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![],
         vec![],
     )
-    .with_children(vec![CResourceChildSpec {
+    .with_children(vec![ResourceChildSpec {
         name: "rest".into(),
         resource: "suffix".into(),
         binding: Variable(90),
-        arguments: vec![SpecExpression::CExpression(c_variable("p"))],
-        field_bindings: vec![CResourceChildField::Parent(0)],
+        arguments: vec![SpecExpression::ProgramExpression(
+            crate::kernel::program_expression::variable("p"),
+        )],
+        field_bindings: vec![ResourceChildField::Parent(0)],
     }])
     .with_instance_schema(Some(holder_schema));
     // Definitions are looked up by binary search on their names.
@@ -435,8 +448,12 @@ fn field_endpoint_instance(name: &str, field: &str, identity: u64) -> ResourceIn
     ResourceInstance::new(
         Variable(identity),
         name.into(),
-        vec![CValue::pointer(heap_base(TARGET_HEAP)).into()].into(),
-        ResourceFieldSchema::new(vec![(field.into(), ResourceFieldType::C(CType::Int32))]).unwrap(),
+        vec![ProgramValue::pointer(heap_base(TARGET_HEAP)).into()].into(),
+        ResourceFieldSchema::new(vec![(
+            field.into(),
+            ResourceFieldType::Program(ProgramType::Int32),
+        )])
+        .unwrap(),
         vec![int32(2).into()].into(),
     )
     .unwrap()
@@ -457,14 +474,14 @@ fn field_endpoint_fold_and_unfold_ignore_unrelated_resources() {
                     owned_instance(TARGET_HEAP + 1 + index as u64),
                 ]
             }))
-            .unchecked_with_facts([CResourceFact::own(CResource::Instance(parent.clone()))]);
-        let state = CState::new().with_resource_context(frame);
+            .unchecked_with_facts([ResourceFact::own(Resource::Instance(parent.clone()))]);
+        let state = ExecutionState::new().with_resource_context(frame);
         let assumptions = PureFactContext::new();
         let children = vec![("rest".to_string(), child.identity)];
         let (round_trip, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let rewrite = |state: &CState,
+            let rewrite = |state: &ExecutionState,
                            instance: &ResourceInstance,
-                           definition: &CCompositeResourceDefinition,
+                           definition: &CompositeResourceDefinition,
                            unfold: bool,
                            children: Option<&[(String, Variable)]>| {
                 crate::kernel::rewrite_resource_instance_selecting_children(
@@ -502,31 +519,33 @@ fn field_endpoint_fold_and_unfold_ignore_unrelated_resources() {
 /// `cells` one-element ranges of `p`, the first starting at its own `start`
 /// field: the body shape whose cells a folded instance publishes as read
 /// authority to its sibling contract clauses.
-fn window_definitions(cells: u32) -> Vec<CCompositeResourceDefinition> {
-    let schema =
-        ResourceFieldSchema::new(vec![("start".into(), ResourceFieldType::C(CType::Int32))])
-            .unwrap();
+fn window_definitions(cells: u32) -> Vec<CompositeResourceDefinition> {
+    let schema = ResourceFieldSchema::new(vec![(
+        "start".into(),
+        ResourceFieldType::Program(ProgramType::Int32),
+    )])
+    .unwrap();
     let contains = (0..cells)
         .map(|cell| {
-            CResourceSpec::owned_memory(CMemorySegment {
+            ResourceSpec::owned_memory(MemorySegment {
                 uninitialized: false,
                 value_runs: Default::default(),
-                base: c_variable("p"),
+                base: crate::kernel::program_expression::variable("p"),
                 start: if cell == 0 {
-                    c_variable("start")
+                    crate::kernel::program_expression::variable("start")
                 } else {
-                    c_int32_literal(cell)
+                    crate::kernel::program_expression::int32_literal(cell)
                 },
-                end: c_int32_literal(cell + 1),
+                end: crate::kernel::program_expression::int32_literal(cell + 1),
                 element_width: 4,
                 guard: None,
             })
         })
         .collect();
     vec![
-        CCompositeResourceDefinition::new(
+        CompositeResourceDefinition::new(
             "window",
-            vec![c_parameter("p", CType::Int32Pointer)],
+            vec![program_parameter("p", ProgramType::Int32Pointer)],
             None,
             false,
             contains,
@@ -536,14 +555,17 @@ fn window_definitions(cells: u32) -> Vec<CCompositeResourceDefinition> {
     ]
 }
 
-fn window_instance(block: u64, identity: u64) -> CResourceFact {
-    CResourceFact::own(CResource::Instance(
+fn window_instance(block: u64, identity: u64) -> ResourceFact {
+    ResourceFact::own(Resource::Instance(
         ResourceInstance::new(
             Variable(identity),
             "window".into(),
-            vec![CValue::pointer(heap_base(block)).into()].into(),
-            ResourceFieldSchema::new(vec![("start".into(), ResourceFieldType::C(CType::Int32))])
-                .unwrap(),
+            vec![ProgramValue::pointer(heap_base(block)).into()].into(),
+            ResourceFieldSchema::new(vec![(
+                "start".into(),
+                ResourceFieldType::Program(ProgramType::Int32),
+            )])
+            .unwrap(),
             vec![int32(0).into()].into(),
         )
         .unwrap(),
@@ -565,7 +587,7 @@ fn unmatched_instance_body_views_ignore_unrelated_instances() {
                 window_instance(index as u64 + 1, TARGET_HEAP + 1 + index as u64),
             ]
         }));
-        let state = CState::new().with_resource_context(frame);
+        let state = ExecutionState::new().with_resource_context(frame);
         let target = window_instance(TARGET_HEAP, 2 * TARGET_HEAP);
         let assumptions = PureFactContext::new();
         let (supply, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -580,7 +602,7 @@ fn unmatched_instance_body_views_ignore_unrelated_instances() {
             .facts()
             .iter()
             .filter(|fact| {
-                matches!(fact, CResourceFact::View(CResource::Memory(range))
+                matches!(fact, ResourceFact::View(Resource::Memory(range))
                     if range.base().block == PointerBlock::Heap(TARGET_HEAP))
             })
             .count();
@@ -605,7 +627,7 @@ fn unmatched_instance_body_views_are_linear_in_the_body() {
     let mut samples = Vec::new();
     for size in BODY_SIZES {
         let definitions = window_definitions(size as u32);
-        let state = CState::new();
+        let state = ExecutionState::new();
         let target = window_instance(TARGET_HEAP, 2 * TARGET_HEAP);
         let assumptions = PureFactContext::new();
         let (supply, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -619,7 +641,7 @@ fn unmatched_instance_body_views_are_linear_in_the_body() {
         let published = supply
             .facts()
             .iter()
-            .filter(|fact| matches!(fact, CResourceFact::View(CResource::Memory(_))))
+            .filter(|fact| matches!(fact, ResourceFact::View(Resource::Memory(_))))
             .count();
         assert_eq!(published, size, "every owned cell of the body is published");
         samples.push((size, work));
@@ -642,42 +664,44 @@ fn unmatched_instance_body_views_are_linear_in_the_body() {
 /// one-element ranges of `p`: the shape of `arena_state` owning
 /// `arena_cells`, where the published cells sit one composite below the
 /// instance's body.
-fn holder_definitions(cells: u32) -> Vec<CCompositeResourceDefinition> {
-    let schema =
-        ResourceFieldSchema::new(vec![("start".into(), ResourceFieldType::C(CType::Int32))])
-            .unwrap();
+fn holder_definitions(cells: u32) -> Vec<CompositeResourceDefinition> {
+    let schema = ResourceFieldSchema::new(vec![(
+        "start".into(),
+        ResourceFieldType::Program(ProgramType::Int32),
+    )])
+    .unwrap();
     let child_contains = (0..cells)
         .map(|cell| {
-            CResourceSpec::owned_memory(CMemorySegment {
+            ResourceSpec::owned_memory(MemorySegment {
                 uninitialized: false,
                 value_runs: Default::default(),
-                base: c_variable("p"),
-                start: c_int32_literal(cell),
-                end: c_int32_literal(cell + 1),
+                base: crate::kernel::program_expression::variable("p"),
+                start: crate::kernel::program_expression::int32_literal(cell),
+                end: crate::kernel::program_expression::int32_literal(cell + 1),
                 element_width: 4,
                 guard: None,
             })
         })
         .collect();
     vec![
-        CCompositeResourceDefinition::new(
+        CompositeResourceDefinition::new(
             "cells",
-            vec![c_parameter("p", CType::Int32Pointer)],
+            vec![program_parameter("p", ProgramType::Int32Pointer)],
             None,
             false,
             child_contains,
             vec![],
         ),
-        CCompositeResourceDefinition::new(
+        CompositeResourceDefinition::new(
             "holder",
-            vec![c_parameter("p", CType::Int32Pointer)],
+            vec![program_parameter("p", ProgramType::Int32Pointer)],
             None,
             false,
-            vec![CResourceSpec::composite(
-                CResourceAccessMode::Own,
+            vec![ResourceSpec::composite(
+                ResourceAccessMode::Own,
                 "cells".into(),
-                vec![c_variable("p")],
-                vec![CType::Int32Pointer],
+                vec![crate::kernel::program_expression::variable("p")],
+                vec![ProgramType::Int32Pointer],
             )],
             vec![],
         )
@@ -685,14 +709,17 @@ fn holder_definitions(cells: u32) -> Vec<CCompositeResourceDefinition> {
     ]
 }
 
-fn holder_instance(block: u64, identity: u64) -> CResourceFact {
-    CResourceFact::own(CResource::Instance(
+fn holder_instance(block: u64, identity: u64) -> ResourceFact {
+    ResourceFact::own(Resource::Instance(
         ResourceInstance::new(
             Variable(identity),
             "holder".into(),
-            vec![CValue::pointer(heap_base(block)).into()].into(),
-            ResourceFieldSchema::new(vec![("start".into(), ResourceFieldType::C(CType::Int32))])
-                .unwrap(),
+            vec![ProgramValue::pointer(heap_base(block)).into()].into(),
+            ResourceFieldSchema::new(vec![(
+                "start".into(),
+                ResourceFieldType::Program(ProgramType::Int32),
+            )])
+            .unwrap(),
             vec![int32(0).into()].into(),
         )
         .unwrap(),
@@ -713,7 +740,7 @@ fn nested_composite_body_views_ignore_unrelated_instances() {
                 holder_instance(index as u64 + 1, TARGET_HEAP + 1 + index as u64),
             ]
         }));
-        let state = CState::new().with_resource_context(frame);
+        let state = ExecutionState::new().with_resource_context(frame);
         let target = holder_instance(TARGET_HEAP, 2 * TARGET_HEAP);
         let assumptions = PureFactContext::new();
         let (supply, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -728,7 +755,7 @@ fn nested_composite_body_views_ignore_unrelated_instances() {
             .facts()
             .iter()
             .filter(|fact| {
-                matches!(fact, CResourceFact::View(CResource::Memory(range))
+                matches!(fact, ResourceFact::View(Resource::Memory(range))
                     if range.base().block == PointerBlock::Heap(TARGET_HEAP))
             })
             .count();
@@ -750,7 +777,7 @@ fn nested_composite_body_views_are_linear_in_the_child_body() {
     let mut samples = Vec::new();
     for size in SIZES {
         let definitions = holder_definitions(size as u32);
-        let state = CState::new();
+        let state = ExecutionState::new();
         let target = holder_instance(TARGET_HEAP, 2 * TARGET_HEAP);
         let assumptions = PureFactContext::new();
         let (supply, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -764,7 +791,7 @@ fn nested_composite_body_views_are_linear_in_the_child_body() {
         let published = supply
             .facts()
             .iter()
-            .filter(|fact| matches!(fact, CResourceFact::View(CResource::Memory(_))))
+            .filter(|fact| matches!(fact, ResourceFact::View(Resource::Memory(_))))
             .count();
         assert!(published >= 1, "the child's cells are published");
         samples.push((size, work));
@@ -821,8 +848,8 @@ fn a_kept_cell_is_placed_without_visiting_unrelated_ranges() {
     assert_constant_plus_log_growth("kept cell placement", &samples, 4.0);
 }
 
-fn variable_range(base: Pointer, start: MachineTerm, end: MachineTerm) -> CResourceFact {
-    CResourceFact::own_memory(CMemoryRange::new(base, start, end))
+fn variable_range(base: Pointer, start: MachineTerm, end: MachineTerm) -> ResourceFact {
+    ResourceFact::own_memory(MemoryRange::new(base, start, end))
 }
 
 fn int32_equal(left: u64, right: u64) -> ConditionTerm {
@@ -967,8 +994,8 @@ fn parameter_base(identity: u64) -> Pointer {
     }
 }
 
-fn parameter_object(identity: u64) -> CResourceFact {
-    CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+fn parameter_object(identity: u64) -> ResourceFact {
+    ResourceFact::own_memory(MemoryRange::new_with_element_width(
         parameter_base(identity),
         MachineTerm::constant(0),
         MachineTerm::constant(3),
@@ -988,12 +1015,12 @@ fn parameter_frame(count: usize) -> (ResourceContext, PureFactContext) {
         .unchecked_with_facts(
             (0..count as u64).map(|index| parameter_object(FIRST_PARAMETER + index)),
         )
-        .unchecked_with_fact(CResourceFact::own_composite(
+        .unchecked_with_fact(ResourceFact::own_composite(
             "holder".into(),
-            vec![CValue::pointer(parameter_base(FIRST_PARAMETER - 1))],
+            vec![ProgramValue::pointer(parameter_base(FIRST_PARAMETER - 1))],
         ));
     let assumptions =
-        PureFactContext::new().assume_proposition(Proposition::CResourceComposition(frame.clone()));
+        PureFactContext::new().assume_proposition(Proposition::ResourceComposition(frame.clone()));
     (frame, assumptions)
 }
 
@@ -1075,7 +1102,7 @@ fn parameter_validity_still_refuses_related_overlaps() {
     let size = 32;
     let (frame, _) = parameter_frame(size);
     let target = FIRST_PARAMETER + 5;
-    let overlaps = |extra: &CResourceFact, assumptions: &PureFactContext| {
+    let overlaps = |extra: &ResourceFact, assumptions: &PureFactContext| {
         let whole = matches!(
             frame
                 .clone()
@@ -1102,7 +1129,7 @@ fn parameter_validity_still_refuses_related_overlaps() {
         "the same object owned twice"
     );
 
-    let field = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+    let field = ResourceFact::own_memory(MemoryRange::new_with_element_width(
         parameter_base(target).offset_by_elements(MachineTerm::constant(2), 4),
         MachineTerm::constant(0),
         MachineTerm::constant(1),
@@ -1154,7 +1181,7 @@ fn holding_a_parameter_composition_states_no_pairs() {
         let (frame, _) = parameter_frame(size);
         let (assumptions, work) = crate::instrumentation::measure_deterministic_work(|| {
             PureFactContext::new()
-                .assume_proposition(Proposition::CResourceComposition(frame.clone()))
+                .assume_proposition(Proposition::ResourceComposition(frame.clone()))
         });
         assert_eq!(
             assumptions.memory_separation_candidate_count(
@@ -1221,7 +1248,7 @@ fn a_proved_parameter_separation_reads_only_the_nominated_members() {
             parameter_base(identity).offset_by_elements(MachineTerm::constant(1), 4)
         };
         let range = |identity: u64| {
-            CResource::Memory(CMemoryRange::new_with_element_width(
+            Resource::Memory(MemoryRange::new_with_element_width(
                 parameter_base(identity),
                 MachineTerm::constant(1),
                 MachineTerm::constant(2),
@@ -1291,7 +1318,7 @@ fn refused_parameter_separation_ignores_unrelated_owned_objects() {
             assumptions = assumptions.assume_proposition(extent.coverage_fact(range));
         }
         let range = |id| {
-            CResource::Memory(CMemoryRange::new_with_element_width(
+            Resource::Memory(MemoryRange::new_with_element_width(
                 parameter_base(id),
                 1u32.into(),
                 2u32.into(),
@@ -1350,7 +1377,11 @@ fn normalizing_external_ranges_compares_only_related_bases() {
 }
 
 fn tag_schema() -> ResourceFieldSchema {
-    ResourceFieldSchema::new(vec![("tag".into(), ResourceFieldType::C(CType::Int32))]).unwrap()
+    ResourceFieldSchema::new(vec![(
+        "tag".into(),
+        ResourceFieldType::Program(ProgramType::Int32),
+    )])
+    .unwrap()
 }
 
 fn layer_name(layer: usize) -> String {
@@ -1361,16 +1392,16 @@ fn layer_name(layer: usize) -> String {
 /// and each later one names the one before it as a child over the same `p`,
 /// with its own `tag` as the child's. Installed as a contract interface
 /// installs them: sorted by name, with their reach decided.
-fn layered_definitions(layers: usize) -> Vec<CCompositeResourceDefinition> {
+fn layered_definitions(layers: usize) -> Vec<CompositeResourceDefinition> {
     let mut definitions = (0..layers)
         .map(|layer| {
             let contains = if layer == 0 {
-                vec![CResourceSpec::owned_memory(CMemorySegment {
+                vec![ResourceSpec::owned_memory(MemorySegment {
                     uninitialized: false,
                     value_runs: Default::default(),
-                    base: c_variable("p"),
-                    start: c_int32_literal(0),
-                    end: c_int32_literal(1),
+                    base: crate::kernel::program_expression::variable("p"),
+                    start: crate::kernel::program_expression::int32_literal(0),
+                    end: crate::kernel::program_expression::int32_literal(1),
                     element_width: 4,
                     guard: None,
                 })]
@@ -1380,17 +1411,19 @@ fn layered_definitions(layers: usize) -> Vec<CCompositeResourceDefinition> {
             let children = if layer == 0 {
                 Vec::new()
             } else {
-                vec![CResourceChildSpec {
+                vec![ResourceChildSpec {
                     name: "child".into(),
                     resource: layer_name(layer - 1),
                     binding: Variable(5_000_000 + layer as u64),
-                    arguments: vec![SpecExpression::CExpression(c_variable("p"))],
-                    field_bindings: vec![CResourceChildField::Parent(0)],
+                    arguments: vec![SpecExpression::ProgramExpression(
+                        crate::kernel::program_expression::variable("p"),
+                    )],
+                    field_bindings: vec![ResourceChildField::Parent(0)],
                 }]
             };
-            CCompositeResourceDefinition::new(
+            CompositeResourceDefinition::new(
                 layer_name(layer),
-                vec![c_parameter("p", CType::Int32Pointer)],
+                vec![program_parameter("p", ProgramType::Int32Pointer)],
                 None,
                 false,
                 contains,
@@ -1405,12 +1438,12 @@ fn layered_definitions(layers: usize) -> Vec<CCompositeResourceDefinition> {
     definitions
 }
 
-fn layered_instance(layers: usize) -> CResourceFact {
-    CResourceFact::own(CResource::Instance(
+fn layered_instance(layers: usize) -> ResourceFact {
+    ResourceFact::own(Resource::Instance(
         ResourceInstance::new(
             Variable(2 * TARGET_HEAP),
             layer_name(layers - 1),
-            vec![CValue::pointer(heap_base(TARGET_HEAP)).into()].into(),
+            vec![ProgramValue::pointer(heap_base(TARGET_HEAP)).into()].into(),
             tag_schema(),
             vec![int32(0).into()].into(),
         )
@@ -1431,7 +1464,7 @@ fn a_layered_footprint_is_linear_in_its_definitions() {
         let (definitions, work) =
             crate::instrumentation::measure_deterministic_work(|| layered_definitions(layers));
         installed.push((layers, work));
-        let state = CState::new();
+        let state = ExecutionState::new();
         let assumptions = PureFactContext::new();
         let fact = layered_instance(layers);
         let (ranges, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -1445,7 +1478,7 @@ fn a_layered_footprint_is_linear_in_its_definitions() {
         });
         assert_eq!(
             ranges,
-            vec![CMemoryRange::new(
+            vec![MemoryRange::new(
                 heap_base(TARGET_HEAP),
                 MachineTerm::constant(0),
                 MachineTerm::constant(1),
@@ -1475,26 +1508,29 @@ fn a_layered_footprint_is_linear_in_its_definitions() {
 /// does not descend into them.
 #[test]
 fn a_recursive_footprint_is_constant_in_live_nodes() {
-    let mut definitions = vec![CCompositeResourceDefinition::new(
+    let mut definitions = vec![CompositeResourceDefinition::new(
         "list",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         None,
         true,
         vec![
-            CResourceSpec::owned_memory(CMemorySegment {
+            ResourceSpec::owned_memory(MemorySegment {
                 uninitialized: false,
                 value_runs: Default::default(),
-                base: c_variable("p"),
-                start: c_int32_literal(0),
-                end: c_int32_literal(1),
+                base: crate::kernel::program_expression::variable("p"),
+                start: crate::kernel::program_expression::int32_literal(0),
+                end: crate::kernel::program_expression::int32_literal(1),
                 element_width: 4,
                 guard: None,
             }),
-            CResourceSpec::composite(
-                CResourceAccessMode::Own,
+            ResourceSpec::composite(
+                ResourceAccessMode::Own,
                 "list".into(),
-                vec![c_pointer_offset_bytes(c_variable("p"), 4)],
-                vec![CType::Int32Pointer],
+                vec![crate::kernel::program_expression::pointer_offset_bytes(
+                    crate::kernel::program_expression::variable("p"),
+                    4,
+                )],
+                vec![ProgramType::Int32Pointer],
             ),
         ],
         vec![],
@@ -1503,7 +1539,7 @@ fn a_recursive_footprint_is_constant_in_live_nodes() {
     let mut samples = Vec::new();
     for nodes in SIZES {
         // The live nodes: a known cell at each of them.
-        let memory = (0..nodes).fold(CMemory::new(), |memory, node| {
+        let memory = (0..nodes).fold(Memory::new(), |memory, node| {
             memory.store(
                 Pointer {
                     block: PointerBlock::Heap(TARGET_HEAP),
@@ -1512,11 +1548,11 @@ fn a_recursive_footprint_is_constant_in_live_nodes() {
                 int32(node as u32),
             )
         });
-        let state = CState::new().with_memory(memory);
+        let state = ExecutionState::new().with_memory(memory);
         let assumptions = PureFactContext::new();
-        let fact = CResourceFact::own(CResource::Composite {
+        let fact = ResourceFact::own(Resource::Composite {
             name: "list".into(),
-            arguments: vec![CValue::pointer(heap_base(TARGET_HEAP)).into()].into(),
+            arguments: vec![ProgramValue::pointer(heap_base(TARGET_HEAP)).into()].into(),
         });
         let (ranges, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::functions::checked_owned_memory_ranges(
@@ -1527,7 +1563,7 @@ fn a_recursive_footprint_is_constant_in_live_nodes() {
             )
             .unwrap()
         });
-        assert_eq!(ranges, vec![CMemoryRange::unnamed_footprint()]);
+        assert_eq!(ranges, vec![MemoryRange::unnamed_footprint()]);
         samples.push((nodes, work));
     }
     assert_constant_plus_log_growth("a recursive footprint", &samples, 0.0);
@@ -1536,35 +1572,41 @@ fn a_recursive_footprint_is_constant_in_live_nodes() {
 /// `slot(s)`: the arena's region shape. The body owns the descriptor
 /// `s[0..4]` and the cells `s->pool->data[at..end]`, whose base loads the
 /// descriptor's first field and then the pool's.
-fn slot_definitions() -> Vec<CCompositeResourceDefinition> {
+fn slot_definitions() -> Vec<CompositeResourceDefinition> {
     let schema = ResourceFieldSchema::new(vec![
-        ("at".into(), ResourceFieldType::C(CType::Int32)),
-        ("end".into(), ResourceFieldType::C(CType::Int32)),
+        ("at".into(), ResourceFieldType::Program(ProgramType::Int32)),
+        ("end".into(), ResourceFieldType::Program(ProgramType::Int32)),
     ])
     .unwrap();
-    let pool = c_typed_load(c_variable("s"), CType::Int32Pointer);
+    let pool = crate::kernel::program_expression::typed_load(
+        crate::kernel::program_expression::variable("s"),
+        ProgramType::Int32Pointer,
+    );
     vec![
-        CCompositeResourceDefinition::new(
+        CompositeResourceDefinition::new(
             "slot",
-            vec![c_parameter("s", CType::Int32Pointer)],
+            vec![program_parameter("s", ProgramType::Int32Pointer)],
             None,
             false,
             vec![
-                CResourceSpec::owned_memory(CMemorySegment {
+                ResourceSpec::owned_memory(MemorySegment {
                     uninitialized: false,
                     value_runs: Default::default(),
-                    base: c_variable("s"),
-                    start: c_int32_literal(0),
-                    end: c_int32_literal(4),
+                    base: crate::kernel::program_expression::variable("s"),
+                    start: crate::kernel::program_expression::int32_literal(0),
+                    end: crate::kernel::program_expression::int32_literal(4),
                     element_width: 4,
                     guard: None,
                 }),
-                CResourceSpec::owned_memory(CMemorySegment {
+                ResourceSpec::owned_memory(MemorySegment {
                     uninitialized: false,
                     value_runs: Default::default(),
-                    base: c_typed_load(pool, CType::Int32Pointer),
-                    start: c_variable("at"),
-                    end: c_variable("end"),
+                    base: crate::kernel::program_expression::typed_load(
+                        pool,
+                        ProgramType::Int32Pointer,
+                    ),
+                    start: crate::kernel::program_expression::variable("at"),
+                    end: crate::kernel::program_expression::variable("end"),
                     element_width: 4,
                     guard: None,
                 }),
@@ -1584,16 +1626,16 @@ fn external_descriptor(identity: u64) -> Pointer {
 
 /// The pointer a load of `cell` reads in `source`, as execution materializes
 /// it: the value named by that read.
-fn materialized_pointer(source: &CMemory, cell: &Pointer) -> CValue {
-    CValue::Pointer(CPointerValue::from_read(
+fn materialized_pointer(source: &Memory, cell: &Pointer) -> ProgramValue {
+    ProgramValue::Pointer(PointerValue::from_read(
         Pointer::loaded(&MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory_ref(source),
+            crate::kernel::intern_memory_ref(source),
             Box::new(cell.clone()),
             crate::kernel::LoadKind::Int32,
         ))
         .unwrap(),
-        CType::Int32Pointer,
-        &crate::kernel::intern_c_memory_ref(source),
+        ProgramType::Int32Pointer,
+        &crate::kernel::intern_memory_ref(source),
         cell,
     ))
 }
@@ -1612,18 +1654,19 @@ fn unfold_beside_descriptors_of_its_type_ignores_unrelated_descriptors() {
         let definitions = slot_definitions();
         let region = external_descriptor(100_000);
         let other = external_descriptor(100_001);
-        let entry = CMemory::new();
+        let entry = Memory::new();
         let pool = match materialized_pointer(&entry, &region) {
-            CValue::Pointer(value) => value,
+            ProgramValue::Pointer(value) => value,
             _ => unreachable!("a pointer cell is materialized as a pointer"),
         };
         let instance = ResourceInstance::new(
             Variable(2 * TARGET_HEAP),
             "slot".into(),
-            vec![CValue::typed_pointer(region.clone(), CType::Int32Pointer).into()].into(),
+            vec![ProgramValue::typed_pointer(region.clone(), ProgramType::Int32Pointer).into()]
+                .into(),
             ResourceFieldSchema::new(vec![
-                ("at".into(), ResourceFieldType::C(CType::Int32)),
-                ("end".into(), ResourceFieldType::C(CType::Int32)),
+                ("at".into(), ResourceFieldType::Program(ProgramType::Int32)),
+                ("end".into(), ResourceFieldType::Program(ProgramType::Int32)),
             ])
             .unwrap(),
             vec![int32(0).into(), int32(2).into()].into(),
@@ -1648,15 +1691,15 @@ fn unfold_beside_descriptors_of_its_type_ignores_unrelated_descriptors() {
             )
             .unchecked_with_facts([
                 owned_range(other.clone(), 0, 4),
-                CResourceFact::own_memory(CMemoryRange::from_pointer_value(
+                ResourceFact::own_memory(MemoryRange::from_pointer_value(
                     &pool,
                     0u32.into(),
                     4u32.into(),
                     4,
                 )),
-                CResourceFact::own(CResource::Instance(instance.clone())),
+                ResourceFact::own(Resource::Instance(instance.clone())),
             ]);
-        let state = CState::new()
+        let state = ExecutionState::new()
             .with_memory(memory)
             .with_resource_context(frame);
         let assumptions = PureFactContext::new();
@@ -1692,14 +1735,17 @@ fn unfold_beside_descriptors_of_its_type_ignores_unrelated_descriptors() {
 
 /// A folded `window(p)` of a pointer parameter: its body owns `p[start..1]`
 /// at its own field `start = 0`, which is the cell at `p`.
-fn parameter_window_instance(parameter: u64, identity: u64) -> CResourceFact {
-    CResourceFact::own(CResource::Instance(
+fn parameter_window_instance(parameter: u64, identity: u64) -> ResourceFact {
+    ResourceFact::own(Resource::Instance(
         ResourceInstance::new(
             Variable(identity),
             "window".into(),
-            vec![CValue::pointer(parameter_base(parameter)).into()].into(),
-            ResourceFieldSchema::new(vec![("start".into(), ResourceFieldType::C(CType::Int32))])
-                .unwrap(),
+            vec![ProgramValue::pointer(parameter_base(parameter)).into()].into(),
+            ResourceFieldSchema::new(vec![(
+                "start".into(),
+                ResourceFieldType::Program(ProgramType::Int32),
+            )])
+            .unwrap(),
             vec![int32(0).into()].into(),
         )
         .unwrap(),
@@ -1712,10 +1758,10 @@ const STORE_KEPT_PARAMETER: u64 = 97_001;
 /// Frames one store at the written parameter's object as the store
 /// statement does: the opened composition first, then the cached cells. It
 /// returns the charged work and how many of `kept` cached cells survived.
-fn framed_store_beside_instances(state: &CState, kept: &[Pointer]) -> (usize, usize) {
+fn framed_store_beside_instances(state: &ExecutionState, kept: &[Pointer]) -> (usize, usize) {
     let write = parameter_base(STORE_WRITTEN_PARAMETER);
     let assumptions = PureFactContext::new()
-        .assume_proposition(Proposition::CResourceComposition(state.resources().clone()));
+        .assume_proposition(Proposition::ResourceComposition(state.resources().clone()));
     let (memory, work) = crate::instrumentation::measure_deterministic_work(|| {
         let assumptions = match crate::kernel::functions::store_opened_instance_composition(
             state,
@@ -1724,7 +1770,7 @@ fn framed_store_beside_instances(state: &CState, kept: &[Pointer]) -> (usize, us
             &assumptions,
         ) {
             Some(opened) => {
-                assumptions.assume_proposition(Proposition::CResourceComposition(opened))
+                assumptions.assume_proposition(Proposition::ResourceComposition(opened))
             }
             None => assumptions.clone(),
         };
@@ -1767,11 +1813,11 @@ fn a_store_opens_no_folded_instance_whose_arguments_name_no_cached_cell() {
                 parameter_window_instance(STORE_KEPT_PARAMETER, 3 * TARGET_HEAP),
             ]);
         let memory = (0..size)
-            .fold(CMemory::new(), |memory, index| {
+            .fold(Memory::new(), |memory, index| {
                 memory.store(heap_base(index as u64 + 1), int32(index as u32))
             })
             .store(kept.clone(), int32(5));
-        let state = CState::new()
+        let state = ExecutionState::new()
             .with_resource_context(frame)
             .with_memory(memory);
         let (work, survived) = framed_store_beside_instances(&state, std::slice::from_ref(&kept));
@@ -1801,10 +1847,10 @@ fn a_store_opens_folded_instances_in_work_linear_in_the_aliasing_ones() {
         let cells = (0..size)
             .map(|index| parameter_base(FIRST_PARAMETER + index as u64))
             .collect::<Vec<_>>();
-        let memory = cells.iter().fold(CMemory::new(), |memory, cell| {
+        let memory = cells.iter().fold(Memory::new(), |memory, cell| {
             memory.store(cell.clone(), int32(5))
         });
-        let state = CState::new()
+        let state = ExecutionState::new()
             .with_resource_context(frame)
             .with_memory(memory);
         let (work, survived) = framed_store_beside_instances(&state, &cells);
@@ -1834,9 +1880,9 @@ fn a_store_forgets_a_folded_instance_cell_it_does_not_open() {
         parameter_object(STORE_WRITTEN_PARAMETER),
         parameter_window_instance(STORE_KEPT_PARAMETER, 3 * TARGET_HEAP),
     ]);
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_resource_context(frame)
-        .with_memory(CMemory::new().store(kept.clone(), int32(5)));
+        .with_memory(Memory::new().store(kept.clone(), int32(5)));
     // No definitions armed: nothing can be opened.
     let (_, survived) = framed_store_beside_instances(&state, std::slice::from_ref(&kept));
     assert_eq!(survived, 0, "an unopened instance keeps nothing");
@@ -1863,7 +1909,7 @@ fn shared_view_offset_alias_lookup_is_indexed_and_preserves_occurrences() {
             true,
         );
     let view = |pointer, end| {
-        CResourceFact::view_memory(CMemoryRange::new_with_element_width(
+        ResourceFact::view_memory(MemoryRange::new_with_element_width(
             pointer,
             0u32.into(),
             end,
@@ -1915,7 +1961,7 @@ fn observable_projection_reuses_private_local_deltas_and_unchanged_queries() {
         let (_, sequence_work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 0..size {
                 resources = resources.clone().unchecked_with_fact(owned_range(
-                    CMemory::local_pointer(&format!("hidden_{index}")),
+                    Memory::local_pointer(&format!("hidden_{index}")),
                     0,
                     4,
                 ));
@@ -1931,7 +1977,7 @@ fn observable_projection_reuses_private_local_deltas_and_unchanged_queries() {
             for _ in 0..16 {
                 assert_eq!(
                     resources.observable_facts_assuming_valid(&assumptions),
-                    vec![Proposition::CResourceComposition(expected.clone())]
+                    vec![Proposition::ResourceComposition(expected.clone())]
                 );
             }
         });
@@ -1955,7 +2001,7 @@ fn observable_projection_reuses_private_local_deltas_and_unchanged_queries() {
                 resources = resources
                     .clone()
                     .without_exact_representation(&owned_range(
-                        CMemory::local_pointer(&format!("hidden_{index}")),
+                        Memory::local_pointer(&format!("hidden_{index}")),
                         0,
                         4,
                     ))
@@ -1991,7 +2037,7 @@ fn observable_projection_queries_do_not_enumerate_retained_owners() {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..16 {
                 let result = context.observable_facts_assuming_valid(&assumptions);
-                let [Proposition::CResourceComposition(observed)] = result.as_slice() else {
+                let [Proposition::ResourceComposition(observed)] = result.as_slice() else {
                     panic!("owned composition is observable");
                 };
                 assert!(std::sync::Arc::ptr_eq(&observed.storage, &expected.storage));
@@ -2022,7 +2068,7 @@ fn observable_projection_shares_first_projection_across_cold_forks() {
                 ]
                 .into_iter()
                 .chain((0..size).map(|index| {
-                    owned_range(CMemory::local_pointer(&format!("hidden_{index}")), 0, 4)
+                    owned_range(Memory::local_pointer(&format!("hidden_{index}")), 0, 4)
                 })),
             );
         let forks = [root.clone(), root.clone(), root.clone()];
@@ -2065,7 +2111,7 @@ fn observable_projection_reuses_local_edits_across_sibling_paths() {
         ]);
         for i in 0..size {
             source = source.unchecked_with_fact(owned_range(
-                CMemory::local_pointer(&format!("hidden_{i}")),
+                Memory::local_pointer(&format!("hidden_{i}")),
                 0,
                 4,
             ));
@@ -2109,12 +2155,12 @@ fn observable_projection_tracks_supported_views_caches_and_owner_retirement() {
         let assumptions = PureFactContext::new();
         let owner = owned_range(heap_base(1), 0, 4);
         let view =
-            CResourceFact::view_memory(CMemoryRange::new(heap_base(1), 0u32.into(), 2u32.into()));
+            ResourceFact::view_memory(MemoryRange::new(heap_base(1), 0u32.into(), 2u32.into()));
         let mut source = ResourceContext::new()
             .unchecked_with_facts([owner.clone(), owned_range(heap_base(2), 0, 4)]);
         for i in 0..size {
             source = source.unchecked_with_fact(owned_range(
-                CMemory::local_pointer(&format!("hidden_{i}")),
+                Memory::local_pointer(&format!("hidden_{i}")),
                 0,
                 4,
             ));
@@ -2143,9 +2189,9 @@ fn observable_projection_tracks_supported_views_caches_and_owner_retirement() {
             !retired.contains_exact_representation(&view),
             "a cached view cannot survive its owner"
         );
-        let hidden_owner = owned_range(CMemory::local_pointer("hidden_0"), 0, 4);
-        let hidden_view = CResourceFact::view_memory(CMemoryRange::new(
-            CMemory::local_pointer("hidden_0"),
+        let hidden_owner = owned_range(Memory::local_pointer("hidden_0"), 0, 4);
+        let hidden_view = ResourceFact::view_memory(MemoryRange::new(
+            Memory::local_pointer("hidden_0"),
             0u32.into(),
             2u32.into(),
         ));
@@ -2185,7 +2231,7 @@ fn footprint_composition_does_not_decide_every_alias_pair() {
         owned_range(argument_base(STRUCT), 0, 2),
         owned_range(argument_base(STRUCT), 2, 4),
         owned_range(argument_base(STRUCT), 4, 6),
-        CResourceFact::own_memory(CMemoryRange::new(
+        ResourceFact::own_memory(MemoryRange::new(
             argument_base(ARRAY),
             MachineTerm::constant(0),
             MachineTerm::Variable(Variable(LENGTH)),
@@ -2263,7 +2309,7 @@ fn selected_ownership_overlap_ignores_ambient_aliases() {
                 )
         });
         let range =
-            |base| CMemoryRange::new(base, 0u32.into(), MachineTerm::Variable(Variable(998_002)));
+            |base| MemoryRange::new(base, 0u32.into(), MachineTerm::Variable(Variable(998_002)));
         let left = range(left);
         let right = range(right);
         let (overlaps, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -2283,10 +2329,10 @@ fn selected_ownership_overlap_ignores_ambient_aliases() {
 /// as a `malloc` that succeeded leaves it: the allocation token and complete
 /// byte access, both owned.
 fn with_live_allocation(
-    (memory, resources): (CMemory, ResourceContext),
+    (memory, resources): (Memory, ResourceContext),
     identity: u64,
     bytes: u32,
-) -> (CMemory, ResourceContext) {
+) -> (Memory, ResourceContext) {
     let pending = symbolic_base(identity);
     let (memory, _, base) = memory
         .with_pending_heap_allocation(
@@ -2299,8 +2345,8 @@ fn with_live_allocation(
     assert_eq!(base, heap_base(identity));
     let memory = memory.store(base.clone(), int32(identity as u32));
     let resources = resources.unchecked_with_facts([
-        CResourceFact::own_allocation(base.clone(), bytes),
-        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        ResourceFact::own_allocation(base.clone(), bytes),
+        ResourceFact::own_memory(MemoryRange::new_with_element_width(
             base,
             MachineTerm::constant(0),
             MachineTerm::constant(bytes),
@@ -2317,7 +2363,7 @@ const WRITTEN_INT_HEAP: u64 = TARGET_HEAP + 1;
 /// A caller holding `unrelated` live heap allocations beside the target,
 /// each reached from its own never-address-taken pointer local, whose
 /// automatic storage the caller owns, as C lowering leaves `int *u = malloc(..)`.
-fn caller_beside_unrelated_allocations(unrelated: usize) -> CState {
+fn caller_beside_unrelated_allocations(unrelated: usize) -> ExecutionState {
     let locals = (0..unrelated)
         .map(|index| (format!("u{index}"), index as u64 + 1))
         .chain([("p".to_owned(), TARGET_HEAP)])
@@ -2326,14 +2372,14 @@ fn caller_beside_unrelated_allocations(unrelated: usize) -> CState {
         locals.iter().map(|(name, _)| name.clone()).collect(),
     );
     let (mut memory, mut resources) = locals.iter().fold(
-        (CMemory::new(), ResourceContext::new()),
+        (Memory::new(), ResourceContext::new()),
         |caller, (_, identity)| with_live_allocation(caller, *identity, 16),
     );
     // Writing the `int` retyped its bytes: the caller owns them as one
     // `int` cell and holds the cell's view, supported by that owner, with
     // the owner's cached identity expansion. A lending call's recovery
     // normalizes the caller's resources, dropping and restoring both.
-    let written = CMemoryRange::new(
+    let written = MemoryRange::new(
         heap_base(WRITTEN_INT_HEAP),
         MachineTerm::constant(0),
         MachineTerm::constant(4),
@@ -2344,22 +2390,22 @@ fn caller_beside_unrelated_allocations(unrelated: usize) -> CState {
         .resolve_pending_heap_allocation(&pending, true)
         .expect("the pending allocation resolves");
     memory = written_memory.store(heap_base(WRITTEN_INT_HEAP), int32(7));
-    let written_owner = CResourceFact::own_memory(written.clone());
+    let written_owner = ResourceFact::own_memory(written.clone());
     resources = resources
         .unchecked_with_facts([
-            CResourceFact::own_allocation(heap_base(WRITTEN_INT_HEAP), 4u32),
+            ResourceFact::own_allocation(heap_base(WRITTEN_INT_HEAP), 4u32),
             written_owner.clone(),
         ])
-        .unchecked_with_supported_facts(&written_owner, [CResourceFact::view_memory(written)])
+        .unchecked_with_supported_facts(&written_owner, [ResourceFact::view_memory(written)])
         .with_cached_supported_expansion(&written_owner, vec![written_owner.clone()]);
-    let mut state = CState::new().with_population_creation_tracking();
+    let mut state = ExecutionState::new().with_population_creation_tracking();
     for (name, identity) in &locals {
-        let slot = CMemory::local_pointer(name);
+        let slot = Memory::local_pointer(name);
         memory = memory
             .with_block(slot.block.clone(), 8)
-            .store(slot.clone(), CValue::pointer(heap_base(*identity)));
+            .store(slot.clone(), ProgramValue::pointer(heap_base(*identity)));
         resources = resources.unchecked_with_fact(owned_range(slot, 0, 8));
-        state = state.with_local(name.clone(), CValue::pointer(heap_base(*identity)));
+        state = state.with_local(name.clone(), ProgramValue::pointer(heap_base(*identity)));
     }
     // The call views `p`'s bytes, so they hold values the caller wrote.
     let memory = memory.with_initialized_object(&heap_base(TARGET_HEAP), 16);
@@ -2385,30 +2431,34 @@ fn caller_beside_unrelated_allocations(unrelated: usize) -> CState {
 /// allocation in the expanded byte-representation round trip).
 #[test]
 fn a_view_lending_call_and_its_observation_ignore_unrelated_allocations() {
-    let helper = c_function(
-        CType::Int32,
+    let helper = program_function(
+        ProgramType::Int32,
         "peek",
-        vec![c_parameter("data", CType::Int32Pointer)],
-        c_return(c_int32_literal(0)),
+        vec![program_parameter("data", ProgramType::Int32Pointer)],
+        program_return(crate::kernel::program_expression::int32_literal(0)),
     )
     .with_resource_summary(
-        vec![CResourceSpec::viewed_memory(CMemorySegment::new(
-            c_variable("data"),
-            c_int32_literal(0),
-            c_int32_literal(4),
+        vec![ResourceSpec::viewed_memory(MemorySegment::new(
+            crate::kernel::program_expression::variable("data"),
+            crate::kernel::program_expression::int32_literal(0),
+            crate::kernel::program_expression::int32_literal(4),
         ))],
         Vec::new(),
     );
-    let environment = CExecutionEnvironment::new()
+    let environment = ExecutionEnvironment::new()
         .with_function(helper.clone())
-        .with_verified_function_rule(CVerifiedFunctionRule {
+        .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: helper,
-            loop_semantics: CLoopSemantics::Verify,
+            loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
             applied_tactics: Default::default(),
         });
-    let call = c_call_assign("observed", "peek", vec![c_variable("p")]);
+    let call = program_call_assign(
+        "observed",
+        "peek",
+        vec![crate::kernel::program_expression::variable("p")],
+    );
     let assumptions = PureFactContext::new();
     let mut samples = Vec::new();
     for size in [2usize, 4, 8, 16] {
@@ -2421,7 +2471,7 @@ fn a_view_lending_call_and_its_observation_ignore_unrelated_allocations() {
         caller
             .resources()
             .synchronize_memory_equalities(&assumptions);
-        crate::kernel::reasoning::variable_collection::collect_c_state_bitvector_variables(
+        crate::kernel::reasoning::variable_collection::collect_execution_state_bitvector_variables(
             &caller,
             &mut BTreeSet::new(),
         );
@@ -2429,17 +2479,17 @@ fn a_view_lending_call_and_its_observation_ignore_unrelated_allocations() {
             .resources()
             .observable_facts_assuming_valid(&assumptions);
         let (after, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let paths = execute_c_statement_paths(
+            let paths = execute_execution_statement_paths(
                 &caller,
                 &call,
                 &assumptions,
-                CExecutionContext::apply_verified_rules(&environment),
+                ExecutionContext::apply_verified_rules(&environment),
                 &mut ExecutionBudget::default(),
             )
             .expect("the view-lending call executes");
             let [
-                CStatementExecutionPath {
-                    outcome: CStatementOutcome::Normal(after),
+                StatementExecutionPath {
+                    outcome: StatementOutcome::Normal(after),
                     ..
                 },
             ] = paths.as_slice()
@@ -2459,7 +2509,7 @@ fn a_view_lending_call_and_its_observation_ignore_unrelated_allocations() {
         let mut cold = after.resources().clone();
         cold.observable_projection = Default::default();
         assert_eq!(observed, cold.observable_facts_assuming_valid(&assumptions));
-        let [Proposition::CResourceComposition(composition)] = observed.as_slice() else {
+        let [Proposition::ResourceComposition(composition)] = observed.as_slice() else {
             panic!("the caller's owned heap is observable: {observed:?}");
         };
         // Every allocation's token and bytes stay; no pointer local's slot is
@@ -2481,7 +2531,7 @@ fn a_view_lending_call_and_its_observation_ignore_unrelated_allocations() {
 fn matched_input_argument_views_ignore_unrelated_definitions_and_owners() {
     use crate::kernel::{
         AlgebraicSchemas, AlgebraicTerm, AlgebraicTermNode, AlgebraicType, AlgebraicValue,
-        AlgebraicValueType, AlgebraicVariantType, CResourceMatchArm, CResourceMatchBody,
+        AlgebraicValueType, AlgebraicVariantType, ResourceMatchArm, ResourceMatchBody,
     };
     use std::sync::Arc;
 
@@ -2525,20 +2575,20 @@ fn matched_input_argument_views_ignore_unrelated_definitions_and_owners() {
     )
     .unwrap();
     let mut definition =
-        CCompositeResourceDefinition::new("zz_target", vec![], None, false, vec![], vec![])
+        CompositeResourceDefinition::new("zz_target", vec![], None, false, vec![], vec![])
             .with_instance_schema(Some(schema));
-    definition.matched = Some(CResourceMatchBody {
+    definition.matched = Some(ResourceMatchBody {
         field_index: 0,
         algebraic_type: ty,
-        arms: vec![CResourceMatchArm {
+        arms: vec![ResourceMatchArm {
             variant: "Held".into(),
             bindings: vec![],
             binding_types: vec![],
             binding_variables: vec![],
-            contains: vec![CResourceSpec::owned_memory(CMemorySegment::new(
-                CExpression::Value(CValue::pointer(heap_base(TARGET_HEAP))),
-                c_int32_literal(0),
-                c_int32_literal(2),
+            contains: vec![ResourceSpec::owned_memory(MemorySegment::new(
+                ProgramExpression::Value(ProgramValue::pointer(heap_base(TARGET_HEAP))),
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::program_expression::int32_literal(2),
             ))],
             facts: vec![],
             children: vec![],
@@ -2548,7 +2598,7 @@ fn matched_input_argument_views_ignore_unrelated_definitions_and_owners() {
     for size in [4usize, 16, 64, 256] {
         let mut definitions = (0..size)
             .map(|index| {
-                CCompositeResourceDefinition::new(
+                CompositeResourceDefinition::new(
                     format!("a{index:04}"),
                     vec![],
                     None,
@@ -2559,10 +2609,11 @@ fn matched_input_argument_views_ignore_unrelated_definitions_and_owners() {
             })
             .collect::<Vec<_>>();
         definitions.push(definition.clone());
-        let state =
-            CState::new().with_resource_context(ResourceContext::new().unchecked_with_facts(
+        let state = ExecutionState::new().with_resource_context(
+            ResourceContext::new().unchecked_with_facts(
                 (0..size).map(|index| owned_range(heap_base(index as u64 + 1), 0, 1)),
-            ));
+            ),
+        );
         let (views, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::functions::instance_arm_read_authority(
                 &target,
@@ -2574,7 +2625,7 @@ fn matched_input_argument_views_ignore_unrelated_definitions_and_owners() {
         assert_eq!(views.len(), 1);
         assert_eq!(
             views[0],
-            CResourceFact::view_memory(CMemoryRange::new(
+            ResourceFact::view_memory(MemoryRange::new(
                 heap_base(TARGET_HEAP),
                 MachineTerm::constant(0),
                 MachineTerm::constant(2),
@@ -2604,12 +2655,12 @@ fn respelling_a_wide_struct_range_is_logarithmic_in_unrelated_and_same_block_ran
     };
     let zero = || MachineTerm::uint64_constant(0);
     let byte_block =
-        |identity: u64| CMemoryRange::new_wide(heap_base(identity), zero(), bytes(identity), 1);
+        |identity: u64| MemoryRange::new_wide(heap_base(identity), zero(), bytes(identity), 1);
     let struct_range =
-        |identity: u64| CMemoryRange::new_wide(heap_base(identity), zero(), count(identity), 8);
+        |identity: u64| MemoryRange::new_wide(heap_base(identity), zero(), count(identity), 8);
     // A struct range at a symbolic element of the target block.
     let same_block = |index: u64| {
-        CMemoryRange::new_wide(
+        MemoryRange::new_wide(
             Pointer {
                 block: PointerBlock::Heap(TARGET_HEAP),
                 offset: PointerOffsetTerm::scaled_int64_node(
@@ -2634,16 +2685,16 @@ fn respelling_a_wide_struct_range_is_logarithmic_in_unrelated_and_same_block_ran
             true,
         );
     let unbounded = PureFactContext::new();
-    let frame = |size: usize, target: CMemoryRange, assumptions: &PureFactContext| {
+    let frame = |size: usize, target: MemoryRange, assumptions: &PureFactContext| {
         let resources = ResourceContext::new_with_equalities(assumptions)
             .unchecked_with_facts((1..=size as u64).flat_map(|identity| {
                 [
-                    CResourceFact::own_memory(byte_block(identity)),
-                    CResourceFact::own_memory(struct_range(TARGET_HEAP + identity)),
-                    CResourceFact::own_memory(same_block(identity)),
+                    ResourceFact::own_memory(byte_block(identity)),
+                    ResourceFact::own_memory(struct_range(TARGET_HEAP + identity)),
+                    ResourceFact::own_memory(same_block(identity)),
                 ]
             }))
-            .unchecked_with_fact(CResourceFact::own_memory(target));
+            .unchecked_with_fact(ResourceFact::own_memory(target));
         resources.synchronize_memory_equalities(assumptions);
         resources
     };
@@ -2668,7 +2719,7 @@ fn respelling_a_wide_struct_range_is_logarithmic_in_unrelated_and_same_block_ran
         let structs = frame(size, struct_range(TARGET_HEAP), &bounded);
         let (taken, work) = crate::instrumentation::measure_deterministic_work(|| {
             blocks.clone().without_fact_incrementally(
-                &CResourceFact::own_memory(struct_range(TARGET_HEAP)),
+                &ResourceFact::own_memory(struct_range(TARGET_HEAP)),
                 &bounded,
             )
         });
@@ -2679,7 +2730,7 @@ fn respelling_a_wide_struct_range_is_logarithmic_in_unrelated_and_same_block_ran
         take.push((size, work));
         let (returned, work) = crate::instrumentation::measure_deterministic_work(|| {
             structs.clone().without_fact_incrementally(
-                &CResourceFact::own_memory(byte_block(TARGET_HEAP)),
+                &ResourceFact::own_memory(byte_block(TARGET_HEAP)),
                 &bounded,
             )
         });
@@ -2695,7 +2746,7 @@ fn respelling_a_wide_struct_range_is_logarithmic_in_unrelated_and_same_block_ran
         read.push((size, work));
         let blocks = frame(size, byte_block(TARGET_HEAP), &unbounded);
         let (refused, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let required = CResourceFact::own_memory(struct_range(TARGET_HEAP));
+            let required = ResourceFact::own_memory(struct_range(TARGET_HEAP));
             (
                 blocks
                     .clone()

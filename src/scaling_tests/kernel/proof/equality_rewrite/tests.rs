@@ -22,7 +22,7 @@ fn pointer_rewrite_integer_reads_preserves_snapshot_kind_and_scales() {
             }
             let cited =
                 Proposition::ConditionIs(ConditionTerm::pointer_equal(p.clone(), q.clone()), true);
-            let mut memory = CMemory::new();
+            let mut memory = Memory::new();
             let mut facts = ProofFacts::default().with_fact(cited.clone());
             for index in 0..size {
                 memory = memory.store(
@@ -34,9 +34,9 @@ fn pointer_rewrite_integer_reads_preserves_snapshot_kind_and_scales() {
                     IntegerTerm::constant_i64(index as i64),
                 ));
             }
-            let read = |memory: &CMemory, pointer: &Pointer, kind| {
+            let read = |memory: &Memory, pointer: &Pointer, kind| {
                 MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
-                    &crate::kernel::intern_c_memory(memory.clone()),
+                    &crate::kernel::intern_memory(memory.clone()),
                     pointer,
                     kind,
                     1,
@@ -45,11 +45,11 @@ fn pointer_rewrite_integer_reads_preserves_snapshot_kind_and_scales() {
             // The read identity preserves only its original cell. The observed
             // origin is needed when the equality exposes the alias address.
             let source = MachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
-                &crate::kernel::intern_c_memory(CMemory::new()),
+                &crate::kernel::intern_memory(Memory::new()),
                 &p,
                 LoadKind::UInt8,
                 1,
-                &crate::kernel::intern_c_memory(memory.clone()),
+                &crate::kernel::intern_memory(memory.clone()),
             ));
             let target = read(&memory, &q, LoadKind::UInt8);
             let later = memory.clone().store(q.clone(), crate::kernel::uint8(99));
@@ -124,11 +124,11 @@ fn pointer_read_rewrite_preserves_value_snapshot_and_scales() {
             true,
         );
         let mut facts = ProofFacts::default().with_fact(cited.clone());
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         for i in 0..size {
             memory = memory.store(
                 Pointer::symbolic(Variable(220_000 + i)),
-                CValue::Int32(MachineTerm::constant(7)),
+                ProgramValue::Int32(MachineTerm::constant(7)),
             );
             facts = facts.with_fact(equality(
                 MachineTerm::Variable(Variable(230_000 + i)),
@@ -136,11 +136,11 @@ fn pointer_read_rewrite_preserves_value_snapshot_and_scales() {
             ));
         }
         let context = PureFactContext::new();
-        let read = |memory: &CMemory, address: &Pointer| {
+        let read = |memory: &Memory, address: &Pointer| {
             let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
                 memory,
                 address.clone(),
-                CType::Int32Pointer,
+                ProgramType::Int32Pointer,
                 Default::default(),
                 Vec::new(),
                 &context,
@@ -149,7 +149,8 @@ fn pointer_read_rewrite_preserves_value_snapshot_and_scales() {
                 panic!("one logical read");
             };
             assert!(!path.facts.has_path_conditions() && path.obligations.is_empty());
-            let crate::kernel::CExpressionOutcome::Value(CValue::Pointer(value)) = &path.outcome
+            let crate::kernel::ExpressionOutcome::Value(ProgramValue::Pointer(value)) =
+                &path.outcome
             else {
                 panic!("typed pointer read");
             };
@@ -184,7 +185,7 @@ fn pointer_read_rewrite_preserves_value_snapshot_and_scales() {
         let replacement = Pointer::symbolic(Variable(211_004));
         let later = memory.clone().store(
             alias_address.clone(),
-            CValue::typed_pointer(replacement.clone(), CType::Int32Pointer),
+            ProgramValue::typed_pointer(replacement.clone(), ProgramType::Int32Pointer),
         );
         assert_eq!(read(&later, &alias_address), replacement);
         assert!(!context.pointers_known_equal(actual, &replacement));
@@ -432,14 +433,15 @@ fn cited_read_rewrite_requires_unchanged_cells_and_its_named_premise() {
         offset: PointerOffsetTerm::Constant(0),
     };
     crate::kernel::eval::declare_load_access_width(&pointer, 4);
-    let before = CMemory::new().with_block("rewrite-selected-read", 4);
+    let before = Memory::new().with_block("rewrite-selected-read", 4);
     let after = before.clone().with_block("local:rewrite-unrelated", 4);
-    let changed = after
-        .clone()
-        .store(pointer.clone(), CValue::Int32(MachineTerm::constant(43)));
-    let load = |memory: &CMemory| {
+    let changed = after.clone().store(
+        pointer.clone(),
+        ProgramValue::Int32(MachineTerm::constant(43)),
+    );
+    let load = |memory: &Memory| {
         MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory_ref(memory),
+            crate::kernel::intern_memory_ref(memory),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
         )
@@ -491,9 +493,9 @@ fn same_block_pointer_view_rewrite_preserves_extent_and_selected_work() {
         ConditionTerm::PointerOffsetEqual(Box::new(source.clone()), Box::new(target.clone())),
         true,
     );
-    let memory = CMemory::new().with_block("offset-view-rewrite", 8);
+    let memory = Memory::new().with_block("offset-view-rewrite", 8);
     let extent = MachineTerm::Variable(Variable(192_922));
-    let goal = Proposition::CMemoryLoadable {
+    let goal = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: Pointer {
             block: PointerBlock::ExternalArgument,
@@ -527,7 +529,7 @@ fn same_block_pointer_view_rewrite_preserves_extent_and_selected_work() {
         let (rewritten, work) = crate::instrumentation::measure_deterministic_work(|| {
             facts.check_equality_rewrite(&goal, &cited).unwrap()
         });
-        let Proposition::CMemoryLoadable {
+        let Proposition::MemoryLoadable {
             memory: snapshot,
             base,
             bytes,
@@ -557,9 +559,9 @@ fn pointer_view_rewrite_preserves_snapshot_extent_and_ambient_scaling() {
         ConditionTerm::pointer_equal(source.clone(), target.clone()),
         true,
     );
-    let memory = CMemory::new().with_block("pointer-view-rewrite", 8);
+    let memory = Memory::new().with_block("pointer-view-rewrite", 8);
     let extent = MachineTerm::Variable(Variable(192_912));
-    let goal = Proposition::CMemoryLoadable {
+    let goal = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: source,
         bytes: extent.clone(),
@@ -582,7 +584,7 @@ fn pointer_view_rewrite_preserves_snapshot_extent_and_ambient_scaling() {
         let (rewritten, work) = crate::instrumentation::measure_deterministic_work(|| {
             facts.check_equality_rewrite(&goal, &cited).unwrap()
         });
-        let Proposition::CMemoryLoadable {
+        let Proposition::MemoryLoadable {
             memory: snapshot,
             base,
             bytes,
@@ -606,12 +608,12 @@ fn pointer_rewrite_enters_scalar_calls_and_preserves_scope_and_snapshots() {
     let target = Pointer::symbolic(Variable(921));
     let cited = Proposition::ConditionIs(
         ConditionTerm::PointerValueEqual(
-            Box::new(CPointerValue::new(source.clone(), CType::Int32Pointer)),
-            Box::new(CPointerValue::new(target.clone(), CType::Int32Pointer)),
+            Box::new(PointerValue::new(source.clone(), ProgramType::Int32Pointer)),
+            Box::new(PointerValue::new(target.clone(), ProgramType::Int32Pointer)),
         ),
         true,
     );
-    let memory = CMemory::new().with_block("unchanged", 4);
+    let memory = Memory::new().with_block("unchanged", 4);
     let goal_at = |pointer: Pointer, count: usize| {
         equality(
             MachineTerm::ClickFunctionApplication {
@@ -619,8 +621,8 @@ fn pointer_rewrite_enters_scalar_calls_and_preserves_scope_and_snapshots() {
                 arguments: vec![
                     PureFunctionArgument::ArrayRef {
                         memory: memory.clone(),
-                        pointer: CValue::typed_pointer(pointer, CType::Int32Pointer),
-                        element_type: CType::Int32,
+                        pointer: ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer),
+                        element_type: ProgramType::Int32,
                     };
                     count
                 ],
@@ -646,7 +648,7 @@ fn pointer_rewrite_enters_scalar_calls_and_preserves_scope_and_snapshots() {
         let quantified = Proposition::ForAll {
             name: Default::default(),
             var: bound,
-            sort: Sort::CPointer(CType::Int32Pointer),
+            sort: Sort::ProgramPointer(ProgramType::Int32Pointer),
             body: Box::new(goal.clone()),
         };
         assert!(
@@ -718,11 +720,11 @@ fn rewrite_capture_collection_does_not_visit_snapshot_contents() {
     let address = Variable(42);
     let mut costs = Vec::new();
     for size in [16u64, 64, 256, 1024] {
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         for i in 0..size {
             memory = memory.store(
                 Pointer::symbolic(Variable(100_000 + i)),
-                CValue::Int32(MachineTerm::Variable(Variable(200_000 + i))),
+                ProgramValue::Int32(MachineTerm::Variable(Variable(200_000 + i))),
             );
         }
         let equality = Proposition::ConditionIs(
@@ -731,7 +733,7 @@ fn rewrite_capture_collection_does_not_visit_snapshot_contents() {
                 relation: CompareRelation::Equal,
                 left: Box::new(MachineTerm::Variable(free)),
                 right: Box::new(MachineTerm::MemoryLoad(
-                    crate::kernel::intern_c_memory(memory),
+                    crate::kernel::intern_memory(memory),
                     Box::new(Pointer::symbolic(address)),
                     crate::kernel::LoadKind::Int32,
                 )),
@@ -757,24 +759,27 @@ fn rewrite_integer_application_endpoint_keeps_byte_snapshot_and_ignores_its_cont
     );
     let mut costs = Vec::new();
     for size in [16u64, 64, 256, 1024] {
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         for i in 0..size {
             memory = memory.store(
                 Pointer::symbolic(Variable(300000 + i)),
-                CValue::Int32(MachineTerm::constant(i as u32)),
+                ProgramValue::Int32(MachineTerm::constant(i as u32)),
             );
         }
         let array = PureFunctionArgument::ArrayRef {
             memory,
-            pointer: CValue::typed_pointer(Pointer::symbolic(Variable(48)), CType::UInt8Pointer),
-            element_type: CType::UInt8,
+            pointer: ProgramValue::typed_pointer(
+                Pointer::symbolic(Variable(48)),
+                ProgramType::UInt8Pointer,
+            ),
+            element_type: ProgramType::UInt8,
         };
         let application = |endpoint| {
             IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                 "prefix".into(),
                 vec![
                     array.clone(),
-                    PureFunctionArgument::Value(CValue::Int32(endpoint)),
+                    PureFunctionArgument::Value(ProgramValue::Int32(endpoint)),
                 ],
             ))
         };
@@ -943,17 +948,17 @@ fn pointer_read_chain_rewrite_work(
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(998_951)), 8),
     };
-    let mut memory = CMemory::new();
+    let mut memory = Memory::new();
     for index in 0..cells {
         memory = memory.store(
             Pointer {
                 block: PointerBlock::Temporary(999_000 + index),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::Int32(7u32.into()),
+            ProgramValue::Int32(7u32.into()),
         );
     }
-    let memory = crate::kernel::intern_c_memory(memory);
+    let memory = crate::kernel::intern_memory(memory);
     let read = |address: &Pointer| {
         if native {
             Pointer::version_read(&memory, address)
@@ -1162,7 +1167,10 @@ fn shared_vacuous_sign_cast_equalities_only_inspect_roots() {
         let _session = VerificationSession::enter();
         let signed = MachineIntegerType::Int32;
         let unsigned = MachineIntegerType::UInt32;
-        let mut root = KernelTerm::variable(KernelType::C(signed.c_type()), Variable(1007191));
+        let mut root = KernelTerm::variable(
+            KernelType::Program(signed.program_type()),
+            Variable(1007191),
+        );
         for _ in 0..depth {
             root = KernelTerm::machine_binary_shared(
                 signed,
@@ -1305,7 +1313,7 @@ fn selected_rewrite_does_not_discover_a_load_equality_chain() {
     let x = MachineTerm::Variable(Variable(800_001));
     let y = MachineTerm::Variable(Variable(800_002));
     let read = MachineTerm::MemoryLoad(
-        intern_c_memory(CMemory::new()),
+        intern_memory(Memory::new()),
         Box::new(Pointer::symbolic(Variable(800_003))),
         crate::kernel::LoadKind::Int32,
     );

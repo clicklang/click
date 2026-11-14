@@ -3,15 +3,15 @@ use crate::surface::expansion::LoopEntryBranches;
 
 pub(in crate::surface::proof) fn verify_execution_proofs_forward(
     mut expansion_capture: Option<&mut ExpansionCapture>,
-    statement: &CStatement,
+    statement: &ProgramStatement,
     contexts: Vec<PlanningExecutionContext>,
     next_statement_index: &mut usize,
     next_loop_index: &mut usize,
     environment: &ExecutionProofEnvironment<'_>,
-    verified_loop_rules: &mut Vec<CVerifiedLoopRule>,
+    verified_loop_rules: &mut Vec<VerifiedLoopRule>,
 ) -> Result<Vec<PlanningExecutionContext>, ClickError> {
     match statement {
-        CStatement::Seq(statements) => {
+        ProgramStatement::Seq(statements) => {
             let mut contexts = contexts;
             for statement in statements.iter() {
                 contexts = verify_execution_proofs_forward(
@@ -26,13 +26,13 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
             }
             Ok(contexts)
         }
-        CStatement::If {
+        ProgramStatement::If {
             condition,
             then_branch,
             else_branch,
         } => {
             let statement_index = *next_statement_index;
-            let _site_scope = crate::surface::diagnostics::CStatementSiteScope::enter(
+            let _site_scope = crate::surface::diagnostics::StatementSiteScope::enter(
                 environment.source_layout,
                 statement_index,
                 environment.parsed_function,
@@ -100,7 +100,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
             *next_statement_index = source_region.continuation_node;
             Ok(joined)
         }
-        CStatement::While {
+        ProgramStatement::While {
             condition,
             invariant_checks,
             effect_checks,
@@ -112,7 +112,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
             ..
         } => {
             let statement_index = *next_statement_index;
-            let _site_scope = crate::surface::diagnostics::CStatementSiteScope::enter(
+            let _site_scope = crate::surface::diagnostics::StatementSiteScope::enter(
                 environment.source_layout,
                 statement_index,
                 environment.parsed_function,
@@ -136,11 +136,11 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
             // An early refusal: the kernel checks every certified loop's
             // measures against the function again when it records
             // termination, so the function-wide walk is shared by the loops.
-            crate::kernel::c_reject_address_escaped_loop_measures(
+            crate::kernel::program_reject_address_escaped_loop_measures(
                 environment.function_block.signature().name(),
                 ranking_measures,
                 environment.source_layout.address_taken_locals(|| {
-                    crate::kernel::c_address_taken_locals(environment.function.source_body())
+                    crate::kernel::program_address_taken_locals(environment.function.source_body())
                 }),
             )
             .map_err(ClickError::new)?;
@@ -194,23 +194,23 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                     });
                     checked_initializations.push(initialization);
                 } else {
-                    c_loop_invariants_hold_at_entry(&context.state, invariant_checks, &assumptions)
+                    loop_invariants_hold_at_entry(&context.state, invariant_checks, &assumptions)
                         .map_err(|message| {
-                            ClickError::new(format!(
-                                "`{}`: {message}",
-                                crate::surface::claim_labels::loop_phase_claim_label(
-                                    environment.function_block.signature().name(),
-                                    loop_index,
-                                    "initialize",
-                                )
-                            ))
-                        })?;
+                        ClickError::new(format!(
+                            "`{}`: {message}",
+                            crate::surface::claim_labels::loop_phase_claim_label(
+                                environment.function_block.signature().name(),
+                                loop_index,
+                                "initialize",
+                            )
+                        ))
+                    })?;
                 }
                 // The loop head invents identities for everything the body can
                 // change, from this execution's counter rather than from the
                 // base of the identity range.
                 let preservation_contexts = if *do_while {
-                    c_do_while_preservation_contexts(
+                    program_do_while_preservation_contexts(
                         &context.state,
                         condition,
                         invariant_checks,
@@ -222,7 +222,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                         context.next_kernel_variable,
                     )
                 } else {
-                    c_loop_preservation_contexts(
+                    loop_preservation_contexts(
                         &context.state,
                         condition,
                         invariant_checks,
@@ -243,7 +243,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                             "preserve",
                         ),
                         crate::surface::diagnostics::describe_loop_head_refusal(&refusal),
-                        crate::surface::diagnostics::describe_c_statement_site()
+                        crate::surface::diagnostics::describe_execution_statement_site()
                     ))
                 })?;
                 let multiple_entries = preservation_contexts.len() > 1;
@@ -489,7 +489,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                 Some(&exit_points_by_context),
             )
         }
-        CStatement::Return(_) => {
+        ProgramStatement::Return(_) => {
             let statement_index = *next_statement_index;
             *next_statement_index = environment
                 .source_layout
@@ -517,7 +517,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
         }
         _ => {
             let statement_index = *next_statement_index;
-            let _site_scope = crate::surface::diagnostics::CStatementSiteScope::enter(
+            let _site_scope = crate::surface::diagnostics::StatementSiteScope::enter(
                 environment.source_layout,
                 statement_index,
                 environment.parsed_function,
@@ -569,7 +569,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
 }
 
 fn split_execution_proof_branch_contexts(
-    condition: &CExpression,
+    condition: &ProgramExpression,
     contexts: Vec<PlanningExecutionContext>,
 ) -> Result<(Vec<PlanningExecutionContext>, Vec<PlanningExecutionContext>), ClickError> {
     let mut then_contexts = Vec::new();
@@ -591,7 +591,7 @@ fn split_execution_proof_branch_contexts(
                 case_path: {
                     let mut case_path = context.case_path.clone();
                     case_path.push(ProofCaseChoice {
-                        condition: surface_c_condition(condition, &context.state)?,
+                        condition: surface_program_condition(condition, &context.state)?,
                         value: transition.is_true,
                         match_arm: None,
                     });
@@ -612,17 +612,17 @@ fn split_execution_proof_branch_contexts(
 }
 
 fn advance_execution_proof_statement(
-    statement: &CStatement,
+    statement: &ProgramStatement,
     contexts: Vec<PlanningExecutionContext>,
     statement_index: usize,
     loop_index: Option<usize>,
     environment: &ExecutionProofEnvironment<'_>,
-    verified_loop_rules: &mut Vec<CVerifiedLoopRule>,
+    verified_loop_rules: &mut Vec<VerifiedLoopRule>,
     loop_preservation_source: LoopPreservationSource,
     initializations: Option<&[CheckedLoopInitialization]>,
-    loop_final_exit_candidates: Option<&[Vec<CLoopFinalExitCandidate>]>,
-    loop_break_exits: Option<&[Vec<CLoopBreakExit>]>,
-    loop_return_exits: Option<&[Vec<CLoopReturnExit>]>,
+    loop_final_exit_candidates: Option<&[Vec<LoopFinalExitCandidate>]>,
+    loop_break_exits: Option<&[Vec<LoopBreakExit>]>,
+    loop_return_exits: Option<&[Vec<LoopReturnExit>]>,
     loop_exit_points: Option<&[Vec<RecordedRegionPoints>]>,
 ) -> Result<Vec<PlanningExecutionContext>, ClickError> {
     let mut advanced = Vec::new();
@@ -672,7 +672,7 @@ fn advance_execution_proof_statement(
                 statement,
                 environment.function_environment,
                 Some(environment.spec_definitions.predicates),
-                CExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
+                ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
                 &label,
                 &mut context.next_opaque_call,
                 &mut context.next_kernel_variable,
@@ -695,7 +695,7 @@ fn advance_execution_proof_statement(
                 &mut context.next_kernel_variable,
             )?,
         };
-        if matches!(statement, CStatement::While { .. }) {
+        if matches!(statement, ProgramStatement::While { .. }) {
             let loop_index = loop_index.ok_or_else(|| {
                 ClickError::new(format!(
                     "execution proof traversal region({statement_index}) is a loop without a loop index"
@@ -731,8 +731,8 @@ fn advance_execution_proof_statement(
         for transition in transitions {
             let mut surface_propositions = context.surface_propositions.clone();
             let mut recorded_snapshots = context.recorded_snapshots.clone();
-            if let CStatementOutcome::Normal(exit_state)
-            | CStatementOutcome::Return {
+            if let StatementOutcome::Normal(exit_state)
+            | StatementOutcome::Return {
                 state: exit_state, ..
             } = &transition.outcome
             {
@@ -764,7 +764,7 @@ fn advance_execution_proof_statement(
                     );
                 }
             }
-            if matches!(statement, CStatement::While { .. }) {
+            if matches!(statement, ProgramStatement::While { .. }) {
                 let loop_index = loop_index.expect("a while statement has a checked loop index");
                 let loop_labels = environment
                     .function_block
@@ -782,7 +782,7 @@ fn advance_execution_proof_statement(
                     kind: ProgramPointKind::Entry,
                 };
                 recorded_snapshots.insert(entry_point, context.state.clone());
-                if let CStatementOutcome::Normal(exit_state) = &transition.outcome {
+                if let StatementOutcome::Normal(exit_state) = &transition.outcome {
                     let exit_point = ProgramPointRef {
                         region: CodeRegionRef::Loop(loop_index),
                         kind: ProgramPointKind::Exit,
@@ -814,10 +814,10 @@ fn advance_execution_proof_statement(
                             loop_index,
                         )?;
                     }
-                    if let CStatement::While { condition, .. } = statement {
-                        let exit_condition = ClickProposition::Not(Box::new(surface_c_condition(
-                            condition, exit_state,
-                        )?));
+                    if let ProgramStatement::While { condition, .. } = statement {
+                        let exit_condition = ClickProposition::Not(Box::new(
+                            surface_program_condition(condition, exit_state)?,
+                        ));
                         let lowered_exit_condition = lower_fixed_state_proposition(
                             &exit_condition,
                             &transition.pure_facts,
@@ -839,7 +839,7 @@ fn advance_execution_proof_statement(
                 }
             }
             match transition.outcome {
-                CStatementOutcome::Normal(state) => advanced.push(PlanningExecutionContext {
+                StatementOutcome::Normal(state) => advanced.push(PlanningExecutionContext {
                     state: *state,
                     pure_facts: transition.pure_facts,
                     surface_propositions,
@@ -849,7 +849,7 @@ fn advance_execution_proof_statement(
                     next_kernel_variable: context.next_kernel_variable,
                     resume_at_statement: None,
                 }),
-                CStatementOutcome::Jump { target, state } => {
+                StatementOutcome::Jump { target, state } => {
                     let target = environment.function.control_target(target).ok_or_else(|| {
                         ClickError::new("execution proof traversal produced an unknown goto target")
                     })?;
@@ -864,25 +864,25 @@ fn advance_execution_proof_statement(
                         resume_at_statement: Some(target.statement_index),
                     });
                 }
-                CStatementOutcome::Break(_)
-                | CStatementOutcome::Continue(_)
-                | CStatementOutcome::Throw { .. }
-                | CStatementOutcome::Return { .. } => {}
-                CStatementOutcome::VerificationDiverges => {}
-                CStatementOutcome::UndefinedBehavior(kind) => {
+                StatementOutcome::Break(_)
+                | StatementOutcome::Continue(_)
+                | StatementOutcome::Throw { .. }
+                | StatementOutcome::Return { .. } => {}
+                StatementOutcome::VerificationDiverges => {}
+                StatementOutcome::UndefinedBehavior(kind) => {
                     return Err(ClickError::new(format!(
                         "execution proof traversal for {} region({statement_index}) produced undefined behavior: {}{}",
                         environment.function_block.signature().name(),
                         kind.description(),
-                        crate::surface::diagnostics::describe_c_statement_site()
+                        crate::surface::diagnostics::describe_execution_statement_site()
                     )).with_reported_assertion_goal(kind.required_goal().cloned()));
                 }
-                CStatementOutcome::RuntimeError(error) => {
+                StatementOutcome::RuntimeError(error) => {
                     return Err(ClickError::new(format!(
                         "execution proof traversal for {} region({statement_index}) could not verify C operation: {}{}\nresource facts in context: {}",
                         environment.function_block.signature().name(),
                         describe_runtime_error(&error, ParameterBinding::default()),
-                        crate::surface::diagnostics::describe_c_statement_site(),
+                        crate::surface::diagnostics::describe_execution_statement_site(),
                         context.state.resources().facts().len()
                     ))
                     .with_kind(crate::surface::diagnostics::runtime_refusal_kind(&error)));
@@ -908,7 +908,7 @@ fn locate_loop_phase_error(
 /// Rebuild the decision tree from the guard facts produced by the entry check.
 /// Only these explicit deltas are indexed; ambient proof facts are never read.
 fn loop_entry_branches(
-    entries: &[crate::kernel::CLoopPreservationContext],
+    entries: &[crate::kernel::LoopPreservationContext],
     environment: &ExecutionProofEnvironment<'_>,
     loop_index: usize,
 ) -> Result<LoopEntryBranches, ClickError> {
@@ -920,7 +920,7 @@ fn loop_entry_branches(
         })
         .collect::<Vec<_>>();
     fn build(
-        entries: &[crate::kernel::CLoopPreservationContext],
+        entries: &[crate::kernel::LoopPreservationContext],
         guards: &[BTreeSet<Proposition>],
         indices: Vec<usize>,
         mut decided: BTreeSet<crate::kernel::ConditionTerm>,

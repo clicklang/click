@@ -16,11 +16,11 @@ fn wide_loop_invariant_bundle_expansion_work_scales_with_members() {
         // the same original claim a second time.
         let (expanded, work) = crate::instrumentation::measure_deterministic_work(|| {
             eprintln!("wide loop bundle size {size}: expand");
-            crate::surface::expand_c0_claim_source_by_label(&proof, &sources, "run.contract")
+            crate::surface::expand_c_claim_source_by_label(&proof, &sources, "run.contract")
         });
         let expanded = expanded.unwrap();
         eprintln!("wide loop bundle size {size}: recheck ({work} units)");
-        verify_c0_sources(&expanded, &sources).unwrap();
+        verify_c_sources(&expanded, &sources).unwrap();
         assert!(work > 0);
         samples.push((size, work));
     }

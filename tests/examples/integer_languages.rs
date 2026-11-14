@@ -32,7 +32,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use click::cli::{read_c_inputs_for_project, read_click_project_at_root};
+use click::cli::{read_click_project_at_root, read_verification_inputs_for_project};
 use click::surface::verify_project_functions;
 
 #[path = "../support/cpp_imports.rs"]
@@ -147,7 +147,7 @@ fn verify(language: Language, source: &str, function: &str) -> Result<(), String
         let root = fixture(language);
         let path = root.join(format!("{}.click", language.stem()));
         let project = read_click_project_at_root(&path, &source, &root)?;
-        let inputs = read_c_inputs_for_project(&path, &source, &project)?;
+        let inputs = read_verification_inputs_for_project(&path, &source, &project)?;
         verify_project_functions(&project, &inputs.program_inputs(), [function])
             .map(|_| ())
             .map_err(|error| format!("{error}"))

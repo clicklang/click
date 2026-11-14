@@ -6,7 +6,7 @@ use crate::surface::planning::solve::{SolveEvidence, plan_solve_certificate};
 
 use super::selected_arithmetic::RewriteClosers;
 use super::*;
-use crate::kernel::CFloatCondition;
+use crate::kernel::FloatCondition;
 use crate::kernel::proof::arithmetic_special::signed_definedness_operands;
 use crate::kernel::proof::integer_arithmetic::{
     IntegerAffineClaim, IntegerAffineRelation, IntegerArithmeticCertificate, IntegerArithmeticNode,
@@ -219,7 +219,7 @@ fn collect_signed_surface_terms<'a>(
             | ContractExpression::ResourceField(_)
             | ContractExpression::AlgebraicVariable { .. }
             | ContractExpression::Binding(_)
-            | ContractExpression::CFragment(_)
+            | ContractExpression::ProgramExpression(_)
             | ContractExpression::CBinding(_)
             | ContractExpression::RegionResult(_)
             | ContractExpression::RegionAllocation(_)
@@ -362,8 +362,8 @@ fn int32_widening_spelling(
     let already_cast = matches!(
         &candidate,
         ContractExpression::CUnary {
-            lowered: CExpression::Cast {
-                target_type: crate::kernel::CType::Int32,
+            lowered: ProgramExpression::Cast {
+                target_type: crate::kernel::ProgramType::Int32,
                 ..
             },
             ..
@@ -374,10 +374,10 @@ fn int32_widening_spelling(
     }
     ContractExpression::CUnary {
         operand: Box::new(candidate),
-        lowered: CExpression::Cast {
-            expression: Box::new(CExpression::Value(crate::kernel::int32(0))),
-            target_type: crate::kernel::CType::Int32,
-            integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+        lowered: ProgramExpression::Cast {
+            expression: Box::new(ProgramExpression::Value(crate::kernel::int32(0))),
+            target_type: crate::kernel::ProgramType::Int32,
+            integer_mode: crate::kernel::IntegerCastMode::CConversion,
             pointee_struct: None,
             pointee_volatile: false,
             pointee_constant: false,
@@ -491,6 +491,16 @@ pub(super) fn observed_native_surface_comparison(
     // by that arithmetic; only an observation makes it Integer arithmetic.
     fn written_integer(operand: &ContractExpression) -> bool {
         match operand {
+            // Synthesis retains mathematical sort with this lexical alias.
+            // Observing it again would place an Integer inside a machine cast.
+            ContractExpression::Let {
+                name,
+                click_type: Some(ClickType::Integer),
+                body,
+                ..
+            } if matches!(body.as_ref(), ContractExpression::Binding(value) if value == name) => {
+                true
+            }
             ContractExpression::IntegerLiteral(_) => true,
             ContractExpression::Negate(inner)
             | ContractExpression::Old(inner)
@@ -1008,7 +1018,7 @@ fn integer_surface_zero_claim(
 fn surface_expression_is_constant(expression: &ContractExpression) -> bool {
     match expression {
         ContractExpression::IntegerLiteral(_) => true,
-        ContractExpression::CFragment(crate::kernel::CExpression::Value(_)) => true,
+        ContractExpression::ProgramExpression(crate::kernel::ProgramExpression::Value(_)) => true,
         ContractExpression::Negate(inner) => surface_expression_is_constant(inner),
         ContractExpression::At { expression, .. } | ContractExpression::Old(expression) => {
             surface_expression_is_constant(expression)
@@ -1152,12 +1162,12 @@ fn with_operation_operands(written: &[ContractExpression]) -> Vec<ContractExpres
             | ContractExpression::Remainder(operand, _)
             | ContractExpression::ShiftRight(operand, _)
             | ContractExpression::RustShiftRight(operand, _) => operand.as_ref().clone(),
-            ContractExpression::CFragment(
-                CExpression::Divide(operand, _)
-                | CExpression::Remainder(operand, _)
-                | CExpression::ShiftRight(operand, _)
-                | CExpression::RustShiftRight(operand, _),
-            ) => ContractExpression::CFragment(operand.as_ref().clone()),
+            ContractExpression::ProgramExpression(
+                ProgramExpression::Divide(operand, _)
+                | ProgramExpression::Remainder(operand, _)
+                | ProgramExpression::ShiftRight(operand, _)
+                | ProgramExpression::RustShiftRight(operand, _),
+            ) => ContractExpression::ProgramExpression(operand.as_ref().clone()),
             _ => continue,
         };
         let observed = ContractExpression::Call {
@@ -1247,10 +1257,15 @@ fn written_integer_observations<'s>(
                 }
                 ContractExpression::CUnary {
                     operand,
-                    lowered: CExpression::Cast { .. },
+                    lowered: ProgramExpression::Cast { .. },
                 } => vec![operand.as_ref().clone()],
-                ContractExpression::CFragment(CExpression::Cast { expression, .. }) => {
-                    vec![ContractExpression::CFragment(expression.as_ref().clone())]
+                ContractExpression::ProgramExpression(ProgramExpression::Cast {
+                    expression,
+                    ..
+                }) => {
+                    vec![ContractExpression::ProgramExpression(
+                        expression.as_ref().clone(),
+                    )]
                 }
                 _ => Vec::new(),
             };
@@ -1598,10 +1613,10 @@ fn kernel_upper_bound_split_candidate(
 fn native_int32_split_operand(operand: ContractExpression) -> ContractExpression {
     ContractExpression::CUnary {
         operand: Box::new(operand),
-        lowered: CExpression::Cast {
-            expression: Box::new(CExpression::Value(int32(0))),
-            target_type: crate::kernel::CType::Int32,
-            integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+        lowered: ProgramExpression::Cast {
+            expression: Box::new(ProgramExpression::Value(int32(0))),
+            target_type: crate::kernel::ProgramType::Int32,
+            integer_mode: crate::kernel::IntegerCastMode::CConversion,
             pointee_struct: None,
             pointee_volatile: false,
             pointee_constant: false,
@@ -1615,10 +1630,10 @@ fn native_int32_split_operand(operand: ContractExpression) -> ContractExpression
 fn native_uint32_split_operand(operand: ContractExpression) -> ContractExpression {
     ContractExpression::CUnary {
         operand: Box::new(operand),
-        lowered: CExpression::Cast {
-            expression: Box::new(CExpression::Value(int32(0))),
-            target_type: crate::kernel::CType::UInt32,
-            integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+        lowered: ProgramExpression::Cast {
+            expression: Box::new(ProgramExpression::Value(int32(0))),
+            target_type: crate::kernel::ProgramType::UInt32,
+            integer_mode: crate::kernel::IntegerCastMode::CConversion,
             pointee_struct: None,
             pointee_volatile: false,
             pointee_constant: false,
@@ -1649,7 +1664,7 @@ fn surface_upper_bound_split_condition(proposition: &ClickProposition) -> Option
             left,
             operator: ComparisonOperator::LessThan,
             right: ContractExpression::Add(pivot, one),
-        } if **one == ContractExpression::CFragment(CExpression::Value(int32(1))) => {
+        } if **one == ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))) => {
             Some(ClickProposition::Comparison {
                 left: left.clone(),
                 operator: ComparisonOperator::LessThan,
@@ -1665,7 +1680,9 @@ fn surface_upper_bound_split_condition(proposition: &ClickProposition) -> Option
             operator: ComparisonOperator::LessThan,
             right: native_int32_split_operand(ContractExpression::Subtract(
                 Box::new(right.clone()),
-                Box::new(ContractExpression::CFragment(CExpression::Value(int32(1)))),
+                Box::new(ContractExpression::ProgramExpression(
+                    ProgramExpression::Value(int32(1)),
+                )),
             )),
         }),
         _ => None,
@@ -2026,10 +2043,10 @@ impl<'a> Proof<'a> {
                         } if name == "to_integer" && arguments.len() == 1 => arguments.remove(0),
                         operand => operand,
                     }),
-                    lowered: CExpression::Cast {
-                        expression: Box::new(CExpression::Value(crate::kernel::int32(0))),
-                        target_type: crate::kernel::CType::Int32,
-                        integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+                    lowered: ProgramExpression::Cast {
+                        expression: Box::new(ProgramExpression::Value(crate::kernel::int32(0))),
+                        target_type: crate::kernel::ProgramType::Int32,
+                        integer_mode: crate::kernel::IntegerCastMode::CConversion,
                         pointee_struct: None,
                         pointee_volatile: false,
                         pointee_constant: false,
@@ -2954,9 +2971,9 @@ impl<'a> Proof<'a> {
                 );
             let unsigned = machine.ty() == crate::kernel::MachineIntegerType::UInt32;
             let value = if unsigned {
-                CValue::UInt32(machine.value().clone())
+                ProgramValue::UInt32(machine.value().clone())
             } else {
-                CValue::Int32(machine.value().clone())
+                ProgramValue::Int32(machine.value().clone())
             };
             if let Some(value) = crate::surface::proof::surface_synthesis::synthesize_surface_value(
                 &value,
@@ -3911,7 +3928,7 @@ fn quantified_external_range_goal(goal: &Proposition) -> bool {
             return false;
         }
         match current {
-            Proposition::CMemoryLoadable { base, .. }
+            Proposition::MemoryLoadable { base, .. }
                 if matches!(base.block, crate::kernel::PointerBlock::ExternalArgument) =>
             {
                 saw_range = true;
@@ -3936,7 +3953,7 @@ fn quantified_external_range_goal(goal: &Proposition) -> bool {
             Proposition::Not(body)
             | Proposition::ForAll { body, .. }
             | Proposition::Exists { body, .. } => work.push(body),
-            Proposition::CMemoryLoadable { .. } => return false,
+            Proposition::MemoryLoadable { .. } => return false,
             Proposition::ConditionIs(_, _) => {}
             _ => return false,
         }
@@ -3958,7 +3975,7 @@ impl<'a> Proof<'a> {
     /// x <= MAX / rhs` under `rhs != 0` is `x <= MAX / rhs`. The step's false
     /// path then carries the negation of what was proved, and is pruned by
     /// the exact conflict check. Each disjunct is one exact lookup.
-    fn asserted_condition_given_context(&self, condition: &CExpression) -> ClickProposition {
+    fn asserted_condition_given_context(&self, condition: &ProgramExpression) -> ClickProposition {
         let surface = asserted_condition_proposition(condition);
         let mut disjuncts = Vec::new();
         let mut pending = vec![surface.clone()];
@@ -4023,41 +4040,46 @@ impl<'a> Proof<'a> {
 
 /// The Surface proposition that a C condition is true: its comparisons and
 /// logical connectives as written, and any other operand as `e != 0`.
-fn asserted_condition_proposition(condition: &CExpression) -> ClickProposition {
-    let comparison =
-        |left: &CExpression, operator, right: &CExpression| ClickProposition::Comparison {
-            left: ContractExpression::CFragment(left.clone()),
+fn asserted_condition_proposition(condition: &ProgramExpression) -> ClickProposition {
+    let comparison = |left: &ProgramExpression, operator, right: &ProgramExpression| {
+        ClickProposition::Comparison {
+            left: ContractExpression::ProgramExpression(left.clone()),
             operator,
-            right: ContractExpression::CFragment(right.clone()),
-        };
+            right: ContractExpression::ProgramExpression(right.clone()),
+        }
+    };
     match condition {
-        CExpression::And(left, right) => ClickProposition::And(
+        ProgramExpression::And(left, right) => ClickProposition::And(
             Box::new(asserted_condition_proposition(left)),
             Box::new(asserted_condition_proposition(right)),
         ),
-        CExpression::Or(left, right) => ClickProposition::Or(
+        ProgramExpression::Or(left, right) => ClickProposition::Or(
             Box::new(asserted_condition_proposition(left)),
             Box::new(asserted_condition_proposition(right)),
         ),
-        CExpression::Not(inner) => {
+        ProgramExpression::Not(inner) => {
             ClickProposition::Not(Box::new(asserted_condition_proposition(inner)))
         }
-        CExpression::Equal(left, right) => comparison(left, ComparisonOperator::Equal, right),
-        CExpression::NotEqual(left, right) => comparison(left, ComparisonOperator::NotEqual, right),
-        CExpression::LessThan(left, right) => comparison(left, ComparisonOperator::LessThan, right),
-        CExpression::LessEqual(left, right) => {
+        ProgramExpression::Equal(left, right) => comparison(left, ComparisonOperator::Equal, right),
+        ProgramExpression::NotEqual(left, right) => {
+            comparison(left, ComparisonOperator::NotEqual, right)
+        }
+        ProgramExpression::LessThan(left, right) => {
+            comparison(left, ComparisonOperator::LessThan, right)
+        }
+        ProgramExpression::LessEqual(left, right) => {
             comparison(left, ComparisonOperator::LessEqual, right)
         }
-        CExpression::GreaterThan(left, right) => {
+        ProgramExpression::GreaterThan(left, right) => {
             comparison(left, ComparisonOperator::GreaterThan, right)
         }
-        CExpression::GreaterEqual(left, right) => {
+        ProgramExpression::GreaterEqual(left, right) => {
             comparison(left, ComparisonOperator::GreaterEqual, right)
         }
         other => comparison(
             other,
             ComparisonOperator::NotEqual,
-            &CExpression::Value(int32(0)),
+            &ProgramExpression::Value(int32(0)),
         ),
     }
 }
@@ -4078,11 +4100,13 @@ fn literal_requirement_spelling(
     }
     Some(RequirementSpelling {
         surface: ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::Value(crate::kernel::int32(0))),
+            left: ContractExpression::ProgramExpression(ProgramExpression::Value(
+                crate::kernel::int32(0),
+            )),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::CFragment(CExpression::Value(crate::kernel::int32(
-                u32::from(value != polarity),
-            ))),
+            right: ContractExpression::ProgramExpression(ProgramExpression::Value(
+                crate::kernel::int32(u32::from(value != polarity)),
+            )),
         },
     })
 }
@@ -4109,7 +4133,7 @@ pub(super) fn lowered_states_requirement(
         // A resource spelling includes its formation prerequisites. Proving
         // that complete conjunction proves the selected exact requirement;
         // never discard the extra goals or consult ambient facts here.
-        || (matches!(requirement.proposition, Proposition::CResourceSeparate { .. } | Proposition::CResourceContains { .. })
+        || (matches!(requirement.proposition, Proposition::ResourceSeparate { .. } | Proposition::ResourceContains { .. })
             && crate::kernel::proof::fact_reasoning::exact_fact_contains_conjunct(
                 lowered,
                 &requirement.proposition,
@@ -4208,13 +4232,13 @@ pub(super) fn propositions_match_after_canonical_loads(
                 }
             }
             (
-                Proposition::CMemoryLoadable {
+                Proposition::MemoryLoadable {
                     memory: lm,
                     base: lb,
                     bytes: ln,
                     wide: lw,
                 },
-                Proposition::CMemoryLoadable {
+                Proposition::MemoryLoadable {
                     memory: rm,
                     base: rb,
                     bytes: rn,
@@ -4259,7 +4283,7 @@ fn literal_requirement_matching_respects_both_truth_and_polarity() {
 
 fn source_backed_refusal(
     error: &ClickError,
-    current_memory: &crate::kernel::CMemory,
+    current_memory: &crate::kernel::Memory,
 ) -> Result<bool, ClickError> {
     let Some(requirement) = error.unresolved_requirement() else {
         return Ok(false);
@@ -4267,7 +4291,7 @@ fn source_backed_refusal(
     let Some(site) = requirement.call_site.as_ref() else {
         return Ok(false);
     };
-    if crate::kernel::CMemorySnapshotIdentity::of(current_memory) != site.source_snapshot {
+    if crate::kernel::MemorySnapshotIdentity::of(current_memory) != site.source_snapshot {
         return Ok(false);
     }
     source_backed_requirement_is_supported(
@@ -4284,7 +4308,7 @@ fn source_backed_refusal(
 /// frontier memory identity all have to agree before a source form is
 /// admitted to the retained-have retry.
 struct SourceBackedCallSurface {
-    arguments: Vec<CExpression>,
+    arguments: Vec<ProgramExpression>,
     source_proposition: ClickProposition,
     proposition: ClickProposition,
 }
@@ -4302,7 +4326,7 @@ fn source_backed_call_requirement_surface(
     let source_ordinal = source.source_requirement_ordinal?;
     let site = source.site.as_ref();
 
-    if crate::kernel::CMemorySnapshotIdentity::of(execution.core.state.memory())
+    if crate::kernel::MemorySnapshotIdentity::of(execution.core.state.memory())
         != site.source_snapshot
     {
         return None;
@@ -4323,11 +4347,16 @@ fn source_backed_call_requirement_surface(
     )
     .ok()?;
     let (callee, arguments) = match statement {
-        CStatement::Call {
+        ProgramStatement::Call {
             function_name,
             arguments,
         }
-        | CStatement::CallAssign {
+        | ProgramStatement::CallAssign {
+            function_name,
+            arguments,
+            ..
+        }
+        | ProgramStatement::CallResult {
             function_name,
             arguments,
             ..
@@ -4424,7 +4453,12 @@ fn source_backed_call_requirement_surface(
                     .collect::<Vec<_>>(),
                 parameters
                     .iter()
-                    .map(|parameter| parameter.click_type().c_type().map(C0Type::to_kernel_type))
+                    .map(|parameter| {
+                        parameter
+                            .click_type()
+                            .interface_type()
+                            .map(InterfaceType::to_kernel_type)
+                    })
                     .collect::<Vec<_>>(),
                 requirement.proposition()?.clone(),
             )
@@ -4455,7 +4489,7 @@ fn source_backed_call_requirement_surface(
                 function
                     .parameters()
                     .iter()
-                    .map(|parameter| Some(parameter.c_type()))
+                    .map(|parameter| Some(parameter.program_type()))
                     .collect::<Vec<_>>(),
                 proposition,
             )
@@ -4486,9 +4520,9 @@ fn source_backed_call_requirement_surface(
                     &context.parsed_function.parameters()[slot],
                     *parameter_type,
                 ),
-                None => ContractExpression::CFragment(super::surface_synthesis::source_c_argument(
-                    argument,
-                )),
+                None => ContractExpression::ProgramExpression(
+                    super::surface_synthesis::source_c_argument(argument),
+                ),
             };
             (parameter.clone(), argument)
         })
@@ -4528,13 +4562,13 @@ fn source_backed_call_requirement_surface(
         let expression = if let Some(written) = written_values.get(name.as_str()) {
             (*written).clone()
         } else if super::resources::is_integer_constant(value) {
-            ContractExpression::CFragment(CExpression::Value(value.clone()))
+            ContractExpression::ProgramExpression(ProgramExpression::Value(value.clone()))
         } else {
             let term = match value {
-                CValue::Int32(term)
-                | CValue::UInt32(term)
-                | CValue::Int64(term)
-                | CValue::UInt64(term) => term,
+                ProgramValue::Int32(term)
+                | ProgramValue::UInt32(term)
+                | ProgramValue::Int64(term)
+                | ProgramValue::UInt64(term) => term,
                 _ => return None,
             };
             let local = execution
@@ -4543,8 +4577,8 @@ fn source_backed_call_requirement_surface(
                 .locals()
                 .names_holding_integer(term)
                 .next()?;
-            ContractExpression::CFragment(CExpression::Variable(
-                crate::kernel::c_local_source_name(local).to_owned(),
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::program_local_source_name(local).to_owned(),
             ))
         };
         substitutions.insert(name.clone(), expression);
@@ -4560,8 +4594,8 @@ fn source_backed_call_requirement_surface(
                 .iter()
                 .position(|parameter| parameter == name)?;
             match source_parameter_types[slot]? {
-                crate::kernel::CType::Int8Pointer => Some(C0Type::Int8Pointer),
-                crate::kernel::CType::Int8Array(size) => Some(C0Type::Int8Array(size)),
+                crate::kernel::ProgramType::Int8Pointer => Some(InterfaceType::Int8Pointer),
+                crate::kernel::ProgramType::Int8Array(size) => Some(InterfaceType::Int8Array(size)),
                 _ => None,
             }
         },
@@ -4651,7 +4685,9 @@ pub(in crate::surface::proof) fn source_backed_direct_caller_requirement(
         .iter()
         .enumerate()
         .filter_map(|(predicate_argument_slot, argument)| {
-            let ContractExpression::CFragment(CExpression::Variable(callee_name)) = argument else {
+            let ContractExpression::ProgramExpression(ProgramExpression::Variable(callee_name)) =
+                argument
+            else {
                 return None;
             };
             let callee_slot = callee
@@ -4687,12 +4723,12 @@ pub(in crate::surface::proof) fn source_backed_direct_caller_requirement(
         .get(&predicate_name)?
         .parameters()
         .get(*predicate_argument_slot)
-        .and_then(|parameter| parameter.click_type().c_type())
-        .map(C0Type::to_kernel_type);
+        .and_then(|parameter| parameter.click_type().interface_type())
+        .map(InterfaceType::to_kernel_type);
     *substituted_arguments.get_mut(*predicate_argument_slot)? =
         caller_parameter_as_argument(caller_parameter, predicate_parameter_type);
     let entry_state = context.constants.function_entry_state.as_ref()?;
-    let entry_snapshot = crate::kernel::CMemorySnapshotIdentity::of(entry_state.memory());
+    let entry_snapshot = crate::kernel::MemorySnapshotIdentity::of(entry_state.memory());
     // Phase 1 projects entry requirements only across an effect-free prefix.
     // Local declarations change the current snapshot without adding an
     // effect, while stores and havoc do add one. Crossing a recorded memory
@@ -4719,19 +4755,21 @@ pub(in crate::surface::proof) fn source_backed_direct_caller_requirement(
 /// the parameter itself, or, for a signed character pointer read as
 /// `uint8` bytes, its explicit byte view.
 fn caller_parameter_as_argument(
-    parameter: &syntax::C0Parameter,
-    expected: Option<crate::kernel::CType>,
+    parameter: &crate::languages::interface::ImportedParameter,
+    expected: Option<crate::kernel::ProgramType>,
 ) -> ContractExpression {
     match expected {
         Some(expected)
             if crate::surface::lowering::needs_character_byte_view(
-                parameter.c_type(),
+                parameter.interface_type(),
                 expected,
             ) =>
         {
             crate::surface::lowering::character_byte_view(parameter.name())
         }
-        _ => ContractExpression::CFragment(CExpression::Variable(parameter.name().to_string())),
+        _ => ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            parameter.name().to_string(),
+        )),
     }
 }
 
@@ -4742,19 +4780,19 @@ fn caller_parameter_as_argument(
 /// read predicate grants no write permission, so a `const` cast is identity
 /// here too.
 fn caller_parameter_through_identity_cast(
-    argument: &CExpression,
-    parameters: &[syntax::C0Parameter],
-    state: &crate::kernel::CState,
+    argument: &ProgramExpression,
+    parameters: &[crate::languages::interface::ImportedParameter],
+    state: &crate::kernel::ExecutionState,
 ) -> Option<usize> {
     let (name, cast_type) = match argument {
-        CExpression::Variable(name) => (name, None),
-        CExpression::Cast {
+        ProgramExpression::Variable(name) => (name, None),
+        ProgramExpression::Cast {
             expression,
             target_type,
             pointee_volatile: false,
             ..
         } => match expression.as_ref() {
-            CExpression::Variable(name) => (name, Some(*target_type)),
+            ProgramExpression::Variable(name) => (name, Some(*target_type)),
             _ => return None,
         },
         _ => return None,
@@ -4779,10 +4817,10 @@ fn caller_parameter_through_identity_cast(
     // one byte has one value, read through either signedness.
     match cast_type {
         Some(target_type)
-            if target_type != parameters[slot].c_type().to_kernel_type()
+            if target_type != parameters[slot].interface_type().to_kernel_type()
                 && !(target_type.is_character_pointer()
                     && parameters[slot]
-                        .c_type()
+                        .interface_type()
                         .to_kernel_type()
                         .is_character_pointer()) =>
         {
@@ -4857,8 +4895,8 @@ pub(super) fn synthesize_surface_at_recorded_snapshots<'a>(
 fn synthesize_surface_with_recorded_snapshot<'a>(
     kernel: &'a Proposition,
     parameter_binding: ParameterBinding<'a>,
-    entry: &'a CState,
-    current: &'a CState,
+    entry: &'a ExecutionState,
+    current: &'a ExecutionState,
     recorded_snapshots: &'a RecordedSnapshots,
     anchor: &ProgramPointRef,
 ) -> impl Iterator<Item = ClickProposition> + 'a {
@@ -4995,6 +5033,40 @@ mod synthesized_literal_tests {
     use super::*;
 
     #[test]
+    fn native_comparison_observation_preserves_synthesized_integer_alias() {
+        let kernel = Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: Box::new(MachineTerm::Variable(Variable(991984))),
+                right: Box::new(MachineTerm::constant(10)),
+            },
+            true,
+        );
+        let value = crate::surface::proof::surface_synthesis::integer_typed_expression(
+            ContractExpression::Call {
+                name: "to_integer".into(),
+                arguments: vec![ContractExpression::Binding("x".into())],
+            },
+        );
+        let written = ClickProposition::Comparison {
+            left: ContractExpression::At {
+                selector: SnapshotSelector::ProgramPoint(ProgramPointRef {
+                    region: CodeRegionRef::Function,
+                    kind: ProgramPointKind::Entry,
+                }),
+                expression: Box::new(value),
+            },
+            operator: ComparisonOperator::LessEqual,
+            right: ContractExpression::IntegerLiteral("10".into()),
+        };
+        assert_eq!(
+            observed_native_surface_comparison(&kernel, &written),
+            written
+        );
+    }
+
+    #[test]
     fn requirement_matching_does_not_select_an_unrelated_trivial_goal() {
         let _session = crate::kernel::VerificationSession::enter();
         let requirement = |proposition| UnresolvedRequirement {
@@ -5026,9 +5098,9 @@ mod synthesized_literal_tests {
         ));
         let whole = Proposition::And(Box::new(trivial.clone()), Box::new(bound));
         assert!(!lowered_states_requirement(&whole, &requirement(trivial)));
-        let separation = Proposition::CResourceSeparate {
-            left: Box::new(crate::kernel::CResource::Emp),
-            right: Box::new(crate::kernel::CResource::Emp),
+        let separation = Proposition::ResourceSeparate {
+            left: Box::new(crate::kernel::Resource::Emp),
+            right: Box::new(crate::kernel::Resource::Emp),
         };
         let whole = Proposition::And(Box::new(whole), Box::new(separation.clone()));
         assert!(lowered_states_requirement(&whole, &requirement(separation)));
@@ -5036,16 +5108,14 @@ mod synthesized_literal_tests {
 
     #[test]
     fn signed_certificate_spelling_matches_exact_read_atoms() {
-        use crate::kernel::{CMemory, LoadKind, Pointer, intern_c_memory};
+        use crate::kernel::{LoadKind, Memory, Pointer, intern_memory};
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Pointer::symbolic(Variable(71_230));
-        let before = intern_c_memory(CMemory::new());
-        let after = intern_c_memory(
-            before
-                .memory()
-                .clone()
-                .store(pointer.clone(), CValue::Int32(MachineTerm::constant(1))),
-        );
+        let before = intern_memory(Memory::new());
+        let after = intern_memory(before.memory().clone().store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(1)),
+        ));
         let read = |memory, pointer, kind| MachineTerm::MemoryLoad(memory, Box::new(pointer), kind);
         let value = read(before.clone(), pointer.clone(), LoadKind::Int32);
         let atom = |term: &MachineTerm| {
@@ -5066,20 +5136,20 @@ mod synthesized_literal_tests {
     #[test]
     fn retained_requirements_match_mirrored_orders_and_stored_read_sources() {
         use crate::kernel::{
-            CMemory, CompareRelation as R, KernelTerm, LoadKind, MachineBinaryOp as Op,
-            MachineOperandView as V, Pointer, intern_c_memory,
+            CompareRelation as R, KernelTerm, LoadKind, MachineBinaryOp as Op,
+            MachineOperandView as V, Memory, Pointer, intern_memory,
         };
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
         let x = MachineTerm::Variable(Variable(71231));
         let sum = MachineTerm::logical_machine_binary(ty, Op::Add, x, 1u32.into());
         let pointer = Pointer::symbolic(Variable(71232));
-        let before = intern_c_memory(CMemory::new());
-        let after = intern_c_memory(
+        let before = intern_memory(Memory::new());
+        let after = intern_memory(
             before
                 .memory()
                 .clone()
-                .store(pointer.clone(), CValue::Int32(sum.clone())),
+                .store(pointer.clone(), ProgramValue::Int32(sum.clone())),
         );
         let read =
             |memory| MachineTerm::MemoryLoad(memory, Box::new(pointer.clone()), LoadKind::Int32);

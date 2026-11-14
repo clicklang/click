@@ -13,9 +13,9 @@ pub(super) fn link_c_units(
     target: CTarget,
     thread_runtime: crate::languages::c::thread_runtime::CThreadRuntime,
     external_functions: &[&str],
-    c_sources: &CSourceContext<'_>,
+    c_sources: &ProgramSourceContext<'_>,
     build_storage: bool,
-) -> Result<BTreeMap<String, (String, syntax::C0Function)>, ClickError> {
+) -> Result<BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>, ClickError> {
     let mut parsed = BTreeMap::new();
     let mut units = BTreeMap::new();
     for source_path in verifying_sources {
@@ -76,7 +76,7 @@ pub(super) fn link_c_units(
         let source_globals = globals_by_source.entry(source_path.clone()).or_default();
         for (name, global) in &unit.globals {
             match source_globals.get(name) {
-                Some(previous) if previous.c_type() != global.c_type() => {
+                Some(previous) if previous.interface_type() != global.interface_type() => {
                     return Err(ClickError::new(format!(
                         "conflicting declarations for global `{name}`"
                     )));
@@ -118,7 +118,7 @@ pub(super) fn link_c_units(
                 continue;
             }
             match globals.get(name) {
-                Some(previous) if previous.c_type() != global.c_type() => {
+                Some(previous) if previous.interface_type() != global.interface_type() => {
                     return Err(ClickError::new(format!(
                         "conflicting declarations for global `{name}`"
                     )));
@@ -515,7 +515,7 @@ pub(super) fn link_c_units(
             .filter(|(_, global)| {
                 !global.is_file_static()
                     && global.is_initialized_definition()
-                    && global.c_type().is_pointer()
+                    && global.interface_type().is_pointer()
             })
             .map(|(name, _)| name.clone())
             .collect::<Vec<_>>();
@@ -681,12 +681,14 @@ pub(super) fn link_c_units(
                 .1
                 .program_entry_state = Some(std::sync::Arc::new({
                 let _timing = VerificationTimingPhase::new("program-entry storage");
-                crate::kernel::initialize_c_program_storage(storage_functions).ok_or_else(|| {
-                    ClickError::new(format!(
-                        "verification budget exhausted inside {}",
-                        instrumentation::deadline_context()
-                    ))
-                })?
+                crate::kernel::initialize_program_program_storage(storage_functions).ok_or_else(
+                    || {
+                        ClickError::new(format!(
+                            "verification budget exhausted inside {}",
+                            instrumentation::deadline_context()
+                        ))
+                    },
+                )?
             }));
         }
     }
@@ -710,7 +712,7 @@ fn unit_storage_context(
         BTreeMap<String, syntax::C0GlobalAggregateArray>,
     >,
     global_aggregate_arrays: &syntax::DeclarationMap<syntax::C0GlobalAggregateArray>,
-) -> syntax::C0Function {
+) -> crate::languages::interface::ImportedFunction {
     fn visible<T: Clone>(
         own: &BTreeMap<String, T>,
         linked: &syntax::DeclarationMap<T>,
@@ -727,34 +729,38 @@ fn unit_storage_context(
             })
             .collect()
     }
-    syntax::C0Function::external(syntax::C0Type::Void, String::new(), vec![])
-        .with_globals(visible(
-            &globals_by_source[source_path],
-            globals,
-            |object| object.is_file_static(),
-        ))
-        .with_global_arrays(visible(
-            &global_arrays_by_source[source_path],
-            global_arrays,
-            |object| object.is_file_static(),
-        ))
-        .with_global_aggregates(visible(
-            &global_aggregates_by_source[source_path],
-            global_aggregates,
-            |object| object.is_file_static(),
-        ))
-        .with_global_aggregate_arrays(visible(
-            &global_aggregate_arrays_by_source[source_path],
-            global_aggregate_arrays,
-            |object| object.is_file_static(),
-        ))
+    crate::languages::interface::ImportedFunction::external(
+        crate::languages::interface::InterfaceType::Void,
+        String::new(),
+        vec![],
+    )
+    .with_globals(visible(
+        &globals_by_source[source_path],
+        globals,
+        |object| object.is_file_static(),
+    ))
+    .with_global_arrays(visible(
+        &global_arrays_by_source[source_path],
+        global_arrays,
+        |object| object.is_file_static(),
+    ))
+    .with_global_aggregates(visible(
+        &global_aggregates_by_source[source_path],
+        global_aggregates,
+        |object| object.is_file_static(),
+    ))
+    .with_global_aggregate_arrays(visible(
+        &global_aggregate_arrays_by_source[source_path],
+        global_aggregate_arrays,
+        |object| object.is_file_static(),
+    ))
 }
 
 /// The layouts, nameable objects and per-function tables of the verifying C
 /// translation units.
 pub(super) fn c_layouts(
     verifying_paths: Vec<String>,
-    c_sources: &CSourceContext<'_>,
+    c_sources: &ProgramSourceContext<'_>,
     target: CTarget,
 ) -> Result<parser::ProgramLayouts, ClickError> {
     if let ProgramSource::PreparedC {
@@ -844,7 +850,7 @@ pub(super) fn c_layouts(
             calls
                 .entry(function.source_name().to_string())
                 .or_default()
-                .extend(super::c0_statement_calls(&function).into_iter().flatten());
+                .extend(super::c_statement_calls(&function).into_iter().flatten());
             record_function_tables(&mut tables, function);
         }
     }
@@ -872,7 +878,7 @@ fn c_parse_error_kind(error: &syntax::C0SyntaxError) -> ClickErrorKind {
 
 pub(super) fn parse_c_source_unit(
     source_path: &str,
-    c_sources: &CSourceContext<'_>,
+    c_sources: &ProgramSourceContext<'_>,
     target: CTarget,
 ) -> Result<syntax::C0TranslationUnit, ClickError> {
     if let Some(import) = c_sources.prepared_c_import(source_path)
@@ -958,13 +964,13 @@ pub(super) fn parse_c_source_unit(
 /// A qualified scalar name denotes its storage read in the selected snapshot,
 /// including `old` and recorded snapshots, rather than one fixed input value.
 fn qualified_scalar_read(
-    address: CValue,
-    value_type: CType,
+    address: ProgramValue,
+    value_type: ProgramType,
     pointee_constant: bool,
     pointee_volatile: bool,
-) -> CExpression {
-    let read = CExpression::TypedLoad {
-        pointer: Box::new(CExpression::Value(address)),
+) -> ProgramExpression {
+    let read = ProgramExpression::TypedLoad {
+        pointer: Box::new(ProgramExpression::Value(address)),
         value_type,
         volatile: false,
         pointee_constant,
@@ -972,10 +978,10 @@ fn qualified_scalar_read(
         source: Default::default(),
     };
     if value_type.is_object_pointer() && pointee_volatile {
-        CExpression::Cast {
+        ProgramExpression::Cast {
             expression: Box::new(read),
             target_type: value_type,
-            integer_mode: crate::kernel::CIntegerCastMode::Standard,
+            integer_mode: crate::kernel::IntegerCastMode::Standard,
             pointee_struct: None,
             pointee_volatile: true,
             pointee_constant,
@@ -993,14 +999,14 @@ pub(super) fn unit_qualified_objects(
 ) -> BTreeMap<String, parser::QualifiedCObject> {
     let mut objects = BTreeMap::new();
     for (name, global) in &unit.globals {
-        if let Some(pointer_type) = global.c_type().pointer_type() {
-            let pointer = CMemory::global_pointer(global.kernel_name());
-            let address = CValue::typed_pointer(pointer, pointer_type.to_kernel_type())
+        if let Some(pointer_type) = global.interface_type().pointer_type() {
+            let pointer = Memory::global_pointer(global.kernel_name());
+            let address = ProgramValue::typed_pointer(pointer, pointer_type.to_kernel_type())
                 .with_pointer_pointee_constant(global.is_constant())
                 .with_pointer_pointee_volatile(global.is_volatile());
             let expression = qualified_scalar_read(
                 address,
-                global.c_type().to_kernel_type(),
+                global.interface_type().to_kernel_type(),
                 global.pointee_is_constant(),
                 global.pointee_is_volatile(),
             );
@@ -1008,8 +1014,8 @@ pub(super) fn unit_qualified_objects(
                 name.clone(),
                 parser::QualifiedCObject {
                     expression,
-                    address: Some(CExpression::Value(CValue::typed_pointer(
-                        CMemory::global_pointer(global.kernel_name()),
+                    address: Some(ProgramExpression::Value(ProgramValue::typed_pointer(
+                        Memory::global_pointer(global.kernel_name()),
                         pointer_type.to_kernel_type(),
                     ))),
                     struct_name: global.struct_name().map(str::to_owned),
@@ -1024,11 +1030,13 @@ pub(super) fn unit_qualified_objects(
             objects.insert(
                 name.clone(),
                 parser::QualifiedCObject {
-                    expression: CExpression::Value(CValue::typed_pointer_with_pointee_constant(
-                        CMemory::global_pointer(array.kernel_name()),
-                        pointer_type.to_kernel_type(),
-                        array.is_constant(),
-                    )),
+                    expression: ProgramExpression::Value(
+                        ProgramValue::typed_pointer_with_pointee_constant(
+                            Memory::global_pointer(array.kernel_name()),
+                            pointer_type.to_kernel_type(),
+                            array.is_constant(),
+                        ),
+                    ),
                     address: None,
                     struct_name: None,
                     array_shape: array.index_shape(),
@@ -1041,11 +1049,13 @@ pub(super) fn unit_qualified_objects(
         objects.insert(
             name.clone(),
             parser::QualifiedCObject {
-                expression: CExpression::Value(CValue::typed_pointer_with_pointee_constant(
-                    CMemory::global_pointer(aggregate.kernel_name()),
-                    CType::Int32Pointer,
-                    aggregate.is_constant(),
-                )),
+                expression: ProgramExpression::Value(
+                    ProgramValue::typed_pointer_with_pointee_constant(
+                        Memory::global_pointer(aggregate.kernel_name()),
+                        ProgramType::Int32Pointer,
+                        aggregate.is_constant(),
+                    ),
+                ),
                 address: None,
                 struct_name: Some(aggregate.struct_name().to_owned()),
                 array_shape: None,
@@ -1058,11 +1068,13 @@ pub(super) fn unit_qualified_objects(
             objects.insert(
                 name.clone(),
                 parser::QualifiedCObject {
-                    expression: CExpression::Value(CValue::typed_pointer_with_pointee_constant(
-                        CMemory::global_pointer(aggregate_array.kernel_name()),
-                        CType::Int32Pointer,
-                        aggregate_array.is_constant(),
-                    )),
+                    expression: ProgramExpression::Value(
+                        ProgramValue::typed_pointer_with_pointee_constant(
+                            Memory::global_pointer(aggregate_array.kernel_name()),
+                            ProgramType::Int32Pointer,
+                            aggregate_array.is_constant(),
+                        ),
+                    ),
                     address: None,
                     struct_name: Some(aggregate_array.struct_name().to_owned()),
                     array_shape: Some(vec![length]),
@@ -1099,14 +1111,14 @@ pub(super) fn unit_qualified_objects(
             *names.entry(name).or_default() += 1;
         }
         for local in function.static_locals().values() {
-            if let Some(pointer_type) = local.c_type().pointer_type() {
-                let pointer = CMemory::static_pointer(function.name(), local.kernel_name());
-                let address = CValue::typed_pointer(pointer, pointer_type.to_kernel_type())
+            if let Some(pointer_type) = local.interface_type().pointer_type() {
+                let pointer = Memory::static_pointer(function.name(), local.kernel_name());
+                let address = ProgramValue::typed_pointer(pointer, pointer_type.to_kernel_type())
                     .with_pointer_pointee_constant(local.is_constant())
                     .with_pointer_pointee_volatile(local.is_volatile());
                 let expression = qualified_scalar_read(
                     address,
-                    local.c_type().to_kernel_type(),
+                    local.interface_type().to_kernel_type(),
                     local.pointee_is_constant(),
                     local.pointee_is_volatile(),
                 );
@@ -1114,8 +1126,8 @@ pub(super) fn unit_qualified_objects(
                     format!("{}::{}", function.name(), local.name()),
                     parser::QualifiedCObject {
                         expression,
-                        address: Some(CExpression::Value(CValue::typed_pointer(
-                            CMemory::static_pointer(function.name(), local.kernel_name()),
+                        address: Some(ProgramExpression::Value(ProgramValue::typed_pointer(
+                            Memory::static_pointer(function.name(), local.kernel_name()),
                             pointer_type.to_kernel_type(),
                         ))),
                         struct_name: None,
@@ -1130,9 +1142,9 @@ pub(super) fn unit_qualified_objects(
                 objects.insert(
                     format!("{}::{}", function.name(), array.name()),
                     parser::QualifiedCObject {
-                        expression: CExpression::Value(
-                            CValue::typed_pointer_with_pointee_constant(
-                                CMemory::static_pointer(function.name(), array.kernel_name()),
+                        expression: ProgramExpression::Value(
+                            ProgramValue::typed_pointer_with_pointee_constant(
+                                Memory::static_pointer(function.name(), array.kernel_name()),
                                 pointer_type.to_kernel_type(),
                                 array.is_constant(),
                             ),
@@ -1149,11 +1161,13 @@ pub(super) fn unit_qualified_objects(
             objects.insert(
                 format!("{}::{}", function.name(), aggregate.name()),
                 parser::QualifiedCObject {
-                    expression: CExpression::Value(CValue::typed_pointer_with_pointee_constant(
-                        CMemory::static_pointer(function.name(), aggregate.kernel_name()),
-                        CType::Int32Pointer,
-                        aggregate.is_constant(),
-                    )),
+                    expression: ProgramExpression::Value(
+                        ProgramValue::typed_pointer_with_pointee_constant(
+                            Memory::static_pointer(function.name(), aggregate.kernel_name()),
+                            ProgramType::Int32Pointer,
+                            aggregate.is_constant(),
+                        ),
+                    ),
                     address: None,
                     struct_name: Some(aggregate.struct_name().to_owned()),
                     array_shape: None,
@@ -1165,11 +1179,13 @@ pub(super) fn unit_qualified_objects(
             objects.insert(
                 format!("{}::{}", function.name(), aggregate_array.name()),
                 parser::QualifiedCObject {
-                    expression: CExpression::Value(CValue::typed_pointer_with_pointee_constant(
-                        CMemory::static_pointer(function.name(), aggregate_array.kernel_name()),
-                        CType::Int32Pointer,
-                        aggregate_array.is_constant(),
-                    )),
+                    expression: ProgramExpression::Value(
+                        ProgramValue::typed_pointer_with_pointee_constant(
+                            Memory::static_pointer(function.name(), aggregate_array.kernel_name()),
+                            ProgramType::Int32Pointer,
+                            aggregate_array.is_constant(),
+                        ),
+                    ),
                     address: None,
                     struct_name: Some(aggregate_array.struct_name().to_owned()),
                     array_shape: Some(vec![aggregate_array.length()]),
@@ -1185,7 +1201,7 @@ pub(super) fn unit_qualified_objects(
 /// contract may name.
 pub(super) fn record_function_tables(
     tables: &mut parser::ProgramLayouts,
-    function: syntax::C0Function,
+    function: crate::languages::interface::ImportedFunction,
 ) {
     let mut names: BTreeSet<String> = function
         .globals()
@@ -1264,10 +1280,10 @@ pub(super) fn record_function_tables(
     }
     let names = std::sync::Arc::new(names);
     tables
-        .c_object_names
+        .program_object_names
         .insert(function.source_name().to_string(), names.clone());
     tables
-        .c_object_names
+        .program_object_names
         .insert(function.name().to_string(), names);
     let mut function_aggregate_objects = BTreeMap::new();
     for aggregate in function.global_aggregates().values() {
@@ -1478,7 +1494,7 @@ pub(super) fn validate_modeled_pthread_binding(
 /// objects are reached through qualified names, which need no list.
 pub(super) fn file_scope_object_names(
     click_source: &str,
-    c_sources: &CSourceContext<'_>,
+    c_sources: &ProgramSourceContext<'_>,
     target: CTarget,
 ) -> Result<BTreeSet<String>, ClickError> {
     let mut names = BTreeSet::new();

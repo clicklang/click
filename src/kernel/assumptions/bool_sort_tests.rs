@@ -23,7 +23,7 @@ pub(super) fn positive(id: u64) -> ConditionTerm {
 pub(super) fn applied(name: &str, id: u64) -> ConditionTerm {
     ConditionTerm::bool_application(
         name,
-        vec![PureFunctionArgument::Value(CValue::Int32(word(id)))],
+        vec![PureFunctionArgument::Value(ProgramValue::Int32(word(id)))],
     )
 }
 
@@ -222,7 +222,7 @@ fn an_unfolded_application_has_its_body_s_truth() {
 #[test]
 fn a_bool_read_is_one_value_per_cell() {
     let _session = VerificationSession::enter();
-    let memory = crate::kernel::intern_c_memory(CMemory::new());
+    let memory = crate::kernel::intern_memory(Memory::new());
     let read = ConditionTerm::bool_load(memory.clone(), Pointer::symbolic(Variable(70)));
     let same = ConditionTerm::bool_load(memory, Pointer::symbolic(Variable(70)));
     let context = PureFactContext::new()

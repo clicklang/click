@@ -2,36 +2,63 @@ use super::*;
 
 #[test]
 fn normal_evidence_completes_only_exhausted_void_function_source() {
-    use crate::kernel::{CType, c_function};
+    use crate::kernel::{ProgramType, program_function};
     for (return_type, tail, region, completes) in [
-        (CType::Void, false, ExecutionRegionKind::Function, true),
-        (CType::Void, true, ExecutionRegionKind::Function, false),
-        (CType::Int32, false, ExecutionRegionKind::Function, false),
-        (CType::Void, false, ExecutionRegionKind::LoopBody, false),
-        (CType::Void, false, ExecutionRegionKind::BranchArm, false),
+        (
+            ProgramType::Void,
+            false,
+            ExecutionRegionKind::Function,
+            true,
+        ),
+        (
+            ProgramType::Void,
+            true,
+            ExecutionRegionKind::Function,
+            false,
+        ),
+        (
+            ProgramType::Int32,
+            false,
+            ExecutionRegionKind::Function,
+            false,
+        ),
+        (
+            ProgramType::Void,
+            false,
+            ExecutionRegionKind::LoopBody,
+            false,
+        ),
+        (
+            ProgramType::Void,
+            false,
+            ExecutionRegionKind::BranchArm,
+            false,
+        ),
     ] {
-        let statement = CStatement::Skip;
+        let statement = ProgramStatement::Skip;
         let body = if tail {
-            CStatement::seq(
+            ProgramStatement::seq(
                 Arc::new(statement.clone()),
-                Arc::new(CStatement::Return(CExpression::Value(CValue::Void))),
+                Arc::new(ProgramStatement::Return(ProgramExpression::Value(
+                    ProgramValue::Void,
+                ))),
             )
         } else {
             statement.clone()
         };
-        let function = c_function(return_type, "test", vec![], body);
+        let function = program_function(return_type, "test", vec![], body);
         let mut core = ExecutionProofCore::at_entry(
-            CState::new(),
+            ExecutionState::new(),
             ExecutionFrontier {
                 region,
                 ..ExecutionFrontier::default()
             },
         );
         let before = core.running_state(&function, &[]).unwrap().into_owned();
-        let theorem = Theorem::new(Proposition::CStatementVerifies {
+        let theorem = Theorem::new(Proposition::ProgramStatementVerifies {
             state: Box::new(before.clone()),
             statement: Box::new(statement),
-            outcome: CStatementOutcome::Normal(Box::new(before)),
+            outcome: StatementOutcome::Normal(Box::new(before)),
         });
         core.record_statement_transition(
             &function,

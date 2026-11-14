@@ -232,17 +232,17 @@ impl CAccessClass {
     /// a struct pointer, which it spells as an `int32` pointer, and plain
     /// versus explicitly signed `char` pointees, so those give `None`: an
     /// access whose class is unknown is not checked.
-    pub fn of_kernel_type(c_type: crate::kernel::CType) -> Option<Self> {
-        use crate::kernel::CType;
-        Some(match c_type {
-            CType::Bool => Self::Scalar(CScalarClass::Bool),
-            CType::Int8 | CType::UInt8 => Self::Scalar(CScalarClass::Char),
-            CType::Int16 | CType::UInt16 => Self::Scalar(CScalarClass::Short),
-            CType::Int32 | CType::UInt32 => Self::Scalar(CScalarClass::Int),
-            CType::Int128 | CType::UInt128 => Self::Scalar(CScalarClass::Int128),
-            CType::Float32 => Self::Scalar(CScalarClass::Float),
-            CType::Float64 => Self::Scalar(CScalarClass::Double),
-            CType::VoidPointer => Self::VOID_POINTER,
+    pub fn of_kernel_type(program_type: crate::kernel::ProgramType) -> Option<Self> {
+        use crate::kernel::ProgramType;
+        Some(match program_type {
+            ProgramType::Bool => Self::Scalar(CScalarClass::Bool),
+            ProgramType::Int8 | ProgramType::UInt8 => Self::Scalar(CScalarClass::Char),
+            ProgramType::Int16 | ProgramType::UInt16 => Self::Scalar(CScalarClass::Short),
+            ProgramType::Int32 | ProgramType::UInt32 => Self::Scalar(CScalarClass::Int),
+            ProgramType::Int128 | ProgramType::UInt128 => Self::Scalar(CScalarClass::Int128),
+            ProgramType::Float32 => Self::Scalar(CScalarClass::Float),
+            ProgramType::Float64 => Self::Scalar(CScalarClass::Double),
+            ProgramType::VoidPointer => Self::VOID_POINTER,
             _ => return None,
         })
     }

@@ -25,7 +25,7 @@ struct Analysis<'a> {
 }
 
 pub(in crate::kernel) fn declared_requirements(
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
 ) -> ObjectTypeRequirements {
     let mut analysis = Analysis::new(interface);
     for proposition in interface
@@ -40,7 +40,7 @@ pub(in crate::kernel) fn declared_requirements(
 }
 
 impl<'a> Analysis<'a> {
-    fn new(interface: &'a CFunctionContractInterface) -> Self {
+    fn new(interface: &'a FunctionContractInterface) -> Self {
         Self {
             bindings: interface
                 .parameters()
@@ -72,14 +72,14 @@ impl<'a> Analysis<'a> {
             .copied()
     }
 
-    fn c_origins(&self, value: &CExpression) -> Origins {
+    fn program_origins(&self, value: &ProgramExpression) -> Origins {
         match value {
-            CExpression::Variable(name) => self
+            ProgramExpression::Variable(name) => self
                 .bindings
                 .get(name.as_str())
                 .cloned()
                 .unwrap_or_default(),
-            CExpression::Cast { expression, .. } => self.c_origins(expression),
+            ProgramExpression::Cast { expression, .. } => self.program_origins(expression),
             _ => None,
         }
     }
@@ -100,7 +100,7 @@ impl<'a> Analysis<'a> {
         }
         crate::instrumentation::record_deterministic_work(1);
         let result = match value {
-            SpecExpression::CExpression(value) => self.c_origins(value),
+            SpecExpression::ProgramExpression(value) => self.program_origins(value),
             SpecExpression::Cast(value, _) | SpecExpression::LoopEntrySnapshot(value) => {
                 self.origins(value)
             }
@@ -185,7 +185,7 @@ impl<'a> Analysis<'a> {
                         if let Some(schema) = self.fields(&expression.algebraic_type, variant) {
                             for (field, ty) in fields.iter().zip(schema) {
                                 if let (
-                                    SpecAlgebraicValue::C(value),
+                                    SpecAlgebraicValue::Program(value),
                                     AlgebraicValueType::ObjectPointer(_, class),
                                 ) = (field, ty)
                                 {
@@ -257,7 +257,7 @@ impl<'a> Analysis<'a> {
 /// unconditional clauses and the exact nonnull-result guard cover every
 /// possible nonnull return. Other guards and branching expressions supply none.
 pub(in crate::kernel) fn declared_return_class(
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
 ) -> Option<effective_type::CAccessClass> {
     if !interface.return_type().is_pointer() {
         return None;
@@ -291,25 +291,24 @@ pub(in crate::kernel) fn declared_return_class(
     None
 }
 fn direct_result(value: &SpecExpression) -> bool {
-    matches!(value, SpecExpression::CExpression(CExpression::Variable(name)) if name == C_CONTRACT_RESULT_NAME)
+    matches!(value, SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) if name == C_CONTRACT_RESULT_NAME)
 }
 fn zero(value: &SpecExpression) -> bool {
     match value {
-        SpecExpression::Value(value) | SpecExpression::CExpression(CExpression::Value(value)) => {
-            match value {
-                CValue::Pointer(p) => p.is_null(),
-                CValue::Int32(bits32_constant!(0))
-                | CValue::UInt32(bits32_constant!(0))
-                | CValue::UInt64(uint64_constant!(0)) => true,
-                _ => false,
-            }
-        }
+        SpecExpression::Value(value)
+        | SpecExpression::ProgramExpression(ProgramExpression::Value(value)) => match value {
+            ProgramValue::Pointer(p) => p.is_null(),
+            ProgramValue::Int32(bits32_constant!(0))
+            | ProgramValue::UInt32(bits32_constant!(0))
+            | ProgramValue::UInt64(uint64_constant!(0)) => true,
+            _ => false,
+        },
         SpecExpression::Cast(value, _) => zero(value),
         _ => false,
     }
 }
 fn result_nonnull(proposition: &SpecProposition) -> bool {
-    matches!(proposition, SpecProposition::Comparison { left, operator: CComparisonOperator::NotEqual, right }
+    matches!(proposition, SpecProposition::Comparison { left, operator: ComparisonOperator::NotEqual, right }
         if (direct_result(left) && zero(right)) || (zero(left) && direct_result(right)))
 }
 fn result_arguments_class(
@@ -349,7 +348,13 @@ impl<'a> Analysis<'a> {
                 let schema = self.fields(&value.algebraic_type, variant)?;
                 fields.iter().zip(schema).find_map(|(field, ty)| {
                     crate::instrumentation::record_deterministic_work(1);
-                    let (SpecAlgebraicValue::C(value), AlgebraicValueType::ObjectPointer(_, class)) = (field, ty) else { return None; };
+                    let (
+                        SpecAlgebraicValue::Program(value),
+                        AlgebraicValueType::ObjectPointer(_, class),
+                    ) = (field, ty)
+                    else {
+                        return None;
+                    };
                     direct_result(value).then(|| class.clone())
                 })
             }
@@ -369,12 +374,12 @@ mod tests {
         CAccessClass::Struct(CStructClass::opaque("node"))
     }
     fn variable(name: &str) -> SpecExpression {
-        SpecExpression::CExpression(CExpression::Variable(name.to_string()))
+        SpecExpression::ProgramExpression(ProgramExpression::Variable(name.to_string()))
     }
     fn typed(value: SpecExpression) -> SpecExpression {
         SpecExpression::PureFunctionApplication {
             name: "typed".to_string(),
-            result_type: CType::Int32,
+            result_type: ProgramType::Int32,
             pointer_result: None,
             result_object_class: None,
             projection: None,
@@ -384,12 +389,12 @@ mod tests {
             }],
         }
     }
-    fn interface(proposition: SpecProposition) -> CFunctionContractInterface {
-        let mut interface = CFunctionContractInterface::new(
-            CType::Void,
+    fn interface(proposition: SpecProposition) -> FunctionContractInterface {
+        let mut interface = FunctionContractInterface::new(
+            ProgramType::Void,
             vec![
-                CParameter::new("p", CType::Int32Pointer),
-                CParameter::new("q", CType::Int32Pointer),
+                ProgramParameter::new("p", ProgramType::Int32Pointer),
+                ProgramParameter::new("q", ProgramType::Int32Pointer),
             ],
         );
         interface.contract_ensures = vec![proposition];
@@ -409,11 +414,11 @@ mod tests {
         );
     }
     #[test]
-    fn quantified_names_do_not_strengthen_same_named_c_inputs() {
+    fn quantified_names_do_not_strengthen_same_named_program_inputs() {
         let spec = SpecProposition::ForAllPointer {
             name: "p".to_string(),
             variable: Variable(501),
-            c_type: CType::Int32Pointer,
+            program_type: ProgramType::Int32Pointer,
             body: Box::new(SpecProposition::Defined(typed(variable("p")))),
         };
         assert!(declared_requirements(&interface(spec)).is_empty());
@@ -423,7 +428,7 @@ mod tests {
         assert!(
             declared_requirements(&interface(SpecProposition::Comparison {
                 left: variable("p"),
-                operator: CComparisonOperator::Equal,
+                operator: ComparisonOperator::Equal,
                 right: variable("p"),
             }))
             .is_empty()
@@ -438,9 +443,9 @@ mod tests {
             interface.object_type_requirements(),
             &ObjectTypeRequirements::unit(1, class())
         );
-        let mut normal = vec![CValue::typed_pointer(
+        let mut normal = vec![ProgramValue::typed_pointer(
             Pointer::symbolic(Variable(700)),
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
         )];
         assert!(
             check_requirements(
@@ -448,21 +453,21 @@ mod tests {
                 interface.parameters(),
                 interface.object_type_requirements(),
                 &mut normal,
-                &CMemory::new(),
+                &Memory::new(),
                 &PureFactContext::new()
             )
             .is_none()
         );
-        let mut captured = vec![CValue::typed_pointer(
+        let mut captured = vec![ProgramValue::typed_pointer(
             Pointer::symbolic(Variable(701)),
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
         )];
         assert!(
             check_value_requirements(
                 "f",
                 &interface,
                 &mut captured,
-                &CMemory::new(),
+                &Memory::new(),
                 &PureFactContext::new()
             )
             .is_some()
@@ -473,26 +478,26 @@ mod tests {
                 "f",
                 &interface,
                 &mut captured,
-                &CMemory::new(),
+                &Memory::new(),
                 &PureFactContext::new()
             )
             .is_none()
         );
     }
 
-    fn returning(clause: SpecProposition) -> CFunctionContractInterface {
-        let mut interface = CFunctionContractInterface::new(CType::Int32Pointer, vec![]);
+    fn returning(clause: SpecProposition) -> FunctionContractInterface {
+        let mut interface = FunctionContractInterface::new(ProgramType::Int32Pointer, vec![]);
         interface.contract_ensures = vec![clause];
         interface
     }
     fn return_check() -> SpecProposition {
         SpecProposition::Defined(typed(variable(C_CONTRACT_RESULT_NAME)))
     }
-    fn return_guard(operator: CComparisonOperator) -> SpecProposition {
+    fn return_guard(operator: ComparisonOperator) -> SpecProposition {
         SpecProposition::Comparison {
             left: variable(C_CONTRACT_RESULT_NAME),
             operator,
-            right: SpecExpression::Value(CValue::Int32(MachineTerm::constant(0))),
+            right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
         }
     }
     #[test]
@@ -503,13 +508,13 @@ mod tests {
         );
         assert_eq!(
             declared_return_class(&returning(SpecProposition::Implies(
-                Box::new(return_guard(CComparisonOperator::NotEqual)),
+                Box::new(return_guard(ComparisonOperator::NotEqual)),
                 Box::new(return_check())
             ))),
             Some(class())
         );
         for guard in [
-            return_guard(CComparisonOperator::Equal),
+            return_guard(ComparisonOperator::Equal),
             SpecProposition::Defined(variable("flag")),
         ] {
             assert_eq!(
@@ -536,7 +541,7 @@ mod tests {
             declared_return_class(&returning(SpecProposition::Defined(branched))),
             None
         );
-        let mut address_only = CFunctionContractInterface::new(CType::Int32Pointer, vec![]);
+        let mut address_only = FunctionContractInterface::new(ProgramType::Int32Pointer, vec![]);
         address_only.return_pointee_class = Some(class());
         assert_eq!(declared_return_class(&address_only), None);
     }

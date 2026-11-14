@@ -198,7 +198,7 @@ load of a `signed char` cell holding `t` reads `t mod 256`, a `signed char`
 load of an `unsigned char` cell holding `u` reads the two's-complement value
 of `u`'s eight bits, and a symbolic `signed char` read is the conversion of
 the byte's unsigned read rather than an unknown of its own. This is
-`CType::read_cell` and `LoadKind::read_cell`, used by every execution and
+`ProgramType::read_cell` and `LoadKind::read_cell`, used by every execution and
 specification route that answers a load from a cell. It is what lets a
 user-space C string, whose plain `char` is signed, be read as `uint8` bytes by
 `strlen` and the C-string predicates
@@ -284,7 +284,7 @@ The copied source cells are found with one range query over the copied
 block and extent (`representation_copy_cell_moves`), and the byte view's
 containing cell with a query over the at most seven constant offsets below
 the access (`containing_integer_cell`). Neither scans memory, other blocks,
-or old snapshots. Each planted cell pays the ordinary `CMemory::store` cost.
+or old snapshots. Each planted cell pays the ordinary `Memory::store` cost.
 The regressions measure deterministic work at four or more sizes, under the
 [efficiency contract](verification-efficiency.md):
 

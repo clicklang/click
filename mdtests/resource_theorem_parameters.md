@@ -49,6 +49,8 @@ void copy_pos(struct cursor *target, struct cursor *source) {
     }
     step() by { assumption(); }
     step();
+    assumption();
+    assumption(); assumption(); assumption();
 }
 ```
 

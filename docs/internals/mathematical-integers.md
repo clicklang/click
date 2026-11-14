@@ -544,7 +544,7 @@ foundation used artifact schema 38.
 
 ## Explicit machine modulo casts
 
-The shared kernel `c_integer_cast_modulo` boundary implements Rust integer `as`
+The shared kernel `program_expression::integer_cast_modulo` boundary implements Rust integer `as`
 and C++20 integral conversions for the admitted 8–64-bit runtime types. It
 checks the evaluated source and destination types, folds root constants through
 `MachineIntegerConstant`, and retains symbolic operands in the common term
@@ -657,7 +657,7 @@ A 32-bit load carries its signedness, `LoadKind::Int32` or
 and Rust lower a read to a typed load of the source type). Rule K5
 (2026-10-25): a typed read at signedness F of a cell holding a value stored
 at the other signedness S returns σ_{S→F} of the stored word
-(`CType::read_cell`), so `4294967295u` stored and read through `int *` is
+(`ProgramType::read_cell`), so `4294967295u` stored and read through `int *` is
 `-1` (`mdtests/a_32_bit_cell_read_at_the_other_signedness_is_its_sign_cast.md`,
 `mdtests/cpp_an_unsigned_cell_read_as_int_is_its_sign_cast.md`,
 `rust_a_u32_cell_read_as_i32_is_its_sign_cast` in `tests/rust_import.rs`).
@@ -774,9 +774,9 @@ prints as `c`.
 ## Wide runtime scalars
 
 
-The shared kernel has `CType::Int128` / `UInt128` and corresponding `CValue`
-wrappers in the existing machine-term arena. `c_int128_literal` and
-`c_uint128_literal` retain all 128 bits in `MachineIntegerConstant` payloads.
+The shared kernel has `ProgramType::Int128` / `UInt128` and corresponding `ProgramValue`
+wrappers in the existing machine-term arena. `program_expression::int128_literal` and
+`program_expression::uint128_literal` retain all 128 bits in `MachineIntegerConstant` payloads.
 Symbolic variables, scalar locals, assignment, function parameters/results,
 and substitution preserve the wide type. The pinned x86_64 Linux profile gives
 these scalar objects 16 bytes and alignment 16; value width alone does not

@@ -1022,11 +1022,11 @@ impl<'a> Proof<'a> {
             // name that term, rather than introduce a new subtraction node.
             let starts_at_zero = matches!(
                 start,
-                ContractExpression::CFragment(CExpression::Value(
-                    CValue::Int32(int32_constant!(0))
-                        | CValue::UInt32(uint32_constant!(0))
-                        | CValue::Int64(int64_constant!(0))
-                        | CValue::UInt64(uint64_constant!(0))
+                ContractExpression::ProgramExpression(ProgramExpression::Value(
+                    ProgramValue::Int32(int32_constant!(0))
+                        | ProgramValue::UInt32(uint32_constant!(0))
+                        | ProgramValue::Int64(int64_constant!(0))
+                        | ProgramValue::UInt64(uint64_constant!(0))
                 ))
             ) || matches!(start, ContractExpression::IntegerLiteral(value) if value == "0");
             let candidate = ClickProposition::Comparison {
@@ -1036,9 +1036,9 @@ impl<'a> Proof<'a> {
                     ContractExpression::Subtract(Box::new(end.clone()), Box::new(start.clone()))
                 },
                 operator: ComparisonOperator::LessEqual,
-                right: ContractExpression::CFragment(CExpression::Value(CValue::UInt64(
-                    MachineTerm::uint64_constant(constant_u64(*limit)),
-                ))),
+                right: ContractExpression::ProgramExpression(ProgramExpression::Value(
+                    ProgramValue::UInt64(MachineTerm::uint64_constant(constant_u64(*limit))),
+                )),
             };
             if self
                 .lower_surface_proposition(&candidate, "loop extent bound")
@@ -1167,7 +1167,7 @@ impl<'a> Proof<'a> {
             // A `have` at the frontier may also consume a fact available across
             // the frontier's certified effects, exactly as a statement step's
             // prerequisite may. Load names are not preserved across call-havoc and
-            // store edges by path assumptions (see `CMemoryDerivation`), so the
+            // store edges by path assumptions (see `MemoryDerivation`), so the
             // cell an earlier fact names can carry a different load variable at
             // the frontier; the equality is proved in this path's context from the
             // goal's own snapshot-blind candidates, never by search.

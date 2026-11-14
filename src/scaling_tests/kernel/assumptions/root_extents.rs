@@ -6,8 +6,8 @@ fn extent_work(steps: u64, unrelated: u64) -> usize {
         block: PointerBlock::Heap(982_000),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let held = CMemoryRange::new(base.clone(), 0u32.into(), 8u32.into());
-    let mut previous = CPointerValue::new(base, CType::Int32Pointer);
+    let held = MemoryRange::new(base.clone(), 0u32.into(), 8u32.into());
+    let mut previous = PointerValue::new(base, ProgramType::Int32Pointer);
     let mut facts = PureFactContext::new();
     for i in 0..unrelated {
         facts = facts.assume_condition(

@@ -586,7 +586,7 @@ and every preservation branch reaches the back edge with the invariants and
 effects reestablished, the kernel constructs the loop exit without proving
 either premise again.
 
-That abstract exit is justified by an opaque kernel `CVerifiedLoopRule` over the
+That abstract exit is justified by an opaque kernel `VerifiedLoopRule` over the
 symbolic loop-entry state and its required assumptions. The `loop` tactic
 applies it immediately and advances the enclosing frontier. There is no later
 summary tactic and no detached traversal from function entry.

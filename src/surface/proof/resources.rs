@@ -120,8 +120,8 @@ impl ResourcePureFacts for ProofResourcePureFacts {
 }
 
 pub(super) struct UnfoldedCompositeResource {
-    pub(super) state: CState,
-    pub(super) selected: CResourceFact,
+    pub(super) state: ExecutionState,
+    pub(super) selected: ResourceFact,
     pub(super) body_was_already_exposed: bool,
 }
 
@@ -130,8 +130,8 @@ pub(super) struct UnfoldedCompositeResource {
 /// only when they carry the same checked loan bundle; otherwise the rewrite
 /// is ambiguous and must fail closed.
 fn unique_borrowed_resource_dependency(
-    state: &CState,
-    resource: &CResourceFact,
+    state: &ExecutionState,
+    resource: &ResourceFact,
 ) -> Result<Option<crate::kernel::LoanViewBinding>, String> {
     if !state.loan_bindings_are_consistent() {
         return Err("resource and loan binding sidecars disagree".into());
@@ -178,14 +178,14 @@ fn unique_borrowed_resource_dependency(
 /// that list on trust: the kernel expands the parent one level itself and
 /// `project` re-checks every child against that expansion (D2 law 10).
 fn project_children_into_ledger(
-    state: CState,
+    state: ExecutionState,
     binding: &crate::kernel::LoanViewBinding,
-    children: impl IntoIterator<Item = CResourceFact>,
-    memory: &CMemory,
+    children: impl IntoIterator<Item = ResourceFact>,
+    memory: &Memory,
     assumptions: &PureFactContext,
-    definitions: &[CCompositeResourceDefinition],
+    definitions: &[CompositeResourceDefinition],
     context_label: &str,
-) -> Result<CState, ClickError> {
+) -> Result<ExecutionState, ClickError> {
     let (Some(ledger), Some(holder)) = (state.loan_ledger().cloned(), state.loan_participant())
     else {
         return Ok(state);
@@ -249,17 +249,17 @@ struct DynamicViewDependencyIndex {
 
 impl DynamicViewDependencyIndex {
     fn new(
-        bound_views: &[(CResourceFact, crate::kernel::LoanViewBinding)],
-        unbound_views: &[CResourceFact],
+        bound_views: &[(ResourceFact, crate::kernel::LoanViewBinding)],
+        unbound_views: &[ResourceFact],
         assumptions: &PureFactContext,
     ) -> Self {
         Self::with_owned(bound_views, unbound_views, &[], assumptions)
     }
 
     fn with_owned(
-        bound_views: &[(CResourceFact, crate::kernel::LoanViewBinding)],
-        unbound_views: &[CResourceFact],
-        owned: &[CResourceFact],
+        bound_views: &[(ResourceFact, crate::kernel::LoanViewBinding)],
+        unbound_views: &[ResourceFact],
+        owned: &[ResourceFact],
         assumptions: &PureFactContext,
     ) -> Self {
         let (bound, inserted) = ResourceContext::new_with_equalities(assumptions)
@@ -297,14 +297,14 @@ type QuantifiedBinder<'a> = Option<(Variable, &'a Proposition)>;
 /// that dependency capture does not search equal ambient occurrences.
 fn dynamic_body_fact_dependency(
     required: &Proposition,
-    state: &CState,
+    state: &ExecutionState,
     assumptions: &PureFactContext,
     temporary_views: &DynamicViewDependencyIndex,
 ) -> Result<Option<crate::kernel::LoanViewBinding>, String> {
     fn check_load(
         pointer: Pointer,
         width: u32,
-        state: &CState,
+        state: &ExecutionState,
         assumptions: &PureFactContext,
         temporary_views: &DynamicViewDependencyIndex,
         binder: QuantifiedBinder<'_>,
@@ -315,23 +315,23 @@ fn dynamic_body_fact_dependency(
         // view of that whole range instead of one of the symbolic cell
         // `p[v]`, which no view contains since `v` alone is unconstrained.
         // Every cell the guard admits lies in the range
-        // (`CMemoryRange::guarded_quantified_cells`), so a view covering the
+        // (`MemoryRange::guarded_quantified_cells`), so a view covering the
         // range covers every cell the fact reads, and its loan is the fact's
         // dependency. A read the range does not describe keeps the one-cell
         // requirement.
         let range = binder
             .and_then(|(variable, guard)| {
-                CMemoryRange::guarded_quantified_cells(&pointer, variable, guard, width)
+                MemoryRange::guarded_quantified_cells(&pointer, variable, guard, width)
             })
             .unwrap_or_else(|| {
-                CMemoryRange::new_with_element_width(
+                MemoryRange::new_with_element_width(
                     pointer,
                     MachineTerm::constant(0),
                     MachineTerm::constant(1),
                     width,
                 )
             });
-        let required_view = CResourceFact::view_memory(range);
+        let required_view = ResourceFact::view_memory(range);
         if !temporary_views
             .unbound
             .view_occurrences_for_fact(&required_view, assumptions)
@@ -424,7 +424,7 @@ fn dynamic_body_fact_dependency(
     }
     fn walk_term(
         term: &Term,
-        state: &CState,
+        state: &ExecutionState,
         assumptions: &PureFactContext,
         temporary_views: &DynamicViewDependencyIndex,
         binder: QuantifiedBinder<'_>,
@@ -445,7 +445,7 @@ fn dynamic_body_fact_dependency(
     }
     fn walk_proposition(
         proposition: &Proposition,
-        state: &CState,
+        state: &ExecutionState,
         assumptions: &PureFactContext,
         temporary_views: &DynamicViewDependencyIndex,
         binder: QuantifiedBinder<'_>,
@@ -507,23 +507,23 @@ fn dynamic_body_fact_dependency(
                 }
                 Ok(())
             }
-            Proposition::CResourceSeparate { .. }
-            | Proposition::CResourceComposition(_)
-            | Proposition::CResourceContains { .. } => Ok(()),
-            Proposition::CMemoryLoads { outcome, .. } => match outcome {
-                CExpressionOutcome::Value(value) => walk_term(
-                    &Term::CValue(value.clone()),
+            Proposition::ResourceSeparate { .. }
+            | Proposition::ResourceComposition(_)
+            | Proposition::ResourceContains { .. } => Ok(()),
+            Proposition::MemoryLoads { outcome, .. } => match outcome {
+                ExpressionOutcome::Value(value) => walk_term(
+                    &Term::ProgramValue(value.clone()),
                     state,
                     assumptions,
                     temporary_views,
                     binder,
                     selected,
                 ),
-                CExpressionOutcome::UndefinedBehavior(_) | CExpressionOutcome::RuntimeError(_) => {
+                ExpressionOutcome::UndefinedBehavior(_) | ExpressionOutcome::RuntimeError(_) => {
                     Ok(())
                 }
             },
-            Proposition::CMemoryReadDefined {
+            Proposition::MemoryReadDefined {
                 memory,
                 pointer,
                 value_type,
@@ -531,7 +531,7 @@ fn dynamic_body_fact_dependency(
                 // Definedness is an observation of the same cell as a load.
                 // Retain its access dependency, including loads in its address.
                 walk_term(
-                    &Term::CValue(CValue::pointer(pointer.clone())),
+                    &Term::ProgramValue(ProgramValue::pointer(pointer.clone())),
                     state,
                     assumptions,
                     temporary_views,
@@ -551,7 +551,7 @@ fn dynamic_body_fact_dependency(
                 }
                 Ok(())
             }
-            Proposition::CMemoryLoadable { bytes, .. } => walk_term(
+            Proposition::MemoryLoadable { bytes, .. } => walk_term(
                 &Term::Bitvector32(bytes.clone()),
                 state,
                 assumptions,
@@ -559,7 +559,7 @@ fn dynamic_body_fact_dependency(
                 binder,
                 selected,
             ),
-            Proposition::CHeapAllocationFreed { bytes, .. } => walk_term(
+            Proposition::HeapAllocationFreed { bytes, .. } => walk_term(
                 &Term::Bitvector32(bytes.bytes().clone()),
                 state,
                 assumptions,
@@ -567,11 +567,11 @@ fn dynamic_body_fact_dependency(
                 binder,
                 selected,
             ),
-            Proposition::CMemoryCanStore { .. }
-            | Proposition::CMemoryMutatesOnly { .. }
-            | Proposition::CMemoryEffectSummary { .. }
-            | Proposition::CFunctionSatisfiesSpecification { .. }
-            | Proposition::CFunctionPartiallySatisfiesSpecification { .. } => Ok(()),
+            Proposition::MemoryCanStore { .. }
+            | Proposition::MemoryMutatesOnly { .. }
+            | Proposition::MemoryEffectSummary { .. }
+            | Proposition::ProgramFunctionSatisfiesSpecification { .. }
+            | Proposition::ProgramFunctionPartiallySatisfiesSpecification { .. } => Ok(()),
             _ => Err("unsupported opaque proposition in current-load dependency".into()),
         }
     }
@@ -590,11 +590,11 @@ fn dynamic_body_fact_dependency(
 pub(super) fn materialize_folded_composite_resource_cells(
     resource_environment: &ResourceEnvironment,
     parameter_binding: ParameterBinding<'_>,
-    state: CState,
+    state: ExecutionState,
     claim_label: &str,
     spec_definitions: SpecDefinitions<'_>,
     assumptions: &PureFactContext,
-) -> Result<CState, ClickError> {
+) -> Result<ExecutionState, ClickError> {
     let memory = materialize_folded_composite_resource_memory(
         resource_environment,
         parameter_binding,
@@ -609,27 +609,26 @@ pub(super) fn materialize_folded_composite_resource_cells(
 fn materialize_folded_composite_resource_memory(
     resource_environment: &ResourceEnvironment,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     spec_definitions: SpecDefinitions<'_>,
     assumptions: &PureFactContext,
-) -> Result<CMemory, String> {
+) -> Result<Memory, String> {
     let mut memory = state.memory().clone();
     for resource in state.resources().facts() {
         let (name, resource_arguments) = match resource.resource() {
-            CResource::Footprint(_)
-            | CResource::Parameter(_)
-            | CResource::Emp
-            | CResource::Star(_) => continue,
-            CResource::Composite { name, arguments } => (name, arguments),
-            CResource::Memory(_)
-            | CResource::Token { .. }
-            | CResource::Instance(_)
-            | CResource::MutexGuard(_)
-            | CResource::MutexLive(_)
-            | CResource::MutexUse(_)
-            | CResource::Publication(_)
-            | CResource::PopulationAuthority(_)
-            | CResource::Iterated(_) => {
+            Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_) => {
+                continue;
+            }
+            Resource::Composite { name, arguments } => (name, arguments),
+            Resource::Memory(_)
+            | Resource::Token { .. }
+            | Resource::Instance(_)
+            | Resource::MutexGuard(_)
+            | Resource::MutexLive(_)
+            | Resource::MutexUse(_)
+            | Resource::Publication(_)
+            | Resource::PopulationAuthority(_)
+            | Resource::Iterated(_) => {
                 continue;
             }
         };
@@ -764,7 +763,7 @@ fn unmatched_instance_body(
     }
     let mut parameters = definition.parameters.clone();
     for field in definition.fields() {
-        if matches!(field.click_type(), ClickType::C(_)) {
+        if matches!(field.click_type(), ClickType::Program(_)) {
             parameters.push(FunctionParameter {
                 name: field.name().to_string(),
                 click_type: field.click_type().clone(),
@@ -829,7 +828,7 @@ pub(in crate::surface) fn pair_instance_body_clause_presentations(
     click_function_environment: &ClickFunctionEnvironment,
     instance: &ResourceInstance,
     records: &[crate::kernel::ResourceBodyClauseRecord],
-    function_values: &BTreeMap<String, CValue>,
+    function_values: &BTreeMap<String, ProgramValue>,
     proof_bindings: Option<&[String]>,
 ) -> Result<Vec<ResourceClausePresentation>, ClickError> {
     let Some(first) = records.first() else {
@@ -868,7 +867,7 @@ pub(in crate::surface) fn pair_instance_body_clause_presentations(
     if !bindings.is_empty() && proof_bindings.is_none_or(|names| names.len() != bindings.len()) {
         return Ok(Vec::new());
     }
-    let mut names_by_value = BTreeMap::<CValue, Option<String>>::new();
+    let mut names_by_value = BTreeMap::<ProgramValue, Option<String>>::new();
     for (name, value) in function_values {
         use std::collections::btree_map::Entry;
         match names_by_value.entry(value.clone()) {
@@ -882,14 +881,16 @@ pub(in crate::surface) fn pair_instance_body_clause_presentations(
     }
     let mut substitutions = BTreeMap::new();
     for (parameter, argument) in definition.parameters().iter().zip(instance.arguments()) {
-        let Some(value) = argument.as_c_value() else {
+        let Some(value) = argument.as_program_value() else {
             return Err(ClickError::new(
                 "resource body clause has a non-C parameter",
             ));
         };
         let expression = match names_by_value.get(value).and_then(Option::as_ref) {
-            Some(name) => ContractExpression::CFragment(CExpression::Variable(name.clone())),
-            None => ContractExpression::CFragment(CExpression::Value(value.clone())),
+            Some(name) => {
+                ContractExpression::ProgramExpression(ProgramExpression::Variable(name.clone()))
+            }
+            None => ContractExpression::ProgramExpression(ProgramExpression::Value(value.clone())),
         };
         substitutions.insert(parameter.name().to_string(), expression);
     }
@@ -1047,12 +1048,12 @@ pub(in crate::surface) fn materialize_unfolded_instance_arm_cells(
     resource_environment: &ResourceEnvironment,
     spec_definitions: SpecDefinitions<'_>,
     parameter_binding: ParameterBinding<'_>,
-    state: CState,
+    state: ExecutionState,
     instance: &ResourceInstance,
     assumptions: &PureFactContext,
     naming_assumptions: &PureFactContext,
     checked_active_body: bool,
-) -> CState {
+) -> ExecutionState {
     if !checked_active_body {
         return state;
     }
@@ -1109,12 +1110,12 @@ pub(super) enum OwnedCores {
 pub(super) fn project_initial_composite_resource_cores(
     resource_environment: &ResourceEnvironment,
     parameter_binding: ParameterBinding<'_>,
-    mut state: CState,
+    mut state: ExecutionState,
     available_pure_facts: &(impl PropositionSource + ?Sized),
     claim_label: &str,
     owned: Option<OwnedCores>,
     spec_definitions: SpecDefinitions<'_>,
-) -> Result<CState, ClickError> {
+) -> Result<ExecutionState, ClickError> {
     let include_owned = owned.is_some();
     let attach_to_owner = owned == Some(OwnedCores::AttachedToOwner);
     let attach_instance_arms = attach_to_owner;
@@ -1124,7 +1125,7 @@ pub(super) fn project_initial_composite_resource_cores(
         // when no arm is selected (D7). The arm scope's body holds only that
         // arm's own memory clauses, so this projects cells and never a
         // contained instance.
-        if let CResource::Instance(instance) = resource.resource() {
+        if let Resource::Instance(instance) = resource.resource() {
             let Some(selected) = selected_resource_instance_arm(
                 resource_environment,
                 spec_definitions.functions,
@@ -1175,10 +1176,8 @@ pub(super) fn project_initial_composite_resource_cores(
         }
         let head = resource.clone();
         let (name, resource_arguments, is_owned) = match resource {
-            CResourceFact::View(CResource::Composite { name, arguments }) => {
-                (name, arguments, false)
-            }
-            CResourceFact::Own(CResource::Composite { name, arguments }, _) => {
+            ResourceFact::View(Resource::Composite { name, arguments }) => (name, arguments, false),
+            ResourceFact::Own(Resource::Composite { name, arguments }, _) => {
                 (name, arguments, true)
             }
             _ => continue,
@@ -1213,7 +1212,7 @@ pub(super) fn project_initial_composite_resource_cores(
             parameter_binding,
             &state,
             &state,
-            &CValue::Int32(MachineTerm::constant(0)),
+            &ProgramValue::Int32(MachineTerm::constant(0)),
             &assumptions,
             spec_definitions,
         )
@@ -1305,11 +1304,11 @@ fn project_selected_instance_arm_cells(
     selected: &SelectedInstanceArm,
     instance: &ResourceInstance,
     parameter_binding: ParameterBinding<'_>,
-    state: CState,
+    state: ExecutionState,
     assumptions: &PureFactContext,
     include_owned: bool,
-    owner: Option<&CResourceFact>,
-) -> CState {
+    owner: Option<&ResourceFact>,
+) -> ExecutionState {
     let arm = &selected.arm;
     let Some(body) = arm.composite_body() else {
         return state;
@@ -1405,11 +1404,11 @@ fn resource_value_substitutions_for_parameters(
         .zip(instance_arguments)
         .map(|(parameter, argument)| {
             let argument = argument
-                .as_c_value()
+                .as_program_value()
                 .ok_or_else(|| format!("resource `{name}` has a non-C argument"))?;
             Ok((
                 parameter.name().to_string(),
-                ContractExpression::CFragment(CExpression::Value(argument.clone())),
+                ContractExpression::ProgramExpression(ProgramExpression::Value(argument.clone())),
             ))
         })
         .collect::<Result<BTreeMap<_, _>, String>>()?;
@@ -1417,7 +1416,7 @@ fn resource_value_substitutions_for_parameters(
     // pushed in field order, so one forward pass pairs them up.
     let mut binding_parameters = parameters[instance_arguments.len()..].iter();
     for binding in constructor_bindings {
-        let Some(value) = binding.as_c_value() else {
+        let Some(value) = binding.as_program_value() else {
             continue;
         };
         let Some(parameter) = binding_parameters.next() else {
@@ -1425,7 +1424,7 @@ fn resource_value_substitutions_for_parameters(
         };
         substitutions.insert(
             parameter.name().to_string(),
-            ContractExpression::CFragment(CExpression::Value(value.clone())),
+            ContractExpression::ProgramExpression(ProgramExpression::Value(value.clone())),
         );
     }
     Ok(substitutions)
@@ -1434,12 +1433,12 @@ fn resource_value_substitutions_for_parameters(
 pub(super) fn project_initial_resource_facts(
     resource_environment: &ResourceEnvironment,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     available_pure_facts: &[Proposition],
     spec_definitions: SpecDefinitions<'_>,
     claim_label: &str,
 ) -> Result<Vec<Proposition>, ClickError> {
-    let result = CValue::Int32(MachineTerm::constant(0));
+    let result = ProgramValue::Int32(MachineTerm::constant(0));
     let mut facts = ProofResourcePureFacts::new(ProofFacts::from_ordered(available_pure_facts));
     append_state_resource_context_observable_facts_with_store(
         parameter_binding,
@@ -1463,14 +1462,14 @@ pub(super) fn project_initial_resource_facts(
 pub(super) fn project_outcome_resource_facts(
     resource_environment: &ResourceEnvironment,
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    outcome: &CFunctionOutcome,
+    pre_state: &ExecutionState,
+    outcome: &FunctionOutcome,
     available_pure_facts: ProofFacts,
     spec_definitions: SpecDefinitions<'_>,
     claim_label: &str,
     path_index: usize,
 ) -> Result<ProofFacts, ClickError> {
-    let CFunctionOutcome::Return { value, state } = outcome else {
+    let FunctionOutcome::Return { value, state } = outcome else {
         return Ok(available_pure_facts);
     };
     let mut facts = ProofResourcePureFacts::new(available_pure_facts);
@@ -1499,7 +1498,7 @@ pub(super) fn project_outcome_resource_facts(
 
 fn append_state_resource_context_observable_facts_with_store<F: ResourcePureFacts>(
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     available_pure_facts: &mut F,
     context: &str,
 ) -> Result<(), ClickError> {
@@ -1521,9 +1520,9 @@ fn append_state_resource_context_observable_facts_with_store<F: ResourcePureFact
 fn project_folded_resource_observable_facts_with_store(
     resource_environment: &ResourceEnvironment,
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    state: &CState,
-    result: &CValue,
+    pre_state: &ExecutionState,
+    state: &ExecutionState,
+    result: &ProgramValue,
     propositions: &mut ProofResourcePureFacts,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<(), String> {
@@ -1543,19 +1542,19 @@ fn project_folded_resource_observable_facts_with_store(
 }
 
 pub(super) struct CheckedResourceObservation {
-    pub(super) state: CState,
+    pub(super) state: ExecutionState,
     pub(super) facts: ProofFacts,
     pub(super) added_facts: Vec<Proposition>,
-    pub(super) observed_resource: CResourceFact,
+    pub(super) observed_resource: ResourceFact,
 }
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn observe_composite_resource_for_proof(
-    function: &CFunction,
+    function: &ProgramFunction,
     resource_environment: &ResourceEnvironment,
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    state: CState,
+    state: ExecutionState,
     facts: ProofFacts,
     surface_propositions: &mut SurfacePropositionMap,
     count_derivations: &mut PersistentOrderedSet<Theorem>,
@@ -1587,21 +1586,21 @@ pub(super) fn observe_composite_resource_for_proof(
 
 #[allow(clippy::too_many_arguments)]
 fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
-    function: &CFunction,
+    function: &ProgramFunction,
     resource_environment: &ResourceEnvironment,
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    state: CState,
+    state: ExecutionState,
     available_pure_facts: &mut F,
     surface_propositions: &mut SurfacePropositionMap,
     count_derivations: &mut PersistentOrderedSet<Theorem>,
     spec_definitions: SpecDefinitions<'_>,
     claim_label: &str,
     tactic_index: usize,
-) -> Result<(CState, CResourceFact), ClickError> {
+) -> Result<(ExecutionState, ResourceFact), ClickError> {
     let requested_resource = lower_resource_clause_at_state(resource, parameter_binding, &state)?;
     let assumptions = available_pure_facts.assumptions().clone();
-    let viewed_resource = CResourceFact::View(requested_resource.resource().clone());
+    let viewed_resource = ResourceFact::View(requested_resource.resource().clone());
     let abstract_resource = state
         .resources()
         .directly_supporting_fact(&requested_resource, &assumptions)
@@ -1663,7 +1662,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             (quantity.clone(), resource.as_ref().clone(), true)
         }
         ResourceClause::Declared { .. } => (
-            ContractExpression::CFragment(CExpression::Value(int32(1))),
+            ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
             resource.clone(),
             false,
         ),
@@ -1699,7 +1698,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
                 parameter_binding,
                 &state,
                 &state,
-                &CValue::Int32(MachineTerm::constant(0)),
+                &ProgramValue::Int32(MachineTerm::constant(0)),
                 available_pure_facts.assumptions(),
                 &count_witness,
                 spec_definitions,
@@ -1729,7 +1728,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             }
         }
         let nonnegative_witness = ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::Value(int32(0))),
+            left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
             operator: ComparisonOperator::LessEqual,
             right: observed_quantity.clone(),
         };
@@ -1737,7 +1736,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             parameter_binding,
             &state,
             &state,
-            &CValue::Int32(MachineTerm::constant(0)),
+            &ProgramValue::Int32(MachineTerm::constant(0)),
             available_pure_facts.assumptions(),
             &nonnegative_witness,
             spec_definitions,
@@ -1769,7 +1768,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
         // population fact of the entry, and a certificate that cites it
         // needs this spelling of it.
         let count_nonnegative_witness = ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::Value(int32(0))),
+            left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
             operator: ComparisonOperator::LessEqual,
             right: ContractExpression::ResourceCount(Box::new(counted_resource.clone())),
         };
@@ -1777,7 +1776,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             parameter_binding,
             &state,
             &state,
-            &CValue::Int32(MachineTerm::constant(0)),
+            &ProgramValue::Int32(MachineTerm::constant(0)),
             available_pure_facts.assumptions(),
             &count_nonnegative_witness,
             spec_definitions,
@@ -1835,7 +1834,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
         claim_label,
         tactic_index,
     )?;
-    let CResource::Composite {
+    let Resource::Composite {
         arguments: resource_arguments,
         ..
     } = abstract_resource.resource()
@@ -1875,7 +1874,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
         parameter_binding,
         &state,
         &state,
-        &CValue::Int32(MachineTerm::constant(0)),
+        &ProgramValue::Int32(MachineTerm::constant(0)),
         available_pure_facts,
         spec_definitions,
         false,
@@ -1979,7 +1978,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
         .facts()
         .iter()
         .filter_map(|fact| fact.core_with_assumptions(available_pure_facts.assumptions()))
-        .map(|fact| CResourceFact::View(fact.resource().clone()))
+        .map(|fact| ResourceFact::View(fact.resource().clone()))
         .collect::<Vec<_>>();
     if let Some(binding) = borrowed_parent_binding.as_ref() {
         for child in &all_viewed_contained_resources {
@@ -2069,8 +2068,8 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
     resource: &ResourceClause,
     substitutions: &BTreeMap<String, ContractExpression>,
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    fact_state: &CState,
+    pre_state: &ExecutionState,
+    fact_state: &ExecutionState,
     instantiated: &crate::kernel::InstantiatedCompositeResourceFacts,
     available_pure_facts: &F,
     surface_propositions: &mut SurfacePropositionMap,
@@ -2085,7 +2084,7 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
         parameter_binding,
         pre_state,
         fact_state,
-        &CValue::Int32(MachineTerm::constant(0)),
+        &ProgramValue::Int32(MachineTerm::constant(0)),
         available_pure_facts.assumptions(),
         spec_definitions,
     )?
@@ -2134,7 +2133,7 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
                         parent: parent_subject.clone(),
                         child: child_subject.clone(),
                     },
-                    &Proposition::CResourceContains {
+                    &Proposition::ResourceContains {
                         parent: Box::new(parent.resource().clone()),
                         child: Box::new(child.clone()),
                     },
@@ -2170,7 +2169,7 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
                         left: left_subject.clone(),
                         right: right_subject.clone(),
                     },
-                    &Proposition::CResourceSeparate {
+                    &Proposition::ResourceSeparate {
                         left: Box::new(left.clone()),
                         right: Box::new(right.clone()),
                     },
@@ -2235,7 +2234,7 @@ pub(super) fn record_initial_composite_surface_facts(
     resource_environment: &ResourceEnvironment,
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     available_pure_facts: &PureFactList,
     surface_propositions: &mut SurfacePropositionMap,
     spec_definitions: SpecDefinitions<'_>,
@@ -2277,7 +2276,7 @@ pub(super) fn record_initial_composite_surface_facts(
             parameter_binding,
             state,
             state,
-            &CValue::Int32(MachineTerm::constant(0)),
+            &ProgramValue::Int32(MachineTerm::constant(0)),
             &assumptions,
             spec_definitions,
         )?
@@ -2293,7 +2292,7 @@ pub(super) fn record_initial_composite_surface_facts(
                 parameter_binding,
                 state,
                 state,
-                &CValue::Int32(MachineTerm::constant(0)),
+                &ProgramValue::Int32(MachineTerm::constant(0)),
                 available_pure_facts,
                 &surface,
                 spec_definitions,
@@ -2312,28 +2311,28 @@ pub(super) fn record_initial_composite_surface_facts(
 
 fn project_held_resource_observable_facts(
     resource_environment: &ResourceEnvironment,
-    resource: &CResourceFact,
+    resource: &ResourceFact,
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    state: &CState,
-    result: &CValue,
+    pre_state: &ExecutionState,
+    state: &ExecutionState,
+    result: &ProgramValue,
     available_pure_facts: &mut ProofResourcePureFacts,
     spec_definitions: SpecDefinitions<'_>,
-) -> Result<CMemory, String> {
+) -> Result<Memory, String> {
     let (name, resource_arguments) = match resource.resource() {
-        CResource::Footprint(_) | CResource::Parameter(_) | CResource::Emp | CResource::Star(_) => {
+        Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_) => {
             return Ok(state.memory().clone());
         }
-        CResource::Composite { name, arguments } => (name, arguments),
-        CResource::Memory(_)
-        | CResource::Token { .. }
-        | CResource::Instance(_)
-        | CResource::MutexGuard(_)
-        | CResource::MutexLive(_)
-        | CResource::MutexUse(_)
-        | CResource::Publication(_)
-        | CResource::PopulationAuthority(_)
-        | CResource::Iterated(_) => {
+        Resource::Composite { name, arguments } => (name, arguments),
+        Resource::Memory(_)
+        | Resource::Token { .. }
+        | Resource::Instance(_)
+        | Resource::MutexGuard(_)
+        | Resource::MutexLive(_)
+        | Resource::MutexUse(_)
+        | Resource::Publication(_)
+        | Resource::PopulationAuthority(_)
+        | Resource::Iterated(_) => {
             return Ok(state.memory().clone());
         }
     };
@@ -2388,9 +2387,9 @@ fn try_select_composite_resource_body(
     definition: &ResourceDefinition,
     substitutions: &BTreeMap<String, ContractExpression>,
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    state: &CState,
-    result: &CValue,
+    pre_state: &ExecutionState,
+    state: &ExecutionState,
+    result: &ProgramValue,
     assumptions: &PureFactContext,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Option<bool>, String> {
@@ -2472,9 +2471,9 @@ fn composite_resource_body_is_active_with_assumptions(
     definition: &ResourceDefinition,
     substitutions: &BTreeMap<String, ContractExpression>,
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    state: &CState,
-    result: &CValue,
+    pre_state: &ExecutionState,
+    state: &ExecutionState,
+    result: &ProgramValue,
     assumptions: &PureFactContext,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<bool, String> {
@@ -2506,14 +2505,14 @@ fn apply_composite_observation_law_with_facts<F: ResourcePureFacts>(
     definition: &ResourceDefinition,
     resource_arguments: &[AlgebraicValue],
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    state: &CState,
-    result: &CValue,
+    pre_state: &ExecutionState,
+    state: &ExecutionState,
+    result: &ProgramValue,
     available_pure_facts: &mut F,
     spec_definitions: SpecDefinitions<'_>,
     lower_declared_source_facts: bool,
-    compiled_definitions: Option<&[CCompositeResourceDefinition]>,
-) -> Result<(CMemory, ResourceContext, bool), String> {
+    compiled_definitions: Option<&[CompositeResourceDefinition]>,
+) -> Result<(Memory, ResourceContext, bool), String> {
     let Some(composite_body) = definition.composite_body() else {
         return Ok((state.memory().clone(), ResourceContext::new(), false));
     };
@@ -2584,9 +2583,9 @@ fn apply_composite_observation_law_with_facts<F: ResourcePureFacts>(
     if contained_resources
         .facts()
         .iter()
-        .any(|child| matches!(child.resource(), CResource::PopulationAuthority(_)))
+        .any(|child| matches!(child.resource(), Resource::PopulationAuthority(_)))
     {
-        let owner = CResourceFact::own(CResource::Composite {
+        let owner = ResourceFact::own(Resource::Composite {
             name: definition.name().to_owned(),
             arguments: resource_arguments.to_vec().into(),
         });
@@ -2601,7 +2600,7 @@ fn apply_composite_observation_law_with_facts<F: ResourcePureFacts>(
     append_composite_definition_observable_facts(
         definition,
         composite_body,
-        &CResource::Composite {
+        &Resource::Composite {
             name: definition.name().to_string(),
             arguments: resource_arguments.to_vec().into(),
         },
@@ -2621,13 +2620,13 @@ fn apply_composite_observation_law_with_facts<F: ResourcePureFacts>(
 fn append_composite_definition_observable_facts<F: ResourcePureFacts>(
     definition: &ResourceDefinition,
     composite_body: &CompositeResourceBody,
-    parent_resource: &CResource,
+    parent_resource: &Resource,
     substitutions: &BTreeMap<String, ContractExpression>,
     contained_resources: &ResourceContext,
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    fact_state: &CState,
-    result: &CValue,
+    pre_state: &ExecutionState,
+    fact_state: &ExecutionState,
+    result: &ProgramValue,
     propositions: &mut F,
     spec_definitions: SpecDefinitions<'_>,
     lower_declared_source_facts: bool,
@@ -2667,18 +2666,18 @@ fn append_composite_definition_observable_facts<F: ResourcePureFacts>(
 }
 
 fn append_composite_resource_relation_facts_with_store<F: ResourcePureFacts>(
-    parent_resource: &CResource,
+    parent_resource: &Resource,
     contained_resources: &ResourceContext,
     propositions: &mut F,
 ) {
     let owned_children = contained_resources
         .facts()
         .iter()
-        .filter_map(CResourceFact::owned_resource)
+        .filter_map(ResourceFact::owned_resource)
         .cloned()
         .collect::<Vec<_>>();
     for child in &owned_children {
-        let proposition = Proposition::CResourceContains {
+        let proposition = Proposition::ResourceContains {
             parent: Box::new(parent_resource.clone()),
             child: Box::new(child.clone()),
         };
@@ -2696,7 +2695,7 @@ fn append_composite_resource_relation_facts_with_store<F: ResourcePureFacts>(
                     .filter(|fact| fact.is_own())
                     .cloned(),
             );
-        propositions.insert(Proposition::CResourceComposition(owned_context));
+        propositions.insert(Proposition::ResourceComposition(owned_context));
     }
 }
 
@@ -2705,7 +2704,7 @@ fn append_composite_resource_loadable_facts<F: ResourcePureFacts>(
     composite_body: &CompositeResourceBody,
     substitutions: &BTreeMap<String, ContractExpression>,
     parameter_binding: ParameterBinding<'_>,
-    memory: &CMemory,
+    memory: &Memory,
     propositions: &mut F,
 ) -> Result<(), String> {
     for contained in composite_body.contains() {
@@ -2736,10 +2735,10 @@ fn append_composite_resource_loadable_facts<F: ResourcePureFacts>(
 fn append_resource_clause_loadable_fact_with_store<F: ResourcePureFacts>(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    memory: &CMemory,
+    memory: &Memory,
     propositions: &mut F,
 ) -> Result<(), ClickError> {
-    let state = CState::new().with_memory(memory.clone());
+    let state = ExecutionState::new().with_memory(memory.clone());
     let Some(ranges) = resource_clause_memory_ranges_at_state(resource, parameter_binding, &state)?
     else {
         return Ok(());
@@ -2757,9 +2756,9 @@ fn append_resource_clause_loadable_fact_with_store<F: ResourcePureFacts>(
 
 pub(super) fn append_lowered_resource_clause_loadable_fact(
     resource: &ResourceClause,
-    _parameters: &[syntax::C0Parameter],
-    lowered: &CResourceFact,
-    state: &CState,
+    _parameters: &[crate::languages::interface::ImportedParameter],
+    lowered: &ResourceFact,
+    state: &ExecutionState,
     propositions: &mut Vec<Proposition>,
 ) {
     let ResourceClause::ViewMemory(_) = resource else {
@@ -2788,9 +2787,9 @@ fn append_composite_resource_declared_facts<F: ResourcePureFacts>(
     substitutions: &BTreeMap<String, ContractExpression>,
     contained_resources: &ResourceContext,
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    fact_state: &CState,
-    result: &CValue,
+    pre_state: &ExecutionState,
+    fact_state: &ExecutionState,
+    result: &ProgramValue,
     propositions: &mut F,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<(), String> {
@@ -2875,9 +2874,9 @@ fn materialize_composite_resource_memory(
     composite_body: &CompositeResourceBody,
     substitutions: &BTreeMap<String, ContractExpression>,
     parameter_binding: ParameterBinding<'_>,
-    memory: CMemory,
+    memory: Memory,
     assumptions: &PureFactContext,
-) -> Result<CMemory, String> {
+) -> Result<Memory, String> {
     // This pass names cells only. Tokens and nested resource heads cannot
     // materialize a cell, and their formation belongs to resource admission,
     // not to preparing the memory in which that admission will be checked.
@@ -2897,7 +2896,7 @@ fn materialize_composite_resource_memory(
         let lowered = lower_resource_clause_at_state_with_assumptions(
             &contained,
             parameter_binding,
-            &CState::new().with_memory(memory.clone()),
+            &ExecutionState::new().with_memory(memory.clone()),
             None,
             assumptions,
         )
@@ -2926,9 +2925,9 @@ pub(in crate::surface) fn instantiate_composite_resource_body_resources(
     composite_body: &CompositeResourceBody,
     substitutions: &BTreeMap<String, ContractExpression>,
     parameter_binding: ParameterBinding<'_>,
-    mut memory: CMemory,
+    mut memory: Memory,
     assumptions: &PureFactContext,
-) -> Result<(CMemory, ResourceContext), String> {
+) -> Result<(Memory, ResourceContext), String> {
     let mut resources = ResourceContext::new();
     // Every cell exposed by this one body expansion names the value it had
     // in the snapshot before the expansion began.  Lower clauses against the
@@ -2946,7 +2945,7 @@ pub(in crate::surface) fn instantiate_composite_resource_body_resources(
         let lowered = lower_resource_clause_at_state_with_assumptions(
             &contained,
             parameter_binding,
-            &CState::new().with_memory(memory.clone()),
+            &ExecutionState::new().with_memory(memory.clone()),
             None,
             assumptions,
         )
@@ -2991,11 +2990,11 @@ fn resource_value_substitutions(
         .zip(arguments)
         .map(|(parameter, argument)| {
             let argument = argument
-                .as_c_value()
+                .as_program_value()
                 .ok_or_else(|| "algebraic resource bodies are not supported yet".to_string())?;
             Ok((
                 parameter.name().to_string(),
-                ContractExpression::CFragment(CExpression::Value(argument.clone())),
+                ContractExpression::ProgramExpression(ProgramExpression::Value(argument.clone())),
             ))
         })
         .collect::<Result<_, String>>()
@@ -3007,12 +3006,12 @@ fn resource_value_substitutions(
 fn resource_value_substitutions_with_witnesses(
     definition: &ResourceDefinition,
     arguments: &[AlgebraicValue],
-    memory: &CMemory,
+    memory: &Memory,
     resources: &ResourceContext,
     assumptions: &PureFactContext,
     resource_environment: &ResourceEnvironment,
     spec_definitions: SpecDefinitions<'_>,
-    compiled_definitions: Option<&[CCompositeResourceDefinition]>,
+    compiled_definitions: Option<&[CompositeResourceDefinition]>,
 ) -> Result<BTreeMap<String, ContractExpression>, String> {
     let mut substitutions = resource_value_substitutions(definition, arguments)?;
     let Some(body) = definition.composite_body() else {
@@ -3032,7 +3031,7 @@ fn resource_value_substitutions_with_witnesses(
         .map_err(|error| error.raw_summary().to_string())?;
         &owned_definitions
     };
-    let fact = CResourceFact::own(CResource::Composite {
+    let fact = ResourceFact::own(Resource::Composite {
         name: definition.name().to_string(),
         arguments: arguments.to_vec().into(),
     });
@@ -3052,7 +3051,7 @@ fn resource_value_substitutions_with_witnesses(
     for (witness, value) in body.witnesses().iter().zip(values) {
         substitutions.insert(
             witness.name().to_string(),
-            ContractExpression::CFragment(CExpression::Value(value)),
+            ContractExpression::ProgramExpression(ProgramExpression::Value(value)),
         );
     }
     Ok(substitutions)
@@ -3061,10 +3060,10 @@ fn resource_value_substitutions_with_witnesses(
 pub(super) struct CheckedResourceUnfold {
     /// Facts this unfold publishes, including facts already known locally.
     pub(super) published_facts: Vec<Proposition>,
-    pub(super) state: CState,
+    pub(super) state: ExecutionState,
     pub(super) facts: ProofFacts,
     pub(super) added_facts: Vec<Proposition>,
-    pub(super) selected: CResourceFact,
+    pub(super) selected: ResourceFact,
     pub(super) body_was_already_exposed: bool,
 }
 
@@ -3074,7 +3073,7 @@ pub(super) fn unfold_composite_resource_for_proof(
     resource: &ResourceClause,
     source_resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    state: CState,
+    state: ExecutionState,
     facts: ProofFacts,
     surface_propositions: &mut SurfacePropositionMap,
     spec_definitions: SpecDefinitions<'_>,
@@ -3103,7 +3102,7 @@ pub(super) fn open_composite_resource_for_proof(
     resource_environment: &ResourceEnvironment,
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    state: CState,
+    state: ExecutionState,
     facts: ProofFacts,
     surface_propositions: &mut SurfacePropositionMap,
     spec_definitions: SpecDefinitions<'_>,
@@ -3132,7 +3131,7 @@ fn unfold_composite_resource_for_proof_with_access(
     resource: &ResourceClause,
     source_resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    state: CState,
+    state: ExecutionState,
     facts: ProofFacts,
     surface_propositions: &mut SurfacePropositionMap,
     spec_definitions: SpecDefinitions<'_>,
@@ -3174,12 +3173,12 @@ pub(super) fn declared_resource_witness_values(
     resource_environment: &ResourceEnvironment,
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     assumptions: &PureFactContext,
     spec_definitions: SpecDefinitions<'_>,
     claim_label: &str,
     tactic_index: usize,
-) -> Result<Vec<(String, CValue)>, ClickError> {
+) -> Result<Vec<(String, ProgramValue)>, ClickError> {
     let definition = composite_resource_law_definition(
         resource_environment,
         resource,
@@ -3207,7 +3206,7 @@ pub(super) fn declared_resource_witness_values(
         .witnesses()
         .iter()
         .filter_map(|witness| match substitutions.get(witness.name()) {
-            Some(ContractExpression::CFragment(CExpression::Value(value))) => {
+            Some(ContractExpression::ProgramExpression(ProgramExpression::Value(value))) => {
                 Some((witness.name().to_string(), value.clone()))
             }
             _ => None,
@@ -3241,7 +3240,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
     resource: &ResourceClause,
     source_resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    mut state: CState,
+    mut state: ExecutionState,
     available_pure_facts: &mut F,
     surface_propositions: &mut SurfacePropositionMap,
     spec_definitions: SpecDefinitions<'_>,
@@ -3287,7 +3286,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         parameter_binding,
         &state,
         &state,
-        &CValue::Int32(MachineTerm::constant(0)),
+        &ProgramValue::Int32(MachineTerm::constant(0)),
         available_pure_facts.assumptions(),
         spec_definitions,
     )
@@ -3325,7 +3324,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         .or_else(|| {
             (!matches!(resource, ResourceClause::Quantified { .. }))
                 .then(|| {
-                    let viewed = CResourceFact::View(abstract_resource.resource().clone());
+                    let viewed = ResourceFact::View(abstract_resource.resource().clone());
                     state
                         .resources()
                         .directly_supporting_fact(&viewed, &assumptions)
@@ -3360,30 +3359,29 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             })?
             .filter(|binding| binding.hold.is_some())
     };
-    let (requested_population_name, requested_population_arguments) = match abstract_resource
-        .resource()
-    {
-        CResource::Footprint(_) | CResource::Parameter(_) | CResource::Emp | CResource::Star(_) => {
-            return Err(ClickError::new(
-                "a resource descriptor does not grant ownership",
-            ));
-        }
-        CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
-            (name.clone(), arguments.clone())
-        }
-        CResource::Memory(_) => unreachable!("a declared resource lowered to memory"),
-        CResource::Instance(_)
-        | CResource::MutexGuard(_)
-        | CResource::MutexLive(_)
-        | CResource::MutexUse(_)
-        | CResource::Publication(_)
-        | CResource::PopulationAuthority(_)
-        | CResource::Iterated(_) => {
-            return Err(ClickError::new(
-                "instance unfolding is not a population operation",
-            ));
-        }
-    };
+    let (requested_population_name, requested_population_arguments) =
+        match abstract_resource.resource() {
+            Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_) => {
+                return Err(ClickError::new(
+                    "a resource descriptor does not grant ownership",
+                ));
+            }
+            Resource::Composite { name, arguments } | Resource::Token { name, arguments } => {
+                (name.clone(), arguments.clone())
+            }
+            Resource::Memory(_) => unreachable!("a declared resource lowered to memory"),
+            Resource::Instance(_)
+            | Resource::MutexGuard(_)
+            | Resource::MutexLive(_)
+            | Resource::MutexUse(_)
+            | Resource::Publication(_)
+            | Resource::PopulationAuthority(_)
+            | Resource::Iterated(_) => {
+                return Err(ClickError::new(
+                    "instance unfolding is not a population operation",
+                ));
+            }
+        };
     let body_reads_counts = composite_body
         .facts()
         .iter()
@@ -3584,7 +3582,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             &body_assumptions,
         )?;
         if opening_view {
-            lowered = CResourceFact::View(lowered.resource().clone());
+            lowered = ResourceFact::View(lowered.resource().clone());
         }
         unfolded_facts.push(lowered.clone());
         // A completed outcome has no more C loads to execute. Its proof
@@ -3673,7 +3671,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             parameter_binding,
             &fact_state,
             &fact_state,
-            &CValue::Int32(MachineTerm::constant(0)),
+            &ProgramValue::Int32(MachineTerm::constant(0)),
             available_pure_facts.assumptions(),
             &fact,
             spec_definitions,
@@ -3834,7 +3832,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
                 .into_iter()
                 .filter(|(child, _)| {
                     child.is_view()
-                        && crate::kernel::c_resources_directly_match(
+                        && crate::kernel::resources_directly_match(
                             binding.viewed.resource(),
                             child.resource(),
                             &assumptions,
@@ -4012,8 +4010,8 @@ fn fold_composite_resources_on_outcome_with_facts(
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
     pure_facts: &impl ResourcePureFacts,
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    mut outcome: CFunctionOutcome,
+    pre_state: &ExecutionState,
+    mut outcome: FunctionOutcome,
     spec_definitions: SpecDefinitions<'_>,
     unfolded_predicates: &[String],
     closure: ResourceBodyClosure,
@@ -4033,7 +4031,7 @@ fn fold_composite_resources_on_outcome_with_facts(
             .composite_body()
             .expect("composite_resource_law_definition should require a composite body");
         let (guard_result, guard_state) = match &outcome {
-            CFunctionOutcome::Return { value, state } => (value.clone(), state.clone()),
+            FunctionOutcome::Return { value, state } => (value.clone(), state.clone()),
             _ => {
                 return Err(ClickError::new(format!(
                     "`{claim_label}` path {path_index}: `fold({})` requires a return outcome, got {}",
@@ -4077,7 +4075,8 @@ fn fold_composite_resources_on_outcome_with_facts(
                         &BTreeSet::new(),
                     )
                     .map_err(ClickError::new)?;
-                    *argument = ContractExpression::CFragment(CExpression::Value(value));
+                    *argument =
+                        ContractExpression::ProgramExpression(ProgramExpression::Value(value));
                 }
             }
         }
@@ -4124,7 +4123,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 matches!(contained, ResourceClause::Declared { name, .. } if name == "authority")
             });
         if closure == ResourceBodyClosure::Initialize {
-            let CFunctionOutcome::Return { value, state } = &mut outcome else {
+            let FunctionOutcome::Return { value, state } = &mut outcome else {
                 unreachable!("the return outcome was checked above");
             };
             let population = lower_resource_clause_at_state_with_assumptions(
@@ -4139,23 +4138,23 @@ fn fold_composite_resources_on_outcome_with_facts(
                 .expect("fold requires owned composite authority")
                 .clone();
             let name = match population.resource() {
-                CResource::Footprint(_)
-                | CResource::Parameter(_)
-                | CResource::Emp
-                | CResource::Star(_) => {
+                Resource::Footprint(_)
+                | Resource::Parameter(_)
+                | Resource::Emp
+                | Resource::Star(_) => {
                     return Err(ClickError::new(
                         "a resource descriptor does not grant ownership",
                     ));
                 }
-                CResource::Composite { name, .. } | CResource::Token { name, .. } => name,
-                CResource::Memory(_)
-                | CResource::Instance(_)
-                | CResource::MutexGuard(_)
-                | CResource::MutexLive(_)
-                | CResource::MutexUse(_)
-                | CResource::Publication(_)
-                | CResource::PopulationAuthority(_)
-                | CResource::Iterated(_) => {
+                Resource::Composite { name, .. } | Resource::Token { name, .. } => name,
+                Resource::Memory(_)
+                | Resource::Instance(_)
+                | Resource::MutexGuard(_)
+                | Resource::MutexLive(_)
+                | Resource::MutexUse(_)
+                | Resource::Publication(_)
+                | Resource::PopulationAuthority(_)
+                | Resource::Iterated(_) => {
                     return Err(ClickError::new(format!(
                         "`{claim_label}` path {path_index}: `fold({})` did not lower to a declared resource",
                         describe_resource_clause(resource)
@@ -4214,7 +4213,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 // An ordinary wrapper transfers its existing children.
             }
         } else {
-            let CFunctionOutcome::Return { value, state } = &outcome else {
+            let FunctionOutcome::Return { value, state } = &outcome else {
                 unreachable!("the return outcome was checked above");
             };
             let population = lower_resource_clause_at_state_with_assumptions(
@@ -4226,7 +4225,7 @@ fn fold_composite_resources_on_outcome_with_facts(
             )?;
             let assumptions = pure_facts.assumptions();
             if !state.resources().satisfies_fact(&population, assumptions) {
-                let viewed_population = CResourceFact::View(population.resource().clone());
+                let viewed_population = ResourceFact::View(population.resource().clone());
                 closing_view = state
                     .resources()
                     .satisfies_fact(&viewed_population, assumptions);
@@ -4239,25 +4238,25 @@ fn fold_composite_resources_on_outcome_with_facts(
                 opened_owner = Some(*occurrence);
             }
             let (name, _) = match population.resource() {
-                CResource::Footprint(_)
-                | CResource::Parameter(_)
-                | CResource::Emp
-                | CResource::Star(_) => {
+                Resource::Footprint(_)
+                | Resource::Parameter(_)
+                | Resource::Emp
+                | Resource::Star(_) => {
                     return Err(ClickError::new(
                         "a resource descriptor does not grant ownership",
                     ));
                 }
-                CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
+                Resource::Composite { name, arguments } | Resource::Token { name, arguments } => {
                     (name, arguments)
                 }
-                CResource::Memory(_) => unreachable!("declared resource lowered to memory"),
-                CResource::Instance(_)
-                | CResource::MutexGuard(_)
-                | CResource::MutexLive(_)
-                | CResource::MutexUse(_)
-                | CResource::Publication(_)
-                | CResource::PopulationAuthority(_)
-                | CResource::Iterated(_) => {
+                Resource::Memory(_) => unreachable!("declared resource lowered to memory"),
+                Resource::Instance(_)
+                | Resource::MutexGuard(_)
+                | Resource::MutexLive(_)
+                | Resource::MutexUse(_)
+                | Resource::Publication(_)
+                | Resource::PopulationAuthority(_)
+                | Resource::Iterated(_) => {
                     return Err(ClickError::new(
                         "instance folding is not a population operation",
                     ));
@@ -4357,7 +4356,7 @@ fn fold_composite_resources_on_outcome_with_facts(
             // are not aliases for it; the checked matchers below transport
             // earlier evidence only after this exact current-state lowering.
             let required = {
-                let CFunctionOutcome::Return { value, state } = &outcome else {
+                let FunctionOutcome::Return { value, state } = &outcome else {
                     unreachable!("the return outcome was checked above")
                 };
                 let state = authority_closing_fact_state.as_ref().unwrap_or(state);
@@ -4396,7 +4395,7 @@ fn fold_composite_resources_on_outcome_with_facts(
             if let Some(binding) = dynamic_body_fact_dependency(
                 &required,
                 authority_closing_fact_state.as_ref().unwrap_or(match &outcome {
-                    CFunctionOutcome::Return { state, .. } => state,
+                    FunctionOutcome::Return { state, .. } => state,
                     _ => pre_state,
                 }),
                 &body_assumptions,
@@ -4470,11 +4469,13 @@ fn fold_composite_resources_on_outcome_with_facts(
                         authority_closing_fact_state
                             .as_ref()
                             .unwrap_or(match &outcome {
-                                CFunctionOutcome::Return { state, .. } => state,
+                                FunctionOutcome::Return { state, .. } => state,
                                 _ => pre_state,
                             });
                     for expression in spelling_substitutions.values_mut() {
-                        if let ContractExpression::CFragment(CExpression::Value(value)) = expression
+                        if let ContractExpression::ProgramExpression(ProgramExpression::Value(
+                            value,
+                        )) = expression
                             && let Some(spelled) =
                                 crate::surface::proof::surface_synthesis::synthesize_surface_value(
                                     value,
@@ -4490,7 +4491,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                     if spelling_substitutions.values().any(|expression| {
                         matches!(
                             expression,
-                            ContractExpression::CFragment(CExpression::Value(value))
+                            ContractExpression::ProgramExpression(ProgramExpression::Value(value))
                                 if !is_integer_constant(value)
                         )
                     }) {
@@ -4524,7 +4525,7 @@ fn fold_composite_resources_on_outcome_with_facts(
             if open {
                 let available_pure_facts = pure_facts.materialize();
                 let resources = match &outcome {
-                    CFunctionOutcome::Return { state, .. } => state.resources().facts(),
+                    FunctionOutcome::Return { state, .. } => state.resources().facts(),
                     _ => pre_state.resources().facts(),
                 };
                 let required_text =
@@ -4588,7 +4589,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 continue;
             }
         }
-        let CFunctionOutcome::Return { value, state } = outcome else {
+        let FunctionOutcome::Return { value, state } = outcome else {
             return Err(ClickError::new(format!(
                 "`{claim_label}` path {path_index}: `fold({})` requires a return outcome, got {}\n  execution pure facts: {}",
                 describe_resource_clause(resource),
@@ -4698,7 +4699,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 // and downgrade its simultaneously exposed body to views.
                 // Close those views when they are the representation that is
                 // actually present; an absent body still fails below.
-                let viewed = CResourceFact::View(lowered.resource().clone());
+                let viewed = ResourceFact::View(lowered.resource().clone());
                 if post_state.resources().satisfies_fact(&viewed, &assumptions) {
                     lowered = viewed;
                 }
@@ -4908,7 +4909,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 Some(&value.native()),
                 pure_facts.assumptions(),
             )?;
-            if let CResource::Composite { name, arguments } | CResource::Token { name, arguments } =
+            if let Resource::Composite { name, arguments } | Resource::Token { name, arguments } =
                 selected.resource()
             {
                 post_state = Box::new(
@@ -4928,7 +4929,7 @@ fn fold_composite_resources_on_outcome_with_facts(
             Some(&value.native()),
             pure_facts.assumptions(),
         )?);
-        outcome = CFunctionOutcome::Return {
+        outcome = FunctionOutcome::Return {
             value,
             state: post_state,
         };
@@ -4938,8 +4939,8 @@ fn fold_composite_resources_on_outcome_with_facts(
 }
 
 pub(super) struct CheckedResourceFold {
-    pub(super) selected: CResourceFact,
-    pub(super) state: CState,
+    pub(super) selected: ResourceFact,
+    pub(super) state: ExecutionState,
     pub(super) facts: ProofFacts,
     /// The hold a borrowing fold placed on the loan behind its viewed body,
     /// which the kernel checks as the fold's only ledger change.
@@ -4949,14 +4950,14 @@ pub(super) struct CheckedResourceFold {
 /// A folded outcome, the resources it selected, and the loan holds its
 /// borrowing folds placed.
 type FoldedOutcome = (
-    CFunctionOutcome,
-    Vec<CResourceFact>,
+    FunctionOutcome,
+    Vec<ResourceFact>,
     Vec<crate::kernel::CheckedLoanTransition>,
 );
 
 pub(super) struct CheckedOutcomeResourceFold {
-    pub(super) selected: CResourceFact,
-    pub(super) outcome: CFunctionOutcome,
+    pub(super) selected: ResourceFact,
+    pub(super) outcome: FunctionOutcome,
     pub(super) facts: ProofFacts,
 }
 
@@ -4972,8 +4973,8 @@ pub(super) fn fold_composite_resource_for_proof(
     tactic_index: usize,
     facts: ProofFacts,
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    state: CState,
+    pre_state: &ExecutionState,
+    state: ExecutionState,
     spec_definitions: SpecDefinitions<'_>,
     unfolded_predicates: &[String],
     family_reaches_population: bool,
@@ -5008,8 +5009,8 @@ pub(super) fn fold_composite_resource_on_outcome_for_proof(
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
     facts: ProofFacts,
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    outcome: CFunctionOutcome,
+    pre_state: &ExecutionState,
+    outcome: FunctionOutcome,
     spec_definitions: SpecDefinitions<'_>,
     unfolded_predicates: &[String],
     closure: ResourceBodyClosure,
@@ -5041,10 +5042,10 @@ pub(super) fn fold_composite_resource_on_outcome_for_proof(
     // Unrelated resources and their observation laws are unchanged; do not
     // scan/reproject the whole outcome for each closed scope.
     if matches!(closure, ResourceBodyClosure::CloseOpen { .. })
-        && let CFunctionOutcome::Return { value, state } = &outcome
+        && let FunctionOutcome::Return { value, state } = &outcome
     {
         let requested = &selected;
-        let viewed = CResourceFact::View(requested.resource().clone());
+        let viewed = ResourceFact::View(requested.resource().clone());
         let support = state
             .resources()
             .directly_supporting_fact(requested, facts.assumptions())
@@ -5087,8 +5088,8 @@ pub(super) fn close_open_resource_for_proof(
     tactic_index: usize,
     facts: ProofFacts,
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    state: CState,
+    pre_state: &ExecutionState,
+    state: ExecutionState,
     spec_definitions: SpecDefinitions<'_>,
     unfolded_predicates: &[String],
     preserve_exposed_body: bool,
@@ -5121,16 +5122,16 @@ fn fold_composite_resource_for_proof_with_closure(
     tactic_index: usize,
     facts: ProofFacts,
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    state: CState,
+    pre_state: &ExecutionState,
+    state: ExecutionState,
     spec_definitions: SpecDefinitions<'_>,
     unfolded_predicates: &[String],
     closure: ResourceBodyClosure,
     family_reaches_population: bool,
 ) -> Result<CheckedResourceFold, ClickError> {
     let facts = ProofResourcePureFacts::new(facts);
-    let outcome = CFunctionOutcome::Return {
-        value: CValue::Int32(MachineTerm::constant(0)).into(),
+    let outcome = FunctionOutcome::Return {
+        value: ProgramValue::Int32(MachineTerm::constant(0)).into(),
         state: Box::new(state),
     };
     let (outcome, mut selections, loan_holds) = fold_composite_resources_on_outcome_with_facts(
@@ -5149,7 +5150,7 @@ fn fold_composite_resource_for_proof_with_closure(
         closure,
         family_reaches_population,
     )?;
-    let CFunctionOutcome::Return { state, .. } = outcome else {
+    let FunctionOutcome::Return { state, .. } = outcome else {
         unreachable!("folding a synthetic return outcome preserves its outcome kind")
     };
     Ok(CheckedResourceFold {
@@ -5172,11 +5173,11 @@ pub(super) fn iterated_template_for_resource(
     resource: &ResourceClause,
     action: &str,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     claim_label: &str,
     tactic_index: usize,
     assumptions: &PureFactContext,
-) -> Result<crate::kernel::CIteratedMemory, ClickError> {
+) -> Result<crate::kernel::IteratedMemory, ClickError> {
     let definition = composite_resource_law_definition(
         resource_environment,
         resource,
@@ -5213,7 +5214,7 @@ pub(super) fn iterated_template_for_resource(
         assumptions,
     )?;
     match lowered {
-        CResourceFact::Own(CResource::Iterated(iterated), _) => Ok(iterated.as_ref().clone()),
+        ResourceFact::Own(Resource::Iterated(iterated), _) => Ok(iterated.as_ref().clone()),
         _ => Err(ClickError::new(format!(
             "`{claim_label}` tactic {tactic_index}: the iterated clause of `{}` did not lower to iterated ownership",
             definition.name()
@@ -5288,12 +5289,12 @@ fn extend_substitutions_with_witnesses(
     definition: &ResourceDefinition,
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
-    result: Option<&CValue>,
+    state: &ExecutionState,
+    result: Option<&ProgramValue>,
     assumptions: &PureFactContext,
     resource_environment: &ResourceEnvironment,
     spec_definitions: SpecDefinitions<'_>,
-    compiled_definitions: Option<&[CCompositeResourceDefinition]>,
+    compiled_definitions: Option<&[CompositeResourceDefinition]>,
 ) -> Result<(), ClickError> {
     let Some(body) = definition.composite_body() else {
         return Ok(());
@@ -5338,7 +5339,7 @@ fn extend_substitutions_with_witnesses(
     for (witness, value) in body.witnesses().iter().zip(values) {
         substitutions.insert(
             witness.name().to_string(),
-            ContractExpression::CFragment(CExpression::Value(value)),
+            ContractExpression::ProgramExpression(ProgramExpression::Value(value)),
         );
     }
     Ok(())
@@ -5346,17 +5347,17 @@ fn extend_substitutions_with_witnesses(
 
 /// Whether `value` is an integer constant, which a requirement spells as its
 /// literal.
-pub(in crate::surface::proof) fn is_integer_constant(value: &CValue) -> bool {
+pub(in crate::surface::proof) fn is_integer_constant(value: &ProgramValue) -> bool {
     matches!(
         value,
-        CValue::Int8(term)
-            | CValue::Int16(term)
-            | CValue::Int32(term)
-            | CValue::Int64(term)
-            | CValue::UInt8(term)
-            | CValue::UInt16(term)
-            | CValue::UInt32(term)
-            | CValue::UInt64(term)
+        ProgramValue::Int8(term)
+            | ProgramValue::Int16(term)
+            | ProgramValue::Int32(term)
+            | ProgramValue::Int64(term)
+            | ProgramValue::UInt8(term)
+            | ProgramValue::UInt16(term)
+            | ProgramValue::UInt32(term)
+            | ProgramValue::UInt64(term)
             if matches!(
                 term,
                 bits32_constant!(_)
@@ -5402,7 +5403,7 @@ pub(super) fn resource_argument_substitutions(
     let expected_types = definition
         .parameters()
         .iter()
-        .map(FunctionParameter::c_type)
+        .map(FunctionParameter::interface_type)
         .collect::<Vec<_>>();
     if parameter_types != &expected_types {
         return Err(ClickError::new(format!(
@@ -5509,20 +5510,20 @@ fn instantiate_contract_segment(
     Ok(ContractSegment {
         uninitialized: segment.uninitialized,
         state: segment.state,
-        base: substitute_c_fragment(&segment.base, substitutions)?,
-        start: substitute_c_fragment(&segment.start, substitutions)?,
-        end: substitute_c_fragment(&segment.end, substitutions)?,
+        base: substitute_program_expression(&segment.base, substitutions)?,
+        start: substitute_program_expression(&segment.start, substitutions)?,
+        end: substitute_program_expression(&segment.end, substitutions)?,
         surface,
     })
 }
 
 fn materialize_composite_resource_cells_from_snapshot(
-    mut memory: CMemory,
-    naming_memory: &CMemory,
+    mut memory: Memory,
+    naming_memory: &Memory,
     resource_clause: &ResourceClause,
-    lowered: &CResourceFact,
-    parameters: &[syntax::C0Parameter],
-) -> CMemory {
+    lowered: &ResourceFact,
+    parameters: &[crate::languages::interface::ImportedParameter],
+) -> Memory {
     let Some((segment, range)) = (match resource_clause {
         ResourceClause::Conditional { .. } => None,
         ResourceClause::Named { .. } => None,
@@ -5547,7 +5548,7 @@ fn materialize_composite_resource_cells_from_snapshot(
         return memory;
     }
 
-    let naming_source = crate::kernel::intern_c_memory(naming_memory.clone());
+    let naming_source = crate::kernel::intern_memory(naming_memory.clone());
     // Observe complete typed fields. In particular, an eight-byte pointer read
     // cannot reuse two independently named four-byte integer observations.
     if let Some(layout) = crate::surface::lowering::object_segment_layout(parameters, segment)
@@ -5559,15 +5560,16 @@ fn materialize_composite_resource_cells_from_snapshot(
                 range.base(),
                 memory,
                 |mut memory, pointer, element_type| {
-                    if !matches!(memory.load(&pointer), CExpressionOutcome::Value(_)) {
+                    if !matches!(memory.load(&pointer), ExpressionOutcome::Value(_)) {
                         // Function pointers retain their scalar function-name
                         // carrier. Object-pointer observations use the same
                         // selected source as the range path below.
-                        let storage_type = if matches!(element_type, CType::FunctionPointer(_)) {
-                            CType::Int32
-                        } else {
-                            element_type
-                        };
+                        let storage_type =
+                            if matches!(element_type, ProgramType::FunctionPointer(_)) {
+                                ProgramType::Int32
+                            } else {
+                                element_type
+                            };
                         memory = memory.materialize_cell_from_source(
                             pointer,
                             storage_type,
@@ -5616,9 +5618,9 @@ fn materialize_composite_resource_cells_from_snapshot(
     {
         segment_type
     } else if element_width == 1 {
-        CType::UInt8
+        ProgramType::UInt8
     } else {
-        CType::Int32
+        ProgramType::Int32
     };
     if run_type.byte_width() <= element_width {
         match memory.with_named_cell_run(
@@ -5639,7 +5641,7 @@ fn materialize_composite_resource_cells_from_snapshot(
             MachineTerm::constant(index),
             element_width,
         );
-        if matches!(memory.load(&pointer), CExpressionOutcome::Value(_)) {
+        if matches!(memory.load(&pointer), ExpressionOutcome::Value(_)) {
             continue;
         }
         memory = memory.materialize_cell_from_source(pointer, run_type, naming_source.clone());
@@ -5689,24 +5691,24 @@ void child_release(struct child* obj) {
             target: None,
             runtime: None,
         });
-        let verified = crate::surface::verify_c0_project(
+        let verified = crate::surface::verify_c_project(
             &project,
             &[("control.c", "struct child { int32 refs; int32 payload; }; void child_release(struct child* obj) { obj->refs = obj->refs - 1; }")],
         )
         .expect("the fixed helper's authority contract verifies");
         let execution = &verified[0].checked_execution;
         let path = &execution.paths()[0];
-        let Proposition::CFunctionVerifies { outcome, .. } =
+        let Proposition::ProgramFunctionVerifies { outcome, .. } =
             implication_body(path.theorem().proposition())
         else {
             panic!("the helper has a checked C outcome")
         };
-        let CFunctionOutcome::Return { state, .. } = outcome else {
+        let FunctionOutcome::Return { state, .. } = outcome else {
             panic!("the helper returns")
         };
         let assumptions = path.assumptions();
         let head = state.resources().facts().iter().find(|fact| {
-            matches!(fact.resource(), CResource::Composite { name, .. } if name == "child_control")
+            matches!(fact.resource(), Resource::Composite { name, .. } if name == "child_control")
         }).unwrap();
         let definition = execution
             .function()
@@ -5719,9 +5721,9 @@ void child_release(struct child* obj) {
             .expect("the returned control owns its authenticated body");
         let range = children
             .iter()
-            .find_map(CResourceFact::memory_own_range)
+            .find_map(ResourceFact::memory_own_range)
             .unwrap();
-        let view = CResourceFact::view_memory(range.clone());
+        let view = ResourceFact::view_memory(range.clone());
         let occurrence = state.resources().owned_occurrences_for_fact(head)[0];
         // This is the exact owner observation published by a modular return,
         // with its support occurrence, not an independently returned view.
@@ -5742,10 +5744,10 @@ void child_release(struct child* obj) {
                 .exact_projection_support(&view)
                 .is_some()
         );
-        let fact = Proposition::CMemoryReadDefined {
+        let fact = Proposition::MemoryReadDefined {
             memory: observed.memory().clone(),
             pointer: range.base().offset_by_bytes(4),
-            value_type: CType::Int32,
+            value_type: ProgramType::Int32,
         };
         let no_temporary_views = DynamicViewDependencyIndex::new(&[], &[], assumptions);
         assert!(
@@ -5775,12 +5777,12 @@ void child_release(struct child* obj) {
 
     fn binding_for(
         support: crate::kernel::ResourceOccurrenceId,
-        viewed: CResourceFact,
+        viewed: ResourceFact,
     ) -> crate::kernel::LoanViewBinding {
         let ledger = crate::kernel::LoanLedger::new();
         let owner = ledger.fresh_participant().unwrap();
         let reader = ledger.fresh_participant().unwrap();
-        let escrow = CResourceFact::own_token("v11_surface_support".into(), Vec::new());
+        let escrow = ResourceFact::own_token("v11_surface_support".into(), Vec::new());
         let opening = ledger.lend(owner, reader, support, escrow).unwrap();
         crate::kernel::LoanViewBinding {
             loan: opening.loan,
@@ -5794,8 +5796,8 @@ void child_release(struct child* obj) {
 
     #[test]
     fn duplicate_equal_view_dependencies_fail_closed() {
-        let support = CResourceFact::own_token("v11_surface_support".into(), Vec::new());
-        let child = CResourceFact::view_token("v11_surface_child".into(), Vec::new());
+        let support = ResourceFact::own_token("v11_surface_support".into(), Vec::new());
+        let child = ResourceFact::view_token("v11_surface_child".into(), Vec::new());
         let resources = ResourceContext::new().unchecked_with_facts([
             support.clone(),
             child.clone(),
@@ -5804,13 +5806,13 @@ void child_release(struct child* obj) {
         let support_occurrence = resources.owned_occurrences_for_fact(&support)[0];
         let occurrences = resources.occurrences_for_fact(&child);
         let binding = binding_for(support_occurrence, child.clone());
-        let state = CState::new().with_resource_context_and_loan_dependencies(
+        let state = ExecutionState::new().with_resource_context_and_loan_dependencies(
             resources,
             [(occurrences[0], binding.clone())],
         );
         assert!(unique_borrowed_resource_dependency(&state, &child).is_err());
 
-        let second = CResourceFact::view_token("v11_surface_other".into(), Vec::new());
+        let second = ResourceFact::view_token("v11_surface_other".into(), Vec::new());
         let mut different = binding;
         different.viewed = second;
         let resources = state.resources().clone();
@@ -5837,7 +5839,7 @@ void child_release(struct child* obj) {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
         };
-        let memory = CMemory::new();
+        let memory = Memory::new();
         let index = Variable(2_000_000);
         let index_term = || Box::new(MachineTerm::Variable(index));
         let below = |end: u32| {
@@ -5863,10 +5865,10 @@ void child_release(struct child* obj) {
         let quantified = |guard: Proposition| Proposition::ForAll {
             name: Default::default(),
             var: index,
-            sort: crate::kernel::Sort::CInt32,
+            sort: crate::kernel::Sort::ProgramInt32,
             body: Box::new(Proposition::Implies(
                 Box::new(guard),
-                Box::new(Proposition::CMemoryReadDefined {
+                Box::new(Proposition::MemoryReadDefined {
                     memory: memory.clone(),
                     pointer: Pointer {
                         block: PointerBlock::ExternalArgument,
@@ -5878,13 +5880,13 @@ void child_release(struct child* obj) {
                             byte_width: 4,
                         },
                     },
-                    value_type: crate::kernel::CType::Int32,
+                    value_type: crate::kernel::ProgramType::Int32,
                 }),
             )),
         };
-        let range = CMemoryRange::new(base, MachineTerm::constant(0), MachineTerm::constant(4));
-        let own = CResourceFact::own_memory(range.clone());
-        let view = CResourceFact::view_memory(range);
+        let range = MemoryRange::new(base, MachineTerm::constant(0), MachineTerm::constant(4));
+        let own = ResourceFact::own_memory(range.clone());
+        let view = ResourceFact::view_memory(range);
         let support_resources = ResourceContext::new().unchecked_with_fact(own.clone());
         let support = support_resources.owned_occurrences_for_fact(&own)[0];
         let ledger = crate::kernel::LoanLedger::new();
@@ -5901,7 +5903,7 @@ void child_release(struct child* obj) {
         };
         let bound_resources = ResourceContext::new().unchecked_with_fact(view.clone());
         let view_occurrence = bound_resources.occurrences_for_fact(&view)[0];
-        let state = CState::new()
+        let state = ExecutionState::new()
             .with_memory(memory.clone())
             .with_resource_context_and_loan_dependencies(
                 bound_resources,
@@ -5945,8 +5947,11 @@ void child_release(struct child* obj) {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
         };
-        let memory = CMemory::new().store(pointer.clone(), CValue::Int32(MachineTerm::constant(0)));
-        let snapshot = crate::kernel::intern_c_memory_ref(&memory);
+        let memory = Memory::new().store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(0)),
+        );
+        let snapshot = crate::kernel::intern_memory_ref(&memory);
         let condition = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -5958,10 +5963,10 @@ void child_release(struct child* obj) {
             right: Box::new(MachineTerm::constant(0)),
         };
         let proposition = if definedness {
-            Proposition::CMemoryReadDefined {
+            Proposition::MemoryReadDefined {
                 memory: memory.clone(),
                 pointer: pointer.clone(),
-                value_type: crate::kernel::CType::Int32,
+                value_type: crate::kernel::ProgramType::Int32,
             }
         } else {
             Proposition::ConditionIs(condition, true)
@@ -5980,9 +5985,9 @@ void child_release(struct child* obj) {
             },
             true,
         ));
-        let range = CMemoryRange::new(pointer, MachineTerm::constant(0), extent);
-        let own = CResourceFact::own_memory(range.clone());
-        let view = CResourceFact::view_memory(range.clone());
+        let range = MemoryRange::new(pointer, MachineTerm::constant(0), extent);
+        let own = ResourceFact::own_memory(range.clone());
+        let view = ResourceFact::view_memory(range.clone());
         let support_resources = ResourceContext::new().unchecked_with_fact(own.clone());
         let support = support_resources.owned_occurrences_for_fact(&own)[0];
         let ledger = crate::kernel::LoanLedger::new();
@@ -6002,7 +6007,7 @@ void child_release(struct child* obj) {
         // remains in the caller state that supplied the exact occurrence.
         let bound_resources = ResourceContext::new().unchecked_with_fact(view.clone());
         let view_occurrence = bound_resources.occurrences_for_fact(&view)[0];
-        let bound_state = CState::new()
+        let bound_state = ExecutionState::new()
             .with_memory(memory.clone())
             .with_resource_context_and_loan_dependencies(
                 bound_resources,
@@ -6074,7 +6079,7 @@ void child_release(struct child* obj) {
             [view.clone()],
             &memory,
         );
-        let supported_state = CState::new()
+        let supported_state = ExecutionState::new()
             .with_memory(memory.clone())
             .with_resource_context(supported);
         assert!(
@@ -6088,9 +6093,11 @@ void child_release(struct child* obj) {
             .is_none()
         );
 
-        let unbound_state = CState::new().with_memory(memory).with_resource_context(
-            ResourceContext::new().unchecked_with_facts([own.clone(), view]),
-        );
+        let unbound_state = ExecutionState::new()
+            .with_memory(memory)
+            .with_resource_context(
+                ResourceContext::new().unchecked_with_facts([own.clone(), view]),
+            );
         assert!(
             dynamic_body_fact_dependency(
                 &proposition,
@@ -6104,7 +6111,7 @@ void child_release(struct child* obj) {
         assert!(
             dynamic_body_fact_dependency(
                 &proposition,
-                &CState::new().with_memory(unbound_state.memory().clone()),
+                &ExecutionState::new().with_memory(unbound_state.memory().clone()),
                 &assumptions,
                 &no_temporary_views,
             )
@@ -6118,7 +6125,7 @@ void child_release(struct child* obj) {
             return;
         }
 
-        let owner_state = CState::new()
+        let owner_state = ExecutionState::new()
             .with_memory(unbound_state.memory().clone())
             .with_resource_context(ResourceContext::new().unchecked_with_fact(own));
         assert!(
@@ -6154,7 +6161,7 @@ mod wide_range_reader_tests {
     #[test]
     fn wide_composite_materialization_keeps_the_snapshot_without_enumerating_cells() {
         let base = Pointer::symbolic(Variable(985_600));
-        let wide = CMemoryRange::new_wide(
+        let wide = MemoryRange::new_wide(
             base.clone(),
             MachineTerm::uint64_constant(0),
             MachineTerm::uint64_constant(1 << 33),
@@ -6164,33 +6171,33 @@ mod wide_range_reader_tests {
         let segment = ContractSegment {
             uninitialized: false,
             state: ContractSegmentState::Current,
-            base: CExpression::Value(CValue::pointer(base.clone())),
-            start: crate::kernel::c_uint64_literal(0),
-            end: crate::kernel::c_uint64_literal(1 << 33),
+            base: ProgramExpression::Value(ProgramValue::pointer(base.clone())),
+            start: crate::kernel::program_expression::uint64_literal(0),
+            end: crate::kernel::program_expression::uint64_literal(1 << 33),
             surface: ContractSegmentSurface::Range {
                 base: literal(),
                 start: literal(),
                 end: literal(),
             },
         };
-        let memory = CMemory::new();
+        let memory = Memory::new();
         let result = materialize_composite_resource_cells_from_snapshot(
             memory.clone(),
             &memory,
             &ResourceClause::OwnMemory(segment),
-            &CResourceFact::own_memory(wide),
+            &ResourceFact::own_memory(wide),
             &[],
         );
         assert_eq!(result.diagnostic_identity(), memory.diagnostic_identity());
         // The range kind also matters when the shared term representation has
         // legacy constant nodes: they must not trigger signed enumeration.
-        let tagged = CMemoryRange::new_wide(base, 0u32.into(), 8u32.into(), 4);
+        let tagged = MemoryRange::new_wide(base, 0u32.into(), 8u32.into(), 4);
         let clause = ResourceClause::OwnMemory(ContractSegment {
             uninitialized: false,
             state: ContractSegmentState::Current,
-            base: crate::kernel::c_int32_literal(0),
-            start: crate::kernel::c_uint64_literal(0),
-            end: crate::kernel::c_uint64_literal(8),
+            base: crate::kernel::program_expression::int32_literal(0),
+            start: crate::kernel::program_expression::uint64_literal(0),
+            end: crate::kernel::program_expression::uint64_literal(8),
             surface: ContractSegmentSurface::Range {
                 base: literal(),
                 start: literal(),
@@ -6201,7 +6208,7 @@ mod wide_range_reader_tests {
             memory.clone(),
             &memory,
             &clause,
-            &CResourceFact::own_memory(tagged),
+            &ResourceFact::own_memory(tagged),
             &[],
         );
         assert_eq!(result.diagnostic_identity(), memory.diagnostic_identity());
@@ -6231,7 +6238,7 @@ resource cell(p: int32*) {
         let specs = SpecDefinitions::new(&predicates, &functions);
         let schema = crate::kernel::ResourceFieldSchema::new(vec![(
             "number".to_string(),
-            crate::kernel::ResourceFieldType::C(CType::Int32),
+            crate::kernel::ResourceFieldType::Program(ProgramType::Int32),
         )])
         .unwrap();
         for (pointer, active) in [
@@ -6251,16 +6258,16 @@ resource cell(p: int32*) {
             let instance = ResourceInstance::new(
                 crate::kernel::Variable(88_002),
                 "cell".to_string(),
-                vec![AlgebraicValue::C(CValue::typed_pointer(
+                vec![AlgebraicValue::Program(ProgramValue::typed_pointer(
                     pointer.clone(),
-                    CType::Int32Pointer,
+                    ProgramType::Int32Pointer,
                 ))]
                 .into(),
                 schema.clone(),
-                vec![AlgebraicValue::C(crate::kernel::int32(3))].into(),
+                vec![AlgebraicValue::Program(crate::kernel::int32(3))].into(),
             )
             .unwrap();
-            let before = CState::new();
+            let before = ExecutionState::new();
             let after = materialize_unfolded_instance_arm_cells(
                 &resources,
                 specs,
@@ -6272,7 +6279,7 @@ resource cell(p: int32*) {
                 active,
             );
             assert_eq!(
-                matches!(after.memory().load(&pointer), CExpressionOutcome::Value(_)),
+                matches!(after.memory().load(&pointer), ExpressionOutcome::Value(_)),
                 active
             );
             assert_eq!(
@@ -6360,13 +6367,13 @@ mod fold_quantity_activity_tests {
 mod declared_scalar_field_observation_tests {
     use super::*;
 
-    fn field(base: CExpression, element_type: CType) -> ContractSegment {
+    fn field(base: ProgramExpression, element_type: ProgramType) -> ContractSegment {
         ContractSegment {
             uninitialized: false,
             state: ContractSegmentState::Current,
             base,
-            start: crate::kernel::c_int32_literal(0),
-            end: crate::kernel::c_int32_literal(0),
+            start: crate::kernel::program_expression::int32_literal(0),
+            end: crate::kernel::program_expression::int32_literal(0),
             surface: ContractSegmentSurface::Field {
                 value_bytes: None,
                 base: None,
@@ -6384,22 +6391,22 @@ mod declared_scalar_field_observation_tests {
             let mut samples = Vec::new();
             for padding in [0u32, 16, 64, 256] {
                 let segment = field(
-                    CExpression::Value(CValue::pointer(base.clone())),
-                    CType::Int32,
+                    ProgramExpression::Value(ProgramValue::pointer(base.clone())),
+                    ProgramType::Int32,
                 );
-                let range = CMemoryRange::new(base.clone(), 0.into(), (1 + padding).into());
+                let range = MemoryRange::new(base.clone(), 0.into(), (1 + padding).into());
                 let (clause, fact) = if viewed {
                     (
                         ResourceClause::ViewMemory(segment),
-                        CResourceFact::view_memory(range),
+                        ResourceFact::view_memory(range),
                     )
                 } else {
                     (
                         ResourceClause::OwnMemory(segment),
-                        CResourceFact::own_memory(range),
+                        ResourceFact::own_memory(range),
                     )
                 };
-                let memory = CMemory::new();
+                let memory = Memory::new();
                 let (named, work) = crate::instrumentation::measure_deterministic_work(|| {
                     materialize_composite_resource_cells_from_snapshot(
                         memory.clone(),
@@ -6411,12 +6418,12 @@ mod declared_scalar_field_observation_tests {
                 });
                 assert!(matches!(
                     named.load(&base),
-                    CExpressionOutcome::Value(CValue::Int32(_))
+                    ExpressionOutcome::Value(ProgramValue::Int32(_))
                 ));
                 assert!(
                     !matches!(
                         named.load(&base.offset_by_bytes(4)),
-                        CExpressionOutcome::Value(_)
+                        ExpressionOutcome::Value(_)
                     ),
                     "padding must not become an initialized scalar"
                 );
@@ -6433,39 +6440,39 @@ mod declared_scalar_field_observation_tests {
     fn pointer_field_observation_is_one_complete_typed_read() {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Pointer::symbolic(Variable(985_803));
-        let memory = CMemory::new();
+        let memory = Memory::new();
         let segment = field(
-            CExpression::Value(CValue::pointer(base.clone())),
-            CType::Int32Pointer,
+            ProgramExpression::Value(ProgramValue::pointer(base.clone())),
+            ProgramType::Int32Pointer,
         );
         let named = materialize_composite_resource_cells_from_snapshot(
             memory.clone(),
             &memory,
             &ResourceClause::OwnMemory(segment),
-            &CResourceFact::own_memory(CMemoryRange::new(base.clone(), 0.into(), 2.into())),
+            &ResourceFact::own_memory(MemoryRange::new(base.clone(), 0.into(), 2.into())),
             &[],
         );
-        let CExpressionOutcome::Value(value) = named.load(&base) else {
+        let ExpressionOutcome::Value(value) = named.load(&base) else {
             panic!("observed field")
         };
         assert!(
-            matches!(value, CValue::Pointer(_)),
+            matches!(value, ProgramValue::Pointer(_)),
             "a pointer field must not be cached as an integer prefix"
         );
         let expected = Pointer::loaded(&MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(memory),
+            crate::kernel::intern_memory(memory),
             Box::new(base.clone()),
             crate::kernel::LoadKind::Int32,
         ))
         .unwrap();
-        assert!(value == CValue::typed_pointer(expected, CType::Int32Pointer));
+        assert!(value == ProgramValue::typed_pointer(expected, ProgramType::Int32Pointer));
         assert!(!matches!(
             named.load(&base.offset_by_bytes(4)),
-            CExpressionOutcome::Value(_)
+            ExpressionOutcome::Value(_)
         ));
         assert!(!matches!(
             named.load(&base.offset_by_bytes(8)),
-            CExpressionOutcome::Value(_)
+            ExpressionOutcome::Value(_)
         ));
     }
 
@@ -6474,30 +6481,30 @@ mod declared_scalar_field_observation_tests {
         let base = Pointer::symbolic(Variable(985_802));
         for count in [0, 16, 64, 256] {
             let segment = field(
-                crate::kernel::c_typed_load(
-                    CExpression::Value(CValue::pointer(base.clone())),
-                    CType::Int32Array(count),
+                crate::kernel::program_expression::typed_load(
+                    ProgramExpression::Value(ProgramValue::pointer(base.clone())),
+                    ProgramType::Int32Array(count),
                 ),
-                CType::Int32,
+                ProgramType::Int32,
             );
-            let range = CMemoryRange::new(base.clone(), 0.into(), (count + 4).into());
-            let memory = CMemory::new();
+            let range = MemoryRange::new(base.clone(), 0.into(), (count + 4).into());
+            let memory = Memory::new();
             let named = materialize_composite_resource_cells_from_snapshot(
                 memory.clone(),
                 &memory,
                 &ResourceClause::OwnMemory(segment),
-                &CResourceFact::own_memory(range),
+                &ResourceFact::own_memory(range),
                 &[],
             );
             if count > 0 {
                 assert!(matches!(
                     named.load(&base.offset_by_bytes((count - 1) * 4)),
-                    CExpressionOutcome::Value(CValue::Int32(_))
+                    ExpressionOutcome::Value(ProgramValue::Int32(_))
                 ));
             }
             assert!(!matches!(
                 named.load(&base.offset_by_bytes(count * 4)),
-                CExpressionOutcome::Value(_)
+                ExpressionOutcome::Value(_)
             ));
         }
     }

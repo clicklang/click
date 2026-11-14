@@ -6,16 +6,17 @@
 //! directly.
 //!
 pub(crate) mod api;
+pub mod program_expression;
 mod region_footprint;
 pub use region_footprint::RegionFootprint;
 mod source_access;
 mod source_loans;
-pub use source_access::{CStatementAssignSource, CStatementStoreSource};
 pub(crate) use source_access::{
     ExecutedReferenceAccess, ExecutedReferenceBoundary, ReferenceAccessKind,
     ReferenceAccessSourceId, ReferenceBorrowSourceId,
 };
-pub use source_loans::{CScalarReferenceEnd, CScalarReferenceScope};
+pub use source_access::{StatementAssignSource, StatementStoreSource};
+pub use source_loans::{ScalarReferenceEnd, ScalarReferenceScope};
 pub(crate) use source_loans::{
     ScalarReferencePlanFamily, ScalarReferencePlanKey, ScalarReferenceScopeKey,
     ScalarReferenceScopePlan, ScalarReferenceSourcePlan,
@@ -48,8 +49,8 @@ mod population_access;
 // Population authority: checked anchor lifetimes, registrations and the C
 // creation ledger.
 mod population_authority;
-pub(crate) use population_authority::c_creation::CheckedPopulationAuthorityExchange;
-pub(crate) use population_authority::c_creation::CheckedPopulationMemberExchange;
+pub(crate) use population_authority::storage_creation::CheckedPopulationAuthorityExchange;
+pub(crate) use population_authority::storage_creation::CheckedPopulationMemberExchange;
 mod quantified_frame;
 mod resource_description;
 mod thread_confinement;
@@ -118,7 +119,7 @@ pub(crate) mod sorry;
 #[cfg(test)]
 pub(crate) use fold_read_summary::registered_fold_read_summary;
 pub use fold_read_summary::{
-    CFoldReadDefinition, CheckedFoldReadSummary, FoldReadDecline, register_fold_read_definition,
+    CheckedFoldReadSummary, FoldReadDecline, FoldReadDefinition, register_fold_read_definition,
 };
 pub(crate) use fold_read_summary::{FoldFrameRefusal, frame_fold_application_transport};
 pub(crate) use quantified_frame::{QuantifiedFrameRefusal, frame_quantified_transport};
@@ -172,7 +173,7 @@ pub(crate) use eval::offsets_have_same_canonical_form;
 pub(crate) use eval::pointer_read_over_immediate_store;
 pub(crate) use eval::proposition_mentions_load_variable;
 pub(crate) use eval::proposition_mentions_scalar_read;
-pub(crate) use eval::read_over_write_c_value;
+pub(crate) use eval::read_over_write_program_value;
 pub(crate) use eval::read_over_write_value;
 #[cfg(test)]
 pub(crate) use eval::record_load_variable_defining_fact;
@@ -183,7 +184,7 @@ pub(crate) use eval::resolve_pending_heap_allocations;
 pub(crate) use eval::scalar_read_observation;
 pub(crate) use eval::terms_have_same_canonical_form;
 pub(crate) use eval::{
-    CUndefinedBehaviorSite, locate_undefined_behavior, locate_undefined_behavior_in_condition,
+    UndefinedBehaviorSite, locate_undefined_behavior, locate_undefined_behavior_in_condition,
 };
 pub(crate) use eval::{arithmetic_comparison_form, comparison_form};
 #[cfg(test)]
@@ -199,17 +200,17 @@ pub(crate) use functions::ResourceModelArmSelection;
 pub(crate) use functions::ResourceRewriteRefusal;
 pub(crate) use functions::StorageWriteOutsideFootprint;
 pub(crate) use functions::arm_algebraic_payload_spelling;
-pub(crate) use functions::c_type_spelling;
 pub(crate) use functions::checked_composite_projection_evidence;
 pub(crate) use functions::decide_resource_model_arm;
 pub(crate) use functions::establish_resource_derived_loop_frames;
 pub(crate) use functions::evaluate_guarded_contract_condition_with_loop_entry;
 pub(crate) use functions::guard_contract_refusal;
-pub(crate) use functions::initialize_c_function_globals;
-pub(crate) use functions::initialize_c_program_storage;
+pub(crate) use functions::initialize_program_function_globals;
+pub(crate) use functions::initialize_program_program_storage;
 #[cfg(test)]
 pub(crate) use functions::measure_resource_clause_attempts;
 pub(crate) use functions::modified_by_value_aggregate_parameter_with_current_ensure_in_source;
+pub(crate) use functions::program_type_spelling;
 pub(crate) use functions::publish_instance_arms;
 pub(crate) use functions::select_resource_model_arm;
 pub(crate) use functions::symbolic_call_result;
@@ -218,14 +219,13 @@ pub(crate) use functions::{
     quantified_resource_requirement_assumptions, resource_clause_position_note,
     resource_clause_stall_note, unmatched_instance_body_views,
 };
-pub use loops::CLoopBinder;
+pub use loops::LoopBinder;
 #[cfg(test)]
-pub(crate) use loops::c_loop_state_components_match_at_back_edge;
+pub(crate) use loops::loop_state_components_match_at_back_edge;
 pub(crate) use loops::memory_range_extent_refusal;
 pub(crate) use loops::{
-    c_loop_binder_state_components_match_at_back_edge, c_loop_binders,
-    c_loop_condition_may_continue, c_loop_state_with_loop_binders_rebound,
-    loop_structural_descent_failure,
+    loop_binder_state_components_match_at_back_edge, loop_binders, loop_condition_may_continue,
+    loop_state_with_loop_binders_rebound, loop_structural_descent_failure,
 };
 // Used through other modules' glob imports of `crate::kernel`, which the unused
 // import lint does not see once nothing here is `pub`.
@@ -245,18 +245,18 @@ pub(crate) use reasoning::substitute_integer_variable_in_pure_proposition;
 pub(crate) use reasoning::try_resolve_load_variables_from_registry;
 pub use reasoning::{LoweringIntroduction, LoweringIntroductions};
 pub(crate) use reasoning::{
-    collect_bitvector_variables, collect_c_value_bitvector_variables,
+    collect_bitvector_variables, collect_program_value_bitvector_variables,
     collect_spec_algebraic_expression_bitvector_variables, collect_spec_integer_bound_variables,
     collect_spec_integer_variables,
 };
 pub(crate) use reasoning::{
     substitute_pointer_value_in_proposition, substitute_pointer_variable_in_proposition,
 };
-pub(crate) use spec::c_value_word32_term;
 pub(crate) use spec::is_verified_load_variable_defining_fact;
+pub(crate) use spec::program_value_word32_term;
 pub use termination::{
-    CTerminationRefusal, CTerminationVerdicts, CUnsuitableCallback, c_function_callees,
-    c_termination_height_plan, c_verified_function_termination_rules,
+    TerminationRefusal, TerminationVerdicts, UnsuitableCallback, program_function_callees,
+    program_termination_height_plan, program_verified_function_termination_rules,
 };
 
 mod prelude {
@@ -338,7 +338,7 @@ pub fn verification_session_generation() -> u64 {
 #[derive(Clone)]
 pub struct VerificationSessionState {
     generation: u64,
-    arena: primitives::CMemoryArenaState,
+    arena: primitives::MemoryArenaState,
     loads: eval::LoadRegistryState,
     model_fields: model_fields::ModelFieldRegistryState,
     blocks: primitives::BlockRegistriesState,
@@ -386,7 +386,7 @@ impl VerificationSession {
 
             resource_conjunction::clear();
             spec::required_constructions::clear_required_constructions();
-            primitives::start_fresh_c_memory_arena();
+            primitives::start_fresh_memory_arena();
             eval::clear_load_variable_registry();
             model_fields::clear_model_field_registry();
             primitives::clear_block_alignment_registry();
@@ -427,7 +427,7 @@ impl VerificationSession {
     pub fn capture_state() -> VerificationSessionState {
         VerificationSessionState {
             generation: verification_session_generation(),
-            arena: primitives::capture_c_memory_arena(),
+            arena: primitives::capture_memory_arena(),
             loads: eval::capture_load_variable_registry(),
             model_fields: model_fields::capture_model_field_registry(),
             blocks: primitives::capture_block_registries(),
@@ -441,7 +441,7 @@ impl VerificationSession {
     /// for regressions that a reusable session's checks leave nothing behind.
     #[cfg(test)]
     pub fn state_entry_count() -> usize {
-        primitives::c_memory_arena_entry_count()
+        primitives::memory_arena_entry_count()
             + eval::load_registry_entry_count()
             + resource_conjunction::len()
     }
@@ -465,7 +465,7 @@ impl VerificationSession {
 
         resource_conjunction::restore(&state.conjunctions);
         spec::required_constructions::restore_required_constructions(&state.required_constructions);
-        primitives::restore_c_memory_arena(&state.arena);
+        primitives::restore_memory_arena(&state.arena);
         eval::restore_load_variable_registry(&state.loads);
         model_fields::restore_model_field_registry(&state.model_fields);
         primitives::restore_block_registries(&state.blocks);

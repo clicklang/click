@@ -6,7 +6,8 @@ fn adjacent_bound_queries_retain_shared_prefixes_in_changing_contexts() {
     let samples = [16usize, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::C(format.c_type()), Variable(189321));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(format.program_type()), Variable(189321));
         let mut context = PureFactContext::new();
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {

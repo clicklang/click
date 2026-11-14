@@ -10,35 +10,37 @@ fn address(index: usize) -> Pointer {
         offset: PointerOffsetTerm::Constant(0),
     }
 }
-fn spec() -> CResourceSpec {
-    CResourceSpec::new(
-        CResourceTerm::MutexGuard {
-            mutex: Box::new(c_variable("mutex")),
-            snapshot: CResourceSnapshot::Current,
+fn spec() -> ResourceSpec {
+    ResourceSpec::new(
+        ResourceTerm::MutexGuard {
+            mutex: Box::new(crate::kernel::program_expression::variable("mutex")),
+            snapshot: ResourceSnapshot::Current,
         },
-        CResourceAccessMode::Own,
-        CResourceQuantity::One,
-        CResourceTransferRole::Borrow,
-        CResourceSnapshot::Current,
+        ResourceAccessMode::Own,
+        ResourceQuantity::One,
+        ResourceTransferRole::Borrow,
+        ResourceSnapshot::Current,
     )
     .unwrap()
     .with_guard(SpecProposition::Comparison {
-        left: SpecExpression::CExpression(c_variable("flag")),
-        operator: CComparisonOperator::Equal,
+        left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
+            "flag",
+        )),
+        operator: ComparisonOperator::Equal,
         right: SpecExpression::Value(int32(1)),
     })
 }
-fn entry() -> CState {
+fn entry() -> ExecutionState {
     MutexContext::new(
-        CState::new()
-            .with_local("mutex", CValue::pointer(address(0)))
+        ExecutionState::new()
+            .with_local("mutex", ProgramValue::pointer(address(0)))
             .with_local("flag", int32(0)),
     )
     .initialize_empty(address(0), 40)
     .unwrap()
     .state
 }
-fn head(entry: &CState, identity: u64) -> CState {
+fn head(entry: &ExecutionState, identity: u64) -> ExecutionState {
     let (state, _) = prepare_direct_loop_guard(
         entry,
         entry,
@@ -89,7 +91,7 @@ fn direct_loop_guard_metadata_does_not_replace_owned_carrier() {
     missing.resources = missing
         .resources
         .without_fact_incrementally(
-            &CResourceFact::own(CResource::Instance(instance)),
+            &ResourceFact::own(Resource::Instance(instance)),
             &PureFactContext::new(),
         )
         .unwrap();
@@ -118,7 +120,7 @@ fn direct_loop_guard_rejects_changed_mutex_address() {
     let entry = entry();
     let changed = entry
         .clone()
-        .with_local("mutex", CValue::pointer(address(1)));
+        .with_local("mutex", ProgramValue::pointer(address(1)));
     assert!(
         prepare_direct_loop_guard(
             &entry,

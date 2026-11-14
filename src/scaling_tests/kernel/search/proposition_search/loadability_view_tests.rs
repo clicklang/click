@@ -1,10 +1,10 @@
 #[test]
 fn ambient_loadability_enumeration_charges_every_visited_fact() {
     for size in [8u64, 32, 128] {
-        let state = crate::kernel::CState::new();
+        let state = crate::kernel::ExecutionState::new();
         let mut context = PureFactContext::new();
         for index in 0..size {
-            context = context.assume_proposition(Proposition::CMemoryLoadable {
+            context = context.assume_proposition(Proposition::MemoryLoadable {
                 memory: state.memory().clone(),
                 base: Pointer::symbolic(Variable(670_000 + index)),
                 bytes: MachineTerm::constant(4),
@@ -29,10 +29,10 @@ fn witness_collection_stops_when_its_work_budget_is_exhausted() {
     let mut samples = Vec::new();
     for size in [32u64, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let state = crate::kernel::CState::new();
+        let state = crate::kernel::ExecutionState::new();
         let mut context = PureFactContext::new();
         for index in 0..size {
-            context = context.assume_proposition(Proposition::CMemoryLoadable {
+            context = context.assume_proposition(Proposition::MemoryLoadable {
                 memory: state.memory().clone(),
                 base: Pointer::symbolic(Variable(680_000 + index)),
                 bytes: MachineTerm::constant(4),
@@ -48,7 +48,7 @@ fn witness_collection_stops_when_its_work_budget_is_exhausted() {
                 crate::kernel::search::ProofSearch::derive_exists_from_witness(
                     &(context),
                     Variable(690_000),
-                    &Sort::CInt32,
+                    &Sort::ProgramInt32,
                     &body,
                 )
             })
@@ -67,11 +67,11 @@ fn witness_collection_stops_when_its_work_budget_is_exhausted() {
 fn ambiguous_address_enumeration_requires_search_and_charges_candidates() {
     for size in [8u32, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = crate::kernel::CState::new().memory().clone();
+        let memory = crate::kernel::ExecutionState::new().memory().clone();
         let base = Pointer::symbolic(Variable(795_000));
         let mut context = PureFactContext::new();
         for extent in 1..=size {
-            context = context.assume_proposition(Proposition::CMemoryLoadable {
+            context = context.assume_proposition(Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: base.clone(),
                 bytes: extent.into(),

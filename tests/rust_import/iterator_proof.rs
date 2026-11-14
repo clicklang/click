@@ -24,7 +24,7 @@ fn preserves_source_and_checks_obligations(fixture: &str) {
     let proof = fs::read_to_string(p.root.join("borrow.click")).unwrap();
     assert!(!proof.contains("__rust_"));
     assert!(!proof.contains("statement("));
-    C0VerificationSession::new_program_prepared(&proof, &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared(&proof, &prepared).unwrap();
     for invalid in [
         proof.replacen("views bytes[0..bytes.len()];", "", 1),
         proof.replacen(
@@ -34,7 +34,7 @@ fn preserves_source_and_checks_obligations(fixture: &str) {
         ),
     ] {
         assert_ne!(invalid, proof, "negative proof must change the sidecar");
-        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+        assert!(ProgramVerificationSession::new_program_prepared(&invalid, &prepared).is_err());
     }
     // A growing measure is false even when the checker can derive the
     // remaining count's decrease without its explicit `have`. Its back-edge
@@ -45,7 +45,7 @@ fn preserves_source_and_checks_obligations(fixture: &str) {
     );
     assert_ne!(growing, proof, "negative proof must change the sidecar");
     {
-        let error = C0VerificationSession::new_program_prepared(&growing, &prepared)
+        let error = ProgramVerificationSession::new_program_prepared(&growing, &prepared)
             .err()
             .expect("a growing loop measure must be rejected")
             .to_string();

@@ -20,7 +20,7 @@ fn trait_objects_project() -> Project {
 fn charon_trait_object_functions_are_defined_per_implementation() {
     let p = trait_objects_project();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(SIDECAR, &prepared)
+    ProgramVerificationSession::new_program_prepared(SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     let square = SIDECAR
         .find("impl trait_objects::Shape for trait_objects::Square {")
@@ -102,7 +102,7 @@ fn charon_trait_object_functions_are_defined_per_implementation() {
             verify_rust_proof_after(&invalid, &prepared, head)
                 .expect_err("a definition or call the interface does not justify must fail")
         } else {
-            C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
                 .err()
                 .expect("a definition or call the interface does not justify must fail")
         };
@@ -183,7 +183,7 @@ fn charon_trait_functions_are_defined_from_a_held_resource() {
     let p = Project::from_fixture("design/charon-trial/resource-state");
     fs::write(p.root.join("borrow.click"), RESOURCE_SIDECAR).unwrap();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(RESOURCE_SIDECAR, &prepared)
+    ProgramVerificationSession::new_program_prepared(RESOURCE_SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     for (head, before, after, expected) in [
         // The definition binds the implementation's methods.

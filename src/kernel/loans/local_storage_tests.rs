@@ -1,9 +1,9 @@
 use super::*;
-use crate::kernel::{CMemory, Pointer, PointerOffsetTerm};
+use crate::kernel::{Memory, Pointer, PointerOffsetTerm};
 
-fn view(index: usize, end: u32) -> CCheckedResourceFact {
-    CCheckedResourceFact {
-        fact: CResourceFact::view_memory(CMemoryRange::new(
+fn view(index: usize, end: u32) -> CheckedResourceFact {
+    CheckedResourceFact {
+        fact: ResourceFact::view_memory(MemoryRange::new(
             Pointer {
                 block: format!("local:loan-{index}").into(),
                 offset: PointerOffsetTerm::Constant(0),
@@ -11,8 +11,8 @@ fn view(index: usize, end: u32) -> CCheckedResourceFact {
             0.into(),
             end.into(),
         )),
-        role: CResourceTransferRole::Borrow,
-        snapshot: CResourceSnapshot::Entry,
+        role: ResourceTransferRole::Borrow,
+        snapshot: ResourceSnapshot::Entry,
         clause_position: None,
         section_index: None,
         selected_mutex_source: None,
@@ -34,7 +34,7 @@ fn plan() -> StableViewTransferPlan {
 
 #[test]
 fn local_views_preserve_aliases_check_bounds_and_mint_no_owned_escrow() {
-    let memory = CMemory::new().with_block(
+    let memory = Memory::new().with_block(
         view(0, 2).fact.memory_range().unwrap().base().block.clone(),
         8,
     );

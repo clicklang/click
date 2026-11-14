@@ -30,12 +30,12 @@ fn unfinished_callback_error_does_not_execute_the_next_statement() {
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
     let resources = ResourceEnvironment::new(&[]);
-    let environment = CExecutionEnvironment::new();
+    let environment = ExecutionEnvironment::new();
     let root = Proof::for_execution_frontier(
         "unfinished callback",
         0,
         ExecutionProofState::at_entry(
-            CState::new(),
+            ExecutionState::new(),
             ExecutionFrontier::default(),
             RecordedSnapshots::new(),
             SurfacePropositionMap::default(),
@@ -83,12 +83,12 @@ fn implicit_tail_budget_errors_check_boundaries_without_exploring_paths() {
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
     let resources = ResourceEnvironment::new(&[]);
-    let environment = CExecutionEnvironment::new();
+    let environment = ExecutionEnvironment::new();
     let root = Proof::for_execution_frontier(
         "bounded implicit tail",
         0,
         ExecutionProofState::at_entry(
-            CState::new(),
+            ExecutionState::new(),
             ExecutionFrontier::default(),
             RecordedSnapshots::new(),
             SurfacePropositionMap::default(),
@@ -209,8 +209,8 @@ fn is_one_arithmetic_certificate_over(steps: &[ProofStep], expected: &[ClickProp
             ContractExpression::CUnary {
                 operand,
                 lowered:
-                    CExpression::Cast {
-                        target_type: CType::Int32,
+                    ProgramExpression::Cast {
+                        target_type: ProgramType::Int32,
                         ..
                     },
             } => operand.as_ref().clone(),
@@ -253,14 +253,23 @@ fn is_one_arithmetic_certificate_over(steps: &[ProofStep], expected: &[ClickProp
 /// to the kernel `terms` in order; any other term stays a literal value.
 fn named_int32(terms: &[MachineTerm], term: &MachineTerm) -> ContractExpression {
     match terms.iter().position(|named| named == term) {
-        Some(index) => ContractExpression::CFragment(CExpression::Variable(format!("x{index}"))),
-        None => ContractExpression::CFragment(CExpression::Value(CValue::Int32(term.clone()))),
+        Some(index) => {
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(format!("x{index}")))
+        }
+        None => ContractExpression::ProgramExpression(ProgramExpression::Value(
+            ProgramValue::Int32(term.clone()),
+        )),
     }
 }
 
 /// A C function whose int32 parameters are [`named_int32`]'s names, and the
 /// arguments that bind them to `terms`.
-fn named_int32_function(terms: &[MachineTerm]) -> (syntax::C0Function, Vec<CExpression>) {
+fn named_int32_function(
+    terms: &[MachineTerm],
+) -> (
+    crate::languages::interface::ImportedFunction,
+    Vec<ProgramExpression>,
+) {
     let parameters = (0..terms.len())
         .map(|index| format!("int32 x{index}"))
         .collect::<Vec<_>>()
@@ -269,17 +278,17 @@ fn named_int32_function(terms: &[MachineTerm]) -> (syntax::C0Function, Vec<CExpr
         .expect("test C function should parse");
     let arguments = terms
         .iter()
-        .map(|term| CExpression::Value(CValue::Int32(term.clone())))
+        .map(|term| ProgramExpression::Value(ProgramValue::Int32(term.clone())))
         .collect();
     (function, arguments)
 }
 
 /// [`named_int32`]'s names as a pure theorem's values.
-fn named_int32_values(terms: &[MachineTerm]) -> BTreeMap<String, CValue> {
+fn named_int32_values(terms: &[MachineTerm]) -> BTreeMap<String, ProgramValue> {
     terms
         .iter()
         .enumerate()
-        .map(|(index, term)| (format!("x{index}"), CValue::Int32(term.clone())))
+        .map(|(index, term)| (format!("x{index}"), ProgramValue::Int32(term.clone())))
         .collect()
 }
 
@@ -290,10 +299,10 @@ fn fixed_state_failure_names_kernel_values_held_in_live_locals() {
     // even when a generated temporary with the same value sorts before it.
     let len = MachineTerm::Variable(Variable(70));
     let size = MachineTerm::Variable(Variable(94));
-    let state = CState::new()
-        .with_local("len", CValue::UInt64(len.clone()))
-        .with_local("chunk_size", CValue::UInt64(size.clone()))
-        .with_local("__rust_checked_94", CValue::UInt64(size.clone()));
+    let state = ExecutionState::new()
+        .with_local("len", ProgramValue::UInt64(len.clone()))
+        .with_local("chunk_size", ProgramValue::UInt64(size.clone()))
+        .with_local("__rust_checked_94", ProgramValue::UInt64(size.clone()));
     let remainder = MachineTerm::uint64_remainder(len, size.clone());
     let goal = Proposition::ConditionIs(
         ConditionTerm::Compare {
@@ -314,11 +323,13 @@ fn fixed_state_failure_names_kernel_values_held_in_live_locals() {
         true,
     )];
     let surface = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(CValue::UInt64(remainder))),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(
+            ProgramValue::UInt64(remainder),
+        )),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(CValue::UInt64(
-            MachineTerm::uint64_constant(0),
-        ))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(
+            ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
+        )),
     };
     let snapshots = RecordedSnapshots::new();
     let surfaces = SurfacePropositionMap::default();
@@ -357,8 +368,8 @@ fn fixed_state_failure_names_kernel_values_held_in_live_locals() {
 fn missing_assumption_side_uses_recorded_names_in_fixed_state_errors() {
     let before = MachineTerm::Variable(Variable(70));
     let after = MachineTerm::Variable(Variable(71));
-    let entry = CState::new().with_local("remaining", CValue::UInt64(before.clone()));
-    let state = CState::new().with_local("remaining", CValue::UInt64(after.clone()));
+    let entry = ExecutionState::new().with_local("remaining", ProgramValue::UInt64(before.clone()));
+    let state = ExecutionState::new().with_local("remaining", ProgramValue::UInt64(after.clone()));
     let side = Proposition::ConditionIs(
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
@@ -370,9 +381,13 @@ fn missing_assumption_side_uses_recorded_names_in_fixed_state_errors() {
     );
     let goal = Proposition::And(Box::new(side.clone()), Box::new(side));
     let written = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(CValue::UInt64(before))),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(
+            ProgramValue::UInt64(before),
+        )),
         operator: ComparisonOperator::LessThan,
-        right: ContractExpression::CFragment(CExpression::Value(CValue::UInt64(after))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(
+            ProgramValue::UInt64(after),
+        )),
     };
     let surface = ClickProposition::And(Box::new(written.clone()), Box::new(written));
     let mut snapshots = RecordedSnapshots::new();
@@ -425,10 +440,10 @@ fn missing_assumption_side_uses_recorded_names_in_fixed_state_errors() {
 #[test]
 fn return_publication_shares_effect_prefixes_and_suppresses_duplicates() {
     for size in [4, 64, 1024] {
-        let memory = CState::new().memory().clone();
+        let memory = ExecutionState::new().memory().clone();
         let source: ExecutionFacts = (0..size)
             .map(|index| {
-                ExecutionPureFact::new(Proposition::CMemoryMutatesOnly {
+                ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
                     before: memory.clone(),
                     after: memory.clone(),
                     writes: vec![(
@@ -488,7 +503,7 @@ fn pure_identity_fixture() -> PureTheoremContext {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: crate::persistent::PersistentMap::default(),
-        memory: CMemory::new(),
+        memory: Memory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -504,7 +519,7 @@ fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
     let loadable = Proposition::ForAll {
         name: Default::default(),
         var: Variable(30),
-        sort: Sort::CInt32,
+        sort: Sort::ProgramInt32,
         body: Box::new(Proposition::Implies(
             Box::new(Proposition::And(
                 Box::new(Proposition::ConditionIs(
@@ -526,8 +541,8 @@ fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
                     true,
                 )),
             )),
-            Box::new(Proposition::CMemoryLoadable {
-                memory: CMemory::new().with_block("sum", 16),
+            Box::new(Proposition::MemoryLoadable {
+                memory: Memory::new().with_block("sum", 16),
                 base: pointer,
                 bytes: MachineTerm::Variable(Variable(30)),
                 wide: false,
@@ -574,9 +589,13 @@ fn atomic_conjunct_extraction_returns_when_an_early_step_completes_the_goal() {
                 true,
             ),
             ClickProposition::Comparison {
-                left: ContractExpression::CFragment(CExpression::Value(CValue::Int32(left))),
+                left: ContractExpression::ProgramExpression(ProgramExpression::Value(
+                    ProgramValue::Int32(left),
+                )),
                 operator: ComparisonOperator::LessEqual,
-                right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(right))),
+                right: ContractExpression::ProgramExpression(ProgramExpression::Value(
+                    ProgramValue::Int32(right),
+                )),
             },
         )
     };
@@ -648,29 +667,29 @@ fn atomic_conjunct_extraction_requires_exact_selected_premise_on_small_stack() {
                 block: "atomic-extract-cell".into(),
                 offset: PointerOffsetTerm::Constant(0),
             };
-            let old_memory = CMemory::new().with_block("atomic-extract-cell", 4).store(
+            let old_memory = Memory::new().with_block("atomic-extract-cell", 4).store(
                 pointer.clone(),
-                CValue::Int32(MachineTerm::Variable(Variable(8_000_100))),
+                ProgramValue::Int32(MachineTerm::Variable(Variable(8_000_100))),
             );
             let current_memory = old_memory.clone().store(
                 pointer.clone(),
-                CValue::Int32(MachineTerm::Variable(Variable(8_000_101))),
+                ProgramValue::Int32(MachineTerm::Variable(Variable(8_000_101))),
             );
-            let old_state = CState::new().with_memory(old_memory);
-            let current_state = CState::new().with_memory(current_memory);
-            let arguments = vec![CExpression::Value(CValue::pointer(pointer))];
+            let old_state = ExecutionState::new().with_memory(old_memory);
+            let current_state = ExecutionState::new().with_memory(current_memory);
+            let arguments = vec![ProgramExpression::Value(ProgramValue::pointer(pointer))];
             let surface = ClickProposition::Comparison {
                 left: ContractExpression::Index(
-                    Box::new(ContractExpression::CFragment(CExpression::Variable(
-                        "p".to_string(),
-                    ))),
+                    Box::new(ContractExpression::ProgramExpression(
+                        ProgramExpression::Variable("p".to_string()),
+                    )),
                     Box::new(ContractExpression::IntegerLiteral("0".to_string())),
                 ),
                 operator: ComparisonOperator::LessEqual,
-                right: ContractExpression::CFragment(CExpression::Value(int32(9))),
+                right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(9))),
             };
             let snapshots = RecordedSnapshots::new();
-            let lower_at = |state: &CState| {
+            let lower_at = |state: &ExecutionState| {
                 lower_fixed_state_proposition_with_assumptions(
                     &surface,
                     &PureFactContext::new(),
@@ -1053,14 +1072,14 @@ fn both_and_preserves_exact_binders_and_saved_snapshots() {
         block: "cell".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = CMemory::new().with_block("cell", 4).store(
+    let memory = Memory::new().with_block("cell", 4).store(
         pointer.clone(),
-        CValue::Int32(MachineTerm::Variable(Variable(11))),
+        ProgramValue::Int32(MachineTerm::Variable(Variable(11))),
     );
     let conjunct = |binder| Proposition::ForAll {
         name: Default::default(),
         var: Variable(binder),
-        sort: Sort::CInt32,
+        sort: Sort::ProgramInt32,
         body: Box::new(Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -1099,9 +1118,9 @@ fn both_surface_conjunction_is_positional_even_for_duplicate_or_reversed_childre
     let theorem_environment = TheoremEnvironment::new(&[]);
     let context = pure_identity_fixture();
     let equality = |value| ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(int32(value))),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(value))),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(int32(1))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
     };
     let lower = |surface: &ClickProposition| {
         lower_pure_theorem_proposition(
@@ -1162,7 +1181,7 @@ fn both_surface_conjunction_is_positional_even_for_duplicate_or_reversed_childre
 fn both_preserves_written_body_across_an_inserted_guard_and_reverifies_cold() {
     let parsed_function =
         syntax::parse_function("void noop() {}").expect("test function should parse");
-    let state = CState::new();
+    let state = ExecutionState::new();
     let snapshots = RecordedSnapshots::new();
     let surfaces = SurfacePropositionMap::default();
     let predicates = PredicateEnvironment::new(&[]);
@@ -1170,9 +1189,9 @@ fn both_preserves_written_body_across_an_inserted_guard_and_reverifies_cold() {
     let theorems = TheoremEnvironment::new(&[]);
     let guard = Proposition::ConditionIs(ConditionTerm::Constant(false), false);
     let body_surface = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(int32(1))),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
         operator: ComparisonOperator::LessEqual,
-        right: ContractExpression::CFragment(CExpression::Value(int32(2))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(2))),
     };
     let body = lower_fixed_state_proposition_with_assumptions(
         &body_surface,
@@ -1257,9 +1276,9 @@ fn both_rejects_an_unsupported_written_child_correspondence_boundedly() {
     let guard = Proposition::ConditionIs(ConditionTerm::Constant(false), false);
     let body = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
     let unsupported = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(int32(1))),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(int32(2))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(2))),
     };
     let root = Proof::for_pure_surface_goal(
         "unsupported both presentation",
@@ -1325,9 +1344,9 @@ fn both_rejects_unlowerable_child_without_exact_parent_metadata() {
 #[test]
 fn focused_case_split_partitions_by_attribution_and_rejects_foreign_joins() {
     let equality = |value| ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(int32(value))),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(value))),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(int32(value))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(value))),
     };
     let disjunction = ClickProposition::Or(Box::new(equality(0)), Box::new(equality(1)));
     let predicate_environment = PredicateEnvironment::new(&[]);
@@ -1497,7 +1516,7 @@ fn proof_failure_preserves_ancestor_and_selected_provenance() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: crate::persistent::PersistentMap::default(),
-        memory: CMemory::new(),
+        memory: Memory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
         requires: vec![goal.clone()],
@@ -1543,7 +1562,7 @@ fn branch_identity_is_stable_across_fork_refinement_and_closure() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: crate::persistent::PersistentMap::default(),
-        memory: CMemory::new(),
+        memory: Memory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -1609,7 +1628,7 @@ fn certificate_suffix_requires_an_exact_shared_ancestor() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: crate::persistent::PersistentMap::default(),
-        memory: CMemory::new(),
+        memory: Memory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -1673,9 +1692,9 @@ fn certificate_suffix_requires_an_exact_shared_ancestor() {
 #[test]
 fn have_scope_publishes_only_a_completed_checked_body() {
     let proposition = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(int32(0))),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
     };
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
@@ -1684,7 +1703,7 @@ fn have_scope_publishes_only_a_completed_checked_body() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: crate::persistent::PersistentMap::default(),
-        memory: CMemory::new(),
+        memory: Memory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -1782,7 +1801,7 @@ fn pure_have_presentation_root(surface: ClickProposition) -> Proof<'static> {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: crate::persistent::PersistentMap::default(),
-        memory: CMemory::new(),
+        memory: Memory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -1816,13 +1835,17 @@ fn pure_have_presentation_root(surface: ClickProposition) -> Proof<'static> {
 fn have_scope_accepts_matching_reported_goal_and_records_introductions() {
     let binder = "written".to_string();
     let surface = ClickProposition::ForAll {
-        click_type: ClickType::C(C0Type::Int32),
+        click_type: ClickType::Program(InterfaceType::Int32),
         name: binder.clone(),
         written_name: None,
         body: Box::new(ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::Variable(binder.clone())),
+            left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                binder.clone(),
+            )),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::CFragment(CExpression::Variable(binder.clone())),
+            right: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                binder.clone(),
+            )),
         }),
     };
     let root = pure_have_presentation_root(surface.clone());
@@ -1907,13 +1930,13 @@ fn have_scope_accepts_matching_reported_goal_and_records_introductions() {
 #[test]
 fn have_scope_negation_metadata_stops_at_the_contradiction_goal() {
     let surface = ClickProposition::Not(Box::new(ClickProposition::ForAll {
-        click_type: ClickType::C(C0Type::Int32),
+        click_type: ClickType::Program(InterfaceType::Int32),
         name: "k".into(),
         written_name: None,
         body: Box::new(ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::Variable("k".into())),
+            left: ContractExpression::ProgramExpression(ProgramExpression::Variable("k".into())),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+            right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
         }),
     }));
     let root = pure_have_presentation_root(surface.clone());
@@ -1959,9 +1982,9 @@ fn have_scope_negation_metadata_stops_at_the_contradiction_goal() {
 #[test]
 fn have_scope_rejects_mismatched_reported_goal_transactionally() {
     let surface = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(int32(0))),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
     };
     let root = pure_have_presentation_root(surface.clone());
     let scope = root.driver().open_have(surface).expect("have should open");
@@ -1993,13 +2016,15 @@ fn have_scope_rejects_mismatched_reported_goal_transactionally() {
 fn have_scope_rejects_inconsistent_universal_binder_flags() {
     let binder = "written".to_string();
     let surface = ClickProposition::ForAll {
-        click_type: ClickType::C(C0Type::Int32),
+        click_type: ClickType::Program(InterfaceType::Int32),
         name: binder.clone(),
         written_name: None,
         body: Box::new(ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::Variable(binder.clone())),
+            left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                binder.clone(),
+            )),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::CFragment(CExpression::Variable(binder)),
+            right: ContractExpression::ProgramExpression(ProgramExpression::Variable(binder)),
         }),
     };
     let root = pure_have_presentation_root(surface.clone());
@@ -2027,13 +2052,15 @@ fn have_scope_rejects_inconsistent_universal_binder_flags() {
 #[test]
 fn have_scope_matches_renamed_existential_display_name_and_binder() {
     let surface = ClickProposition::Exists {
-        click_type: ClickType::C(C0Type::Int32),
+        click_type: ClickType::Program(InterfaceType::Int32),
         name: "chosen".to_string(),
         written_name: None,
         body: Box::new(ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::Variable("chosen".to_string())),
+            left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                "chosen".to_string(),
+            )),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::CFragment(CExpression::Value(int32(7))),
+            right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(7))),
         }),
     };
     let root = pure_have_presentation_root(surface.clone());
@@ -2041,7 +2068,7 @@ fn have_scope_matches_renamed_existential_display_name_and_binder() {
     let reported = Proposition::Exists {
         name: "different_display_name".to_string(),
         var: Variable(8_765_432),
-        sort: Sort::CInt32,
+        sort: Sort::ProgramInt32,
         body: Box::new(Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -2060,21 +2087,25 @@ fn have_scope_matches_renamed_existential_display_name_and_binder() {
 #[test]
 fn have_scope_rejects_unreachable_universal_introduction() {
     let quantified = ClickProposition::ForAll {
-        click_type: ClickType::C(C0Type::Int32),
+        click_type: ClickType::Program(InterfaceType::Int32),
         name: "branch_local".to_string(),
         written_name: None,
         body: Box::new(ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::Variable("branch_local".to_string())),
+            left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                "branch_local".to_string(),
+            )),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::CFragment(CExpression::Variable("branch_local".to_string())),
+            right: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                "branch_local".to_string(),
+            )),
         }),
     };
     let surface = ClickProposition::Or(
         Box::new(quantified),
         Box::new(ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::Value(int32(0))),
+            left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+            right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
         }),
     );
     let root = pure_have_presentation_root(surface.clone());
@@ -2102,9 +2133,9 @@ fn have_scope_rejects_unreachable_universal_introduction() {
 #[test]
 fn have_scope_with_no_reported_introductions_is_presentation_noop() {
     let surface = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(int32(1))),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(int32(1))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
     };
     let root = pure_have_presentation_root(surface.clone());
     let scope = root.driver().open_have(surface).expect("have should open");
@@ -2121,14 +2152,14 @@ fn have_scope_with_no_reported_introductions_is_presentation_noop() {
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn smart_have_scope_and_explicit_step_scale_with_local_output() {
     let proposition = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(int32(0))),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
     };
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let kernel = lower_pure_theorem_proposition(
         "smart have scaling",
         &proposition,
@@ -2253,7 +2284,7 @@ fn execution_have_indexes_only_its_delta_and_scales_with_history() {
     let parsed_function =
         syntax::parse_function("int32 idle() { return 0; }").expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment =
@@ -2264,7 +2295,7 @@ fn execution_have_indexes_only_its_delta_and_scales_with_history() {
             "execution have scaling",
             0,
             ExecutionProofState::at_entry(
-                CState::new(),
+                ExecutionState::new(),
                 ExecutionFrontier::default(),
                 RecordedSnapshots::new(),
                 SurfacePropositionMap::default(),
@@ -2286,9 +2317,9 @@ fn execution_have_indexes_only_its_delta_and_scales_with_history() {
         )
     };
     let reflexive = |value: u32| ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(int32(value))),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(value))),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(int32(value))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(value))),
     };
     let explicit = [ProofTactic::Normalize];
     let mut prefix_baseline = None;
@@ -2390,7 +2421,7 @@ fn persistent_fact_lookup_scales_logarithmically() {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: crate::persistent::PersistentMap::default(),
-            memory: CMemory::new(),
+            memory: Memory::new(),
             values: BTreeMap::new(),
             array_refs: BTreeMap::new(),
             requires,
@@ -2602,7 +2633,7 @@ fn outcome_fact_deltas_share_ambient_universal_facts() {
     let universal = |index| Proposition::ForAll {
         name: Default::default(),
         var: Variable(index),
-        sort: Sort::CInt32,
+        sort: Sort::ProgramInt32,
         body: Box::new(Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -2660,15 +2691,19 @@ fn proposition_unfold_uses_indexed_facts_and_persistent_local_state() {
     let theorem_environment = TheoremEnvironment::new(click_file.theorem_definitions());
     let predicate_surface = ClickProposition::PredicateCall {
         name: "selected".to_string(),
-        arguments: vec![ContractExpression::CFragment(CExpression::Value(int32(7)))],
+        arguments: vec![ContractExpression::ProgramExpression(
+            ProgramExpression::Value(int32(7)),
+        )],
     };
     // Unfolding preserves the declared int32 parameter conversion in source.
     let converted_argument = ContractExpression::CUnary {
-        operand: Box::new(ContractExpression::CFragment(CExpression::Value(int32(7)))),
-        lowered: CExpression::Cast {
-            expression: Box::new(CExpression::Value(int32(7))),
-            target_type: CType::Int32,
-            integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+        operand: Box::new(ContractExpression::ProgramExpression(
+            ProgramExpression::Value(int32(7)),
+        )),
+        lowered: ProgramExpression::Cast {
+            expression: Box::new(ProgramExpression::Value(int32(7))),
+            target_type: ProgramType::Int32,
+            integer_mode: crate::kernel::IntegerCastMode::CConversion,
             pointee_struct: None,
             pointee_volatile: false,
             pointee_constant: false,
@@ -2684,7 +2719,7 @@ fn proposition_unfold_uses_indexed_facts_and_persistent_local_state() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: crate::persistent::PersistentMap::default(),
-        memory: CMemory::new(),
+        memory: Memory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -2801,18 +2836,20 @@ fn fixed_state_proposition_unfold_checks_the_same_retained_step() {
     let click_function_environment =
         ClickFunctionEnvironment::new(click_file.click_function_definitions());
     let theorem_environment = TheoremEnvironment::new(click_file.theorem_definitions());
-    let state = CState::new();
-    let arguments = vec![CExpression::Value(int32(7))];
+    let state = ExecutionState::new();
+    let arguments = vec![ProgramExpression::Value(int32(7))];
     let parameter_binding = ParameterBinding::new(parsed_function.parameters(), &arguments);
     let recorded_snapshots = RecordedSnapshots::new();
     let predicate_surface = ClickProposition::PredicateCall {
         name: "selected".to_string(),
-        arguments: vec![ContractExpression::CFragment(CExpression::Value(int32(7)))],
+        arguments: vec![ContractExpression::ProgramExpression(
+            ProgramExpression::Value(int32(7)),
+        )],
     };
     let goal_surface = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(int32(7))),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(7))),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(int32(7))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(7))),
     };
     let lower = |surface: &ClickProposition| {
         lower_fixed_state_proposition_with_assumptions(
@@ -2904,7 +2941,7 @@ fn fixed_state_proof_root_borrows_inherited_unfold_history_without_reindexing_it
     let inherited = (0..4096)
         .map(|index| format!("predicate_{index}"))
         .collect::<Vec<_>>();
-    let state = CState::new();
+    let state = ExecutionState::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let surface_propositions = SurfacePropositionMap::default();
     let predicate_environment = PredicateEnvironment::new(&[]);
@@ -2942,7 +2979,7 @@ fn fixed_state_proof_root_borrows_inherited_unfold_history_without_reindexing_it
 #[test]
 #[ignore = "nightly: 1.3s in the parallel gate"]
 fn result_aware_fixed_state_goal_focus_shares_facts_and_checks_assumption() {
-    let state = CState::new();
+    let state = ExecutionState::new();
     let result = int32(0);
     let recorded_snapshots = RecordedSnapshots::new();
     let surface_propositions = SurfacePropositionMap::default();
@@ -3008,18 +3045,18 @@ fn result_aware_fixed_state_goal_focus_shares_facts_and_checks_assumption() {
 fn fixed_state_context_have_publishes_checked_fact_for_later_scope() {
     let parsed_function = syntax::parse_function("int32 identity(int32 x) { return x; }")
         .expect("test function should parse");
-    let state = CState::new();
+    let state = ExecutionState::new();
     let result = int32(0);
-    let arguments = vec![CExpression::Value(result.clone())];
+    let arguments = vec![ProgramExpression::Value(result.clone())];
     let recorded_snapshots = RecordedSnapshots::new();
     let surface_propositions = SurfacePropositionMap::default();
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
     let proposition = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Variable("x".to_string())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".to_string())),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
     };
 
     for size in LOCAL_PROOF_FACT_SIZES {
@@ -3159,17 +3196,17 @@ fn fixed_state_context_have_publishes_checked_fact_for_later_scope() {
 fn fixed_state_context_have_goal_does_not_reuse_an_older_surface_lowering() {
     let parsed_function = syntax::parse_function("int32 identity(int32 x) { return x; }")
         .expect("test function should parse");
-    let state = CState::new();
+    let state = ExecutionState::new();
     let result = int32(1);
-    let arguments = vec![CExpression::Value(result.clone())];
+    let arguments = vec![ProgramExpression::Value(result.clone())];
     let recorded_snapshots = RecordedSnapshots::new();
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
     let surface = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Variable("x".to_string())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".to_string())),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
     };
     let older = indexed_fact(9_200_000);
     let mut surface_propositions = SurfacePropositionMap::default();
@@ -3206,9 +3243,9 @@ fn proof_if_fork_and_join_work_is_logarithmic_in_unrelated_facts() {
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
     let condition = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(int32(0))),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(int32(1))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
     };
     let surface_goal = ClickProposition::Or(
         Box::new(condition.clone()),
@@ -3221,7 +3258,7 @@ fn proof_if_fork_and_join_work_is_logarithmic_in_unrelated_facts() {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: crate::persistent::PersistentMap::default(),
-            memory: CMemory::new(),
+            memory: Memory::new(),
             values: BTreeMap::new(),
             array_refs: BTreeMap::new(),
             requires,
@@ -3281,7 +3318,7 @@ fn proof_if_fork_and_join_work_is_logarithmic_in_unrelated_facts() {
 
 #[test]
 fn execution_frontier_rejects_proposition_closers_transactionally() {
-    let state = CState::new();
+    let state = ExecutionState::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let surface_propositions = SurfacePropositionMap::default();
     let predicate_environment = PredicateEnvironment::new(&[]);
@@ -3319,7 +3356,7 @@ fn execution_frontier_rejects_proposition_closers_transactionally() {
 #[test]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn fixed_state_witness_refines_existential_transactionally_with_constant_local_work() {
-    let state = CState::new();
+    let state = ExecutionState::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let surface_propositions = SurfacePropositionMap::default();
     let predicate_environment = PredicateEnvironment::new(&[]);
@@ -3338,20 +3375,22 @@ fn fixed_state_witness_refines_existential_transactionally_with_constant_local_w
     let goal = Proposition::Exists {
         name: "chosen".to_string(),
         var: variable,
-        sort: Sort::CInt32,
+        sort: Sort::ProgramInt32,
         body: Box::new(expected),
     };
     let witness = ProofWitness::single(
         "chosen".to_string(),
-        ContractExpression::CFragment(CExpression::Value(int32(7))),
+        ContractExpression::ProgramExpression(ProgramExpression::Value(int32(7))),
     );
     let expected_surface = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Variable("chosen".to_string())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            "chosen".to_string(),
+        )),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(int32(7))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(7))),
     };
     let surface_goal = ClickProposition::Exists {
-        click_type: ClickType::C(C0Type::Int32),
+        click_type: ClickType::Program(InterfaceType::Int32),
         name: "chosen".to_string(),
         written_name: None,
         body: Box::new(expected_surface),
@@ -3359,7 +3398,7 @@ fn fixed_state_witness_refines_existential_transactionally_with_constant_local_w
     let instantiated_surface = ClickProposition::Comparison {
         left: witness.value().clone(),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(int32(7))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(7))),
     };
 
     for size in [16_u32, 64, 256, 1024, 4096] {
@@ -3383,7 +3422,7 @@ fn fixed_state_witness_refines_existential_transactionally_with_constant_local_w
         let retained_root = root.clone();
         let wrong_name = ProofStep::Witness(ProofWitness::single(
             "other".to_string(),
-            ContractExpression::CFragment(CExpression::Value(int32(7))),
+            ContractExpression::ProgramExpression(ProgramExpression::Value(int32(7))),
         ));
         let error = root
             .driver()
@@ -3432,17 +3471,19 @@ fn fixed_state_witness_refines_existential_transactionally_with_constant_local_w
 fn universal_intro_binding_is_local_to_its_focused_sibling_branch() {
     let parsed_function =
         syntax::parse_function("void noop() {}").expect("test function should parse");
-    let state = CState::new();
+    let state = ExecutionState::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let surface_propositions = SurfacePropositionMap::default();
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
     let binder = "k".to_string();
-    let binder_expression = ContractExpression::CFragment(CExpression::Variable(binder.clone()));
-    let constant = |value| ContractExpression::CFragment(CExpression::Value(int32(value)));
+    let binder_expression =
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(binder.clone()));
+    let constant =
+        |value| ContractExpression::ProgramExpression(ProgramExpression::Value(int32(value)));
     let surface_goal = ClickProposition::ForAll {
-        click_type: ClickType::C(C0Type::Int32),
+        click_type: ClickType::Program(InterfaceType::Int32),
         name: binder.clone(),
         written_name: None,
         body: Box::new(ClickProposition::Comparison {
@@ -3527,8 +3568,8 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
     let function_block = &click_file.function_blocks()[0];
     let parsed_function = syntax::parse_function("int32 choose_source(int32 x) { return x; }")
         .expect("test function should parse");
-    let state = CState::new().with_local("x", int32(7));
-    let arguments = vec![CExpression::Value(int32(7))];
+    let state = ExecutionState::new().with_local("x", int32(7));
+    let arguments = vec![ProgramExpression::Value(int32(7))];
     let recorded_snapshots = RecordedSnapshots::new();
     let surface_propositions = SurfacePropositionMap::default();
     let predicate_environment = PredicateEnvironment::new(&[]);
@@ -3538,7 +3579,7 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
     let source_fact = Proposition::Exists {
         name: "source_value".to_string(),
         var: source_variable,
-        sort: Sort::CInt32,
+        sort: Sort::ProgramInt32,
         body: Box::new(Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -3553,7 +3594,7 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
     let goal = Proposition::Exists {
         name: "witness".to_string(),
         var: goal_variable,
-        sort: Sort::CInt32,
+        sort: Sort::ProgramInt32,
         body: Box::new(Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -3630,7 +3671,9 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
             .driver()
             .apply_step(ProofStep::Witness(ProofWitness::single(
                 "witness".to_string(),
-                ContractExpression::CFragment(CExpression::Variable("candidate".to_string())),
+                ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                    "candidate".to_string(),
+                )),
             )))
             .expect("witness should resolve the one referenced proof local")
             .driver()
@@ -3716,11 +3759,11 @@ fn initial_entry_provenance_keeps_nonzero_requirement_identity_after_derived_ins
         parsed_function.parameters(),
         &context.pure_facts,
         &context.entry_fact_origins,
-        crate::kernel::CMemorySnapshotIdentity::of(context.state.memory()),
+        crate::kernel::MemorySnapshotIdentity::of(context.state.memory()),
     );
-    let source_arguments = vec![ContractExpression::CFragment(CExpression::Variable(
-        "x".to_string(),
-    ))];
+    let source_arguments = vec![ContractExpression::ProgramExpression(
+        ProgramExpression::Variable("x".to_string()),
+    )];
     let indexed = index
         .lookup_unique_caller_requirement(
             &owner,
@@ -3728,7 +3771,7 @@ fn initial_entry_provenance_keeps_nonzero_requirement_identity_after_derived_ins
             0,
             0,
             &source_arguments,
-            crate::kernel::CMemorySnapshotIdentity::of(context.state.memory()),
+            crate::kernel::MemorySnapshotIdentity::of(context.state.memory()),
         )
         .expect("the real entry pipeline should preserve the selected caller requirement");
     assert_eq!(indexed.source_id.outer_ordinal, 1);
@@ -3746,24 +3789,24 @@ fn pure_rewrite_uses_indexed_equality_availability_without_changing_facts() {
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
     let equality = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Variable("x".to_string())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".to_string())),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Variable("y".to_string())),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Variable("y".to_string())),
     };
     let unavailable = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Variable("z".to_string())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Variable("z".to_string())),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Variable("w".to_string())),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Variable("w".to_string())),
     };
     let values = BTreeMap::from([
         (
             "x".to_string(),
-            CValue::Int32(MachineTerm::Variable(Variable(9_100_000))),
+            ProgramValue::Int32(MachineTerm::Variable(Variable(9_100_000))),
         ),
         ("y".to_string(), int32(1)),
         (
             "z".to_string(),
-            CValue::Int32(MachineTerm::Variable(Variable(9_100_001))),
+            ProgramValue::Int32(MachineTerm::Variable(Variable(9_100_001))),
         ),
         ("w".to_string(), int32(3)),
     ]);
@@ -3771,7 +3814,7 @@ fn pure_rewrite_uses_indexed_equality_availability_without_changing_facts() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: crate::persistent::PersistentMap::default(),
-        memory: CMemory::new(),
+        memory: Memory::new(),
         values,
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -3874,9 +3917,10 @@ fn surface_rewrite_retains_structural_successor_and_scales() {
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
-    let variable =
-        |name: &str| ContractExpression::CFragment(CExpression::Variable(name.to_string()));
-    let zero = ContractExpression::CFragment(CExpression::Value(int32(0)));
+    let variable = |name: &str| {
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(name.to_string()))
+    };
+    let zero = ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0)));
     let comparison =
         |left: ContractExpression, operator: ComparisonOperator, right: ContractExpression| {
             ClickProposition::Comparison {
@@ -3915,22 +3959,22 @@ fn surface_rewrite_retains_structural_successor_and_scales() {
     let values = BTreeMap::from([
         (
             "x".to_string(),
-            CValue::Int32(MachineTerm::Variable(Variable(9_101_000))),
+            ProgramValue::Int32(MachineTerm::Variable(Variable(9_101_000))),
         ),
         (
             "y".to_string(),
-            CValue::Int32(MachineTerm::Variable(Variable(9_101_001))),
+            ProgramValue::Int32(MachineTerm::Variable(Variable(9_101_001))),
         ),
         (
             "z".to_string(),
-            CValue::Int32(MachineTerm::Variable(Variable(9_101_002))),
+            ProgramValue::Int32(MachineTerm::Variable(Variable(9_101_002))),
         ),
     ]);
     let base_context = PureTheoremContext {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: crate::persistent::PersistentMap::default(),
-        memory: CMemory::new(),
+        memory: Memory::new(),
         values,
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -4022,16 +4066,16 @@ fn surface_rewrite_retains_structural_successor_and_scales() {
 #[test]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn fixed_state_extract_uses_persistent_proper_conjunct_membership() {
-    let state = CState::new();
+    let state = ExecutionState::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let surface_propositions = SurfacePropositionMap::default();
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
     let surface = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(int32(7))),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(7))),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(int32(7))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(7))),
     };
     let kernel = lower_fixed_state_proposition_with_assumptions(
         &surface,
@@ -4117,18 +4161,18 @@ fn implication_extract_uses_indexed_consequent_and_alpha_equivalent_antecedent()
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
     let target_surface = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Variable("x".to_string())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".to_string())),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(int32(1))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
     };
     let theorem_context = PureTheoremContext {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: crate::persistent::PersistentMap::default(),
-        memory: CMemory::new(),
+        memory: Memory::new(),
         values: BTreeMap::from([(
             "x".to_string(),
-            CValue::Int32(MachineTerm::Variable(Variable(8_000_000))),
+            ProgramValue::Int32(MachineTerm::Variable(Variable(8_000_000))),
         )]),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -4145,7 +4189,7 @@ fn implication_extract_uses_indexed_consequent_and_alpha_equivalent_antecedent()
     let universal = |variable| Proposition::ForAll {
         name: Default::default(),
         var: variable,
-        sort: Sort::CInt32,
+        sort: Sort::ProgramInt32,
         body: Box::new(Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -4243,17 +4287,19 @@ fn implication_extract_uses_indexed_consequent_and_alpha_equivalent_antecedent()
 fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
     let parsed_function = syntax::parse_function("int32 selected(int32 x) { return x; }")
         .expect("test function should parse");
-    let state = CState::new();
+    let state = ExecutionState::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let surface_propositions = SurfacePropositionMap::default();
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
-    let x_value = CValue::Int32(MachineTerm::Variable(Variable(8_700_000)));
-    let arguments = vec![CExpression::Value(x_value)];
-    let value = |constant| ContractExpression::CFragment(CExpression::Value(int32(constant)));
-    let variable =
-        |name: &str| ContractExpression::CFragment(CExpression::Variable(name.to_string()));
+    let x_value = ProgramValue::Int32(MachineTerm::Variable(Variable(8_700_000)));
+    let arguments = vec![ProgramExpression::Value(x_value)];
+    let value =
+        |constant| ContractExpression::ProgramExpression(ProgramExpression::Value(int32(constant)));
+    let variable = |name: &str| {
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(name.to_string()))
+    };
     let premise = ClickProposition::Comparison {
         left: variable("x"),
         operator: ComparisonOperator::LessEqual,
@@ -4265,7 +4311,7 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
         right: variable("x"),
     };
     let quantified_surface = ClickProposition::ForAll {
-        click_type: ClickType::C(C0Type::Int32),
+        click_type: ClickType::Program(InterfaceType::Int32),
         name: "k".to_string(),
         written_name: None,
         body: Box::new(ClickProposition::Implies(
@@ -4303,7 +4349,7 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
                     Proposition::ForAll {
                         name: Default::default(),
                         var: Variable(9_000_000 + u64::from(index)),
-                        sort: Sort::CInt32,
+                        sort: Sort::ProgramInt32,
                         body: Box::new(indexed_fact(100_000 + index)),
                     },
                 ]
@@ -4439,21 +4485,21 @@ fn execution_apply_uses_only_named_evidence_and_forks_persistently() {
     let parsed_function = syntax::parse_function("int32 identity(int32 x) { return x; }")
         .expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
-    let state = CState::new();
-    let left = CValue::Int32(MachineTerm::Variable(Variable(8_000_000)));
-    let right = CValue::Int32(MachineTerm::Variable(Variable(8_000_001)));
-    let arguments = vec![CExpression::Value(left.clone())];
+    let state = ExecutionState::new();
+    let left = ProgramValue::Int32(MachineTerm::Variable(Variable(8_000_000)));
+    let right = ProgramValue::Int32(MachineTerm::Variable(Variable(8_000_001)));
+    let arguments = vec![ProgramExpression::Value(left.clone())];
     let premise = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(left.clone())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(left.clone())),
         operator: ComparisonOperator::LessThan,
-        right: ContractExpression::CFragment(CExpression::Value(right.clone())),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(right.clone())),
     };
     let conclusion = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(left.clone())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(left.clone())),
         operator: ComparisonOperator::LessEqual,
-        right: ContractExpression::CFragment(CExpression::Value(right.clone())),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(right.clone())),
     };
     let kernel_premise = lower_fixed_state_proposition_with_assumptions(
         &premise,
@@ -4474,8 +4520,8 @@ fn execution_apply_uses_only_named_evidence_and_forks_persistently() {
     let application = TheoremApplication {
         name: "less_than_implies_less_equal".to_string(),
         arguments: vec![
-            ContractExpression::CFragment(CExpression::Value(left)),
-            ContractExpression::CFragment(CExpression::Value(right)),
+            ContractExpression::ProgramExpression(ProgramExpression::Value(left)),
+            ContractExpression::ProgramExpression(ProgramExpression::Value(right)),
         ],
     };
     let missing_application = TheoremApplication {
@@ -4618,10 +4664,12 @@ fn smart_retry_retains_checked_have_and_exact_step_after_injected_refusal() {
         syntax::parse_function("int32 identity(int32 x) { int32 y = x; return y; }")
             .expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(&[]);
-    let arguments = [CExpression::Value(CValue::Int32(MachineTerm::constant(7)))];
-    let state = CState::new();
+    let arguments = [ProgramExpression::Value(ProgramValue::Int32(
+        MachineTerm::constant(7),
+    ))];
+    let state = ExecutionState::new();
     let true_fact = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
     let requirement = Proposition::Or(Box::new(true_fact.clone()), Box::new(true_fact.clone()));
     let root = Proof::for_execution_frontier(
@@ -4800,7 +4848,7 @@ fn smart_retry_falls_back_from_mismatching_registry_to_exact_synthesized_existen
         .expect("caller contract should exist");
     let predicate_environment = PredicateEnvironment::new(&[]).with_contracts(
         click_file.contract_definitions(),
-        &click_file.c_function_names,
+        &click_file.program_function_names,
     );
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
@@ -4813,10 +4861,10 @@ fn smart_retry_falls_back_from_mismatching_registry_to_exact_synthesized_existen
         .expect("test callback should parse")
         .to_kernel_function()
         .with_contract(vec![], vec![], vec![], vec![], true);
-    let callback_contract = CFunctionContract::new("Need", callback)
-        .expect("callback contract should be representable");
+    let callback_contract =
+        FunctionContract::new("Need", callback).expect("callback contract should be representable");
     let function_environment =
-        CExecutionEnvironment::new().with_function_contract(callback_contract);
+        ExecutionEnvironment::new().with_function_contract(callback_contract);
     let resource_environment = ResourceEnvironment::new(&[]);
     let (state, arguments, pure_facts, _) = initial_claim_context(
         function_block,
@@ -4827,13 +4875,13 @@ fn smart_retry_falls_back_from_mismatching_registry_to_exact_synthesized_existen
     )
     .expect("production-shaped caller context should initialize");
     let synthesized_surface = ClickProposition::Exists {
-        click_type: ClickType::C(C0Type::Int32),
+        click_type: ClickType::Program(InterfaceType::Int32),
         name: "k".into(),
         written_name: None,
         body: Box::new(ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::Variable("k".into())),
+            left: ContractExpression::ProgramExpression(ProgramExpression::Variable("k".into())),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::CFragment(CExpression::Variable("x".into())),
+            right: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".into())),
         }),
     };
     let requirement = lower_fixed_state_proposition_with_assumptions(
@@ -4853,9 +4901,9 @@ fn smart_retry_falls_back_from_mismatching_registry_to_exact_synthesized_existen
     .expect("the scalar existential should synthesize");
     assert!(matches!(synthesized, ClickProposition::Exists { .. }));
     let actual_surface = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Variable("x".into())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".into())),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
     };
     let actual_requirement = lower_fixed_state_proposition_with_assumptions(
         &actual_surface,
@@ -4915,28 +4963,28 @@ fn smart_retry_falls_back_from_mismatching_registry_to_exact_synthesized_existen
             "other_callback",
             "Need",
             0,
-            vec![CExpression::Variable("x".into())],
+            vec![ProgramExpression::Variable("x".into())],
         ),
         (
             "wrong interface",
             "callback",
             "Other",
             0,
-            vec![CExpression::Variable("x".into())],
+            vec![ProgramExpression::Variable("x".into())],
         ),
         (
             "wrong argument",
             "callback",
             "Need",
             0,
-            vec![CExpression::Value(int32(7))],
+            vec![ProgramExpression::Value(int32(7))],
         ),
         (
             "wrong ordinal",
             "callback",
             "Need",
             1,
-            vec![CExpression::Variable("x".into())],
+            vec![ProgramExpression::Variable("x".into())],
         ),
     ] {
         let site = std::sync::Arc::new(crate::kernel::CallRequirementSite::for_requirement(
@@ -4975,7 +5023,7 @@ fn smart_retry_falls_back_from_mismatching_registry_to_exact_synthesized_existen
         "callback",
         "Need",
         0,
-        &[CExpression::Variable("x".into())],
+        &[ProgramExpression::Variable("x".into())],
         at_call.execution().unwrap().core.state.memory(),
     ));
     let source = std::sync::Arc::new(crate::kernel::CallRequirementSource::new(
@@ -5023,14 +5071,16 @@ fn supported_source_refusal_on_branch_does_not_enter_planning() {
         syntax::parse_function("int32 identity(int32 x) { if (x) { return x; } return x; }")
             .expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(&[]);
-    let arguments = [CExpression::Value(CValue::Int32(MachineTerm::constant(7)))];
+    let arguments = [ProgramExpression::Value(ProgramValue::Int32(
+        MachineTerm::constant(7),
+    ))];
     let root = Proof::for_execution_frontier(
         "smart branch refusal",
         0,
         ExecutionProofState::at_entry(
-            CState::new(),
+            ExecutionState::new(),
             ExecutionFrontier::default(),
             RecordedSnapshots::new(),
             SurfacePropositionMap::default(),
@@ -5113,19 +5163,21 @@ fn assert_static_array_retry_uses_recorded_qualified_source(block: &str, name: &
         syntax::parse_function("int32 identity(int32 x) { int32 y = x; return y; }")
             .expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(&[]);
-    let arguments = [CExpression::Value(CValue::Int32(MachineTerm::constant(7)))];
-    let state = CState::new().with_memory(CMemory::new().with_block(
+    let arguments = [ProgramExpression::Value(ProgramValue::Int32(
+        MachineTerm::constant(7),
+    ))];
+    let state = ExecutionState::new().with_memory(Memory::new().with_block(
         block,
         4 * u32::try_from(cells).expect("test array size should fit in a block"),
     ));
-    let base = CValue::typed_pointer(
+    let base = ProgramValue::typed_pointer(
         Pointer {
             block: PointerBlock::Concrete(block.into()),
             offset: PointerOffsetTerm::Constant(0),
         },
-        CType::Int32Pointer,
+        ProgramType::Int32Pointer,
     );
     let mut surface_propositions = SurfacePropositionMap::default();
     let mut lowered_clauses = Vec::new();
@@ -5138,14 +5190,14 @@ fn assert_static_array_retry_uses_recorded_qualified_source(block: &str, name: &
             left: ContractExpression::Index(
                 Box::new(ContractExpression::QualifiedC {
                     name: name.to_string(),
-                    lowered: CExpression::Value(base.clone()),
+                    lowered: ProgramExpression::Value(base.clone()),
                 }),
                 Box::new(ContractExpression::IntegerLiteral(index.to_string())),
             ),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                MachineTerm::constant(5),
-            ))),
+            right: ContractExpression::ProgramExpression(ProgramExpression::Value(
+                ProgramValue::Int32(MachineTerm::constant(5)),
+            )),
         };
         let source_lowered = lower_fixed_state_proposition_with_assumptions(
             &source_surface,
@@ -5167,12 +5219,14 @@ fn assert_static_array_retry_uses_recorded_qualified_source(block: &str, name: &
                 left: ContractExpression::Index(
                     Box::new(ContractExpression::QualifiedC {
                         name: name.to_string(),
-                        lowered: CExpression::Value(base.clone()),
+                        lowered: ProgramExpression::Value(base.clone()),
                     }),
                     Box::new(ContractExpression::IntegerLiteral(index.to_string())),
                 ),
                 operator,
-                right: ContractExpression::CFragment(CExpression::Value(int32(bound as u32))),
+                right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(
+                    bound as u32,
+                ))),
             };
             lowered_clauses.push(
                 lower_fixed_state_proposition_with_assumptions(
@@ -5273,21 +5327,21 @@ fn nested_have_accepts_trailing_assumption_after_closure() {
     let parsed_function = syntax::parse_function("int32 identity(int32 x) { return x; }")
         .expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
-    let state = CState::new();
-    let left = CValue::Int32(MachineTerm::Variable(Variable(8_000_000)));
-    let right = CValue::Int32(MachineTerm::Variable(Variable(8_000_001)));
-    let arguments = vec![CExpression::Value(left.clone())];
+    let state = ExecutionState::new();
+    let left = ProgramValue::Int32(MachineTerm::Variable(Variable(8_000_000)));
+    let right = ProgramValue::Int32(MachineTerm::Variable(Variable(8_000_001)));
+    let arguments = vec![ProgramExpression::Value(left.clone())];
     let premise = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(left.clone())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(left.clone())),
         operator: ComparisonOperator::LessThan,
-        right: ContractExpression::CFragment(CExpression::Value(right.clone())),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(right.clone())),
     };
     let conclusion = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(left.clone())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(left.clone())),
         operator: ComparisonOperator::LessEqual,
-        right: ContractExpression::CFragment(CExpression::Value(right.clone())),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(right.clone())),
     };
     let kernel_premise = lower_fixed_state_proposition_with_assumptions(
         &premise,
@@ -5300,8 +5354,8 @@ fn nested_have_accepts_trailing_assumption_after_closure() {
     let application = TheoremApplication {
         name: "less_than_implies_less_equal".to_string(),
         arguments: vec![
-            ContractExpression::CFragment(CExpression::Value(left)),
-            ContractExpression::CFragment(CExpression::Value(right)),
+            ContractExpression::ProgramExpression(ProgramExpression::Value(left)),
+            ContractExpression::ProgramExpression(ProgramExpression::Value(right)),
         ],
     };
     let missing_application = TheoremApplication {
@@ -5418,21 +5472,21 @@ fn branch_theorem_search_retains_checked_arm_steps_and_scales() {
     )
     .expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
-    let state = CState::new();
-    let left = CValue::Int32(MachineTerm::Variable(Variable(8_050_000)));
-    let right = CValue::Int32(MachineTerm::Variable(Variable(8_050_001)));
-    let choose_left = CValue::Int32(MachineTerm::Variable(Variable(8_050_002)));
+    let state = ExecutionState::new();
+    let left = ProgramValue::Int32(MachineTerm::Variable(Variable(8_050_000)));
+    let right = ProgramValue::Int32(MachineTerm::Variable(Variable(8_050_001)));
+    let choose_left = ProgramValue::Int32(MachineTerm::Variable(Variable(8_050_002)));
     let arguments = vec![
-        CExpression::Value(left.clone()),
-        CExpression::Value(right.clone()),
-        CExpression::Value(choose_left),
+        ProgramExpression::Value(left.clone()),
+        ProgramExpression::Value(right.clone()),
+        ProgramExpression::Value(choose_left),
     ];
     let premise = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(left.clone())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(left.clone())),
         operator: ComparisonOperator::LessThan,
-        right: ContractExpression::CFragment(CExpression::Value(right.clone())),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(right.clone())),
     };
     let kernel_premise = lower_fixed_state_proposition_with_assumptions(
         &premise,
@@ -5445,8 +5499,8 @@ fn branch_theorem_search_retains_checked_arm_steps_and_scales() {
     let application = TheoremApplication {
         name: "less_than_implies_less_equal".to_string(),
         arguments: vec![
-            ContractExpression::CFragment(CExpression::Value(left)),
-            ContractExpression::CFragment(CExpression::Value(right)),
+            ContractExpression::ProgramExpression(ProgramExpression::Value(left)),
+            ContractExpression::ProgramExpression(ProgramExpression::Value(right)),
         ],
     };
     let missing_application = TheoremApplication {
@@ -5480,7 +5534,7 @@ fn branch_theorem_search_retains_checked_arm_steps_and_scales() {
                 source_layout: SourceExecutionLayout::new(parsed_function.body()),
                 proof_site: Some(ProofSite::FunctionClaim {
                     function_name: "choose".to_string(),
-                    claim: CProofClaim::Grouped,
+                    claim: ContractProofClaim::Grouped,
                 }),
                 ..ExecutionProofConstants::default()
             },
@@ -5736,20 +5790,20 @@ fn fixed_state_apply_search_uses_indexes_and_retains_its_checked_successor() {
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let parsed_function = syntax::parse_function("int32 identity(int32 x) { return x; }")
         .expect("test C function should parse");
-    let state = CState::new();
-    let left = CValue::Int32(MachineTerm::Variable(Variable(8_100_000)));
-    let right = CValue::Int32(MachineTerm::Variable(Variable(8_100_001)));
-    let arguments = vec![CExpression::Value(left.clone())];
+    let state = ExecutionState::new();
+    let left = ProgramValue::Int32(MachineTerm::Variable(Variable(8_100_000)));
+    let right = ProgramValue::Int32(MachineTerm::Variable(Variable(8_100_001)));
+    let arguments = vec![ProgramExpression::Value(left.clone())];
     let parameter_binding = ParameterBinding::new(parsed_function.parameters(), &arguments);
     let premise = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(left.clone())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(left.clone())),
         operator: ComparisonOperator::LessThan,
-        right: ContractExpression::CFragment(CExpression::Value(right.clone())),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(right.clone())),
     };
     let conclusion = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(left.clone())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(left.clone())),
         operator: ComparisonOperator::LessEqual,
-        right: ContractExpression::CFragment(CExpression::Value(right.clone())),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(right.clone())),
     };
     let recorded_snapshots = RecordedSnapshots::new();
     let kernel_premise = lower_fixed_state_proposition_with_assumptions(
@@ -5771,8 +5825,8 @@ fn fixed_state_apply_search_uses_indexes_and_retains_its_checked_successor() {
     let application = TheoremApplication {
         name: "less_than_implies_less_equal".to_string(),
         arguments: vec![
-            ContractExpression::CFragment(CExpression::Value(left)),
-            ContractExpression::CFragment(CExpression::Value(right)),
+            ContractExpression::ProgramExpression(ProgramExpression::Value(left)),
+            ContractExpression::ProgramExpression(ProgramExpression::Value(right)),
         ],
     };
     let missing_application = TheoremApplication {
@@ -5923,11 +5977,11 @@ fn result_aware_fixed_state_apply_scales_with_unrelated_facts() {
     let theorem_environment = TheoremEnvironment::new(click_file.theorem_definitions());
     let parsed_function = syntax::parse_function("int32 identity(int32 x) { return x; }")
         .expect("test C function should parse");
-    let arguments = vec![CExpression::Value(CValue::Int32(MachineTerm::Variable(
-        Variable(8_150_000),
-    )))];
-    let result = CValue::Int32(MachineTerm::Variable(Variable(8_150_001)));
-    let state = CState::new();
+    let arguments = vec![ProgramExpression::Value(ProgramValue::Int32(
+        MachineTerm::Variable(Variable(8_150_000)),
+    ))];
+    let result = ProgramValue::Int32(MachineTerm::Variable(Variable(8_150_001)));
+    let state = ExecutionState::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let surface_propositions = SurfacePropositionMap::default();
     let kernel_goal = lower_fixed_state_proposition_with_assumptions(
@@ -6021,11 +6075,11 @@ fn result_aware_fixed_state_context_apply_is_indexed_and_transactional() {
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let parsed_function = syntax::parse_function("int32 bounded(int32 upper) { return upper; }")
         .expect("test C function should parse");
-    let arguments = vec![CExpression::Value(CValue::Int32(MachineTerm::Variable(
-        Variable(8_155_001),
-    )))];
-    let result = CValue::Int32(MachineTerm::Variable(Variable(8_155_000)));
-    let state = CState::new();
+    let arguments = vec![ProgramExpression::Value(ProgramValue::Int32(
+        MachineTerm::Variable(Variable(8_155_001)),
+    ))];
+    let result = ProgramValue::Int32(MachineTerm::Variable(Variable(8_155_000)));
+    let state = ExecutionState::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let kernel_premise = lower_fixed_state_proposition_with_assumptions(
         surface_premise,
@@ -6118,33 +6172,33 @@ fn fixed_state_transport_can_follow_another_checked_step() {
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let parsed_function =
         syntax::parse_function("void noop() {}").expect("test C function should parse");
-    let state = CState::new();
+    let state = ExecutionState::new();
     let source = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
             MachineTerm::Variable(Variable(8_160_000)),
         ))),
         operator: ComparisonOperator::LessThan,
-        right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-            MachineTerm::Variable(Variable(8_160_001)),
-        ))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(
+            ProgramValue::Int32(MachineTerm::Variable(Variable(8_160_001))),
+        )),
     };
     let extracted = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
             MachineTerm::Variable(Variable(8_160_002)),
         ))),
         operator: ComparisonOperator::LessThan,
-        right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-            MachineTerm::Variable(Variable(8_160_003)),
-        ))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(
+            ProgramValue::Int32(MachineTerm::Variable(Variable(8_160_003))),
+        )),
     };
     let missing = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
             MachineTerm::Variable(Variable(8_160_006)),
         ))),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-            MachineTerm::Variable(Variable(8_160_007)),
-        ))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(
+            ProgramValue::Int32(MachineTerm::Variable(Variable(8_160_007))),
+        )),
     };
     let recorded_snapshots = RecordedSnapshots::new();
     let lower = |surface: &ClickProposition| {
@@ -6263,7 +6317,7 @@ fn pure_signed_order_solve_builds_its_certificate_with_logarithmic_local_updates
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard order theorems should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let terms = [
         MachineTerm::Variable(Variable(8_150_000)),
         MachineTerm::Variable(Variable(8_150_001)),
@@ -6412,7 +6466,7 @@ fn pure_equality_refinement_solve_applies_one_rewrite_with_logarithmic_local_upd
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let value = MachineTerm::Variable(Variable(8_174_000));
     let named = [value.clone()];
     let named_values = named_int32_values(&named);
@@ -6502,7 +6556,7 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let selected_term = MachineTerm::Variable(Variable(8_174_050));
     let named = [selected_term.clone()];
     let named_values = named_int32_values(&named);
@@ -6532,15 +6586,17 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
     let equality_surface = ClickProposition::Comparison {
         left: named_int32(&named, &selected_term),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(int32(2))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(2))),
     };
     let goal_surface = ClickProposition::Comparison {
         left: ContractExpression::Subtract(
             Box::new(named_int32(&named, &selected_term)),
-            Box::new(ContractExpression::CFragment(CExpression::Value(int32(1)))),
+            Box::new(ContractExpression::ProgramExpression(
+                ProgramExpression::Value(int32(1)),
+            )),
         ),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(int32(1))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
     };
 
     for size in [16_u32, 64, 256, 1024, 4096] {
@@ -6613,7 +6669,7 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let left = MachineTerm::Variable(Variable(8_174_060));
     let right = MachineTerm::Variable(Variable(8_174_061));
     let named = [left.clone(), right.clone()];
@@ -6633,7 +6689,7 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
     let surface_equality = |term: &MachineTerm| ClickProposition::Comparison {
         left: named_int32(&named, term),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
     };
     let goal = Proposition::ConditionIs(
         ConditionTerm::Compare {
@@ -6655,7 +6711,7 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
             Box::new(named_int32(&named, &right)),
         ),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
     };
     let selected = [equality(&left), equality(&right)];
     let surfaces = [surface_equality(&left), surface_equality(&right)];
@@ -6751,7 +6807,7 @@ fn check_fixed_state_predecessor_solve(sizes: &[u32]) {
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let state = CState::new();
+    let state = ExecutionState::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let value = MachineTerm::Variable(Variable(8_174_100));
     let upper = MachineTerm::Variable(Variable(8_174_101));
@@ -6769,7 +6825,7 @@ fn check_fixed_state_predecessor_solve(sizes: &[u32]) {
         right: expression(upper.clone()),
     };
     let nonnegative = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
             MachineTerm::constant(0),
         ))),
         operator: ComparisonOperator::LessEqual,
@@ -6870,7 +6926,7 @@ fn fixed_state_equality_solve_builds_its_recorded_path_with_logarithmic_local_up
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let parsed_function =
         syntax::parse_function("void noop() {}").expect("test C function should parse");
-    let state = CState::new();
+    let state = ExecutionState::new();
     let arguments = Vec::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let terms = [
@@ -6880,7 +6936,9 @@ fn fixed_state_equality_solve_builds_its_recorded_path_with_logarithmic_local_up
         MachineTerm::Variable(Variable(8_175_003)),
     ];
     let expression = |term: &MachineTerm| {
-        ContractExpression::CFragment(CExpression::Value(CValue::Int32(term.clone())))
+        ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
+            term.clone(),
+        )))
     };
     let equal = |left: usize, right: usize| ClickProposition::Comparison {
         left: expression(&terms[left]),
@@ -6961,14 +7019,16 @@ fn fixed_state_arithmetic_rewrite_paths_ignore_unrelated_facts() {
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let parsed_function =
         syntax::parse_function("void noop() {}").expect("test C function should parse");
-    let state = CState::new();
+    let state = ExecutionState::new();
     let arguments = Vec::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let left = MachineTerm::Variable(Variable(8_176_000));
     let right = MachineTerm::Variable(Variable(8_176_001));
     let one = MachineTerm::constant(1);
     let expression = |term: &MachineTerm| {
-        ContractExpression::CFragment(CExpression::Value(CValue::Int32(term.clone())))
+        ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
+            term.clone(),
+        )))
     };
     let equality = |left: &MachineTerm, right: &MachineTerm| ClickProposition::Comparison {
         left: expression(left),
@@ -7054,7 +7114,7 @@ fn fixed_state_order_solve_builds_its_theorem_path_with_logarithmic_local_update
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard order theorems should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let state = CState::new();
+    let state = ExecutionState::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let terms = [
         MachineTerm::Variable(Variable(8_176_000)),
@@ -7174,7 +7234,7 @@ fn check_fixed_state_single_premise_arithmetic_solves(sizes: &[u32], labels: Opt
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("the standard increment theorem should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let state = CState::new();
+    let state = ExecutionState::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let value = MachineTerm::Variable(Variable(8_177_000));
     let upper = MachineTerm::Variable(Variable(8_177_001));
@@ -7220,7 +7280,9 @@ fn check_fixed_state_single_premise_arithmetic_solves(sizes: &[u32], labels: Opt
     let surface_bound_goal = ClickProposition::Comparison {
         left: ContractExpression::Add(
             Box::new(expression(value.clone())),
-            Box::new(ContractExpression::CFragment(CExpression::Value(int32(1)))),
+            Box::new(ContractExpression::ProgramExpression(
+                ProgramExpression::Value(int32(1)),
+            )),
         ),
         operator: ComparisonOperator::LessEqual,
         right: expression(upper.clone()),
@@ -7230,18 +7292,24 @@ fn check_fixed_state_single_premise_arithmetic_solves(sizes: &[u32], labels: Opt
         operator: ComparisonOperator::LessThan,
         right: ContractExpression::Add(
             Box::new(expression(value.clone())),
-            Box::new(ContractExpression::CFragment(CExpression::Value(int32(1)))),
+            Box::new(ContractExpression::ProgramExpression(
+                ProgramExpression::Value(int32(1)),
+            )),
         ),
     };
     let surface_defined_goal = ClickProposition::Defined {
         expression: ContractExpression::Add(
             Box::new(expression(value.clone())),
-            Box::new(ContractExpression::CFragment(CExpression::Value(int32(1)))),
+            Box::new(ContractExpression::ProgramExpression(
+                ProgramExpression::Value(int32(1)),
+            )),
         ),
     };
     let surface_one_plus_defined_goal = ClickProposition::Defined {
         expression: ContractExpression::Add(
-            Box::new(ContractExpression::CFragment(CExpression::Value(int32(1)))),
+            Box::new(ContractExpression::ProgramExpression(
+                ProgramExpression::Value(int32(1)),
+            )),
             Box::new(expression(value.clone())),
         ),
     };
@@ -7249,7 +7317,9 @@ fn check_fixed_state_single_premise_arithmetic_solves(sizes: &[u32], labels: Opt
         left: expression(value.clone()),
         operator: ComparisonOperator::LessThan,
         right: ContractExpression::Add(
-            Box::new(ContractExpression::CFragment(CExpression::Value(int32(1)))),
+            Box::new(ContractExpression::ProgramExpression(
+                ProgramExpression::Value(int32(1)),
+            )),
             Box::new(expression(value.clone())),
         ),
     };
@@ -7271,7 +7341,9 @@ fn check_fixed_state_single_premise_arithmetic_solves(sizes: &[u32], labels: Opt
     let surface_increment_constant_upper_goal = ClickProposition::Comparison {
         left: ContractExpression::Add(
             Box::new(expression(value.clone())),
-            Box::new(ContractExpression::CFragment(CExpression::Value(int32(1)))),
+            Box::new(ContractExpression::ProgramExpression(
+                ProgramExpression::Value(int32(1)),
+            )),
         ),
         operator: ComparisonOperator::LessEqual,
         right: expression(MachineTerm::constant(5)),
@@ -7514,16 +7586,18 @@ fn branch_exported_premise_uses_one_selected_anchor_with_logarithmic_work() {
     let parsed_function = syntax::parse_function("int32 noop(int32 x) { return x; }")
         .expect("test C function should parse");
     let value = MachineTerm::Variable(Variable(8_177_900));
-    let arguments = vec![CExpression::Value(CValue::Int32(value))];
-    let state = CState::new();
+    let arguments = vec![ProgramExpression::Value(ProgramValue::Int32(value))];
+    let state = ExecutionState::new();
     let point = ProgramPointRef {
         region: CodeRegionRef::Region(0),
         kind: ProgramPointKind::Entry,
     };
     let mut recorded_snapshots = RecordedSnapshots::new();
     recorded_snapshots.insert(point.clone(), state.clone());
-    let variable = || ContractExpression::CFragment(CExpression::Variable("x".to_string()));
-    let constant = |value| ContractExpression::CFragment(CExpression::Value(int32(value)));
+    let variable =
+        || ContractExpression::ProgramExpression(ProgramExpression::Variable("x".to_string()));
+    let constant =
+        |value| ContractExpression::ProgramExpression(ProgramExpression::Value(int32(value)));
     let lower_premise = ClickProposition::Comparison {
         left: variable(),
         operator: ComparisonOperator::GreaterEqual,
@@ -7613,7 +7687,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("the standard increment theorem should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let state = CState::new();
+    let state = ExecutionState::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let lower = MachineTerm::Variable(Variable(8_178_000));
     let value = MachineTerm::Variable(Variable(8_178_001));
@@ -7636,7 +7710,9 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
     let increment = |term: MachineTerm| {
         ContractExpression::Add(
             Box::new(expression(term)),
-            Box::new(ContractExpression::CFragment(CExpression::Value(int32(1)))),
+            Box::new(ContractExpression::ProgramExpression(
+                ProgramExpression::Value(int32(1)),
+            )),
         )
     };
     let surface_goals = [
@@ -7937,7 +8013,7 @@ fn le_and_not_lt_equality_solve_retains_one_indexed_arithmetic_certificate() {
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("the standard equality theorem should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let state = CState::new();
+    let state = ExecutionState::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let left = MachineTerm::Variable(Variable(8_178_100));
     let right = MachineTerm::Variable(Variable(8_178_101));
@@ -8129,7 +8205,7 @@ fn ge_and_not_gt_equality_solve_retains_one_indexed_theorem_application() {
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("the standard equality theorem should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let state = CState::new();
+    let state = ExecutionState::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let left = MachineTerm::Variable(Variable(8_178_102));
     let right = MachineTerm::Variable(Variable(8_178_103));
@@ -8227,7 +8303,7 @@ fn le_and_neq_strict_solve_retains_one_indexed_arithmetic_certificate() {
     let theorem_definitions = proof_theorem_definitions(&click_file)
         .expect("the standard strict-order theorem should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let state = CState::new();
+    let state = ExecutionState::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let left = MachineTerm::Variable(Variable(8_178_104));
     let right = MachineTerm::Variable(Variable(8_178_105));
@@ -8322,7 +8398,7 @@ fn symbolic_arithmetic_definedness_retains_two_indexed_theorem_premises() {
     let theorem_definitions = proof_theorem_definitions(&click_file)
         .expect("the standard symbolic-add theorem should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let state = CState::new();
+    let state = ExecutionState::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let value = MachineTerm::Variable(Variable(8_178_100));
     let amount = MachineTerm::Variable(Variable(8_178_101));
@@ -8509,7 +8585,7 @@ fn selected_disjunction_solve_retains_checked_cases_and_scales() {
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("the standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let state = CState::new();
+    let state = ExecutionState::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let value = MachineTerm::Variable(Variable(8_178_900));
     let named = [value.clone()];
@@ -8618,7 +8694,7 @@ fn surface_structural_solve_retains_recursive_child_proofs_and_scales() {
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("the standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let state = CState::new();
+    let state = ExecutionState::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let left_value = MachineTerm::Variable(Variable(8_178_910));
     let right_value = MachineTerm::Variable(Variable(8_178_911));
@@ -8810,7 +8886,7 @@ fn predecessor_solves_retain_indexed_named_rule_premises() {
     let theorem_definitions = proof_theorem_definitions(&click_file)
         .expect("the standard predecessor theorems should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let state = CState::new();
+    let state = ExecutionState::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let value = MachineTerm::Variable(Variable(8_179_000));
     let bound = MachineTerm::Variable(Variable(8_179_001));
@@ -8821,7 +8897,9 @@ fn predecessor_solves_retain_indexed_named_rule_premises() {
     let predecessor = || {
         ContractExpression::Subtract(
             Box::new(expression(value.clone())),
-            Box::new(ContractExpression::CFragment(CExpression::Value(int32(1)))),
+            Box::new(ContractExpression::ProgramExpression(
+                ProgramExpression::Value(int32(1)),
+            )),
         )
     };
     let positive = ClickProposition::Comparison {
@@ -9042,18 +9120,18 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = CMemory::new();
-    let left = CValue::Int32(MachineTerm::Variable(Variable(8_200_000)));
-    let right = CValue::Int32(MachineTerm::Variable(Variable(8_200_001)));
+    let memory = Memory::new();
+    let left = ProgramValue::Int32(MachineTerm::Variable(Variable(8_200_000)));
+    let right = ProgramValue::Int32(MachineTerm::Variable(Variable(8_200_001)));
     let premise = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(left.clone())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(left.clone())),
         operator: ComparisonOperator::LessThan,
-        right: ContractExpression::CFragment(CExpression::Value(right.clone())),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(right.clone())),
     };
     let conclusion = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(left.clone())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(left.clone())),
         operator: ComparisonOperator::LessEqual,
-        right: ContractExpression::CFragment(CExpression::Value(right.clone())),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(right.clone())),
     };
     let kernel_premise = lower_pure_theorem_proposition(
         "persistent pure theorem search",
@@ -9074,8 +9152,8 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
     let application = TheoremApplication {
         name: "less_than_implies_less_equal".to_string(),
         arguments: vec![
-            ContractExpression::CFragment(CExpression::Value(left)),
-            ContractExpression::CFragment(CExpression::Value(right)),
+            ContractExpression::ProgramExpression(ProgramExpression::Value(left)),
+            ContractExpression::ProgramExpression(ProgramExpression::Value(right)),
         ],
     };
     let missing_application = TheoremApplication {
@@ -9185,18 +9263,18 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = CMemory::new();
-    let left = CValue::Int32(MachineTerm::Variable(Variable(8_210_000)));
-    let right = CValue::Int32(MachineTerm::Variable(Variable(8_210_001)));
+    let memory = Memory::new();
+    let left = ProgramValue::Int32(MachineTerm::Variable(Variable(8_210_000)));
+    let right = ProgramValue::Int32(MachineTerm::Variable(Variable(8_210_001)));
     let premise = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(left.clone())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(left.clone())),
         operator: ComparisonOperator::LessThan,
-        right: ContractExpression::CFragment(CExpression::Value(right.clone())),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(right.clone())),
     };
     let other = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(right.clone())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(right.clone())),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(right.clone())),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(right.clone())),
     };
     let selected = ClickProposition::And(Box::new(premise.clone()), Box::new(other.clone()));
     let wrong_conjunction = ClickProposition::And(Box::new(other.clone()), Box::new(other.clone()));
@@ -9260,9 +9338,9 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
     ));
 
     let conclusion = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(left.clone())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(left.clone())),
         operator: ComparisonOperator::LessEqual,
-        right: ContractExpression::CFragment(CExpression::Value(right.clone())),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(right.clone())),
     };
     let kernel_conclusion = lower_pure_theorem_proposition(
         "checked conjunct theorem application",
@@ -9293,8 +9371,8 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
     let application = TheoremApplication {
         name: "less_than_implies_less_equal".to_string(),
         arguments: vec![
-            ContractExpression::CFragment(CExpression::Value(left)),
-            ContractExpression::CFragment(CExpression::Value(right)),
+            ContractExpression::ProgramExpression(ProgramExpression::Value(left)),
+            ContractExpression::ProgramExpression(ProgramExpression::Value(right)),
         ],
     };
     let closed = root
@@ -9327,20 +9405,20 @@ fn execution_unfold_forks_persistently_and_ignores_unrelated_facts() {
     let parsed_function = syntax::parse_function("int32 identity(int32 x) { return x; }")
         .expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let function_environment = CExecutionEnvironment::new();
-    let state = CState::new();
-    let argument = CExpression::Value(CValue::Int32(MachineTerm::constant(7)));
+    let function_environment = ExecutionEnvironment::new();
+    let state = ExecutionState::new();
+    let argument = ProgramExpression::Value(ProgramValue::Int32(MachineTerm::constant(7)));
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
     let arguments = vec![argument.clone()];
     let surface = ClickProposition::PredicateCall {
         name: "selected".to_string(),
-        arguments: vec![ContractExpression::CFragment(argument)],
+        arguments: vec![ContractExpression::ProgramExpression(argument)],
     };
     let predicate = Proposition::Predicate {
         name: "selected".to_string(),
         arguments: vec![
-            Term::CState(Box::new(state.clone())),
-            Term::CValue(CValue::Int32(MachineTerm::constant(7))),
+            Term::ExecutionState(Box::new(state.clone())),
+            Term::ProgramValue(ProgramValue::Int32(MachineTerm::constant(7))),
         ],
     };
 
@@ -9443,15 +9521,15 @@ fn choose_projection_retains_unfolded_source_token_and_is_consumed_by_extract() 
     let click_functions = ClickFunctionEnvironment::new(click_file.click_function_definitions());
     let theorems = TheoremEnvironment::new(click_file.theorem_definitions());
     let resources = ResourceEnvironment::new(click_file.resource_definitions());
-    let execution_environment = CExecutionEnvironment::new();
-    let state = CState::new();
-    let argument = CExpression::Value(int32(7));
+    let execution_environment = ExecutionEnvironment::new();
+    let state = ExecutionState::new();
+    let argument = ProgramExpression::Value(int32(7));
     let arguments = vec![argument.clone()];
     let source = Proposition::Predicate {
         name: "selected".to_string(),
         arguments: vec![
-            Term::CState(Box::new(state.clone())),
-            Term::CValue(CValue::Int32(MachineTerm::constant(7))),
+            Term::ExecutionState(Box::new(state.clone())),
+            Term::ProgramValue(ProgramValue::Int32(MachineTerm::constant(7))),
         ],
     };
     let owner = CallerSourceOwnerId::ordinary("test.c", "identity");
@@ -9471,7 +9549,7 @@ fn choose_projection_retains_unfolded_source_token_and_is_consumed_by_extract() 
         parsed_function.parameters(),
         std::slice::from_ref(&source),
         &entry_origins,
-        crate::kernel::CMemorySnapshotIdentity::of(state.memory()),
+        crate::kernel::MemorySnapshotIdentity::of(state.memory()),
     );
     let root = Proof::for_execution_frontier(
         "chosen projection",
@@ -9506,9 +9584,9 @@ fn choose_projection_retains_unfolded_source_token_and_is_consumed_by_extract() 
         .apply_step(ProofStep::UnfoldPredicate("selected".to_string()))
         .expect("the selected requirement should unfold");
     let scope_goal = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(int32(0))),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
     };
     let scope = unfolded
         .driver()
@@ -9550,7 +9628,7 @@ fn choose_projection_retains_unfolded_source_token_and_is_consumed_by_extract() 
         &projection.leaves[0].surface,
         &BTreeMap::from([(
             "candidate".to_string(),
-            ContractExpression::CFragment(CExpression::Variable("other".to_string())),
+            ContractExpression::ProgramExpression(ProgramExpression::Variable("other".to_string())),
         )]),
     )
     .expect("renaming a citation should be capture-safe");
@@ -9600,9 +9678,9 @@ fn choose_projection_retains_unfolded_source_token_and_is_consumed_by_extract() 
     let nested = chosen
         .driver()
         .open_have(ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::Value(int32(0))),
+            left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+            right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
         })
         .expect("a nested proposition scope should open");
     assert!(
@@ -9660,9 +9738,9 @@ fn execution_resource_observation_is_retained_transactional_and_logarithmic() {
             )
             .expect("the marker resource definition should lower"),
         );
-    let function_environment = CExecutionEnvironment::new();
-    let arguments = vec![CExpression::Value(int32(7))];
-    let empty_state = CState::new();
+    let function_environment = ExecutionEnvironment::new();
+    let arguments = vec![ProgramExpression::Value(int32(7))];
+    let empty_state = ExecutionState::new();
     let lowered = lower_resource_clause(
         &resource,
         ParameterBinding::new(parsed_function.parameters(), &arguments),
@@ -9774,9 +9852,9 @@ fn execution_resource_unfold_is_retained_transactional_and_logarithmic() {
             )
             .expect("the marker resource definition should lower"),
         );
-    let function_environment = CExecutionEnvironment::new();
-    let arguments = vec![CExpression::Value(int32(7))];
-    let empty_state = CState::new();
+    let function_environment = ExecutionEnvironment::new();
+    let arguments = vec![ProgramExpression::Value(int32(7))];
+    let empty_state = ExecutionState::new();
     let lowered = lower_resource_clause(
         &resource,
         ParameterBinding::new(parsed_function.parameters(), &arguments),
@@ -9889,9 +9967,9 @@ fn execution_resource_fold_is_retained_transactional_and_logarithmic() {
             )
             .expect("the marker resource definition should lower"),
         );
-    let function_environment = CExecutionEnvironment::new();
-    let arguments = vec![CExpression::Value(int32(7))];
-    let empty_state = CState::new();
+    let function_environment = ExecutionEnvironment::new();
+    let arguments = vec![ProgramExpression::Value(int32(7))];
+    let empty_state = ExecutionState::new();
     let lowered = lower_resource_clause(
         &resource,
         ParameterBinding::new(parsed_function.parameters(), &arguments),
@@ -10017,9 +10095,9 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
             )
             .expect("the marker resource definition should lower"),
         );
-    let function_environment = CExecutionEnvironment::new();
-    let arguments = vec![CExpression::Value(int32(7))];
-    let empty_state = CState::new();
+    let function_environment = ExecutionEnvironment::new();
+    let arguments = vec![ProgramExpression::Value(int32(7))];
+    let empty_state = ExecutionState::new();
     let lowered = lower_resource_clause(
         &resource,
         ParameterBinding::new(parsed_function.parameters(), &arguments),
@@ -10034,9 +10112,9 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
         right: ContractExpression::CBinding("x".to_string()),
     };
     let _exposed_reflexive = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Variable("x".to_string())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".to_string())),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Variable("x".to_string())),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".to_string())),
     };
 
     for size in [16_u32, 64, 256, 1024, 4096] {
@@ -10198,14 +10276,14 @@ fn execution_transport_forks_without_copying_unrelated_state() {
     let parsed_function = syntax::parse_function("int32 identity(int32 x) { return x; }")
         .expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let function_environment = CExecutionEnvironment::new();
-    let state = CState::new();
-    let arguments = vec![CExpression::Value(int32(7))];
+    let function_environment = ExecutionEnvironment::new();
+    let state = ExecutionState::new();
+    let arguments = vec![ProgramExpression::Value(int32(7))];
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
     let surface = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(int32(7))),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(7))),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(int32(7))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(7))),
     };
     let kernel = lower_fixed_state_proposition_with_assumptions(
         &surface,
@@ -10312,14 +10390,17 @@ fn execution_transport_search_returns_checked_successors_and_scales() {
     )
     .expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
-    let state = CState::new();
-    let arguments = vec![CExpression::Value(int32(3)), CExpression::Value(int32(5))];
+    let state = ExecutionState::new();
+    let arguments = vec![
+        ProgramExpression::Value(int32(3)),
+        ProgramExpression::Value(int32(5)),
+    ];
     let term = |variable| {
-        ContractExpression::CFragment(CExpression::Value(CValue::Int32(MachineTerm::Variable(
-            Variable(variable),
-        ))))
+        ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
+            MachineTerm::Variable(Variable(variable)),
+        )))
     };
     let source = ClickProposition::Comparison {
         left: term(8_170_000),
@@ -10452,8 +10533,8 @@ fn statement_assignment_step_ignores_unrelated_proof_facts() {
     let parsed_function = syntax::parse_function("int32 set_one(int32 x) { x = 1; return x; }")
         .expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let function_environment = CExecutionEnvironment::new();
-    let arguments = vec![CExpression::Value(int32(7))];
+    let function_environment = ExecutionEnvironment::new();
+    let arguments = vec![ProgramExpression::Value(int32(7))];
     let mut samples = Vec::new();
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
 
@@ -10462,7 +10543,7 @@ fn statement_assignment_step_ignores_unrelated_proof_facts() {
             "contextual local assignment",
             0,
             ExecutionProofState::at_entry(
-                CState::new(),
+                ExecutionState::new(),
                 ExecutionFrontier::default(),
                 RecordedSnapshots::new(),
                 SurfacePropositionMap::default(),
@@ -10544,7 +10625,7 @@ fn contextual_store_step_scales_with_unrelated_named_facts() {
     )
     .expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let (state, arguments, base_facts, base_surfaces) = initial_claim_context(
         function_block,
         &parsed_function,
@@ -10561,11 +10642,11 @@ fn contextual_store_step_scales_with_unrelated_named_facts() {
         for index in 0..size {
             let fact = indexed_fact(index + 10_000);
             let surface = ClickProposition::Comparison {
-                left: ContractExpression::CFragment(CExpression::Variable(format!(
+                left: ContractExpression::ProgramExpression(ProgramExpression::Variable(format!(
                     "unrelated_{index}"
                 ))),
                 operator: ComparisonOperator::Equal,
-                right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+                right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
             };
             surface_propositions
                 .record_lowering(&surface, &fact)
@@ -10650,8 +10731,8 @@ fn checked_statement_step_ignores_unrelated_proof_facts() {
     let parsed_function = syntax::parse_function("int32 constant(int32 x) { return 1; }")
         .expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let function_environment = CExecutionEnvironment::new();
-    let arguments = vec![CExpression::Value(int32(7))];
+    let function_environment = ExecutionEnvironment::new();
+    let arguments = vec![ProgramExpression::Value(int32(7))];
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
     let mut samples = Vec::new();
 
@@ -10660,7 +10741,7 @@ fn checked_statement_step_ignores_unrelated_proof_facts() {
             "persistent statement step",
             0,
             ExecutionProofState::at_entry(
-                CState::new(),
+                ExecutionState::new(),
                 ExecutionFrontier::default(),
                 RecordedSnapshots::new(),
                 SurfacePropositionMap::default(),
@@ -10776,8 +10857,8 @@ fn close_invariants_is_a_transactional_constant_local_proof_step() {
     let parsed_function = syntax::parse_function("int32 loop_region(int32 x) { return x; }")
         .expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let function_environment = CExecutionEnvironment::new();
-    let arguments = vec![CExpression::Value(int32(7))];
+    let function_environment = ExecutionEnvironment::new();
+    let arguments = vec![ProgramExpression::Value(int32(7))];
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
 
     for size in [16_u32, 64, 256, 1024, 4096] {
@@ -10795,7 +10876,7 @@ fn close_invariants_is_a_transactional_constant_local_proof_step() {
                 "persistent close invariants",
                 0,
                 ExecutionProofState::at_entry(
-                    CState::new(),
+                    ExecutionState::new(),
                     frontier,
                     RecordedSnapshots::new(),
                     SurfacePropositionMap::default(),
@@ -10825,10 +10906,10 @@ fn close_invariants_is_a_transactional_constant_local_proof_step() {
         assert!(outside_loop.certificate().steps().is_empty());
 
         let root = make_root(true);
-        let checks = vec![crate::kernel::CLoopInvariantCheck::new(
+        let checks = vec![crate::kernel::LoopInvariantCheck::new(
             crate::kernel::SpecProposition::Comparison {
                 left: crate::kernel::SpecExpression::Value(int32(0)),
-                operator: crate::kernel::CComparisonOperator::LessEqual,
+                operator: crate::kernel::ComparisonOperator::LessEqual,
                 right: crate::kernel::SpecExpression::Value(int32(0)),
             },
             None,
@@ -10837,8 +10918,8 @@ fn close_invariants_is_a_transactional_constant_local_proof_step() {
         let (body, scope) = root
             .state
             .open_invariant_body(
-                &CState::new(),
-                &CState::new(),
+                &ExecutionState::new(),
+                &ExecutionState::new(),
                 &crate::kernel::IntegerTerm::var(crate::kernel::Variable(9_999)),
                 &checks,
                 &[],
@@ -10878,7 +10959,7 @@ fn close_invariants_is_a_transactional_constant_local_proof_step() {
             evidence,
             successor_core.checked_invariant_lowerings.as_ref().unwrap()
         ));
-        successor_core.state = CState::new().with_local("changed", int32(1)).into();
+        successor_core.state = ExecutionState::new().with_local("changed", int32(1)).into();
         assert!(
             !evidence
                 .snapshot()
@@ -10920,16 +11001,16 @@ fn close_invariants_is_a_transactional_constant_local_proof_step() {
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn proof_condition_split_filters_conflicts_without_rebuilding_facts() {
     let symbolic = Variable(50_000);
-    let state = CState::new().with_local("x", int32(MachineTerm::Variable(symbolic)));
-    let condition = CExpression::LessThan(
-        Box::new(CExpression::Variable("x".to_string())),
-        Box::new(CExpression::Value(int32(0))),
+    let state = ExecutionState::new().with_local("x", int32(MachineTerm::Variable(symbolic)));
+    let condition = ProgramExpression::LessThan(
+        Box::new(ProgramExpression::Variable("x".to_string())),
+        Box::new(ProgramExpression::Value(int32(0))),
     );
     let empty = ProofFacts::default();
-    let branch = CStatement::If {
+    let branch = ProgramStatement::If {
         condition: condition.clone(),
-        then_branch: Box::new(CStatement::Skip),
-        else_branch: Box::new(CStatement::Skip),
+        then_branch: Box::new(ProgramStatement::Skip),
+        else_branch: Box::new(ProgramStatement::Skip),
     };
     let (checked_split, unconstrained) = certified_proof_condition_split(
         &state,
@@ -10956,7 +11037,7 @@ fn proof_condition_split_filters_conflicts_without_rebuilding_facts() {
         arm_facts,
     ));
     assert!(!checked_split.validates_exhaustive_join(
-        &CState::new(),
+        &ExecutionState::new(),
         &condition,
         &empty,
         arm_theorems,
@@ -10964,7 +11045,7 @@ fn proof_condition_split_filters_conflicts_without_rebuilding_facts() {
     ));
     assert!(!checked_split.validates_exhaustive_join(
         &state,
-        &CExpression::Value(int32(1)),
+        &ProgramExpression::Value(int32(1)),
         &empty,
         arm_theorems,
         arm_facts,
@@ -11015,7 +11096,7 @@ fn proof_condition_split_filters_conflicts_without_rebuilding_facts() {
         assert!(transitions[0].pure_facts.contains(&selecting_fact));
         assert!(matches!(
             implication_body(transitions[0].theorem.proposition()),
-            Proposition::CConditionEvaluates { .. }
+            Proposition::ProgramConditionEvaluates { .. }
         ));
         assert_eq!(facts.to_vec().len(), size as usize + 1);
     }
@@ -11045,14 +11126,14 @@ fn execution_proof_if_split_is_logarithmic_in_unrelated_facts() {
     )
     .expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let arguments = vec![CExpression::Value(CValue::Int32(MachineTerm::Variable(
-        Variable(71_000),
-    )))];
-    let function_environment = CExecutionEnvironment::new();
+    let arguments = vec![ProgramExpression::Value(ProgramValue::Int32(
+        MachineTerm::Variable(Variable(71_000)),
+    ))];
+    let function_environment = ExecutionEnvironment::new();
     let condition = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Variable("x".to_string())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".to_string())),
         operator: ComparisonOperator::GreaterEqual,
-        right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
     };
 
     let mut samples = Vec::new();
@@ -11061,7 +11142,7 @@ fn execution_proof_if_split_is_logarithmic_in_unrelated_facts() {
             "execution proof if scaling",
             0,
             ExecutionProofState::at_entry(
-                CState::new(),
+                ExecutionState::new(),
                 ExecutionFrontier::default(),
                 RecordedSnapshots::new(),
                 SurfacePropositionMap::default(),
@@ -11155,9 +11236,11 @@ fn execution_proof_if_split_is_logarithmic_in_unrelated_facts() {
         // A nested case must keep outer-before-inner source order and share
         // the original arm prefix through both terminal joins.
         let inner_condition = ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::Variable("x".to_string())),
+            left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                "x".to_string(),
+            )),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+            right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
         };
         let outer_then = split.focus_execution_if_arm(&record, true).unwrap();
         let outer_history = outer_then
@@ -11268,23 +11351,23 @@ fn execution_proof_cases_split_is_logarithmic_in_unrelated_facts() {
     let parsed_function = syntax::parse_function("int32 identity(int32 x) { return x; }")
         .expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let arguments = vec![CExpression::Value(CValue::Int32(MachineTerm::Variable(
-        Variable(72_000),
-    )))];
-    let function_environment = CExecutionEnvironment::new();
+    let arguments = vec![ProgramExpression::Value(ProgramValue::Int32(
+        MachineTerm::Variable(Variable(72_000)),
+    ))];
+    let function_environment = ExecutionEnvironment::new();
     let nonnegative = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Variable("x".to_string())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".to_string())),
         operator: ComparisonOperator::GreaterEqual,
-        right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
     };
     let negative = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Variable("x".to_string())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".to_string())),
         operator: ComparisonOperator::LessThan,
-        right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
     };
     let disjunction =
         ClickProposition::Or(Box::new(nonnegative.clone()), Box::new(negative.clone()));
-    let state = CState::new();
+    let state = ExecutionState::new();
     let lowered_disjunction = lower_fixed_state_proposition_with_assumptions(
         &disjunction,
         &PureFactContext::new(),
@@ -11375,9 +11458,10 @@ fn empty_execution_branch_joins_checked_proof_arms_at_the_shared_frontier() {
         syntax::parse_function("int32 identity(int32 x) { if (x < 0) {} else {} return x; }")
             .expect("test C branch should parse");
     let function = parsed_function.to_kernel_function();
-    let argument = CExpression::Value(CValue::Int32(MachineTerm::Variable(Variable(60_000))));
+    let argument =
+        ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(60_000))));
     let arguments = vec![argument];
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let mut allocation_samples = Vec::new();
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
     let mut statement_delta: Option<Vec<Proposition>> = None;
@@ -11390,7 +11474,7 @@ fn empty_execution_branch_joins_checked_proof_arms_at_the_shared_frontier() {
             "empty branch proof",
             0,
             ExecutionProofState::at_entry(
-                CState::new(),
+                ExecutionState::new(),
                 frontier,
                 RecordedSnapshots::new(),
                 SurfacePropositionMap::default(),
@@ -11504,18 +11588,18 @@ fn cursor_execution_branch_join_retains_structural_reads_without_bindings() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),
     };
-    let state = CState::new().with_resource_context(ResourceContext::new().unchecked_with_fact(
-        CResourceFact::own_memory(CMemoryRange::new(
+    let state = ExecutionState::new().with_resource_context(
+        ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
             pointer.clone(),
             MachineTerm::constant(0),
             MachineTerm::constant(1),
-        )),
-    ));
+        ))),
+    );
     let arguments = vec![
-        CExpression::Value(CValue::Int32(MachineTerm::Variable(Variable(60_001)))),
-        CExpression::Value(CValue::pointer(pointer.clone())),
+        ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(60_001)))),
+        ProgramExpression::Value(ProgramValue::pointer(pointer.clone())),
     ];
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment =
         ClickFunctionEnvironment::new(click_file.click_function_definitions());
@@ -11591,8 +11675,8 @@ fn cursor_execution_branch_join_retains_structural_reads_without_bindings() {
     }
     for path in terminal_view.frontier.execution().unwrap().paths() {
         assert!(matches!(path.outcome(),
-            CFunctionOutcome::Return { value, .. }
-                if matches!(value.native().as_ref(), CValue::Int32(MachineTerm::MemoryLoad(_, at, crate::kernel::LoadKind::Int32)) if **at == pointer)));
+            FunctionOutcome::Return { value, .. }
+                if matches!(value.native().as_ref(), ProgramValue::Int32(MachineTerm::MemoryLoad(_, at, crate::kernel::LoadKind::Int32)) if **at == pointer)));
     }
 
     // A condition fact selects one arm, exercising the single-transition
@@ -11678,10 +11762,10 @@ fn generated_load_source_event_fixture(
         },
         crate::kernel::GeneratedLoadBinding::Exact {
             variable: Variable(variable.into()),
-            snapshot: crate::kernel::CMemorySnapshotIdentity::of(&CMemory::new()),
+            snapshot: crate::kernel::MemorySnapshotIdentity::of(&Memory::new()),
             pointer: pointer.clone(),
             load: MachineTerm::MemoryLoad(
-                CMemory::new().into(),
+                Memory::new().into(),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -11694,7 +11778,7 @@ fn generated_load_source_event_fixture(
 
 fn generated_load_source_execution() -> ExecutionProofState {
     ExecutionProofState::at_entry(
-        CState::new(),
+        ExecutionState::new(),
         ExecutionFrontier::default(),
         RecordedSnapshots::default(),
         SurfacePropositionMap::default(),
@@ -11894,12 +11978,12 @@ fn nonempty_execution_branch_retains_checked_arm_steps_at_the_join() {
     )
     .expect("test C branch should parse");
     let function = parsed_function.to_kernel_function();
-    let arguments = vec![CExpression::Value(CValue::Int32(MachineTerm::Variable(
-        Variable(70_000),
-    )))];
+    let arguments = vec![ProgramExpression::Value(ProgramValue::Int32(
+        MachineTerm::Variable(Variable(70_000)),
+    ))];
     let application = TheoremApplication {
         name: "int32_reflexive".to_string(),
-        arguments: vec![ContractExpression::CFragment(arguments[0].clone())],
+        arguments: vec![ContractExpression::ProgramExpression(arguments[0].clone())],
     };
     let reflexive = ClickProposition::Comparison {
         left: application.arguments[0].clone(),
@@ -11910,7 +11994,7 @@ fn nonempty_execution_branch_retains_checked_arm_steps_at_the_join() {
         name: "missing".to_string(),
         arguments: application.arguments.clone(),
     };
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let mut allocation_samples = Vec::new();
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
     for size in LOCAL_PROOF_FACT_SIZES {
@@ -11922,7 +12006,7 @@ fn nonempty_execution_branch_retains_checked_arm_steps_at_the_join() {
             "nonempty branch proof",
             0,
             ExecutionProofState::at_entry(
-                CState::new(),
+                ExecutionState::new(),
                 frontier,
                 RecordedSnapshots::new(),
                 SurfacePropositionMap::default(),
@@ -11933,7 +12017,7 @@ fn nonempty_execution_branch_retains_checked_arm_steps_at_the_join() {
                 source_layout: SourceExecutionLayout::new(parsed_function.body()),
                 proof_site: Some(ProofSite::FunctionClaim {
                     function_name: "constant".to_string(),
-                    claim: CProofClaim::Grouped,
+                    claim: ContractProofClaim::Grouped,
                 }),
                 ..ExecutionProofConstants::default()
             },
@@ -12209,13 +12293,15 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
             )
             .expect("the ready resource definition should lower"),
         );
-    let arguments = vec![CExpression::Value(CValue::Int32(MachineTerm::Variable(
-        Variable(72_000),
-    )))];
-    let function_environment = CExecutionEnvironment::new();
-    let variable =
-        |name: &str| ContractExpression::CFragment(CExpression::Variable(name.to_string()));
-    let value = |constant| ContractExpression::CFragment(CExpression::Value(int32(constant)));
+    let arguments = vec![ProgramExpression::Value(ProgramValue::Int32(
+        MachineTerm::Variable(Variable(72_000)),
+    ))];
+    let function_environment = ExecutionEnvironment::new();
+    let variable = |name: &str| {
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(name.to_string()))
+    };
+    let value =
+        |constant| ContractExpression::ProgramExpression(ProgramExpression::Value(int32(constant)));
     let nonnegative = ClickProposition::Comparison {
         left: variable("x"),
         operator: ComparisonOperator::GreaterEqual,
@@ -12226,7 +12312,7 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
         operator: ComparisonOperator::LessThan,
         right: value(0),
     };
-    let make_root = |size: u32, state: CState| {
+    let make_root = |size: u32, state: ExecutionState| {
         let frontier = ExecutionFrontier {
             next_statement_index: 0,
             ..ExecutionFrontier::default()
@@ -12259,7 +12345,7 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
 
     let mut samples = Vec::new();
     for size in LOCAL_PROOF_FACT_SIZES {
-        let root = make_root(size, CState::new());
+        let root = make_root(size, ExecutionState::new());
         let (split, record) = root
             .split_focused_execution_branch()
             .expect("symbolic condition should open both interface arms");
@@ -12325,7 +12411,7 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
         );
     }
 
-    let root = make_root(16, CState::new());
+    let root = make_root(16, ExecutionState::new());
     let retained = root.clone();
     let (split, record) = root
         .split_focused_execution_branch()
@@ -12356,7 +12442,7 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
     // frontier goals in one state, each advancing by focus on one
     // lineage, with `introduced_since` recovering each arm's fact delta
     // from its recorded split-time base even after interleaved steps.
-    let root = make_root(16, CState::new());
+    let root = make_root(16, ExecutionState::new());
     let (split_proof, record) = root
         .split_focused_execution_branch()
         .expect("the symbolic condition should split in-proof");
@@ -12475,15 +12561,15 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
         arguments: Vec::new(),
         parameter_types: Vec::new(),
     };
-    let marker_fact = CResourceFact::own_token("marker".to_string(), Vec::new());
+    let marker_fact = ResourceFact::own_token("marker".to_string(), Vec::new());
     let mut ownership_samples = Vec::new();
     for size in [16_u32, 64, 256, 1024, 4096] {
         let resources = ResourceContext::new()
             .unchecked_with_facts((0..size).map(|index| {
-                CResourceFact::own_token(format!("unrelated_{index}"), vec![int32(index)])
+                ResourceFact::own_token(format!("unrelated_{index}"), vec![int32(index)])
             }))
             .unchecked_with_fact(marker_fact.clone());
-        let (split, record) = make_root(16, CState::new().with_resource_context(resources))
+        let (split, record) = make_root(16, ExecutionState::new().with_resource_context(resources))
             .split_focused_execution_branch()
             .expect("the owned-interface condition should expose both arms");
         let branches = split
@@ -12538,15 +12624,15 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
         arguments: Vec::new(),
         parameter_types: Vec::new(),
     };
-    let permit_fact = CResourceFact::own_token("permit".to_string(), Vec::new());
+    let permit_fact = ResourceFact::own_token("permit".to_string(), Vec::new());
     let mut changed_snapshot_samples = Vec::new();
     for size in [16_u32, 64, 256, 1024, 4096] {
         let resources = ResourceContext::new()
             .unchecked_with_facts((0..size).map(|index| {
-                CResourceFact::own_token(format!("unrelated_{index}"), vec![int32(index)])
+                ResourceFact::own_token(format!("unrelated_{index}"), vec![int32(index)])
             }))
             .unchecked_with_fact(permit_fact.clone());
-        let (split, record) = make_root(16, CState::new().with_resource_context(resources))
+        let (split, record) = make_root(16, ExecutionState::new().with_resource_context(resources))
             .split_focused_execution_branch()
             .expect("the transformed-interface condition should expose both arms");
         assert!(
@@ -12616,9 +12702,9 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
                 [ProofStep::Step, ProofStep::FoldResource(_)]
             )
         ));
-        let ready_fact = CResourceFact::own_composite("ready".to_string(), Vec::new());
-        let permit_view = CResourceFact::view_token("permit".to_string(), Vec::new());
-        let contains = Proposition::CResourceContains {
+        let ready_fact = ResourceFact::own_composite("ready".to_string(), Vec::new());
+        let permit_view = ResourceFact::view_token("permit".to_string(), Vec::new());
+        let contains = Proposition::ResourceContains {
             parent: Box::new(ready_fact.resource().clone()),
             child: Box::new(permit_fact.resource().clone()),
         };
@@ -12675,8 +12761,8 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
         );
     }
 
-    let represented_quantity = CResourceFact::own_quantity(
-        CResource::Token {
+    let represented_quantity = ResourceFact::own_quantity(
+        Resource::Token {
             name: "marker".to_string(),
             arguments: Vec::new().into(),
         },
@@ -12686,10 +12772,10 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
     for size in [16_u32, 64, 256, 1024, 4096] {
         let resources = ResourceContext::new()
             .unchecked_with_facts((0..size).map(|index| {
-                CResourceFact::own_token(format!("quantity_unrelated_{index}"), Vec::new())
+                ResourceFact::own_token(format!("quantity_unrelated_{index}"), Vec::new())
             }))
             .unchecked_with_fact(represented_quantity.clone());
-        let (split, record) = make_root(16, CState::new().with_resource_context(resources))
+        let (split, record) = make_root(16, ExecutionState::new().with_resource_context(resources))
             .split_focused_execution_branch()
             .expect("the normalized-ownership probe should expose both arms");
         let branches = split
@@ -12737,7 +12823,7 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
 
     let invalid_root = make_root(
         16,
-        CState::new().with_resource_context(
+        ExecutionState::new().with_resource_context(
             ResourceContext::new().unchecked_with_fact(represented_quantity),
         ),
     );
@@ -12756,7 +12842,7 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
         .apply_step(ProofStep::Step)
         .expect("rejected quantity else assignment should check");
     let quantity_three = ResourceClause::Quantified {
-        quantity: ContractExpression::CFragment(CExpression::Value(int32(3))),
+        quantity: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(3))),
         resource: Box::new(marker_clause),
     };
     assert!(
@@ -12793,15 +12879,15 @@ fn nested_end_of_arm_interface_derives_its_enclosing_continuation() {
     .expect("test nested interface branch should parse");
     let function = parsed_function.to_kernel_function();
     let arguments = vec![
-        CExpression::Value(CValue::Int32(MachineTerm::Variable(Variable(73_000)))),
-        CExpression::Value(CValue::Int32(MachineTerm::Variable(Variable(73_001)))),
+        ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(73_000)))),
+        ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(73_001)))),
     ];
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
     let nonnegative = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Variable("x".to_string())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".to_string())),
         operator: ComparisonOperator::GreaterEqual,
-        right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
     };
     let make_root = |size: u32| {
         let frontier = ExecutionFrontier {
@@ -12812,7 +12898,7 @@ fn nested_end_of_arm_interface_derives_its_enclosing_continuation() {
             "nested branch interface proof",
             0,
             ExecutionProofState::at_entry(
-                CState::new(),
+                ExecutionState::new(),
                 frontier,
                 RecordedSnapshots::new(),
                 SurfacePropositionMap::default(),
@@ -12924,9 +13010,9 @@ fn nested_end_of_arm_interface_derives_its_enclosing_continuation() {
 #[test]
 fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
     use crate::kernel::{
-        bool_value, c_call, c_int32_literal, c_parameter, c_return, c_skip, c_try_catch_int32,
-        c_variable, prove_c_function_contract_execution_paths_with_checked_artifacts,
-        prove_checked_c_function_execution_with_environment,
+        bool_value, program_call, program_parameter, program_return, program_skip,
+        program_try_catch_int32, prove_checked_program_function_execution_with_environment,
+        prove_program_function_contract_execution_paths_with_checked_artifacts,
     };
 
     let click_file = crate::surface::parse(
@@ -12944,14 +13030,14 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
     )
     .expect("minimal caller contract should parse");
     let function_block = &click_file.function_blocks()[0];
-    let helper = c_function(
-        CType::Int32,
+    let helper = program_function(
+        ProgramType::Int32,
         "helper",
-        vec![c_parameter("should_throw", CType::Bool)],
-        c_if(
-            c_variable("should_throw"),
-            CStatement::Throw(c_int32_literal(7)),
-            c_return(c_int32_literal(5)),
+        vec![program_parameter("should_throw", ProgramType::Bool)],
+        program_if(
+            crate::kernel::program_expression::variable("should_throw"),
+            ProgramStatement::Throw(crate::kernel::program_expression::int32_literal(7)),
+            program_return(crate::kernel::program_expression::int32_literal(5)),
         ),
     )
     .with_int32_exceptional_outcome()
@@ -12959,71 +13045,82 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
         vec![],
         vec![],
         vec![],
-        vec![CFunctionContractClaim::body_safety()],
+        vec![FunctionContractClaim::body_safety()],
         true,
     );
-    let helper_arguments = vec![CExpression::Value(bool_value(MachineTerm::Variable(
+    let helper_arguments = vec![ProgramExpression::Value(bool_value(MachineTerm::Variable(
         Variable(80_010),
     )))];
-    let artifacts = prove_checked_c_function_execution_with_environment(
-        CState::new().with_population_creation_tracking(),
+    let artifacts = prove_checked_program_function_execution_with_environment(
+        ExecutionState::new().with_population_creation_tracking(),
         helper.clone(),
         helper_arguments.clone(),
         PureFactContext::new(),
-        CExecutionEnvironment::new(),
-        CExecutionSemantics::EXECUTE_BODIES,
-        CFunctionContractExecutionMode::VerifyLoops,
+        ExecutionEnvironment::new(),
+        ExecutionSemantics::EXECUTE_BODIES,
+        FunctionContractExecutionMode::VerifyLoops,
     );
-    let certified = prove_c_function_contract_execution_paths_with_checked_artifacts(
-        CState::new().with_population_creation_tracking(),
+    let certified = prove_program_function_contract_execution_paths_with_checked_artifacts(
+        ExecutionState::new().with_population_creation_tracking(),
         helper.clone(),
         helper_arguments,
-        CExecutionEnvironment::new(),
-        CExecutionSemantics::EXECUTE_BODIES,
-        CFunctionContractExecutionMode::VerifyLoops,
+        ExecutionEnvironment::new(),
+        ExecutionSemantics::EXECUTE_BODIES,
+        FunctionContractExecutionMode::VerifyLoops,
         &[artifacts],
     );
-    let claims = crate::kernel::c_verified_function_contract_claims(&helper, &certified)
+    let claims = crate::kernel::program_verified_function_contract_claims(&helper, &certified)
         .expect("helper body safety should certify");
-    let helper_rule = c_verified_function_rule(helper.clone(), &claims)
+    let helper_rule = program_verified_function_rule(helper.clone(), &claims)
         .expect("the checked helper should have a modular rule");
-    let function_environment = CExecutionEnvironment::new()
+    let function_environment = ExecutionEnvironment::new()
         .with_function(helper)
         .with_verified_function_rule(helper_rule);
 
-    let body = c_seq(
-        c_if(
-            c_variable("construct"),
-            c_try_catch_int32(
-                c_call("helper", vec![c_variable("should_throw")]),
+    let body = program_seq(
+        program_if(
+            crate::kernel::program_expression::variable("construct"),
+            program_try_catch_int32(
+                program_call(
+                    "helper",
+                    vec![crate::kernel::program_expression::variable("should_throw")],
+                ),
                 "caught",
-                c_return(c_variable("caught")),
+                program_return(crate::kernel::program_expression::variable("caught")),
             ),
-            c_skip(),
+            program_skip(),
         ),
-        c_return(c_int32_literal(5)),
+        program_return(crate::kernel::program_expression::int32_literal(5)),
     );
-    let function = c_function(
-        CType::Int32,
+    let function = program_function(
+        ProgramType::Int32,
         "caller",
         vec![
-            c_parameter("construct", CType::Bool),
-            c_parameter("should_throw", CType::Bool),
+            program_parameter("construct", ProgramType::Bool),
+            program_parameter("should_throw", ProgramType::Bool),
         ],
         body,
     );
-    let parsed_function = syntax::C0Function::external(
-        C0Type::Int32,
+    let parsed_function = crate::languages::interface::ImportedFunction::external(
+        InterfaceType::Int32,
         "caller".into(),
         vec![
-            syntax::C0Parameter::new(C0Type::Bool, "construct".into(), None),
-            syntax::C0Parameter::new(C0Type::Bool, "should_throw".into(), None),
+            crate::languages::interface::ImportedParameter::new(
+                InterfaceType::Bool,
+                "construct".into(),
+                None,
+            ),
+            crate::languages::interface::ImportedParameter::new(
+                InterfaceType::Bool,
+                "should_throw".into(),
+                None,
+            ),
         ],
     )
     .with_prelowered_kernel_function(function.clone());
     let arguments = vec![
-        CExpression::Value(bool_value(MachineTerm::Variable(Variable(80_011)))),
-        CExpression::Value(bool_value(MachineTerm::Variable(Variable(80_012)))),
+        ProgramExpression::Value(bool_value(MachineTerm::Variable(Variable(80_011)))),
+        ProgramExpression::Value(bool_value(MachineTerm::Variable(Variable(80_012)))),
     ];
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
@@ -13037,7 +13134,7 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
         "mixed call outcomes",
         0,
         ExecutionProofState::at_entry(
-            CState::new().with_population_creation_tracking(),
+            ExecutionState::new().with_population_creation_tracking(),
             ExecutionFrontier::default(),
             RecordedSnapshots::new(),
             SurfacePropositionMap::default(),
@@ -13147,10 +13244,10 @@ fn decided_execution_branch_retains_one_checked_path_without_copying_context() {
     )
     .expect("test decided C branch should parse");
     let function = parsed_function.to_kernel_function();
-    let arguments = vec![CExpression::Value(CValue::Int32(MachineTerm::Variable(
-        Variable(75_000),
-    )))];
-    let function_environment = CExecutionEnvironment::new();
+    let arguments = vec![ProgramExpression::Value(ProgramValue::Int32(
+        MachineTerm::Variable(Variable(75_000)),
+    ))];
+    let function_environment = ExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
     let make_root = |facts: Vec<Proposition>| {
         let frontier = ExecutionFrontier {
@@ -13161,7 +13258,7 @@ fn decided_execution_branch_retains_one_checked_path_without_copying_context() {
             "decided branch proof",
             0,
             ExecutionProofState::at_entry(
-                CState::new(),
+                ExecutionState::new(),
                 frontier,
                 RecordedSnapshots::new(),
                 SurfacePropositionMap::default(),
@@ -13417,10 +13514,10 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
     )
     .expect("test terminal C branch should parse");
     let function = parsed_function.to_kernel_function();
-    let arguments = vec![CExpression::Value(CValue::Int32(MachineTerm::Variable(
-        Variable(80_000),
-    )))];
-    let function_environment = CExecutionEnvironment::new();
+    let arguments = vec![ProgramExpression::Value(ProgramValue::Int32(
+        MachineTerm::Variable(Variable(80_000)),
+    ))];
+    let function_environment = ExecutionEnvironment::new();
     let mut allocation_samples = Vec::new();
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
     let mut expected_outcome_fact_sizes = None;
@@ -13433,7 +13530,7 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
             "terminal branch proof",
             0,
             ExecutionProofState::at_entry(
-                CState::new(),
+                ExecutionState::new(),
                 frontier,
                 RecordedSnapshots::new(),
                 SurfacePropositionMap::default(),
@@ -13566,13 +13663,13 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
         // checked case delta extends that leaf, retaining its own guards
         // and cache authority rather than rebuilding unrelated records.
         let unknown = ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                MachineTerm::Variable(Variable(80_001)),
-            ))),
+            left: ContractExpression::ProgramExpression(ProgramExpression::Value(
+                ProgramValue::Int32(MachineTerm::Variable(Variable(80_001))),
+            )),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                MachineTerm::constant(0),
-            ))),
+            right: ContractExpression::ProgramExpression(ProgramExpression::Value(
+                ProgramValue::Int32(MachineTerm::constant(0)),
+            )),
         };
         let forked = joined
             .driver()
@@ -13760,15 +13857,15 @@ fn completed_application_retention_does_not_rerun_and_scales() {
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
     let surface = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
             MachineTerm::constant(0),
         ))),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-            MachineTerm::constant(0),
-        ))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(
+            ProgramValue::Int32(MachineTerm::constant(0)),
+        )),
     };
-    let state = CState::new();
+    let state = ExecutionState::new();
     let snapshots = RecordedSnapshots::new();
     let surfaces = SurfacePropositionMap::default();
     let mut allocations = Vec::new();
@@ -13857,7 +13954,7 @@ fn completed_application_retention_does_not_rerun_and_scales() {
 
 #[test]
 fn fixed_state_source_failure_is_only_a_miss_at_an_explicit_search_boundary() {
-    let state = CState::new();
+    let state = ExecutionState::new();
     let snapshots = RecordedSnapshots::new();
     let surfaces = SurfacePropositionMap::default();
     let predicates = PredicateEnvironment::new(&[]);
@@ -13865,11 +13962,11 @@ fn fixed_state_source_failure_is_only_a_miss_at_an_explicit_search_boundary() {
     let theorems = TheoremEnvironment::new(&[]);
     let goal = indexed_fact(10);
     let surface = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
             MachineTerm::Variable(Variable(0)),
         ))),
         operator: ComparisonOperator::LessThan,
-        right: ContractExpression::CFragment(CExpression::Value(int32(10))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(10))),
     };
     let root = Proof::for_fixed_state_surface_goal(
         "source error",
@@ -13962,9 +14059,9 @@ fn outcome_haves_and_folds_share_facts_and_keep_sibling_resources_isolated() {
             )
             .expect("the marker resource definition should lower"),
         );
-    let function_environment = CExecutionEnvironment::new();
-    let arguments = vec![CExpression::Value(int32(7))];
-    let empty_state = CState::new();
+    let function_environment = ExecutionEnvironment::new();
+    let arguments = vec![ProgramExpression::Value(int32(7))];
+    let empty_state = ExecutionState::new();
     let lowered = lower_resource_clause(
         &resource,
         ParameterBinding::new(parsed_function.parameters(), &arguments),
@@ -14017,8 +14114,9 @@ fn outcome_haves_and_folds_share_facts_and_keep_sibling_resources_isolated() {
             let before = current.checkpoint();
             crate::kernel::proof::take_fact_entry_counts();
             for index in 0..operations {
-                let value =
-                    ContractExpression::CFragment(CExpression::Value(int32(index as u32 + 1000)));
+                let value = ContractExpression::ProgramExpression(ProgramExpression::Value(int32(
+                    index as u32 + 1000,
+                )));
                 let proposition = ClickProposition::Comparison {
                     left: value.clone(),
                     operator: ComparisonOperator::Equal,
@@ -14056,12 +14154,12 @@ fn outcome_haves_and_folds_share_facts_and_keep_sibling_resources_isolated() {
             );
             assert_eq!(root.certificate().steps(), terminal.certificate().steps());
             assert_eq!(root.outcome_result(), current.outcome_result());
-            let CFunctionOutcome::Return { state: initial, .. } =
+            let FunctionOutcome::Return { state: initial, .. } =
                 root.focused_outcome_snapshot().unwrap()
             else {
                 unreachable!()
             };
-            let CFunctionOutcome::Return {
+            let FunctionOutcome::Return {
                 state: final_state, ..
             } = current.focused_outcome_snapshot().unwrap()
             else {
@@ -14109,7 +14207,7 @@ fn execution_entry_retains_prepared_symbolic_write_selection() {
         .resources()
         .facts()
         .iter()
-        .find_map(CResourceFact::memory_own_range)
+        .find_map(ResourceFact::memory_own_range)
         .expect("the written ownership clause remains live")
         .clone();
     let assumptions = facts.context();
@@ -14173,20 +14271,21 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
         "struct callbacks { void (*call)(int *p); }; void read(struct callbacks *cb) { cb->call(0); }",
     ).unwrap().pop().unwrap();
     let function = parsed_function.to_kernel_function();
-    fn load_type(statement: &CStatement) -> Option<(CType, &str)> {
+    fn load_type(statement: &ProgramStatement) -> Option<(ProgramType, &str)> {
         match statement {
-            CStatement::Seq(statements) => {
+            ProgramStatement::Seq(statements) => {
                 statements.iter().find_map(|statement| load_type(statement))
             }
-            CStatement::Assign {
+            ProgramStatement::Assign {
                 name,
-                expression: CExpression::TypedLoad { value_type, .. },
+                expression: ProgramExpression::TypedLoad { value_type, .. },
                 ..
             } => Some((*value_type, name.as_str())),
             _ => None,
         }
     }
-    let (c_type, read_local) = load_type(function.body()).expect("callback field is a typed load");
+    let (interface_type, read_local) =
+        load_type(function.body()).expect("callback field is a typed load");
     let argument = Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(210_520)), 4),
@@ -14196,21 +14295,26 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let target = Pointer::function("callback");
-    let memory = CMemory::new().store(table.clone(), CValue::typed_pointer(target.clone(), c_type));
-    let source = crate::kernel::intern_c_memory_ref(&memory);
-    let memory = memory.with_seeded_cells(argument.clone(), 4, c_type, 0, 2, source);
-    let state = CState::new().with_memory(memory).with_resource_context(
-        ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(
-            CMemoryRange::new_with_element_width(
+    let memory = Memory::new().store(
+        table.clone(),
+        ProgramValue::typed_pointer(target.clone(), interface_type),
+    );
+    let source = crate::kernel::intern_memory_ref(&memory);
+    let memory = memory.with_seeded_cells(argument.clone(), 4, interface_type, 0, 2, source);
+    let state = ExecutionState::new()
+        .with_memory(memory)
+        .with_resource_context(ResourceContext::new().unchecked_with_fact(
+            ResourceFact::view_memory(MemoryRange::new_with_element_width(
                 argument.clone(),
                 MachineTerm::constant(0),
                 MachineTerm::constant(1),
                 8,
-            ),
-        )),
-    );
-    let arguments = vec![CExpression::Value(CValue::pointer(argument.clone()))];
-    let function_environment = CExecutionEnvironment::new();
+            )),
+        ));
+    let arguments = vec![ProgramExpression::Value(ProgramValue::pointer(
+        argument.clone(),
+    ))];
+    let function_environment = ExecutionEnvironment::new();
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment =
         ClickFunctionEnvironment::new(click_file.click_function_definitions());
@@ -14257,7 +14361,7 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
         .state
         .scalar_local_value(read_local)
         .expect("callback local has a value");
-    let CValue::Pointer(read) = value else {
+    let ProgramValue::Pointer(read) = value else {
         panic!("callback local is a pointer")
     };
     assert!(
@@ -14291,7 +14395,7 @@ fn fixed_state_transport_retains_checked_spellings_for_rewrite() {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
-    let state = CState::new();
+    let state = ExecutionState::new();
     let snapshots = RecordedSnapshots::new();
     let names = SurfacePropositionMap::default();
     let left = MachineTerm::Variable(Variable(9_104_000));
@@ -14323,8 +14427,8 @@ fn fixed_state_transport_retains_checked_spellings_for_rewrite() {
     for size in [0_u32, 16, 64, 256] {
         let parsed = syntax::parse_function("void noop(int32 left, int32 right) {}").unwrap();
         let arguments = vec![
-            CExpression::Value(CValue::Int32(left.clone())),
-            CExpression::Value(CValue::Int32(right.clone())),
+            ProgramExpression::Value(ProgramValue::Int32(left.clone())),
+            ProgramExpression::Value(ProgramValue::Int32(right.clone())),
         ];
         let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         facts.push(equality.clone());
@@ -14421,15 +14525,15 @@ fn fixed_state_instantiation_retains_checked_spellings_for_rewrite() {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
-    let state = CState::new();
+    let state = ExecutionState::new();
     let snapshots = RecordedSnapshots::new();
     let names = SurfacePropositionMap::default();
     let parsed = syntax::parse_function("void noop(int32 left, int32 right) {}").unwrap();
     let left = MachineTerm::Variable(Variable(9_104_100));
     let right = MachineTerm::Variable(Variable(9_104_101));
     let arguments = vec![
-        CExpression::Value(CValue::Int32(left.clone())),
-        CExpression::Value(CValue::Int32(right.clone())),
+        ProgramExpression::Value(ProgramValue::Int32(left.clone())),
+        ProgramExpression::Value(ProgramValue::Int32(right.clone())),
     ];
     let binding = ParameterBinding::new(parsed.parameters(), &arguments);
     let equal = |left: &str, right: &str| ClickProposition::Comparison {
@@ -14438,7 +14542,7 @@ fn fixed_state_instantiation_retains_checked_spellings_for_rewrite() {
         right: ContractExpression::Binding(right.into()),
     };
     let quantified = ClickProposition::ForAll {
-        click_type: ClickType::C(C0Type::Int32),
+        click_type: ClickType::Program(InterfaceType::Int32),
         name: "item".into(),
         written_name: None,
         body: Box::new(ClickProposition::Implies(
@@ -14486,7 +14590,9 @@ fn fixed_state_instantiation_retains_checked_spellings_for_rewrite() {
         let mut locals = root.state().locals().clone();
         locals.values = locals.values.with_inserted(
             "chosen".into(),
-            ContractExpression::CFragment(CExpression::Value(CValue::Int32(left.clone()))),
+            ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
+                left.clone(),
+            ))),
         );
         let root = root.with_kernel_state(root.state.with_locals(locals));
         let step = |argument| ProofStep::InstantiateUsing {
@@ -14532,7 +14638,7 @@ fn fixed_state_instantiation_retains_checked_spellings_for_rewrite() {
         let mut changed_locals = instantiated.state().locals().clone();
         changed_locals.values = changed_locals.values.with_inserted(
             "chosen".into(),
-            ContractExpression::CFragment(CExpression::Value(CValue::Int32(
+            ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
                 MachineTerm::Variable(Variable(9_104_102)),
             ))),
         );
@@ -14557,15 +14663,15 @@ fn fixed_state_rewrite_keeps_authored_goal_names_after_lookup_substitution() {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
-    let state = CState::new();
+    let state = ExecutionState::new();
     let snapshots = RecordedSnapshots::new();
     let names = SurfacePropositionMap::default();
     let parsed = syntax::parse_function("void noop(int32 left, int32 right) {}").unwrap();
     let left = MachineTerm::Variable(Variable(9_104_200));
     let right = MachineTerm::Variable(Variable(9_104_201));
     let arguments = vec![
-        CExpression::Value(CValue::Int32(left.clone())),
-        CExpression::Value(CValue::Int32(right.clone())),
+        ProgramExpression::Value(ProgramValue::Int32(left.clone())),
+        ProgramExpression::Value(ProgramValue::Int32(right.clone())),
     ];
     let facts = vec![Proposition::ConditionIs(
         ConditionTerm::Compare {
@@ -14609,7 +14715,7 @@ fn fixed_state_rewrite_keeps_authored_goal_names_after_lookup_substitution() {
     let mut locals = root.state().locals().clone();
     locals.values = locals.values.with_inserted(
         "chosen".into(),
-        ContractExpression::CFragment(CExpression::Value(CValue::Int32(right))),
+        ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(right))),
     );
     let root = root.with_kernel_state(root.state.with_locals(locals));
     let rewritten = root
@@ -14663,9 +14769,9 @@ fn signed_certificate_premise_keeps_machine_addition_when_printed() {
     }
     let mut context = pure_identity_fixture();
     context.values = BTreeMap::from([
-        ("x".into(), CValue::Int32(x)),
-        ("y".into(), CValue::Int32(y)),
-        ("z".into(), CValue::Int32(z)),
+        ("x".into(), ProgramValue::Int32(x)),
+        ("y".into(), ProgramValue::Int32(y)),
+        ("z".into(), ProgramValue::Int32(z)),
     ]);
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
@@ -14678,7 +14784,9 @@ fn signed_certificate_premise_keeps_machine_addition_when_printed() {
         SpecDefinitions::new(&predicates, &functions),
         &theorems,
     );
-    let variable = |name: &str| ContractExpression::CFragment(CExpression::Variable(name.into()));
+    let variable = |name: &str| {
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(name.into()))
+    };
     let surface = ClickProposition::Comparison {
         left: variable("x"),
         operator: ComparisonOperator::Equal,
@@ -14736,7 +14844,7 @@ fn have_primitive_reports_prerequisites_and_driver_solves_them() {
     let mut context = pure_identity_fixture();
     context.values.insert(
         "j".into(),
-        CValue::Int32(MachineTerm::Variable(Variable(0))),
+        ProgramValue::Int32(MachineTerm::Variable(Variable(0))),
     );
     for requirement in theorem.requires() {
         let Requirement::Proposition(surface) = requirement else {
@@ -14824,7 +14932,7 @@ fn proposed_goal_spelling_retains_unproved_domains_for_the_driver() {
     let mut context = pure_identity_fixture();
     context.values.insert(
         "x".into(),
-        CValue::Int32(MachineTerm::Variable(Variable(995899))),
+        ProgramValue::Int32(MachineTerm::Variable(Variable(995899))),
     );
     let Ensure::Proposition(parent) = theorem.ensures()[0].ensure() else {
         panic!("parent");
@@ -14889,7 +14997,7 @@ fn proposed_goal_spelling_retains_unproved_domains_for_the_driver() {
 #[test]
 fn partition_assumption_uses_the_fixed_state_not_its_entry_partition() {
     let cell = |name: &str| {
-        CResource::Memory(CMemoryRange::new(
+        Resource::Memory(MemoryRange::new(
             Pointer {
                 block: name.into(),
                 offset: PointerOffsetTerm::Constant(0),
@@ -14900,11 +15008,12 @@ fn partition_assumption_uses_the_fixed_state_not_its_entry_partition() {
     };
     let left = cell("partition-left");
     let right = cell("partition-right");
-    let entry = CState::new().with_resource_context(ResourceContext::new().unchecked_with_facts([
-        CResourceFact::own(left.clone()),
-        CResourceFact::View(right.clone()),
-    ]));
-    let goal = Proposition::CResourceSeparate {
+    let entry =
+        ExecutionState::new().with_resource_context(ResourceContext::new().unchecked_with_facts([
+            ResourceFact::own(left.clone()),
+            ResourceFact::View(right.clone()),
+        ]));
+    let goal = Proposition::ResourceSeparate {
         left: Box::new(left.clone()),
         right: Box::new(right),
     };
@@ -14917,8 +15026,8 @@ fn partition_assumption_uses_the_fixed_state_not_its_entry_partition() {
         let current = if retained {
             entry.clone()
         } else {
-            CState::new().with_resource_context(
-                ResourceContext::new().unchecked_with_facts([CResourceFact::own(left.clone())]),
+            ExecutionState::new().with_resource_context(
+                ResourceContext::new().unchecked_with_facts([ResourceFact::own(left.clone())]),
             )
         };
         let root = Proof::for_fixed_state_frontier(

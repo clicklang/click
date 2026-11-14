@@ -49,7 +49,8 @@ fn scaled_offset_admission_and_queries_keep_cold_dags_shared() {
         let mut samples = Vec::new();
         for size in [16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
-            let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(991430));
+            let mut root =
+                KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(991430));
             for _ in 0..size {
                 root = KernelTerm::machine_binary_shared(
                     ty,

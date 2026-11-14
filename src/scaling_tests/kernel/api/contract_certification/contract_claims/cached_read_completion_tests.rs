@@ -7,7 +7,7 @@ use super::*;
 #[test]
 fn cached_read_completion_work_ignores_ambient_cells_and_range_length() {
     for size in [32, 128, 512, 2048] {
-        let memory = (0..size).fold(CMemory::new(), |memory, index| {
+        let memory = (0..size).fold(Memory::new(), |memory, index| {
             memory.store(
                 pointer("ambient", index * 4),
                 int32(u32::try_from(index).unwrap()),

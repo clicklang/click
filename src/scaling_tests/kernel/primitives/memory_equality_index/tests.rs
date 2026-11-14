@@ -19,9 +19,9 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
         };
-        let before = CMemory::new();
-        let read = |context: &PureFactContext, memory: &CMemory, address: &Pointer| {
-            let snapshot = crate::kernel::intern_c_memory_ref(memory);
+        let before = Memory::new();
+        let read = |context: &PureFactContext, memory: &Memory, address: &Pointer| {
+            let snapshot = crate::kernel::intern_memory_ref(memory);
             let variable = crate::kernel::load_variable_for_cell_with_origin(
                 &snapshot,
                 address,
@@ -38,16 +38,15 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
         // Its unknown value is retained as the initial opaque read.
         let before = before.store(
             field.clone(),
-            CValue::Pointer(CPointerValue::new(source.clone(), CType::Int32Pointer)),
+            ProgramValue::Pointer(PointerValue::new(source.clone(), ProgramType::Int32Pointer)),
         );
         let count = MachineTerm::Variable(Variable(999_321));
-        let range =
-            |base| CMemoryRange::new_with_element_width(base, 0u32.into(), count.clone(), 4);
+        let range = |base| MemoryRange::new_with_element_width(base, 0u32.into(), count.clone(), 4);
         let field_range =
-            CMemoryRange::new_with_element_width(field.clone(), 0u32.into(), 2u32.into(), 4);
-        let separation = Proposition::CResourceSeparate {
-            left: Box::new(CResource::Memory(field_range.clone())),
-            right: Box::new(CResource::Memory(range(source.clone()))),
+            MemoryRange::new_with_element_width(field.clone(), 0u32.into(), 2u32.into(), 4);
+        let separation = Proposition::ResourceSeparate {
+            left: Box::new(Resource::Memory(field_range.clone())),
+            right: Box::new(Resource::Memory(range(source.clone()))),
         };
         let bounded = PureFactContext::new()
             .assume_condition(
@@ -59,13 +58,13 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
                 true,
             );
         let context = bounded.clone().assume_proposition(separation);
-        let held = CResourceFact::own_memory(range(source.clone()));
+        let held = ResourceFact::own_memory(range(source.clone()));
         let mut resources = ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::view_memory(field_range))
+            .unchecked_with_fact(ResourceFact::view_memory(field_range))
             .unchecked_with_fact(held.clone());
         for index in 0..size {
             let unrelated = read(&context, &before, &field.offset_by_bytes(64 + index * 8));
-            resources = resources.unchecked_with_fact(CResourceFact::own_memory(range(unrelated)));
+            resources = resources.unchecked_with_fact(ResourceFact::own_memory(range(unrelated)));
         }
         resources.synchronize_memory_equalities(&context);
         let local = Pointer {
@@ -75,10 +74,10 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
         let after = before
             .clone()
             .with_block(local.block.clone(), 4)
-            .store(source.offset_by_bytes(4), CValue::Int32(7u32.into()))
-            .store(local, CValue::Int32(8u32.into()));
+            .store(source.offset_by_bytes(4), ProgramValue::Int32(7u32.into()))
+            .store(local, ProgramValue::Int32(8u32.into()));
         let current = read(&context, &after, &field);
-        let required = CResourceFact::own_memory(range(current.clone()));
+        let required = ResourceFact::own_memory(range(current.clone()));
         let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
             resources
                 .directly_supporting_fact(&required, &context)
@@ -113,8 +112,8 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
                 .directly_supporting_fact(&required, &context)
                 .is_none()
         );
-        let partial = after.store(field.offset_by_bytes(4), CValue::Int32(9u32.into()));
-        let changed = CResourceFact::own_memory(range(read(&context, &partial, &field)));
+        let partial = after.store(field.offset_by_bytes(4), ProgramValue::Int32(9u32.into()));
+        let changed = ResourceFact::own_memory(range(read(&context, &partial, &field)));
         assert!(
             resources
                 .directly_supporting_fact(&changed, &context)
@@ -183,8 +182,8 @@ fn wide_read_keeps_full_buffer_index_beside_a_batch_cursor() {
             ConditionTerm::uint64_less_than(full.clone(), MachineTerm::uint64_constant(22208)),
             true,
         );
-        let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(
-            CMemoryRange::new_wide(
+        let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::view_memory(
+            MemoryRange::new_wide(
                 base.clone(),
                 MachineTerm::uint64_constant(0),
                 MachineTerm::uint64_constant(22208),
@@ -255,8 +254,8 @@ fn wide_read_keeps_native_index_beside_a_narrow_alias() {
                 ),
                 true,
             );
-        let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(
-            CMemoryRange::new_wide(
+        let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::view_memory(
+            MemoryRange::new_wide(
                 bytes,
                 MachineTerm::uint64_constant(0),
                 MachineTerm::uint64_constant(15),
@@ -323,10 +322,14 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
             true,
             true,
         );
-        let bytes_value =
-            crate::kernel::CPointerValue::new(bytes.clone(), crate::kernel::CType::UInt8Pointer);
-        let cursor_value =
-            crate::kernel::CPointerValue::new(cursor.clone(), crate::kernel::CType::UInt8Pointer);
+        let bytes_value = crate::kernel::PointerValue::new(
+            bytes.clone(),
+            crate::kernel::ProgramType::UInt8Pointer,
+        );
+        let cursor_value = crate::kernel::PointerValue::new(
+            cursor.clone(),
+            crate::kernel::ProgramType::UInt8Pointer,
+        );
         let aliases = PureFactContext::new()
             .assume_condition(
                 ConditionTerm::pointer_value_equal(
@@ -378,8 +381,8 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
                 true,
             );
         }
-        let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(
-            CMemoryRange::new_wide(bytes.clone(), MachineTerm::uint64_constant(0), length, 1)
+        let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::view_memory(
+            MemoryRange::new_wide(bytes.clone(), MachineTerm::uint64_constant(0), length, 1)
                 .with_pointer_carrier(&bytes_value),
         ));
         resources.synchronize_memory_equalities(&facts);
@@ -472,7 +475,7 @@ fn constant_base_interior_lookup_scales_with_selected_range() {
                 true,
             );
         let resources = ResourceContext::new().unchecked_with_facts((0..count).map(|index| {
-            CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            ResourceFact::own_memory(MemoryRange::new_with_element_width(
                 model.clone(),
                 (index * 8 + 2).into(),
                 (index * 8 + 6).into(),
@@ -487,7 +490,7 @@ fn constant_base_interior_lookup_scales_with_selected_range() {
             .assume_condition(ConditionTerm::pointer_equal(cursor.clone(), old_read), true)
             .assume_condition(ConditionTerm::pointer_equal(cursor.clone(), model), true);
         resources.synchronize_memory_equalities(&facts);
-        let required = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        let required = ResourceFact::own_memory(MemoryRange::new_with_element_width(
             cursor.clone(),
             4u32.into(),
             6u32.into(),
@@ -545,7 +548,7 @@ fn modeled_pointer_alias_field_lookup_scales_with_selected_addresses() {
                 true,
             );
         let resources = ResourceContext::new().unchecked_with_facts((0..count).map(|index| {
-            CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            ResourceFact::own_memory(MemoryRange::new_with_element_width(
                 old_read.offset_by_bytes(index * 16),
                 0u32.into(),
                 1u32.into(),
@@ -657,12 +660,12 @@ fn logical_field_coordinates_keep_symbolic_offsets_without_scanning_aliases() {
         let owner = Pointer::symbolic(Variable(955_930))
             .offset_by_elements(MachineTerm::Variable(Variable(955_931)), 4);
         let alias = Pointer::symbolic(Variable(955_932));
-        let mut resources = ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(
-            CMemoryRange::new_with_element_width(owner.clone(), 2u32.into(), 4u32.into(), 4),
+        let mut resources = ResourceContext::new().unchecked_with_fact(ResourceFact::view_memory(
+            MemoryRange::new_with_element_width(owner.clone(), 2u32.into(), 4u32.into(), 4),
         ));
         for i in 0..size {
-            resources = resources.unchecked_with_fact(CResourceFact::view_memory(
-                CMemoryRange::new_with_element_width(
+            resources = resources.unchecked_with_fact(ResourceFact::view_memory(
+                MemoryRange::new_with_element_width(
                     Pointer::symbolic(Variable(956_000 + i)),
                     0u32.into(),
                     4u32.into(),
@@ -672,7 +675,7 @@ fn logical_field_coordinates_keep_symbolic_offsets_without_scanning_aliases() {
         }
         resources.synchronize_memory_equalities(&PureFactContext::new());
         let mut context = PureFactContext::new()
-            .assume_proposition(Proposition::CResourceComposition(resources))
+            .assume_proposition(Proposition::ResourceComposition(resources))
             .assume_condition(
                 ConditionTerm::pointer_equal(owner.clone(), alias.clone()),
                 true,
@@ -719,9 +722,11 @@ fn prepared_access_provenance_misses_do_not_scan_overlapping_suppliers() {
         let unrelated_origin = Pointer::symbolic(Variable(960_001));
         let mut resources = ResourceContext::new_with_equalities(&facts);
         for end in 1..=size {
-            resources = resources.unchecked_with_fact(CResourceFact::view_memory(
-                CMemoryRange::new(base.clone(), 0u32.into(), end.into()),
-            ));
+            resources = resources.unchecked_with_fact(ResourceFact::view_memory(MemoryRange::new(
+                base.clone(),
+                0u32.into(),
+                end.into(),
+            )));
         }
         resources.synchronize_memory_equalities(&facts);
         assert!(resources.permits_designated_memory_read(
@@ -760,9 +765,11 @@ fn prepared_object_provenance_lookup_does_not_enumerate_same_object_views() {
         let missing = Pointer::symbolic(Variable(961_001));
         let mut resources = ResourceContext::new_with_equalities(&facts);
         for end in 1..=size {
-            resources = resources.unchecked_with_fact(CResourceFact::view_memory(
-                CMemoryRange::new(base.clone(), 0u32.into(), end.into()),
-            ));
+            resources = resources.unchecked_with_fact(ResourceFact::view_memory(MemoryRange::new(
+                base.clone(),
+                0u32.into(),
+                end.into(),
+            )));
         }
         resources.synchronize_memory_equalities(&facts);
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -790,9 +797,11 @@ fn prepared_write_and_storage_refusals_do_not_scan_owner_buckets() {
         let query = base.offset_by_bytes(4);
         let mut resources = ResourceContext::new_with_equalities(&facts);
         for end in 1..=size {
-            resources = resources.unchecked_with_fact(CResourceFact::own_memory(
-                CMemoryRange::new(base.clone(), 0u32.into(), end.into()),
-            ));
+            resources = resources.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
+                base.clone(),
+                0u32.into(),
+                end.into(),
+            )));
         }
         resources.synchronize_memory_equalities(&facts);
         assert!(

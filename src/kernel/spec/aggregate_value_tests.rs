@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn logical_pointer_field_uses_current_pointee_memory() {
-    use crate::kernel::{CAggregateField, CAggregateLayout};
+    use crate::kernel::{AggregateField, AggregateLayout};
     let slot = Pointer {
         block: "local:frame:0:input".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -11,19 +11,19 @@ fn logical_pointer_field_uses_current_pointee_memory() {
         block: "local:pointee".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let mut entry = CState::new().with_memory(
-        CMemory::new()
+    let mut entry = ExecutionState::new().with_memory(
+        Memory::new()
             .with_block(slot.block.clone(), 8)
             .with_block(pointee.block.clone(), 4)
-            .store(slot.clone(), CValue::pointer(pointee.clone()))
+            .store(slot.clone(), ProgramValue::pointer(pointee.clone()))
             .store(pointee.clone(), int32(3)),
     );
     entry.locals.set_aggregate_object_at(
         "input".to_string(),
-        CAggregateLayout::new(
+        AggregateLayout::new(
             8,
             8,
-            vec![CAggregateField::new("data", 0, CType::Int32Pointer)],
+            vec![AggregateField::new("data", 0, ProgramType::Int32Pointer)],
         ),
         slot.clone(),
     );
@@ -31,12 +31,12 @@ fn logical_pointer_field_uses_current_pointee_memory() {
         memory: SpecMemory::Current,
         pointer: Box::new(SpecExpression::AggregateFieldValue {
             parameter: "input".to_string(),
-            pointer: Box::new(SpecExpression::CExpression(CExpression::Variable(
-                "input".to_string(),
-            ))),
-            value_type: CType::Int32Pointer,
+            pointer: Box::new(SpecExpression::ProgramExpression(
+                ProgramExpression::Variable("input".to_string()),
+            )),
+            value_type: ProgramType::Int32Pointer,
         }),
-        value_type: CType::Int32,
+        value_type: ProgramType::Int32,
     };
     let state = entry.clone().with_memory(
         entry
@@ -45,7 +45,7 @@ fn logical_pointer_field_uses_current_pointee_memory() {
             .without_local_block(&slot.block)
             .store(pointee.clone(), int32(7)),
     );
-    let evaluate = |state: &CState| {
+    let evaluate = |state: &ExecutionState| {
         evaluate_spec_expression_paths_with_loop_entry_in(
             state,
             &load,
@@ -58,7 +58,7 @@ fn logical_pointer_field_uses_current_pointee_memory() {
     let paths = evaluate(&state);
     assert_eq!(paths.len(), 1);
     assert_eq!(
-        crate::kernel::eval::read_over_write_c_value(&paths[0].value.clone().into_native()),
+        crate::kernel::eval::read_over_write_program_value(&paths[0].value.clone().into_native()),
         int32(7)
     );
     assert!(paths[0].obligations.is_empty());
@@ -71,7 +71,7 @@ fn logical_pointer_field_uses_current_pointee_memory() {
     assert!(!PureFactContext::new().proves_memory_read_defined(
         ended.memory(),
         &pointee,
-        CType::Int32,
+        ProgramType::Int32,
     ));
 }
 

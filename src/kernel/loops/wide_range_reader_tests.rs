@@ -4,7 +4,7 @@ use super::*;
 #[test]
 fn wide_loop_frames_cover_native_accesses_and_refuse_cross_width_ranges() {
     let base = Pointer::symbolic(Variable(984_500));
-    let wide = CMemoryRange::new_wide(
+    let wide = MemoryRange::new_wide(
         base.clone(),
         MachineTerm::uint64_constant(0),
         MachineTerm::uint64_constant(1 << 33),
@@ -26,7 +26,7 @@ fn wide_loop_frames_cover_native_accesses_and_refuse_cross_width_ranges() {
     assert!(loop_effect_segment_contains_pointer(
         &segment, &base, 4, &facts
     ));
-    let bytes = CMemoryRange::new_wide(
+    let bytes = MemoryRange::new_wide(
         base.clone(),
         MachineTerm::uint64_constant(0),
         MachineTerm::uint64_constant(1 << 33),
@@ -35,9 +35,9 @@ fn wide_loop_frames_cover_native_accesses_and_refuse_cross_width_ranges() {
     assert!(!loop_effect_segment_contains_range(
         &segment, &bytes, &facts
     ));
-    let check = CLoopEffectCheck::new(CLoopEffect::Mutable(vec![]), None)
+    let check = LoopEffectCheck::new(LoopEffect::Mutable(vec![]), None)
         .with_validated_ranges(vec![wide.clone()]);
-    let state = CState::new();
+    let state = ExecutionState::new();
     let mut budget = ExecutionBudget::beside_live_state();
     assert!(
         collect_loop_effect_check_obligations(
@@ -52,7 +52,7 @@ fn wide_loop_frames_cover_native_accesses_and_refuse_cross_width_ranges() {
         .unwrap()
         .is_empty()
     );
-    let summary = Proposition::CMemoryEffectSummary {
+    let summary = Proposition::MemoryEffectSummary {
         before: state.memory().clone(),
         after: state.memory().clone(),
         mutable_ranges: vec![wide],
@@ -60,7 +60,7 @@ fn wide_loop_frames_cover_native_accesses_and_refuse_cross_width_ranges() {
     let run = crate::kernel::primitives::CellRun::new(
         base,
         4,
-        CType::Int32,
+        ProgramType::Int32,
         4,
         state.memory().clone().into(),
         crate::kernel::primitives::IndexIntervals::default(),

@@ -23,10 +23,10 @@ fn checked_word_tag_addition_ignores_unrelated_facts() {
             );
         }
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
-            apply_c_add(
-                &CState::new(),
+            apply_program_add(
+                &ExecutionState::new(),
                 value,
-                CValue::UInt64(MachineTerm::uint64_constant(1)),
+                ProgramValue::UInt64(MachineTerm::uint64_constant(1)),
                 None,
                 None,
                 Vec::new().into(),
@@ -35,7 +35,7 @@ fn checked_word_tag_addition_ignores_unrelated_facts() {
             )
         });
         assert!(matches!(&paths[0].outcome,
-            CExpressionOutcome::Value(CValue::PointerInteger(record))
+            ExpressionOutcome::Value(ProgramValue::PointerInteger(record))
                 if matches!(record.kind, PointerIntegerKind::Word { changed_bits: 1 })));
         work
     });
@@ -52,7 +52,7 @@ fn commuted_word_tag_or_ignores_unrelated_facts() {
         let (_, value) = word();
         let tag = MachineTerm::Variable(Variable(997_080));
         let tag_value =
-            CValue::UInt64(tag.clone()).complete_word(Pointer::symbolic(Variable(997_081)));
+            ProgramValue::UInt64(tag.clone()).complete_word(Pointer::symbolic(Variable(997_081)));
         let mut context = PureFactContext::new().assume_condition(
             ConditionTerm::uint64_less_equal(tag, MachineTerm::uint64_constant(1)),
             true,
@@ -66,21 +66,21 @@ fn commuted_word_tag_or_ignores_unrelated_facts() {
                 true,
             );
         }
-        let CValue::PointerInteger(expected) = &value else {
+        let ProgramValue::PointerInteger(expected) = &value else {
             panic!("word carrier")
         };
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
-            apply_c_bitwise_binary(
+            apply_program_bitwise_binary(
                 tag_value,
                 value.clone(),
                 Vec::new().into(),
                 Vec::new(),
                 &context,
-                CBitwiseOperation::Or,
+                BitwiseOperation::Or,
             )
         });
         assert!(matches!(&paths[0].outcome,
-            CExpressionOutcome::Value(CValue::PointerInteger(record))
+            ExpressionOutcome::Value(ProgramValue::PointerInteger(record))
                 if record.pointer == expected.pointer
                     && matches!(record.kind, PointerIntegerKind::Word { changed_bits: 1 })));
         work

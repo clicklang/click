@@ -20,7 +20,7 @@ mod tests {
     use super::*;
 
     fn verify(source: &str) {
-        verify_c0_sources(source, &[]).unwrap_or_else(|e| panic!("{}\n{source}", e.message()));
+        verify_c_sources(source, &[]).unwrap_or_else(|e| panic!("{}\n{source}", e.message()));
     }
 
     #[test]
@@ -43,10 +43,10 @@ mod tests {
                 format!("theorem truncation() {{ ensures {term} == {expected} by solve(); }}");
             verify(&source);
             let expanded =
-                expand_c0_claim_source_by_label(&source, &[], "truncation.ensures_0").unwrap();
+                expand_c_claim_source_by_label(&source, &[], "truncation.ensures_0").unwrap();
             verify(&expanded);
             assert!(
-                verify_c0_sources(
+                verify_c_sources(
                     &source.replace(&format!("== {expected}"), &format!("== ({expected}) + 1")),
                     &[]
                 )
@@ -69,10 +69,10 @@ mod tests {
                 );
                 verify(&source);
                 let expanded =
-                    expand_c0_claim_source_by_label(&source, &[], "truncation.ensures_0").unwrap();
+                    expand_c_claim_source_by_label(&source, &[], "truncation.ensures_0").unwrap();
                 verify(&expanded);
                 assert!(
-                    verify_c0_sources(&source.replace("requires b != 0;", ""), &[]).is_err(),
+                    verify_c_sources(&source.replace("requires b != 0;", ""), &[]).is_err(),
                     "{source}"
                 );
             }
@@ -95,11 +95,11 @@ mod tests {
             let source = format!(
                 "theorem bad(x: int32) {{ ensures {expression} == {expression} by solve(); }}"
             );
-            assert!(verify_c0_sources(&source, &[]).is_err(), "{source}");
+            assert!(verify_c_sources(&source, &[]).is_err(), "{source}");
         }
         for function in ["truncating_quotient", "truncating_remainder"] {
             let source = format!("function {function}(a: Integer, b: Integer) -> Integer {{ a }}");
-            assert!(verify_c0_sources(&source, &[]).is_err());
+            assert!(verify_c_sources(&source, &[]).is_err());
         }
     }
 
@@ -112,10 +112,10 @@ mod tests {
             );
             verify(&source);
             let expanded =
-                expand_c0_claim_source_by_label(&source, &[], "truncation.ensures_0").unwrap();
+                expand_c_claim_source_by_label(&source, &[], "truncation.ensures_0").unwrap();
             verify(&expanded);
             assert!(
-                verify_c0_sources(&source.replace("requires defined(x + 1);", ""), &[]).is_err()
+                verify_c_sources(&source.replace("requires defined(x + 1);", ""), &[]).is_err()
             );
         }
     }
@@ -128,12 +128,12 @@ mod tests {
             );
             verify(&source);
             let expanded =
-                expand_c0_claim_source_by_label(&source, &[], "client.ensures_0").unwrap();
+                expand_c_claim_source_by_label(&source, &[], "client.ensures_0").unwrap();
             verify(&expanded);
-            assert!(verify_c0_sources(&source.replace("requires b != 0;", ""), &[]).is_err());
+            assert!(verify_c_sources(&source.replace("requires b != 0;", ""), &[]).is_err());
         }
         let too_wide = "theorem bad() { ensures to_int128(truncating_quotient(-170141183460469231731687303715884105728, -1)) == to_int128(truncating_quotient(-170141183460469231731687303715884105728, -1)) by solve(); }";
-        assert!(verify_c0_sources(too_wide, &[]).is_err());
+        assert!(verify_c_sources(too_wide, &[]).is_err());
     }
 
     #[cfg(test)]

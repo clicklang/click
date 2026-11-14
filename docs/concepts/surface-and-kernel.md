@@ -42,7 +42,7 @@ ForAll(var, body)
 
 The important rule is that C state is never ambient in Kernel Click. Surface
 Click is elaborated against a chosen state, and that state becomes an explicit
-`CMemory`, `Pointer`, or `CValue` inside the term.
+`Memory`, `Pointer`, or `ProgramValue` inside the term.
 
 In `src/surface.rs`, invariant elaboration is driven by
 `SpecElaborationContext`. That context carries:
@@ -74,7 +74,7 @@ ClickArrayRef { memory, pointer, element_type }
 
 It is a pure specification value. It is not a C runtime object, it is not
 stored in C memory, and C code cannot mutate it. If C code writes through a
-pointer, that produces a new `CMemory` value. Existing array refs still refer to
+pointer, that produces a new `Memory` value. Existing array refs still refer to
 the memory value they were built from.
 
 The `element_type` is currently `int32` or `uint8`. It decides both pointer
@@ -214,7 +214,7 @@ In `src/surface.rs`, `ClickArrayRef` is private lowering state. Opaque
 kernel predicate arguments encode an array ref as two terms:
 
 ```text
-Term::CMemory(memory), Term::CValue(CValue::Pointer(pointer))
+Term::Memory(memory), Term::ProgramValue(ProgramValue::Pointer(pointer))
 ```
 
 When a predicate is unfolded, Click reconstructs the array-ref environment from

@@ -18,8 +18,8 @@ fn object_slot(name: &str) -> Pointer {
 fn loop_written_objects_scale_with_the_body_not_the_frame() {
     fn work(body_calls: usize, unrelated: usize) -> usize {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut state = CState::new();
-        let layout = CAggregateLayout::holding_value(CType::Int32);
+        let mut state = ExecutionState::new();
+        let layout = AggregateLayout::holding_value(ProgramType::Int32);
         state
             .locals
             .set_aggregate_object_at("c", layout.clone(), object_slot("c"));
@@ -29,9 +29,15 @@ fn loop_written_objects_scale_with_the_body_not_the_frame() {
                 .locals
                 .set_aggregate_object_at(name.clone(), layout.clone(), object_slot(&name));
         }
-        let mut body = CStatement::Skip;
+        let mut body = ProgramStatement::Skip;
         for _ in 0..body_calls {
-            body = c_seq(body, c_call("bump", vec![c_variable("c")]));
+            body = program_seq(
+                body,
+                program_call(
+                    "bump",
+                    vec![crate::kernel::program_expression::variable("c")],
+                ),
+            );
         }
         let (ranges, work) = crate::instrumentation::measure_deterministic_work(|| {
             loop_written_automatic_objects(&state, &body, &BTreeSet::new())

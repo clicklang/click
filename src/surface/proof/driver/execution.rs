@@ -1393,14 +1393,14 @@ pub(in crate::surface::proof) fn try_check_flat_function_proof<'a>(
     generated_by_source_index: Option<usize>,
     expansion_capture: Option<&mut ExpansionCapture>,
     function_block: &'a FunctionBlock,
-    parsed_function: &'a syntax::C0Function,
+    parsed_function: &'a crate::languages::interface::ImportedFunction,
     claim_label: &'a str,
-    function_environment: &'a CExecutionEnvironment,
+    function_environment: &'a ExecutionEnvironment,
     spec_definitions: SpecDefinitions<'a>,
     resource_environment: &'a ResourceEnvironment,
     theorem_environment: &'a TheoremEnvironment,
-    function: &'a CFunction,
-    arguments: &'a [CExpression],
+    function: &'a ProgramFunction,
+    arguments: &'a [ProgramExpression],
 ) -> Driven<Proof<'a>> {
     // A retained proof or a terminal error publishes what the driver
     // captured; only a decline (`Ok(None)`) leaves the cursor untouched.
@@ -1439,14 +1439,14 @@ fn try_check_flat_function_proof_inner<'a>(
     generated_by_source_index: Option<usize>,
     staged_expansion_capture: &mut Option<ExpansionCapture>,
     function_block: &'a FunctionBlock,
-    parsed_function: &'a syntax::C0Function,
+    parsed_function: &'a crate::languages::interface::ImportedFunction,
     claim_label: &'a str,
-    function_environment: &'a CExecutionEnvironment,
+    function_environment: &'a ExecutionEnvironment,
     spec_definitions: SpecDefinitions<'a>,
     resource_environment: &'a ResourceEnvironment,
     theorem_environment: &'a TheoremEnvironment,
-    function: &'a CFunction,
-    arguments: &'a [CExpression],
+    function: &'a ProgramFunction,
+    arguments: &'a [ProgramExpression],
 ) -> Driven<Proof<'a>> {
     let Some(tactics) = linear_execution_tactics(program) else {
         return decline();
@@ -1521,14 +1521,14 @@ pub(in crate::surface::proof) fn try_check_structural_function_proof<'a>(
     generated_by_source_index: Option<usize>,
     expansion_capture: Option<&mut ExpansionCapture>,
     function_block: &'a FunctionBlock,
-    parsed_function: &'a syntax::C0Function,
+    parsed_function: &'a crate::languages::interface::ImportedFunction,
     claim_label: &'a str,
-    function_environment: &'a CExecutionEnvironment,
+    function_environment: &'a ExecutionEnvironment,
     spec_definitions: SpecDefinitions<'a>,
     resource_environment: &'a ResourceEnvironment,
     theorem_environment: &'a TheoremEnvironment,
-    function: &'a CFunction,
-    arguments: &'a [CExpression],
+    function: &'a ProgramFunction,
+    arguments: &'a [ProgramExpression],
 ) -> Driven<Proof<'a>> {
     // The linear driver owns these scripts. Running them here would execute
     // their entire prefix only to decline for lack of structural tactics,
@@ -1736,14 +1736,14 @@ fn try_check_structural_function_proof_inner<'a>(
     generated_by_source_index: Option<usize>,
     staged_expansion_capture: &mut Option<ExpansionCapture>,
     function_block: &'a FunctionBlock,
-    parsed_function: &'a syntax::C0Function,
+    parsed_function: &'a crate::languages::interface::ImportedFunction,
     claim_label: &'a str,
-    function_environment: &'a CExecutionEnvironment,
+    function_environment: &'a ExecutionEnvironment,
     spec_definitions: SpecDefinitions<'a>,
     resource_environment: &'a ResourceEnvironment,
     theorem_environment: &'a TheoremEnvironment,
-    function: &'a CFunction,
-    arguments: &'a [CExpression],
+    function: &'a ProgramFunction,
+    arguments: &'a [ProgramExpression],
 ) -> Driven<Proof<'a>> {
     let proof_site = constants.proof_site.clone();
     let owning_source_index = generated_by_source_index.unwrap_or(usize::MAX);
@@ -3283,10 +3283,10 @@ fn describe_unfinished_preservation(
 /// The next statement the path would actually execute: the leading `Skip`s a
 /// block end leaves in the remaining program are not statements the author
 /// wrote, so they are skipped. `None` when nothing but block ends remains.
-fn frontier_head_statement(statement: &CStatement) -> Option<&CStatement> {
+fn frontier_head_statement(statement: &ProgramStatement) -> Option<&ProgramStatement> {
     match statement {
-        CStatement::Skip => None,
-        CStatement::Seq(statements) => statements
+        ProgramStatement::Skip => None,
+        ProgramStatement::Seq(statements) => statements
             .iter()
             .find_map(|statement| frontier_head_statement(statement)),
         other => Some(other),
@@ -3307,15 +3307,15 @@ fn count_leaves(leaves: &[Proof<'_>], control: LoopControlExit) -> usize {
 /// The `break`s and `continue`s the rest of the body still contains, counting
 /// only those that belong to this loop: a nested loop or `switch` owns its
 /// own, so this does not descend into one.
-fn remaining_body_exits(statement: &CStatement) -> (usize, usize) {
+fn remaining_body_exits(statement: &ProgramStatement) -> (usize, usize) {
     match statement {
-        CStatement::Break => (1, 0),
-        CStatement::Continue
-        | CStatement::ForStep {
+        ProgramStatement::Break => (1, 0),
+        ProgramStatement::Continue
+        | ProgramStatement::ForStep {
             continue_after: true,
             ..
         } => (0, 1),
-        CStatement::Seq(statements) => {
+        ProgramStatement::Seq(statements) => {
             statements
                 .iter()
                 .fold((0, 0), |(breaks, continues), statement| {
@@ -3323,7 +3323,7 @@ fn remaining_body_exits(statement: &CStatement) -> (usize, usize) {
                     (breaks + statement_breaks, continues + statement_continues)
                 })
         }
-        CStatement::If {
+        ProgramStatement::If {
             then_branch,
             else_branch,
             ..
@@ -5701,7 +5701,7 @@ mod tests {
             let c_source = null_checked_allocation_chain(count);
             let proof = nested_null_check_proof(count);
             DEEPEST_REGION_DEPTH.with(|deepest| deepest.set(0));
-            crate::surface::verify_c0_sources(&proof, &[("chain.c", &c_source)])
+            crate::surface::verify_c_sources(&proof, &[("chain.c", &c_source)])
                 .unwrap_or_else(|error| panic!("{count} cases: {}", error.message()));
             let deepest = DEEPEST_REGION_DEPTH.with(std::cell::Cell::get);
             assert!(

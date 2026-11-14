@@ -71,15 +71,14 @@ impl Proof<'_> {
             }
             // Proof-local values are immutable, unlike C locals. A direct
             // name for a value does not move a memory read to the current state.
-            let immutable_name =
-                locals
-                    .iter()
-                    .find_map(|(name, expression)| match expression {
-                        ContractExpression::CFragment(CExpression::Value(CValue::Pointer(
-                            value,
-                        ))) if value.pointer() == pointer => Some(name.clone()),
-                        _ => None,
-                    });
+            let immutable_name = locals
+                .iter()
+                .find_map(|(name, expression)| match expression {
+                    ContractExpression::ProgramExpression(ProgramExpression::Value(
+                        ProgramValue::Pointer(value),
+                    )) if value.pointer() == pointer => Some(name.clone()),
+                    _ => None,
+                });
             if let Some(text) = immutable_name {
                 return Some(PointerTraceView {
                     text,
@@ -190,7 +189,7 @@ fn immutable_field_hint(
     else {
         return None;
     };
-    let CExpression::TypedLoad { value_type, .. } = lowered else {
+    let ProgramExpression::TypedLoad { value_type, .. } = lowered else {
         return None;
     };
     if !value_type.is_pointer() {
@@ -198,9 +197,10 @@ fn immutable_field_hint(
     }
     let (name, base) = match base.as_ref() {
         ContractExpression::Binding(name)
-        | ContractExpression::CFragment(CExpression::Variable(name)) => {
-            let ContractExpression::CFragment(CExpression::Value(CValue::Pointer(base))) =
-                locals.get(name)?
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+            let ContractExpression::ProgramExpression(ProgramExpression::Value(
+                ProgramValue::Pointer(base),
+            )) = locals.get(name)?
             else {
                 return None;
             };
@@ -208,8 +208,10 @@ fn immutable_field_hint(
         }
         // Checked surface forms substitute model binders with their exact
         // values. Recover the immutable binder before spelling the field.
-        ContractExpression::CFragment(CExpression::Value(CValue::Pointer(base))) => {
-            let (name, _) = locals.iter().find(|(_, value)| matches!(value, ContractExpression::CFragment(CExpression::Value(CValue::Pointer(candidate))) if candidate == base))?;
+        ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(
+            base,
+        ))) => {
+            let (name, _) = locals.iter().find(|(_, value)| matches!(value, ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(candidate))) if candidate == base))?;
             (name, base)
         }
         _ => return None,
@@ -227,16 +229,16 @@ mod pointer_trace_tests {
     #[test]
     fn field_hint_recovers_substituted_immutable_binders_only_at_their_exact_address() {
         let base = Pointer::symbolic(Variable(990001));
-        let value = CValue::typed_pointer(base.clone(), CType::Int32Pointer);
-        let local = ContractExpression::CFragment(CExpression::Value(value.clone()));
+        let value = ProgramValue::typed_pointer(base.clone(), ProgramType::Int32Pointer);
+        let local = ContractExpression::ProgramExpression(ProgramExpression::Value(value.clone()));
         let locals = BTreeMap::from([("zid".to_string(), local.clone())]);
         let hint = |base_expression, value_type| ContractExpression::Field {
             pointee_struct: None,
             base: Box::new(base_expression),
             field: "left".into(),
             offset_bytes: 8,
-            lowered: CExpression::TypedLoad {
-                pointer: Box::new(CExpression::Value(value.clone())),
+            lowered: ProgramExpression::TypedLoad {
+                pointer: Box::new(ProgramExpression::Value(value.clone())),
                 value_type,
                 volatile: false,
                 pointee_constant: false,
@@ -245,7 +247,7 @@ mod pointer_trace_tests {
             },
         };
         let address = base.offset_by_bytes(8);
-        let substituted = hint(local.clone(), CType::Int32Pointer);
+        let substituted = hint(local.clone(), ProgramType::Int32Pointer);
         assert_eq!(
             immutable_field_hint(&substituted, &address, &locals),
             Some("zid->left".into())
@@ -255,7 +257,7 @@ mod pointer_trace_tests {
             None
         );
         assert_eq!(
-            immutable_field_hint(&hint(local, CType::UInt64), &address, &locals),
+            immutable_field_hint(&hint(local, ProgramType::UInt64), &address, &locals),
             None
         );
         assert_eq!(
@@ -264,10 +266,12 @@ mod pointer_trace_tests {
         );
         let reassigned = BTreeMap::from([(
             "zid".to_string(),
-            ContractExpression::CFragment(CExpression::Value(CValue::typed_pointer(
-                Pointer::symbolic(Variable(990002)),
-                CType::Int32Pointer,
-            ))),
+            ContractExpression::ProgramExpression(ProgramExpression::Value(
+                ProgramValue::typed_pointer(
+                    Pointer::symbolic(Variable(990002)),
+                    ProgramType::Int32Pointer,
+                ),
+            )),
         )]);
         assert_eq!(
             immutable_field_hint(&substituted, &address, &reassigned),
@@ -278,7 +282,7 @@ mod pointer_trace_tests {
             immutable_field_hint(
                 &hint(
                     ContractExpression::CBinding("zid".into()),
-                    CType::Int32Pointer
+                    ProgramType::Int32Pointer
                 ),
                 &address,
                 &locals

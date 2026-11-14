@@ -238,8 +238,10 @@ fn every_integer_operator_propagates_early_and_late_aliases() {
 #[test]
 fn all_integer_argument_types_follow_model_aliases_without_losing_tags() {
     let _session = crate::kernel::VerificationSession::enter();
-    let ty =
-        super::algebraic_tests::model_type("AllIntegerArgs", AlgebraicValueType::C(CType::Int32));
+    let ty = super::algebraic_tests::model_type(
+        "AllIntegerArgs",
+        AlgebraicValueType::Program(ProgramType::Int32),
+    );
     let x = super::algebraic_tests::variable(&ty, 940_021);
     let y = super::algebraic_tests::variable(&ty, 940_022);
     let arg = |ty: M, model: &AlgebraicTerm| {
@@ -354,8 +356,8 @@ fn nested_operators_register_the_pointer_arguments_they_use() {
     let q = Pointer::symbolic(Variable(940_052));
     let call = |pointer| MachineTerm::ClickFunctionApplication {
         name: "pointer_getter".into(),
-        arguments: vec![PureFunctionArgument::Value(CValue::Pointer(
-            crate::kernel::CPointerValue::new(pointer, CType::Int32Pointer),
+        arguments: vec![PureFunctionArgument::Value(ProgramValue::Pointer(
+            crate::kernel::PointerValue::new(pointer, ProgramType::Int32Pointer),
         ))],
     };
     let expression = |pointer| {
@@ -383,8 +385,8 @@ fn nested_operators_register_the_pointer_arguments_they_use() {
     // address equality alone must not identify these function applications.
     assert!(!graph.are_uint64_equal(&a, &b));
     graph.add_pointer_value_equality(
-        &crate::kernel::CPointerValue::new(p, CType::Int32Pointer),
-        &crate::kernel::CPointerValue::new(q, CType::Int32Pointer),
+        &crate::kernel::PointerValue::new(p, ProgramType::Int32Pointer),
+        &crate::kernel::PointerValue::new(q, ProgramType::Int32Pointer),
     );
     assert!(graph.are_uint64_equal(&a, &b));
 }
@@ -427,18 +429,24 @@ fn a_uint32_constant_is_one_class_with_its_word() {
 #[test]
 fn common_call_operands_register_complete_pointer_arguments() {
     use crate::kernel::{
-        CPointerValue, KernelTermExport, KernelTermImport, MachineOperandView as V,
+        KernelTermExport, KernelTermImport, MachineOperandView as V, PointerValue,
         SharedPureApplication,
     };
     let _session = crate::kernel::VerificationSession::enter();
-    let p = CPointerValue::new(Pointer::symbolic(Variable(940_061)), CType::Int32Pointer);
-    let q = CPointerValue::new(Pointer::symbolic(Variable(940_062)), CType::Int32Pointer);
-    let call = |pointer: CPointerValue| {
+    let p = PointerValue::new(
+        Pointer::symbolic(Variable(940_061)),
+        ProgramType::Int32Pointer,
+    );
+    let q = PointerValue::new(
+        Pointer::symbolic(Variable(940_062)),
+        ProgramType::Int32Pointer,
+    );
+    let call = |pointer: PointerValue| {
         KernelTermImport::default().machine_call(
             M::Int32,
             &SharedPureApplication::intern(
                 "common_pointer_getter".into(),
-                vec![PureFunctionArgument::Value(CValue::Pointer(pointer))],
+                vec![PureFunctionArgument::Value(ProgramValue::Pointer(pointer))],
             ),
         )
     };

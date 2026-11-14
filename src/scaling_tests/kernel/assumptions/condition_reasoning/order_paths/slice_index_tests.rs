@@ -290,7 +290,8 @@ fn shared_wide_order_walks_scale_with_selected_chain() {
             let _session = crate::kernel::VerificationSession::enter();
             let ty = MachineIntegerType::UInt64;
             let operand = |id| {
-                let root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(id));
+                let root =
+                    KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(id));
                 SharedMachineIntegerTerm::from_shared(
                     ty,
                     KernelTerm::machine_binary_shared(
@@ -410,7 +411,8 @@ fn signed_order_rules_keep_growing_shared_prefixes() {
     for size in [4, 12, 36] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::C(format.c_type()), Variable(996711));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(format.program_type()), Variable(996711));
         let mut facts = PureFactContext::new();
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -544,7 +546,8 @@ fn range_membership_retains_shared_order_path_sources() {
     for size in [8, 32, 96] {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(998801));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(998801));
         let observe = |term| IntegerTerm::from_machine(ty, term).unwrap();
         let mut facts = PureFactContext::new();
         let exports = KernelTermExport::machine_export_count();

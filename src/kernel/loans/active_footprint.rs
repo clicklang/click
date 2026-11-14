@@ -1,6 +1,6 @@
 //! Retained resource descriptor for active loan backing. Updates follow one
 //! fixed-width loan-id path; access requirements clone only the root descriptor.
-use super::{CMemoryRange, CResource, LoanId};
+use super::{LoanId, MemoryRange, Resource};
 use std::sync::Arc;
 
 #[derive(Clone, Debug, Default)]
@@ -8,7 +8,7 @@ pub(super) struct ActiveFootprint(Option<Arc<Node>>);
 
 #[derive(Debug)]
 struct Node {
-    resource: CResource,
+    resource: Resource,
     children: [Option<Arc<Node>>; 2],
 }
 
@@ -25,17 +25,17 @@ impl std::hash::Hash for ActiveFootprint {
 }
 
 impl ActiveFootprint {
-    pub(super) fn resource(&self) -> CResource {
+    pub(super) fn resource(&self) -> Resource {
         self.0
             .as_ref()
-            .map_or(CResource::Emp, |node| node.resource.clone())
+            .map_or(Resource::Emp, |node| node.resource.clone())
     }
 
-    pub(super) fn with_loan(&self, loan: LoanId, ranges: &[CMemoryRange]) -> Self {
-        let mut resources = ranges.iter().map(|range| CResource::Memory(range.clone()));
+    pub(super) fn with_loan(&self, loan: LoanId, ranges: &[MemoryRange]) -> Self {
+        let mut resources = ranges.iter().map(|range| Resource::Memory(range.clone()));
         let resource = resources
             .next()
-            .map(|first| resources.fold(first, CResource::star));
+            .map(|first| resources.fold(first, Resource::star));
         Self(update(self.0.as_ref(), loan.ordinal, 64, resource.as_ref()))
     }
 
@@ -48,7 +48,7 @@ fn update(
     node: Option<&Arc<Node>>,
     key: u64,
     remaining: u32,
-    resource: Option<&CResource>,
+    resource: Option<&Resource>,
 ) -> Option<Arc<Node>> {
     crate::instrumentation::record_deterministic_work(1);
     if remaining == 0 {
@@ -68,7 +68,7 @@ fn update(
     let resource = match (&children[0], &children[1]) {
         (None, None) => return None,
         (Some(node), None) | (None, Some(node)) => node.resource.clone(),
-        (Some(left), Some(right)) => CResource::star(left.resource.clone(), right.resource.clone()),
+        (Some(left), Some(right)) => Resource::star(left.resource.clone(), right.resource.clone()),
     };
     Some(Arc::new(Node { resource, children }))
 }

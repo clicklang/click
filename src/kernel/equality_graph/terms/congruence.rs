@@ -6,8 +6,8 @@ use crate::kernel::MachineBinaryOp;
 use crate::kernel::MachineIntegerType;
 use crate::kernel::machine_integer::representation;
 use crate::kernel::{
-    BitvectorUnaryOp as U, CType, CValue, CarrierWidth as W, ConditionTerm as C, MachineTerm as T,
-    PureFunctionArgument as A, SharedPureApplication,
+    BitvectorUnaryOp as U, CarrierWidth as W, ConditionTerm as C, MachineTerm as T, ProgramType,
+    ProgramValue, PureFunctionArgument as A, SharedPureApplication,
 };
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{MachineCastSpelling, cast_op};
@@ -16,8 +16,8 @@ use crate::kernel::{bits32_constant, int64_constant, uint64_constant};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum ArgumentTag {
-    Value(CType),
-    Array((u32, u32), CType),
+    Value(ProgramType),
+    Array((u32, u32), ProgramType),
     Algebraic,
     DesignationRead((u32, u32)),
     PointerExtentRead((u32, u32)),
@@ -536,7 +536,7 @@ impl TermClasses {
         machine: Option<(&T, W)>,
         algebraic: Option<&crate::kernel::AlgebraicTerm>,
         integer: Option<&crate::kernel::IntegerTerm>,
-        value: Option<&CValue>,
+        value: Option<&ProgramValue>,
         pointer_call: Option<(&SharedPureApplication, CallHead)>,
     ) -> u64 {
         enum Binary {
@@ -554,7 +554,7 @@ impl TermClasses {
             RetainedMachine(&'a crate::kernel::SharedMachineIntegerTerm, W),
             OpaqueCount(&'a T),
             Argument(&'a A),
-            Value(&'a CValue),
+            Value(&'a ProgramValue),
             Wrap(ArgumentTag),
             Call(u64, usize),
             /// Exact observation followed by conversion back to its own type.
@@ -614,7 +614,8 @@ impl TermClasses {
                     continue;
                 }
                 Work::OpaqueCount(term) => {
-                    values.push(self.opaque_argument(&A::Value(CValue::UInt64(term.clone()))));
+                    values
+                        .push(self.opaque_argument(&A::Value(ProgramValue::UInt64(term.clone()))));
                     continue;
                 }
                 Work::RememberInteger(term) => {
@@ -863,8 +864,10 @@ impl TermClasses {
                         // A value of an abstract type is its algebraic term,
                         // so a field holding one is congruent with a field
                         // holding an equal one.
-                        V::C(CValue::Parameter(term)) => pending.push(Work::Algebraic(term)),
-                        V::C(value) => pending.push(Work::Value(value)),
+                        V::Program(ProgramValue::Parameter(term)) => {
+                            pending.push(Work::Algebraic(term))
+                        }
+                        V::Program(value) => pending.push(Work::Value(value)),
                         V::Algebraic(term) => pending.push(Work::Algebraic(term)),
                         V::Integer(term) => {
                             pending.push(Work::Wrap(ArgumentTag::Integer));
@@ -1237,7 +1240,7 @@ impl TermClasses {
                                 128 => W::Bits128,
                                 _ => unreachable!("machine argument width"),
                             };
-                            pending.push(Work::Wrap(ArgumentTag::Value(value.ty().c_type())));
+                            pending.push(Work::Wrap(ArgumentTag::Value(value.ty().program_type())));
                             pending.push(Work::RetainedMachine(value, width));
                         }
                         A::Algebraic(term) => {
@@ -1254,7 +1257,7 @@ impl TermClasses {
                             element_type,
                         } => {
                             pending.push(Work::Wrap(ArgumentTag::Array(
-                                crate::kernel::intern_c_memory(memory.clone()).read_identity(),
+                                crate::kernel::intern_memory(memory.clone()).read_identity(),
                                 *element_type,
                             )));
                             pending.push(Work::Value(pointer));
@@ -1267,17 +1270,17 @@ impl TermClasses {
                     let scalar = match value {
                         // A `Bool` travels as its 8-bit carrier (rule C1),
                         // and an 8- or 16-bit value is a value of its width.
-                        CValue::Bool(t) => Some((CType::Bool, t, W::Bits8)),
-                        CValue::Int8(t) => Some((CType::Int8, t, W::Bits8)),
-                        CValue::UInt8(t) => Some((CType::UInt8, t, W::Bits8)),
-                        CValue::Int16(t) => Some((CType::Int16, t, W::Bits16)),
-                        CValue::UInt16(t) => Some((CType::UInt16, t, W::Bits16)),
-                        CValue::Int32(t) => Some((CType::Int32, t, W::Bits32)),
-                        CValue::UInt32(t) => Some((CType::UInt32, t, W::Bits32)),
-                        CValue::Int64(t) => Some((CType::Int64, t, W::Bits64)),
-                        CValue::UInt64(t) => Some((CType::UInt64, t, W::Bits64)),
-                        CValue::Int128(t) => Some((CType::Int128, t, W::Bits128)),
-                        CValue::UInt128(t) => Some((CType::UInt128, t, W::Bits128)),
+                        ProgramValue::Bool(t) => Some((ProgramType::Bool, t, W::Bits8)),
+                        ProgramValue::Int8(t) => Some((ProgramType::Int8, t, W::Bits8)),
+                        ProgramValue::UInt8(t) => Some((ProgramType::UInt8, t, W::Bits8)),
+                        ProgramValue::Int16(t) => Some((ProgramType::Int16, t, W::Bits16)),
+                        ProgramValue::UInt16(t) => Some((ProgramType::UInt16, t, W::Bits16)),
+                        ProgramValue::Int32(t) => Some((ProgramType::Int32, t, W::Bits32)),
+                        ProgramValue::UInt32(t) => Some((ProgramType::UInt32, t, W::Bits32)),
+                        ProgramValue::Int64(t) => Some((ProgramType::Int64, t, W::Bits64)),
+                        ProgramValue::UInt64(t) => Some((ProgramType::UInt64, t, W::Bits64)),
+                        ProgramValue::Int128(t) => Some((ProgramType::Int128, t, W::Bits128)),
+                        ProgramValue::UInt128(t) => Some((ProgramType::UInt128, t, W::Bits128)),
                         _ => None,
                     };
                     if let Some((ty, term, width)) = scalar {
@@ -1285,7 +1288,7 @@ impl TermClasses {
                         pending.push(Work::Machine(term, width));
                         continue;
                     }
-                    if let CValue::Pointer(pointer) = value {
+                    if let ProgramValue::Pointer(pointer) = value {
                         let address = self.numeric_address(pointer.pointer());
                         // Address, allocation origin and selected extent are
                         // distinct congruence operands. Only a complete value
@@ -1297,7 +1300,7 @@ impl TermClasses {
                             .with_address(crate::kernel::Pointer::null())
                             .with_designation(std::sync::Arc::new(crate::kernel::Pointer::null()))
                             .with_root_extent();
-                        let head = self.opaque_argument(&A::Value(CValue::Pointer(metadata)));
+                        let head = self.opaque_argument(&A::Value(ProgramValue::Pointer(metadata)));
                         let node = self.intern_node(Node::Apply(head, root));
                         let node = self.intern_node(Node::Apply(node, extent));
                         let node = self.intern_node(Node::Apply(node, address));
@@ -1535,7 +1538,7 @@ impl TermClasses {
         while let Some(work) = pending.pop() {
             crate::instrumentation::record_deterministic_work(1);
             let node = match work {
-                Work::Type(V::C(ty)) => Node::TypeC(*ty),
+                Work::Type(V::Program(ty)) => Node::TypeC(*ty),
                 Work::Type(V::ObjectPointer(ty, class)) => {
                     Node::TypeObjectPointer(*ty, class.clone())
                 }
@@ -1640,16 +1643,28 @@ impl TermClasses {
 
     pub(in crate::kernel::equality_graph) fn add_pointer_value_equality(
         &mut self,
-        a: &crate::kernel::CPointerValue,
-        b: &crate::kernel::CPointerValue,
+        a: &crate::kernel::PointerValue,
+        b: &crate::kernel::PointerValue,
     ) -> bool {
         let roots = (
             self.designation_node(a.designation()),
             self.designation_node(b.designation()),
         );
         let extents = (self.extent_node(a), self.extent_node(b));
-        let a = self.intern_expression(None, None, None, Some(&CValue::Pointer(a.clone())), None);
-        let b = self.intern_expression(None, None, None, Some(&CValue::Pointer(b.clone())), None);
+        let a = self.intern_expression(
+            None,
+            None,
+            None,
+            Some(&ProgramValue::Pointer(a.clone())),
+            None,
+        );
+        let b = self.intern_expression(
+            None,
+            None,
+            None,
+            Some(&ProgramValue::Pointer(b.clone())),
+            None,
+        );
         self.register_pending_loads();
         self.close(vec![roots, extents, (a, b)])
     }
@@ -1712,16 +1727,28 @@ impl TermClasses {
 
     pub(in crate::kernel::equality_graph) fn pointer_values_equal(
         &mut self,
-        a: &crate::kernel::CPointerValue,
-        b: &crate::kernel::CPointerValue,
+        a: &crate::kernel::PointerValue,
+        b: &crate::kernel::PointerValue,
     ) -> bool {
-        let a = self.intern_expression(None, None, None, Some(&CValue::Pointer(a.clone())), None);
-        let b = self.intern_expression(None, None, None, Some(&CValue::Pointer(b.clone())), None);
+        let a = self.intern_expression(
+            None,
+            None,
+            None,
+            Some(&ProgramValue::Pointer(a.clone())),
+            None,
+        );
+        let b = self.intern_expression(
+            None,
+            None,
+            None,
+            Some(&ProgramValue::Pointer(b.clone())),
+            None,
+        );
         self.register_pending_loads();
         self.root(a) == self.root(b)
     }
 
-    pub(super) fn retain_pointer_value(&mut self, node: u64, value: crate::kernel::CPointerValue) {
+    pub(super) fn retain_pointer_value(&mut self, node: u64, value: crate::kernel::PointerValue) {
         let root = self.root(node);
         let value = self
             .pointer_values
@@ -1734,13 +1761,13 @@ impl TermClasses {
 
     pub(in crate::kernel::equality_graph) fn pointer_value_representative(
         &mut self,
-        value: &crate::kernel::CPointerValue,
-    ) -> crate::kernel::CPointerValue {
+        value: &crate::kernel::PointerValue,
+    ) -> crate::kernel::PointerValue {
         let node = self.intern_expression(
             None,
             None,
             None,
-            Some(&CValue::Pointer(value.clone())),
+            Some(&ProgramValue::Pointer(value.clone())),
             None,
         );
         self.register_pending_loads();
@@ -1769,7 +1796,7 @@ impl TermClasses {
         }
     }
 
-    fn extent_node(&mut self, value: &crate::kernel::CPointerValue) -> u64 {
+    fn extent_node(&mut self, value: &crate::kernel::PointerValue) -> u64 {
         let node = if let Some(extent) = value.extent() {
             let head = self.intern_node(Node::ArgumentTag(ArgumentTag::PointerSubobjectExtent));
             let width = self.intern_int32(&extent.width);
@@ -1823,8 +1850,8 @@ impl TermClasses {
         }
         self.intern_node(Node::OpaqueArgument(SharedPureApplication::intern(
             "<pointer-extent-origin>".into(),
-            vec![A::Value(CValue::Pointer(
-                crate::kernel::CPointerValue::new(origin.clone(), CType::VoidPointer),
+            vec![A::Value(ProgramValue::Pointer(
+                crate::kernel::PointerValue::new(origin.clone(), ProgramType::VoidPointer),
             ))],
         )))
     }
@@ -1911,13 +1938,13 @@ impl TermClasses {
             self.read_designation_nodes.insert(origin, node);
             return node;
         }
-        self.opaque_argument(&A::Value(CValue::Pointer(
-            crate::kernel::CPointerValue::new(origin.clone(), CType::VoidPointer),
+        self.opaque_argument(&A::Value(ProgramValue::Pointer(
+            crate::kernel::PointerValue::new(origin.clone(), ProgramType::VoidPointer),
         )))
     }
 
     fn opaque_argument(&mut self, argument: &A) -> u64 {
-        if let A::Value(CValue::UInt64(term)) = argument {
+        if let A::Value(ProgramValue::UInt64(term)) = argument {
             return self.intern_node(Node::OpaqueMachineCount(MachineAtom::uint64(term.clone())));
         }
         // Map comparisons use stable IDs, not full algebraic values/snapshots.
@@ -2044,14 +2071,14 @@ impl TermClasses {
                     None,
                     None,
                     None,
-                    Some(&CValue::Pointer((**a).clone())),
+                    Some(&ProgramValue::Pointer((**a).clone())),
                     None,
                 ),
                 self.intern_expression(
                     None,
                     None,
                     None,
-                    Some(&CValue::Pointer((**b).clone())),
+                    Some(&ProgramValue::Pointer((**b).clone())),
                     None,
                 ),
             ),

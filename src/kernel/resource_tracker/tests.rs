@@ -2,7 +2,7 @@
 // recorded edges directly, so a stop kind is pinned by the edge that produced
 // it rather than by a proof that happens to reach it.
 use super::*;
-use crate::kernel::intern_c_memory;
+use crate::kernel::intern_memory;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 fn block(name: &str) -> PointerBlock {
@@ -16,16 +16,16 @@ fn at(block: PointerBlock, offset: i64) -> Pointer {
     }
 }
 
-fn one() -> CValue {
-    CValue::Int32(MachineTerm::constant(1))
+fn one() -> ProgramValue {
+    ProgramValue::Int32(MachineTerm::constant(1))
 }
 
-fn point(memory: &CMemory) -> ProgramPoint {
-    ProgramPoint::at(&intern_c_memory(memory.clone()))
+fn point(memory: &Memory) -> ProgramPoint {
+    ProgramPoint::at(&intern_memory(memory.clone()))
 }
 
-fn entry_memory() -> CMemory {
-    CMemory::new()
+fn entry_memory() -> Memory {
+    Memory::new()
         .with_block(block("global:g"), 16)
         .with_block(block("global:h"), 16)
         .with_block(block("local:f:i"), 4)
@@ -40,7 +40,7 @@ fn a_store_to_another_object_keeps_one_version() {
     let cell = at(block("global:g"), 0);
     assert_eq!(
         same(
-            Resource::Cell {
+            TrackedResource::Cell {
                 pointer: &cell,
                 bytes: 4
             },
@@ -51,7 +51,7 @@ fn a_store_to_another_object_keeps_one_version() {
     );
     assert_eq!(
         same(
-            Resource::Block(&block("global:g")),
+            TrackedResource::Block(&block("global:g")),
             &point(&after),
             &point(&entry)
         ),
@@ -67,7 +67,7 @@ fn a_store_to_the_cell_reports_changed() {
     let written = at(block("global:g"), 0);
     let after = entry.clone().store(written.clone(), one());
     let outcome = same(
-        Resource::Cell {
+        TrackedResource::Cell {
             pointer: &written,
             bytes: 4,
         },
@@ -101,7 +101,7 @@ fn a_narrow_store_inside_a_wide_cell_reports_changed() {
         let after = entry.clone().store(written, crate::kernel::uint8(7));
         assert_ne!(
             same(
-                Resource::Cell {
+                TrackedResource::Cell {
                     pointer: &cell,
                     bytes: 8,
                 },
@@ -112,7 +112,7 @@ fn a_narrow_store_inside_a_wide_cell_reports_changed() {
             "a one-byte store at offset {offset} writes the eight-byte cell at offset 0"
         );
         let four_byte_answer = same(
-            Resource::Cell {
+            TrackedResource::Cell {
                 pointer: &cell,
                 bytes: 4,
             },
@@ -145,7 +145,7 @@ fn a_store_that_may_alias_reports_unknown_and_the_check_it_needs() {
     let after = entry.clone().store(written.clone(), one());
     let cell = at(block("global:g"), 0);
     let outcome = same(
-        Resource::Cell {
+        TrackedResource::Cell {
             pointer: &cell,
             bytes: 4,
         },
@@ -168,7 +168,7 @@ fn a_store_that_may_alias_reports_unknown_and_the_check_it_needs() {
 #[test]
 fn a_call_havoc_carries_a_cell_outside_its_write_set_only() {
     let entry = entry_memory();
-    let ranges = vec![CMemoryRange::new(
+    let ranges = vec![MemoryRange::new(
         at(block("global:g"), 0),
         MachineTerm::constant(0),
         MachineTerm::constant(4),
@@ -180,7 +180,7 @@ fn a_call_havoc_carries_a_cell_outside_its_write_set_only() {
     let outside = at(block("global:h"), 0);
     assert_eq!(
         same(
-            Resource::Cell {
+            TrackedResource::Cell {
                 pointer: &outside,
                 bytes: 4
             },
@@ -193,7 +193,7 @@ fn a_call_havoc_carries_a_cell_outside_its_write_set_only() {
 
     let inside = at(block("global:g"), 0);
     let outcome = same(
-        Resource::Cell {
+        TrackedResource::Cell {
             pointer: &inside,
             bytes: 4,
         },
@@ -216,7 +216,7 @@ fn a_call_havoc_carries_a_cell_outside_its_write_set_only() {
 #[test]
 fn a_call_havoc_carries_a_block_outside_its_write_set_only() {
     let entry = entry_memory();
-    let ranges = vec![CMemoryRange::new(
+    let ranges = vec![MemoryRange::new(
         at(block("global:g"), 0),
         MachineTerm::constant(0),
         MachineTerm::constant(4),
@@ -227,7 +227,7 @@ fn a_call_havoc_carries_a_block_outside_its_write_set_only() {
             .with_call_memory_havoc(Variable(903), &ranges, &PureFactContext::new(), None);
     assert_eq!(
         same(
-            Resource::Block(&block("global:h")),
+            TrackedResource::Block(&block("global:h")),
             &point(&after),
             &point(&entry)
         ),
@@ -236,7 +236,7 @@ fn a_call_havoc_carries_a_block_outside_its_write_set_only() {
     );
 
     let outcome = same(
-        Resource::Block(&block("global:g")),
+        TrackedResource::Block(&block("global:g")),
         &point(&after),
         &point(&entry),
     );
@@ -258,7 +258,7 @@ fn a_call_havoc_carries_a_block_outside_its_write_set_only() {
     // possibly one object, so a write set naming the global separates from
     // neither.
     let outcome = same(
-        Resource::Block(&PointerBlock::ExternalArgument),
+        TrackedResource::Block(&PointerBlock::ExternalArgument),
         &point(&after),
         &point(&entry),
     );
@@ -281,7 +281,7 @@ fn a_call_havoc_carries_a_block_outside_its_write_set_only() {
 #[test]
 fn a_loop_havoc_carries_a_block_outside_its_checked_write_set() {
     let entry = entry_memory().store(at(block("global:h"), 0), one());
-    let ranges = vec![CMemoryRange::new(
+    let ranges = vec![MemoryRange::new(
         at(block("global:g"), 0),
         MachineTerm::constant(0),
         MachineTerm::constant(4),
@@ -298,7 +298,7 @@ fn a_loop_havoc_carries_a_block_outside_its_checked_write_set() {
     );
     assert_eq!(
         same(
-            Resource::Block(&block("global:h")),
+            TrackedResource::Block(&block("global:h")),
             &point(&after),
             &point(&entry)
         ),
@@ -306,7 +306,7 @@ fn a_loop_havoc_carries_a_block_outside_its_checked_write_set() {
         "a checked write set in another object leaves this one's contents alone"
     );
     let outcome = same(
-        Resource::Block(&block("global:g")),
+        TrackedResource::Block(&block("global:g")),
         &point(&after),
         &point(&entry),
     );
@@ -329,7 +329,7 @@ fn a_loop_without_a_write_set_needs_no_separation_check() {
     );
     let cell = at(block("global:g"), 0);
     let outcome = same(
-        Resource::Cell {
+        TrackedResource::Cell {
             pointer: &cell,
             bytes: 4,
         },
@@ -358,7 +358,7 @@ fn a_declaration_of_another_object_keeps_one_version() {
     let cell = at(block("global:g"), 0);
     assert_eq!(
         same(
-            Resource::Cell {
+            TrackedResource::Cell {
                 pointer: &cell,
                 bytes: 4
             },
@@ -370,7 +370,7 @@ fn a_declaration_of_another_object_keeps_one_version() {
     );
     assert_eq!(
         same(
-            Resource::Block(&block("global:g")),
+            TrackedResource::Block(&block("global:g")),
             &point(&after),
             &point(&entry)
         ),
@@ -387,7 +387,11 @@ fn a_block_does_not_cross_its_own_declaration_or_an_unseparated_one() {
     let entry = entry_memory();
     let own = entry.clone().with_block(block("global:k"), 16);
     let subject = block("global:k");
-    let outcome = same(Resource::Block(&subject), &point(&own), &point(&entry));
+    let outcome = same(
+        TrackedResource::Block(&subject),
+        &point(&own),
+        &point(&entry),
+    );
     let Sameness::Changed { by, .. } = outcome else {
         panic!("a block's own declaration is a change, not {outcome:?}");
     };
@@ -403,7 +407,11 @@ fn a_block_does_not_cross_its_own_declaration_or_an_unseparated_one() {
     // address, so nothing separates it from the declared object.
     let symbolic = PointerBlock::Symbolic(Variable(81));
     let after = entry.clone().with_block(block("local:f:t"), 4);
-    let outcome = same(Resource::Block(&symbolic), &point(&after), &point(&entry));
+    let outcome = same(
+        TrackedResource::Block(&symbolic),
+        &point(&after),
+        &point(&entry),
+    );
     let Sameness::Unknown { why, .. } = outcome else {
         panic!("an unseparated declaration stops a block fact, and got {outcome:?}");
     };
@@ -438,7 +446,7 @@ fn a_release_of_another_object_keeps_one_version() {
 
     // This asks the walk directly whether it crossed the release rather than
     // comparing two program points across it.
-    let crossed = last_same(Resource::Block(&block("global:g")), &point(&freed))
+    let crossed = last_same(TrackedResource::Block(&block("global:g")), &point(&freed))
         .expect("a block always has a last-same point");
     assert_ne!(
         crossed.point,
@@ -446,7 +454,7 @@ fn a_release_of_another_object_keeps_one_version() {
         "a released heap object is proven distinct from a global, so the walk crosses it"
     );
 
-    let own = last_same(Resource::Block(&heap), &point(&freed))
+    let own = last_same(TrackedResource::Block(&heap), &point(&freed))
         .expect("a block always has a last-same point");
     assert_eq!(own.point, point(&freed));
     assert_eq!(own.stopped_by.change, Change::Free { allocation: fresh });
@@ -467,13 +475,13 @@ fn a_release_is_based_on_the_memory_it_started_from() {
     let live = entry_memory()
         .with_heap_allocation_claim(fresh.clone(), HeapExtent::int32(16))
         .expect("a fresh allocation claim");
-    let before = intern_c_memory(live.clone());
-    let freed = intern_c_memory(
+    let before = intern_memory(live.clone());
+    let freed = intern_memory(
         live.free_heap_block(&fresh, &PureFactContext::new())
             .expect("the allocation is live, so it can be released"),
     );
     let derivation = freed.derivation().expect("a release records its edge");
-    let CMemoryDerivation::HeapFreed { base, .. } = derivation.as_ref() else {
+    let MemoryDerivation::HeapFreed { base, .. } = derivation.as_ref() else {
         panic!("a release records a `HeapFreed` edge");
     };
     assert_eq!(base, &before, "the edge starts from the pre-free memory");
@@ -499,7 +507,7 @@ fn a_release_inside_the_argument_object_stops_a_block_fact() {
         .free_heap_block(&inside, &PureFactContext::new())
         .expect("the allocation is live, so it can be released");
     let stopped = last_same(
-        Resource::Block(&PointerBlock::ExternalArgument),
+        TrackedResource::Block(&PointerBlock::ExternalArgument),
         &point(&freed),
     )
     .expect("a block always has a last-same point");
@@ -523,7 +531,7 @@ fn a_lifetime_end_of_another_local_keeps_one_version() {
     let retired = entry.without_local_block(&block("local:f:i"));
     assert_eq!(
         same(
-            Resource::Block(&block("global:g")),
+            TrackedResource::Block(&block("global:g")),
             &point(&retired),
             &point(&entry)
         ),
@@ -531,7 +539,7 @@ fn a_lifetime_end_of_another_local_keeps_one_version() {
         "another function-local object is proven distinct from a global"
     );
     let outcome = same(
-        Resource::Block(&block("local:f:i")),
+        TrackedResource::Block(&block("local:f:i")),
         &point(&retired),
         &point(&entry),
     );
@@ -569,7 +577,7 @@ fn a_pending_allocation_records_nothing_a_block_can_observe() {
         entry.forgotten.ended_local_blocks,
         requested.forgotten.ended_local_blocks
     );
-    let same_heap_but_pending = CHeapMemory {
+    let same_heap_but_pending = HeapMemory {
         pending_allocations: entry.heap.pending_allocations.clone(),
         ..requested.heap.as_ref().clone()
     };
@@ -586,7 +594,7 @@ fn a_pending_allocation_records_nothing_a_block_can_observe() {
     ] {
         assert_eq!(
             same(
-                Resource::Block(&subject),
+                TrackedResource::Block(&subject),
                 &point(&requested),
                 &point(&entry)
             ),
@@ -604,7 +612,7 @@ fn one_sided_explanation_reaches_the_beginning_of_the_history() {
     let entry = entry_memory();
     let cell = at(block("global:g"), 0);
     let explanation = explain_last_same(
-        Resource::Cell {
+        TrackedResource::Cell {
             pointer: &cell,
             bytes: 4,
         },
@@ -616,7 +624,7 @@ fn one_sided_explanation_reaches_the_beginning_of_the_history() {
     let written = at(PointerBlock::Symbolic(Variable(78)), 0);
     let after = entry.store(written.clone(), one());
     let explanation = explain_last_same(
-        Resource::Cell {
+        TrackedResource::Cell {
             pointer: &cell,
             bytes: 4,
         },
@@ -649,7 +657,7 @@ fn an_explanation_counts_the_steps_it_crossed() {
         .store(at(block("global:h"), 0), one());
     let cell = at(block("global:g"), 0);
     let explanation = explain(
-        Resource::Cell {
+        TrackedResource::Cell {
             pointer: &cell,
             bytes: 4,
         },
@@ -677,14 +685,14 @@ fn a_version_mismatch_names_the_resource_and_both_points() {
     let after = entry
         .clone()
         .store(at(PointerBlock::Symbolic(Variable(80)), 0), one());
-    let load = |memory: &CMemory| {
+    let load = |memory: &Memory| {
         MachineTerm::MemoryLoad(
-            intern_c_memory(memory.clone()),
+            intern_memory(memory.clone()),
             Box::new(cell.clone()),
             crate::kernel::LoadKind::Int32,
         )
     };
-    let fact = |memory: &CMemory| {
+    let fact = |memory: &Memory| {
         Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -731,7 +739,7 @@ fn a_version_mismatch_names_the_resource_and_both_points() {
 fn a_session_reset_empties_the_version_memos() {
     let memory = entry_memory().store(at(block("local:f:i"), 0), one());
     last_same_point(
-        Resource::Block(&PointerBlock::ExternalArgument),
+        TrackedResource::Block(&PointerBlock::ExternalArgument),
         &point(&memory),
     );
     assert!(
@@ -755,7 +763,10 @@ mod saved_states {
 
     fn schema() -> ResourceFieldSchema {
         ResourceFieldSchema::new(vec![
-            ("rank".into(), ResourceFieldType::C(CType::Int32)),
+            (
+                "rank".into(),
+                ResourceFieldType::Program(ProgramType::Int32),
+            ),
             ("mark".into(), ResourceFieldType::Integer),
         ])
         .unwrap()
@@ -765,10 +776,10 @@ mod saved_states {
         ResourceInstance::new(
             Variable(identity),
             "cell".into(),
-            vec![CValue::Int32(MachineTerm::constant(7)).into()].into(),
+            vec![ProgramValue::Int32(MachineTerm::constant(7)).into()].into(),
             schema(),
             vec![
-                AlgebraicValue::C(CValue::Int32(MachineTerm::constant(rank))),
+                AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::constant(rank))),
                 AlgebraicValue::Integer(IntegerTerm::constant(num_bigint::BigInt::from(mark))),
             ]
             .into(),
@@ -776,14 +787,14 @@ mod saved_states {
         .unwrap()
     }
 
-    fn holding(identity: u64, rank: u32, mark: i64) -> CState {
-        CState::new().with_resource_context(ResourceContext::new().unchecked_with_fact(
-            CResourceFact::own(CResource::Instance(instance(identity, rank, mark))),
+    fn holding(identity: u64, rank: u32, mark: i64) -> ExecutionState {
+        ExecutionState::new().with_resource_context(ResourceContext::new().unchecked_with_fact(
+            ResourceFact::own(Resource::Instance(instance(identity, rank, mark))),
         ))
     }
 
-    fn rank() -> Resource<'static> {
-        Resource::ModelField {
+    fn rank() -> TrackedResource<'static> {
+        TrackedResource::ModelField {
             identity: Variable(1),
             children: &[],
             field_index: 0,
@@ -841,7 +852,7 @@ mod saved_states {
     #[test]
     fn a_consumed_instance_is_unknown() {
         let entry = holding(1, 3, 0);
-        let consumed = CState::new();
+        let consumed = ExecutionState::new();
         assert_eq!(
             same_at_states(rank(), StatePoint::at(&consumed), StatePoint::at(&entry)),
             not_held(true, false),
@@ -860,7 +871,7 @@ mod saved_states {
     fn another_identity_is_another_resource() {
         let entry = holding(1, 3, 0);
         let after = holding(1, 3, 0);
-        let other = Resource::ModelField {
+        let other = TrackedResource::ModelField {
             identity: Variable(2),
             children: &[],
             field_index: 0,
@@ -878,7 +889,7 @@ mod saved_states {
         let entry = holding(1, 3, 0);
         let after = holding(1, 3, 0);
         let child = &["left".to_string()];
-        let field = Resource::ModelField {
+        let field = TrackedResource::ModelField {
             identity: Variable(1),
             children: child,
             field_index: 0,
@@ -933,8 +944,8 @@ mod footprints {
         Evidence, FootprintSeparation, Separation, StepEffect, affects,
     };
 
-    fn bytes(base: Pointer, count: u32) -> CMemoryRange {
-        CMemoryRange::new_with_element_width(
+    fn bytes(base: Pointer, count: u32) -> MemoryRange {
+        MemoryRange::new_with_element_width(
             base,
             MachineTerm::constant(0),
             MachineTerm::constant(count),
@@ -944,8 +955,8 @@ mod footprints {
 
     /// The rule's answer for the step that produced `after`, asked about a
     /// footprint that is `Some(ranges)` when the kernel could name it.
-    fn effect(after: &CMemory, ranges: Option<&[CMemoryRange]>) -> StepEffect {
-        let produced = intern_c_memory(after.clone());
+    fn effect(after: &Memory, ranges: Option<&[MemoryRange]>) -> StepEffect {
+        let produced = intern_memory(after.clone());
         let derivation = produced
             .derivation()
             .expect("the constructed step records an edge");
@@ -954,8 +965,8 @@ mod footprints {
             derivation.as_ref(),
             &produced,
             match ranges {
-                Some(ranges) => Resource::Ranges(ranges),
-                None => Resource::AnyMemory,
+                Some(ranges) => TrackedResource::Ranges(ranges),
+                None => TrackedResource::AnyMemory,
             },
             &Evidence {
                 assumptions: &no_facts,
@@ -1011,7 +1022,7 @@ mod footprints {
     #[test]
     fn a_store_through_a_loaded_pointer_reaches_every_stated_footprint() {
         let cells = entry_memory();
-        let source = intern_c_memory(cells.clone());
+        let source = intern_memory(cells.clone());
         let p = Pointer::loaded_value(&source, &at(block("global:cells"), 0));
         let q = Pointer::loaded_value(&source, &at(block("global:cells"), 8));
         let after = cells.store(q.offset_by_bytes(8), one());
@@ -1059,15 +1070,18 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
         block: block("global:g"),
         offset: PointerOffsetTerm::scaled_int32_node(index.clone(), 4),
     };
-    let three = CValue::Int32(MachineTerm::constant(3));
+    let three = ProgramValue::Int32(MachineTerm::constant(3));
     let no_facts = PureFactContext::new();
     let before = entry_memory().store(cell.clone(), three.clone());
     let after = before
         .clone()
         .without_possible_aliasing_cells(&written, 4, &no_facts)
-        .store(written.clone(), CValue::Int32(MachineTerm::constant(7)));
+        .store(
+            written.clone(),
+            ProgramValue::Int32(MachineTerm::constant(7)),
+        );
     assert_eq!(after.known_value(&cell), None, "the store dropped the cell");
-    let after = intern_c_memory(after);
+    let after = intern_memory(after);
     let index_is_zero = |value| {
         PureFactContext::new().assume_proposition(Proposition::ConditionIs(
             ConditionTerm::equal(index.clone(), MachineTerm::constant(0)),
@@ -1079,7 +1093,7 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
         None,
         "source discovery does not cross the cache-forgetting and store edges"
     );
-    let effect = Proposition::CMemoryMutatesOnly {
+    let effect = Proposition::MemoryMutatesOnly {
         before: before.clone(),
         after: after.memory().clone(),
         writes: vec![(written, 4)],
@@ -1088,18 +1102,20 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
         &before,
         after.memory(),
         &cell,
-        crate::kernel::CType::Int32,
+        crate::kernel::ProgramType::Int32,
         &[effect],
         &crate::kernel::tests::explicit_signed_elements(
             cell.clone(),
-            crate::kernel::CType::Int32,
+            crate::kernel::ProgramType::Int32,
             index.clone(),
             MachineTerm::constant(0),
             index_is_zero(false),
         ),
     )
     .expect("explicit separation preserves the stored value");
-    let (CValue::Int32(old), CValue::Int32(new), CValue::Int32(three)) = (old, new, three) else {
+    let (ProgramValue::Int32(old), ProgramValue::Int32(new), ProgramValue::Int32(three)) =
+        (old, new, three)
+    else {
         panic!("complete int32 observations");
     };
     let source = Proposition::ConditionIs(ConditionTerm::equal(old, three.clone()), true);
@@ -1127,7 +1143,7 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
     );
     assert_eq!(
         cell_value_on_path(&after, &cell, 4, &index_is_zero(true)),
-        Some(CValue::Int32(MachineTerm::constant(7)))
+        Some(ProgramValue::Int32(MachineTerm::constant(7)))
     );
     assert_eq!(cell_value_on_path(&after, &cell, 4, &no_facts), None);
 }
@@ -1141,7 +1157,7 @@ fn branch_join_preserves_uncached_reads_only_when_every_arm_agrees() {
         let first = before.clone().store(other.clone(), one());
         let second = before
             .clone()
-            .store(other, CValue::Int32(MachineTerm::constant(2)));
+            .store(other, ProgramValue::Int32(MachineTerm::constant(2)));
         let joined = first
             .clone()
             .with_interface_memory_havoc(
@@ -1153,7 +1169,7 @@ fn branch_join_preserves_uncached_reads_only_when_every_arm_agrees() {
         assert!(joined.known_value(&cell).is_none());
         assert_eq!(
             same(
-                Resource::Cell {
+                TrackedResource::Cell {
                     pointer: &cell,
                     bytes
                 },
@@ -1178,7 +1194,7 @@ fn branch_join_preserves_uncached_reads_only_when_every_arm_agrees() {
             .unwrap();
         assert_ne!(
             same(
-                Resource::Cell {
+                TrackedResource::Cell {
                     pointer: &cell,
                     bytes
                 },
@@ -1198,7 +1214,7 @@ fn branch_join_identity_retains_inputs_through_read_projection() {
     let a = before.clone().store(other.clone(), one());
     let b = before
         .clone()
-        .store(other.clone(), CValue::Int32(MachineTerm::constant(2)));
+        .store(other.clone(), ProgramValue::Int32(MachineTerm::constant(2)));
     let unchanged = a
         .clone()
         .with_interface_memory_havoc(
@@ -1209,11 +1225,11 @@ fn branch_join_identity_retains_inputs_through_read_projection() {
         .unwrap();
     let c = a.store(
         cell.clone(),
-        CValue::UInt64(MachineTerm::uint64_constant(9)),
+        ProgramValue::UInt64(MachineTerm::uint64_constant(9)),
     );
     let d = b.store(
         cell.clone(),
-        CValue::UInt64(MachineTerm::uint64_constant(10)),
+        ProgramValue::UInt64(MachineTerm::uint64_constant(10)),
     );
     let changed = c
         .clone()
@@ -1226,7 +1242,7 @@ fn branch_join_identity_retains_inputs_through_read_projection() {
     assert!(unchanged.known_value(&cell).is_none());
     assert!(changed.known_value(&cell).is_none());
     assert_ne!(unchanged, changed);
-    let project = |memory: &CMemory| {
+    let project = |memory: &Memory| {
         crate::kernel::reasoning::memory_resolution::canonical_memory_for_pointer_load(
             memory, &cell,
         )
@@ -1251,8 +1267,8 @@ fn branch_join_typed_agreement_checks_alias_premises_and_access_width() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let before = entry_memory();
-    let left = intern_c_memory(before.clone().store(at(block("local:f:i"), 0), one()));
-    let right = intern_c_memory(before.store(alias.clone(), one()));
+    let left = intern_memory(before.clone().store(at(block("local:f:i"), 0), one()));
+    let right = intern_memory(before.store(alias.clone(), one()));
     let bare = PureFactContext::new();
     let separated = bare.clone().assume_condition(
         ConditionTerm::pointer_equal(alias, at(cell.block.clone(), 8)),
@@ -1306,10 +1322,10 @@ fn transport_diagnostic_retains_the_actual_cell_walk_and_scope() {
     use crate::kernel::{
         take_transport_cell_walk_diagnostics, with_transport_cell_walk_diagnostics,
     };
-    let entry = intern_c_memory(entry_memory());
+    let entry = intern_memory(entry_memory());
     let pointer = at(block("global:g"), 0);
-    let changed = intern_c_memory(entry.memory().clone().store(pointer.clone(), one()));
-    let after = intern_c_memory(
+    let changed = intern_memory(entry.memory().clone().store(pointer.clone(), one()));
+    let after = intern_memory(
         changed
             .memory()
             .clone()
@@ -1370,7 +1386,7 @@ fn named_cell_stop_retains_the_decision_made_by_its_walk() {
     let _session = crate::kernel::VerificationSession::enter();
     let read = Pointer::symbolic(crate::kernel::Variable(981_201));
     let write = Pointer::symbolic(crate::kernel::Variable(981_202));
-    let memory = intern_c_memory(CMemory::new().store(write.clone(), one()));
+    let memory = intern_memory(Memory::new().store(write.clone(), one()));
     let here = ProgramPoint::at(&memory);
     let named = last_same_named_cell(&read, 4, &here).expect("named cell");
     assert!(matches!(
@@ -1386,7 +1402,7 @@ fn named_cell_stop_retains_the_decision_made_by_its_walk() {
         .add_checked_read_equality(&read, &write);
     let (retained, work) = crate::instrumentation::measure_deterministic_work(|| {
         last_same(
-            Resource::Cell {
+            TrackedResource::Cell {
                 pointer: &read,
                 bytes: 4,
             },
@@ -1404,18 +1420,18 @@ fn named_cell_stop_retains_the_decision_made_by_its_walk() {
 #[test]
 fn a_forgotten_observation_retains_only_its_complete_typed_value() {
     use super::cell_source::{CellWalkStop, memory_dag_cell_source_with_stop};
-    use crate::kernel::{CType, LoadKind};
+    use crate::kernel::{LoadKind, ProgramType};
     crate::kernel::memory_provenance::with_extended_dag_bridging(|| {
         let pointer = at(block("global:g"), 0);
-        let source = intern_c_memory(entry_memory());
+        let source = intern_memory(entry_memory());
         let observed = source.memory().clone().materialize_cell_from_source(
             pointer.clone(),
-            CType::Int32,
+            ProgramType::Int32,
             source.clone(),
         );
         let value = observed.known_value(&pointer).unwrap();
         let assumptions = PureFactContext::new();
-        let forgotten = intern_c_memory(observed.without_possible_aliasing_cells(
+        let forgotten = intern_memory(observed.without_possible_aliasing_cells(
             &pointer.offset_by_bytes(1),
             1,
             &assumptions,
@@ -1430,7 +1446,7 @@ fn a_forgotten_observation_retains_only_its_complete_typed_value() {
             memory_dag_cell_source_with_stop(&forgotten, &pointer, 8, &assumptions, true).unwrap();
         assert_ne!(stop, CellWalkStop::RetainedValue);
         assert!(wide.resolved_value(&pointer, LoadKind::Bits64).is_none());
-        let changed = intern_c_memory(forgotten.memory().clone().store(pointer.clone(), one()));
+        let changed = intern_memory(forgotten.memory().clone().store(pointer.clone(), one()));
         let (cell, stop) =
             memory_dag_cell_source_with_stop(&changed, &pointer, 4, &assumptions, true).unwrap();
         assert_eq!(stop, CellWalkStop::Affected);
@@ -1459,7 +1475,7 @@ fn structural_read_dependencies_keep_the_observed_point_and_exact_width() {
     let _session = crate::kernel::VerificationSession::enter();
     let entry = entry_memory();
     let pointer = at(block("global:g"), 0);
-    let origin = intern_c_memory(entry.store(at(block("global:h"), 0), one()));
+    let origin = intern_memory(entry.store(at(block("global:h"), 0), one()));
     crate::kernel::eval::record_load_access_width(origin.memory(), &pointer, 4);
     let read = crate::kernel::eval::canonical_form_of_load(
         origin.clone(),

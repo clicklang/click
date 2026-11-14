@@ -17,7 +17,7 @@ fn impl_fn_project() -> Project {
 fn charon_impl_fn_arguments_meet_named_contracts() {
     let p = impl_fn_project();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(SIDECAR, &prepared)
+    ProgramVerificationSession::new_program_prepared(SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     // Keep the original full positive check. Select complete function
     // proofs for local failures; declaration/interface boundary cases
@@ -65,7 +65,7 @@ fn charon_impl_fn_arguments_meet_named_contracts() {
             verify_rust_proof_after(&invalid, &prepared, head)
                 .expect_err("a callable without the contract its use needs must fail")
         } else {
-            C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
                 .err()
                 .expect("a callable without the contract its use needs must fail")
         };

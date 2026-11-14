@@ -26,7 +26,7 @@ fn pure_pointer_dag_substitution_and_capture_collection_scale_linearly() {
         let (_, capture_work) = crate::instrumentation::measure_deterministic_work(|| {
             let mut variables = CarrierVariables::for_rewrite(false);
             collect_pointer_carriers(&input, &mut variables);
-            assert_eq!(variables.c, BTreeSet::from([source]));
+            assert_eq!(variables.program_values, BTreeSet::from([source]));
             let mut captured = BTreeSet::new();
             crate::kernel::prelude::collect_proposition_capture_variables(
                 &Proposition::ConditionIs(
@@ -52,13 +52,13 @@ fn pure_pointer_legacy_scalar_substitution_visits_the_shared_dag_once() {
     for depth in [8, 16, 32] {
         let mut input = call(
             "scalar",
-            vec![PureFunctionArgument::Value(CValue::Int32(
+            vec![PureFunctionArgument::Value(ProgramValue::Int32(
                 MachineTerm::Variable(variable),
             ))],
         );
         let mut expected = call(
             "scalar",
-            vec![PureFunctionArgument::Value(CValue::Int32(
+            vec![PureFunctionArgument::Value(ProgramValue::Int32(
                 replacement.clone(),
             ))],
         );
@@ -84,9 +84,9 @@ fn pure_pointer_legacy_scalar_substitution_visits_the_shared_dag_once() {
 #[test]
 fn full_pointer_substitution_visits_shared_read_origins_once() {
     let _session = VerificationSession::enter();
-    let memory = intern_c_memory(CMemory::new());
-    let p = CPointerValue::new(Pointer::symbolic(Variable(810)), CType::Int32Pointer);
-    let q = CPointerValue::new(Pointer::symbolic(Variable(811)), CType::Int32Pointer);
+    let memory = intern_memory(Memory::new());
+    let p = PointerValue::new(Pointer::symbolic(Variable(810)), ProgramType::Int32Pointer);
+    let q = PointerValue::new(Pointer::symbolic(Variable(811)), ProgramType::Int32Pointer);
     let mut costs = Vec::new();
     for depth in [16, 32, 64] {
         let mut input = p.pointer().clone();
@@ -121,24 +121,31 @@ fn full_pointer_resource_relationship_rewriting_scales_with_its_arguments() {
     let mut samples = Vec::new();
     for size in [16usize, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = intern_c_memory(CMemory::new());
-        let source = CPointerValue::from_read(
+        let memory = intern_memory(Memory::new());
+        let source = PointerValue::from_read(
             Pointer::symbolic(Variable(425_100)),
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
             &memory,
             &Pointer::symbolic(Variable(425_101)),
         );
-        let target = CPointerValue::new(Pointer::symbolic(Variable(425_102)), CType::Int32Pointer);
-        let relationship = |value: &CPointerValue| Proposition::CResourceSeparate {
-            left: Box::new(CResource::Memory(CMemoryRange::from_pointer_value(
+        let target = PointerValue::new(
+            Pointer::symbolic(Variable(425_102)),
+            ProgramType::Int32Pointer,
+        );
+        let relationship = |value: &PointerValue| Proposition::ResourceSeparate {
+            left: Box::new(Resource::Memory(MemoryRange::from_pointer_value(
                 value,
                 0u32.into(),
                 1u32.into(),
                 4,
             ))),
-            right: Box::new(CResource::Composite {
+            right: Box::new(Resource::Composite {
                 name: "many".into(),
-                arguments: vec![AlgebraicValue::C(CValue::Pointer(value.clone())); size].into(),
+                arguments: vec![
+                    AlgebraicValue::Program(ProgramValue::Pointer(value.clone()));
+                    size
+                ]
+                .into(),
             }),
         };
         let input = relationship(&source);
@@ -162,7 +169,7 @@ fn displaced_full_pointer_rewrite_scales_with_the_selected_offset() {
         let mut costs = Vec::new();
         for size in [8_u64, 32, 128] {
             let parameter = |id| {
-                CPointerValue::new(
+                PointerValue::new(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: PointerOffsetTerm::scale_int32(
@@ -170,12 +177,15 @@ fn displaced_full_pointer_rewrite_scales_with_the_selected_offset() {
                             1,
                         ),
                     },
-                    CType::UInt8Pointer,
+                    ProgramType::UInt8Pointer,
                 )
             };
             let base = parameter(916_221);
             let source = if symbolic {
-                CPointerValue::new(Pointer::symbolic(Variable(916_222)), CType::UInt8Pointer)
+                PointerValue::new(
+                    Pointer::symbolic(Variable(916_222)),
+                    ProgramType::UInt8Pointer,
+                )
             } else {
                 parameter(916_222)
             };
@@ -195,11 +205,11 @@ fn displaced_full_pointer_rewrite_scales_with_the_selected_offset() {
             });
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let mut rewrite = TermRewrite::for_pointer_value_exact(&source, &target);
-                let result = rewrite.value(&CValue::Pointer(input));
+                let result = rewrite.value(&ProgramValue::Pointer(input));
                 assert_eq!(rewrite.refusal(), None);
                 result
             });
-            let CValue::Pointer(result) = result else {
+            let ProgramValue::Pointer(result) = result else {
                 panic!("pointer type")
             };
             assert_eq!(result.pointer().block, target.pointer().block);
@@ -253,8 +263,8 @@ fn integer_address_rewrite_visits_a_shared_pointer_dag_once() {
             };
             assert_eq!(application.name(), "pair");
             let [
-                PureFunctionArgument::Value(CValue::Pointer(left)),
-                PureFunctionArgument::Value(CValue::Pointer(right)),
+                PureFunctionArgument::Value(ProgramValue::Pointer(left)),
+                PureFunctionArgument::Value(ProgramValue::Pointer(right)),
             ] = application.arguments()
             else {
                 panic!("lost pointer arguments")

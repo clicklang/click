@@ -3,10 +3,10 @@ use super::*;
 #[test]
 fn machine_call_roots_preserve_types_arguments_and_native_roundtrips() {
     let _session = crate::kernel::VerificationSession::enter();
-    let input = KernelTerm::variable(KernelType::C(CType::UInt32), Variable(995800));
+    let input = KernelTerm::variable(KernelType::Program(ProgramType::UInt32), Variable(995800));
     let native = SharedPureApplication::intern(
         "f".into(),
-        vec![PureFunctionArgument::Value(CValue::UInt32(
+        vec![PureFunctionArgument::Value(ProgramValue::UInt32(
             MachineTerm::Variable(Variable(995800)),
         ))],
     );
@@ -36,7 +36,7 @@ fn machine_call_roots_preserve_types_arguments_and_native_roundtrips() {
             root,
             KernelTermImport::default().machine_call(format, &retained)
         );
-        assert_eq!(root.ty(), &KernelType::C(format.c_type()));
+        assert_eq!(root.ty(), &KernelType::Program(format.program_type()));
         assert_eq!(root.children(), &[input.clone()]);
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         assert_eq!(
@@ -64,10 +64,10 @@ fn machine_call_roots_preserve_types_arguments_and_native_roundtrips() {
 #[test]
 fn machine_call_roots_preserve_opaque_producer_payloads() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = CPointerValue::new(Pointer::symbolic(Variable(995801)), CType::VoidPointer);
+    let pointer = PointerValue::new(Pointer::symbolic(Variable(995801)), ProgramType::VoidPointer);
     let application = SharedPureApplication::intern(
         "pointer_arg".into(),
-        vec![PureFunctionArgument::Value(CValue::Pointer(
+        vec![PureFunctionArgument::Value(ProgramValue::Pointer(
             pointer.clone(),
         ))],
     );
@@ -82,7 +82,7 @@ fn machine_call_roots_preserve_opaque_producer_payloads() {
     );
     let second = SharedPureApplication::intern(
         application.name().into(),
-        vec![PureFunctionArgument::Value(CValue::Pointer(
+        vec![PureFunctionArgument::Value(ProgramValue::Pointer(
             pointer
                 .clone()
                 .with_declared_object_class(Some(class.clone())),
@@ -107,7 +107,7 @@ fn machine_call_roots_preserve_opaque_producer_payloads() {
         else {
             panic!()
         };
-        let PureFunctionArgument::Value(CValue::Pointer(pointer)) = &arguments[0] else {
+        let PureFunctionArgument::Value(ProgramValue::Pointer(pointer)) = &arguments[0] else {
             panic!()
         };
         assert_eq!(pointer.object_class(), expected);
@@ -120,7 +120,7 @@ fn machine_call_roots_preserve_opaque_producer_payloads() {
     };
     assert_eq!(
         arguments,
-        vec![PureFunctionArgument::Value(CValue::Pointer(pointer))]
+        vec![PureFunctionArgument::Value(ProgramValue::Pointer(pointer))]
     );
 }
 
@@ -128,14 +128,14 @@ fn machine_call_roots_preserve_opaque_producer_payloads() {
 fn machine_call_argument_order_and_read_snapshots_remain_distinct() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = Pointer::symbolic(Variable(995802));
-    let before = crate::kernel::intern_c_memory(CMemory::new());
-    let after = crate::kernel::intern_c_memory(
-        CMemory::new().store(pointer.clone(), CValue::Int32(7u32.into())),
+    let before = crate::kernel::intern_memory(Memory::new());
+    let after = crate::kernel::intern_memory(
+        Memory::new().store(pointer.clone(), ProgramValue::Int32(7u32.into())),
     );
     let calls = [before, after].map(|memory| {
         SharedPureApplication::intern(
             "read_arg".into(),
-            vec![PureFunctionArgument::Value(CValue::Int32(
+            vec![PureFunctionArgument::Value(ProgramValue::Int32(
                 MachineTerm::MemoryLoad(memory, Box::new(pointer.clone()), LoadKind::Int32),
             ))],
         )
@@ -143,7 +143,7 @@ fn machine_call_argument_order_and_read_snapshots_remain_distinct() {
     let roots = calls
         .map(|call| KernelTermImport::default().machine_call(MachineIntegerType::Int32, &call));
     assert_ne!(roots[0], roots[1]);
-    let args = [1u32, 2].map(|x| PureFunctionArgument::Value(CValue::Int32(x.into())));
+    let args = [1u32, 2].map(|x| PureFunctionArgument::Value(ProgramValue::Int32(x.into())));
     let a = SharedPureApplication::intern("ordered".into(), args.to_vec());
     let b = SharedPureApplication::intern("ordered".into(), args.into_iter().rev().collect());
     assert_ne!(
@@ -173,7 +173,7 @@ fn common_call_numeric_identity_matches_native_without_changing_payloads() {
     ] {
         let application = SharedPureApplication::intern(
             "numeric_call".into(),
-            vec![PureFunctionArgument::Value(CValue::UInt32(
+            vec![PureFunctionArgument::Value(ProgramValue::UInt32(
                 MachineTerm::Variable(Variable(995820)),
             ))],
         );
@@ -206,7 +206,7 @@ fn native_call_import_before_shared_production_keeps_argument_handles() {
         );
         let application = SharedPureApplication::intern(
             "native_then_shared".into(),
-            vec![PureFunctionArgument::Value(CValue::Int32(argument))],
+            vec![PureFunctionArgument::Value(ProgramValue::Int32(argument))],
         );
         let imported = KernelTermImport::default().machine_call(format, &application);
         if warm {

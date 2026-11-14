@@ -44,7 +44,8 @@ Preserve these rules throughout the migration:
 
 ## Current position
 
-Baseline for this revision: `1dcc52be1`, including merged PR #2581.
+Historical starting baseline: `1dcc52be1`, including merged PR #2581.
+The delivery table below records the current migration status.
 
 Already landed:
 
@@ -58,12 +59,13 @@ Already landed:
 - Volatile observation result names (#2492), with typed value retention and
   branch/indexing controls. Specification reads no longer emit C access events.
 
-**The split is not complete.** The remaining checker boundaries in the
-compiler-assisted inventory are closed below. Execution producers, generic
-legacy payloads and the common raise/lower boundary remain. Nested signed arithmetic
-construction is enabled, as recorded in step 2.
-These are concrete migration boundaries,
-not a count of every remaining defect in the verifier.
+**The split is not complete.** Common roots are live for supported numeric
+evaluation, calls, execution handoffs, range folds, and numeric/algebraic match
+results. Remaining work includes complete-pointer/address boundaries, other
+Boolean and opaque result families, the general raise/lower and certificate
+boundary, and duplicate storage removal. Named native compatibility consumers
+remain explicit; closing chunk 6 does not close those other packages. These are
+representation boundaries, not a count of every remaining verifier defect.
 
 The previous document interleaved open boxes with later paragraphs completing
 parts of them. Its old unchecked lists and historical accessor counts must not
@@ -83,7 +85,7 @@ not ten aliases for partial progress on one boundary. Keep one PR open at a time
 | 3 | Pure-function arguments and results | In progress. [PR #2643](https://github.com/clicklang/click/pull/2643) retained shared machine values during argument assembly. [PR #2647](https://github.com/clicklang/click/pull/2647) retains them in call payloads and migrates argument collection, rewriting, alpha keys, congruence and fold-read consumers. Typed semantic application identity is separate from exact producer payloads; numeric indexes share native/retained call identities, and comparison cycle guards permit narrow-to-wide checking. Repeated native/shared readings do not accumulate payload versions. The integer machine call-result sequence 3a–3f below completes common result production and its consumers; pointer, algebraic, Boolean and floating-point result families remain separate work. |
 | 4 | Mixed-width arithmetic and casts | Implemented as subchunks 4a–4j below, one PR per subchunk. Numeric producers retain shared operands and results within the existing supported profile. General call and nonnumeric compatibility boundaries belong to the remaining packages; the previous combined branch stays unmerged reference material. |
 | 5 | C/Rust execution result carriers | Supported machine handoffs implemented in 5a–5g below: expression paths, local bindings, returns and caller receipt retain common roots. Native memory-cell, specification and presentation boundaries remain explicit. |
-| 6 | Folds, binders and algebraic matches | In progress |
+| 6 | Folds, binders and algebraic matches | Implemented as 6a–6n below. Common fold and numeric/algebraic match results retain scoped children; remaining native consumers are named compatibility boundaries. |
 | 7 | Complete pointers and read addresses | Open |
 | 8 | Remaining Boolean and opaque expression payloads | Open |
 | 9 | Unified raising/lowering and certificate boundaries | Open |
@@ -185,7 +187,7 @@ other result families.
 
 ## Chunk 6: folds, binders and algebraic matches
 
-Deliver one PR per subchunk, in sequence. Prepare scoped consumers and Surface
+Delivered one PR per subchunk, in sequence, preparing scoped consumers and Surface
 support before activating new evaluator roots. Preserve existing proof/refusal
 behavior, range ordering, binder identity, capture avoidance, scoped obligations
 and constructor reduction rules. No new search, indexes or larger budgets.
@@ -207,6 +209,9 @@ and constructor reduction rules. No new search, indexes or larger budgets.
 | 6m | Algebraic match producers | Algebraic result matches retain common structure; other producers have named compatibility boundaries. |
 | 6n | Closure | Remove superseded adapters and validate nested folds/matches/calls, fact stability, exact round trips and scaling. |
 
+The following paragraphs record each implementation stage. Later producer
+activation supersedes the staging notes in earlier consumer-only steps.
+
 6a ([PR #2731](https://github.com/clicklang/click/pull/2731), merged)
 prepares the typed `KernelFold` payload without registering a live
 `KernelTermNode` variant or switching evaluator production. This deliberately
@@ -215,7 +220,8 @@ ready. Integer results preserve Int32, UInt64 and Integer range kinds; the
 existing symbolic machine fold retains its Int32 range and result profile.
 This is preparation, not closure of the fold boundary.
 
-6b prepares common-child readers for Integer-free, expression-free, C-capture
+6b ([PR #2733](https://github.com/clicklang/click/pull/2733), merged)
+prepares common-child readers for Integer-free, expression-free, C-capture
 and typed binder variables, plus current-memory read dependencies. Variable
 summaries use the existing persistent set representation and a traversal-local
 memo keyed by common node identity; filtering body binders never changes the
@@ -226,7 +232,8 @@ readers remain staged until common fold roots are activated. Validation: nine
 focused parity/scaling cases and the full scaling plus related-reader selection
 (1,574 tests) pass.
 
-6c prepares scoped rewriting of the common fold payload. Machine children use
+6c ([PR #2734](https://github.com/clicklang/click/pull/2734), merged)
+prepares scoped rewriting of the common fold payload. Machine children use
 the retained operand walker directly; Integer children reuse the existing
 capture-safe fold walker through a rewrite-local, memoized Integer compatibility
 bridge. Range endpoints retain shared machine operands, including the existing
@@ -237,7 +244,8 @@ read snapshots. This remains staged until fold roots are activated; the Integer
 compatibility boundary has not been removed. All four focused parity/scaling
 tests and the full scaling plus rewrite selection (1,682 tests) pass.
 
-6d shares the machine fold alpha-key implementation between native and common
+6d ([PR #2738](https://github.com/clicklang/click/pull/2738), merged)
+shares the machine fold alpha-key implementation between native and common
 children. Bound-variable ordinals apply only to the body, with the enclosing
 scope restored on success or refusal; free variables and snapshot identities
 remain distinct. Integer checking uses a named compatibility adapter retaining
@@ -246,7 +254,8 @@ producers or change fold reduction laws. Fold child keys remain boxed so this
 variant does not enlarge ordinary scalar keys. The full scaling, related fact
 matching/arithmetic, rewrite and registration selection passes 1,676 tests.
 
-6e adds the existing `.fold(...)` Surface spelling for retained Integer and
+6e ([PR #2739](https://github.com/clicklang/click/pull/2739), merged)
+adds the existing `.fold(...)` Surface spelling for retained Integer and
 machine fold payloads. Body binders use separate Integer/C namespaces;
 bounds and initial values stay outside their scope. A single name-freshening
 pass avoids capture and processes nested folds iteratively. Integer-index
@@ -257,7 +266,8 @@ expands and replays without implicit search. This supplies the spelling
 boundary; live common fold producer activation remains 6f and 6g. Validation:
 the full scaling and related Surface selection passes all 1,634 tests.
 
-6f activates Integer `KernelTermNode::Fold` roots and the existing Integer fold
+6f ([PR #2740](https://github.com/clicklang/click/pull/2740), merged)
+activates Integer `KernelTermNode::Fold` roots and the existing Integer fold
 constructor produces through them. The evaluator's native Integer result
 carrier remains an explicit shallow reading whose operands retain common
 handles. Free-variable/capture collection, current-memory dependencies and
@@ -325,7 +335,8 @@ than exporting native expression trees. All 1,957 tests in the full scaling and
 related match, rewrite and fact-key selection pass, including five new checks.
 
 
-6k prepares common match spelling through the existing Surface `match` form.
+6k ([PR #2746](https://github.com/clicklang/click/pull/2746), merged)
+prepares common match spelling through the existing Surface `match` form.
 Ordered arms retain typed C, Integer and algebraic scopes, including nested
 folds; written binder names are preferred and conflicting names are freshened.
 Common machine bodies raise directly. Private binder markers are finalized
@@ -334,6 +345,66 @@ avoid the reproduced stack overflow on a 128-node match body. This changes
 neither language syntax nor evaluator reduction policy. All 2,100 tests in the
 full scaling and related Surface, match, fold and substitution selection pass,
 including six print/parse/lower round trips and typed-field scope checks.
+
+6l ([PR #2752](https://github.com/clicklang/click/pull/2752), merged)
+switches numeric match production to live common roots and arm bodies.
+Integer path results retain a shallow native reading; machine path results
+retain their `KernelTerm` directly. Scoped consumers preserve capture,
+constructor evidence, memory dependencies and typed observation identity.
+Ordinary memory transport and fact simplification leave matches opaque,
+while explicit substitution visits their scoped bodies. Bool, floating-point
+and generic results retain explicit compatibility paths. Algebraic result
+production remains 6m; whole-slice closure remains 6n.
+The full scaling suite and related match, fold, rewrite, Surface, observation,
+memory, condition-decision and variable-reader tests pass: 2,350 total.
+Existing Rust signed-match proofs also pass after preserving synthesized
+Integer aliases during certificate
+observation; the alias is not observed again as a machine value.
+The existing false-list refusal keeps its 100,000-unit budget: unchanged
+retained word comparisons no longer repeat the same order-fact query. Shared
+and native match readers also preserve scrutinee/guard selection, cold-import
+observation identity and the existing word-arithmetic dispatch policy.
+The full 5,286-fixture Markdown corpus passes with zero fact-stability changes.
+Numeric match imports use the same retained-operand boundary as folds: opaque
+arm expressions, including boolean casts, remain valid arithmetic leaves.
+This fixes the Rust option and example-project storage assertion found by CI.
+
+6m ([PR #2754](https://github.com/clicklang/click/pull/2754), merged)
+retains symbolic algebraic match results in a private evaluator carrier.
+Nested algebraic scrutinees and arm bodies stay common through construction
+and scoped rewriting. Capture reservation walks shared children directly;
+unknown nested matches decline constructor reduction without materializing
+their native trees. Exact native-source replacement preserves the existing
+value-equality policy, including pointer evidence.
+
+Native output is an explicit, iterative compatibility operation. Remaining
+boundaries are algebraic constructors and calls, conditionals, equality facts,
+resource capture, generic C parameters, and algebraic scrutinee descriptors
+consumed by numeric matches. These are not claims that every algebraic term
+family has migrated. Concrete constructor selection, arm obligations and
+refusals remain unchanged. Producer scaling covers depths 8/16/32/64; scoped
+rewriting covers shared nested bodies at 8/32/128 without native exports.
+All 2,404 tests in the full scaling and related selection pass, as does the
+full Markdown corpus with zero fact-stability differences and the production
+build check.
+
+6n removes the superseded `KernelMatch::export_algebraic` adapter. Explicit
+output of retained algebraic matches now uses the iterative
+`KernelTermExport::algebraic` boundary.
+Combined source round trips cover calls around folds, calls inside match arms,
+matches inside folds, nested algebraic match scrutinees, and algebraic call
+arguments. A deterministic Surface control grows mixed fold/match/call depth
+at 3/9/27 and unrelated locals at 0/64/256, requiring no machine exports and
+unchanged work as unrelated locals grow. Existing syntax, binder scope,
+constructor evidence, refusals and budgets are preserved. All 37 focused
+checks and all 2,410 tests in the full scaling and related selection pass. The
+full Markdown corpus passes with zero fact-stability differences; production
+compilation and the full normal example suite also pass.
+
+Chunk 6 closes the supported fold/match producer and consumer slice. It does
+not remove native Integer compatibility readings or migrate algebraic
+constructors, calls, conditionals and facts wholesale. Those named boundaries,
+plus the remaining result families in chunks 3 and 7–10, remain visible work.
 
 ## Chunk 5: execution value handoffs
 

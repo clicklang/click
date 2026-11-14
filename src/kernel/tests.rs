@@ -5,19 +5,19 @@ mod callback_signature_tests;
 mod one_byte_one_name_tests;
 
 fn checked_memory_load_equality(
-    left: &CMemory,
-    right: &CMemory,
+    left: &Memory,
+    right: &Memory,
     pointer: &Pointer,
     assumptions: &PureFactContext,
 ) -> bool {
     checked_atomic_load_equality(
         &MachineTerm::MemoryLoad(
-            intern_c_memory_ref(left),
+            intern_memory_ref(left),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
         ),
         &MachineTerm::MemoryLoad(
-            intern_c_memory_ref(right),
+            intern_memory_ref(right),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
         ),
@@ -28,13 +28,13 @@ fn checked_memory_load_equality(
 /// Instantiate the explicit elements law and discharge its written premise.
 pub(in crate::kernel) fn explicit_signed_elements(
     base: Pointer,
-    ty: CType,
+    ty: ProgramType,
     i: MachineTerm,
     j: MachineTerm,
     facts: PureFactContext,
 ) -> PureFactContext {
     let law = crate::kernel::prove_separation_elements(
-        CPointerValue::new(base, ty.pointer_to().unwrap()),
+        PointerValue::new(base, ty.pointer_to().unwrap()),
         ty.byte_width(),
         MachineIntegerType::Int32,
         i,
@@ -57,29 +57,29 @@ pub(in crate::kernel) fn explicit_signed_elements(
 /// certificate. Tests supply the selected transition and prove its separation;
 /// the logical read producers provide both observations without reconstruction.
 pub(in crate::kernel) fn explicit_frame(
-    before: &CMemory,
-    after: &CMemory,
+    before: &Memory,
+    after: &Memory,
     address: &Pointer,
-    ty: CType,
+    ty: ProgramType,
     effects: &[Proposition],
     facts: &PureFactContext,
-) -> Option<(CValue, CValue, Proposition)> {
+) -> Option<(ProgramValue, ProgramValue, Proposition)> {
     use crate::kernel::eval::typed_reads::ReadScope;
     use crate::kernel::proof::transport_certificate::{TransportCertificate, TransportNode};
-    let entry = CState::new().with_memory(before.clone());
+    let entry = ExecutionState::new().with_memory(before.clone());
     let exit = entry.clone().with_memory(after.clone());
     let effects = effects
         .iter()
         .cloned()
         .map(ExecutionPureFact::certified)
         .collect::<Vec<_>>();
-    let footprint = CResource::Footprint(crate::kernel::RegionFootprint::transition(
+    let footprint = Resource::Footprint(crate::kernel::RegionFootprint::transition(
         "selected transition".into(),
         &entry,
         &exit,
         &effects,
     ));
-    let kept = CResource::Memory(CMemoryRange::new_with_element_width(
+    let kept = Resource::Memory(MemoryRange::new_with_element_width(
         address.clone(),
         0u32.into(),
         1u32.into(),
@@ -87,7 +87,7 @@ pub(in crate::kernel) fn explicit_frame(
     ));
     // Establish each explicitly selected member's separation, then apply the
     // footprint rule to those facts, as normalize(using: [...]) does.
-    let CResource::Footprint(region) = &footprint else {
+    let Resource::Footprint(region) = &footprint else {
         unreachable!()
     };
     let mut selected = PureFactContext::new();
@@ -97,7 +97,7 @@ pub(in crate::kernel) fn explicit_frame(
         if !facts.proves_resource_separate(&member, &kept) {
             return None;
         }
-        selected = selected.assume_proposition(Proposition::CResourceSeparate {
+        selected = selected.assume_proposition(Proposition::ResourceSeparate {
             left: Box::new(member),
             right: Box::new(kept),
         });
@@ -105,12 +105,12 @@ pub(in crate::kernel) fn explicit_frame(
     if !crate::kernel::region_footprint::separate_using(&footprint, &kept, &selected) {
         return None;
     }
-    let separation = Proposition::CResourceSeparate {
+    let separation = Proposition::ResourceSeparate {
         left: Box::new(footprint),
         right: Box::new(kept),
     };
     let _reads = ReadScope::enter();
-    let observe = |memory: &CMemory| {
+    let observe = |memory: &Memory| {
         let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
             memory,
             address.clone(),
@@ -122,7 +122,7 @@ pub(in crate::kernel) fn explicit_frame(
         let [path] = paths.as_slice() else {
             panic!("one logical observation");
         };
-        let CExpressionOutcome::Value(value) = &path.outcome else {
+        let ExpressionOutcome::Value(value) = &path.outcome else {
             panic!("logical read produces a value");
         };
         value.clone()
@@ -130,20 +130,24 @@ pub(in crate::kernel) fn explicit_frame(
     let old = observe(before);
     let new = observe(after);
     let condition = match (new.numeric_value(), old.numeric_value()) {
-        (CValue::Parameter(a), CValue::Parameter(b)) => {
+        (ProgramValue::Parameter(a), ProgramValue::Parameter(b)) => {
             ConditionTerm::AlgebraicEqual(a.clone(), b.clone())
         }
-        (CValue::Pointer(a), CValue::Pointer(b)) => {
+        (ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
             ConditionTerm::pointer_value_equal(a.clone(), b.clone())
         }
-        (CValue::Int32(a), CValue::Int32(b)) => ConditionTerm::equal(a.clone(), b.clone()),
-        (CValue::UInt8(a), CValue::UInt8(b)) => ConditionTerm::machine_compare(
+        (ProgramValue::Int32(a), ProgramValue::Int32(b)) => {
+            ConditionTerm::equal(a.clone(), b.clone())
+        }
+        (ProgramValue::UInt8(a), ProgramValue::UInt8(b)) => ConditionTerm::machine_compare(
             MachineIntegerType::UInt8,
             CompareRelation::Equal,
             a.clone(),
             b.clone(),
         ),
-        (CValue::UInt64(a), CValue::UInt64(b)) => ConditionTerm::uint64_equal(a.clone(), b.clone()),
+        (ProgramValue::UInt64(a), ProgramValue::UInt64(b)) => {
+            ConditionTerm::uint64_equal(a.clone(), b.clone())
+        }
         other => panic!("unsupported test observation: {other:?}"),
     };
     let result = Proposition::ConditionIs(condition, true);
@@ -195,14 +199,14 @@ mod wide_storage_tests;
 /// lowering. This helper does not establish that they represent the complete
 /// input domain needed when packaging a reusable function rule.
 fn certify_contract_with_kernel_artifacts(
-    state: CState,
-    function: CFunction,
-    arguments: Vec<CExpression>,
+    state: ExecutionState,
+    function: ProgramFunction,
+    arguments: Vec<ProgramExpression>,
     derived_entry_facts: Vec<Proposition>,
-    environment: CExecutionEnvironment,
-    execution_semantics: CExecutionSemantics,
-    mode: CFunctionContractExecutionMode,
-) -> CFunctionContractExecution {
+    environment: ExecutionEnvironment,
+    execution_semantics: ExecutionSemantics,
+    mode: FunctionContractExecutionMode,
+) -> FunctionContractExecution {
     let assume_all = |facts: &[Proposition]| {
         facts
             .iter()
@@ -222,7 +226,7 @@ fn certify_contract_with_kernel_artifacts(
         .map(|case_facts| {
             let mut facts = derived_entry_facts.clone();
             facts.extend(case_facts.iter().cloned());
-            prove_checked_c_function_execution_with_environment(
+            prove_checked_program_function_execution_with_environment(
                 state.clone(),
                 function.clone(),
                 arguments.clone(),
@@ -233,7 +237,7 @@ fn certify_contract_with_kernel_artifacts(
             )
         })
         .collect::<Vec<_>>();
-    prove_c_function_contract_execution_paths_with_checked_artifacts(
+    prove_program_function_contract_execution_paths_with_checked_artifacts(
         state,
         function,
         arguments,
@@ -336,24 +340,24 @@ fn memory_range(
     base: Pointer,
     start: impl Into<MachineTerm>,
     end: impl Into<MachineTerm>,
-) -> CMemoryRange {
-    CMemoryRange::new(base, start.into(), end.into())
+) -> MemoryRange {
+    MemoryRange::new(base, start.into(), end.into())
 }
 
 fn view_memory_fact(
     base: Pointer,
     start: impl Into<MachineTerm>,
     end: impl Into<MachineTerm>,
-) -> CResourceFact {
-    CResourceFact::view_memory(memory_range(base, start, end))
+) -> ResourceFact {
+    ResourceFact::view_memory(memory_range(base, start, end))
 }
 
 fn own_memory_fact(
     base: Pointer,
     start: impl Into<MachineTerm>,
     end: impl Into<MachineTerm>,
-) -> CResourceFact {
-    CResourceFact::own_memory(memory_range(base, start, end))
+) -> ResourceFact {
+    ResourceFact::own_memory(memory_range(base, start, end))
 }
 
 fn view_memory_context(

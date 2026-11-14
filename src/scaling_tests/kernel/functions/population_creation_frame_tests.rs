@@ -11,7 +11,7 @@ fn automatic_lifetime_reuse_tracks_exact_memory_and_retired_blocks() {
         let blocks = (0..size)
             .map(|i| PointerBlock::from(format!("local:lifetime:memo_{i}")))
             .collect::<Vec<_>>();
-        let before = blocks.iter().fold(CMemory::new(), |memory, block| {
+        let before = blocks.iter().fold(Memory::new(), |memory, block| {
             memory.with_block(block.clone(), 4)
         });
         let after = retire_automatic_lifetime_blocks(&before, &blocks);

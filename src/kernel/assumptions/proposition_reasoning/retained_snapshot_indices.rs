@@ -27,22 +27,24 @@ fn reads() -> [MachineTerm; 3] {
         block: "retained-snapshot".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = CMemory::new()
-        .with_block(pointer.block.clone(), 64)
-        .store(pointer.clone(), CValue::Int32(MachineTerm::constant(2)));
+    let memory = Memory::new().with_block(pointer.block.clone(), 64).store(
+        pointer.clone(),
+        ProgramValue::Int32(MachineTerm::constant(2)),
+    );
     let other = Pointer {
         block: pointer.block.clone(),
         offset: PointerOffsetTerm::Constant(32),
     };
     let separate = memory
         .clone()
-        .store(other, CValue::Int32(MachineTerm::constant(3)));
-    let overlap = memory
-        .clone()
-        .store(pointer.clone(), CValue::Int32(MachineTerm::constant(3)));
+        .store(other, ProgramValue::Int32(MachineTerm::constant(3)));
+    let overlap = memory.clone().store(
+        pointer.clone(),
+        ProgramValue::Int32(MachineTerm::constant(3)),
+    );
     [memory, separate, overlap].map(|memory| {
         MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(memory),
+            crate::kernel::intern_memory(memory),
             Box::new(pointer.clone()),
             LoadKind::Int32,
         )
@@ -181,7 +183,7 @@ fn snapshot_source_index_matches_retained_signed_and_unsigned_ring_terms() {
 #[test]
 fn cached_snapshot_syntax_never_caches_context_authority() {
     let _session = VerificationSession::enter();
-    let memory = crate::kernel::intern_c_memory(CMemory::new().with_block("snapshot-alias", 16));
+    let memory = crate::kernel::intern_memory(Memory::new().with_block("snapshot-alias", 16));
     let pointers = [994110, 994111].map(|id| Pointer {
         block: "snapshot-alias".into(),
         offset: PointerOffsetTerm::Variable(Variable(id)),

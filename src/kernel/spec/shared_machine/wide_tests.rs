@@ -99,7 +99,7 @@ fn wide_casts_match_all_existing_integer_directions() {
             let intermediate = if source == destination {
                 initial
             } else {
-                cast(&initial.into(), destination.c_type()).unwrap()
+                cast(&initial.into(), destination.program_type()).unwrap()
             };
             super::super::super::signedness_cast_tests::check_native_parity(intermediate, source);
         }
@@ -110,12 +110,12 @@ fn wide_casts_match_all_existing_integer_directions() {
 fn wide_reads_keep_type_and_snapshot_in_casts_and_observations() {
     let _session = VerificationSession::enter();
     let address = Pointer::symbolic(Variable(995703));
-    let before = crate::kernel::intern_c_memory(CMemory::new());
-    let after = crate::kernel::intern_c_memory(
-        CMemory::new().store(address.clone(), CValue::Int32(7u32.into())),
+    let before = crate::kernel::intern_memory(Memory::new());
+    let after = crate::kernel::intern_memory(
+        Memory::new().store(address.clone(), ProgramValue::Int32(7u32.into())),
     );
     for format in [MachineIntegerType::Int128, MachineIntegerType::UInt128] {
-        let kind = crate::kernel::LoadKind::of_type(format.c_type()).unwrap();
+        let kind = crate::kernel::LoadKind::of_type(format.program_type()).unwrap();
         let roots = [before.clone(), after.clone()].map(|memory| {
             KernelTermImport::default().machine(
                 format,
@@ -144,7 +144,7 @@ fn wide_reads_keep_type_and_snapshot_in_casts_and_observations() {
             ),
         );
         assert!(MachineOperandView::Shared(&bad).observe(format).is_none());
-        assert!(cast(&bad.into(), CType::Int32).is_none());
+        assert!(cast(&bad.into(), ProgramType::Int32).is_none());
     }
 }
 
@@ -164,7 +164,7 @@ fn supported_wide_arithmetic_matches_native_values_and_domains() {
                 for defined in [false, true] {
                     let mut execution = ExecutionBudget::new();
                     let mut budget = SpecEvaluation::logical(&mut execution);
-                    budget.c_definedness = defined;
+                    budget.program_definedness = defined;
                     for case in 0..6 {
                         let operand = |format: MachineIntegerType, id| match case {
                             0 => MachineTerm::Variable(Variable(id)),
@@ -177,9 +177,9 @@ fn supported_wide_arithmetic_matches_native_values_and_domains() {
                                 MachineTerm::Variable(Variable(id)),
                             ),
                             5 => MachineTerm::MemoryLoad(
-                                crate::kernel::intern_c_memory(CMemory::new()),
+                                crate::kernel::intern_memory(Memory::new()),
                                 Box::new(Pointer::symbolic(Variable(id))),
-                                crate::kernel::LoadKind::of_type(format.c_type()).unwrap(),
+                                crate::kernel::LoadKind::of_type(format.program_type()).unwrap(),
                             ),
                             _ => word(format, 2.into()),
                         };
@@ -216,14 +216,14 @@ fn supported_wide_arithmetic_matches_native_values_and_domains() {
                             assert_eq!(KernelTermExport::machine_export_count(), exports);
                             assert_eq!(actual.is_some(), expected.is_some(), "{a:?} {b:?} {op:?}");
                             if let (Some(actual), Some(expected)) = (actual, &expected) {
-                                let CExpressionOutcome::Value(expected_value) = &expected.outcome
+                                let ExpressionOutcome::Value(expected_value) = &expected.outcome
                                 else {
                                     panic!()
                                 };
                                 let actual_value = SpecValue::Shared(actual.value).into_native();
-                                let normalize = |value: &CValue| {
+                                let normalize = |value: &ProgramValue| {
                                     let format =
-                                        MachineIntegerType::from_c_type(value.c_type()).unwrap();
+                                        MachineIntegerType::from_program_type(value.program_type()).unwrap();
                                     let crate::kernel::integer_c_value!(term) = value else {
                                         panic!()
                                     };
@@ -286,7 +286,7 @@ fn wide_producer_keeps_unsupported_operators_and_untyped_words_out() {
                 root(format, &MachineTerm::Variable(Variable(995714))),
             ],
         );
-        assert!(cast(&invalid.clone().into(), CType::Int32).is_none());
+        assert!(cast(&invalid.clone().into(), ProgramType::Int32).is_none());
         assert!(
             apply_values(
                 Some(MachineBinaryOp::Divide),
@@ -303,7 +303,7 @@ fn wide_producer_keeps_unsupported_operators_and_untyped_words_out() {
 fn nested_wide_evaluation_retains_results_and_inherited_debts() {
     let _session = VerificationSession::enter();
     let leaf = |id| {
-        Box::new(SpecExpression::Value(CValue::Int128(
+        Box::new(SpecExpression::Value(ProgramValue::Int128(
             MachineTerm::Variable(Variable(id)),
         )))
     };
@@ -315,7 +315,7 @@ fn nested_wide_evaluation_retains_results_and_inherited_debts() {
     let mut budget = SpecEvaluation::logical(&mut execution);
     let exports = KernelTermExport::machine_export_count();
     let actual = evaluate_spec_expression_paths_with_algebraic_bindings_in(
-        SpecScope::unbound(&CState::new(), None),
+        SpecScope::unbound(&ExecutionState::new(), None),
         &expression,
         &PureFactContext::new(),
         &mut budget,

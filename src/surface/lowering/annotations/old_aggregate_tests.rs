@@ -1,34 +1,38 @@
 use super::*;
 
-fn entry_state() -> CState {
+fn entry_state() -> ExecutionState {
     use crate::kernel::*;
     let source = Pointer {
         block: "local:caller".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let function = c_function(
-        CType::Void,
+    let function = program_function(
+        ProgramType::Void,
         "copy",
-        vec![c_parameter_with_aggregate_layout(
+        vec![program_parameter_with_aggregate_layout(
             "input",
-            CType::VoidPointer,
-            CAggregateLayout::new(
+            ProgramType::VoidPointer,
+            AggregateLayout::new(
                 8,
                 8,
-                vec![CAggregateField::new("data", 0, CType::Int32Pointer)],
+                vec![AggregateField::new("data", 0, ProgramType::Int32Pointer)],
             ),
         )],
-        c_return(c_void_value()),
+        program_return(program_void_value()),
     );
-    c_function_entry_state(
-        &CState::new().with_memory(CMemory::new().with_block(source.block.clone(), 8)),
+    program_function_entry_state(
+        &ExecutionState::new().with_memory(Memory::new().with_block(source.block.clone(), 8)),
         &function,
-        &[CExpression::Value(CValue::pointer(source))],
+        &[ProgramExpression::Value(ProgramValue::pointer(source))],
     )
     .unwrap()
 }
 
-fn lower_name(state: &CState, name: &str, at_entry: bool) -> Result<SpecExpression, String> {
+fn lower_name(
+    state: &ExecutionState,
+    name: &str,
+    at_entry: bool,
+) -> Result<SpecExpression, String> {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
     let snapshots = RecordedSnapshots::new();
@@ -44,7 +48,7 @@ fn lower_name(state: &CState, name: &str, at_entry: bool) -> Result<SpecExpressi
         BTreeSet::new(),
         BTreeMap::new(),
     );
-    lowerer.lower_c_binding_to_spec(
+    lowerer.lower_program_binding_to_spec(
         name,
         &SpecElaborationContext {
             current_memory: SpecMemory::Fixed(state.memory().clone()),
@@ -60,13 +64,13 @@ fn old_aggregate_binding_uses_only_the_selected_entry_place() {
     let state = entry_state();
     assert_eq!(
         lower_name(&state, "input", true).unwrap(),
-        SpecExpression::Value(CValue::typed_pointer(
+        SpecExpression::Value(ProgramValue::typed_pointer(
             state
                 .locals()
                 .aggregate_object_pointer("input")
                 .unwrap()
                 .clone(),
-            CType::UInt8Pointer
+            ProgramType::UInt8Pointer
         ))
     );
     assert!(lower_name(&state, "later_local", true).is_err());

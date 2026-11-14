@@ -6,11 +6,11 @@ fn ownership_footprint_does_not_walk_pointer_aliases() {
         for size in [8u64, 32, 128] {
             let _session = crate::kernel::VerificationSession::enter();
             let pointer = |i| Pointer::symbolic(Variable(991_000 + i));
-            let owner = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
-                CMemoryRange::new(pointer(0), 0u32.into(), 2u32.into()),
+            let owner = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
+                MemoryRange::new(pointer(0), 0u32.into(), 2u32.into()),
             ));
             let mut facts = PureFactContext::new()
-                .assume_proposition(Proposition::CResourceComposition(owner.clone()))
+                .assume_proposition(Proposition::ResourceComposition(owner.clone()))
                 .with_store_owner(Some(owner));
             for i in 1..=size {
                 let base = if related { pointer(0) } else { pointer(2 * i) };

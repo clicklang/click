@@ -99,7 +99,7 @@ fn collect_spec_proposition_carriers(
         | SpecProposition::ExistsInt32 { variable, body, .. }
         | SpecProposition::ForAllPointer { variable, body, .. }
         | SpecProposition::ExistsPointer { variable, body, .. } => {
-            variables.c.insert(*variable);
+            variables.program_values.insert(*variable);
             collect_spec_proposition_carriers(body, variables, integer_seen);
         }
         SpecProposition::ForAllInteger { variable, body, .. }
@@ -167,7 +167,7 @@ fn collect_spec_integer_carriers(
     }
     match expression {
         SpecIntegerExpression::ResourceField(projection) => {
-            variables.c.insert(projection.identity);
+            variables.program_values.insert(projection.identity);
         }
         SpecIntegerExpression::Term(term) => {
             collect_integer_carriers(term, variables, integer_seen)
@@ -212,8 +212,9 @@ fn collect_spec_integer_carriers(
                             AlgebraicValueType::Integer => {
                                 variables.integer.insert(*variable);
                             }
-                            AlgebraicValueType::C(_) | AlgebraicValueType::ObjectPointer(_, _) => {
-                                variables.c.insert(*variable);
+                            AlgebraicValueType::Program(_)
+                            | AlgebraicValueType::ObjectPointer(_, _) => {
+                                variables.program_values.insert(*variable);
                             }
                             AlgebraicValueType::Algebraic { .. }
                             | AlgebraicValueType::Parameter(_) => {
@@ -277,7 +278,7 @@ fn collect_spec_integer_carriers(
             match index {
                 SpecIntegerRangeFoldIndex::Int32 { .. }
                 | SpecIntegerRangeFoldIndex::UInt64 { .. } => {
-                    variables.c.insert(*item);
+                    variables.program_values.insert(*item);
                 }
                 SpecIntegerRangeFoldIndex::Integer { .. } => {
                     variables.integer.insert(*item);
@@ -296,12 +297,12 @@ fn collect_spec_expression_carriers(
         return;
     }
     match expression {
-        SpecExpression::Value(value) => collect_c_value_carriers(value, variables),
+        SpecExpression::Value(value) => collect_program_value_carriers(value, variables),
         SpecExpression::IntegerToMachine { value, .. } => {
             collect_spec_integer_carriers(value, variables, integer_seen)
         }
         SpecExpression::ResourceField { projection, .. } => {
-            variables.c.insert(projection.identity);
+            variables.program_values.insert(projection.identity);
         }
         SpecExpression::AlgebraicMatch { scrutinee, arms } => {
             collect_spec_algebraic_carriers(scrutinee, variables, integer_seen);
@@ -315,8 +316,8 @@ fn collect_spec_expression_carriers(
                 collect_spec_expression_carriers(&arm.body, variables, integer_seen);
             }
         }
-        SpecExpression::CExpression(expression) => {
-            collect_spec_c_expression_carriers(expression, variables)
+        SpecExpression::ProgramExpression(expression) => {
+            collect_spec_program_expression_carriers(expression, variables)
         }
         SpecExpression::CountedResourceCount { arguments, .. } => {
             for argument in arguments.iter().flatten() {
@@ -417,65 +418,70 @@ fn collect_spec_expression_carriers(
     }
 }
 
-fn collect_spec_c_expression_carriers(expression: &CExpression, variables: &mut CarrierVariables) {
+fn collect_spec_program_expression_carriers(
+    expression: &ProgramExpression,
+    variables: &mut CarrierVariables,
+) {
     if !variables.visit() {
         return;
     }
     match expression {
-        CExpression::Value(value) => collect_c_value_carriers(value, variables),
-        CExpression::Variable(_) | CExpression::FunctionAddress(_) => {}
-        CExpression::Cast { expression, .. }
-        | CExpression::FloatNegate(expression)
-        | CExpression::FloatClassification { expression, .. }
-        | CExpression::EnumField {
+        ProgramExpression::Value(value) => collect_program_value_carriers(value, variables),
+        ProgramExpression::Variable(_)
+        | ProgramExpression::FunctionAddress(_)
+        | ProgramExpression::CallResult { .. } => {}
+        ProgramExpression::Cast { expression, .. }
+        | ProgramExpression::FloatNegate(expression)
+        | ProgramExpression::FloatClassification { expression, .. }
+        | ProgramExpression::EnumField {
             value: expression, ..
         }
-        | CExpression::EnumIs {
+        | ProgramExpression::EnumIs {
             value: expression, ..
         }
-        | CExpression::AddressOf(expression)
-        | CExpression::CheckedObjectAddress(expression)
-        | CExpression::Not(expression)
-        | CExpression::Load(expression)
-        | CExpression::BitwiseNot(expression) => {
-            collect_spec_c_expression_carriers(expression, variables)
+        | ProgramExpression::AddressOf(expression)
+        | ProgramExpression::CheckedObjectAddress(expression)
+        | ProgramExpression::Not(expression)
+        | ProgramExpression::Load(expression)
+        | ProgramExpression::BitwiseNot(expression) => {
+            collect_spec_program_expression_carriers(expression, variables)
         }
-        CExpression::EnumConstruct { fields, .. } => {
+        ProgramExpression::EnumConstruct { fields, .. } => {
             for field in fields {
-                collect_spec_c_expression_carriers(field, variables);
+                collect_spec_program_expression_carriers(field, variables);
                 if variables.exhausted() {
                     return;
                 }
             }
         }
-        CExpression::PointerOffsetBytes { pointer, .. }
-        | CExpression::Subobject { pointer, .. } => {
-            collect_spec_c_expression_carriers(pointer, variables)
+        ProgramExpression::PointerOffsetBytes { pointer, .. }
+        | ProgramExpression::Subobject { pointer, .. } => {
+            collect_spec_program_expression_carriers(pointer, variables)
         }
-        CExpression::Conditional {
+        ProgramExpression::Conditional {
             condition,
             then_branch,
             else_branch,
         } => {
-            collect_spec_c_expression_carriers(condition, variables);
+            collect_spec_program_expression_carriers(condition, variables);
             if variables.exhausted() {
                 return;
             }
-            collect_spec_c_expression_carriers(then_branch, variables);
+            collect_spec_program_expression_carriers(then_branch, variables);
             if variables.exhausted() {
                 return;
             }
-            collect_spec_c_expression_carriers(else_branch, variables);
+            collect_spec_program_expression_carriers(else_branch, variables);
         }
         crate::kernel::binary_c_expression!(left, right) => {
-            collect_spec_c_expression_carriers(left, variables);
+            collect_spec_program_expression_carriers(left, variables);
             if variables.exhausted() {
                 return;
             }
-            collect_spec_c_expression_carriers(right, variables);
+            collect_spec_program_expression_carriers(right, variables);
         }
-        CExpression::TypedLoad { pointer, .. } => {
-            collect_spec_c_expression_carriers(pointer, variables)
+        ProgramExpression::TypedLoad { pointer, .. } => {
+            collect_spec_program_expression_carriers(pointer, variables)
         }
     }
 }
@@ -494,9 +500,9 @@ fn collect_spec_algebraic_carriers(
         }
         SpecAlgebraicExpressionNode::Binding(_) => {}
         SpecAlgebraicExpressionNode::ResourceField(projection) => {
-            variables.c.insert(projection.identity);
+            variables.program_values.insert(projection.identity);
         }
-        SpecAlgebraicExpressionNode::CValue(value) => {
+        SpecAlgebraicExpressionNode::ProgramValue(value) => {
             collect_spec_expression_carriers(value, variables, integer_seen)
         }
         SpecAlgebraicExpressionNode::Constructor { fields, .. } => {
@@ -505,7 +511,7 @@ fn collect_spec_algebraic_carriers(
                     return;
                 }
                 match field {
-                    SpecAlgebraicValue::C(value) => {
+                    SpecAlgebraicValue::Program(value) => {
                         collect_spec_expression_carriers(value, variables, integer_seen)
                     }
                     SpecAlgebraicValue::Integer(value) => {
@@ -908,7 +914,7 @@ impl<'a> TermRewrite<'a> {
                 body,
             } => {
                 let (variable, body) =
-                    self.with_spec_scope(BindingCarrier::C, *variable, |rewrite| {
+                    self.with_spec_scope(BindingCarrier::Program, *variable, |rewrite| {
                         rewrite.rewrite_spec_proposition(body)
                     })?;
                 SpecProposition::ForAllMachineInteger {
@@ -924,7 +930,7 @@ impl<'a> TermRewrite<'a> {
                 body,
             } => {
                 let (variable, body) =
-                    self.with_spec_scope(BindingCarrier::C, *variable, |rewrite| {
+                    self.with_spec_scope(BindingCarrier::Program, *variable, |rewrite| {
                         rewrite.rewrite_spec_proposition(body)
                     })?;
                 SpecProposition::ForAllInt32 {
@@ -968,17 +974,17 @@ impl<'a> TermRewrite<'a> {
             SpecProposition::ForAllPointer {
                 name,
                 variable,
-                c_type,
+                program_type,
                 body,
             } => {
                 let (variable, body) =
-                    self.with_spec_scope(BindingCarrier::C, *variable, |rewrite| {
+                    self.with_spec_scope(BindingCarrier::Program, *variable, |rewrite| {
                         rewrite.rewrite_spec_proposition(body)
                     })?;
                 SpecProposition::ForAllPointer {
                     name: name.clone(),
                     variable,
-                    c_type: *c_type,
+                    program_type: *program_type,
                     body: Box::new(body),
                 }
             }
@@ -989,7 +995,7 @@ impl<'a> TermRewrite<'a> {
                 body,
             } => {
                 let (variable, body) =
-                    self.with_spec_scope(BindingCarrier::C, *variable, |rewrite| {
+                    self.with_spec_scope(BindingCarrier::Program, *variable, |rewrite| {
                         rewrite.rewrite_spec_proposition(body)
                     })?;
                 SpecProposition::ExistsMachineInteger {
@@ -1005,7 +1011,7 @@ impl<'a> TermRewrite<'a> {
                 body,
             } => {
                 let (variable, body) =
-                    self.with_spec_scope(BindingCarrier::C, *variable, |rewrite| {
+                    self.with_spec_scope(BindingCarrier::Program, *variable, |rewrite| {
                         rewrite.rewrite_spec_proposition(body)
                     })?;
                 SpecProposition::ExistsInt32 {
@@ -1049,17 +1055,17 @@ impl<'a> TermRewrite<'a> {
             SpecProposition::ExistsPointer {
                 name,
                 variable,
-                c_type,
+                program_type,
                 body,
             } => {
                 let (variable, body) =
-                    self.with_spec_scope(BindingCarrier::C, *variable, |rewrite| {
+                    self.with_spec_scope(BindingCarrier::Program, *variable, |rewrite| {
                         rewrite.rewrite_spec_proposition(body)
                     })?;
                 SpecProposition::ExistsPointer {
                     name: name.clone(),
                     variable,
-                    c_type: *c_type,
+                    program_type: *program_type,
                     body: Box::new(body),
                 }
             }
@@ -1127,9 +1133,12 @@ impl<'a> TermRewrite<'a> {
                     destination: *destination,
                 }
             }
-            SpecExpression::ResourceField { projection, c_type } => SpecExpression::ResourceField {
+            SpecExpression::ResourceField {
+                projection,
+                program_type,
+            } => SpecExpression::ResourceField {
                 projection: projection.clone(),
-                c_type: *c_type,
+                program_type: *program_type,
             },
             SpecExpression::AlgebraicMatch { scrutinee, arms } => SpecExpression::AlgebraicMatch {
                 scrutinee: Box::new(self.rewrite_spec_algebraic(scrutinee)?),
@@ -1145,8 +1154,8 @@ impl<'a> TermRewrite<'a> {
                     })
                     .collect::<Result<Vec<_>, SpecRewriteError>>()?,
             },
-            SpecExpression::CExpression(value) => {
-                SpecExpression::CExpression(self.rewrite_c_expression(value)?)
+            SpecExpression::ProgramExpression(value) => {
+                SpecExpression::ProgramExpression(self.rewrite_program_expression(value)?)
             }
             SpecExpression::CountedResourceCount { name, arguments } => {
                 SpecExpression::CountedResourceCount {
@@ -1411,7 +1420,7 @@ impl<'a> TermRewrite<'a> {
                 let initial = self.rewrite_spec_integer(initial)?;
                 let item_carrier = match index {
                     SpecIntegerRangeFoldIndex::Int32 { .. }
-                    | SpecIntegerRangeFoldIndex::UInt64 { .. } => BindingCarrier::C,
+                    | SpecIntegerRangeFoldIndex::UInt64 { .. } => BindingCarrier::Program,
                     SpecIntegerRangeFoldIndex::Integer { .. } => BindingCarrier::Integer,
                 };
                 let (accumulator, (item, body)) =
@@ -1544,8 +1553,10 @@ impl<'a> TermRewrite<'a> {
             SpecAlgebraicExpressionNode::ResourceField(projection) => {
                 SpecAlgebraicExpressionNode::ResourceField(projection.clone())
             }
-            SpecAlgebraicExpressionNode::CValue(value) => {
-                SpecAlgebraicExpressionNode::CValue(Box::new(self.rewrite_spec_expression(value)?))
+            SpecAlgebraicExpressionNode::ProgramValue(value) => {
+                SpecAlgebraicExpressionNode::ProgramValue(Box::new(
+                    self.rewrite_spec_expression(value)?,
+                ))
             }
             SpecAlgebraicExpressionNode::Constructor { variant, fields } => {
                 SpecAlgebraicExpressionNode::Constructor {
@@ -1607,8 +1618,8 @@ impl<'a> TermRewrite<'a> {
         value: &SpecAlgebraicValue,
     ) -> Result<SpecAlgebraicValue, SpecRewriteError> {
         Ok(match value {
-            SpecAlgebraicValue::C(value) => {
-                SpecAlgebraicValue::C(self.rewrite_spec_expression(value)?)
+            SpecAlgebraicValue::Program(value) => {
+                SpecAlgebraicValue::Program(self.rewrite_spec_expression(value)?)
             }
             SpecAlgebraicValue::Integer(value) => {
                 SpecAlgebraicValue::Integer(self.rewrite_spec_integer(value)?)
@@ -1725,16 +1736,19 @@ impl<'a> TermRewrite<'a> {
         })
     }
 
-    fn rewrite_c_expression(
+    fn rewrite_program_expression(
         &mut self,
-        expression: &CExpression,
-    ) -> Result<CExpression, SpecRewriteError> {
+        expression: &ProgramExpression,
+    ) -> Result<ProgramExpression, SpecRewriteError> {
         self.spec_visit()?;
         let result = match expression {
-            CExpression::Value(value) => CExpression::Value(self.value(value)),
-            CExpression::Variable(name) => CExpression::Variable(name.clone()),
-            CExpression::FunctionAddress(name) => CExpression::FunctionAddress(name.clone()),
-            CExpression::Cast {
+            ProgramExpression::Value(value) => ProgramExpression::Value(self.value(value)),
+            ProgramExpression::Variable(name) => ProgramExpression::Variable(name.clone()),
+            ProgramExpression::FunctionAddress(name) => {
+                ProgramExpression::FunctionAddress(name.clone())
+            }
+            ProgramExpression::CallResult { .. } => expression.clone(),
+            ProgramExpression::Cast {
                 expression,
                 target_type,
                 integer_mode,
@@ -1742,8 +1756,8 @@ impl<'a> TermRewrite<'a> {
                 pointee_volatile,
                 pointee_constant,
                 explicit_qualification,
-            } => CExpression::Cast {
-                expression: Box::new(self.rewrite_c_expression(expression)?),
+            } => ProgramExpression::Cast {
+                expression: Box::new(self.rewrite_program_expression(expression)?),
                 target_type: *target_type,
                 integer_mode: *integer_mode,
                 pointee_struct: pointee_struct.clone(),
@@ -1751,171 +1765,175 @@ impl<'a> TermRewrite<'a> {
                 pointee_constant: *pointee_constant,
                 explicit_qualification: *explicit_qualification,
             },
-            CExpression::Conditional {
+            ProgramExpression::Conditional {
                 condition,
                 then_branch,
                 else_branch,
-            } => CExpression::Conditional {
-                condition: Box::new(self.rewrite_c_expression(condition)?),
-                then_branch: Box::new(self.rewrite_c_expression(then_branch)?),
-                else_branch: Box::new(self.rewrite_c_expression(else_branch)?),
+            } => ProgramExpression::Conditional {
+                condition: Box::new(self.rewrite_program_expression(condition)?),
+                then_branch: Box::new(self.rewrite_program_expression(then_branch)?),
+                else_branch: Box::new(self.rewrite_program_expression(else_branch)?),
             },
-            CExpression::FloatNegate(value) => {
-                CExpression::FloatNegate(Box::new(self.rewrite_c_expression(value)?))
+            ProgramExpression::FloatNegate(value) => {
+                ProgramExpression::FloatNegate(Box::new(self.rewrite_program_expression(value)?))
             }
-            CExpression::EnumConstruct {
+            ProgramExpression::EnumConstruct {
                 enum_type,
                 variant,
                 fields,
-            } => CExpression::EnumConstruct {
+            } => ProgramExpression::EnumConstruct {
                 enum_type: *enum_type,
                 variant: variant.clone(),
                 fields: fields
                     .iter()
-                    .map(|field| self.rewrite_c_expression(field))
+                    .map(|field| self.rewrite_program_expression(field))
                     .collect::<Result<_, _>>()?,
             },
-            CExpression::EnumField {
+            ProgramExpression::EnumField {
                 value,
                 variant,
                 index,
-            } => CExpression::EnumField {
-                value: Box::new(self.rewrite_c_expression(value)?),
+            } => ProgramExpression::EnumField {
+                value: Box::new(self.rewrite_program_expression(value)?),
                 variant: variant.clone(),
                 index: *index,
             },
-            CExpression::EnumIs { value, variant } => CExpression::EnumIs {
-                value: Box::new(self.rewrite_c_expression(value)?),
+            ProgramExpression::EnumIs { value, variant } => ProgramExpression::EnumIs {
+                value: Box::new(self.rewrite_program_expression(value)?),
                 variant: variant.clone(),
             },
-            CExpression::FloatClassification {
+            ProgramExpression::FloatClassification {
                 expression,
                 classification,
-            } => CExpression::FloatClassification {
-                expression: Box::new(self.rewrite_c_expression(expression)?),
+            } => ProgramExpression::FloatClassification {
+                expression: Box::new(self.rewrite_program_expression(expression)?),
                 classification: *classification,
             },
-            CExpression::AddressOf(value) => {
-                CExpression::AddressOf(Box::new(self.rewrite_c_expression(value)?))
+            ProgramExpression::AddressOf(value) => {
+                ProgramExpression::AddressOf(Box::new(self.rewrite_program_expression(value)?))
             }
-            CExpression::CheckedObjectAddress(value) => {
-                CExpression::CheckedObjectAddress(Box::new(self.rewrite_c_expression(value)?))
+            ProgramExpression::CheckedObjectAddress(value) => {
+                ProgramExpression::CheckedObjectAddress(Box::new(
+                    self.rewrite_program_expression(value)?,
+                ))
             }
-            CExpression::PointerOffsetBytes { pointer, bytes } => CExpression::PointerOffsetBytes {
-                pointer: Box::new(self.rewrite_c_expression(pointer)?),
-                bytes: *bytes,
-            },
-            CExpression::Subobject { pointer, width } => CExpression::Subobject {
-                pointer: Box::new(self.rewrite_c_expression(pointer)?),
+            ProgramExpression::PointerOffsetBytes { pointer, bytes } => {
+                ProgramExpression::PointerOffsetBytes {
+                    pointer: Box::new(self.rewrite_program_expression(pointer)?),
+                    bytes: *bytes,
+                }
+            }
+            ProgramExpression::Subobject { pointer, width } => ProgramExpression::Subobject {
+                pointer: Box::new(self.rewrite_program_expression(pointer)?),
                 width: *width,
             },
-            CExpression::LessThan(left, right) => CExpression::LessThan(
-                Box::new(self.rewrite_c_expression(left)?),
-                Box::new(self.rewrite_c_expression(right)?),
+            ProgramExpression::LessThan(left, right) => ProgramExpression::LessThan(
+                Box::new(self.rewrite_program_expression(left)?),
+                Box::new(self.rewrite_program_expression(right)?),
             ),
-            CExpression::LessEqual(left, right) => CExpression::LessEqual(
-                Box::new(self.rewrite_c_expression(left)?),
-                Box::new(self.rewrite_c_expression(right)?),
+            ProgramExpression::LessEqual(left, right) => ProgramExpression::LessEqual(
+                Box::new(self.rewrite_program_expression(left)?),
+                Box::new(self.rewrite_program_expression(right)?),
             ),
-            CExpression::GreaterThan(left, right) => CExpression::GreaterThan(
-                Box::new(self.rewrite_c_expression(left)?),
-                Box::new(self.rewrite_c_expression(right)?),
+            ProgramExpression::GreaterThan(left, right) => ProgramExpression::GreaterThan(
+                Box::new(self.rewrite_program_expression(left)?),
+                Box::new(self.rewrite_program_expression(right)?),
             ),
-            CExpression::GreaterEqual(left, right) => CExpression::GreaterEqual(
-                Box::new(self.rewrite_c_expression(left)?),
-                Box::new(self.rewrite_c_expression(right)?),
+            ProgramExpression::GreaterEqual(left, right) => ProgramExpression::GreaterEqual(
+                Box::new(self.rewrite_program_expression(left)?),
+                Box::new(self.rewrite_program_expression(right)?),
             ),
-            CExpression::Equal(left, right) => CExpression::Equal(
-                Box::new(self.rewrite_c_expression(left)?),
-                Box::new(self.rewrite_c_expression(right)?),
+            ProgramExpression::Equal(left, right) => ProgramExpression::Equal(
+                Box::new(self.rewrite_program_expression(left)?),
+                Box::new(self.rewrite_program_expression(right)?),
             ),
-            CExpression::NotEqual(left, right) => CExpression::NotEqual(
-                Box::new(self.rewrite_c_expression(left)?),
-                Box::new(self.rewrite_c_expression(right)?),
+            ProgramExpression::NotEqual(left, right) => ProgramExpression::NotEqual(
+                Box::new(self.rewrite_program_expression(left)?),
+                Box::new(self.rewrite_program_expression(right)?),
             ),
-            CExpression::Not(value) => {
-                CExpression::Not(Box::new(self.rewrite_c_expression(value)?))
+            ProgramExpression::Not(value) => {
+                ProgramExpression::Not(Box::new(self.rewrite_program_expression(value)?))
             }
-            CExpression::And(left, right) => CExpression::And(
-                Box::new(self.rewrite_c_expression(left)?),
-                Box::new(self.rewrite_c_expression(right)?),
+            ProgramExpression::And(left, right) => ProgramExpression::And(
+                Box::new(self.rewrite_program_expression(left)?),
+                Box::new(self.rewrite_program_expression(right)?),
             ),
-            CExpression::Or(left, right) => CExpression::Or(
-                Box::new(self.rewrite_c_expression(left)?),
-                Box::new(self.rewrite_c_expression(right)?),
+            ProgramExpression::Or(left, right) => ProgramExpression::Or(
+                Box::new(self.rewrite_program_expression(left)?),
+                Box::new(self.rewrite_program_expression(right)?),
             ),
-            CExpression::Add(left, right) => CExpression::Add(
-                Box::new(self.rewrite_c_expression(left)?),
-                Box::new(self.rewrite_c_expression(right)?),
+            ProgramExpression::Add(left, right) => ProgramExpression::Add(
+                Box::new(self.rewrite_program_expression(left)?),
+                Box::new(self.rewrite_program_expression(right)?),
             ),
-            CExpression::Subtract(left, right) => CExpression::Subtract(
-                Box::new(self.rewrite_c_expression(left)?),
-                Box::new(self.rewrite_c_expression(right)?),
+            ProgramExpression::Subtract(left, right) => ProgramExpression::Subtract(
+                Box::new(self.rewrite_program_expression(left)?),
+                Box::new(self.rewrite_program_expression(right)?),
             ),
-            CExpression::Multiply(left, right) => CExpression::Multiply(
-                Box::new(self.rewrite_c_expression(left)?),
-                Box::new(self.rewrite_c_expression(right)?),
+            ProgramExpression::Multiply(left, right) => ProgramExpression::Multiply(
+                Box::new(self.rewrite_program_expression(left)?),
+                Box::new(self.rewrite_program_expression(right)?),
             ),
-            CExpression::Divide(left, right) => CExpression::Divide(
-                Box::new(self.rewrite_c_expression(left)?),
-                Box::new(self.rewrite_c_expression(right)?),
+            ProgramExpression::Divide(left, right) => ProgramExpression::Divide(
+                Box::new(self.rewrite_program_expression(left)?),
+                Box::new(self.rewrite_program_expression(right)?),
             ),
-            CExpression::Remainder(left, right) => CExpression::Remainder(
-                Box::new(self.rewrite_c_expression(left)?),
-                Box::new(self.rewrite_c_expression(right)?),
+            ProgramExpression::Remainder(left, right) => ProgramExpression::Remainder(
+                Box::new(self.rewrite_program_expression(left)?),
+                Box::new(self.rewrite_program_expression(right)?),
             ),
-            CExpression::ShiftLeft(left, right) => CExpression::ShiftLeft(
-                Box::new(self.rewrite_c_expression(left)?),
-                Box::new(self.rewrite_c_expression(right)?),
+            ProgramExpression::ShiftLeft(left, right) => ProgramExpression::ShiftLeft(
+                Box::new(self.rewrite_program_expression(left)?),
+                Box::new(self.rewrite_program_expression(right)?),
             ),
-            CExpression::RustShiftLeft(left, right) => CExpression::RustShiftLeft(
-                Box::new(self.rewrite_c_expression(left)?),
-                Box::new(self.rewrite_c_expression(right)?),
+            ProgramExpression::RustShiftLeft(left, right) => ProgramExpression::RustShiftLeft(
+                Box::new(self.rewrite_program_expression(left)?),
+                Box::new(self.rewrite_program_expression(right)?),
             ),
-            CExpression::ShiftRight(left, right) => CExpression::ShiftRight(
-                Box::new(self.rewrite_c_expression(left)?),
-                Box::new(self.rewrite_c_expression(right)?),
+            ProgramExpression::ShiftRight(left, right) => ProgramExpression::ShiftRight(
+                Box::new(self.rewrite_program_expression(left)?),
+                Box::new(self.rewrite_program_expression(right)?),
             ),
-            CExpression::RustShiftRight(left, right) => CExpression::RustShiftRight(
-                Box::new(self.rewrite_c_expression(left)?),
-                Box::new(self.rewrite_c_expression(right)?),
+            ProgramExpression::RustShiftRight(left, right) => ProgramExpression::RustShiftRight(
+                Box::new(self.rewrite_program_expression(left)?),
+                Box::new(self.rewrite_program_expression(right)?),
             ),
-            CExpression::BitwiseAnd(left, right) => CExpression::BitwiseAnd(
-                Box::new(self.rewrite_c_expression(left)?),
-                Box::new(self.rewrite_c_expression(right)?),
+            ProgramExpression::BitwiseAnd(left, right) => ProgramExpression::BitwiseAnd(
+                Box::new(self.rewrite_program_expression(left)?),
+                Box::new(self.rewrite_program_expression(right)?),
             ),
-            CExpression::BitwiseOr(left, right) => CExpression::BitwiseOr(
-                Box::new(self.rewrite_c_expression(left)?),
-                Box::new(self.rewrite_c_expression(right)?),
+            ProgramExpression::BitwiseOr(left, right) => ProgramExpression::BitwiseOr(
+                Box::new(self.rewrite_program_expression(left)?),
+                Box::new(self.rewrite_program_expression(right)?),
             ),
-            CExpression::BitwiseXor(left, right) => CExpression::BitwiseXor(
-                Box::new(self.rewrite_c_expression(left)?),
-                Box::new(self.rewrite_c_expression(right)?),
+            ProgramExpression::BitwiseXor(left, right) => ProgramExpression::BitwiseXor(
+                Box::new(self.rewrite_program_expression(left)?),
+                Box::new(self.rewrite_program_expression(right)?),
             ),
-            CExpression::BitwiseNot(value) => {
-                CExpression::BitwiseNot(Box::new(self.rewrite_c_expression(value)?))
+            ProgramExpression::BitwiseNot(value) => {
+                ProgramExpression::BitwiseNot(Box::new(self.rewrite_program_expression(value)?))
             }
-            CExpression::Load(value) => {
-                CExpression::Load(Box::new(self.rewrite_c_expression(value)?))
+            ProgramExpression::Load(value) => {
+                ProgramExpression::Load(Box::new(self.rewrite_program_expression(value)?))
             }
-            CExpression::TypedLoad {
+            ProgramExpression::TypedLoad {
                 pointer,
                 value_type,
                 volatile,
                 pointee_constant,
                 access_class,
                 source,
-            } => CExpression::TypedLoad {
-                pointer: Box::new(self.rewrite_c_expression(pointer)?),
+            } => ProgramExpression::TypedLoad {
+                pointer: Box::new(self.rewrite_program_expression(pointer)?),
                 value_type: *value_type,
                 volatile: *volatile,
                 pointee_constant: *pointee_constant,
                 access_class: access_class.clone(),
                 source: source.clone(),
             },
-            CExpression::Index(left, right) => CExpression::Index(
-                Box::new(self.rewrite_c_expression(left)?),
-                Box::new(self.rewrite_c_expression(right)?),
+            ProgramExpression::Index(left, right) => ProgramExpression::Index(
+                Box::new(self.rewrite_program_expression(left)?),
+                Box::new(self.rewrite_program_expression(right)?),
             ),
         };
         self.spec_status()?;
@@ -1935,7 +1953,7 @@ impl<'a> TermRewrite<'a> {
             .as_ref()
             .is_some_and(|replacement| replacement.contains(carrier, variable));
         let existing_scope = match carrier {
-            BindingCarrier::C => self.scope.c.contains_key(&variable),
+            BindingCarrier::Program => self.scope.program_values.contains_key(&variable),
             BindingCarrier::Integer => self.scope.integer.contains_key(&variable),
             BindingCarrier::Algebraic => self.scope.algebraic.contains_key(&variable),
         };
@@ -1977,11 +1995,11 @@ impl<'a> TermRewrite<'a> {
     /// behavior; the Spec resource path must participate in the active
     /// tactic deadline from replacement collection onward.
     pub(crate) fn for_checked_typed_variables(
-        c: &'a BTreeMap<Variable, TypedCReplacement>,
+        program_values: &'a BTreeMap<Variable, TypedProgramValueReplacement>,
         integer: &'a BTreeMap<Variable, IntegerTerm>,
         algebraic: &'a BTreeMap<Variable, AlgebraicTerm>,
     ) -> Self {
-        let mut rewrite = Self::for_typed_variables(c, integer, algebraic);
+        let mut rewrite = Self::for_typed_variables(program_values, integer, algebraic);
         rewrite.enforce_integer_work_limit = true;
         rewrite.ensure_replacement_carriers();
         rewrite
@@ -1998,11 +2016,11 @@ mod tests {
         replacement: IntegerTerm,
         proposition: &SpecProposition,
     ) -> Result<SpecProposition, SpecRewriteError> {
-        let c_replacements = BTreeMap::new();
+        let program_replacements = BTreeMap::new();
         let integer_replacements = BTreeMap::from([(source, replacement)]);
         let algebraic_replacements = BTreeMap::new();
         let mut rewrite = TermRewrite::for_checked_typed_variables(
-            &c_replacements,
+            &program_replacements,
             &integer_replacements,
             &algebraic_replacements,
         );
@@ -2017,8 +2035,8 @@ mod tests {
                 value: Box::new(SpecIntegerExpression::Term(IntegerTerm::var(source))),
                 destination: MachineIntegerType::Int32,
             },
-            operator: CComparisonOperator::Equal,
-            right: SpecExpression::Value(CValue::Int32(MachineTerm::constant(7))),
+            operator: ComparisonOperator::Equal,
+            right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(7))),
         };
         let rewritten =
             rewrite_with_integer_replacement(source, IntegerTerm::constant_i64(7), &proposition)
@@ -2103,7 +2121,7 @@ mod tests {
     }
 
     #[test]
-    fn checked_spec_rewrite_reserves_free_c_source_ids_before_freshening() {
+    fn checked_spec_rewrite_reserves_free_program_source_ids_before_freshening() {
         let source = Variable(100);
         let binder = Variable(99);
         let free_source = Variable(0);
@@ -2111,19 +2129,21 @@ mod tests {
             name: "q".into(),
             variable: binder,
             body: Box::new(SpecProposition::Comparison {
-                left: SpecExpression::Value(CValue::Int32(MachineTerm::Variable(source))),
-                operator: CComparisonOperator::Equal,
-                right: SpecExpression::Value(CValue::Int32(MachineTerm::Variable(free_source))),
+                left: SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(source))),
+                operator: ComparisonOperator::Equal,
+                right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(
+                    free_source,
+                ))),
             }),
         };
-        let c_replacements = BTreeMap::from([(
+        let program_replacements = BTreeMap::from([(
             source,
-            TypedCReplacement::Bitvector(MachineTerm::Variable(binder)),
+            TypedProgramValueReplacement::Bitvector(MachineTerm::Variable(binder)),
         )]);
         let integer_replacements = BTreeMap::new();
         let algebraic_replacements = BTreeMap::new();
         let mut rewrite = TermRewrite::for_checked_typed_variables(
-            &c_replacements,
+            &program_replacements,
             &integer_replacements,
             &algebraic_replacements,
         );
@@ -2140,17 +2160,17 @@ mod tests {
         };
         assert_eq!(
             left,
-            SpecExpression::Value(CValue::Int32(MachineTerm::Variable(binder)))
+            SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(binder)))
         );
         assert_eq!(
             right,
-            SpecExpression::Value(CValue::Int32(MachineTerm::Variable(free_source)))
+            SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(free_source)))
         );
     }
 
     #[test]
     fn checked_spec_rewrite_reserves_integer_ids_hidden_in_registered_load_offsets() {
-        let memory: SharedCMemory = CMemory::new().into();
+        let memory: SharedMemory = Memory::new().into();
         let pointer = Pointer {
             block: PointerBlock::Symbolic(Variable(101)),
             offset: PointerOffsetTerm::scaled_int32_node(
@@ -2161,9 +2181,9 @@ mod tests {
                 4,
             ),
         };
-        // The visible C term contains only the registered load variable.  Its
+        // The visible program term contains only the registered load variable.  Its
         // pointer offset retains the free Integer ID 0, which must still be
-        // reserved before a C binder is freshened.
+        // reserved before a program-value binder is freshened.
         let load = crate::kernel::eval::load_variable_for_cell(
             &memory,
             &pointer,
@@ -2176,19 +2196,19 @@ mod tests {
             name: "q".into(),
             variable: binder,
             body: Box::new(SpecProposition::Comparison {
-                left: SpecExpression::Value(CValue::Int32(MachineTerm::Variable(source))),
-                operator: CComparisonOperator::Equal,
-                right: SpecExpression::Value(CValue::Int32(MachineTerm::Variable(load))),
+                left: SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(source))),
+                operator: ComparisonOperator::Equal,
+                right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(load))),
             }),
         };
-        let c_replacements = BTreeMap::from([(
+        let program_replacements = BTreeMap::from([(
             source,
-            TypedCReplacement::Bitvector(MachineTerm::Variable(binder)),
+            TypedProgramValueReplacement::Bitvector(MachineTerm::Variable(binder)),
         )]);
         let integer_replacements = BTreeMap::new();
         let algebraic_replacements = BTreeMap::new();
         let mut rewrite = TermRewrite::for_checked_typed_variables(
-            &c_replacements,
+            &program_replacements,
             &integer_replacements,
             &algebraic_replacements,
         );
@@ -2228,11 +2248,11 @@ mod tests {
                 right: SpecIntegerExpression::Term(IntegerTerm::var(later_free_source)),
             }),
         };
-        let c_replacements = BTreeMap::new();
+        let program_replacements = BTreeMap::new();
         let integer_replacements = BTreeMap::from([(source, IntegerTerm::var(binder))]);
         let algebraic_replacements = BTreeMap::new();
         let mut rewrite = TermRewrite::for_checked_typed_variables(
-            &c_replacements,
+            &program_replacements,
             &integer_replacements,
             &algebraic_replacements,
         );
@@ -2267,12 +2287,12 @@ mod tests {
         let proposition = SpecProposition::IntegerComparison {
             left: SpecIntegerExpression::RangeFold {
                 index: SpecIntegerRangeFoldIndex::Int32 {
-                    start: Box::new(SpecExpression::Value(CValue::Int32(MachineTerm::constant(
-                        0,
-                    )))),
-                    end: Box::new(SpecExpression::Value(CValue::Int32(MachineTerm::constant(
-                        1,
-                    )))),
+                    start: Box::new(SpecExpression::Value(ProgramValue::Int32(
+                        MachineTerm::constant(0),
+                    ))),
+                    end: Box::new(SpecExpression::Value(ProgramValue::Int32(
+                        MachineTerm::constant(1),
+                    ))),
                 },
                 initial: Box::new(SpecIntegerExpression::Term(IntegerTerm::var(source))),
                 accumulator: Variable(46),
@@ -2280,7 +2300,9 @@ mod tests {
                 body: Box::new(SpecIntegerExpression::Add(
                     Box::new(SpecIntegerExpression::Term(IntegerTerm::var(source))),
                     Box::new(SpecIntegerExpression::FromMachine(Box::new(
-                        SpecExpression::Value(CValue::Int32(MachineTerm::Variable(fold_item))),
+                        SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(
+                            fold_item,
+                        ))),
                     ))),
                 )),
             },
@@ -2322,7 +2344,8 @@ mod tests {
         let SpecIntegerExpression::FromMachine(value) = *right else {
             panic!("the Int32 item lost its machine carrier")
         };
-        let SpecExpression::Value(CValue::Int32(MachineTerm::Variable(rewritten_item))) = *value
+        let SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(rewritten_item))) =
+            *value
         else {
             panic!("the Int32 item was not rewritten as a C value")
         };

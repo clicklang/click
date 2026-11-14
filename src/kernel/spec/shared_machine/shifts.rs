@@ -9,7 +9,7 @@ fn convert(
     if source == target {
         Some(root)
     } else {
-        cast(&root.into(), target.c_type())
+        cast(&root.into(), target.program_type())
     }
 }
 
@@ -47,10 +47,10 @@ pub(super) fn rust(
         right.machine()?,
         Some(bits),
     )?;
-    let KernelType::C(result_type) = result.value.ty() else {
+    let KernelType::Program(result_type) = result.value.ty() else {
         unreachable!()
     };
-    let result_format = MachineIntegerType::from_c_type(*result_type)?;
+    let result_format = MachineIntegerType::from_program_type(*result_type)?;
     result.value = convert(result_format, result.value, format)?;
     Some(result)
 }

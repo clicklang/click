@@ -26,10 +26,13 @@ fn hashing_a_pointer_word_does_not_walk_its_type_origins() {
             ));
         }
         assert_eq!(evidence, reversed);
-        let word = crate::kernel::eval::cast_c_value_to_type(
-            CValue::typed_pointer(Pointer::symbolic(Variable(930_444)), CType::Int32Pointer)
-                .with_pointer_object_type_evidence(Some(evidence)),
-            CType::UInt64,
+        let word = crate::kernel::eval::cast_program_value_to_type(
+            ProgramValue::typed_pointer(
+                Pointer::symbolic(Variable(930_444)),
+                ProgramType::Int32Pointer,
+            )
+            .with_pointer_object_type_evidence(Some(evidence)),
+            ProgramType::UInt64,
             crate::kernel::eval::IntegerConversion::Modular,
             &mut Vec::new(),
             &PureFactContext::new(),

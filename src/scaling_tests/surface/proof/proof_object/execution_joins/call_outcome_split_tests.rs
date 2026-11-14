@@ -1,9 +1,9 @@
 use super::*;
 use crate::kernel::{
-    CFunctionContractClaim, CStatement, Proposition, bool_value, c_call, c_function, c_if,
-    c_int32_literal, c_parameter, c_return, c_seq, c_skip, c_try_catch_int32, c_variable,
-    prove_c_function_contract_execution_paths_with_checked_artifacts,
-    prove_checked_c_function_execution_with_environment,
+    FunctionContractClaim, ProgramStatement, Proposition, bool_value, program_call,
+    program_function, program_if, program_parameter, program_return, program_seq, program_skip,
+    program_try_catch_int32, prove_checked_program_function_execution_with_environment,
+    prove_program_function_contract_execution_paths_with_checked_artifacts,
 };
 
 /// A caught-throw call splits into its returned and threw arms the way a C
@@ -15,14 +15,14 @@ use crate::kernel::{
 /// units at 16 to 256 facts.
 #[test]
 fn call_outcome_split_does_not_copy_the_proofs_facts() {
-    let helper = c_function(
-        CType::Int32,
+    let helper = program_function(
+        ProgramType::Int32,
         "helper",
-        vec![c_parameter("should_throw", CType::Bool)],
-        c_if(
-            c_variable("should_throw"),
-            CStatement::Throw(c_int32_literal(7)),
-            c_return(c_int32_literal(5)),
+        vec![program_parameter("should_throw", ProgramType::Bool)],
+        program_if(
+            crate::kernel::program_expression::variable("should_throw"),
+            ProgramStatement::Throw(crate::kernel::program_expression::int32_literal(7)),
+            program_return(crate::kernel::program_expression::int32_literal(5)),
         ),
     )
     .with_int32_exceptional_outcome()
@@ -30,63 +30,74 @@ fn call_outcome_split_does_not_copy_the_proofs_facts() {
         vec![],
         vec![],
         vec![],
-        vec![CFunctionContractClaim::body_safety()],
+        vec![FunctionContractClaim::body_safety()],
         true,
     );
-    let helper_arguments = vec![CExpression::Value(bool_value(MachineTerm::Variable(
+    let helper_arguments = vec![ProgramExpression::Value(bool_value(MachineTerm::Variable(
         Variable(80_111),
     )))];
-    let artifacts = prove_checked_c_function_execution_with_environment(
-        CState::new().with_population_creation_tracking(),
+    let artifacts = prove_checked_program_function_execution_with_environment(
+        ExecutionState::new().with_population_creation_tracking(),
         helper.clone(),
         helper_arguments.clone(),
         PureFactContext::new(),
-        CExecutionEnvironment::new(),
-        CExecutionSemantics::EXECUTE_BODIES,
-        CFunctionContractExecutionMode::VerifyLoops,
+        ExecutionEnvironment::new(),
+        ExecutionSemantics::EXECUTE_BODIES,
+        FunctionContractExecutionMode::VerifyLoops,
     );
-    let certified = prove_c_function_contract_execution_paths_with_checked_artifacts(
-        CState::new().with_population_creation_tracking(),
+    let certified = prove_program_function_contract_execution_paths_with_checked_artifacts(
+        ExecutionState::new().with_population_creation_tracking(),
         helper.clone(),
         helper_arguments,
-        CExecutionEnvironment::new(),
-        CExecutionSemantics::EXECUTE_BODIES,
-        CFunctionContractExecutionMode::VerifyLoops,
+        ExecutionEnvironment::new(),
+        ExecutionSemantics::EXECUTE_BODIES,
+        FunctionContractExecutionMode::VerifyLoops,
         &[artifacts],
     );
-    let claims = crate::kernel::c_verified_function_contract_claims(&helper, &certified)
+    let claims = crate::kernel::program_verified_function_contract_claims(&helper, &certified)
         .expect("helper body safety should certify");
-    let helper_rule = c_verified_function_rule(helper.clone(), &claims)
+    let helper_rule = program_verified_function_rule(helper.clone(), &claims)
         .expect("the checked helper should have a modular rule");
-    let function_environment = CExecutionEnvironment::new()
+    let function_environment = ExecutionEnvironment::new()
         .with_function(helper)
         .with_verified_function_rule(helper_rule);
-    let function = c_function(
-        CType::Int32,
+    let function = program_function(
+        ProgramType::Int32,
         "caller",
         vec![
-            c_parameter("construct", CType::Bool),
-            c_parameter("should_throw", CType::Bool),
+            program_parameter("construct", ProgramType::Bool),
+            program_parameter("should_throw", ProgramType::Bool),
         ],
-        c_seq(
-            c_if(
-                c_variable("construct"),
-                c_try_catch_int32(
-                    c_call("helper", vec![c_variable("should_throw")]),
+        program_seq(
+            program_if(
+                crate::kernel::program_expression::variable("construct"),
+                program_try_catch_int32(
+                    program_call(
+                        "helper",
+                        vec![crate::kernel::program_expression::variable("should_throw")],
+                    ),
                     "caught",
-                    c_return(c_variable("caught")),
+                    program_return(crate::kernel::program_expression::variable("caught")),
                 ),
-                c_skip(),
+                program_skip(),
             ),
-            c_return(c_int32_literal(5)),
+            program_return(crate::kernel::program_expression::int32_literal(5)),
         ),
     );
-    let parsed_function = syntax::C0Function::external(
-        C0Type::Int32,
+    let parsed_function = crate::languages::interface::ImportedFunction::external(
+        InterfaceType::Int32,
         "caller".into(),
         vec![
-            syntax::C0Parameter::new(C0Type::Bool, "construct".into(), None),
-            syntax::C0Parameter::new(C0Type::Bool, "should_throw".into(), None),
+            crate::languages::interface::ImportedParameter::new(
+                InterfaceType::Bool,
+                "construct".into(),
+                None,
+            ),
+            crate::languages::interface::ImportedParameter::new(
+                InterfaceType::Bool,
+                "should_throw".into(),
+                None,
+            ),
         ],
     )
     .with_prelowered_kernel_function(function.clone());
@@ -96,8 +107,8 @@ fn call_outcome_split_does_not_copy_the_proofs_facts() {
     .unwrap();
     let function_block = &click_file.function_blocks()[0];
     let arguments = vec![
-        CExpression::Value(bool_value(MachineTerm::Variable(Variable(80_112)))),
-        CExpression::Value(bool_value(MachineTerm::Variable(Variable(80_113)))),
+        ProgramExpression::Value(bool_value(MachineTerm::Variable(Variable(80_112)))),
+        ProgramExpression::Value(bool_value(MachineTerm::Variable(Variable(80_113)))),
     ];
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
@@ -126,7 +137,7 @@ fn call_outcome_split_does_not_copy_the_proofs_facts() {
             "call outcome split",
             0,
             ExecutionProofState::at_entry(
-                CState::new().with_population_creation_tracking(),
+                ExecutionState::new().with_population_creation_tracking(),
                 ExecutionFrontier::default(),
                 RecordedSnapshots::new(),
                 SurfacePropositionMap::default(),

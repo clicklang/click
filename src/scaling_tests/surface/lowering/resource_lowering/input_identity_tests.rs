@@ -8,12 +8,12 @@ use super::*;
 fn input_pointer_places_are_exact_and_do_not_scan_unrelated_functions() {
     let selected = input_scope("certificate-selected");
     let variable = input_pointer_variable(selected, 1).unwrap();
-    let pointer = crate::kernel::CPointerValue::new(
+    let pointer = crate::kernel::PointerValue::new(
         Pointer {
             block: PointerBlock::ExternalArgument,
             offset: scale_int32_offset(MachineTerm::Variable(variable), 4),
         },
-        CType::Int32Pointer,
+        ProgramType::Int32Pointer,
     );
     INPUT_POINTER_PLACES.with(|places| {
         places
@@ -45,7 +45,10 @@ fn input_pointer_places_are_exact_and_do_not_scan_unrelated_functions() {
         None
     );
     assert_eq!(
-        input_pointer_parameter(selected, &pointer.clone().with_type(CType::Int8Pointer)),
+        input_pointer_parameter(
+            selected,
+            &pointer.clone().with_type(ProgramType::Int8Pointer)
+        ),
         None
     );
     let mut wrong_stride = pointer.clone();

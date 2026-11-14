@@ -225,7 +225,7 @@ impl ConstructorTypes {
             ContractExpression::ResourceField(access) => access.click_type.clone(),
             ContractExpression::Binding(name)
             | ContractExpression::CBinding(name)
-            | ContractExpression::CFragment(CExpression::Variable(name)) => {
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
                 self.variables.borrow().get(name).cloned().flatten()
             }
             ContractExpression::Old(inner)
@@ -757,9 +757,11 @@ fn slice_method(
         ContractExpression::IntegerLiteral(text) => text
             .parse::<u64>()
             .map(|value| {
-                ContractExpression::CFragment(CExpression::Value(crate::kernel::CValue::UInt64(
-                    crate::kernel::MachineTerm::uint64_constant(value),
-                )))
+                ContractExpression::ProgramExpression(ProgramExpression::Value(
+                    crate::kernel::ProgramValue::UInt64(
+                        crate::kernel::MachineTerm::uint64_constant(value),
+                    ),
+                ))
             })
             .unwrap_or(bound),
         _ => bound,
@@ -790,9 +792,9 @@ fn slice_method(
         ),
         _ => return None,
     };
-    let zero = ContractExpression::CFragment(CExpression::Value(crate::kernel::CValue::UInt64(
-        crate::kernel::MachineTerm::uint64_constant(0),
-    )));
+    let zero = ContractExpression::ProgramExpression(ProgramExpression::Value(
+        crate::kernel::ProgramValue::UInt64(crate::kernel::MachineTerm::uint64_constant(0)),
+    ));
     let data = match &start {
         Some(start) => ContractExpression::Add(Box::new(pointer), Box::new(start.clone())),
         None => pointer,

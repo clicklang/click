@@ -114,7 +114,8 @@ fn admitting_modular_equalities_does_not_export_shared_operands() {
     for size in [8, 32, 96] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::C(format.c_type()), Variable(982705));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(format.program_type()), Variable(982705));
         let mut context = PureFactContext::new();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for step in 0..size {
@@ -170,8 +171,10 @@ fn inverse_operation_mapping_retains_shared_prefixes() {
             let mut samples = Vec::new();
             for size in [8, 32, 96] {
                 let _session = crate::kernel::VerificationSession::enter();
-                let mut root =
-                    KernelTerm::variable(KernelType::C(format.c_type()), Variable(982801));
+                let mut root = KernelTerm::variable(
+                    KernelType::Program(format.program_type()),
+                    Variable(982801),
+                );
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                     for _ in 0..size {
                         root = KernelTerm::machine_binary_shared(
@@ -224,7 +227,7 @@ fn ordinary_comparison_admission_retains_shared_operands(ty: MachineIntegerType)
         for equality in [false, true] {
             let _session = crate::kernel::VerificationSession::enter();
             let mut root = KernelTerm::variable(
-                KernelType::C(ty.c_type()),
+                KernelType::Program(ty.program_type()),
                 Variable(991800 + u64::from(equality)),
             );
             for _ in 0..size {
@@ -333,11 +336,15 @@ fn shared_contradiction_admission_updates_only_new_additive_structure() {
     let samples = [8, 32, 96].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(993000));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(993000));
         let mut facts = contradictions::ContextContradictions::default();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for n in 0..size {
-                let fresh = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(993001 + n));
+                let fresh = KernelTerm::variable(
+                    KernelType::Program(ty.program_type()),
+                    Variable(993001 + n),
+                );
                 root = KernelTerm::machine_binary_shared(
                     ty,
                     MachineBinaryOp::Add,
@@ -370,7 +377,8 @@ fn repeated_shared_comparison_admission_is_near_linear() {
     let samples = [8usize, 32, 96].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(994000));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(994000));
         let mut facts = PureFactContext::new();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {
@@ -406,7 +414,8 @@ fn operation_and_quantified_bridges_retain_shared_operands() {
     for size in [8, 32, 96] {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::UInt64;
-        let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(994001));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(994001));
         for _ in 0..size {
             root = KernelTerm::machine_binary_shared(
                 ty,
@@ -443,7 +452,8 @@ fn constant_bound_selection_rejects_shared_symbolic_candidates_without_export() 
     for ty in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
         for size in [8, 32, 96] {
             let _session = crate::kernel::VerificationSession::enter();
-            let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(994011));
+            let mut root =
+                KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(994011));
             for _ in 0..size {
                 root = KernelTerm::machine_binary_shared(
                     ty,

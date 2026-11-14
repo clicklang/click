@@ -4,8 +4,10 @@ fn typed_offset_evidence_refuses_cold_arithmetic_without_exports() {
     for size in [16, 64, 256] {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let mut left = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1018821));
-        let mut right = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1018822));
+        let mut left =
+            KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1018821));
+        let mut right =
+            KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1018822));
         for _ in 0..size {
             left =
                 KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [left.clone(), left]);

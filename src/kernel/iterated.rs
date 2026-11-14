@@ -1,4 +1,4 @@
-//! Checked operations on iterated guarded ownership (`CResource::Iterated`).
+//! Checked operations on iterated guarded ownership (`Resource::Iterated`).
 //!
 //! The fact itself is defined in `primitives/iterated.rs`. Everything here
 //! answers a question about one index or one C store, so each operation reads
@@ -19,15 +19,15 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum IteratedStep {
     /// `take(base[a..b])`: move one element out of the fact.
-    Take { element: CMemoryRange },
+    Take { element: MemoryRange },
     /// `give(base[a..b])`: move one element back into the fact.
-    Give { element: CMemoryRange },
+    Give { element: MemoryRange },
     /// `gather(resource)`: form `template` (a hole-free fact) from the
     /// covering owned range when every guard is known true, or from nothing
     /// when every guard is known false.
-    Gather { template: CIteratedMemory },
+    Gather { template: IteratedMemory },
     /// `scatter(resource)`: the converse of `gather`.
-    Scatter { template: CIteratedMemory },
+    Scatter { template: IteratedMemory },
 }
 
 /// Decides one condition from the fact context: `Some(true)`, `Some(false)`,
@@ -74,7 +74,7 @@ fn pointers_equal(assumptions: &PureFactContext, left: &Pointer, right: &Pointer
 /// Whether `index` lies in the fact's range, by the fact context.
 fn index_in_range(
     assumptions: &PureFactContext,
-    iterated: &CIteratedMemory,
+    iterated: &IteratedMemory,
     index: &MachineTerm,
 ) -> bool {
     proves(
@@ -94,7 +94,7 @@ fn index_in_range(
 /// Whether `index` lies outside the fact's range, by the fact context.
 fn index_out_of_range(
     assumptions: &PureFactContext,
-    iterated: &CIteratedMemory,
+    iterated: &IteratedMemory,
     index: &MachineTerm,
 ) -> bool {
     proves(
@@ -114,7 +114,7 @@ fn index_out_of_range(
 /// The guard's truth for a guard cell holding `cell`.
 fn guard_holds_for(
     assumptions: &PureFactContext,
-    iterated: &CIteratedMemory,
+    iterated: &IteratedMemory,
     cell: &MachineTerm,
 ) -> Option<bool> {
     let equal = decide(
@@ -134,15 +134,15 @@ fn guard_holds_for(
 /// separately requires ownership of the guard range. A logical value fact
 /// never establishes that a subsequent C load is initialized.
 fn guard_cell_value(
-    state: &CState,
-    iterated: &CIteratedMemory,
+    state: &ExecutionState,
+    iterated: &IteratedMemory,
     index: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> Result<MachineTerm, String> {
     // A guard cell holding a value is that value (the read-over-write
     // authority); only an unknown cell is read as a named load.
     let cell = iterated.guard_cell(index);
-    if let Some(CValue::Int32(value)) = state
+    if let Some(ProgramValue::Int32(value)) = state
         .memory()
         .known_value(&cell)
         .and_then(|stored| iterated.guard().cell_type.read_cell(&stored))
@@ -159,8 +159,8 @@ fn guard_cell_value(
     );
     match paths.as_slice() {
         [
-            CExpressionPath {
-                outcome: CExpressionOutcome::Value(CValue::Int32(value)),
+            ExpressionPath {
+                outcome: ExpressionOutcome::Value(ProgramValue::Int32(value)),
                 facts,
                 obligations,
             },
@@ -179,8 +179,8 @@ fn guard_cell_value(
 /// context proves it holds, `Some(false)` when it proves it fails, and
 /// `None` when neither is established.
 pub(crate) fn iterated_guard_at(
-    state: &CState,
-    iterated: &CIteratedMemory,
+    state: &ExecutionState,
+    iterated: &IteratedMemory,
     index: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> Result<Option<bool>, String> {
@@ -194,8 +194,8 @@ pub(crate) fn iterated_guard_at(
 /// ("may hold") otherwise. This is the containment and separation question
 /// for one element, answered from one guard cell and the holes.
 pub(crate) fn iterated_holds_element(
-    state: &CState,
-    iterated: &CIteratedMemory,
+    state: &ExecutionState,
+    iterated: &IteratedMemory,
     index: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> Option<bool> {
@@ -227,8 +227,8 @@ pub(crate) fn iterated_holds_element(
 /// another block, or the element block's elements of the fact lie entirely
 /// outside it by constant bounds. Constant in the fact's range size.
 pub(crate) fn iterated_separate_from_range(
-    iterated: &CIteratedMemory,
-    range: &CMemoryRange,
+    iterated: &IteratedMemory,
+    range: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
     if range.base().blocks_proven_distinct(iterated.element_base()) {
@@ -237,13 +237,13 @@ pub(crate) fn iterated_separate_from_range(
     let Some(covering) = iterated.covering_range().or_else(|| {
         // Gapped elements are covered by the range from the first element's
         // start to the last element's end.
-        // CIteratedMemory::element_range always constructs signed int32 bounds.
+        // IteratedMemory::element_range always constructs signed int32 bounds.
         let first = iterated.element_range(iterated.lower());
         let last = iterated.element_range(&MachineTerm::subtract(
             iterated.upper().clone(),
             MachineTerm::constant(1),
         ));
-        Some(CMemoryRange::new_with_element_width(
+        Some(MemoryRange::new_with_element_width(
             iterated.element_base().clone(),
             first.start().clone(),
             last.end().clone(),
@@ -253,19 +253,19 @@ pub(crate) fn iterated_separate_from_range(
         return false;
     };
     assumptions.proves_resource_separate(
-        &CResource::Memory(covering),
-        &CResource::Memory(range.clone()),
+        &Resource::Memory(covering),
+        &Resource::Memory(range.clone()),
     )
 }
 
 fn owned_iterated_candidates(
     resources: &ResourceContext,
     block: PointerBlock,
-) -> impl Iterator<Item = (&CResourceFact, &CIteratedMemory)> {
+) -> impl Iterator<Item = (&ResourceFact, &IteratedMemory)> {
     resources
         .iterated_facts_in_block(&block)
         .filter_map(move |fact| match fact {
-            CResourceFact::Own(CResource::Iterated(iterated), quantity)
+            ResourceFact::Own(Resource::Iterated(iterated), quantity)
                 if quantity.as_const() == Some(1) && iterated.element_base().block == block =>
             {
                 Some((fact, iterated.as_ref()))
@@ -277,9 +277,9 @@ fn owned_iterated_candidates(
 /// The one owned iterated fact whose elements live at `element`'s base.
 fn iterated_fact_for_element<'a>(
     resources: &'a ResourceContext,
-    element: &CMemoryRange,
+    element: &MemoryRange,
     assumptions: &PureFactContext,
-) -> Result<(&'a CResourceFact, &'a CIteratedMemory), String> {
+) -> Result<(&'a ResourceFact, &'a IteratedMemory), String> {
     let mut found = None;
     for (fact, iterated) in owned_iterated_candidates(resources, element.base().block.clone()) {
         if iterated.element_width() != element.element_width()
@@ -301,10 +301,7 @@ fn iterated_fact_for_element<'a>(
 /// clause's constant offset removed and, for a stride above one, the stride
 /// factored out of the term as written. [`check_element_at`] then decides
 /// that the whole range is that element.
-fn element_index(
-    iterated: &CIteratedMemory,
-    element: &CMemoryRange,
-) -> Result<MachineTerm, String> {
+fn element_index(iterated: &IteratedMemory, element: &MemoryRange) -> Result<MachineTerm, String> {
     let Some((start, _)) = element.int32_bounds() else {
         return Err("iterated ownership requires a signed 32-bit element range".into());
     };
@@ -329,8 +326,8 @@ fn element_index(
 
 /// Checks that `element` is exactly the fact's element at `index`.
 fn check_element_at(
-    iterated: &CIteratedMemory,
-    element: &CMemoryRange,
+    iterated: &IteratedMemory,
+    element: &MemoryRange,
     index: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> Result<(), String> {
@@ -349,14 +346,12 @@ fn check_element_at(
 
 fn replace_iterated(
     resources: ResourceContext,
-    current: &CResourceFact,
-    next: CIteratedMemory,
+    current: &ResourceFact,
+    next: IteratedMemory,
 ) -> Result<ResourceContext, String> {
     resources
         .without_exact_representation(current)
-        .map(|resources| {
-            resources.unchecked_with_fact(CResourceFact::own(CResource::iterated(next)))
-        })
+        .map(|resources| resources.unchecked_with_fact(ResourceFact::own(Resource::iterated(next))))
         .ok_or_else(|| "the iterated ownership fact is not held".to_string())
 }
 
@@ -364,10 +359,10 @@ fn replace_iterated(
 /// the one fact it names, one guard cell, the fact's holes, and the element
 /// it moves; the index range is never enumerated.
 pub(crate) fn apply_iterated_step(
-    state: &CState,
+    state: &ExecutionState,
     step: &IteratedStep,
     assumptions: &PureFactContext,
-) -> Result<CState, String> {
+) -> Result<ExecutionState, String> {
     match step {
         IteratedStep::Take { element } => {
             let (current, iterated) =
@@ -411,7 +406,7 @@ pub(crate) fn apply_iterated_step(
             // The context was valid and the iterated fact only gained a hole,
             // so only pairs with the element need checking, and only its
             // block needs normalizing: unrelated holdings cost nothing.
-            let taken = CResourceFact::own_memory(element.clone());
+            let taken = ResourceFact::own_memory(element.clone());
             let resources = resources
                 .try_compose_into_valid_context_delaying_normalization([taken.clone()], assumptions)
                 .map_err(|error| {
@@ -458,7 +453,7 @@ pub(crate) fn apply_iterated_step(
             let resources = state
                 .resources()
                 .clone()
-                .without_fact_incrementally(&CResourceFact::own_memory(owned_element), assumptions)
+                .without_fact_incrementally(&ResourceFact::own_memory(owned_element), assumptions)
                 .ok_or_else(|| "the element is not owned here".to_string())?;
             let resources = replace_iterated(resources, current, next)?;
             Ok(state.clone().with_resource_context(resources))
@@ -471,7 +466,7 @@ pub(crate) fn apply_iterated_step(
             // a declaration's guard reads cells its own body owns; otherwise
             // someone else could change which elements the fact claims.
             if !state.resources().satisfies_fact(
-                &CResourceFact::own_memory(template.guard_range()),
+                &ResourceFact::own_memory(template.guard_range()),
                 assumptions,
             ) {
                 return Err(
@@ -487,17 +482,17 @@ pub(crate) fn apply_iterated_step(
                     let resources = state
                         .resources()
                         .clone()
-                        .without_fact_incrementally(&CResourceFact::own_memory(covering), assumptions)
+                        .without_fact_incrementally(&ResourceFact::own_memory(covering), assumptions)
                         .ok_or_else(|| {
                             "gathering needs ownership of every element's cells".to_string()
                         })?;
                     Ok(state.clone().with_resource_context(resources.unchecked_with_fact(
-                        CResourceFact::own(CResource::iterated(template.clone())),
+                        ResourceFact::own(Resource::iterated(template.clone())),
                     )))
                 }
                 Some(false) => Ok(state.clone().with_resource_context(
-                    state.resources().clone().unchecked_with_fact(CResourceFact::own(
-                        CResource::iterated(template.clone()),
+                    state.resources().clone().unchecked_with_fact(ResourceFact::own(
+                        Resource::iterated(template.clone()),
                     )),
                 )),
                 None => Err(
@@ -507,7 +502,7 @@ pub(crate) fn apply_iterated_step(
             }
         }
         IteratedStep::Scatter { template } => {
-            let required = CResourceFact::own(CResource::iterated(template.clone()));
+            let required = ResourceFact::own(Resource::iterated(template.clone()));
             let resources = state
                 .resources()
                 .clone()
@@ -525,7 +520,7 @@ pub(crate) fn apply_iterated_step(
                     // As for `Take`: the fact consumed above overlapped
                     // nothing, so only pairs with the covering range and its
                     // block's normalization remain.
-                    let covering = CResourceFact::own_memory(covering);
+                    let covering = ResourceFact::own_memory(covering);
                     let resources = resources
                         .try_compose_into_valid_context_delaying_normalization(
                             [covering.clone()],
@@ -557,8 +552,8 @@ const ITERATED_GUARD_INDEX: Variable = Variable(u64::MAX - 0x6974_6572);
 /// instantiated once and decided under the range hypotheses. One decision,
 /// independent of the range's size.
 fn every_guard(
-    state: &CState,
-    iterated: &CIteratedMemory,
+    state: &ExecutionState,
+    iterated: &IteratedMemory,
     assumptions: &PureFactContext,
 ) -> Result<Option<bool>, String> {
     let index = MachineTerm::Variable(ITERATED_GUARD_INDEX);
@@ -592,7 +587,7 @@ fn every_guard(
 /// guard comparison of `cell`.
 fn instantiate_guard(
     hypotheses: &PureFactContext,
-    iterated: &CIteratedMemory,
+    iterated: &IteratedMemory,
     cell: &MachineTerm,
 ) -> PureFactContext {
     hypotheses
@@ -611,15 +606,15 @@ fn instantiate_guard(
 /// nobody checked. Dropping the fact is the sound answer: the elements are
 /// lost to this frame, never claimed twice.
 pub(crate) fn frame_out_iterated_facts_written_by_loop(
-    state: CState,
-    written: Option<&[CMemoryRange]>,
-) -> CState {
+    state: ExecutionState,
+    written: Option<&[MemoryRange]>,
+) -> ExecutionState {
     if !state.resources().has_iterated_facts() {
         return state;
     }
     let mut resources = state.resources().clone();
     for fact in state.resources().iterated_facts() {
-        let CResource::Iterated(iterated) = fact.resource() else {
+        let Resource::Iterated(iterated) = fact.resource() else {
             continue;
         };
         let guard_block = &iterated.guard().base().block;
@@ -642,7 +637,7 @@ pub(crate) fn frame_out_iterated_facts_written_by_loop(
 /// share its block: for each fact, the representation to hold while the store
 /// writes and the one to hold after it.
 pub(crate) struct IteratedStorePlan {
-    replacements: Vec<(CResourceFact, CIteratedMemory, CIteratedMemory)>,
+    replacements: Vec<(ResourceFact, IteratedMemory, IteratedMemory)>,
 }
 
 impl IteratedStorePlan {
@@ -673,7 +668,7 @@ impl IteratedStorePlan {
                 }
                 replace_iterated(
                     resources,
-                    &CResourceFact::own(CResource::iterated(during.clone())),
+                    &ResourceFact::own(Resource::iterated(during.clone())),
                     after.clone(),
                 )
             })
@@ -701,9 +696,9 @@ impl IteratedStorePlan {
 /// until `give` returns the element. A store at an index whose element the
 /// fact may still hold is refused: it would silently change the fact.
 pub(crate) fn plan_iterated_guard_store(
-    state: &CState,
+    state: &ExecutionState,
     pointer: &Pointer,
-    value: &CValue,
+    value: &ProgramValue,
     assumptions: &PureFactContext,
 ) -> Result<IteratedStorePlan, String> {
     let resources = state.resources();
@@ -712,7 +707,7 @@ pub(crate) fn plan_iterated_guard_store(
         return Ok(IteratedStorePlan { replacements });
     }
     for fact in resources.iterated_facts_in_block(&pointer.block) {
-        let CResourceFact::Own(CResource::Iterated(iterated), _) = fact else {
+        let ResourceFact::Own(Resource::Iterated(iterated), _) = fact else {
             continue;
         };
         if iterated.guard().base().block != pointer.block {
@@ -720,7 +715,7 @@ pub(crate) fn plan_iterated_guard_store(
         }
         // Owned memory is a partition: a cell one owned range authorizes
         // cannot be a guard cell another owned range holds.
-        let written = CResource::Memory(CMemoryRange::new_with_element_width(
+        let written = Resource::Memory(MemoryRange::new_with_element_width(
             pointer.clone(),
             MachineTerm::constant(0),
             MachineTerm::constant(1),
@@ -728,7 +723,7 @@ pub(crate) fn plan_iterated_guard_store(
         ));
         if resources.proves_owned_resources_separate(
             &written,
-            &CResource::Memory(iterated.guard_range()),
+            &Resource::Memory(iterated.guard_range()),
             assumptions,
         ) {
             continue;
@@ -750,7 +745,7 @@ pub(crate) fn plan_iterated_guard_store(
         if value.byte_width() != iterated.guard().cell_width {
             return Err(refusal("the store does not write one whole guard cell"));
         }
-        let CValue::Int32(stored) = value else {
+        let ProgramValue::Int32(stored) = value else {
             return Err(refusal("the stored value is not an `int32`"));
         };
         let out_of_range = index_out_of_range(assumptions, iterated, &index);
@@ -767,7 +762,7 @@ pub(crate) fn plan_iterated_guard_store(
             // a partition, so the fact cannot hold it: at this index it
             // claims nothing, whatever the guard cell says.
             None if resources.satisfies_fact(
-                &CResourceFact::own_memory(iterated.element_range(&index)),
+                &ResourceFact::own_memory(iterated.element_range(&index)),
                 assumptions,
             ) =>
             {
@@ -806,7 +801,7 @@ mod wide_range_reader_tests {
     #[test]
     fn wide_elements_do_not_enter_iterated_index_arithmetic() {
         let base = Pointer::symbolic(Variable(984_900));
-        let iterated = CIteratedMemory::new(
+        let iterated = IteratedMemory::new(
             "items",
             base.clone(),
             4,
@@ -815,16 +810,16 @@ mod wide_range_reader_tests {
             1,
             0u32.into(),
             4u32.into(),
-            CIteratedGuard {
+            IteratedGuard {
                 base: base.clone(),
-                cell_type: CType::Int32,
+                cell_type: ProgramType::Int32,
                 cell_width: 4,
                 holds_when_equal: true,
                 value: 1u32.into(),
             },
         )
         .unwrap();
-        let wide = CMemoryRange::new_wide(
+        let wide = MemoryRange::new_wide(
             base,
             MachineTerm::uint64_constant(0),
             MachineTerm::uint64_constant(1 << 33),

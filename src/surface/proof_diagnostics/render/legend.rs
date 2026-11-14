@@ -1,8 +1,8 @@
 //! Definitions for report-local labels, never additional proof evidence.
 use super::*;
-use crate::kernel::{CMemoryConstructionKind, CMemoryDerivation, CValue, PointerBlock};
 #[cfg(test)]
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{MemoryConstructionKind, MemoryDerivation, PointerBlock, ProgramValue};
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int64_constant, uint64_constant,
 };
@@ -233,13 +233,13 @@ impl SnapshotLabels {
         format!("{base_name} + {}", self.legend_offset(&pointer.offset, 4))
     }
 
-    fn legend_value(&mut self, value: &CValue) -> String {
+    fn legend_value(&mut self, value: &ProgramValue) -> String {
         match value {
-            CValue::Pointer(pointer) => self.pointer_value_name(pointer.pointer()),
-            CValue::Int32(bits)
-            | CValue::UInt32(bits)
-            | CValue::Int64(bits)
-            | CValue::UInt64(bits) => self.legend_bits(bits),
+            ProgramValue::Pointer(pointer) => self.pointer_value_name(pointer.pointer()),
+            ProgramValue::Int32(bits)
+            | ProgramValue::UInt32(bits)
+            | ProgramValue::Int64(bits)
+            | ProgramValue::UInt64(bits) => self.legend_bits(bits),
             _ => {
                 let mut renderer = Renderer {
                     output: String::new(),
@@ -259,7 +259,7 @@ impl SnapshotLabels {
         }
     }
 
-    fn legend_ranges(&mut self, ranges: &[crate::kernel::CMemoryRange]) -> String {
+    fn legend_ranges(&mut self, ranges: &[crate::kernel::MemoryRange]) -> String {
         let mut renderer = Renderer {
             output: String::new(),
             nodes: 0,
@@ -277,7 +277,7 @@ impl SnapshotLabels {
             if index > 0 {
                 renderer.push(", ");
             }
-            renderer.resource(&crate::kernel::CResource::Memory(range.clone()));
+            renderer.resource(&crate::kernel::Resource::Memory(range.clone()));
         }
         renderer.push("]");
         if renderer.truncated {
@@ -323,7 +323,7 @@ impl SnapshotLabels {
         description
     }
 
-    fn legend_snapshot(&mut self, memory: &CMemory) -> String {
+    fn legend_snapshot(&mut self, memory: &Memory) -> String {
         let point = self
             .source_memories
             .iter()
@@ -342,7 +342,7 @@ impl SnapshotLabels {
         // This bounded walk happens only while printing, never during checking.
         let mut described = memory;
         for _ in 0..MAX_ROUNDS {
-            let Some(CMemoryConstructionKind::Transform { sources, .. }) =
+            let Some(MemoryConstructionKind::Transform { sources, .. }) =
                 described.diagnostic_construction()
             else {
                 break;
@@ -352,7 +352,7 @@ impl SnapshotLabels {
             };
             described = source;
         }
-        if let Some(CMemoryConstructionKind::Transform { sources, .. }) =
+        if let Some(MemoryConstructionKind::Transform { sources, .. }) =
             described.diagnostic_construction()
             && sources.iter().any(|source| source == described)
         {
@@ -360,8 +360,8 @@ impl SnapshotLabels {
         }
         let memory = described;
         let edge = match memory.diagnostic_construction() {
-            Some(CMemoryConstructionKind::Transition(edge)) => edge.clone(),
-            Some(CMemoryConstructionKind::Transform {
+            Some(MemoryConstructionKind::Transition(edge)) => edge.clone(),
+            Some(MemoryConstructionKind::Transform {
                 operation,
                 sources,
                 arguments,
@@ -382,7 +382,7 @@ impl SnapshotLabels {
                 return format!("{point}initial empty memory");
             }
             None => {
-                let shared = crate::kernel::intern_c_memory_ref(memory);
+                let shared = crate::kernel::intern_memory_ref(memory);
                 let Some(edge) = shared.derivation() else {
                     return format!(
                         "{point}INTERNAL ERROR: snapshot constructor did not record its origin"
@@ -393,12 +393,12 @@ impl SnapshotLabels {
         };
         let base = self.snapshot_name(edge.base().memory());
         let operation = match edge.as_ref() {
-            CMemoryDerivation::Store { pointer, value, .. } => {
+            MemoryDerivation::Store { pointer, value, .. } => {
                 let address = self.pointer_value_name(pointer);
                 let value = self.legend_value(value);
                 format!("store {value} at address {address}")
             }
-            CMemoryDerivation::BranchJoin { incoming, .. } => {
+            MemoryDerivation::BranchJoin { incoming, .. } => {
                 let inputs = incoming
                     .iter()
                     .map(|memory| self.snapshot_name(memory.memory()))
@@ -406,11 +406,11 @@ impl SnapshotLabels {
                     .join(", ");
                 format!("join branch memories ({inputs})")
             }
-            CMemoryDerivation::CellObserved { .. } => "cache an observed cell".to_owned(),
-            CMemoryDerivation::CellsForgotten { .. } => {
+            MemoryDerivation::CellObserved { .. } => "cache an observed cell".to_owned(),
+            MemoryDerivation::CellsForgotten { .. } => {
                 "cached cells forgotten (not a program write)".into()
             }
-            CMemoryDerivation::CallHavoc {
+            MemoryDerivation::CallHavoc {
                 mutable_ranges,
                 kept_by_caller,
                 ..
@@ -428,25 +428,25 @@ impl SnapshotLabels {
                 }
                 description
             }
-            CMemoryDerivation::LoopHavoc { mutable_ranges, .. } => match mutable_ranges {
+            MemoryDerivation::LoopHavoc { mutable_ranges, .. } => match mutable_ranges {
                 Some(ranges) => format!("loop effect: may write {}", self.legend_ranges(ranges)),
                 None => "loop effect: unknown write footprint".into(),
             },
-            CMemoryDerivation::BlockDeclared { block, .. } => {
+            MemoryDerivation::BlockDeclared { block, .. } => {
                 let address = self.pointer_value_name(&Pointer {
                     block: block.clone(),
                     offset: PointerOffsetTerm::Constant(0),
                 });
                 format!("declare block at {address}")
             }
-            CMemoryDerivation::LocalLifetimeEnded { block, .. } => {
+            MemoryDerivation::LocalLifetimeEnded { block, .. } => {
                 let address = self.pointer_value_name(&Pointer {
                     block: block.clone(),
                     offset: PointerOffsetTerm::Constant(0),
                 });
                 format!("end local lifetime at {address}")
             }
-            CMemoryDerivation::HeapAllocated { block, bytes, .. } => {
+            MemoryDerivation::HeapAllocated { block, bytes, .. } => {
                 let address = self.pointer_value_name(&Pointer {
                     block: block.clone(),
                     offset: PointerOffsetTerm::Constant(0),
@@ -454,17 +454,17 @@ impl SnapshotLabels {
                 let bytes = self.legend_bits(bytes);
                 format!("allocate {bytes} bytes at {address}")
             }
-            CMemoryDerivation::HeapAllocationPending {
+            MemoryDerivation::HeapAllocationPending {
                 allocation_base,
                 bytes,
                 ..
             }
-            | CMemoryDerivation::ContractAllocationRetired {
+            | MemoryDerivation::ContractAllocationRetired {
                 allocation_base,
                 bytes,
                 ..
             }
-            | CMemoryDerivation::HeapFreed {
+            | MemoryDerivation::HeapFreed {
                 allocation_base,
                 bytes,
                 ..
@@ -473,15 +473,15 @@ impl SnapshotLabels {
                 let bytes = self.legend_bits(bytes);
                 format!("{}({address}, {bytes} bytes)", edge.kind_name())
             }
-            CMemoryDerivation::ObjectInitializationRecorded { pointer, bytes, .. } => {
+            MemoryDerivation::ObjectInitializationRecorded { pointer, bytes, .. } => {
                 let address = self.pointer_value_name(pointer);
                 format!("record {bytes} initialized bytes at {address}")
             }
-            CMemoryDerivation::HeapAllocationFailed { .. } => "resolve failed allocation".into(),
-            CMemoryDerivation::ContractAllocationClaimsChanged { .. } => {
+            MemoryDerivation::HeapAllocationFailed { .. } => "resolve failed allocation".into(),
+            MemoryDerivation::ContractAllocationClaimsChanged { .. } => {
                 "update contract allocation claims".into()
             }
-            CMemoryDerivation::CellsSeeded { run, .. } => {
+            MemoryDerivation::CellsSeeded { run, .. } => {
                 let address = self.pointer_value_name(run.base());
                 let source = if run.source() == edge.base() {
                     "base".to_owned()
@@ -624,21 +624,21 @@ mod tests {
             block: "local:p".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let before = CMemory::new();
+        let before = Memory::new();
         let after = before
             .clone()
-            .store(base.clone(), CValue::Int32(7u32.into()));
+            .store(base.clone(), ProgramValue::Int32(7u32.into()));
         let mut labels = SnapshotLabels::default();
         for memory in [before, after] {
             labels.pointer_value_name(&pure_pointer(
                 "select",
                 vec![PureFunctionArgument::ArrayRef {
                     memory,
-                    pointer: CValue::Pointer(crate::kernel::CPointerValue::new(
+                    pointer: ProgramValue::Pointer(crate::kernel::PointerValue::new(
                         base.clone(),
-                        crate::kernel::CType::Int32Pointer,
+                        crate::kernel::ProgramType::Int32Pointer,
                     )),
-                    element_type: crate::kernel::CType::Int32,
+                    element_type: crate::kernel::ProgramType::Int32,
                 }],
                 0,
             ));
@@ -666,7 +666,7 @@ mod tests {
             block: "local:unchanged".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let memory = CMemory::new()
+        let memory = Memory::new()
             .with_uninitialized_object(pointer.clone(), 4)
             .with_uninitialized_object(pointer, 4);
         let mut labels = SnapshotLabels::default();
@@ -680,12 +680,12 @@ mod tests {
     #[test]
     fn snapshot_origin_survives_thread_and_arena_changes() {
         let memory = std::thread::spawn(|| {
-            CMemory::new().with_block("local:origin-test", 4).store(
+            Memory::new().with_block("local:origin-test", 4).store(
                 Pointer {
                     block: "local:origin-test".into(),
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                CValue::Int32(MachineTerm::constant(9)),
+                ProgramValue::Int32(MachineTerm::constant(9)),
             )
         })
         .join()
@@ -701,7 +701,7 @@ mod tests {
 
     #[test]
     fn proof_entry_construction_is_not_an_unknown_root() {
-        let memory = CMemory::new().with_uninitialized_block("local:object", 8);
+        let memory = Memory::new().with_uninitialized_block("local:object", 8);
         let mut labels = SnapshotLabels::default();
         labels.snapshot_name(&memory);
         let text = labels.trace_legend();
@@ -713,7 +713,7 @@ mod tests {
 
     #[test]
     fn legend_defines_loaded_address_and_displacement_recursively() {
-        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let memory = crate::kernel::intern_memory(Memory::new());
         let base = Pointer::symbolic(Variable(986_401));
         let mut loaded = Pointer::loaded_value(&memory, &base);
         loaded.offset = PointerOffsetTerm::Constant(16);
@@ -733,7 +733,10 @@ mod tests {
     #[test]
     fn legend_shows_recorded_store_and_its_base() {
         let address = Pointer::symbolic(Variable(986_402));
-        let memory = CMemory::new().store(address.clone(), CValue::Int32(MachineTerm::constant(7)));
+        let memory = Memory::new().store(
+            address.clone(),
+            ProgramValue::Int32(MachineTerm::constant(7)),
+        );
         let mut labels = SnapshotLabels::default();
         labels.immutable_pointer_name(&address, "p");
         labels.snapshot_name(&memory);
@@ -750,8 +753,8 @@ mod tests {
         let pointer = Pointer::symbolic(Variable(986_405));
         let ranges =
             crate::kernel::ResourceContext::new().unchecked_with_facts((0..12).map(|index| {
-                CResourceFact::own(CResource::Memory(
-                    crate::kernel::CMemoryRange::new_with_element_width(
+                ResourceFact::own(Resource::Memory(
+                    crate::kernel::MemoryRange::new_with_element_width(
                         pointer.clone(),
                         MachineTerm::constant(index),
                         MachineTerm::constant(index + 1),
@@ -788,12 +791,12 @@ mod tests {
 
     #[test]
     fn legend_names_only_matching_recorded_memories() {
-        let memory = CMemory::new().with_block("legend_recorded", 8);
+        let memory = Memory::new().with_block("legend_recorded", 8);
         let mut labels = SnapshotLabels::default();
         let naming = std::sync::Arc::new((Vec::new(), Vec::new()));
         labels
             .source_memories
-            .push((CMemory::new(), "unrelated_point".into(), naming.clone()));
+            .push((Memory::new(), "unrelated_point".into(), naming.clone()));
         labels
             .source_memories
             .push((memory.clone(), "before_rotation".into(), naming));

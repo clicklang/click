@@ -3,7 +3,7 @@ use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 fn assert_subobject_access_reports(c: &str, source: &str, ordinary_goal: &str, trace_goal: &str) {
-    let ordinary = verify_c0_sources(source, &[("access.c", c)])
+    let ordinary = verify_c_sources(source, &[("access.c", c)])
         .unwrap_err()
         .concise_report();
     assert!(ordinary.contains("goal:"), "{ordinary}");
@@ -13,7 +13,7 @@ fn assert_subobject_access_reports(c: &str, source: &str, ordinary_goal: &str, t
         assert!(!ordinary.contains("have <goal>"), "{ordinary}");
     }
     with_proof_trace("f", || {
-        let error = verify_c0_sources(source, &[("access.c", c)]).unwrap_err();
+        let error = verify_c_sources(source, &[("access.c", c)]).unwrap_err();
         let report = error.trace_context_report().unwrap();
         assert!(!error.raw_summary().contains("resource facts:"), "{report}");
         assert!(report.contains("resources at the failed check"), "{report}");
@@ -58,9 +58,9 @@ fn implicit_tail_handles_unsigned_statement_cases_with_tracing() {
     let source = r#"verifying "unsigned.c";
         int32 unsigned_index(uint32 x) { ensures result == result; }"#;
     let sources = [("unsigned.c", c)];
-    verify_c0_sources(source, &sources).unwrap();
+    verify_c_sources(source, &sources).unwrap();
     with_proof_trace("unsigned_index", || {
-        verify_c0_sources(source, &sources).unwrap();
+        verify_c_sources(source, &sources).unwrap();
     });
     // Explicit index cases discharge this operation without changing the C.
     let explicit = format!(
@@ -78,7 +78,7 @@ fn implicit_tail_handles_unsigned_statement_cases_with_tracing() {
             }} else {{ step(); step(); step(); solve(); }}
         }}"
     );
-    verify_c0_sources(&explicit, &sources).unwrap();
+    verify_c_sources(&explicit, &sources).unwrap();
 }
 
 #[test]
@@ -90,8 +90,7 @@ fn unclosed_have_script_retains_its_remaining_goal_and_introduced_premise() {
             step_until(function.exit); solve();
         }"#;
     with_proof_trace("f", || {
-        let error =
-            verify_c0_sources(source, &[("f.c", "int f(int x) { return x; }")]).unwrap_err();
+        let error = verify_c_sources(source, &[("f.c", "int f(int x) { return x; }")]).unwrap_err();
         let trace = error.trace_context_report().unwrap();
         assert!(trace.contains("intro"), "{trace}");
         let failed = trace.split("failed check:").nth(1).unwrap();
@@ -103,7 +102,7 @@ fn unclosed_have_script_retains_its_remaining_goal_and_introduced_premise() {
     let corrected = source
         .replace("x == 43", "x == 42")
         .replace("intro();", "intro(); assumption();");
-    verify_c0_sources(&corrected, &[("f.c", "int f(int x) { return x; }")]).unwrap();
+    verify_c_sources(&corrected, &[("f.c", "int f(int x) { return x; }")]).unwrap();
 }
 
 #[test]
@@ -113,7 +112,7 @@ fn unclosed_theorem_script_retains_its_remaining_goal_and_introduced_premise() {
         ensures x == 42 implies x == 43 by { intro(); }
     }"#;
     with_proof_trace("unfinished", || {
-        let error = verify_c0_sources(source, &[]).unwrap_err();
+        let error = verify_c_sources(source, &[]).unwrap_err();
         let trace = error.trace_context_report().unwrap();
         assert!(trace.contains("intro"), "{trace}");
         let failed = trace.split("failed check:").nth(1).unwrap();
@@ -124,7 +123,7 @@ fn unclosed_theorem_script_retains_its_remaining_goal_and_introduced_premise() {
     let corrected = source
         .replace("x == 43", "x == 42")
         .replace("intro();", "intro(); assumption();");
-    verify_c0_sources(&corrected, &[]).unwrap();
+    verify_c_sources(&corrected, &[]).unwrap();
 }
 
 #[test]
@@ -132,7 +131,7 @@ fn unclosed_theorem_script_retains_its_remaining_goal_and_introduced_premise() {
 fn missing_write_permission_explains_the_available_view_and_failed_check() {
     let c = "void write(int *p) { p[0] = 7; }";
     let source = r#"verifying "write.c"; void write(int32* p) { views p[0..1]; }"#;
-    let error = verify_c0_sources(source, &[("write.c", c)]).unwrap_err();
+    let error = verify_c_sources(source, &[("write.c", c)]).unwrap_err();
     let report = error.concise_report();
     assert!(
         report.contains("missing resource fact `owns p[0]`"),
@@ -141,7 +140,7 @@ fn missing_write_permission_explains_the_available_view_and_failed_check() {
     assert!(report.contains("available `views p[0]`"), "{report}");
     assert!(report.contains("permits reading only"), "{report}");
     with_proof_trace("write", || {
-        let error = verify_c0_sources(source, &[("write.c", c)]).unwrap_err();
+        let error = verify_c_sources(source, &[("write.c", c)]).unwrap_err();
         let trace = error.trace_context_report().unwrap();
         assert!(trace.contains("failed check:"), "{trace}");
         assert!(trace.contains("resources at the failed check"), "{trace}");
@@ -157,7 +156,7 @@ fn first_operation_failure_retains_the_required_access_and_empty_resources() {
     let c = "int read(int *p) { return *p; }";
     let source = r#"verifying "read.c"; int32 read(int32* p) { ensures result == 7; }"#;
     with_proof_trace("read", || {
-        let error = verify_c0_sources(source, &[("read.c", c)]).unwrap_err();
+        let error = verify_c_sources(source, &[("read.c", c)]).unwrap_err();
         let trace = error.trace_context_report().unwrap();
         assert!(trace.contains("failed check:"), "{trace}");
         assert!(trace.contains("missing resource fact `views"), "{trace}");
@@ -176,7 +175,7 @@ fn first_operation_failure_retains_the_required_access_and_empty_resources() {
 fn execution_tactic_in_a_have_names_the_proposition_context() {
     let c = "int f(void) { return 7; }";
     let source = r#"verifying "f.c"; int32 f() { ensures result == 7; } by { have 1 == 1 by { step_until(function.exit); } step_until(function.exit); solve(); }"#;
-    let error = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
+    let error = verify_c_sources(source, &[("f.c", c)]).unwrap_err();
     let report = error.concise_report();
     assert!(
         report.contains("unsupported proof operation `step_until`"),
@@ -188,7 +187,7 @@ fn execution_tactic_in_a_have_names_the_proposition_context() {
         "{report}"
     );
     with_proof_trace("f", || {
-        let error = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
+        let error = verify_c_sources(source, &[("f.c", c)]).unwrap_err();
         let trace = error.trace_context_report().unwrap();
         assert!(trace.contains("failed check:"), "{trace}");
         assert!(trace.contains("proof context:"), "{trace}");
@@ -208,7 +207,7 @@ fn failed_solve_reports_actual_cell_queries_separately_from_history_explanations
         ensures p[0] == old(p[0]);
     }"#;
     with_proof_trace("f", || {
-        let error = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
+        let error = verify_c_sources(source, &[("f.c", c)]).unwrap_err();
         let trace = error.trace_context_report().unwrap();
         assert!(
             trace.contains("checks observed during the failed attempt"),
@@ -233,7 +232,7 @@ fn failed_solve_reports_actual_cell_queries_separately_from_history_explanations
         assert!(!trace.contains("memory-history check stops at"), "{trace}");
     });
     let separated = source.replace("requires i < 2;", "requires i < 2; requires i == 1;");
-    verify_c0_sources(&separated, &[("f.c", c)]).unwrap();
+    verify_c_sources(&separated, &[("f.c", c)]).unwrap();
 }
 
 #[test]
@@ -243,7 +242,7 @@ fn failed_written_have_keeps_its_goal_and_actual_queries() {
     let source = r#"verifying "f.c"; void f(int32* p, int32 i) {
             owns p[0..2]; requires 0 <= i; requires i < 2;
         } by { step(); have p[0] == old(p[0]) by solve(); step_until(function.exit); }"#;
-    let ordinary = verify_c0_sources(source, &[("f.c", c)])
+    let ordinary = verify_c_sources(source, &[("f.c", c)])
         .unwrap_err()
         .concise_report();
     assert!(
@@ -251,7 +250,7 @@ fn failed_written_have_keeps_its_goal_and_actual_queries() {
         "{ordinary}"
     );
     with_proof_trace("f", || {
-        let error = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
+        let error = verify_c_sources(source, &[("f.c", c)]).unwrap_err();
         let trace = error.trace_context_report().unwrap();
         assert!(
             trace.contains("checks observed during the failed attempt"),
@@ -275,7 +274,7 @@ fn failed_outcome_reports_post_call_resources_not_the_execution_entry() {
         void drop(int32* p) { consumes p[0..1]; }
         void f(int32* p) { consumes p[0..1]; ensures 1 == 2; }"#;
     with_proof_trace("f", || {
-        let error = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
+        let error = verify_c_sources(source, &[("f.c", c)]).unwrap_err();
         let trace = error.trace_context_report().unwrap();
         assert!(trace.contains("resource lost: owns"), "{trace}");
         assert!(
@@ -332,7 +331,7 @@ fn implicit_loop_closure_is_smart() {
             step_until(function.exit); solve();
         }
     "#;
-    let (result, events) = collect(|| verify_c0_sources(source, &[("f.c", c)]));
+    let (result, events) = collect(|| verify_c_sources(source, &[("f.c", c)]));
     assert!(result.is_err(), "a false invariant must still be rejected");
     assert!(
         events.iter().any(|event| matches!(event,
@@ -371,7 +370,7 @@ fn implicit_solve_is_a_smart_tactic_at_the_simple_tactic_site() {
         }
     "#;
     let (result, events) =
-        collect(|| verify_c0_sources(source, &[("make.c", "void make(int32 x, int32 y) { }\n")]));
+        collect(|| verify_c_sources(source, &[("make.c", "void make(int32 x, int32 y) { }\n")]));
     result.expect("the implicit `solve` proves the fold's open body fact");
     let started = |name: &str| {
         events
@@ -421,7 +420,7 @@ fn solve_have_budget_failure_keeps_the_exhaustion_reason() {
             control: 1_000_000,
         },
         || {
-            verify_c0_sources(
+            verify_c_sources(
                 source,
                 &[(
                     "bound.c",
@@ -463,7 +462,7 @@ fn smart_closer_inside_a_have_script_spends_the_smart_budget() {
             control: 1_000_000,
         },
         || {
-            verify_c0_sources(
+            verify_c_sources(
                 source,
                 &[(
                     "bound.c",
@@ -545,7 +544,7 @@ fn uninitialized_mutex_is_a_named_proof_prerequisite() {
         verifying "mutex.c";
         void use_mutex(struct cell *cell) { ensures 0 == 0; } by { step(); }
     "#;
-    let error = verify_c0_sources(click_source, &[("mutex.c", c_source)]).unwrap_err();
+    let error = verify_c_sources(click_source, &[("mutex.c", c_source)]).unwrap_err();
     assert_eq!(error.kind(), ClickErrorKind::Proof, "{}", error.message());
     assert!(
         error
@@ -597,7 +596,7 @@ fn worker_without_protocol_contract_is_a_proof_error() {
             step();
         }
     "#;
-    let error = verify_c0_sources(click_source, &[("mutex.c", c_source)]).unwrap_err();
+    let error = verify_c_sources(click_source, &[("mutex.c", c_source)]).unwrap_err();
     assert_eq!(error.kind(), ClickErrorKind::Proof, "{}", error.message());
     assert!(
         error
@@ -772,7 +771,7 @@ fn resource_neutral_callee_preserves_callers_allocation_resource() {
 
     let sources = [("push.c", push_c), ("caller.c", caller_c)];
     let (verified, events) =
-        crate::instrumentation::collect(|| verify_c0_sources(click_source, &sources));
+        crate::instrumentation::collect(|| verify_c_sources(click_source, &sources));
     verified.expect("a storage-only callee should preserve its caller's allocation authority");
     assert!(events.iter().all(|event| !matches!(
         event,
@@ -787,7 +786,7 @@ fn resource_neutral_callee_preserves_callers_allocation_resource() {
     )));
 
     let expanded =
-        crate::surface::expand_c0_claim_source_by_label(click_source, &sources, "push.contract")
+        crate::surface::expand_c_claim_source_by_label(click_source, &sources, "push.contract")
             .expect("all push postconditions should expand explicitly");
     // `1 <= owner->len` composes the entry order `0 <= len` with the
     // increment as one explicit signed certificate, then transports it.
@@ -801,7 +800,7 @@ fn resource_neutral_callee_preserves_callers_allocation_resource() {
         "{expanded}"
     );
     assert!(!expanded.contains("derive using"), "{expanded}");
-    verify_c0_sources(&expanded, &sources).expect("expanded push proof should check");
+    verify_c_sources(&expanded, &sources).expect("expanded push proof should check");
 }
 
 /// Every external pointer parameter shares one block, so a store to
@@ -819,12 +818,26 @@ fn an_unnamed_store_index_is_spelled_through_its_own_base() {
         offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
     };
     let parameters = vec![
-        syntax::C0Parameter::new(C0Type::Int32Pointer, "next".to_string(), None),
-        syntax::C0Parameter::new(C0Type::Int32Pointer, "visited".to_string(), None),
+        crate::languages::interface::ImportedParameter::new(
+            InterfaceType::Int32Pointer,
+            "next".to_string(),
+            None,
+        ),
+        crate::languages::interface::ImportedParameter::new(
+            InterfaceType::Int32Pointer,
+            "visited".to_string(),
+            None,
+        ),
     ];
     let arguments = vec![
-        CExpression::Value(CValue::typed_pointer(base(100_000), CType::Int32Pointer)),
-        CExpression::Value(CValue::typed_pointer(base(100_001), CType::Int32Pointer)),
+        ProgramExpression::Value(ProgramValue::typed_pointer(
+            base(100_000),
+            ProgramType::Int32Pointer,
+        )),
+        ProgramExpression::Value(ProgramValue::typed_pointer(
+            base(100_001),
+            ProgramType::Int32Pointer,
+        )),
     ];
     // `visited + old_cur * 4`, with `old_cur` a variable no local names.
     let store = Pointer {
@@ -891,24 +904,24 @@ fn execution_effect_diagnostics_omit_raw_memory_snapshots() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(8),
     };
-    let before = CMemory::new().store(pointer.clone(), int32(1));
+    let before = Memory::new().store(pointer.clone(), int32(1));
     let after = before.clone().store(pointer.clone(), int32(2));
     let facts = vec![
-        ExecutionPureFact::new(Proposition::CMemoryMutatesOnly {
+        ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
             before: before.clone(),
             after: after.clone(),
             writes: vec![(pointer.clone(), 4)],
         }),
-        ExecutionPureFact::new(Proposition::CMemoryEffectSummary {
+        ExecutionPureFact::new(Proposition::MemoryEffectSummary {
             before: before.clone(),
             after: after.clone(),
-            mutable_ranges: vec![CMemoryRange::new(
+            mutable_ranges: vec![MemoryRange::new(
                 pointer.clone(),
                 MachineTerm::constant(0),
                 MachineTerm::constant(1),
             )],
         }),
-        ExecutionPureFact::new(Proposition::CHeapAllocationFreed {
+        ExecutionPureFact::new(Proposition::HeapAllocationFreed {
             before,
             after,
             allocation_base: pointer,
@@ -924,7 +937,7 @@ fn execution_effect_diagnostics_omit_raw_memory_snapshots() {
         "{description}"
     );
     assert!(description.contains("freed between"), "{description}");
-    assert!(!description.contains("CMemory"), "{description}");
+    assert!(!description.contains("Memory"), "{description}");
     assert!(
         !description.contains("diagnostic truncated"),
         "{description}"
@@ -962,12 +975,20 @@ fn a_condition_search_miss_spells_its_goal_and_premises() {
         true,
     );
     let parameters = vec![
-        syntax::C0Parameter::new(C0Type::Int32, "x".to_string(), None),
-        syntax::C0Parameter::new(C0Type::Int32, "y".to_string(), None),
+        crate::languages::interface::ImportedParameter::new(
+            InterfaceType::Int32,
+            "x".to_string(),
+            None,
+        ),
+        crate::languages::interface::ImportedParameter::new(
+            InterfaceType::Int32,
+            "y".to_string(),
+            None,
+        ),
     ];
     let arguments = vec![
-        CExpression::Value(CValue::Int32(x.clone())),
-        CExpression::Value(CValue::Int32(y.clone())),
+        ProgramExpression::Value(ProgramValue::Int32(x.clone())),
+        ProgramExpression::Value(ProgramValue::Int32(y.clone())),
     ];
     let message = super::proof::describe_condition_search_miss(
         &goal,
@@ -1086,7 +1107,7 @@ fn failed_algebraic_solve_reports_claim_without_internal_schema_dump() {
             } == value by solve();
         }
     "#;
-    let error = verify_c0_sources(source, &[]).unwrap_err();
+    let error = verify_c_sources(source, &[]).unwrap_err();
     let message = error.message();
     assert!(
         message.contains("false_reconstruction.ensures_0"),
@@ -1134,7 +1155,7 @@ fn failed_compound_algebraic_solve_renders_the_goal_once_without_a_debug_dump() 
             }
         }
     "#;
-    let error = verify_c0_sources(source, &[]).unwrap_err();
+    let error = verify_c_sources(source, &[]).unwrap_err();
     let message = error.message();
     assert!(message.contains("color_bit_is_two.ensures_0"), "{message}");
     assert!(message.contains("root_color("), "{message}");
@@ -1186,7 +1207,7 @@ fn negative_mdtest_failures_include_structured_proof_context() {
             .iter()
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
-        let error = verify_c0_sources(click, &sources).expect_err(name);
+        let error = verify_c_sources(click, &sources).expect_err(name);
         let message = error.message();
         if name == "resource_summary_requires_returned_write" {
             assert!(
@@ -1209,14 +1230,14 @@ fn negative_mdtest_failures_include_structured_proof_context() {
             assert!(message.contains("goal:"), "{name}: {message}");
             assert!(message.contains("recent premises"), "{name}: {message}");
         }
-        assert!(!message.contains("CMemory {"), "{name}: {message}");
+        assert!(!message.contains("Memory {"), "{name}: {message}");
     }
 }
 
 /// An undecided C `if` reported its two condition paths with the kernel
 /// `Debug` of their facts. A condition whose load has not been named by a
 /// load variable — the shape `list_count_live` reaches after its recursive
-/// call — then carries the whole `CMemory` snapshot, blocks and heap
+/// call — then carries the whole `Memory` snapshot, blocks and heap
 /// included, twice. That is the raw-state dump `AGENTS.md` names. Each path
 /// is now spelled on its own line in the bounded source vocabulary, which is
 /// what says which condition each arm assumes.
@@ -1254,7 +1275,7 @@ int32 pick(struct node* node) {
     solve();
 }
 "#;
-    let error = verify_c0_sources(click_source, &[("pick.c", c_source)]).unwrap_err();
+    let error = verify_c_sources(click_source, &[("pick.c", c_source)]).unwrap_err();
     let message = error.message();
     assert!(
         message.contains("feasible condition paths"),
@@ -1264,16 +1285,16 @@ int32 pick(struct node* node) {
         message.contains("condition path 0:") && message.contains("condition path 1:"),
         "each arm's assumption should be spelled on its own line: {message}"
     );
-    assert!(!message.contains("CMemory {"), "{message}");
-    assert!(!message.contains("CHeapMemory {"), "{message}");
-    assert!(!message.contains("CBlock {"), "{message}");
+    assert!(!message.contains("Memory {"), "{message}");
+    assert!(!message.contains("HeapMemory {"), "{message}");
+    assert!(!message.contains("MemoryBlock {"), "{message}");
     assert!(message.len() < 8000, "{message}");
 }
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_08")]
 fn maybe_throwing_step_diagnostic_teaches_outcomes_syntax() {
-    let call = crate::kernel::c_call("helper", Vec::new());
+    let call = crate::kernel::program_call("helper", Vec::new());
     let message =
         super::diagnostics::describe_multiple_statement_successors_guidance(&call, 2, true);
 
@@ -1295,7 +1316,7 @@ fn maybe_throwing_step_diagnostic_teaches_outcomes_syntax() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_08")]
 fn branch_split_step_diagnostic_does_not_offer_outcomes() {
-    let call = crate::kernel::c_call("helper", Vec::new());
+    let call = crate::kernel::program_call("helper", Vec::new());
     let message =
         super::diagnostics::describe_multiple_statement_successors_guidance(&call, 2, false);
 
@@ -1309,17 +1330,26 @@ fn branch_split_step_diagnostic_does_not_offer_outcomes() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_09")]
 fn statement_head_names_the_guard_without_the_loop_node() {
-    use crate::kernel::{
-        c_and, c_assign, c_int32_literal, c_load, c_not_equal, c_variable, c_while,
-    };
+    use crate::kernel::{program_assign, program_while};
 
-    let condition = c_and(
-        c_not_equal(c_variable("a"), c_int32_literal(0)),
-        c_not_equal(c_load(c_variable("p")), c_int32_literal(0)),
+    let condition = crate::kernel::program_expression::and(
+        crate::kernel::program_expression::not_equal(
+            crate::kernel::program_expression::variable("a"),
+            crate::kernel::program_expression::int32_literal(0),
+        ),
+        crate::kernel::program_expression::not_equal(
+            crate::kernel::program_expression::load(crate::kernel::program_expression::variable(
+                "p",
+            )),
+            crate::kernel::program_expression::int32_literal(0),
+        ),
     );
-    let body = c_assign("unmistakable_body_local", c_int32_literal(0));
-    let loop_statement = c_while(condition, Vec::new(), body);
-    let head = super::diagnostics::describe_c_statement_head(&loop_statement);
+    let body = program_assign(
+        "unmistakable_body_local",
+        crate::kernel::program_expression::int32_literal(0),
+    );
+    let loop_statement = program_while(condition, Vec::new(), body);
+    let head = super::diagnostics::describe_execution_statement_head(&loop_statement);
 
     assert_eq!(head, "while ((a != 0) && (*p != 0))");
     assert!(!head.contains("unmistakable_body_local"), "{head}");
@@ -1327,17 +1357,23 @@ fn statement_head_names_the_guard_without_the_loop_node() {
 
     // A guard spelled past the printer's byte budget is truncated rather than
     // allowed to set the size of the diagnostic.
-    let mut wide = c_not_equal(c_variable("a"), c_int32_literal(0));
+    let mut wide = crate::kernel::program_expression::not_equal(
+        crate::kernel::program_expression::variable("a"),
+        crate::kernel::program_expression::int32_literal(0),
+    );
     for _ in 0..200 {
-        wide = c_and(
+        wide = crate::kernel::program_expression::and(
             wide,
-            c_not_equal(c_variable("another_long_operand_name"), c_int32_literal(0)),
+            crate::kernel::program_expression::not_equal(
+                crate::kernel::program_expression::variable("another_long_operand_name"),
+                crate::kernel::program_expression::int32_literal(0),
+            ),
         );
     }
-    let wide_head = super::diagnostics::describe_c_statement_head(&c_while(
+    let wide_head = super::diagnostics::describe_execution_statement_head(&program_while(
         wide,
         Vec::new(),
-        c_assign("a", c_int32_literal(0)),
+        program_assign("a", crate::kernel::program_expression::int32_literal(0)),
     ));
     assert!(wide_head.len() <= 512, "{}", wide_head.len());
     assert!(wide_head.ends_with('…'), "{wide_head}");
@@ -1346,14 +1382,14 @@ fn statement_head_names_the_guard_without_the_loop_node() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_09")]
 fn loan_refusal_diagnostic_renders_only_its_selected_subject() {
-    use crate::kernel::{CMemoryRange, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm};
     use crate::kernel::{LoanRefusal, LoanRefusalOperation, LoanRefusalSubject};
+    use crate::kernel::{MachineTerm, MemoryRange, Pointer, PointerBlock, PointerOffsetTerm};
 
     let pointer = Pointer {
         block: PointerBlock::Concrete("selected_resource".to_string()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let selected = CResourceFact::own_memory(CMemoryRange::new(
+    let selected = ResourceFact::own_memory(MemoryRange::new(
         pointer,
         MachineTerm::constant(0),
         MachineTerm::constant(4),
@@ -1363,7 +1399,7 @@ fn loan_refusal_diagnostic_renders_only_its_selected_subject() {
         LoanRefusalSubject::for_resource(selected),
     );
     let rendered = super::diagnostics::describe_runtime_error(
-        &crate::kernel::CRuntimeError::LoanRefusal(Box::new(diagnostic)),
+        &crate::kernel::RuntimeError::LoanRefusal(Box::new(diagnostic)),
         ParameterBinding::default(),
     );
 
@@ -1376,10 +1412,10 @@ fn loan_refusal_diagnostic_renders_only_its_selected_subject() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_09")]
 fn loan_refusal_diagnostic_renders_a_range_subject_without_ledger_state() {
-    use crate::kernel::{CMemoryRange, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm};
     use crate::kernel::{LoanRefusal, LoanRefusalOperation, LoanRefusalSubject};
+    use crate::kernel::{MachineTerm, MemoryRange, Pointer, PointerBlock, PointerOffsetTerm};
 
-    let range = CMemoryRange::new(
+    let range = MemoryRange::new(
         Pointer {
             block: PointerBlock::Concrete("selected_range".to_string()),
             offset: PointerOffsetTerm::Constant(0),
@@ -1392,13 +1428,13 @@ fn loan_refusal_diagnostic_renders_a_range_subject_without_ledger_state() {
         LoanRefusalSubject::for_range(range),
     );
     let rendered = super::diagnostics::describe_runtime_error(
-        &crate::kernel::CRuntimeError::LoanRefusal(Box::new(diagnostic)),
+        &crate::kernel::RuntimeError::LoanRefusal(Box::new(diagnostic)),
         ParameterBinding::default(),
     );
 
     assert!(rendered.contains("selected range"), "{rendered}");
     assert!(rendered.contains("selected_range"), "{rendered}");
-    assert!(!rendered.contains("CMemoryRange {"), "{rendered}");
+    assert!(!rendered.contains("MemoryRange {"), "{rendered}");
     assert!(rendered.len() < 1024, "{}", rendered.len());
 }
 
@@ -1427,7 +1463,7 @@ fn identical_load_renders_name_distinct_snapshot_loads() {
             }
         "#;
 
-    let error = verify_c0_sources(click_source, &[("sym_index_clobber.c", c_source)])
+    let error = verify_c_sources(click_source, &[("sym_index_clobber.c", c_source)])
         .expect_err("a symbolically-indexed write must leave the old-value goal open");
     let message = error.message();
     assert!(
@@ -1589,21 +1625,21 @@ fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
         block: PointerBlock::Symbolic(Variable(982_001)),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let before = CMemory::new().with_block(global.block.clone(), 4);
+    let before = Memory::new().with_block(global.block.clone(), 4);
     let after = before.clone().store(alias.clone(), int32(1));
-    let pre_state = CState::new().with_memory(before.clone());
+    let pre_state = ExecutionState::new().with_memory(before.clone());
     let aliases_global =
         Proposition::ConditionIs(ConditionTerm::pointer_equal(alias.clone(), global), true);
     let facts = [
-        ExecutionPureFact::new(Proposition::CMemoryMutatesOnly {
+        ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
             before: before.clone(),
             after: after.clone(),
             writes: vec![(alias.clone(), 4)],
         }),
-        ExecutionPureFact::new(Proposition::CMemoryEffectSummary {
+        ExecutionPureFact::new(Proposition::MemoryEffectSummary {
             before,
             after,
-            mutable_ranges: vec![CMemoryRange::new(
+            mutable_ranges: vec![MemoryRange::new(
                 alias,
                 MachineTerm::constant(0),
                 MachineTerm::constant(1),
@@ -1626,8 +1662,8 @@ fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
         .expect_err("a fact-aliased write reaches the preexisting global");
         assert!(matches!(
             error,
-            crate::kernel::CContractClosingRefusal::Write(_)
-                | crate::kernel::CContractClosingRefusal::Range(_)
+            crate::kernel::ContractClosingRefusal::Write(_)
+                | crate::kernel::ContractClosingRefusal::Range(_)
         ));
     }
 }
@@ -1694,13 +1730,13 @@ fn missing_mutex_use_names_the_required_resource_without_loan_internals() {
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let rendered = super::diagnostics::describe_runtime_error(
-        &crate::kernel::CRuntimeError::MissingMutexUse {
+        &crate::kernel::RuntimeError::MissingMutexUse {
             mutex: mutex.clone(),
         },
         ParameterBinding::default(),
     );
     let owner = super::diagnostics::describe_runtime_error(
-        &crate::kernel::CRuntimeError::MissingMutexLive { mutex },
+        &crate::kernel::RuntimeError::MissingMutexLive { mutex },
         ParameterBinding::default(),
     );
     assert_eq!(rendered, owner.replace("mutex_live", "mutex_use"));
@@ -1821,12 +1857,12 @@ fn statement_sites_change_nothing_but_the_location_line() {
         let click_source = format!("{header}{proof}");
         // The first verification in a process also builds shared caches;
         // both measured runs come after it.
-        let _ = verify_c0_sources(&click_source, &[("f.c", SITED_C_SOURCE)]);
+        let _ = verify_c_sources(&click_source, &[("f.c", SITED_C_SOURCE)]);
         let (original, original_work) = crate::instrumentation::measure_deterministic_work(|| {
-            verify_c0_sources(&click_source, &[("f.c", SITED_C_SOURCE)])
+            verify_c_sources(&click_source, &[("f.c", SITED_C_SOURCE)])
         });
         let (moved, moved_work) = crate::instrumentation::measure_deterministic_work(|| {
-            verify_c0_sources(&click_source, &[("f.c", &shifted)])
+            verify_c_sources(&click_source, &[("f.c", &shifted)])
         });
         assert!(original_work > 0, "{proof}");
         assert_eq!(original_work, moved_work, "{proof}");
@@ -1888,7 +1924,7 @@ fn failed_generated_loop_closer_reports_a_short_summary_at_the_loop_tactic() {
             solve();
         }
     "#;
-    let error = verify_c0_sources(click_source, &[("settle.c", c_source)])
+    let error = verify_c_sources(click_source, &[("settle.c", c_source)])
         .expect_err("a loop whose measure does not decrease is refused");
     let (report, context) = error.concise_report_parts();
     assert!(report.contains("`state < state` remained open"), "{report}");
@@ -2012,7 +2048,7 @@ fn folded_child_loop_field_refusal_names_the_fold_and_a_verified_remedy() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    let error = verify_c0_sources(fixture.click_source.as_deref().unwrap(), &sources).unwrap_err();
+    let error = verify_c_sources(fixture.click_source.as_deref().unwrap(), &sources).unwrap_err();
     assert!(
         error
             .message()
@@ -2030,7 +2066,7 @@ fn folded_child_loop_field_refusal_names_the_fold_and_a_verified_remedy() {
     let repaired =
         crate::cli::parse_mdtest(&path, &std::fs::read_to_string(&path).unwrap()).unwrap();
     assert_eq!(fixture.c_sources, repaired.c_sources);
-    verify_c0_sources(repaired.click_source.as_deref().unwrap(), &sources)
+    verify_c_sources(repaired.click_source.as_deref().unwrap(), &sources)
         .unwrap_or_else(|error| panic!("the suggested payload binding must verify: {error:?}"));
 }
 
@@ -2057,7 +2093,7 @@ fn unfolded_algebraic_field_refusal_never_suggests_a_c_field_pattern() {
     }
     "#,
     );
-    let error = verify_c0_sources(&click, &sources).unwrap_err();
+    let error = verify_c_sources(&click, &sources).unwrap_err();
     assert!(
         error.message().contains("`unfold(w)` consumed it"),
         "{error:?}"
@@ -2083,13 +2119,15 @@ fn unheld_field_without_a_checked_consumption_does_not_invent_one() {
             children: vec![],
             field: "rank".into(),
             field_index: 0,
-            click_type: Some(ClickType::C(C0Type::Int32)),
+            click_type: Some(ClickType::Program(InterfaceType::Int32)),
         }),
-        right: ContractExpression::CFragment(CExpression::Value(crate::kernel::int32(0))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(
+            crate::kernel::int32(0),
+        )),
     };
     let message = crate::surface::diagnostics::describe_consumed_instance_field_read(
         &proposition,
-        &CState::new(),
+        &ExecutionState::new(),
         false,
     )
     .unwrap();
@@ -2104,18 +2142,19 @@ fn unheld_field_without_a_checked_consumption_does_not_invent_one() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_12")]
 fn source_unknown_local_pointer_diagnostics_identify_byte_units() {
     use crate::kernel::{
-        CMemoryRange, CPointerValue, CType, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm,
+        MachineTerm, MemoryRange, Pointer, PointerBlock, PointerOffsetTerm, PointerValue,
+        ProgramType,
     };
     let base = Pointer {
         block: PointerBlock::Concrete("unknown".into()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let state = CState::new().with_local(
+    let state = ExecutionState::new().with_local(
         "cursor",
-        CValue::Pointer(CPointerValue::new(base.clone(), CType::Int32Pointer)),
+        ProgramValue::Pointer(PointerValue::new(base.clone(), ProgramType::Int32Pointer)),
     );
     let (parameters, arguments) = super::diagnostics::local_naming_tables_with_source(&state, None);
-    let range = CMemoryRange::new(base, MachineTerm::constant(1), MachineTerm::constant(2));
+    let range = MemoryRange::new(base, MachineTerm::constant(1), MachineTerm::constant(2));
     assert_eq!(
         super::diagnostics::describe_memory_range(
             &range,
@@ -2138,14 +2177,14 @@ int32 last(int32* data, uint64 length) {
 }
 "#;
     // Exact wide-index constants now resolve without a manual rewrite.
-    verify_c0_sources(sidecar, &[("last.c", source)]).unwrap();
+    verify_c_sources(sidecar, &[("last.c", source)]).unwrap();
     let ambiguous = sidecar
         .replace(
             "owns data[0..1];",
             "owns data[0]; views data[length - 1u64];",
         )
         .replace("requires length == 1u64;", "");
-    let error = match verify_c0_sources(&ambiguous, &[("last.c", source)]) {
+    let error = match verify_c_sources(&ambiguous, &[("last.c", source)]) {
         Err(error) => error,
         Ok(_) => panic!("distinct readable addresses do not establish equal values"),
     };
@@ -2189,7 +2228,7 @@ fn callback_script_tails_report_missing_authority_and_complete_valid_steps() {
             .iter()
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
-        let result = verify_c0_sources(&source, &sources);
+        let result = verify_c_sources(&source, &sources);
         if let Some(expected) = expected {
             let error = result.expect_err("missing callback authority must be refused");
             assert!(
@@ -2214,13 +2253,17 @@ fn callback_script_tails_report_missing_authority_and_complete_valid_steps() {
                 &"step(); ".repeat(10),
                 "step(); step(); step(Propagate); step(); step(); step(Copy); step(); step(); step(Rotate); step();",
             );
-            verify_c0_sources(&named, &sources)
+            verify_c_sources(&named, &sources)
                 .unwrap_or_else(|error| panic!("named callback steps: {}", error.message()));
             let smart = source.replace(&"step(); ".repeat(10), "step_until(function.exit);");
-            let expanded =
-                expand_c0_claim_source(&smart, &sources, "erase_augmented", CProofClaim::Grouped)
-                    .unwrap();
-            verify_c0_sources(&expanded, &sources)
+            let expanded = expand_c_claim_source(
+                &smart,
+                &sources,
+                "erase_augmented",
+                ContractProofClaim::Grouped,
+            )
+            .unwrap();
+            verify_c_sources(&expanded, &sources)
                 .unwrap_or_else(|error| panic!("expanded callbacks: {}", error.message()));
         }
     }
@@ -2269,7 +2312,7 @@ fn callback_script_tails_complete_or_report_a_bounded_failure() {
             .iter()
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
-        let result = verify_c0_sources(&source, &sources);
+        let result = verify_c_sources(&source, &sources);
         if fixture_name.ends_with("owns.md") {
             let verified =
                 result.unwrap_or_else(|error| panic!("{fixture_name}: {}", error.message()));
@@ -2328,7 +2371,7 @@ fn struct_field_frame_failure_names_the_read_and_written_members() {
             step_until(function.exit); solve();
         }
     "#;
-    let error = verify_c0_sources(source, &[("field.c", c_source)])
+    let error = verify_c_sources(source, &[("field.c", c_source)])
         .expect_err("the indexed store may overwrite the first member");
     let message = error.message();
     assert!(message.contains("`p->left` may have changed"), "{message}");
@@ -2425,7 +2468,7 @@ fn wide_conjunction_expansion_stays_parseable_and_checked() {
     );
     verify_click_theorems(&source).unwrap();
     let expanded =
-        crate::surface::expand_c0_claim_source_by_label(&source, &[], "wide.ensures_0").unwrap();
+        crate::surface::expand_c_claim_source_by_label(&source, &[], "wide.ensures_0").unwrap();
     verify_click_theorems(&expanded).unwrap();
     assert!(expanded.contains("have "), "{expanded}");
     let invalid = expanded.replacen("requires x <= 0;", "requires x <= 2;", 1);
@@ -2514,12 +2557,12 @@ void run(int32 n, int32 x) { requires n >= 0; requires x == 7; ensures x == 7; }
 }
 "#;
     let sources = [("reuse.c", c)];
-    let verified = verify_c0_sources(source, &sources).unwrap();
+    let verified = verify_c_sources(source, &sources).unwrap();
     let expanded = expand_checked_function_claim(source, &verified, "run.contract").unwrap();
-    verify_c0_sources(&expanded, &sources).expect("the retained closure expands and rechecks");
+    verify_c_sources(&expanded, &sources).expect("the retained closure expands and rechecks");
     let invalid = expanded.replace("invariant x == 7;", "invariant x == 8;");
     assert_ne!(invalid, expanded);
-    assert!(verify_c0_sources(&invalid, &sources).is_err());
+    assert!(verify_c_sources(&invalid, &sources).is_err());
 }
 
 fn wide_loop_invariant_fixture(size: usize) -> (String, String) {
@@ -2561,14 +2604,14 @@ fn wide_loop_invariant_bundle_expands_without_dropping_members() {
     let members = (crate::surface::parser::STRUCTURAL_NESTING_LIMIT + 1).max(25);
     let (source, proof) = wide_loop_invariant_fixture(members);
     let sources = [("bundle.c", source.as_str())];
-    let verified_for_label = verify_c0_sources(&proof, &sources).unwrap();
+    let verified_for_label = verify_c_sources(&proof, &sources).unwrap();
     let expanded =
         expand_checked_function_claim(&proof, &verified_for_label, "run.contract").unwrap();
-    verify_c0_sources(&expanded, &sources).unwrap();
+    verify_c_sources(&expanded, &sources).unwrap();
     let last = format!("invariant total <= {};", 1000 + members - 1);
     let invalid = expanded.replacen(&last, "invariant total <= -1;", 1);
     assert_ne!(invalid, expanded);
-    assert!(verify_c0_sources(&invalid, &sources).is_err());
+    assert!(verify_c_sources(&invalid, &sources).is_err());
 }
 
 // Default theorem search is measured and bounded without inventing a written
@@ -2606,7 +2649,7 @@ fn linear_function_proofs_execute_once_at_multiple_sizes() {
             "verifying \"f.c\"; int32 f() {{ ensures result == 0; }} by {{ {premises} step_until(function.exit); solve(); }}"
         );
         let (result, events) =
-            collect(|| verify_c0_sources(&source, &[("f.c", "int32 f() { return 0; }")]));
+            collect(|| verify_c_sources(&source, &[("f.c", "int32 f() { return 0; }")]));
         result.unwrap();
         let executions = events
             .iter()
@@ -2660,7 +2703,7 @@ void f(struct node* p) {
     }
 }
 "#;
-    let ordinary = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
+    let ordinary = verify_c_sources(source, &[("f.c", c)]).unwrap_err();
     assert!(
         ordinary
             .message()
@@ -2679,7 +2722,7 @@ void f(struct node* p) {
         ordinary.message()
     );
     with_proof_trace("f", || {
-        let error = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
+        let error = verify_c_sources(source, &[("f.c", c)]).unwrap_err();
         let report = error.trace_context_report().unwrap();
         assert_eq!(report.matches("\ngoal: ").count(), 1, "{report}");
         assert!(report.contains("child `right`, argument 1"), "{report}");
@@ -2708,7 +2751,7 @@ fn execute_failure_trace_retains_checked_call_facts() {
              int32 f() {{ ensures result == 2; }} by {{ {execution} solve(); }}"
         );
         with_proof_trace("f", || {
-            let error = verify_c0_sources(&source, &[("f.c", c)])
+            let error = verify_c_sources(&source, &[("f.c", c)])
                 .expect_err("the intentionally false postcondition must fail");
             let trace = error.trace_context_report().expect("failure trace");
             assert!(!trace.contains("<no checked simple steps"), "{trace}");
@@ -2736,7 +2779,7 @@ fn fold_over_a_hidden_record_names_the_failed_fact() {
                   fact p->n == first.v; fact first.v >= 0; } \
                   verifying \"f.c\"; void clear(struct pair* p) { owns x: pair(p); } by { \
                   let { first: c } = unfold(x); step_until(function.exit); let x = fold(pair(p), { first: c }); solve(); }";
-    let error = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
+    let error = verify_c_sources(source, &[("f.c", c)]).unwrap_err();
     let report = error.concise_report();
     // The instance reads the field the body stored to; the read keeps its
     // name rather than the stored `-1` (`docs/internals/spellability.md`).
@@ -2750,7 +2793,7 @@ fn fold_over_a_hidden_record_names_the_failed_fact() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_15")]
 fn a_labelled_resource_fact_is_refused_by_name() {
     let source = "resource held(p: int32*) { owns *p; fact positive: *p > 0; }";
-    let error = verify_c0_sources(source, &[]).unwrap_err();
+    let error = verify_c_sources(source, &[]).unwrap_err();
     assert!(
         error.message.contains("a `fact` clause takes no label"),
         "{}",
@@ -2775,7 +2818,7 @@ fn fold_reports_the_instantiated_body_fact_in_plain_and_matched_resources() {
         let source = format!(
             "verifying \"f.c\"; {resource} void f(int32* p) {{ owns c: cell(p); }} by {{ {proof} }}"
         );
-        let ordinary = verify_c0_sources(&source, &[("f.c", c)]).unwrap_err();
+        let ordinary = verify_c_sources(&source, &[("f.c", c)]).unwrap_err();
         let report = ordinary.concise_report();
         // The summary names the declared fact; `goal:` is its instance.
         assert!(report.contains("is not established\n  `*p == "), "{report}");
@@ -2788,7 +2831,7 @@ fn fold_reports_the_instantiated_body_fact_in_plain_and_matched_resources() {
         assert_eq!(report.matches("\ngoal: ").count(), 1, "{report}");
         assert!(!report.contains("snapshot#"), "{report}");
         with_proof_trace("f", || {
-            let error = verify_c0_sources(&source, &[("f.c", c)]).unwrap_err();
+            let error = verify_c_sources(&source, &[("f.c", c)]).unwrap_err();
             let report = error.trace_context_report().unwrap();
             let required = report
                 .lines()
@@ -2817,13 +2860,13 @@ fn fold_reports_the_selected_missing_body_resource() {
         }
     "#;
     let files = [("f.c", "void f(int *p) {}")];
-    let error = verify_c0_sources(source, &files).unwrap_err();
+    let error = verify_c_sources(source, &files).unwrap_err();
     assert!(error.missing_resource().is_some());
     let report = error.concise_report();
     assert!(report.contains("goal: owns "), "{report}");
     assert!(report.contains("p["), "{report}");
     with_proof_trace("f", || {
-        let error = verify_c0_sources(source, &files).unwrap_err();
+        let error = verify_c_sources(source, &files).unwrap_err();
         let trace = error.trace_context_report().unwrap();
         assert!(trace.contains("goal: owns "), "{trace}");
         assert!(trace.contains("p["), "{trace}");
@@ -2835,7 +2878,7 @@ fn fold_reports_the_selected_missing_body_resource() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_16")]
 fn memory_history_diagnostic_names_the_store_and_limits_its_claim() {
-    use crate::kernel::{LoadKind, intern_c_memory};
+    use crate::kernel::{LoadKind, intern_memory};
     use crate::surface::proof_diagnostics::render::{
         SnapshotLabels, render_memory_history_check, render_proposition_labeled,
     };
@@ -2844,10 +2887,10 @@ fn memory_history_diagnostic_names_the_store_and_limits_its_claim() {
         offset: PointerOffsetTerm::Variable(Variable(992001)),
     };
     let written = Pointer::symbolic(Variable(992002));
-    let before = CMemory::new();
+    let before = Memory::new();
     let blocked = before.clone().store(
         written.clone(),
-        CValue::UInt64(MachineTerm::uint64_constant(42)),
+        ProgramValue::UInt64(MachineTerm::uint64_constant(42)),
     );
     let after = blocked.clone().store(
         Pointer {
@@ -2856,9 +2899,9 @@ fn memory_history_diagnostic_names_the_store_and_limits_its_claim() {
         },
         int32(1),
     );
-    let load = |memory: &CMemory| {
+    let load = |memory: &Memory| {
         MachineTerm::MemoryLoad(
-            intern_c_memory(memory.clone()),
+            intern_memory(memory.clone()),
             Box::new(read.clone()),
             LoadKind::Bits64,
         )
@@ -3017,7 +3060,7 @@ void call(int32* p, int32* q, int32* anchor) {
 "#;
     for tracing in [false, true] {
         let check = || {
-            let error = verify_c0_sources(
+            let error = verify_c_sources(
                 source,
                 &[("call_produced_reuse_requires_new_argument.c", c)],
             )
@@ -3045,21 +3088,21 @@ void call(int32* p, int32* q, int32* anchor) {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_16")]
 fn call_resource_diagnostic_read_shows_snapshot_and_access() {
-    use crate::kernel::{CMemoryRange, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm};
+    use crate::kernel::{MachineTerm, MemoryRange, Pointer, PointerBlock, PointerOffsetTerm};
     let address = Pointer {
         block: PointerBlock::Concrete("selected_child_cell".into()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let required = CResourceFact::View(crate::kernel::CResource::Memory(CMemoryRange::new(
+    let required = ResourceFact::View(crate::kernel::Resource::Memory(MemoryRange::new(
         address,
         MachineTerm::constant(0),
         MachineTerm::constant(1),
     )));
-    let error = crate::kernel::CRuntimeError::ContractResourceDiagnostic {
+    let error = crate::kernel::RuntimeError::ContractResourceDiagnostic {
         reason: "resource `child` argument 1 could not be evaluated: required access authority is unavailable".into(),
         held: None,
         required: Box::new(required),
-        memory: Some(Box::new(crate::kernel::CMemory::new())),
+        memory: Some(Box::new(crate::kernel::Memory::new())),
     };
     let rendered = super::diagnostics::describe_runtime_error(&error, ParameterBinding::default());
     assert!(
@@ -3099,7 +3142,7 @@ fn smart_have_budget_refusal_retains_checked_trace_prefix() {
                     control: if nested { 160 } else { 1_000_000 },
                 },
                 || {
-                    verify_c0_sources(
+                    verify_c_sources(
                         &source,
                         &[("f.c", "void f(int32 *cell, int32 value) { *cell = value; }")],
                     )
@@ -3152,7 +3195,7 @@ fn loop_have_budget_refusal_retains_checked_store_trace() {
             crate::instrumentation::TacticWorkLimits {
                 simple: 1_000_000, smart: 128, control: 1_000_000,
             },
-            || verify_c0_sources(source, &[("f.c", "void f(int32 *cell, int32 value) { int32 i = 1; while (i > 0) { *cell = value; i = i - 1; } }")]),
+            || verify_c_sources(source, &[("f.c", "void f(int32 *cell, int32 value) { int32 i = 1; while (i > 0) { *cell = value; i = i - 1; } }")]),
         ).expect_err("the loop's bounded false comparison must fail");
         assert!(
             error.message().contains("budget exhausted"),
@@ -3243,7 +3286,7 @@ uint64 drain(uint64 len) {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_17")]
 fn failed_invariant_closure_retains_body_trace_and_focused_fact() {
     with_proof_trace("drain", || {
-        let error = verify_c0_sources(CLOSURE_TRACE_CLICK, &[("loop.c", CLOSURE_TRACE_C)])
+        let error = verify_c_sources(CLOSURE_TRACE_CLICK, &[("loop.c", CLOSURE_TRACE_C)])
             .expect_err("the false invariant must be refused at the back edge");
         assert!(
             error.message().contains("remained open"),
@@ -3321,7 +3364,7 @@ fn failed_invariant_closure_trace_prefix_is_lazy_and_scales() {
             &format!("{repeated}   have len == 0u64 by solve();\n"),
         );
         with_proof_trace("drain", || {
-            let error = verify_c0_sources(&source, &[("loop.c", CLOSURE_TRACE_C)])
+            let error = verify_c_sources(&source, &[("loop.c", CLOSURE_TRACE_C)])
                 .expect_err("a trace cannot make the false invariant hold");
             let before = crate::surface::proof_trace::lineage_visits();
             assert!(
@@ -3368,7 +3411,7 @@ fn failed_invariant_closure_trace_keeps_its_branch_guard() {
         }
     "#;
     with_proof_trace("branch_drain", || {
-        let error = verify_c0_sources(source, &[("loop.c", c)])
+        let error = verify_c_sources(source, &[("loop.c", c)])
             .expect_err("the deliberately invalid invariant must fail in the then arm");
         let trace = error.trace_context_report().unwrap();
         assert!(trace.contains("flag == 0"), "{trace}");
@@ -3396,7 +3439,7 @@ fn native_view_solve_selects_only_coverage_premises() {
         source.push_str(&format!(
             " ensures viewable(p[0u64..1u64]) by {{ {body} }} }}"
         ));
-        verify_c0_sources(&source, &[])
+        verify_c_sources(&source, &[])
             .expect("a prefix uses only its source view and coverage bound");
     }
 }
@@ -3405,7 +3448,7 @@ fn native_view_solve_selects_only_coverage_premises() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_18")]
 fn native_view_solve_distinguishes_a_rejected_kernel_query() {
     let source = "target \"x86_64-unknown-linux-gnu\"; theorem false_view(p: uint8[], n: uint64) { views p[0u64..n]; requires n == 0u64; ensures viewable(p[0u64..1u64]) by { solve(); } }";
-    let error = verify_c0_sources(source, &[]).expect_err("an empty view cannot cover one byte");
+    let error = verify_c_sources(source, &[]).expect_err("an empty view cannot cover one byte");
     let report = error.concise_report();
     assert!(
         report.contains("kernel native view checker did not establish"),
@@ -3424,11 +3467,11 @@ fn native_view_solve_distinguishes_a_rejected_kernel_query() {
 fn pending_call_obligations_use_shared_goal_printer_and_snapshot_legend() {
     let _typed = crate::surface::proof_diagnostics::render::TypedNotationScope::enter();
     use crate::kernel::{
-        CMemory, CRuntimeError, ConditionTerm, MachineTerm, Pointer, PointerOffsetTerm,
-        ProofObligation, Proposition,
+        ConditionTerm, MachineTerm, Memory, Pointer, PointerOffsetTerm, ProofObligation,
+        Proposition, RuntimeError,
     };
     use crate::surface::proof_diagnostics::render::{SnapshotLabels, render_proposition_labeled};
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let pointer = Pointer {
         block: "pending_read_cell".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -3438,7 +3481,7 @@ fn pending_call_obligations_use_shared_goal_printer_and_snapshot_legend() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(memory),
+                crate::kernel::intern_memory(memory),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,
             )),
@@ -3452,7 +3495,7 @@ fn pending_call_obligations_use_shared_goal_printer_and_snapshot_legend() {
             "reader.contract",
             0,
             &[],
-            &CMemory::new(),
+            &Memory::new(),
         )),
         7,
         Some(7),
@@ -3465,7 +3508,7 @@ fn pending_call_obligations_use_shared_goal_printer_and_snapshot_legend() {
             .with_call_requirement_site(source),
         ProofObligation::verification_condition(goal.clone()).with_context("call postcondition"),
     ];
-    let error = CRuntimeError::PendingCallObligations(obligations.into());
+    let error = RuntimeError::PendingCallObligations(obligations.into());
     let rendered = super::diagnostics::describe_runtime_error(&error, ParameterBinding::default());
     let expected = render_proposition_labeled(
         &goal,
@@ -3498,7 +3541,7 @@ fn pending_call_obligations_use_shared_goal_printer_and_snapshot_legend() {
         "{rendered}"
     );
     assert!(rendered.contains("pending_read_cell"), "{rendered}");
-    assert!(!rendered.contains("CMemory {"), "{rendered}");
+    assert!(!rendered.contains("Memory {"), "{rendered}");
 }
 
 #[test]
@@ -3539,7 +3582,7 @@ void symbolic(int32* p, const struct callbacks* cb) {
     ] {
         let source = format!("verifying \"callbacks.c\";\n{contract}");
         with_proof_trace(name, || {
-            let error = verify_c0_sources(&source, &[("callbacks.c", c)]).unwrap_err();
+            let error = verify_c_sources(&source, &[("callbacks.c", c)]).unwrap_err();
             let trace = error
                 .trace_context_report()
                 .unwrap_or_else(|| panic!("{}", error.concise_report()));
@@ -3566,18 +3609,18 @@ void symbolic(int32* p, const struct callbacks* cb) {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_19")]
 fn call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_snapshots() {
     use crate::kernel::{
-        AlgebraicValue, CMemory, CPointerValue, CResource, CType, CValue, LoadKind, Pointer,
-        PointerBlock, PointerOffsetTerm, Variable, intern_c_memory,
+        AlgebraicValue, LoadKind, Memory, Pointer, PointerBlock, PointerOffsetTerm, PointerValue,
+        ProgramType, ProgramValue, Resource, Variable, intern_memory,
     };
     let _session = crate::kernel::VerificationSession::enter();
     let read = Pointer {
         block: PointerBlock::Concrete("child_cell".into()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let before = CMemory::new();
+    let before = Memory::new();
     let after = before.clone().store(read.clone(), int32(7));
-    let argument = |memory: CMemory| {
-        AlgebraicValue::C(CValue::Pointer(CPointerValue::new(
+    let argument = |memory: Memory| {
+        AlgebraicValue::Program(ProgramValue::Pointer(PointerValue::new(
             Pointer {
                 block: PointerBlock::Concrete("nodes".into()),
                 offset: PointerOffsetTerm::scale_int32(
@@ -3585,7 +3628,7 @@ fn call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_snapshots(
                         Int32,
                         Subtract,
                         Box::new(MachineTerm::MemoryLoad(
-                            intern_c_memory(memory),
+                            intern_memory(memory),
                             Box::new(read.clone()),
                             LoadKind::Int32,
                         )),
@@ -3594,16 +3637,16 @@ fn call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_snapshots(
                     4,
                 ),
             },
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
         )))
     };
     let resource = |argument| {
-        CResourceFact::own(CResource::Composite {
+        ResourceFact::own(Resource::Composite {
             name: "optional_size".into(),
             arguments: vec![argument].into(),
         })
     };
-    let error = crate::kernel::CRuntimeError::ContractResourceDiagnostic {
+    let error = crate::kernel::RuntimeError::ContractResourceDiagnostic {
         reason: "equality of resource argument 1 was not established".into(),
         held: Some(Box::new(resource(argument(before)))),
         required: Box::new(resource(argument(after))),
@@ -3646,7 +3689,7 @@ fn failed_final_assumption_preserves_its_checked_trace_context() {
         }
     "#;
     with_proof_trace("f", || {
-        let error = verify_c0_sources(
+        let error = verify_c_sources(
             source,
             &[("f.c", "void f(int32 *cell, int32 value) { *cell = value; }")],
         )
@@ -3685,7 +3728,7 @@ fn known_transport_trace_retains_its_written_source_occurrence() {
         "#
         );
         with_proof_trace("f", || {
-            verify_c0_sources(
+            verify_c_sources(
                 &source,
                 &[("f.c", "void f(int32 *p) { int32 y = 0; return; }")],
             )
@@ -3730,7 +3773,7 @@ fn a_trace_marks_searched_steps_and_their_chosen_arguments() {
         "#
         );
         with_proof_trace("f", || {
-            verify_c0_sources(
+            verify_c_sources(
                 &source,
                 &[("f.c", "void f(int32 *p) { int32 y = 0; return; }")],
             )
@@ -3765,7 +3808,7 @@ fn a_trace_marks_searched_steps_and_their_chosen_arguments() {
         }
     "#;
     with_proof_trace("use_it", || {
-        verify_c0_sources(source, &[("f.c", "void f(void) { return; }")])
+        verify_c_sources(source, &[("f.c", "void f(void) { return; }")])
             .expect("the elided apply finds both premises");
         let trace = accepted_proof_trace(&|_, _| None, &|_, _, _| None, &|_, _, _| false, None)
             .expect("the apply retains its trace");
@@ -3796,7 +3839,7 @@ fn rejected_transport_prints_checked_reads_and_retains_prefix() {
         "#
         );
         with_proof_trace("f", || {
-            let error = verify_c0_sources(&source, &[("f.c", c.as_str())])
+            let error = verify_c_sources(&source, &[("f.c", c.as_str())])
                 .expect_err("a write invalidates the transported value");
             let message = error.message();
             // The bare form reports the refusal of its source-only check,
@@ -3856,7 +3899,7 @@ fn failed_normalize_using_retains_actual_wide_read_resolution() {
         }
     "#;
     with_proof_trace("f", || {
-        let error = verify_c0_sources(source, &[("f.c", c)])
+        let error = verify_c_sources(source, &[("f.c", c)])
             .expect_err("an unknown initial word need not be seven");
         let message = error.message();
         for expected in [
@@ -3903,7 +3946,7 @@ fn rejected_loop_transport_premise_uses_shared_exact_diagnostic() {
     "#;
     with_proof_trace("f", || {
         let error =
-            verify_c0_sources(source, &[("f.c", c)]).expect_err("the arbitrary q may alias p");
+            verify_c_sources(source, &[("f.c", c)]).expect_err("the arbitrary q may alias p");
         let message = error.message();
         assert!(message.contains("required transport premise:"), "{message}");
         assert!(!message.contains("available resource facts"), "{message}");
@@ -3938,7 +3981,7 @@ fn rejected_wide_transport_shows_actual_walk_stop_and_prefix() {
         }
     "#;
     with_proof_trace("f", || {
-        let error = verify_c0_sources(source, &[("f.c", c)])
+        let error = verify_c_sources(source, &[("f.c", c)])
             .expect_err("a real write invalidates the old word");
         let message = error.message();
         for expected in [
@@ -3988,7 +4031,7 @@ fn a_failed_retain_names_the_population_count_requirement() {
             .iter()
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
-        let error = verify_c0_sources(fixture.click_source.as_deref().unwrap(), &sources)
+        let error = verify_c_sources(fixture.click_source.as_deref().unwrap(), &sources)
             .expect_err("the caller does not establish the helper's stricter count bound");
         let (report, _) = error.concise_report_parts();
         assert!(
@@ -4019,7 +4062,7 @@ fn have_failure_trace_retains_checked_call_prefix() {
                   int32 f() { ensures result == 1; } by { step(); step(); have x == 2; step_until(function.exit); solve(); }";
     with_proof_trace("f", || {
         let error =
-            verify_c0_sources(source, &[("f.c", c)]).expect_err("the false have must still fail");
+            verify_c_sources(source, &[("f.c", c)]).expect_err("the false have must still fail");
         assert!(error.raw_summary().contains("could not establish `x == 2`"));
         assert_eq!(error.proof_claim_label(), Some("f.contract"));
         let trace = error.trace_context_report().expect("checked prefix trace");
@@ -4061,7 +4104,7 @@ fn budget_stopped_transport_retains_its_checked_loop_prefix() {
                 ..TacticWorkLimits::default()
             },
             || {
-                verify_c0_sources(
+                verify_c_sources(
                     source,
                     &[("f.c", "void f(int32 *p) { while (1) { *p = 9; break; } }")],
                 )
@@ -4092,7 +4135,7 @@ fn budget_stopped_known_transport_retains_its_checked_prefix_and_completed_fact(
         }
     "#;
     let c = [("f.c", "void f(int32 **p, int32 **q) { *q = *p; }")];
-    let (result, work) = collect_tactic_work(|| verify_c0_sources(source, &c));
+    let (result, work) = collect_tactic_work(|| verify_c_sources(source, &c));
     result.expect("the transport is valid with its ordinary work allowance");
     let transport_work = work
         .iter()
@@ -4109,7 +4152,7 @@ fn budget_stopped_known_transport_retains_its_checked_prefix_and_completed_fact(
                     simple: limit,
                     ..TacticWorkLimits::default()
                 },
-                || verify_c0_sources(source, &c),
+                || verify_c_sources(source, &c),
             )
             .expect_err("the explicit transport exhausts its work allowance");
             if limit == 0 {
@@ -4179,7 +4222,7 @@ fn callback_refinement_hint_with_produced_resource_is_a_checked_proof() {
         "callback.c",
         "struct node { uint64 word; }; void wrapped(struct node* p) {} int32 accept(void (*f)(struct node*)) { return 0; } int32 caller() { return accept(&wrapped); }",
     )];
-    let error = verify_c0_sources(source, &c).unwrap_err();
+    let error = verify_c_sources(source, &c).unwrap_err();
     let report = error.concise_report();
     let suggestion = report
         .split_once("prove it explicitly:\n")
@@ -4207,7 +4250,7 @@ fn callback_refinement_hint_with_produced_resource_is_a_checked_proof() {
     let corrected = source
         .replace("/* REFINEMENT */", theorem)
         .replace("/* APPLY */", "apply(wrapped_is_callback());");
-    verify_c0_sources(&corrected, &c).unwrap();
+    verify_c_sources(&corrected, &c).unwrap();
 }
 
 #[test]
@@ -4232,7 +4275,7 @@ fn failed_branch_interface_retains_its_arm_and_written_requirement() {
         "#
         );
         with_proof_trace("advance", || {
-            let error = verify_c0_sources(&source, &[("branch.c", c)])
+            let error = verify_c_sources(&source, &[("branch.c", c)])
                 .expect_err("the chosen arm does not establish the interface");
             assert!(
                 error.message().contains("did not establish fact"),
@@ -4263,7 +4306,7 @@ fn failed_branch_interface_retains_its_arm_and_written_requirement() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_22")]
 fn a_uint32_equality_above_int32_max_prints_in_its_own_type() {
     let source = "verifying \"t.c\";\nunsigned read(unsigned *u) {\n    requires u[0] == 4294967295u32;\n    ensures result == 4294967295u32;\n}\n";
-    let error = verify_c0_sources(
+    let error = verify_c_sources(
         source,
         &[("t.c", "unsigned read(unsigned *u) { return *u; }")],
     )
@@ -4290,9 +4333,9 @@ fn resource_separation_matches_written_goal_with_pointer_alias() {
         }"#;
     // Resource admission and the written goal must retain the same pointer
     // carrier, even when a precondition equates its address to a global object.
-    verify_c0_sources(source, &[("callback-read.c", c)]).unwrap();
+    verify_c_sources(source, &[("callback-read.c", c)]).unwrap();
     let no_alias = source.replace("requires cb == &table;", "");
-    verify_c0_sources(&no_alias, &[("callback-read.c", c)]).unwrap();
+    verify_c_sources(&no_alias, &[("callback-read.c", c)]).unwrap();
 }
 
 #[test]
@@ -4302,16 +4345,18 @@ fn struct_pointer_pointer_ranges_print_pointer_units() {
         "struct item { uint8 tag; int64 value; }; void inspect(struct item **pp) {}",
     )
     .unwrap();
-    let pointer = crate::kernel::CPointerValue::new(
+    let pointer = crate::kernel::PointerValue::new(
         Pointer {
             block: PointerBlock::Concrete("array".into()),
             offset: crate::kernel::PointerOffsetTerm::Constant(0),
         },
-        CType::Int32PointerPointer,
+        ProgramType::Int32PointerPointer,
     );
-    let arguments = [CExpression::Value(CValue::Pointer(pointer.clone()))];
+    let arguments = [ProgramExpression::Value(ProgramValue::Pointer(
+        pointer.clone(),
+    ))];
     for (start, end) in [(0, 4), (1, 3)] {
-        let range = CMemoryRange::from_pointer_value(
+        let range = MemoryRange::from_pointer_value(
             &pointer,
             MachineTerm::constant(start),
             MachineTerm::constant(end),
@@ -4349,7 +4394,7 @@ fn failed_invariant_after_branch_join_reports_the_join() {
             }
         "#;
         with_proof_trace("branch_drain", || {
-            let error = verify_c0_sources(source, &[("loop.c", c.as_str())])
+            let error = verify_c_sources(source, &[("loop.c", c.as_str())])
                 .expect_err("one arm violates the invariant");
             let trace = error.trace_context_report().unwrap();
             assert_eq!(
@@ -4389,7 +4434,7 @@ fn failed_postcondition_after_branch_join_keeps_the_join_trace() {
         }
     "#;
     with_proof_trace("choose", || {
-        let error = verify_c0_sources(source, &[("choose.c", c)])
+        let error = verify_c_sources(source, &[("choose.c", c)])
             .expect_err("the joined return does not establish the postcondition");
         let trace = error.trace_context_report().unwrap();
         assert!(trace.contains("branch (joined)"), "{trace}");
@@ -4415,7 +4460,7 @@ void f(int32* p) { consumes c: cell(p, 0); ensures true; } by {
 }
 "#;
     let c = "void f(int *p) {}";
-    let ordinary = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
+    let ordinary = verify_c_sources(source, &[("f.c", c)]).unwrap_err();
     let report = ordinary.concise_report();
     assert!(
         report.contains("argument 2 equality is not established"),
@@ -4423,7 +4468,7 @@ void f(int32* p) { consumes c: cell(p, 0); ensures true; } by {
     );
     assert!(report.contains("goal: 0 == 1"), "{report}");
     with_proof_trace("f", || {
-        let error = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
+        let error = verify_c_sources(source, &[("f.c", c)]).unwrap_err();
         let report = error.trace_context_report().unwrap();
         assert_eq!(report.matches("\ngoal: ").count(), 1, "{report}");
         assert!(report.contains("goal: 0 == 1"), "{report}");
@@ -4614,7 +4659,7 @@ fn explicit_call_constant_proofs_reject_changed_values() {
             .map(|(name, source)| (*name, source.as_str()))
             .collect();
         assert!(
-            verify_c0_sources(fixture.click_source.as_deref().unwrap(), &sources).is_err(),
+            verify_c_sources(fixture.click_source.as_deref().unwrap(), &sources).is_err(),
             "the explicit proof must not retain the old constant: {name}"
         );
     }
@@ -4639,7 +4684,7 @@ fn trace_marks_a_dropped_cell_and_the_read_history_stop() {
     // `j` may be 1, so the search misses it.
     let c = "int32 read_first(int32 j) { int32 a[4]; a[0] = 7; a[j - 1] = 1; int32 r = a[0]; return r; }";
     with_proof_trace("read_first", || {
-        let error = verify_c0_sources(source, &[("f.c", c)])
+        let error = verify_c_sources(source, &[("f.c", c)])
             .expect_err("the store search misses `((j - 1) as int32) != 0`");
         assert!(
             error.message().contains(

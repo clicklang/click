@@ -60,8 +60,8 @@ pub(in crate::surface) fn describe_condition_search_miss(
 pub(super) fn describe_derivation_failure(
     proposition: &Proposition,
     available: &[Proposition],
-    state: &CState,
-    environment: &CExecutionEnvironment,
+    state: &ExecutionState,
+    environment: &ExecutionEnvironment,
     predicate_environment: Option<&PredicateEnvironment>,
 ) -> String {
     let (parameters, arguments) = crate::surface::diagnostics::local_naming_tables(state);
@@ -89,7 +89,7 @@ pub(super) fn describe_derivation_failure(
     } else if matches!(
         proposition,
         Proposition::Predicate { name, .. }
-            if crate::kernel::CFunctionContract::surface_name_from_predicate(name).is_some()
+            if crate::kernel::FunctionContract::surface_name_from_predicate(name).is_some()
     ) {
         // A named-contract prerequisite the kernel refused is where the
         // automatic formation route ends. Print the explicit theorem that
@@ -123,9 +123,9 @@ pub(super) fn describe_statement_prerequisite_failure(
     proposition: &Proposition,
     available: &[Proposition],
     path_facts: &[Proposition],
-    state: &CState,
-    statement: &CStatement,
-    environment: &CExecutionEnvironment,
+    state: &ExecutionState,
+    statement: &ProgramStatement,
+    environment: &ExecutionEnvironment,
     predicate_environment: Option<&PredicateEnvironment>,
 ) -> String {
     // The context records a path fact in derived forms too (an unsigned
@@ -155,7 +155,7 @@ pub(super) fn describe_statement_prerequisite_failure(
         });
     format!(
         "{refusal}{}",
-        crate::surface::diagnostics::describe_c_statement_site()
+        crate::surface::diagnostics::describe_execution_statement_site()
     )
 }
 
@@ -164,16 +164,16 @@ pub(super) fn describe_statement_prerequisite_failure(
 fn describe_access_bound_prerequisite(
     proposition: &Proposition,
     available: &[Proposition],
-    state: &CState,
-    statement: &CStatement,
+    state: &ExecutionState,
+    statement: &ProgramStatement,
 ) -> Option<String> {
     let (access, verb, memory, pointer, byte_width) = match proposition {
-        Proposition::CMemoryCanStore {
+        Proposition::MemoryCanStore {
             memory,
             pointer,
             byte_width,
         } => ("store to", "write", memory, pointer, *byte_width),
-        Proposition::CMemoryLoadable {
+        Proposition::MemoryLoadable {
             memory,
             base,
             bytes,
@@ -221,10 +221,12 @@ fn describe_access_bound_prerequisite(
     let mut pending = vec![statement];
     while let Some(next) = pending.pop() {
         match next {
-            CStatement::Seq(statements) => {
+            ProgramStatement::Seq(statements) => {
                 pending.extend(statements.iter().rev().map(|statement| statement.as_ref()))
             }
-            CStatement::Store { .. } | CStatement::TypedStore { .. } if verb == "write" => {
+            ProgramStatement::Store { .. } | ProgramStatement::TypedStore { .. }
+                if verb == "write" =>
+            {
                 operation = next;
                 break;
             }
@@ -242,7 +244,7 @@ fn describe_access_bound_prerequisite(
     };
     Some(format!(
         "the {access} {element} may {verb} outside `{object}`: {reason}\n  C operation: {}",
-        crate::surface::diagnostics::describe_c_statement_head(operation),
+        crate::surface::diagnostics::describe_execution_statement_head(operation),
     ))
 }
 
@@ -253,12 +255,12 @@ fn describe_access_bound_prerequisite(
 fn describe_assertion_prerequisite(
     proposition: &Proposition,
     available: &[Proposition],
-    state: &CState,
-    statement: &CStatement,
+    state: &ExecutionState,
+    statement: &ProgramStatement,
 ) -> Option<String> {
     let condition = asserted_condition(proposition, statement)?;
     let mut names = Vec::new();
-    collect_c_expression_variables(condition, &mut names);
+    collect_program_expression_variables(condition, &mut names);
     // A Rust panic check asserts over the lowering's own temporaries, which
     // no proof can name and no fact mentions: state the condition as the
     // pre-state evaluates it, over the source locals it reads.
@@ -270,7 +272,7 @@ fn describe_assertion_prerequisite(
             .locals()
             .object_values()
             .filter(|(name, _)| !name.starts_with("__rust_"))
-            .map(|(name, _)| crate::kernel::c_local_source_name(name).to_string())
+            .map(|(name, _)| crate::kernel::program_local_source_name(name).to_string())
             .collect::<Vec<_>>();
         let names = goal
             .split(|character: char| !(character.is_ascii_alphanumeric() || character == '_'))
@@ -286,7 +288,7 @@ fn describe_assertion_prerequisite(
         }
     }
     let names = names.iter().map(String::as_str).collect::<Vec<_>>();
-    let condition = describe_c_conjunction(condition);
+    let condition = describe_program_conjunction(condition);
     // A check over constants alone is simply false: no fact bears on it.
     if names.is_empty() {
         return Some(format!("`{condition}` does not hold"));
@@ -301,21 +303,21 @@ fn describe_assertion_prerequisite(
 /// truthiness obligation an assertion leaves on its false path.
 pub(in crate::surface) fn asserted_condition<'s>(
     proposition: &Proposition,
-    statement: &'s CStatement,
-) -> Option<&'s CExpression> {
+    statement: &'s ProgramStatement,
+) -> Option<&'s ProgramExpression> {
     if !matches!(
         proposition,
-        Proposition::Equal(Term::CValue(_), Term::CValue(one)) if *one == int32(1)
+        Proposition::Equal(Term::ProgramValue(_), Term::ProgramValue(one)) if *one == int32(1)
     ) {
         return None;
     }
     let mut pending = vec![statement];
     loop {
         match pending.pop()? {
-            CStatement::Seq(statements) => {
+            ProgramStatement::Seq(statements) => {
                 pending.extend(statements.iter().rev().map(|statement| statement.as_ref()))
             }
-            CStatement::Assert { condition, .. } => return Some(condition),
+            ProgramStatement::Assert { condition, .. } => return Some(condition),
             _ => {}
         }
     }
@@ -325,14 +327,14 @@ pub(in crate::surface) fn asserted_condition<'s>(
 /// stands for: its condition as the pre-state evaluates it, which the
 /// implicit `solve` tries and a proof states with `have`.
 pub(in crate::surface) fn asserted_condition_goal(
-    state: &CState,
-    condition: &CExpression,
+    state: &ExecutionState,
+    condition: &ProgramExpression,
 ) -> Option<Proposition> {
     // Over no facts, so the evaluation splits on the condition rather than
     // deciding it from the false path's own assumption. The goal is the
     // fact on the path where the condition holds, with that path's
     // polarity: `x > 0` may be recorded as `x <= 0` being false.
-    let evaluation = crate::kernel::prove_symbolic_c_condition_evaluation(
+    let evaluation = crate::kernel::prove_symbolic_program_condition_evaluation(
         state.clone(),
         condition.clone(),
         crate::kernel::PureFactContext::new(),
@@ -340,12 +342,7 @@ pub(in crate::surface) fn asserted_condition_goal(
     evaluation
         .paths()
         .iter()
-        .filter(|path| {
-            matches!(
-                path.outcome(),
-                crate::kernel::CConditionOutcome::Value(true)
-            )
-        })
+        .filter(|path| matches!(path.outcome(), crate::kernel::ConditionOutcome::Value(true)))
         .find_map(|path| {
             path.facts()
                 .iter()
@@ -359,15 +356,15 @@ pub(in crate::surface) fn asserted_condition_goal(
 
 /// A condition as a proof states it: a conjunction joined by `&&` without
 /// the expression printer's parentheses around each operand.
-fn describe_c_conjunction(condition: &CExpression) -> String {
-    if let CExpression::And(left, right) = condition {
+fn describe_program_conjunction(condition: &ProgramExpression) -> String {
+    if let ProgramExpression::And(left, right) = condition {
         return format!(
             "{} && {}",
-            describe_c_conjunction(left),
-            describe_c_conjunction(right)
+            describe_program_conjunction(left),
+            describe_program_conjunction(right)
         );
     }
-    let rendered = crate::surface::diagnostics::describe_c_expression(condition);
+    let rendered = crate::surface::diagnostics::describe_program_expression(condition);
     match rendered
         .strip_prefix('(')
         .and_then(|inner| inner.strip_suffix(')'))
@@ -392,44 +389,46 @@ fn balanced_parentheses(text: &str) -> bool {
     depth == 0
 }
 
-fn collect_c_expression_variables(expression: &CExpression, names: &mut Vec<String>) {
+fn collect_program_expression_variables(expression: &ProgramExpression, names: &mut Vec<String>) {
     let mut pending = vec![expression];
     while let Some(expression) = pending.pop() {
         match expression {
-            CExpression::Variable(name) => {
+            ProgramExpression::Variable(name) => {
                 if !names.contains(name) {
                     names.push(name.clone());
                 }
             }
-            CExpression::Value(_) | CExpression::FunctionAddress(_) => {}
-            CExpression::Cast { expression, .. }
-            | CExpression::FloatNegate(expression)
-            | CExpression::FloatClassification { expression, .. }
-            | CExpression::AddressOf(expression)
-            | CExpression::CheckedObjectAddress(expression)
-            | CExpression::PointerOffsetBytes {
+            ProgramExpression::Value(_)
+            | ProgramExpression::FunctionAddress(_)
+            | ProgramExpression::CallResult { .. } => {}
+            ProgramExpression::Cast { expression, .. }
+            | ProgramExpression::FloatNegate(expression)
+            | ProgramExpression::FloatClassification { expression, .. }
+            | ProgramExpression::AddressOf(expression)
+            | ProgramExpression::CheckedObjectAddress(expression)
+            | ProgramExpression::PointerOffsetBytes {
                 pointer: expression,
                 ..
             }
-            | CExpression::Subobject {
+            | ProgramExpression::Subobject {
                 pointer: expression,
                 ..
             }
-            | CExpression::Not(expression)
-            | CExpression::BitwiseNot(expression)
-            | CExpression::Load(expression)
-            | CExpression::TypedLoad {
+            | ProgramExpression::Not(expression)
+            | ProgramExpression::BitwiseNot(expression)
+            | ProgramExpression::Load(expression)
+            | ProgramExpression::TypedLoad {
                 pointer: expression,
                 ..
             }
-            | CExpression::EnumField {
+            | ProgramExpression::EnumField {
                 value: expression, ..
             }
-            | CExpression::EnumIs {
+            | ProgramExpression::EnumIs {
                 value: expression, ..
             } => pending.push(expression),
-            CExpression::EnumConstruct { fields, .. } => pending.extend(fields.iter().rev()),
-            CExpression::Conditional {
+            ProgramExpression::EnumConstruct { fields, .. } => pending.extend(fields.iter().rev()),
+            ProgramExpression::Conditional {
                 condition,
                 then_branch,
                 else_branch,
@@ -450,7 +449,7 @@ fn collect_c_expression_variables(expression: &CExpression, names: &mut Vec<Stri
 /// bounded, as `the facts `a`, `b``.
 fn describe_consulted_facts_mentioning(
     available: &[Proposition],
-    state: &CState,
+    state: &ExecutionState,
     names: &[&str],
 ) -> String {
     let mentions = |text: &str| {

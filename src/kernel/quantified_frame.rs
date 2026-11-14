@@ -198,7 +198,10 @@ impl Framer<'_> {
             ) if from_sort == to_sort
                 && matches!(
                     from_sort,
-                    Sort::CInt32 | Sort::Bitvector32 | Sort::CInt64 | Sort::CMachineInteger(_)
+                    Sort::ProgramInt32
+                        | Sort::Bitvector32
+                        | Sort::ProgramInt64
+                        | Sort::ProgramInteger(_)
                 ) =>
             {
                 // One binder identity for both bodies. When the two lowerings
@@ -285,11 +288,11 @@ impl Framer<'_> {
                 })
             }
             (
-                Proposition::CMemoryReadDefined {
+                Proposition::MemoryReadDefined {
                     value_type: from_type,
                     ..
                 },
-                Proposition::CMemoryReadDefined {
+                Proposition::MemoryReadDefined {
                     value_type: to_type,
                     ..
                 },
@@ -381,14 +384,14 @@ mod wide_condition_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let assumptions = PureFactContext::new();
-        let before = CMemory::new().with_block("wide-equality-frame", 16);
+        let before = Memory::new().with_block("wide-equality-frame", 16);
         let after = before.clone().store(
             pointer.offset_by_bytes(8),
-            CValue::UInt64(MachineTerm::uint64_constant(3)),
+            ProgramValue::UInt64(MachineTerm::uint64_constant(3)),
         );
-        let load = |memory: &CMemory, kind| {
+        let load = |memory: &Memory, kind| {
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory_ref(memory),
+                crate::kernel::intern_memory_ref(memory),
                 Box::new(pointer.clone()),
                 kind,
             )
@@ -418,7 +421,7 @@ mod wide_condition_tests {
         )));
         let partial = before.clone().store(
             pointer.offset_by_bytes(4),
-            CValue::Int32(MachineTerm::constant(0)),
+            ProgramValue::Int32(MachineTerm::constant(0)),
         );
         assert!(!carried(&condition(
             load(&partial, LoadKind::Bits64),

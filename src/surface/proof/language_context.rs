@@ -21,7 +21,7 @@ pub(in crate::surface::proof) struct PureProofContext<'a> {
     pub(in crate::surface::proof) theorem_context: &'a PureTheoremContext,
     /// Indexed parameter values for reconstructing a refined source goal.
     /// Built once at the root and shared by every proof successor.
-    pub(in crate::surface::proof) source_state: CState,
+    pub(in crate::surface::proof) source_state: ExecutionState,
     pub(in crate::surface::proof) source_names: BTreeMap<Variable, String>,
     pub(in crate::surface::proof) spec_definitions: SpecDefinitions<'a>,
     pub(in crate::surface::proof) theorem_environment: &'a TheoremEnvironment,
@@ -80,10 +80,10 @@ pub(in crate::surface::proof) struct FixedStateProofContext<'a> {
 pub(in crate::surface::proof) struct InvariantBodyContext {
     /// The loop whose preservation this body proves, as `loop(i)` counts it.
     pub(in crate::surface::proof) loop_index: usize,
-    pub(in crate::surface::proof) loop_entry_state: CState,
+    pub(in crate::surface::proof) loop_entry_state: ExecutionState,
     /// The recorded program point that names `loop_entry_state` in source.
     pub(in crate::surface::proof) loop_entry_selector: Option<SnapshotSelector>,
-    pub(in crate::surface::proof) iteration_entry_state: CState,
+    pub(in crate::surface::proof) iteration_entry_state: ExecutionState,
     /// The recorded snapshot that names `iteration_entry_state` in source.
     /// Ranking members read their `pre` values there, so their synthesized
     /// surface spells them `at(<selector>, name)`.
@@ -91,8 +91,8 @@ pub(in crate::surface::proof) struct InvariantBodyContext {
     /// The head's pass count `K`, which the body's proof reads as
     /// `iterations`; the back edge owes the invariants at `K + 1`.
     pub(in crate::surface::proof) iterations: Option<crate::kernel::IntegerTerm>,
-    pub(in crate::surface::proof) checks: Vec<CLoopInvariantCheck>,
-    pub(in crate::surface::proof) ranking_measures: Vec<crate::kernel::CRankingComponent>,
+    pub(in crate::surface::proof) checks: Vec<LoopInvariantCheck>,
+    pub(in crate::surface::proof) ranking_measures: Vec<crate::kernel::RankingComponent>,
     /// The declared `decreases` components as the loop head writes them, in
     /// the order of `ranking_measures`. The back edge's descent member is
     /// spelled from them, `m < at(<iteration entry>, m)`, as a contract's
@@ -119,7 +119,7 @@ pub(in crate::surface::proof) struct InvariantBodyContext {
     /// The binders this loop's `owns name: resource(...)` clauses declare.
     /// The back edge binds those names again on whatever the body ends
     /// holding before any invariant reads a binder field.
-    pub(in crate::surface::proof) binders: Vec<crate::kernel::CLoopBinder>,
+    pub(in crate::surface::proof) binders: Vec<crate::kernel::LoopBinder>,
     /// The written names of the `int32` quantifier binders the declared
     /// invariants introduce, by the kernel variable each lowers its binder
     /// to. A bundle member synthesized from such an invariant, such as the
@@ -133,13 +133,13 @@ pub(in crate::surface::proof) struct InvariantBodyContext {
 /// descends only its logical connectives, so it is linear in the written
 /// invariants.
 pub(in crate::surface::proof) fn written_invariant_binder_names(
-    checks: &[CLoopInvariantCheck],
+    checks: &[LoopInvariantCheck],
 ) -> BTreeMap<crate::kernel::Variable, String> {
     use crate::kernel::SpecProposition;
     let mut names = BTreeMap::new();
     let mut pending = checks
         .iter()
-        .map(CLoopInvariantCheck::proposition)
+        .map(LoopInvariantCheck::proposition)
         .collect::<Vec<_>>();
     while let Some(proposition) = pending.pop() {
         match proposition {
@@ -200,7 +200,7 @@ pub(in crate::surface::proof) struct ExecutionProofConstants {
     /// Exact ordinary caller whose entry requirement identities populate the
     /// proof-local index. Missing ownership makes source selection fail closed.
     pub(in crate::surface::proof) caller_source_owner: Option<CallerSourceOwnerId>,
-    pub(in crate::surface::proof) function_entry_state: Option<CState>,
+    pub(in crate::surface::proof) function_entry_state: Option<ExecutionState>,
     /// The proved function's parameter index, with the address of the
     /// parameter list it indexes: a context reading that list hands it on to
     /// its parameter bindings.
@@ -250,10 +250,11 @@ pub(in crate::surface::proof) struct ExecutionProofContext<'a> {
     pub(in crate::surface::proof) claim_label: &'a str,
     pub(in crate::surface::proof) tactic_index: usize,
     pub(in crate::surface::proof) function_block: &'a FunctionBlock,
-    pub(in crate::surface::proof) function: &'a CFunction,
-    pub(in crate::surface::proof) parsed_function: &'a syntax::C0Function,
-    pub(in crate::surface::proof) arguments: &'a [CExpression],
-    pub(in crate::surface::proof) function_environment: &'a CExecutionEnvironment,
+    pub(in crate::surface::proof) function: &'a ProgramFunction,
+    pub(in crate::surface::proof) parsed_function:
+        &'a crate::languages::interface::ImportedFunction,
+    pub(in crate::surface::proof) arguments: &'a [ProgramExpression],
+    pub(in crate::surface::proof) function_environment: &'a ExecutionEnvironment,
     pub(in crate::surface::proof) resource_environment: &'a ResourceEnvironment,
     pub(in crate::surface::proof) spec_definitions: SpecDefinitions<'a>,
     pub(in crate::surface::proof) theorem_environment: &'a TheoremEnvironment,
@@ -301,8 +302,8 @@ impl<'a> ExecutionProofContext<'a> {
     pub(in crate::surface::proof) fn old_reference_state<'s>(
         &'s self,
         frontier: &'s ExecutionFrontier,
-        current_state: &'s CState,
-    ) -> &'s CState {
+        current_state: &'s ExecutionState,
+    ) -> &'s ExecutionState {
         old_reference_state(
             self.constants.function_entry_state.as_ref(),
             frontier,
@@ -339,8 +340,8 @@ impl<'a> ExecutionProofContext<'a> {
     pub(in crate::surface::proof) fn with_loop_binding<'l>(
         &'l self,
         function_block: &'l FunctionBlock,
-        function: &'l CFunction,
-        function_environment: &'l CExecutionEnvironment,
+        function: &'l ProgramFunction,
+        function_environment: &'l ExecutionEnvironment,
     ) -> ExecutionProofContext<'l> {
         ExecutionProofContext {
             function_block,

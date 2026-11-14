@@ -19,12 +19,12 @@ use c_frontend::file_scope_object_names;
 /// The session keeps the same shape as an environment identity, but theorem
 /// artifacts must include the Click source digest too.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct CProofArtifactIdentity {
+pub struct ProofArtifactIdentity {
     digest: [u8; 32],
     pub resource_semantics_version: u32,
 }
 
-impl CProofArtifactIdentity {
+impl ProofArtifactIdentity {
     pub fn digest(&self) -> &[u8; 32] {
         &self.digest
     }
@@ -114,7 +114,7 @@ pub fn take_sorry_admissions() -> Vec<SorryAdmission> {
 /// Typed input boundary for C verification. The bundle variant preserves the
 /// plain source map while leaving room for compiler-prepared inputs without
 /// ambient or global state.
-pub(in crate::surface) struct CSourceContext<'a> {
+pub(in crate::surface) struct ProgramSourceContext<'a> {
     source: ProgramSource<'a>,
     input_digest: [u8; 32],
     specification_digest: Option<[u8; 32]>,
@@ -129,7 +129,7 @@ pub(in crate::surface) struct CSourceContext<'a> {
     prepared_parse_count: Cell<usize>,
 }
 
-/// The program a [`CSourceContext`] verifies.
+/// The program a [`ProgramSourceContext`] verifies.
 enum ProgramSource<'a> {
     /// C sources, by path.
     Bundle(BTreeMap<&'a str, &'a str>),
@@ -165,7 +165,7 @@ impl ProgramInputs<'_> {
     }
 }
 
-impl<'a> CSourceContext<'a> {
+impl<'a> ProgramSourceContext<'a> {
     pub(in crate::surface) fn bundle(sources: &[(&'a str, &'a str)]) -> Self {
         let bundle = sources.iter().copied().collect::<BTreeMap<_, _>>();
         let mut parts = Vec::with_capacity(bundle.len() * 2 + 1);
@@ -312,7 +312,7 @@ impl<'a> CSourceContext<'a> {
     pub(in crate::surface) fn environment_identity(
         &self,
         target: CTarget,
-    ) -> CProofArtifactIdentity {
+    ) -> ProofArtifactIdentity {
         self.environment_identity_with_runtime(target, Default::default())
     }
 
@@ -320,12 +320,12 @@ impl<'a> CSourceContext<'a> {
         &self,
         target: CTarget,
         runtime: crate::languages::c::thread_runtime::CThreadRuntime,
-    ) -> CProofArtifactIdentity {
+    ) -> ProofArtifactIdentity {
         let profile = runtime
             .identity_suffix()
             .map(|suffix| format!("{}:{suffix}", target.name()))
             .unwrap_or_else(|| target.name().to_string());
-        CProofArtifactIdentity::for_components(
+        ProofArtifactIdentity::for_components(
             self.input_digest,
             self.specification_digest.unwrap_or([0; 32]),
             &profile,
@@ -337,7 +337,7 @@ impl<'a> CSourceContext<'a> {
         &self,
         click_source: &str,
         target: CTarget,
-    ) -> CProofArtifactIdentity {
+    ) -> ProofArtifactIdentity {
         self.artifact_identity_with_runtime(click_source, target, Default::default())
     }
 
@@ -346,7 +346,7 @@ impl<'a> CSourceContext<'a> {
         click_source: &str,
         target: CTarget,
         runtime: crate::languages::c::thread_runtime::CThreadRuntime,
-    ) -> CProofArtifactIdentity {
+    ) -> ProofArtifactIdentity {
         let click_digest = self.specification_digest.unwrap_or_else(|| {
             digest_framed_parts([
                 b"click-sidecar-source-v1".as_slice(),
@@ -357,7 +357,7 @@ impl<'a> CSourceContext<'a> {
             .identity_suffix()
             .map(|suffix| format!("{}:{suffix}", target.name()))
             .unwrap_or_else(|| target.name().to_string());
-        CProofArtifactIdentity::for_components(self.input_digest, click_digest, &profile)
+        ProofArtifactIdentity::for_components(self.input_digest, click_digest, &profile)
     }
 
     pub(in crate::surface) fn with_click_project(mut self, project: &ClickProject) -> Self {
@@ -546,7 +546,7 @@ fn theorem_has_certification_binders(theorem: &TheoremDefinition) -> bool {
     theorem.parameters().iter().all(|parameter| {
         matches!(
             parameter.click_type(),
-            ClickType::C(C0Type::Int32 | C0Type::FunctionPointer(_))
+            ClickType::Program(InterfaceType::Int32 | InterfaceType::FunctionPointer(_))
         )
     })
 }
@@ -558,7 +558,7 @@ fn theorem_has_certification_binders(theorem: &TheoremDefinition) -> bool {
 fn record_theorem_certification_authority(
     verified_theorems: &[VerifiedPureTheorem],
     facts: &mut BTreeMap<String, Vec<Proposition>>,
-    authorities: &mut BTreeMap<String, Vec<CVerifiedPureTheorem>>,
+    authorities: &mut BTreeMap<String, Vec<KernelVerifiedPureTheorem>>,
 ) {
     for theorem in verified_theorems.iter().filter(|theorem| {
         theorem.kernel_authority.is_some()
@@ -578,11 +578,11 @@ fn record_theorem_certification_authority(
             .enumerate()
             .rev()
             .fold(implication, |body, (index, parameter)| {
-                let sort = match parameter.c_type() {
-                    C0Type::Int32 => crate::kernel::Sort::CInt32,
-                    C0Type::FunctionPointer(_) => {
-                        crate::kernel::Sort::CPointer(parameter.c_type().to_kernel_type())
-                    }
+                let sort = match parameter.interface_type() {
+                    InterfaceType::Int32 => crate::kernel::Sort::ProgramInt32,
+                    InterfaceType::FunctionPointer(_) => crate::kernel::Sort::ProgramPointer(
+                        parameter.interface_type().to_kernel_type(),
+                    ),
                     _ => unreachable!("the theorem binder filter admits only supported types"),
                 };
                 Proposition::ForAll {
@@ -608,9 +608,9 @@ fn record_theorem_certification_authority(
 }
 
 fn record_assumed_theorem_certification_authority(
-    assumed: Vec<(String, Proposition, CVerifiedPureTheorem)>,
+    assumed: Vec<(String, Proposition, KernelVerifiedPureTheorem)>,
     facts: &mut BTreeMap<String, Vec<Proposition>>,
-    authorities: &mut BTreeMap<String, Vec<CVerifiedPureTheorem>>,
+    authorities: &mut BTreeMap<String, Vec<KernelVerifiedPureTheorem>>,
 ) {
     for (name, fact, authority) in assumed {
         facts.entry(name.clone()).or_default().push(fact);
@@ -665,12 +665,12 @@ pub(in crate::surface) fn verify_click_file_theorems(
 
 fn verify_click_file_theorems_with_environment(
     file: &ClickFile,
-    function_environment: Option<&CExecutionEnvironment>,
+    function_environment: Option<&ExecutionEnvironment>,
 ) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
     let predicate_definitions = combined_predicate_definitions(file)?;
     let click_function_definitions = combined_click_function_definitions(file)?;
     let predicate_environment = PredicateEnvironment::new(&predicate_definitions)
-        .with_contracts(file.contract_definitions(), &file.c_function_names);
+        .with_contracts(file.contract_definitions(), &file.program_function_names);
     let click_function_environment = ClickFunctionEnvironment::with_algebraic_types(
         &click_function_definitions,
         &combined_algebraic_type_definitions(file)?,
@@ -722,18 +722,18 @@ pub fn verify_standard_library() -> Result<Vec<VerifiedPureTheorem>, ClickError>
 }
 
 #[cfg(test)]
-pub(in crate::surface) fn verify_click_theorems_with_c_sources(
+pub(in crate::surface) fn verify_click_theorems_with_program_sources(
     click_source: &str,
     c_sources: &[(&str, &str)],
 ) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
-    let sources = CSourceContext::bundle(c_sources);
+    let sources = ProgramSourceContext::bundle(c_sources);
     verify_click_theorems_with_context(click_source, &sources)
 }
 
 #[cfg(test)]
 pub(in crate::surface) fn verify_click_theorems_with_context(
     click_source: &str,
-    sources: &CSourceContext<'_>,
+    sources: &ProgramSourceContext<'_>,
 ) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
     let layouts = parse_c_layouts(click_source, sources)?;
     let resource_struct_layouts = layouts.struct_layouts.clone();
@@ -748,7 +748,7 @@ pub(in crate::surface) fn verify_click_theorems_with_context(
     let click_function_definitions = combined_click_function_definitions(&file)?;
     let resource_definitions = combined_resource_definitions(&file)?;
     let predicate_environment = PredicateEnvironment::new(&predicate_definitions)
-        .with_contracts(file.contract_definitions(), &file.c_function_names);
+        .with_contracts(file.contract_definitions(), &file.program_function_names);
     let click_function_environment = ClickFunctionEnvironment::with_algebraic_types(
         &click_function_definitions,
         &combined_algebraic_type_definitions(&file)?,
@@ -773,12 +773,13 @@ pub(in crate::surface) fn verify_click_theorems_with_context(
         .collect::<BTreeSet<_>>();
     for target in refinement_targets {
         let Some(function) = function_environment
-            .get_function(file.c_function_names.get(&target).unwrap_or(&target))
+            .get_function(file.program_function_names.get(&target).unwrap_or(&target))
             .cloned()
         else {
             continue;
         };
-        if let Some(hypothesis) = crate::kernel::c_recursive_function_contract_hypothesis(function)
+        if let Some(hypothesis) =
+            crate::kernel::program_recursive_function_contract_hypothesis(function)
         {
             function_environment = function_environment.with_verified_function_rule(hypothesis);
         }
@@ -788,7 +789,7 @@ pub(in crate::surface) fn verify_click_theorems_with_context(
 
 pub(in crate::surface) fn verify_click_theorem_context(
     click_source: &str,
-    sources: &CSourceContext<'_>,
+    sources: &ProgramSourceContext<'_>,
     theorem_name: &str,
 ) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
     let layouts = parse_c_layouts(click_source, sources)?;
@@ -801,7 +802,7 @@ pub(in crate::surface) fn verify_click_theorem_context(
 
 pub(in crate::surface) fn verify_click_project_theorem_context(
     project: &ClickProject,
-    sources: &CSourceContext<'_>,
+    sources: &ProgramSourceContext<'_>,
     theorem_name: &str,
 ) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
     let file = resolve_click_project_context(project, sources)?;
@@ -815,7 +816,7 @@ pub(in crate::surface) fn verify_click_project_theorem_context(
 
 fn verify_click_file_theorem_context(
     file: ClickFile,
-    sources: &CSourceContext<'_>,
+    sources: &ProgramSourceContext<'_>,
     theorem_name: &str,
 ) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
     modules::reject_theorem_justification_cycles(&file)?;
@@ -830,7 +831,7 @@ fn verify_click_file_theorem_context(
     let click_function_definitions = combined_click_function_definitions(&file)?;
     let resource_definitions = combined_resource_definitions(&file)?;
     let predicate_environment = PredicateEnvironment::new(&predicate_definitions)
-        .with_contracts(file.contract_definitions(), &file.c_function_names);
+        .with_contracts(file.contract_definitions(), &file.program_function_names);
     let click_function_environment = ClickFunctionEnvironment::with_algebraic_types(
         &click_function_definitions,
         &combined_algebraic_type_definitions(&file)?,
@@ -851,12 +852,13 @@ fn verify_click_file_theorem_context(
     function_environment = with_unselected_tactic_interfaces(&file, function_environment);
     for target in contract_refinement_targets(&file, theorem_name) {
         let Some(function) = function_environment
-            .get_function(file.c_function_names.get(&target).unwrap_or(&target))
+            .get_function(file.program_function_names.get(&target).unwrap_or(&target))
             .cloned()
         else {
             continue;
         };
-        if let Some(hypothesis) = crate::kernel::c_recursive_function_contract_hypothesis(function)
+        if let Some(hypothesis) =
+            crate::kernel::program_recursive_function_contract_hypothesis(function)
         {
             function_environment = function_environment.with_verified_function_rule(hypothesis);
         }
@@ -924,17 +926,17 @@ fn contract_refinement_targets(file: &ClickFile, theorem_name: &str) -> BTreeSet
     targets
 }
 
-pub(in crate::surface) fn parse_c0_click_file(
+pub(in crate::surface) fn parse_click_file_with_c_sources(
     click_source: &str,
     c_sources: &[(&str, &str)],
 ) -> Result<ClickFile, ClickError> {
-    let sources = CSourceContext::bundle(c_sources);
-    parse_c0_click_file_context(click_source, &sources)
+    let sources = ProgramSourceContext::bundle(c_sources);
+    parse_click_file_with_program_sources(click_source, &sources)
 }
 
-fn parse_c0_click_file_context(
+fn parse_click_file_with_program_sources(
     click_source: &str,
-    sources: &CSourceContext<'_>,
+    sources: &ProgramSourceContext<'_>,
 ) -> Result<ClickFile, ClickError> {
     if super::selected_thread_runtime(click_source)?
         == crate::languages::c::thread_runtime::CThreadRuntime::ModeledPthread
@@ -964,8 +966,14 @@ fn parse_c0_click_file_context(
 /// instance and each `ensures` as an available fact.
 fn with_tactic_procedures(
     mut file: ClickFile,
-    mut parsed_sources: BTreeMap<String, (String, syntax::C0Function)>,
-) -> Result<(ClickFile, BTreeMap<String, (String, syntax::C0Function)>), ClickError> {
+    mut parsed_sources: BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
+) -> Result<
+    (
+        ClickFile,
+        BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
+    ),
+    ClickError,
+> {
     for tactic in file.tactic_definitions.clone() {
         let name = tactic.name().to_string();
         if parsed_sources.contains_key(&name)
@@ -1002,7 +1010,7 @@ fn with_tactic_procedures(
         ));
         append_on_every_path(&mut script, &suffix);
         block.grouped_proof = Some(std::sync::Arc::new(SourceProof::Script(script)));
-        let procedure = external_c0_function(&block).with_proof_body(syntax::C0Statement::Return(
+        let procedure = external_c_function(&block).with_proof_body(syntax::C0Statement::Return(
             syntax::C0Expression::Void,
             syntax::C0Site::NONE,
         ));
@@ -1016,8 +1024,8 @@ fn with_tactic_procedures(
 /// the same scoped declaration assumptions used by ordinary selected proofs.
 fn with_unselected_tactic_interfaces(
     file: &ClickFile,
-    mut environment: CExecutionEnvironment,
-) -> CExecutionEnvironment {
+    mut environment: ExecutionEnvironment,
+) -> ExecutionEnvironment {
     for block in file
         .function_blocks()
         .iter()
@@ -1026,7 +1034,8 @@ fn with_unselected_tactic_interfaces(
         let Some(function) = environment.get_function(block.signature().name()).cloned() else {
             continue;
         };
-        if let Some(rule) = crate::kernel::c_unselected_function_contract_assumption(function) {
+        if let Some(rule) = crate::kernel::program_unselected_function_contract_assumption(function)
+        {
             environment = environment.with_external_function_rule(rule);
         }
     }
@@ -1141,13 +1150,13 @@ fn changed_outside_proof_unit(
     rewritten != proof_unit_erased_click_file(baseline.clone(), target)
 }
 
-pub fn verify_c0_sources(
+pub fn verify_c_sources(
     click_source: &str,
     c_sources: &[(&str, &str)],
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
     instrumentation::with_default_tactic_limits(|| {
-        let sources = CSourceContext::bundle(c_sources);
-        let result = verify_c0_sources_with_context(click_source, &sources, None, None, None, None)
+        let sources = ProgramSourceContext::bundle(c_sources);
+        let result = verify_program_with_context(click_source, &sources, None, None, None, None)
             .map(|(verified, _)| verified);
         if let Err(error) = &result {
             error.emit_timing_failure();
@@ -1158,7 +1167,7 @@ pub fn verify_c0_sources(
 
 pub(in crate::surface) fn resolve_click_project_context(
     project: &ClickProject,
-    sources: &CSourceContext<'_>,
+    sources: &ProgramSourceContext<'_>,
 ) -> Result<ClickFile, ClickError> {
     let _timing = VerificationTimingPhase::new("source resolution");
     let click_source = project
@@ -1176,15 +1185,15 @@ pub(in crate::surface) fn resolve_click_project_context(
 /// Verifies exactly the proofs owned by a loaded entry module. Imported
 /// theorem statements and declarations are available as conditional
 /// interfaces, but their proof bodies are not executed.
-pub fn verify_c0_project(
+pub fn verify_c_project(
     project: &ClickProject,
     c_sources: &[(&str, &str)],
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
     instrumentation::with_default_tactic_limits(|| {
-        let sources = CSourceContext::bundle(c_sources).with_click_project(project);
+        let sources = ProgramSourceContext::bundle(c_sources).with_click_project(project);
         let file = resolve_click_project_context(project, &sources)?;
         let source = project.entry_source().expect("resolved entry source");
-        let result = verify_c0_sources_with_context(source, &sources, None, None, None, Some(file))
+        let result = verify_program_with_context(source, &sources, None, None, None, Some(file))
             .map(|(verified, _)| verified);
         if let Err(error) = &result {
             error.emit_timing_failure();
@@ -1199,13 +1208,13 @@ pub fn verify_project_at(
     inputs: &ProgramInputs<'_>,
     line: usize,
     column: usize,
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
     instrumentation::with_default_tactic_limits(|| {
-        let sources = CSourceContext::of(inputs)?.with_click_project(project);
+        let sources = ProgramSourceContext::of(inputs)?.with_click_project(project);
         let file = resolve_click_project_context(project, &sources)?;
         let source = project.entry_source().expect("resolved entry source");
         let target = expansion::verification_target_at_file(source, &file, line, column)?;
-        verify_c0_sources_with_context(source, &sources, Some(target), None, None, Some(file))
+        verify_program_with_context(source, &sources, Some(target), None, None, Some(file))
             .map(|(verified, _)| verified)
     })
 }
@@ -1214,15 +1223,15 @@ pub fn verify_project_functions(
     project: &ClickProject,
     inputs: &ProgramInputs<'_>,
     functions: impl IntoIterator<Item = String>,
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
     let functions = functions.into_iter().collect::<BTreeSet<_>>();
     instrumentation::with_default_tactic_limits(|| {
-        let sources = CSourceContext::of(inputs)?.with_click_project(project);
+        let sources = ProgramSourceContext::of(inputs)?.with_click_project(project);
         let file = resolve_click_project_context(project, &sources)?;
         for name in &functions {
             if !file.function_is_selected(name)
                 && let Some(owner) = file
-                    .declaration_owner(&DeclarationIdentity::CFunction(name.clone()))
+                    .declaration_owner(&DeclarationIdentity::ProgramFunction(name.clone()))
                     .or_else(|| file.declaration_owner(&DeclarationIdentity::Tactic(name.clone())))
             {
                 return Err(ClickError::new(format!(
@@ -1231,7 +1240,7 @@ pub fn verify_project_functions(
             }
         }
         let source = project.entry_source().expect("resolved entry source");
-        verify_c0_sources_with_context(
+        verify_program_with_context(
             source,
             &sources,
             Some(VerificationTarget::Functions(functions)),
@@ -1243,14 +1252,14 @@ pub fn verify_project_functions(
     })
 }
 
-pub fn verify_c0_prepared_project(
+pub fn verify_c_prepared_project(
     project: &ClickProject,
     imports: &[PreparedCImport],
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
     instrumentation::with_default_tactic_limits(|| {
-        let sources = CSourceContext::prepared(imports).with_click_project(project);
+        let sources = ProgramSourceContext::prepared(imports).with_click_project(project);
         let file = resolve_click_project_context(project, &sources)?;
-        verify_c0_sources_with_context(
+        verify_program_with_context(
             project.entry_source().expect("resolved entry source"),
             &sources,
             None,
@@ -1268,11 +1277,11 @@ pub fn verify_c0_prepared_project(
 pub fn verify_program_prepared_project(
     project: &ClickProject,
     import: impl Into<PreparedProgram>,
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
     instrumentation::with_default_tactic_limits(|| {
-        let sources = CSourceContext::program(import)?.with_click_project(project);
+        let sources = ProgramSourceContext::program(import)?.with_click_project(project);
         let file = resolve_click_project_context(project, &sources)?;
-        verify_c0_sources_with_context(
+        verify_program_with_context(
             project.entry_source().expect("resolved entry source"),
             &sources,
             None,
@@ -1290,11 +1299,11 @@ pub fn verify_project_theorem(
     project: &ClickProject,
     inputs: &ProgramInputs<'_>,
     theorem: &str,
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
     instrumentation::with_default_tactic_limits(|| {
-        let sources = CSourceContext::of(inputs)?.with_click_project(project);
+        let sources = ProgramSourceContext::of(inputs)?.with_click_project(project);
         let file = resolve_click_project_context(project, &sources)?;
-        verify_c0_sources_with_context(
+        verify_program_with_context(
             project.entry_source().expect("resolved entry source"),
             &sources,
             Some(VerificationTarget::Theorem(theorem.to_owned())),
@@ -1308,13 +1317,13 @@ pub fn verify_project_theorem(
 
 /// Verifies compiler-prepared translation units through the same engine used
 /// by legacy source bundles.
-pub fn verify_c0_prepared_sources(
+pub fn verify_c_prepared_sources(
     click_source: &str,
     imports: &[PreparedCImport],
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
     instrumentation::with_default_tactic_limits(|| {
-        let sources = CSourceContext::prepared(imports);
-        verify_c0_sources_with_context(click_source, &sources, None, None, None, None)
+        let sources = ProgramSourceContext::prepared(imports);
+        verify_program_with_context(click_source, &sources, None, None, None, None)
             .map(|(verified, _)| verified)
     })
 }
@@ -1322,13 +1331,13 @@ pub fn verify_c0_prepared_sources(
 /// Runs one ordinary verification while filling in the given expansion
 /// capture. Verification behaves identically with or without the capture;
 /// only the capture's `result` differs.
-pub(in crate::surface) fn verify_c0_sources_with_expansion_capture(
+pub(in crate::surface) fn verify_c_sources_with_expansion_capture(
     click_source: &str,
     c_sources: &[(&str, &str)],
     expansion_capture: &mut ExpansionCapture,
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
     instrumentation::with_default_tactic_limits(|| {
-        verify_c0_sources_with_environment(
+        verify_c_sources_with_environment(
             click_source,
             c_sources,
             None,
@@ -1339,13 +1348,13 @@ pub(in crate::surface) fn verify_c0_sources_with_expansion_capture(
     })
 }
 
-pub(in crate::surface) fn verify_c0_sources_with_expansion_capture_context(
+pub(in crate::surface) fn verify_program_with_expansion_capture_context(
     click_source: &str,
-    c_sources: &CSourceContext<'_>,
+    c_sources: &ProgramSourceContext<'_>,
     expansion_capture: &mut ExpansionCapture,
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
     instrumentation::with_default_tactic_limits(|| {
-        verify_c0_sources_with_context(
+        verify_program_with_context(
             click_source,
             c_sources,
             None,
@@ -1361,11 +1370,11 @@ pub(in crate::surface) fn verify_project_with_expansion_capture(
     project: &ClickProject,
     inputs: &ProgramInputs<'_>,
     expansion_capture: &mut ExpansionCapture,
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
     instrumentation::with_default_tactic_limits(|| {
-        let sources = CSourceContext::of(inputs)?.with_click_project(project);
+        let sources = ProgramSourceContext::of(inputs)?.with_click_project(project);
         let file = resolve_click_project_context(project, &sources)?;
-        verify_c0_sources_with_context(
+        verify_program_with_context(
             project.entry_source().expect("resolved entry source"),
             &sources,
             None,
@@ -1378,29 +1387,29 @@ pub(in crate::surface) fn verify_project_with_expansion_capture(
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct C0IncrementalSelection {
+pub struct IncrementalSelection {
     pub selected_functions: Vec<String>,
     pub reused_functions: Vec<String>,
     pub reasons: Vec<String>,
     pub full_rebuild: bool,
 }
 
-pub fn c0_function_names(
+pub fn c_source_function_names(
     click_source: &str,
     c_sources: &[(&str, &str)],
 ) -> Result<Vec<String>, ClickError> {
-    Ok(parse_c0_click_file(click_source, c_sources)?
+    Ok(parse_click_file_with_c_sources(click_source, c_sources)?
         .function_blocks()
         .iter()
         .map(|function| function.signature().name().to_string())
         .collect())
 }
 
-pub fn c0_project_function_names(
+pub fn c_project_function_names(
     project: &ClickProject,
     c_sources: &[(&str, &str)],
 ) -> Result<Vec<String>, ClickError> {
-    let sources = CSourceContext::bundle(c_sources).with_click_project(project);
+    let sources = ProgramSourceContext::bundle(c_sources).with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
     Ok(file
         .function_blocks()
@@ -1414,7 +1423,7 @@ pub fn project_selected_proof_names(
     project: &ClickProject,
     inputs: &ProgramInputs<'_>,
 ) -> Result<Vec<String>, ClickError> {
-    let sources = CSourceContext::of(inputs)?.with_click_project(project);
+    let sources = ProgramSourceContext::of(inputs)?.with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
     Ok(selected_entry_proof_names(&file))
 }
@@ -1439,7 +1448,7 @@ fn selected_entry_proof_names(file: &ClickFile) -> Vec<String> {
         .collect()
 }
 
-fn c0_imported_headers(
+fn c_imported_headers(
     file: &ClickFile,
     c_sources: &BTreeMap<&str, &str>,
 ) -> Result<BTreeMap<String, BTreeSet<String>>, ClickError> {
@@ -1482,16 +1491,16 @@ fn c0_imported_headers(
 /// every current function. Function-local C or Click changes select that
 /// function and its transitive callers in the union of the old and new call
 /// graphs.
-pub fn c0_incremental_selection(
+pub fn c_incremental_selection(
     current_click_source: &str,
     current_c_sources: &[(&str, &str)],
     baseline_click_source: &str,
     baseline_c_sources: &[(&str, &str)],
-) -> Result<C0IncrementalSelection, ClickError> {
-    let current_file = parse_c0_click_file(current_click_source, current_c_sources)?;
-    let baseline_file = parse_c0_click_file(baseline_click_source, baseline_c_sources)?;
-    let current_source_map = CSourceContext::bundle(current_c_sources);
-    let baseline_source_map = CSourceContext::bundle(baseline_c_sources);
+) -> Result<IncrementalSelection, ClickError> {
+    let current_file = parse_click_file_with_c_sources(current_click_source, current_c_sources)?;
+    let baseline_file = parse_click_file_with_c_sources(baseline_click_source, baseline_c_sources)?;
+    let current_source_map = ProgramSourceContext::bundle(current_c_sources);
+    let baseline_source_map = ProgramSourceContext::bundle(baseline_c_sources);
     let current_parsed = parse_verified_sources_context(&current_file, &current_source_map)?;
     let baseline_parsed = parse_verified_sources_context(&baseline_file, &baseline_source_map)?;
     let current_blocks = current_file
@@ -1519,7 +1528,7 @@ pub fn c0_incremental_selection(
         || current_file.contract_definitions() != baseline_file.contract_definitions()
         || current_file.algebraic_type_definitions() != baseline_file.algebraic_type_definitions();
     if shared_environment_changed {
-        return Ok(C0IncrementalSelection {
+        return Ok(IncrementalSelection {
             selected_functions: current_names.iter().cloned().collect(),
             reused_functions: Vec::new(),
             reasons: vec![
@@ -1554,9 +1563,9 @@ pub fn c0_incremental_selection(
         }
     }
 
-    let current_imports = c0_imported_headers(&current_file, current_source_map.bundle_sources()?)?;
+    let current_imports = c_imported_headers(&current_file, current_source_map.bundle_sources()?)?;
     let baseline_imports =
-        c0_imported_headers(&baseline_file, baseline_source_map.bundle_sources()?)?;
+        c_imported_headers(&baseline_file, baseline_source_map.bundle_sources()?)?;
     for source_path in &current_file.verifying_sources {
         let current_headers = current_imports.get(source_path).into_iter().flatten();
         let baseline_headers = baseline_imports.get(source_path).into_iter().flatten();
@@ -1590,7 +1599,7 @@ pub fn c0_incremental_selection(
     let mut reverse = BTreeMap::<String, BTreeSet<String>>::new();
     for parsed in [&current_parsed, &baseline_parsed] {
         for (caller, (_, function)) in parsed {
-            for dependency in c0_statement_calls(function).into_iter().flatten() {
+            for dependency in c_statement_calls(function).into_iter().flatten() {
                 reverse
                     .entry(dependency)
                     .or_default()
@@ -1613,7 +1622,7 @@ pub fn c0_incremental_selection(
         .difference(&affected)
         .cloned()
         .collect::<Vec<_>>();
-    Ok(C0IncrementalSelection {
+    Ok(IncrementalSelection {
         selected_functions: affected.into_iter().collect(),
         reused_functions: reused,
         reasons,
@@ -1624,14 +1633,14 @@ pub fn c0_incremental_selection(
 /// Verifies exactly a selected function set in one native verifier
 /// transaction. Called-function contracts are scoped assumptions; their
 /// implementation proofs are not added to the selection.
-pub fn verify_c0_sources_functions(
+pub fn verify_c_sources_functions(
     click_source: &str,
     c_sources: &[(&str, &str)],
     functions: impl IntoIterator<Item = String>,
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
     let functions = functions.into_iter().collect::<BTreeSet<_>>();
     instrumentation::with_default_tactic_limits(|| {
-        verify_c0_sources_targeted(
+        verify_c_sources_targeted(
             click_source,
             c_sources,
             Some(VerificationTarget::Functions(functions)),
@@ -1639,15 +1648,15 @@ pub fn verify_c0_sources_functions(
     })
 }
 
-pub fn verify_c0_prepared_sources_functions(
+pub fn verify_c_prepared_sources_functions(
     click_source: &str,
     imports: &[PreparedCImport],
     functions: impl IntoIterator<Item = String>,
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
     let functions = functions.into_iter().collect::<BTreeSet<_>>();
     instrumentation::with_default_tactic_limits(|| {
-        let sources = CSourceContext::prepared(imports);
-        verify_c0_sources_with_context(
+        let sources = ProgramSourceContext::prepared(imports);
+        verify_program_with_context(
             click_source,
             &sources,
             Some(VerificationTarget::Functions(functions)),
@@ -1660,8 +1669,8 @@ pub fn verify_c0_prepared_sources_functions(
 }
 
 fn ensure_environment_identity(
-    expected: &CProofArtifactIdentity,
-    sources: &CSourceContext<'_>,
+    expected: &ProofArtifactIdentity,
+    sources: &ProgramSourceContext<'_>,
     target: CTarget,
     runtime: crate::languages::c::thread_runtime::CThreadRuntime,
 ) -> Result<(), ClickError> {
@@ -1675,11 +1684,11 @@ fn ensure_environment_identity(
     )))
 }
 
-impl C0VerificationSession {
+impl ProgramVerificationSession {
     pub fn new(
         click_source: &str,
         c_sources: &[(&str, &str)],
-    ) -> Result<(Self, Vec<VerifiedCTheorem>), ClickError> {
+    ) -> Result<(Self, Vec<VerifiedProgramTheorem>), ClickError> {
         Self::start(
             None,
             click_source,
@@ -1692,14 +1701,14 @@ impl C0VerificationSession {
     pub fn new_prepared(
         click_source: &str,
         imports: &[PreparedCImport],
-    ) -> Result<(Self, Vec<VerifiedCTheorem>), ClickError> {
+    ) -> Result<(Self, Vec<VerifiedProgramTheorem>), ClickError> {
         Self::start(None, click_source, &ProgramInputs::Prepared(imports))
     }
 
     pub fn new_program_prepared(
         click_source: &str,
         import: impl Into<PreparedProgram>,
-    ) -> Result<(Self, Vec<VerifiedCTheorem>), ClickError> {
+    ) -> Result<(Self, Vec<VerifiedProgramTheorem>), ClickError> {
         Self::start(None, click_source, &ProgramInputs::program(import))
     }
 
@@ -1707,28 +1716,28 @@ impl C0VerificationSession {
     pub fn new_project(
         project: &ClickProject,
         c_sources: &[(&str, &str)],
-    ) -> Result<(Self, Vec<VerifiedCTheorem>), ClickError> {
+    ) -> Result<(Self, Vec<VerifiedProgramTheorem>), ClickError> {
         Self::start_project(project, &ProgramInputs::Bundle(c_sources.to_vec()))
     }
 
     pub fn new_prepared_project(
         project: &ClickProject,
         imports: &[PreparedCImport],
-    ) -> Result<(Self, Vec<VerifiedCTheorem>), ClickError> {
+    ) -> Result<(Self, Vec<VerifiedProgramTheorem>), ClickError> {
         Self::start_project(project, &ProgramInputs::Prepared(imports))
     }
 
     pub fn new_program_prepared_project(
         project: &ClickProject,
         import: impl Into<PreparedProgram>,
-    ) -> Result<(Self, Vec<VerifiedCTheorem>), ClickError> {
+    ) -> Result<(Self, Vec<VerifiedProgramTheorem>), ClickError> {
         Self::start_project(project, &ProgramInputs::program(import))
     }
 
     fn start_project(
         project: &ClickProject,
         inputs: &ProgramInputs<'_>,
-    ) -> Result<(Self, Vec<VerifiedCTheorem>), ClickError> {
+    ) -> Result<(Self, Vec<VerifiedProgramTheorem>), ClickError> {
         let source = project.entry_source().ok_or_else(|| {
             ClickError::new(format!("missing entry module `{}`", project.entry()))
         })?;
@@ -1741,9 +1750,9 @@ impl C0VerificationSession {
         project: Option<&ClickProject>,
         click_source: &str,
         inputs: &ProgramInputs<'_>,
-    ) -> Result<(Self, Vec<VerifiedCTheorem>), ClickError> {
+    ) -> Result<(Self, Vec<VerifiedProgramTheorem>), ClickError> {
         instrumentation::with_default_tactic_limits(|| {
-            let sources = CSourceContext::of(inputs)?;
+            let sources = ProgramSourceContext::of(inputs)?;
             // Parse the file once: verification starts from it and the
             // session keeps it as the baseline for later rewrite checks.
             let (sources, baseline_file) = match project {
@@ -1753,11 +1762,12 @@ impl C0VerificationSession {
                     (sources, baseline_file)
                 }
                 None => {
-                    let baseline_file = parse_c0_click_file_context(click_source, &sources)?;
+                    let baseline_file =
+                        parse_click_file_with_program_sources(click_source, &sources)?;
                     (sources, baseline_file)
                 }
             };
-            let (verified, verified_function_environment) = verify_c0_sources_with_context(
+            let (verified, verified_function_environment) = verify_program_with_context(
                 click_source,
                 &sources,
                 None,
@@ -1808,7 +1818,7 @@ impl C0VerificationSession {
 
     /// Identity of the immutable inputs and resource semantics used by this
     /// reusable verification session.
-    pub fn environment_identity(&self) -> CProofArtifactIdentity {
+    pub fn environment_identity(&self) -> ProofArtifactIdentity {
         self.environment_identity
     }
 
@@ -1844,7 +1854,7 @@ impl C0VerificationSession {
         click_source: &str,
         line: usize,
         column: usize,
-    ) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+    ) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
         let _kernel_tables = self.ensure_kernel_state_retained()?;
         instrumentation::with_default_tactic_limits(|| {
             self.verify_at_with_limits(click_source, line, column)
@@ -1857,7 +1867,7 @@ impl C0VerificationSession {
         click_source: &str,
         line: usize,
         column: usize,
-    ) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+    ) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
         let _kernel_tables = self.ensure_kernel_state_retained()?;
         let baseline_project = self.click_project.as_ref().ok_or_else(|| {
             ClickError::new("verification session does not contain a Click module graph")
@@ -1870,11 +1880,11 @@ impl C0VerificationSession {
                 .map(|(name, source)| (name.as_str(), source.as_str()))
                 .collect::<Vec<_>>();
             let sources = if let Some(import) = self.prepared_program_import.as_ref() {
-                CSourceContext::program(import)?.with_click_project(&project)
+                ProgramSourceContext::program(import)?.with_click_project(&project)
             } else if let Some(imports) = self.prepared_imports.as_ref() {
-                CSourceContext::prepared(imports).with_click_project(&project)
+                ProgramSourceContext::prepared(imports).with_click_project(&project)
             } else {
-                CSourceContext::bundle(&c_sources).with_click_project(&project)
+                ProgramSourceContext::bundle(&c_sources).with_click_project(&project)
             };
             let rewritten_file = resolve_click_project_context(&project, &sources)?;
             let target = expansion::verification_target_at_file(
@@ -1916,7 +1926,7 @@ impl C0VerificationSession {
                 ),
                 VerificationTarget::Theorem(_) | VerificationTarget::Functions(_) => None,
             };
-            verify_c0_sources_with_context(
+            verify_program_with_context(
                 click_source,
                 &sources,
                 Some(target),
@@ -1935,13 +1945,13 @@ impl C0VerificationSession {
         click_source: &str,
         line: usize,
         column: usize,
-    ) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+    ) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
         let _kernel_tables = self.ensure_kernel_state_retained()?;
         instrumentation::with_default_tactic_limits(|| {
             let sources = if let Some(import) = self.prepared_program_import.as_ref() {
-                CSourceContext::program(import)?
+                ProgramSourceContext::program(import)?
             } else if let Some(imports) = self.prepared_imports.as_ref() {
-                CSourceContext::prepared(imports)
+                ProgramSourceContext::prepared(imports)
             } else {
                 return Err(ClickError::new(
                     "verification session does not contain prepared imports",
@@ -1978,7 +1988,7 @@ impl C0VerificationSession {
                     "rewritten source location resolves to a proof unit absent from the baseline",
                 ));
             }
-            let rewritten_file = parse_c0_click_file_context(click_source, &sources)?;
+            let rewritten_file = parse_click_file_with_program_sources(click_source, &sources)?;
             if changed_outside_proof_unit(&self.baseline_file, rewritten_file, &target) {
                 return Err(ClickError::new(
                     "rewritten sidecar changed source outside the selected proof unit",
@@ -1992,7 +2002,7 @@ impl C0VerificationSession {
                 ),
                 VerificationTarget::Theorem(_) | VerificationTarget::Functions(_) => None,
             };
-            verify_c0_sources_with_context(
+            verify_program_with_context(
                 click_source,
                 &sources,
                 Some(target),
@@ -2009,13 +2019,13 @@ impl C0VerificationSession {
         click_source: &str,
         line: usize,
         column: usize,
-    ) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+    ) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
         let c_sources = self
             .c_sources
             .iter()
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
-        let sources = CSourceContext::bundle(&c_sources);
+        let sources = ProgramSourceContext::bundle(&c_sources);
         ensure_environment_identity(
             &self.environment_identity,
             &sources,
@@ -2047,7 +2057,7 @@ impl C0VerificationSession {
                 "rewritten source location resolves to a proof unit absent from the baseline",
             ));
         }
-        let rewritten_file = parse_c0_click_file_context(click_source, &sources)?;
+        let rewritten_file = parse_click_file_with_program_sources(click_source, &sources)?;
         if changed_outside_proof_unit(&self.baseline_file, rewritten_file, &target) {
             return Err(ClickError::new(
                 "rewritten sidecar changed source outside the selected proof unit",
@@ -2062,7 +2072,7 @@ impl C0VerificationSession {
             VerificationTarget::Theorem(_) => None,
             VerificationTarget::Functions(_) => None,
         };
-        verify_c0_sources_with_context(
+        verify_program_with_context(
             click_source,
             &sources,
             Some(target),
@@ -2076,15 +2086,15 @@ impl C0VerificationSession {
 
 /// Parses and validates the complete sidecar, then verifies only the proof
 /// unit containing the one-based source location and the C functions it calls.
-pub fn verify_c0_sources_at(
+pub fn verify_c_sources_at(
     click_source: &str,
     c_sources: &[(&str, &str)],
     line: usize,
     column: usize,
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
     instrumentation::with_default_tactic_limits(|| {
         let target = verification_target_at(click_source, c_sources, line, column)?;
-        verify_c0_sources_targeted(click_source, c_sources, Some(target))
+        verify_c_sources_targeted(click_source, c_sources, Some(target))
     })
 }
 
@@ -2094,36 +2104,36 @@ pub fn verify_sources_at(
     inputs: &ProgramInputs<'_>,
     line: usize,
     column: usize,
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
     if let ProgramInputs::Bundle(c_sources) = inputs {
-        return verify_c0_sources_at(click_source, c_sources, line, column);
+        return verify_c_sources_at(click_source, c_sources, line, column);
     }
     instrumentation::with_default_tactic_limits(|| {
-        let sources = CSourceContext::of(inputs)?;
+        let sources = ProgramSourceContext::of(inputs)?;
         let target = verification_target_at_context(click_source, &sources, line, column)?;
-        verify_c0_sources_with_context(click_source, &sources, Some(target), None, None, None)
+        verify_program_with_context(click_source, &sources, Some(target), None, None, None)
             .map(|(verified, _)| verified)
     })
 }
 
-pub(in crate::surface) fn verify_c0_sources_targeted(
+pub(in crate::surface) fn verify_c_sources_targeted(
     click_source: &str,
     c_sources: &[(&str, &str)],
     verification_target: Option<VerificationTarget>,
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
-    verify_c0_sources_with_environment(click_source, c_sources, verification_target, None, None)
+) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
+    verify_c_sources_with_environment(click_source, c_sources, verification_target, None, None)
         .map(|(verified, _)| verified)
 }
 
-pub(in crate::surface) fn verify_c0_sources_with_environment(
+pub(in crate::surface) fn verify_c_sources_with_environment(
     click_source: &str,
     c_sources: &[(&str, &str)],
     verification_target: Option<VerificationTarget>,
-    initial_function_environment: Option<CExecutionEnvironment>,
+    initial_function_environment: Option<ExecutionEnvironment>,
     expansion_capture: Option<&mut ExpansionCapture>,
-) -> Result<(Vec<VerifiedCTheorem>, CExecutionEnvironment), ClickError> {
-    let sources = CSourceContext::bundle(c_sources);
-    verify_c0_sources_with_context(
+) -> Result<(Vec<VerifiedProgramTheorem>, ExecutionEnvironment), ClickError> {
+    let sources = ProgramSourceContext::bundle(c_sources);
+    verify_program_with_context(
         click_source,
         &sources,
         verification_target,
@@ -2133,18 +2143,18 @@ pub(in crate::surface) fn verify_c0_sources_with_environment(
     )
 }
 
-/// [`verify_c0_sources_in_context`], with a proof failure that names no
+/// [`verify_program_in_context`], with a proof failure that names no
 /// source located by what was being verified when it arose.
-pub(in crate::surface) fn verify_c0_sources_with_context(
+pub(in crate::surface) fn verify_program_with_context(
     click_source: &str,
-    c_sources: &CSourceContext<'_>,
+    c_sources: &ProgramSourceContext<'_>,
     verification_target: Option<VerificationTarget>,
-    initial_function_environment: Option<CExecutionEnvironment>,
+    initial_function_environment: Option<ExecutionEnvironment>,
     expansion_capture: Option<&mut ExpansionCapture>,
     resolved_file: Option<ClickFile>,
-) -> Result<(Vec<VerifiedCTheorem>, CExecutionEnvironment), ClickError> {
+) -> Result<(Vec<VerifiedProgramTheorem>, ExecutionEnvironment), ClickError> {
     crate::surface::clear_ambient_proof_source();
-    verify_c0_sources_in_context(
+    verify_program_in_context(
         click_source,
         c_sources,
         verification_target,
@@ -2155,14 +2165,14 @@ pub(in crate::surface) fn verify_c0_sources_with_context(
     .map_err(ClickError::located_by_ambient_source)
 }
 
-fn verify_c0_sources_in_context(
+fn verify_program_in_context(
     click_source: &str,
-    c_sources: &CSourceContext<'_>,
+    c_sources: &ProgramSourceContext<'_>,
     verification_target: Option<VerificationTarget>,
-    initial_function_environment: Option<CExecutionEnvironment>,
+    initial_function_environment: Option<ExecutionEnvironment>,
     mut expansion_capture: Option<&mut ExpansionCapture>,
     resolved_file: Option<ClickFile>,
-) -> Result<(Vec<VerifiedCTheorem>, CExecutionEnvironment), ClickError> {
+) -> Result<(Vec<VerifiedProgramTheorem>, ExecutionEnvironment), ClickError> {
     check_verification_deadline()?;
     let preselected_runtime = resolved_file
         .as_ref()
@@ -2292,7 +2302,7 @@ fn verify_c0_sources_in_context(
         FunctionSourceRegistry::from_function_blocks(&external_and_user_function_blocks)?
             .with_execution_names(&termination_kernel_names),
     );
-    let (mut termination_plans, mut requested_termination) = c_function_termination_plans(
+    let (mut termination_plans, mut requested_termination) = program_function_termination_plans(
         &file,
         selected_functions.as_ref(),
         &termination_kernel_names,
@@ -2331,7 +2341,7 @@ fn verify_c0_sources_in_context(
         let theorem_dependencies =
             TheoremEnvironment::with_standard_library(&unselected_theorem_definitions)?;
         let predicate_environment = PredicateEnvironment::new(&predicate_definitions)
-            .with_contracts(file.contract_definitions(), &file.c_function_names);
+            .with_contracts(file.contract_definitions(), &file.program_function_names);
         let click_function_environment = ClickFunctionEnvironment::with_algebraic_types(
             &click_function_definitions,
             &combined_algebraic_type_definitions(&file)?,
@@ -2416,13 +2426,13 @@ fn verify_c0_sources_in_context(
                 .is_none_or(|selected| selected.contains(function_block.signature().name()));
             if selected {
                 if let Some(hypothesis) =
-                    crate::kernel::c_recursive_function_contract_hypothesis(function)
+                    crate::kernel::program_recursive_function_contract_hypothesis(function)
                 {
                     function_environment =
                         function_environment.with_verified_function_rule(hypothesis);
                 }
             } else if let Some(assumption) =
-                crate::kernel::c_unselected_function_contract_assumption(function)
+                crate::kernel::program_unselected_function_contract_assumption(function)
             {
                 function_environment = function_environment.with_external_function_rule(assumption);
             }
@@ -2443,7 +2453,7 @@ fn verify_c0_sources_in_context(
         let _timing = VerificationTimingPhase::new("environment");
         let mut theorem_certification_facts = BTreeMap::<String, Vec<Proposition>>::new();
         let mut theorem_certification_authorities =
-            BTreeMap::<String, Vec<CVerifiedPureTheorem>>::new();
+            BTreeMap::<String, Vec<KernelVerifiedPureTheorem>>::new();
         record_theorem_certification_authority(
             &verified_theorems,
             &mut theorem_certification_facts,
@@ -2485,7 +2495,7 @@ fn verify_c0_sources_in_context(
     );
     check_verification_deadline()?;
     let mut verified = Vec::new();
-    let mut termination_loop_rules = BTreeMap::<String, Vec<CVerifiedLoopRule>>::new();
+    let mut termination_loop_rules = BTreeMap::<String, Vec<VerifiedLoopRule>>::new();
     // Standard-library theorems already checked for their certification
     // authority during this verification; see the certification loop below.
     let mut checked_standard_library_theorems = BTreeSet::<String>::new();
@@ -2542,7 +2552,7 @@ fn verify_c0_sources_in_context(
                 &parsed_sources,
                 function_block.signature().name(),
                 Some(function_block.signature()),
-            )? && c0_statement_calls(parsed)
+            )? && c_statement_calls(parsed)
                 .iter()
                 .any(|calls| calls.contains("pthread_create"))
             {
@@ -2600,13 +2610,13 @@ fn verify_c0_sources_in_context(
                 Some(function_block.signature()),
             )?
             .ok_or_else(|| ClickError::new("modeled pthread caller has no C definition"))?;
-            if c0_statement_calls(parsed)
+            if c_statement_calls(parsed)
                 .iter()
                 .any(|calls| calls.contains("pthread_create"))
             {
                 let partial_rules = function_environment.verified_function_rules();
                 let inline_bodies = function_environment.linked_functions();
-                let heights = c_termination_height_plan(&partial_rules, &inline_bodies);
+                let heights = program_termination_height_plan(&partial_rules, &inline_bodies);
                 let declared_diverging = external_and_user_function_blocks
                     .iter()
                     .filter(|function| function.signature().diverges())
@@ -2633,7 +2643,7 @@ fn verify_c0_sources_in_context(
                 assumed_terminating.extend(closure_instance_names(&parsed_sources));
                 assumed_terminating.extend(object_coercion_names(&parsed_sources));
                 assumed_terminating.extend(modeled_thread_runtime_names());
-                let preliminary = c_verified_function_termination_rules(
+                let preliminary = program_verified_function_termination_rules(
                     &partial_rules,
                     &termination_plans,
                     &termination_loop_rules,
@@ -2720,9 +2730,9 @@ fn verify_c0_sources_in_context(
             proof_bindings: Vec::new(),
             name: None,
             ensure: Ensure::Proposition(ClickProposition::Comparison {
-                left: ContractExpression::CFragment(CExpression::Value(int32(0))),
+                left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
                 operator: ComparisonOperator::Equal,
-                right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+                right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
             }),
             proof: SourceProof::Tactic(SmartTactic::ImplicitTail),
             borrowed: false,
@@ -3012,12 +3022,12 @@ fn verify_c0_sources_in_context(
                 .parameters()
                 .iter()
                 .position(|parameter| parameter.name() == name);
-            let Some(CExpression::Value(CValue::Pointer(base))) =
+            let Some(ProgramExpression::Value(ProgramValue::Pointer(base))) =
                 position.and_then(|index| certification_arguments.get(index))
             else {
                 continue;
             };
-            certification_facts.push(Proposition::CMemoryLoadable {
+            certification_facts.push(Proposition::MemoryLoadable {
                 memory: certification_state.memory().clone(),
                 base: base.pointer().clone(),
                 bytes: MachineTerm::constant(*bytes),
@@ -3049,9 +3059,9 @@ fn verify_c0_sources_in_context(
                 .iter()
                 .any(|verified| verified.concrete_loop_execution)
             {
-                CFunctionContractExecutionMode::ExecuteLoops
+                FunctionContractExecutionMode::ExecuteLoops
             } else {
-                CFunctionContractExecutionMode::VerifyLoops
+                FunctionContractExecutionMode::VerifyLoops
             };
             let certification_started = std::time::Instant::now();
             let contract_execution = {
@@ -3071,17 +3081,17 @@ fn verify_c0_sources_in_context(
                     || {
                         let checked_artifacts = checked_executions
                             .iter()
-                            .map(|execution| CCheckedFunctionExecution::clone(execution))
+                            .map(|execution| CheckedFunctionExecution::clone(execution))
                             .collect::<Vec<_>>();
                         // The entry state and arguments outlive the call: a
                         // refusal below names the unauthorized entry premise
                         // through them, in the names the user wrote.
-                        prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure_theorems(
+                        prove_program_function_contract_execution_paths_with_checked_artifacts_and_pure_theorems(
                             certification_state.clone(),
                             contract_function.clone(),
                             certification_arguments.clone(),
                             certification_function_environment,
-                            CExecutionSemantics::APPLY_VERIFIED_RULES,
+                            ExecutionSemantics::APPLY_VERIFIED_RULES,
                             contract_execution_mode,
                             &checked_artifacts,
                             &certification_pure_theorems,
@@ -3142,7 +3152,7 @@ fn verify_c0_sources_in_context(
                         )));
                     }
                 }
-                // As in `c_function_termination_plans`, a `diverges` function
+                // As in `program_function_termination_plans`, a `diverges` function
                 // plans its ranked loops, so the check can tell whether the
                 // marker was needed, but never requests whole-function
                 // termination evidence.
@@ -3157,7 +3167,7 @@ fn verify_c0_sources_in_context(
                     {
                         plan.extend_loop_measures(loop_measures);
                     } else {
-                        termination_plans.push(c_function_termination_plan(
+                        termination_plans.push(program_function_termination_plan(
                             &executing_name,
                             None,
                             loop_measures,
@@ -3174,7 +3184,7 @@ fn verify_c0_sources_in_context(
                 .collect::<Vec<_>>();
             let certified_claims = {
                 let _certification_timing = VerificationTimingPhase::new("certification");
-                c_function_contract_claims_from_completions(
+                program_function_contract_claims_from_completions(
                     &contract_function,
                     &contract_execution,
                     &checked_propositions,
@@ -3187,7 +3197,7 @@ fn verify_c0_sources_in_context(
                 });
             }
             let Some(certified_claims) = certified_claims else {
-                let diagnostic_result = c_unverified_function_contract_claims_diagnostic(
+                let diagnostic_result = program_unverified_function_contract_claims_diagnostic(
                     &contract_function,
                     &contract_execution,
                     &checked_propositions,
@@ -3237,14 +3247,14 @@ fn verify_c0_sources_in_context(
                     let key = if has_explicit_claims {
                         match &verified.claim {
                             VerifiedClaim::Ensure { index, .. } => {
-                                CFunctionContractClaimKey::Ensure(*index)
+                                FunctionContractClaimKey::Ensure(*index)
                             }
                             VerifiedClaim::ExceptionalEnsure { index, .. } => {
-                                CFunctionContractClaimKey::ExceptionalEnsure(*index)
+                                FunctionContractClaimKey::ExceptionalEnsure(*index)
                             }
                         }
                     } else {
-                        CFunctionContractClaimKey::BodySafety
+                        FunctionContractClaimKey::BodySafety
                     };
                     certified_claims
                         .iter()
@@ -3267,7 +3277,7 @@ fn verify_c0_sources_in_context(
             // the resource transition, while explicit mutable frames require
             // an Effect claim.
             if !contract_function.is_program_entry() {
-                let rule = c_verified_function_rule(contract_function, &certified_claims)
+                let rule = program_verified_function_rule(contract_function, &certified_claims)
                     .ok_or_else(|| {
                         ClickError::new(format!(
                             "could not package verified contract for `{}`",
@@ -3318,7 +3328,7 @@ fn verify_c0_sources_in_context(
     // outside the verified set is an assumption, as its postconditions are:
     // an external contract always, and an unselected function because it owes
     // termination evidence to the run that does select it.
-    let termination_heights = c_termination_height_plan(&partial_rules, &inline_bodies);
+    let termination_heights = program_termination_height_plan(&partial_rules, &inline_bodies);
     let declared_diverging = external_and_user_function_blocks
         .iter()
         .filter(|function| function.signature().diverges())
@@ -3347,7 +3357,7 @@ fn verify_c0_sources_in_context(
     // selected function without it. Each retry drops one measure.
     let mut run_plans = termination_plans.clone();
     let verdicts = loop {
-        let verdicts = c_verified_function_termination_rules(
+        let verdicts = program_verified_function_termination_rules(
             &partial_rules,
             &run_plans,
             &termination_loop_rules,
@@ -3376,7 +3386,7 @@ fn verify_c0_sources_in_context(
             break verdicts;
         }
     };
-    let CTerminationVerdicts {
+    let TerminationVerdicts {
         rules: termination_rules,
         refusals: termination_refusals,
         unjustified_diverging,
@@ -3449,7 +3459,7 @@ fn verify_c0_sources_in_context(
         .collect::<Vec<_>>();
     if let Some((name, refusal)) = refused
         .iter()
-        .find(|(_, refusal)| !matches!(refusal, CTerminationRefusal::Callee { .. }))
+        .find(|(_, refusal)| !matches!(refusal, TerminationRefusal::Callee { .. }))
         .or(refused.first())
     {
         return Err(ClickError::new(format!(
@@ -3514,7 +3524,7 @@ fn verify_c0_sources_in_context(
         .iter()
         .filter_map(|proof| proof.strip_prefix("function:").map(str::to_string))
         .collect::<BTreeSet<_>>();
-    let selection = CProofSelection {
+    let selection = ProofSelection {
         entry_module,
         selected_proofs: selected_proofs.clone(),
         assumed_theorems: all_theorem_names
@@ -3551,7 +3561,7 @@ fn verify_c0_sources_in_context(
 
 pub(in crate::surface) fn tactic_expansion_required_functions(
     file: &ClickFile,
-    parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+    parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
     (site, tactic_index): (ProofSite, Option<usize>),
 ) -> Result<BTreeSet<String>, ClickError> {
     let ProofSite::FunctionClaim {
@@ -3578,14 +3588,14 @@ pub(in crate::surface) fn tactic_expansion_required_functions(
         .find(|function| function.signature().name() == function_name)
         .ok_or_else(|| ClickError::new(format!("unknown function `{function_name}`")))?;
     let _tactics = match claim {
-        CProofClaim::Grouped => function_block
+        ContractProofClaim::Grouped => function_block
             .grouped_proof()
             .and_then(SourceProof::tactics),
-        CProofClaim::Ensure(index) => function_block
+        ContractProofClaim::Ensure(index) => function_block
             .ensures()
             .get(index)
             .and_then(|clause| clause.proof().tactics()),
-        CProofClaim::ExceptionalEnsure(index) => function_block
+        ContractProofClaim::ExceptionalEnsure(index) => function_block
             .exceptional_ensures()
             .get(index)
             .and_then(|clause| clause.proof().tactics()),
@@ -3628,8 +3638,8 @@ pub(in crate::surface) fn tactic_expansion_dependency_context(
     let ProofSite::FunctionClaim { function_name, .. } = site else {
         return Ok(None);
     };
-    let source_map = CSourceContext::bundle(c_sources);
-    let file = parse_c0_click_file(click_source, c_sources)?;
+    let source_map = ProgramSourceContext::bundle(c_sources);
+    let file = parse_click_file_with_c_sources(click_source, c_sources)?;
     let parsed_sources = parse_verified_sources_context(&file, &source_map)?;
     let required = tactic_expansion_required_functions(
         &file,
@@ -3662,7 +3672,7 @@ pub(in crate::surface) fn tactic_expansion_dependency_context(
             .get(&name)
             .cloned()
             .expect("queued dependency has a recorded path");
-        for dependency in c0_statement_calls(function)
+        for dependency in c_statement_calls(function)
             .into_iter()
             .flatten()
             .filter(|dependency| required.contains(dependency))
@@ -3687,7 +3697,7 @@ pub(in crate::surface) fn tactic_expansion_dependency_context(
 
 pub(in crate::surface) fn verification_required_functions(
     file: &ClickFile,
-    parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+    parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
     function_name: &str,
 ) -> Result<BTreeSet<String>, ClickError> {
     let function_blocks = combined_external_function_blocks(file)?;
@@ -3700,7 +3710,7 @@ pub(in crate::surface) fn verification_required_functions(
 }
 
 fn verification_required_functions_with_blocks(
-    parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+    parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
     function_name: &str,
     function_blocks: &[FunctionBlock],
     runtime: crate::languages::c::thread_runtime::CThreadRuntime,
@@ -3727,7 +3737,7 @@ struct AssumptionWalk<'a> {
 /// calls and follows the calls of a body a typed frontend lowered itself, so
 /// that a C++ or Rust function's library models are reported.
 fn required_functions(
-    parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+    parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
     function_name: &str,
     function_blocks: &[FunctionBlock],
     runtime: crate::languages::c::thread_runtime::CThreadRuntime,
@@ -3786,17 +3796,17 @@ fn required_functions(
             return Err(ClickError::new(format!("no C source defines `{name}`")));
         };
         let Some(report) = report.as_mut() else {
-            pending.extend(c0_statement_calls(parsed).into_iter().flatten());
+            pending.extend(c_statement_calls(parsed).into_iter().flatten());
             continue;
         };
         pending.extend(
-            c0_statement_calls_recording(parsed, report.allocator)
+            c_statement_calls_recording(parsed, report.allocator)
                 .into_iter()
                 .flatten(),
         );
         if let Some(lowered) = parsed.prelowered_kernel_function() {
             pending.extend(
-                crate::kernel::c_function_callees(lowered)
+                crate::kernel::program_function_callees(lowered)
                     .into_iter()
                     .filter(|callee| {
                         parsed_sources.contains_key(callee) || report.externals.contains_key(callee)
@@ -3812,19 +3822,19 @@ fn required_functions(
 /// call closure. This is intentionally derived from the same call graph used
 /// by targeted verification, so reporting cannot silently omit a transitive
 /// external callee.
-pub fn c0_external_dependencies(
+pub fn c_external_dependencies(
     click_source: &str,
     c_sources: &[(&str, &str)],
 ) -> Result<BTreeMap<String, Vec<String>>, ClickError> {
-    let sources = CSourceContext::bundle(c_sources);
-    c0_external_dependencies_context(click_source, &sources)
+    let sources = ProgramSourceContext::bundle(c_sources);
+    external_dependencies_context(click_source, &sources)
 }
 
 /// What `click verify` reports about a project beside its verdict, from one
 /// resolution of its sources: the external contracts each selected function
 /// relies on, and how many proof units are selected.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct CProjectSummary {
+pub struct ProjectVerificationSummary {
     /// Each function's assumed library models and `extern` contracts.
     pub assumptions: BTreeMap<String, Vec<ModelAssumption>>,
     /// Selected function proofs plus selected theorems.
@@ -3841,16 +3851,16 @@ pub struct CProjectSummary {
     pub external_declarations: BTreeSet<String>,
 }
 
-fn c0_project_summary_file(
+fn project_verification_summary_file(
     file: &ClickFile,
-    sources: &CSourceContext<'_>,
-) -> Result<CProjectSummary, ClickError> {
+    sources: &ProgramSourceContext<'_>,
+) -> Result<ProjectVerificationSummary, ClickError> {
     // The summary reads function names and call graphs, never `main`'s
     // program-entry storage, so it does not build it.
     let parsed_sources =
         parse_verified_sources_context_with_entry(file, sources, ProgramEntryStorage::Skip)?;
-    Ok(CProjectSummary {
-        assumptions: c0_assumptions_parsed(file, &parsed_sources, sources.library_models())?,
+    Ok(ProjectVerificationSummary {
+        assumptions: program_assumptions_parsed(file, &parsed_sources, sources.library_models())?,
         selected_proof_count: file
             .function_blocks()
             .iter()
@@ -3877,29 +3887,34 @@ fn c0_project_summary_file(
 pub fn project_summary(
     project: &ClickProject,
     inputs: &ProgramInputs<'_>,
-) -> Result<CProjectSummary, ClickError> {
+) -> Result<ProjectVerificationSummary, ClickError> {
     // The run's budget charges the summary's work, so it gets its own kernel
     // session: what this thread verified before cannot change its units.
     let _session = crate::kernel::VerificationSession::enter();
-    let sources = CSourceContext::of(inputs)?.with_click_project(project);
+    let sources = ProgramSourceContext::of(inputs)?.with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
-    c0_project_summary_file(&file, &sources)
+    project_verification_summary_file(&file, &sources)
 }
 
 /// A summary and a verification of one loaded project from a single
 /// resolution of its sources. The outer error is the summary's, a failure to
 /// resolve or summarize the sources; the inner result is verification's.
-pub type SummarizedVerification =
-    Result<(CProjectSummary, Result<Vec<VerifiedCTheorem>, ClickError>), ClickError>;
+pub type SummarizedVerification = Result<
+    (
+        ProjectVerificationSummary,
+        Result<Vec<VerifiedProgramTheorem>, ClickError>,
+    ),
+    ClickError,
+>;
 
-/// [`project_summary`] then [`verify_c0_project`], resolving the sources
+/// [`project_summary`] then [`verify_c_project`], resolving the sources
 /// once for both: the resolution validates every declaration, standard
 /// library included, so a caller reporting the summary should not pay twice.
 pub fn verify_project_with_summary(
     project: &ClickProject,
     inputs: &ProgramInputs<'_>,
 ) -> SummarizedVerification {
-    let sources = CSourceContext::of(inputs)?.with_click_project(project);
+    let sources = ProgramSourceContext::of(inputs)?.with_click_project(project);
     summarize_then_verify(
         project,
         &sources,
@@ -3909,7 +3924,7 @@ pub fn verify_project_with_summary(
 
 fn summarize_then_verify(
     project: &ClickProject,
-    sources: &CSourceContext<'_>,
+    sources: &ProgramSourceContext<'_>,
     emit_timing_failure: bool,
 ) -> SummarizedVerification {
     // As in the separate summary: the CLI's phase name, which a stop report
@@ -3921,11 +3936,11 @@ fn summarize_then_verify(
         let _phase = instrumentation::VerificationPhase::new("external dependency summary");
         let _session = crate::kernel::VerificationSession::enter();
         let file = resolve_click_project_context(project, sources)?;
-        let summary = c0_project_summary_file(&file, sources)?;
+        let summary = project_verification_summary_file(&file, sources)?;
         (file, summary)
     };
     let verified = instrumentation::with_default_tactic_limits(|| {
-        let result = verify_c0_sources_with_context(
+        let result = verify_program_with_context(
             project.entry_source().expect("resolved entry source"),
             sources,
             None,
@@ -3943,36 +3958,36 @@ fn summarize_then_verify(
 }
 
 /// Reports the same explicit external-contract assumptions for compiler imports.
-pub fn c0_prepared_external_dependencies(
+pub fn c_prepared_external_dependencies(
     click_source: &str,
     imports: &[PreparedCImport],
 ) -> Result<BTreeMap<String, Vec<String>>, ClickError> {
-    let sources = CSourceContext::prepared(imports);
-    c0_external_dependencies_context(click_source, &sources)
+    let sources = ProgramSourceContext::prepared(imports);
+    external_dependencies_context(click_source, &sources)
 }
 
-fn c0_external_dependencies_context(
+fn external_dependencies_context(
     click_source: &str,
-    sources: &CSourceContext<'_>,
+    sources: &ProgramSourceContext<'_>,
 ) -> Result<BTreeMap<String, Vec<String>>, ClickError> {
     let layouts = parse_c_layouts(click_source, sources)?;
     let file = parser::parse_with_layouts_and_aggregate_objects(
         &sources.with_library_contracts(click_source),
         layouts,
     )?;
-    c0_external_dependencies_file(&file, sources)
+    external_dependencies_file(&file, sources)
 }
 
-fn c0_external_dependencies_file(
+fn external_dependencies_file(
     file: &ClickFile,
-    sources: &CSourceContext<'_>,
+    sources: &ProgramSourceContext<'_>,
 ) -> Result<BTreeMap<String, Vec<String>>, ClickError> {
     // The summary reads function names and call graphs, never `main`'s
     // program-entry storage, so it does not build it.
     let parsed_sources =
         parse_verified_sources_context_with_entry(file, sources, ProgramEntryStorage::Skip)?;
     Ok(
-        c0_assumptions_parsed(file, &parsed_sources, sources.library_models())?
+        program_assumptions_parsed(file, &parsed_sources, sources.library_models())?
             .into_iter()
             .filter_map(|(function, assumptions)| {
                 let external = assumptions
@@ -4057,9 +4072,9 @@ impl ModelAssumption {
 /// Each function's assumptions, from the call closure targeted verification
 /// already computes: the `extern` contracts it reaches, tagged by where each
 /// comes from, and the allocator functions its closure calls.
-fn c0_assumptions_parsed(
+fn program_assumptions_parsed(
     file: &ClickFile,
-    parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+    parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
     library_models: Option<&BTreeSet<String>>,
 ) -> Result<BTreeMap<String, Vec<ModelAssumption>>, ClickError> {
     let function_blocks = combined_external_function_blocks(file)?;
@@ -4135,7 +4150,7 @@ fn c0_assumptions_parsed(
 
 /// The allocator function `name` names, which the C front end models as an
 /// allocation rather than a call.
-fn c0_allocator_function(name: &str) -> Option<&'static str> {
+fn c_allocator_function(name: &str) -> Option<&'static str> {
     ["malloc", "calloc", "realloc", "free"]
         .into_iter()
         .find(|function| *function == name)
@@ -4151,7 +4166,9 @@ fn modeled_thread_runtime_names() -> impl Iterator<Item = String> {
         .map(str::to_string)
 }
 
-fn modeled_pthread_create_workers(function: &syntax::C0Function) -> BTreeSet<String> {
+fn modeled_pthread_create_workers(
+    function: &crate::languages::interface::ImportedFunction,
+) -> BTreeSet<String> {
     use syntax::{C0Expression as E, C0Statement as S};
     let mut workers = BTreeSet::new();
     let mut pending = vec![function.body()];
@@ -4163,6 +4180,11 @@ fn modeled_pthread_create_workers(function: &syntax::C0Function) -> BTreeSet<Str
                 ..
             }
             | S::CallAssign {
+                function_name,
+                arguments,
+                ..
+            }
+            | S::CallResult {
                 function_name,
                 arguments,
                 ..
@@ -4207,7 +4229,7 @@ fn modeled_pthread_create_workers(function: &syntax::C0Function) -> BTreeSet<Str
 fn with_modeled_pthread_workers(
     file: &ClickFile,
     mut selected: BTreeSet<String>,
-    parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+    parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
     runtime: crate::languages::c::thread_runtime::CThreadRuntime,
 ) -> Result<BTreeSet<String>, ClickError> {
     if runtime == crate::languages::c::thread_runtime::CThreadRuntime::ModeledPthread {
@@ -4229,16 +4251,16 @@ fn with_modeled_pthread_workers(
     Ok(selected)
 }
 
-pub(in crate::surface) fn c0_statement_calls(
-    function: &syntax::C0Function,
+pub(in crate::surface) fn c_statement_calls(
+    function: &crate::languages::interface::ImportedFunction,
 ) -> Vec<BTreeSet<String>> {
-    c0_statement_calls_recording(function, &mut BTreeSet::new())
+    c_statement_calls_recording(function, &mut BTreeSet::new())
 }
 
-/// [`c0_statement_calls`], also recording in `allocator` each allocator
+/// [`c_statement_calls`], also recording in `allocator` each allocator
 /// function the body calls, which is not a call dependency.
-fn c0_statement_calls_recording(
-    function: &syntax::C0Function,
+fn c_statement_calls_recording(
+    function: &crate::languages::interface::ImportedFunction,
     allocator: &mut BTreeSet<&'static str>,
 ) -> Vec<BTreeSet<String>> {
     fn collect_function_pointer_names(
@@ -4247,7 +4269,7 @@ fn c0_statement_calls_recording(
     ) {
         match statement {
             syntax::C0Statement::Declare {
-                c_type: syntax::C0Type::FunctionPointer(_),
+                interface_type: crate::languages::interface::InterfaceType::FunctionPointer(_),
                 name,
                 ..
             } => {
@@ -4295,6 +4317,7 @@ fn c0_statement_calls_recording(
             | syntax::C0Statement::Assign { .. }
             | syntax::C0Statement::CallAssign { .. }
             | syntax::C0Statement::Call { .. }
+            | syntax::C0Statement::CallResult { .. }
             | syntax::C0Statement::IndirectCall { .. }
             | syntax::C0Statement::HeapAllocate { .. }
             | syntax::C0Statement::HeapFree { .. }
@@ -4409,6 +4432,7 @@ fn c0_statement_calls_recording(
             }
             syntax::C0Expression::Void
             | syntax::C0Expression::Variable(_)
+            | syntax::C0Expression::CallResult { .. }
             | syntax::C0Expression::Int32Literal(_)
             | syntax::C0Expression::UInt8Literal(_)
             | syntax::C0Expression::UInt32Literal(_)
@@ -4425,7 +4449,12 @@ fn c0_statement_calls_recording(
     let mut function_pointer_names = function
         .parameters()
         .iter()
-        .filter(|parameter| matches!(parameter.c_type(), syntax::C0Type::FunctionPointer(_)))
+        .filter(|parameter| {
+            matches!(
+                parameter.interface_type(),
+                crate::languages::interface::InterfaceType::FunctionPointer(_)
+            )
+        })
         .map(|parameter| parameter.name().to_string())
         .collect::<BTreeSet<_>>();
     collect_function_pointer_names(function.body(), &mut function_pointer_names);
@@ -4502,7 +4531,7 @@ fn c0_statement_calls_recording(
             } => {
                 let mut dependencies = BTreeSet::new();
                 if !function_pointer_names.contains(function_name) {
-                    match c0_allocator_function(function_name) {
+                    match c_allocator_function(function_name) {
                         Some(function) => {
                             allocator.insert(function);
                         }
@@ -4520,10 +4549,15 @@ fn c0_statement_calls_recording(
                 function_name,
                 arguments,
                 ..
+            }
+            | syntax::C0Statement::CallResult {
+                function_name,
+                arguments,
+                ..
             } => {
                 let mut dependencies = BTreeSet::new();
                 if !function_pointer_names.contains(function_name) {
-                    match c0_allocator_function(function_name) {
+                    match c_allocator_function(function_name) {
                         Some(function) => {
                             allocator.insert(function);
                         }
@@ -4637,10 +4671,10 @@ fn c0_statement_calls_recording(
 /// the same proposition rather than nothing.
 fn describe_unauthorized_entry_premise(
     premise: Option<&Proposition>,
-    entry_resources: &[CResourceFact],
+    entry_resources: &[ResourceFact],
     context_facts: &[Proposition],
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
 ) -> String {
     use crate::surface::diagnostics::{describe_click_proposition, describe_pure_fact_spelled};
     use crate::surface::proof_diagnostics::render::render_resource_facts_diagnostic;
@@ -4655,7 +4689,7 @@ fn describe_unauthorized_entry_premise(
             );
     // A loadability premise is a claim about the entry's memory resources;
     // name them, so the reader sees what the refused range was compared to.
-    let held = if matches!(premise, Proposition::CMemoryLoadable { .. }) {
+    let held = if matches!(premise, Proposition::MemoryLoadable { .. }) {
         format!(
             "; the contract entry holds {}",
             render_resource_facts_diagnostic(entry_resources, parameter_binding)
@@ -4692,10 +4726,10 @@ fn describe_unauthorized_entry_premise(
 /// the function that owns the defect has.
 fn termination_refusal_report(
     name: &str,
-    refusal: &CTerminationRefusal,
-    refusals: &BTreeMap<String, CTerminationRefusal>,
+    refusal: &TerminationRefusal,
+    refusals: &BTreeMap<String, TerminationRefusal>,
     declared_diverging: &BTreeSet<String>,
-    unsuitable_callback: Option<&CUnsuitableCallback>,
+    unsuitable_callback: Option<&UnsuitableCallback>,
     tactics: &BTreeSet<String>,
 ) -> String {
     let spelling = |name: &str| {
@@ -4709,9 +4743,9 @@ fn termination_refusal_report(
     let mut current = refusal;
     loop {
         let callee = match current {
-            CTerminationRefusal::Callee { callee } => callee,
-            CTerminationRefusal::UnmeasuredRecursion { callee } => {
-                let shown = CTerminationRefusal::UnmeasuredRecursion {
+            TerminationRefusal::Callee { callee } => callee,
+            TerminationRefusal::UnmeasuredRecursion { callee } => {
+                let shown = TerminationRefusal::UnmeasuredRecursion {
                     callee: spelling(callee),
                 };
                 if tactics.contains(&owner) {
@@ -4726,19 +4760,19 @@ fn termination_refusal_report(
                 }
                 return report;
             }
-            CTerminationRefusal::UnrankedLoop { .. } => {
+            TerminationRefusal::UnrankedLoop { .. } => {
                 report.push_str(&format!(
                     "{current}; give it one, or mark it `loop diverges` and declare `{owner}` `diverges`"
                 ));
                 return report;
             }
-            CTerminationRefusal::DivergingContract { .. } => {
+            TerminationRefusal::DivergingContract { .. } => {
                 report.push_str(&format!(
                     "{current}; declare `{owner}` `diverges` too, or require a contract without the marker"
                 ));
                 return report;
             }
-            CTerminationRefusal::IndirectCall { .. } => {
+            TerminationRefusal::IndirectCall { .. } => {
                 report.push_str(&current.to_string());
                 if let Some(unsuitable) = unsuitable_callback {
                     report.push_str(&format!(
@@ -4749,12 +4783,12 @@ fn termination_refusal_report(
                 }
                 return report;
             }
-            CTerminationRefusal::DeclaredDiverging => {
+            TerminationRefusal::DeclaredDiverging => {
                 report.push_str(&current.to_string());
                 return report;
             }
         };
-        let shown = CTerminationRefusal::Callee {
+        let shown = TerminationRefusal::Callee {
             callee: spelling(callee),
         };
         report.push_str(&shown.to_string());
@@ -4779,7 +4813,7 @@ pub(in crate::surface) fn termination_measure_name(
 ) -> Result<String, ClickError> {
     match expression {
         ContractExpression::Binding(name)
-        | ContractExpression::CFragment(CExpression::Variable(name))
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
         | ContractExpression::CBinding(name) => Ok(name.clone()),
         _ => Err(ClickError::new(format!(
             "{context} must name one int32 C variable; compound ranking expressions are not yet supported"
@@ -4797,15 +4831,15 @@ pub(in crate::surface) fn termination_measure_name(
 pub(in crate::surface) fn termination_measure_keys(
     measure: &TerminationMeasure,
     _context: &str,
-) -> Result<Vec<crate::kernel::CRankingMeasureKey>, ClickError> {
+) -> Result<Vec<crate::kernel::RankingMeasureKey>, ClickError> {
     Ok(measure
         .components()
         .iter()
         .map(
-            |expression| match resource_argument_to_c_expression(expression) {
-                Ok(expression) => crate::kernel::CRankingMeasureKey::CExpression(expression),
+            |expression| match resource_argument_to_program_expression(expression) {
+                Ok(expression) => crate::kernel::RankingMeasureKey::ProgramExpression(expression),
                 Err(_) => {
-                    crate::kernel::CRankingMeasureKey::Pure(termination_measure_source(expression))
+                    crate::kernel::RankingMeasureKey::Pure(termination_measure_source(expression))
                 }
             },
         )
@@ -4831,9 +4865,11 @@ pub(in crate::surface) fn termination_measure_source(expression: &ContractExpres
         ContractExpression::Binding(name)
         | ContractExpression::CBinding(name)
         | ContractExpression::QualifiedC { name, .. } => name.clone(),
-        ContractExpression::CFragment(expression) => crate::kernel::c_ranking_measure_identity(
-            &crate::kernel::CRankingComponent::CExpression(expression.clone()),
-        ),
+        ContractExpression::ProgramExpression(expression) => {
+            crate::kernel::ranking_measure_identity(
+                &crate::kernel::RankingComponent::ProgramExpression(expression.clone()),
+            )
+        }
         ContractExpression::Field { base, field, .. } => {
             format!("{}.{field}", termination_measure_source(base))
         }
@@ -4872,7 +4908,7 @@ pub(in crate::surface) fn termination_measure_source(expression: &ContractExpres
         // both sides render the same clause. The fully parenthesized source
         // printer is one, and it is also what a diagnostic can show: the
         // structural `Debug` form it replaced read
-        // `BitwiseAnd(CFragment(Variable("n")), IntegerLiteral("7"))`.
+        // `BitwiseAnd(ProgramExpression(Variable("n")), IntegerLiteral("7"))`.
         expression => crate::surface::diagnostics::describe_contract_expression(expression),
     }
 }
@@ -4902,7 +4938,7 @@ fn termination_measure_binder_name(measure: &TerminationMeasure) -> Option<&str>
     match component {
         ContractExpression::Binding(name)
         | ContractExpression::CBinding(name)
-        | ContractExpression::CFragment(CExpression::Variable(name)) => Some(name),
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => Some(name),
         _ => None,
     }
 }
@@ -4916,16 +4952,16 @@ fn termination_measure_binder_name(measure: &TerminationMeasure) -> Option<&str>
 pub(in crate::surface) fn loop_termination_measure(
     clause: &StructuralClause,
     context: &str,
-) -> Result<Option<crate::kernel::CLoopTerminationMeasure>, ClickError> {
+) -> Result<Option<crate::kernel::LoopTerminationMeasure>, ClickError> {
     let Some(measure) = clause.decreases() else {
         return Ok(None);
     };
     if let Some(name) = loop_structural_measure_binder(clause) {
-        return Ok(Some(crate::kernel::CLoopTerminationMeasure::Structural(
+        return Ok(Some(crate::kernel::LoopTerminationMeasure::Structural(
             name,
         )));
     }
-    Ok(Some(crate::kernel::CLoopTerminationMeasure::Ranking(
+    Ok(Some(crate::kernel::LoopTerminationMeasure::Ranking(
         termination_measure_keys(measure, context)?,
     )))
 }
@@ -4934,7 +4970,7 @@ pub(in crate::surface) fn loop_termination_measure(
 /// Only a header-provided `static inline` helper has two names; every other
 /// function maps to itself and is left out of the map.
 pub(in crate::surface) fn executing_function_names(
-    parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+    parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
     file: &ClickFile,
 ) -> Result<BTreeMap<String, String>, ClickError> {
     let mut names = BTreeMap::new();
@@ -5005,13 +5041,13 @@ fn executing_function_name(names: &BTreeMap<String, String>, source_name: &str) 
         .unwrap_or_else(|| source_name.to_string())
 }
 
-pub(in crate::surface) fn c_function_termination_plans(
+pub(in crate::surface) fn program_function_termination_plans(
     file: &ClickFile,
     selected_functions: Option<&BTreeSet<String>>,
     executing_names: &BTreeMap<String, String>,
 ) -> Result<
     (
-        Vec<crate::kernel::CFunctionTerminationPlan>,
+        Vec<crate::kernel::FunctionTerminationPlan>,
         BTreeSet<String>,
     ),
     ClickError,
@@ -5027,19 +5063,19 @@ pub(in crate::surface) fn c_function_termination_plans(
         let recursive_measure = function
             .decreases()
             .map(|measure| match measure {
-                CFunctionDecrease::Unresolved(_) => Err(ClickError::new(format!(
+                FunctionDecrease::Unresolved(_) => Err(ClickError::new(format!(
                     "function-level `decreases` in `{}` was never classified; declared-resource expansion did not run",
                     function.signature().name()
                 ))),
                 // In a component of two or more, a binder measure is ranked at
                 // each call by the instance it passes, as an expression
                 // measure is: the body analysis below sees only self-calls.
-                CFunctionDecrease::Binder(binder) if !function.recursion_peers().is_empty() => {
-                    Ok(crate::kernel::CFunctionTerminationMeasure::Expression(
+                FunctionDecrease::Binder(binder) if !function.recursion_peers().is_empty() => {
+                    Ok(crate::kernel::FunctionTerminationMeasure::Expression(
                         binder.clone(),
                     ))
                 }
-                CFunctionDecrease::Binder(binder) => {
+                FunctionDecrease::Binder(binder) => {
                     // `decreases t;` names one of this contract's own resource
                     // binders. The kernel measure is an index into the entry
                     // resource requirements, so find the clause that declares
@@ -5065,9 +5101,9 @@ pub(in crate::surface) fn c_function_termination_plans(
                             function.signature().name()
                         ))
                     })?;
-                    Ok(crate::kernel::CFunctionTerminationMeasure::ResourceRequirement(index))
+                    Ok(crate::kernel::FunctionTerminationMeasure::ResourceRequirement(index))
                 }
-                CFunctionDecrease::Numeric(measure) => {
+                FunctionDecrease::Numeric(measure) => {
                     // A bare C int32 parameter keeps its body-checked measure,
                     // resolved to an index the termination
                     // checker analyses the body for, and refused by the same
@@ -5081,7 +5117,7 @@ pub(in crate::surface) fn c_function_termination_plans(
                         function.signature().name()
                     );
                     let Ok(name) = termination_measure_name(measure, &context) else {
-                        return Ok(crate::kernel::CFunctionTerminationMeasure::Expression(
+                        return Ok(crate::kernel::FunctionTerminationMeasure::Expression(
                             termination_measure_source(measure),
                         ));
                     };
@@ -5104,18 +5140,18 @@ pub(in crate::surface) fn c_function_termination_plans(
                     // would be. Lowering decides whether its type is one a
                     // measure may have.
                     if function.call_ranked_numeric_recursion
-                        || function.signature().parameters()[index].c_type() != C0Type::Int32
+                        || function.signature().parameters()[index].interface_type() != InterfaceType::Int32
                     {
-                        return Ok(crate::kernel::CFunctionTerminationMeasure::Expression(
+                        return Ok(crate::kernel::FunctionTerminationMeasure::Expression(
                             termination_measure_source(measure),
                         ));
                     }
-                    Ok(crate::kernel::CFunctionTerminationMeasure::NumericParameter(index))
+                    Ok(crate::kernel::FunctionTerminationMeasure::NumericParameter(index))
                 }
                 // A tuple is ranked by obligations at the self-calls, like
                 // any expression measure.
-                CFunctionDecrease::Lexicographic(components) => {
-                    Ok(crate::kernel::CFunctionTerminationMeasure::Expression(format!(
+                FunctionDecrease::Lexicographic(components) => {
+                    Ok(crate::kernel::FunctionTerminationMeasure::Expression(format!(
                         "({})",
                         components
                             .iter()
@@ -5124,7 +5160,7 @@ pub(in crate::surface) fn c_function_termination_plans(
                             .join(", ")
                     )))
                 }
-                CFunctionDecrease::Resource(measure) => {
+                FunctionDecrease::Resource(measure) => {
                     let ResourceClause::Declared {
                         kind: ResourceKind::Composite,
                         name: measure_name,
@@ -5163,7 +5199,7 @@ pub(in crate::surface) fn c_function_termination_plans(
                             function.signature().name()
                         ))
                     })?;
-                    Ok(crate::kernel::CFunctionTerminationMeasure::ResourceRequirement(index))
+                    Ok(crate::kernel::FunctionTerminationMeasure::ResourceRequirement(index))
                 }
             })
             .transpose()?;
@@ -5186,7 +5222,7 @@ pub(in crate::surface) fn c_function_termination_plans(
             requested.insert(function.signature().name().to_string());
         }
         if selected && recursive_measure.is_some() {
-            plans.push(c_function_termination_plan(
+            plans.push(program_function_termination_plan(
                 executing_function_name(executing_names, function.signature().name()),
                 recursive_measure,
                 BTreeMap::new(),
@@ -5262,13 +5298,20 @@ fn reject_pure_bodies_reading_c_objects(
 
 /// Looks up a C definition using the spelling visible to Click. Header-local
 /// inline bodies have a translation-unit-qualified kernel name, so sidecar
-/// contracts must match `C0Function::source_name()` rather than the execution
-/// identity returned by `C0Function::name()`.
+/// contracts must match `ImportedFunction::source_name()` rather than the execution
+/// identity returned by `ImportedFunction::name()`.
 fn parsed_function_for_source_name<'a>(
-    parsed_sources: &'a BTreeMap<String, (String, syntax::C0Function)>,
+    parsed_sources: &'a BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
     source_name: &str,
     signature: Option<&FunctionSignature>,
-) -> Result<Option<(&'a String, &'a String, &'a syntax::C0Function)>, ClickError> {
+) -> Result<
+    Option<(
+        &'a String,
+        &'a String,
+        &'a crate::languages::interface::ImportedFunction,
+    )>,
+    ClickError,
+> {
     let mut matches = parsed_sources
         .iter()
         .filter(|(_, (path, function))| {
@@ -5295,7 +5338,7 @@ fn parsed_function_for_source_name<'a>(
 /// the parser later confirms.
 pub(in crate::surface) fn parse_c_layouts(
     click_source: &str,
-    c_sources: &CSourceContext<'_>,
+    c_sources: &ProgramSourceContext<'_>,
 ) -> Result<parser::ProgramLayouts, ClickError> {
     parse_c_layouts_for_target(
         click_source,
@@ -5309,7 +5352,7 @@ pub(in crate::surface) fn parse_c_layouts(
 /// rescanned from the entry module alone.
 pub(in crate::surface) fn parse_c_layouts_for_target(
     click_source: &str,
-    c_sources: &CSourceContext<'_>,
+    c_sources: &ProgramSourceContext<'_>,
     target: CTarget,
 ) -> Result<parser::ProgramLayouts, ClickError> {
     let verifying_paths = super::verifying_source_paths(click_source)?;
@@ -5335,7 +5378,9 @@ pub(in crate::surface) fn parse_c_layouts_for_target(
 }
 
 /// A C++ method's receiver, its first parameter `this`.
-fn receiver(function: &syntax::C0Function) -> Option<&syntax::C0Parameter> {
+fn receiver(
+    function: &crate::languages::interface::ImportedFunction,
+) -> Option<&crate::languages::interface::ImportedParameter> {
     function
         .parameters()
         .first()
@@ -5343,8 +5388,9 @@ fn receiver(function: &syntax::C0Function) -> Option<&syntax::C0Parameter> {
 }
 
 /// Whether a C++ method's receiver is `const`.
-fn receiver_constant(function: &syntax::C0Function) -> bool {
-    receiver(function).is_some_and(syntax::C0Parameter::pointee_is_constant)
+fn receiver_constant(function: &crate::languages::interface::ImportedFunction) -> bool {
+    receiver(function)
+        .is_some_and(crate::languages::interface::ImportedParameter::pointee_is_constant)
 }
 
 impl parser::ProgramLayouts {
@@ -5369,7 +5415,7 @@ impl parser::ProgramLayouts {
                     captures
                         .iter()
                         .map(|capture| FunctionParameter {
-                            click_type: ClickType::C(capture.c_type()),
+                            click_type: ClickType::Program(capture.interface_type()),
                             name: capture.name().to_string(),
                             struct_name: None,
                             function_pointer_signature: None,
@@ -5409,14 +5455,15 @@ impl parser::ProgramLayouts {
                         .collect(),
                 );
             }
-            for c_type in function
+            for interface_type in function
                 .parameters()
                 .iter()
-                .map(|parameter| parameter.c_type())
+                .map(|parameter| parameter.interface_type())
                 .chain([function.return_type()])
             {
                 // An enum or a `Vec` a parameter or result holds or refers to.
-                if let C0Type::Parameter(enum_type) | C0Type::ParameterPointer(enum_type) = c_type
+                if let InterfaceType::Parameter(enum_type)
+                | InterfaceType::ParameterPointer(enum_type) = interface_type
                     && (enum_type.is_enum()
                         || generics::primitive_instance_of(enum_type.name()).is_some())
                 {
@@ -5435,7 +5482,7 @@ impl parser::ProgramLayouts {
                     function
                         .parameters()
                         .iter()
-                        .map(|parameter| parameter.c_type())
+                        .map(|parameter| parameter.interface_type())
                         .collect(),
                     function.return_type(),
                     function
@@ -5461,7 +5508,7 @@ impl parser::ProgramLayouts {
                             .parameters()
                             .iter()
                             .skip(usize::from(receiver(function).is_some()))
-                            .map(|parameter| parameter.c_type())
+                            .map(|parameter| parameter.interface_type())
                             .collect(),
                     });
             }
@@ -5500,12 +5547,12 @@ impl parser::ProgramLayouts {
 pub(in crate::surface) fn parse_verified_sources(
     file: &ClickFile,
     c_sources: &BTreeMap<&str, &str>,
-) -> Result<BTreeMap<String, (String, syntax::C0Function)>, ClickError> {
+) -> Result<BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>, ClickError> {
     let sources = c_sources
         .iter()
         .map(|(path, source)| (*path, *source))
         .collect::<Vec<_>>();
-    let context = CSourceContext::bundle(&sources);
+    let context = ProgramSourceContext::bundle(&sources);
     parse_verified_sources_context(file, &context)
 }
 
@@ -5528,7 +5575,7 @@ pub(in crate::surface) fn parse_verified_sources(
 /// cached was computed while the name was still in the registry. No caller
 /// joins a session today, so this is a lock rather than a code path in use.
 fn record_never_address_taken_locals(
-    parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+    parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
     session_is_fresh: bool,
 ) {
     let summary = crate::languages::c::address_taken::summarize_address_taken(
@@ -5548,8 +5595,8 @@ fn record_never_address_taken_locals(
 /// head. Its types stay the declaration's, which the head is checked against.
 fn named_by_extern_head(
     file: &ClickFile,
-    function: &syntax::C0Function,
-) -> Result<syntax::C0Function, ClickError> {
+    function: &crate::languages::interface::ImportedFunction,
+) -> Result<crate::languages::interface::ImportedFunction, ClickError> {
     if !function.has_positional_parameters() {
         return Ok(function.clone());
     }
@@ -5583,8 +5630,8 @@ fn named_by_extern_head(
 
 pub(in crate::surface) fn parse_verified_sources_context(
     file: &ClickFile,
-    c_sources: &CSourceContext<'_>,
-) -> Result<BTreeMap<String, (String, syntax::C0Function)>, ClickError> {
+    c_sources: &ProgramSourceContext<'_>,
+) -> Result<BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>, ClickError> {
     parse_verified_sources_context_with_entry(file, c_sources, ProgramEntryStorage::Build)
 }
 
@@ -5601,9 +5648,9 @@ pub(in crate::surface) enum ProgramEntryStorage {
 
 pub(in crate::surface) fn parse_verified_sources_context_with_entry(
     file: &ClickFile,
-    c_sources: &CSourceContext<'_>,
+    c_sources: &ProgramSourceContext<'_>,
     entry_storage: ProgramEntryStorage,
-) -> Result<BTreeMap<String, (String, syntax::C0Function)>, ClickError> {
+) -> Result<BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>, ClickError> {
     let build_storage = entry_storage == ProgramEntryStorage::Build;
     if file.selected_thread_runtime()
         == crate::languages::c::thread_runtime::CThreadRuntime::ModeledPthread
@@ -5707,6 +5754,11 @@ fn validate_modeled_pthread_calls(
             function_name,
             arguments,
             ..
+        }
+        | S::CallResult {
+            function_name,
+            arguments,
+            ..
         } => match function_name.as_str() {
             "pthread_create" => {
                 if arguments.len() != 4
@@ -5773,20 +5825,20 @@ fn validate_modeled_pthread_calls(
     Ok(())
 }
 
-pub(in crate::surface) fn external_c0_function(
+pub(in crate::surface) fn external_c_function(
     function_block: &FunctionBlock,
-) -> syntax::C0Function {
-    external_c0_function_with_layouts(function_block, &BTreeMap::new())
+) -> crate::languages::interface::ImportedFunction {
+    external_c_function_with_layouts(function_block, &BTreeMap::new())
 }
 
 /// The C interface of a bodiless function block. A struct passed by value
 /// carries its layout, as a parsed C declaration's parameter does: the
 /// call copies the argument into an object of that layout.
-pub(in crate::surface) fn external_c0_function_with_layouts(
+pub(in crate::surface) fn external_c_function_with_layouts(
     function_block: &FunctionBlock,
-    struct_layouts: &BTreeMap<String, syntax::C0StructLayout>,
-) -> syntax::C0Function {
-    syntax::C0Function::external(
+    struct_layouts: &BTreeMap<String, crate::languages::interface::RecordLayout>,
+) -> crate::languages::interface::ImportedFunction {
+    crate::languages::interface::ImportedFunction::external(
         function_block.signature().return_type(),
         function_block.signature().name().to_string(),
         function_block
@@ -5794,22 +5846,22 @@ pub(in crate::surface) fn external_c0_function_with_layouts(
             .parameters()
             .iter()
             .map(|parameter| {
-                let c_parameter = syntax::C0Parameter::new(
-                    parameter.c_type(),
+                let program_parameter = crate::languages::interface::ImportedParameter::new(
+                    parameter.interface_type(),
                     parameter.name().to_string(),
                     parameter.struct_name().map(str::to_string),
                 );
-                let c_parameter = match parameter
+                let program_parameter = match parameter
                     .struct_name()
-                    .filter(|_| c_parameter.is_struct_value())
+                    .filter(|_| program_parameter.is_struct_value())
                     .and_then(|name| Some((name, struct_layouts.get(name)?)))
                 {
                     Some((name, layout)) => {
-                        c_parameter.with_struct_value(name.to_string(), layout.clone())
+                        program_parameter.with_struct_value(name.to_string(), layout.clone())
                     }
-                    None => c_parameter,
+                    None => program_parameter,
                 };
-                c_parameter
+                program_parameter
                     .with_constant(parameter.is_constant())
                     .with_pointee_constant(parameter.pointee_is_constant())
                     .with_reference(parameter.is_reference())
@@ -5838,19 +5890,17 @@ fn generic_instance_example(name: &str) -> String {
 }
 
 pub(in crate::surface) fn build_function_environment(
-    parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+    parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
     function_blocks: &[FunctionBlock],
     contract_definitions: &[ContractDefinition],
     spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
-) -> Result<CExecutionEnvironment, ClickError> {
-    let mut environment = CExecutionEnvironment::new();
+) -> Result<ExecutionEnvironment, ClickError> {
+    let mut environment = ExecutionEnvironment::new();
     for definition in contract_definitions {
         let function_block = definition.function_block();
-        let parsed_function = external_c0_function_with_layouts(
-            function_block,
-            resource_environment.struct_layouts(),
-        );
+        let parsed_function =
+            external_c_function_with_layouts(function_block, resource_environment.struct_layouts());
         let InitialClaimContext {
             state, arguments, ..
         } = initial_claim_context_with_caller_owner(
@@ -5885,7 +5935,7 @@ pub(in crate::surface) fn build_function_environment(
                 ))
                 .at_declaration(definition.name())
         })?;
-        let contract = CFunctionContract::new(definition.name(), function)
+        let contract = FunctionContract::new(definition.name(), function)
             .and_then(|contract| {
                 contract.with_value_parameters(definition.value_parameters().len())
             })
@@ -5920,10 +5970,8 @@ pub(in crate::surface) fn build_function_environment(
         .filter(|block| block.is_external() && block.signature().has_abstract_types())
     {
         let name = function_block.signature().name();
-        let parsed_function = external_c0_function_with_layouts(
-            function_block,
-            resource_environment.struct_layouts(),
-        );
+        let parsed_function =
+            external_c_function_with_layouts(function_block, resource_environment.struct_layouts());
         let InitialClaimContext {
             state, arguments, ..
         } = initial_claim_context_with_caller_owner(
@@ -5955,7 +6003,7 @@ pub(in crate::surface) fn build_function_environment(
         let argument_values = arguments
             .iter()
             .map(|argument| match argument {
-                CExpression::Value(value) => Some(value.clone()),
+                ProgramExpression::Value(value) => Some(value.clone()),
                 _ => None,
             })
             .collect::<Option<Vec<_>>>()
@@ -5965,7 +6013,7 @@ pub(in crate::surface) fn build_function_environment(
                 ))
                 .at_declaration(name)
             })?;
-        crate::kernel::c_check_contract_clauses_lower(
+        crate::kernel::program_check_contract_clauses_lower(
             &function,
             &state,
             &argument_values,
@@ -6060,7 +6108,7 @@ pub(in crate::surface) fn build_function_environment(
                 // ranks calls to, and a function without an expression measure ranks
                 // none.
                 let recursion_binder = match function_block.decreases() {
-                    Some(CFunctionDecrease::Binder(binder))
+                    Some(FunctionDecrease::Binder(binder))
                         if !function_block.recursion_peers().is_empty() =>
                     {
                         Some(binder.clone())
@@ -6106,15 +6154,16 @@ pub(in crate::surface) fn build_function_environment(
                 vec![],
                 vec![],
                 vec![],
-                vec![CFunctionContractClaim::body_safety()],
+                vec![FunctionContractClaim::body_safety()],
                 true,
             );
-            let rule = crate::kernel::c_external_function_rule(no_op.clone()).ok_or_else(|| {
-                ClickError::new(format!(
-                    "object coercion `{}` cannot be applied opaquely",
-                    function.name()
-                ))
-            })?;
+            let rule =
+                crate::kernel::program_external_function_rule(no_op.clone()).ok_or_else(|| {
+                    ClickError::new(format!(
+                        "object coercion `{}` cannot be applied opaquely",
+                        function.name()
+                    ))
+                })?;
             environment = environment
                 .with_function(no_op)
                 .with_external_function_rule(rule);
@@ -6128,7 +6177,7 @@ pub(in crate::surface) fn build_function_environment(
     // building one costs an entry construction.
     let mut referenced = BTreeSet::new();
     for (_, parsed) in parsed_sources.values() {
-        referenced.extend(c0_statement_calls(parsed).into_iter().flatten());
+        referenced.extend(c_statement_calls(parsed).into_iter().flatten());
     }
     // A prepared frontend's bodiless library function keeps its prepared
     // interface, which can return a constructed record by value; the
@@ -6153,7 +6202,7 @@ pub(in crate::surface) fn build_function_environment(
         }
         let parsed_function = match prepared_interfaces.get(name) {
             Some(prepared) => (*prepared).clone(),
-            None => external_c0_function_with_layouts(
+            None => external_c_function_with_layouts(
                 function_block,
                 resource_environment.struct_layouts(),
             ),
@@ -6177,7 +6226,7 @@ pub(in crate::surface) fn build_function_environment(
             resource_environment,
         )?;
         let mut rule =
-            crate::kernel::c_external_function_rule(function.clone()).ok_or_else(|| {
+            crate::kernel::program_external_function_rule(function.clone()).ok_or_else(|| {
                 ClickError::new(format!(
                     "external function `{}` has a contract that cannot be applied opaquely{}",
                     function_block.signature().name(),
@@ -6189,7 +6238,7 @@ pub(in crate::surface) fn build_function_environment(
         // A crate trait method's interface is also the named contract its
         // implementations refine.
         if interfaces.contains(name) {
-            let contract = CFunctionContract::new(name, function.clone()).ok_or_else(|| {
+            let contract = FunctionContract::new(name, function.clone()).ok_or_else(|| {
                 ClickError::new(format!(
                     "trait method interface `{name}` has a contract that cannot be applied opaquely{}",
                     crate::surface::lowering::opaque_contract_refusal_suffix(
@@ -6222,8 +6271,8 @@ pub(in crate::surface) fn build_function_environment(
 /// assumes of whichever implementation it reaches. An interface the sidecar
 /// does not declare has no contract, so no call through it verifies.
 fn check_trait_method_implementations(
-    environment: &CExecutionEnvironment,
-    parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+    environment: &ExecutionEnvironment,
+    parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
     function_blocks: &[FunctionBlock],
 ) -> Result<(), ClickError> {
     for (_, function) in parsed_sources.values() {
@@ -6300,12 +6349,14 @@ fn check_trait_method_implementations(
         let mut refines = true;
         for contract in contracts {
             refines &= match (contract, verified_interface) {
-                (None, Some(interface)) => crate::kernel::c_function_refines_function_contract(
-                    environment,
-                    interface,
-                    implementation,
-                ),
-                (contract, _) => crate::kernel::c_function_refines_named_contract(
+                (None, Some(interface)) => {
+                    crate::kernel::program_function_refines_function_contract(
+                        environment,
+                        interface,
+                        implementation,
+                    )
+                }
+                (contract, _) => crate::kernel::program_function_refines_named_contract(
                     environment,
                     contract.unwrap_or(interface),
                     implementation,
@@ -6341,7 +6392,7 @@ fn check_trait_method_implementations(
 /// object, or a C++ class reference into its base's, and back. Each returns
 /// at once: it only moves resources.
 fn object_coercion_names(
-    parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+    parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
 ) -> impl Iterator<Item = String> + '_ {
     parsed_sources
         .values()
@@ -6360,7 +6411,7 @@ fn is_object_coercion(name: &str) -> bool {
 /// The functions that make instances of the program's capturing closures.
 /// Each returns at once: it only forms a function value.
 fn closure_instance_names(
-    parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+    parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
 ) -> impl Iterator<Item = String> + '_ {
     parsed_sources
         .values()
@@ -6377,11 +6428,11 @@ fn closure_instance_names(
 /// that contract fixed to them, so a callee requiring another contract of
 /// the value is answered by contract-to-contract refinement.
 fn with_closure_instance(
-    environment: CExecutionEnvironment,
-    closure: &CFunction,
+    environment: ExecutionEnvironment,
+    closure: &ProgramFunction,
     captures: usize,
-) -> Result<CExecutionEnvironment, ClickError> {
-    let contract = CFunctionContract::new(closure.name(), closure.clone())
+) -> Result<ExecutionEnvironment, ClickError> {
+    let contract = FunctionContract::new(closure.name(), closure.clone())
         .and_then(|contract| contract.with_leading_value_parameters(captures))
         .ok_or_else(|| {
             ClickError::new(format!(
@@ -6390,19 +6441,21 @@ fn with_closure_instance(
             ))
         })?;
     let parameters = contract.interface().value_parameters().to_vec();
-    let mut arguments = vec![SpecPredicateArgument::Value(SpecExpression::CExpression(
-        crate::kernel::c_variable(crate::kernel::C_CONTRACT_RESULT_NAME),
-    ))];
+    let mut arguments = vec![SpecPredicateArgument::Value(
+        SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
+            crate::kernel::C_CONTRACT_RESULT_NAME,
+        )),
+    )];
     arguments.extend(parameters.iter().map(|parameter| {
-        SpecPredicateArgument::Value(SpecExpression::CExpression(crate::kernel::c_variable(
-            parameter.name(),
-        )))
+        SpecPredicateArgument::Value(SpecExpression::ProgramExpression(
+            crate::kernel::program_expression::variable(parameter.name()),
+        ))
     }));
-    let instance = crate::kernel::c_function(
+    let instance = crate::kernel::program_function(
         contract.function_pointer_type(),
         crate::languages::rust::names::closure_instance_name(closure.name()),
         parameters,
-        CStatement::Skip,
+        ProgramStatement::Skip,
     )
     .with_contract(
         vec![],
@@ -6413,17 +6466,18 @@ fn with_closure_instance(
         }],
         vec![],
         vec![
-            CFunctionContractClaim::body_safety(),
-            CFunctionContractClaim::ensure_proposition(0, 0),
+            FunctionContractClaim::body_safety(),
+            FunctionContractClaim::ensure_proposition(0, 0),
         ],
         true,
     );
-    let rule = crate::kernel::c_external_function_rule(instance.clone()).ok_or_else(|| {
-        ClickError::new(format!(
-            "closure `{}` cannot be made into a function value",
-            closure.name()
-        ))
-    })?;
+    let rule =
+        crate::kernel::program_external_function_rule(instance.clone()).ok_or_else(|| {
+            ClickError::new(format!(
+                "closure `{}` cannot be made into a function value",
+                closure.name()
+            ))
+        })?;
     Ok(environment
         .with_function_contract(contract)
         .with_function(instance)
@@ -6445,10 +6499,10 @@ fn is_recognized_representation_copy_block(
 
 pub(in crate::surface) fn function_resource_summary(
     function_block: &FunctionBlock,
-    parsed_function: &syntax::C0Function,
+    parsed_function: &crate::languages::interface::ImportedFunction,
     spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
-) -> Result<(Vec<CResourceSpec>, Vec<CResourceSpec>), ClickError> {
+) -> Result<(Vec<ResourceSpec>, Vec<ResourceSpec>), ClickError> {
     let borrowed_resources = function_block
         .ensures()
         .iter()
@@ -6487,21 +6541,21 @@ pub(in crate::surface) fn function_resource_summary(
             .enumerate()
             .find(|(index, borrowed)| !borrowed_requirements[*index] && **borrowed == resource)
             .map(|(index, _)| index);
-        let role = if requires[first_spec..].iter().any(CResourceSpec::is_view)
+        let role = if requires[first_spec..].iter().any(ResourceSpec::is_view)
             || borrowed_index.is_some()
         {
             if let Some(index) = borrowed_index {
                 borrowed_requirements[index] = true;
             }
-            CResourceTransferRole::Borrow
+            ResourceTransferRole::Borrow
         } else {
-            CResourceTransferRole::Consume
+            ResourceTransferRole::Consume
         };
         for spec in &mut requires[first_spec..] {
             *spec = spec
                 .clone()
                 .with_role(role)
-                .with_snapshot(CResourceSnapshot::Entry)
+                .with_snapshot(ResourceSnapshot::Entry)
                 .with_clause_position(clause_index, clause_count);
         }
         resource_clause_index += 1;
@@ -6526,18 +6580,18 @@ pub(in crate::surface) fn function_resource_summary(
             .copied()
             .unwrap_or((ensure_clause_index, ensure_clause_count));
         let role = if ensure.borrowed() {
-            CResourceTransferRole::Borrow
+            ResourceTransferRole::Borrow
         } else {
-            CResourceTransferRole::Produce
+            ResourceTransferRole::Produce
         };
         let snapshot = if ensure.borrowed() {
-            CResourceSnapshot::Entry
+            ResourceSnapshot::Entry
         } else {
-            CResourceSnapshot::Post
+            ResourceSnapshot::Post
         };
         let result_binding = BTreeMap::from([(
             "result".to_string(),
-            ContractExpression::CFragment(CExpression::Variable(
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::C_CONTRACT_RESULT_NAME.to_string(),
             )),
         )]);
@@ -6571,8 +6625,8 @@ pub(in crate::surface) fn function_resource_summary(
                 crate::surface::lowering::elaborate_requirement_proposition(
                     ParameterBinding::new(parsed_function.parameters(), &[]),
                     guard_entry_state.get_or_init(|| {
-                        crate::kernel::initialize_c_function_globals(
-                            &CState::new(),
+                        crate::kernel::initialize_program_function_globals(
+                            &ExecutionState::new(),
                             &parsed_function.to_kernel_function(),
                         )
                     }),
@@ -6588,7 +6642,7 @@ pub(in crate::surface) fn function_resource_summary(
             // checked against the post-call instance.  Keep that exceptional
             // snapshot explicit in the normalized descriptor.
             if ensure.borrowed() && spec.is_instance() {
-                spec = spec.with_snapshot(CResourceSnapshot::Post);
+                spec = spec.with_snapshot(ResourceSnapshot::Post);
             }
             if let Some(guard) = &guard {
                 spec = spec.with_guard(guard.clone());
@@ -6599,11 +6653,11 @@ pub(in crate::surface) fn function_resource_summary(
     }
     if let Some(storage) = crate::surface::lowering::construction_result_resource(parsed_function)?
     {
-        requires.push(storage.clone().with_snapshot(CResourceSnapshot::Entry));
+        requires.push(storage.clone().with_snapshot(ResourceSnapshot::Entry));
         ensures.push(
             storage
-                .with_role(CResourceTransferRole::Produce)
-                .with_snapshot(CResourceSnapshot::Post),
+                .with_role(ResourceTransferRole::Produce)
+                .with_snapshot(ResourceSnapshot::Post),
         );
     }
     if parsed_function.requires_read_only_contract()
@@ -6623,14 +6677,14 @@ pub(in crate::surface) fn function_resource_summary(
 
 pub(in crate::surface) fn function_resource_constructors(
     function_block: &FunctionBlock,
-) -> Result<Vec<CResourceSpec>, ClickError> {
+) -> Result<Vec<ResourceSpec>, ClickError> {
     function_block
         .constructs()
         .iter()
         .map(|resource| {
             let result_binding = BTreeMap::from([(
                 "result".to_string(),
-                ContractExpression::CFragment(CExpression::Variable(
+                ContractExpression::ProgramExpression(ProgramExpression::Variable(
                     crate::kernel::C_CONTRACT_RESULT_NAME.to_string(),
                 )),
             )]);
@@ -6644,8 +6698,8 @@ pub(in crate::surface) fn function_resource_constructors(
                 &resource,
                 &[],
                 None,
-                CResourceTransferRole::Produce,
-                CResourceSnapshot::Current,
+                ResourceTransferRole::Produce,
+                ResourceSnapshot::Current,
                 None,
             )
         })
@@ -6673,7 +6727,7 @@ pub(in crate::surface) fn ordinary_abstract_families(
                         | "publisher"
                         | "subscriber"
                 )
-                && definition.name() != crate::kernel::CResourceFact::ALLOCATION_RESOURCE_NAME
+                && definition.name() != crate::kernel::ResourceFact::ALLOCATION_RESOURCE_NAME
         })
         .map(|definition| definition.name().to_string())
         .collect()
@@ -6682,7 +6736,7 @@ pub(in crate::surface) fn ordinary_abstract_families(
 pub(in crate::surface) fn composite_resource_definitions(
     resource_environment: &ResourceEnvironment,
     spec_definitions: SpecDefinitions<'_>,
-) -> Result<Vec<CCompositeResourceDefinition>, ClickError> {
+) -> Result<Vec<CompositeResourceDefinition>, ClickError> {
     let mut definitions = Vec::new();
     let mut fold_sources = resource_environment
         .fold_sources
@@ -6717,8 +6771,8 @@ pub(in crate::surface) fn composite_resource_definitions(
             .parameters()
             .iter()
             .map(|parameter| {
-                syntax::C0Parameter::new(
-                    parameter.c_type(),
+                crate::languages::interface::ImportedParameter::new(
+                    parameter.interface_type(),
                     parameter.name().to_string(),
                     parameter.struct_name().map(str::to_string),
                 )
@@ -6745,9 +6799,9 @@ pub(in crate::surface) fn composite_resource_definitions(
             .parameters()
             .iter()
             .map(|parameter| {
-                crate::kernel::CParameter::new(
+                crate::kernel::ProgramParameter::new(
                     parameter.name(),
-                    parameter.c_type().to_kernel_type(),
+                    parameter.interface_type().to_kernel_type(),
                 )
             })
             .collect();
@@ -6769,7 +6823,10 @@ pub(in crate::surface) fn composite_resource_definitions(
             .witnesses()
             .iter()
             .map(|witness| {
-                crate::kernel::CParameter::new(witness.name(), witness.c_type().to_kernel_type())
+                crate::kernel::ProgramParameter::new(
+                    witness.name(),
+                    witness.interface_type().to_kernel_type(),
+                )
             })
             .collect();
         let facts_read_counts = body.facts().iter().any(proposition_contains_resource_count);
@@ -6848,8 +6905,8 @@ pub(in crate::surface) fn composite_resource_definitions(
                     .parameters()
                     .iter()
                     .map(|parameter| {
-                        syntax::C0Parameter::new(
-                            parameter.c_type(),
+                        crate::languages::interface::ImportedParameter::new(
+                            parameter.interface_type(),
                             parameter.name().to_string(),
                             parameter.struct_name().map(str::to_string),
                         )
@@ -6880,7 +6937,7 @@ pub(in crate::surface) fn composite_resource_definitions(
                     .ok_or_else(|| ClickError::new("unknown resource match constructor"))?
                     .fields
                     .clone();
-                arms.push(crate::kernel::CResourceMatchArm {
+                arms.push(crate::kernel::ResourceMatchArm {
                     children,
                     variant,
                     bindings: bindings.into_iter().map(|(name, _)| name).collect(),
@@ -6890,7 +6947,7 @@ pub(in crate::surface) fn composite_resource_definitions(
                     facts,
                 });
             }
-            Some(crate::kernel::CResourceMatchBody {
+            Some(crate::kernel::ResourceMatchBody {
                 field_index,
                 algebraic_type: algebraic_type.clone(),
                 arms,
@@ -6912,7 +6969,7 @@ pub(in crate::surface) fn composite_resource_definitions(
             })
         });
         definitions.push(
-            CCompositeResourceDefinition::new(
+            CompositeResourceDefinition::new(
                 definition.name(),
                 parameters,
                 condition,
@@ -6934,8 +6991,8 @@ pub(in crate::surface) fn composite_resource_definitions(
                             parameter,
                             &definition_parameters,
                             None,
-                            CResourceTransferRole::Borrow,
-                            CResourceSnapshot::Current,
+                            ResourceTransferRole::Borrow,
+                            ResourceSnapshot::Current,
                             None,
                         )
                     })
@@ -6971,16 +7028,16 @@ pub(in crate::surface) fn composite_resource_definitions(
 
 pub(in crate::surface) fn append_entry_resource_specs(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
+    parameters: &[crate::languages::interface::ImportedParameter],
     _resource_environment: &ResourceEnvironment,
-    specs: &mut Vec<CResourceSpec>,
+    specs: &mut Vec<ResourceSpec>,
 ) -> Result<(), ClickError> {
     specs.extend(resource_clause_to_resource_specs_with_metadata(
         resource,
         parameters,
         None,
-        CResourceTransferRole::Borrow,
-        CResourceSnapshot::Entry,
+        ResourceTransferRole::Borrow,
+        ResourceSnapshot::Entry,
         None,
     )?);
     Ok(())
@@ -6988,16 +7045,16 @@ pub(in crate::surface) fn append_entry_resource_specs(
 
 pub(in crate::surface) fn append_entry_resource_specs_with_pointer_types(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
-    pointer_element_types: &BTreeMap<String, crate::kernel::CType>,
-    specs: &mut Vec<CResourceSpec>,
+    parameters: &[crate::languages::interface::ImportedParameter],
+    pointer_element_types: &BTreeMap<String, crate::kernel::ProgramType>,
+    specs: &mut Vec<ResourceSpec>,
 ) -> Result<(), ClickError> {
     specs.extend(resource_clause_to_resource_specs_with_metadata(
         resource,
         parameters,
         None,
-        CResourceTransferRole::Borrow,
-        CResourceSnapshot::Entry,
+        ResourceTransferRole::Borrow,
+        ResourceSnapshot::Entry,
         Some(pointer_element_types),
     )?);
     Ok(())
@@ -7005,12 +7062,12 @@ pub(in crate::surface) fn append_entry_resource_specs_with_pointer_types(
 
 fn resource_clause_to_resource_specs_with_metadata(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
-    result_type: Option<crate::kernel::CType>,
-    role: crate::kernel::CResourceTransferRole,
-    snapshot: crate::kernel::CResourceSnapshot,
-    pointer_element_types: Option<&BTreeMap<String, crate::kernel::CType>>,
-) -> Result<Vec<CResourceSpec>, ClickError> {
+    parameters: &[crate::languages::interface::ImportedParameter],
+    result_type: Option<crate::kernel::ProgramType>,
+    role: crate::kernel::ResourceTransferRole,
+    snapshot: crate::kernel::ResourceSnapshot,
+    pointer_element_types: Option<&BTreeMap<String, crate::kernel::ProgramType>>,
+) -> Result<Vec<ResourceSpec>, ClickError> {
     if let ResourceClause::MemoryAggregate { access, segments } = resource {
         return segments
             .iter()
@@ -7059,24 +7116,24 @@ fn resource_clause_to_resource_specs_with_metadata(
 
 fn resource_clause_to_resource_spec_with_parameters(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
-    result_type: Option<crate::kernel::CType>,
-) -> Result<CResourceSpec, ClickError> {
+    parameters: &[crate::languages::interface::ImportedParameter],
+    result_type: Option<crate::kernel::ProgramType>,
+) -> Result<ResourceSpec, ClickError> {
     resource_clause_to_resource_spec_with_metadata(
         resource,
         parameters,
         result_type,
-        crate::kernel::CResourceTransferRole::Borrow,
-        crate::kernel::CResourceSnapshot::Entry,
+        crate::kernel::ResourceTransferRole::Borrow,
+        crate::kernel::ResourceSnapshot::Entry,
         None,
     )
 }
 
 fn resource_clause_to_resource_spec_for_body(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
-    result_type: Option<crate::kernel::CType>,
-) -> Result<CResourceSpec, ClickError> {
+    parameters: &[crate::languages::interface::ImportedParameter],
+    result_type: Option<crate::kernel::ProgramType>,
+) -> Result<ResourceSpec, ClickError> {
     // Scalar model fields are bound by the instance-body evaluator, just as
     // they are for memory endpoints and child arguments. Keep this spelling
     // local to bodies: a field read in an ordinary contract still requires
@@ -7085,7 +7142,7 @@ fn resource_clause_to_resource_spec_for_body(
     let resource = if let ResourceClause::Quantified { quantity, resource } = resource {
         let no_values = BTreeMap::new();
         let substitutions =
-            crate::surface::lowering::ContractSubstitutions::with_body_fields_as_c_names(
+            crate::surface::lowering::ContractSubstitutions::with_body_fields_as_program_names(
                 &no_values,
             );
         lowered_quantity = ResourceClause::Quantified {
@@ -7107,16 +7164,14 @@ fn resource_clause_to_resource_spec_for_body(
             ));
         }
         ResourceClause::Named { .. } | ResourceClause::Quantified { .. } => {
-            CResourceTransferRole::Consume
+            ResourceTransferRole::Consume
         }
-        ResourceClause::ViewMemory(_) => CResourceTransferRole::Borrow,
-        ResourceClause::OwnMemory(_) | ResourceClause::Iterated(_) => {
-            CResourceTransferRole::Consume
-        }
+        ResourceClause::ViewMemory(_) => ResourceTransferRole::Borrow,
+        ResourceClause::OwnMemory(_) | ResourceClause::Iterated(_) => ResourceTransferRole::Consume,
         ResourceClause::MemoryAggregate { access, .. }
         | ResourceClause::Declared { access, .. } => match access {
-            ResourceAccessMode::Own => CResourceTransferRole::Consume,
-            ResourceAccessMode::View => CResourceTransferRole::Borrow,
+            ResourceAccessMode::Own => ResourceTransferRole::Consume,
+            ResourceAccessMode::View => ResourceTransferRole::Borrow,
         },
     };
     resource_clause_to_resource_spec_with_metadata(
@@ -7124,19 +7179,19 @@ fn resource_clause_to_resource_spec_for_body(
         parameters,
         result_type,
         role,
-        CResourceSnapshot::Current,
+        ResourceSnapshot::Current,
         None,
     )
 }
 
 fn resource_clause_to_resource_spec_with_metadata(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
-    result_type: Option<crate::kernel::CType>,
-    role: crate::kernel::CResourceTransferRole,
-    snapshot: crate::kernel::CResourceSnapshot,
-    pointer_element_types: Option<&BTreeMap<String, crate::kernel::CType>>,
-) -> Result<CResourceSpec, ClickError> {
+    parameters: &[crate::languages::interface::ImportedParameter],
+    result_type: Option<crate::kernel::ProgramType>,
+    role: crate::kernel::ResourceTransferRole,
+    snapshot: crate::kernel::ResourceSnapshot,
+    pointer_element_types: Option<&BTreeMap<String, crate::kernel::ProgramType>>,
+) -> Result<ResourceSpec, ClickError> {
     match resource {
         ResourceClause::Conditional { .. } => Err(ClickError::new(
             "conditional resource assertions require loop-contract lowering",
@@ -7152,15 +7207,15 @@ fn resource_clause_to_resource_spec_with_metadata(
             )?;
             if matches!(
                 inner.term(),
-                crate::kernel::CResourceTerm::MutexGuard { .. }
-                    | crate::kernel::CResourceTerm::MutexLive { .. }
-                    | crate::kernel::CResourceTerm::MutexUse { .. }
+                crate::kernel::ResourceTerm::MutexGuard { .. }
+                    | crate::kernel::ResourceTerm::MutexLive { .. }
+                    | crate::kernel::ResourceTerm::MutexUse { .. }
             ) {
                 return inner
                     .with_mutex_authority_binding(binding.identity, binding.name.clone())
                     .map_err(|error| ClickError::new(error.to_string()));
             }
-            CResourceSpec::instance(
+            ResourceSpec::instance(
                 binding.identity,
                 binding.name.clone(),
                 binding.schema.clone().ok_or_else(|| {
@@ -7182,11 +7237,11 @@ fn resource_clause_to_resource_spec_with_metadata(
                 pointer_element_types,
             )?;
             let (quantity, quantity_snapshot) =
-                crate::surface::lowering::resource_argument_to_typed_c_expression_with_snapshot(
+                crate::surface::lowering::resource_argument_to_typed_program_expression_with_snapshot(
                     quantity,
-                    syntax::C0Type::Int32,
+                    crate::languages::interface::InterfaceType::Int32,
                 )?;
-            CResourceSpec::quantified_with_quantity_snapshot(
+            ResourceSpec::quantified_with_quantity_snapshot(
                 quantity,
                 inner,
                 role,
@@ -7195,8 +7250,8 @@ fn resource_clause_to_resource_spec_with_metadata(
             )
             .map_err(|error| ClickError::new(error.to_string()))
         }
-        ResourceClause::ViewMemory(segment) => Ok(CResourceSpec::memory(
-            CMemorySegment::new(
+        ResourceClause::ViewMemory(segment) => Ok(ResourceSpec::memory(
+            MemorySegment::new(
                 segment.base.clone(),
                 segment.start.clone(),
                 segment.end.clone(),
@@ -7212,12 +7267,12 @@ fn resource_clause_to_resource_spec_with_metadata(
             .with_value_runs(crate::surface::lowering::contract_segment_value_runs(
                 parameters, segment,
             )),
-            CResourceAccessMode::View,
+            KernelResourceAccessMode::View,
             role,
             snapshot,
         )),
-        ResourceClause::OwnMemory(segment) => Ok(CResourceSpec::memory(
-            CMemorySegment::new(
+        ResourceClause::OwnMemory(segment) => Ok(ResourceSpec::memory(
+            MemorySegment::new(
                 segment.base.clone(),
                 segment.start.clone(),
                 segment.end.clone(),
@@ -7234,19 +7289,19 @@ fn resource_clause_to_resource_spec_with_metadata(
             .with_value_runs(crate::surface::lowering::contract_segment_value_runs(
                 parameters, segment,
             )),
-            CResourceAccessMode::Own,
+            KernelResourceAccessMode::Own,
             role,
             snapshot,
         )),
         ResourceClause::MemoryAggregate { .. } => Err(ClickError::new(
             "aggregate resource clauses must be expanded before one resource spec is required",
         )),
-        ResourceClause::Iterated(clause) => CResourceSpec::new(
-            crate::kernel::CResourceTerm::Iterated(Box::new(
+        ResourceClause::Iterated(clause) => ResourceSpec::new(
+            crate::kernel::ResourceTerm::Iterated(Box::new(
                 crate::surface::lowering::iterated_clause_to_spec(clause, parameters)?,
             )),
-            CResourceAccessMode::Own,
-            crate::kernel::CResourceQuantity::One,
+            KernelResourceAccessMode::Own,
+            crate::kernel::ResourceQuantity::One,
             role,
             snapshot,
         )
@@ -7274,7 +7329,7 @@ fn resource_clause_to_resource_spec_with_metadata(
                 .iter()
                 .zip(parameter_types)
                 .map(|(argument, parameter_type)| {
-                    crate::surface::lowering::resource_argument_to_typed_c_expression_with_snapshot(
+                    crate::surface::lowering::resource_argument_to_typed_program_expression_with_snapshot(
                         argument,
                         *parameter_type,
                     )
@@ -7284,7 +7339,7 @@ fn resource_clause_to_resource_spec_with_metadata(
                 lowered_arguments.into_iter().unzip();
             let parameter_types = parameter_types
                 .iter()
-                .map(|c_type| c_type.to_kernel_type())
+                .map(|interface_type| interface_type.to_kernel_type())
                 .collect();
             if name == "authority" {
                 let [protected] = resource_type_arguments.as_slice() else {
@@ -7335,17 +7390,17 @@ fn resource_clause_to_resource_spec_with_metadata(
                         .map(crate::surface::diagnostics::describe_contract_expression)
                         .collect(),
                 );
-                return CResourceSpec::new(
-                    crate::kernel::CResourceTerm::PopulationAuthority {
+                return ResourceSpec::new(
+                    crate::kernel::ResourceTerm::PopulationAuthority {
                         population_arity,
-                        protected: Box::new(crate::kernel::CResourceTypeSpec {
+                        protected: Box::new(crate::kernel::ResourceTypeSpec {
                             resource: Box::new(protected_spec),
                             schema: schema.clone(),
                         }),
                         snapshot,
                     },
                     access,
-                    crate::kernel::CResourceQuantity::One,
+                    crate::kernel::ResourceQuantity::One,
                     role,
                     snapshot,
                 )
@@ -7355,13 +7410,13 @@ fn resource_clause_to_resource_spec_with_metadata(
                 let [mutex] = arguments.as_slice() else {
                     return Err(ClickError::new("mutex_guard expects one mutex pointer"));
                 };
-                return CResourceSpec::new(
-                    crate::kernel::CResourceTerm::MutexGuard {
+                return ResourceSpec::new(
+                    crate::kernel::ResourceTerm::MutexGuard {
                         mutex: Box::new(mutex.clone()),
                         snapshot: argument_snapshots[0],
                     },
                     access,
-                    crate::kernel::CResourceQuantity::One,
+                    crate::kernel::ResourceQuantity::One,
                     role,
                     snapshot,
                 )
@@ -7371,13 +7426,13 @@ fn resource_clause_to_resource_spec_with_metadata(
                 let [mutex] = arguments.as_slice() else {
                     return Err(ClickError::new("mutex_live expects one mutex pointer"));
                 };
-                return CResourceSpec::new(
-                    crate::kernel::CResourceTerm::MutexLive {
+                return ResourceSpec::new(
+                    crate::kernel::ResourceTerm::MutexLive {
                         mutex: Box::new(mutex.clone()),
                         snapshot: argument_snapshots[0],
                     },
                     access,
-                    crate::kernel::CResourceQuantity::One,
+                    crate::kernel::ResourceQuantity::One,
                     role,
                     snapshot,
                 )
@@ -7401,7 +7456,7 @@ fn resource_clause_to_resource_spec_with_metadata(
                         "{name} requires the published resource type"
                     )));
                 };
-                let payload = crate::kernel::CResourceTypeSpec {
+                let payload = crate::kernel::ResourceTypeSpec {
                     resource: Box::new(
                         resource_clause_to_resource_spec_with_metadata(
                             payload,
@@ -7420,15 +7475,15 @@ fn resource_clause_to_resource_spec_with_metadata(
                     ),
                     schema: schema.clone(),
                 };
-                return CResourceSpec::new(
-                    crate::kernel::CResourceTerm::Publication {
+                return ResourceSpec::new(
+                    crate::kernel::ResourceTerm::Publication {
                         side,
                         payload: Box::new(payload),
                         flag: Box::new(flag.clone()),
                         snapshot: argument_snapshots[0],
                     },
                     access,
-                    crate::kernel::CResourceQuantity::One,
+                    crate::kernel::ResourceQuantity::One,
                     role,
                     snapshot,
                 )
@@ -7438,11 +7493,11 @@ fn resource_clause_to_resource_spec_with_metadata(
                 let [mutex] = arguments.as_slice() else {
                     return Err(ClickError::new("mutex_use expects one mutex pointer"));
                 };
-                return CResourceSpec::new(
-                    crate::kernel::CResourceTerm::MutexUse {
+                return ResourceSpec::new(
+                    crate::kernel::ResourceTerm::MutexUse {
                         protected: resource_type_arguments.first().map(|resource| {
                             let ResourceClause::Declared { type_schema: Some(schema), .. } = resource else { return Err(ClickError::new("protected resource type has no checked schema")); };
-                            Ok(Box::new(crate::kernel::CResourceTypeSpec {
+                            Ok(Box::new(crate::kernel::ResourceTypeSpec {
                                 resource: Box::new(resource_clause_to_resource_spec_with_metadata(resource, parameters, result_type, role, snapshot, pointer_element_types,
 )?.with_source_arguments(match resource {
                                     ResourceClause::Declared { arguments, .. } => arguments.iter().map(crate::surface::diagnostics::describe_contract_expression).collect(),
@@ -7455,13 +7510,13 @@ fn resource_clause_to_resource_spec_with_metadata(
                         snapshot: argument_snapshots[0],
                     },
                     access,
-                    crate::kernel::CResourceQuantity::One,
+                    crate::kernel::ResourceQuantity::One,
                     role,
                     snapshot,
                 )
                 .map_err(|error| ClickError::new(error.to_string()));
             }
-            CResourceSpec::declared_with_argument_snapshots(
+            ResourceSpec::declared_with_argument_snapshots(
                 match kind {
                     ResourceKind::Composite => ResourceFamily::Composite,
                     ResourceKind::Token => ResourceFamily::Token,
@@ -7623,12 +7678,12 @@ pub(in crate::surface) fn substitute_contract_segment(
             base, start, end, ..
         } = &surface
     {
-        let lower = |original: &CExpression, source: &ContractExpression| {
-            let rewritten = substitute_c_fragment_in(original, substitutions)?;
+        let lower = |original: &ProgramExpression, source: &ContractExpression| {
+            let rewritten = substitute_program_expression_in(original, substitutions)?;
             if rewritten == *original {
                 return Ok(original.clone());
             }
-            crate::surface::lowering::resource_argument_to_c_expression(source)
+            crate::surface::lowering::resource_argument_to_program_expression(source)
                 .map_err(|error| error.message().to_string())
         };
         return Ok(ContractSegment {
@@ -7643,32 +7698,32 @@ pub(in crate::surface) fn substitute_contract_segment(
     Ok(ContractSegment {
         uninitialized: segment.uninitialized,
         state: segment.state,
-        base: substitute_c_fragment_in(&segment.base, substitutions)?,
-        start: substitute_c_fragment_in(&segment.start, substitutions)?,
-        end: substitute_c_fragment_in(&segment.end, substitutions)?,
+        base: substitute_program_expression_in(&segment.base, substitutions)?,
+        start: substitute_program_expression_in(&segment.start, substitutions)?,
+        end: substitute_program_expression_in(&segment.end, substitutions)?,
         surface,
     })
 }
 
 pub(in crate::surface) fn resource_clause_to_resource_spec(
     resource: &ResourceClause,
-) -> Result<CResourceSpec, ClickError> {
+) -> Result<ResourceSpec, ClickError> {
     resource_clause_to_resource_spec_with_metadata(
         resource,
         &[],
         None,
-        crate::kernel::CResourceTransferRole::Borrow,
-        crate::kernel::CResourceSnapshot::Current,
+        crate::kernel::ResourceTransferRole::Borrow,
+        crate::kernel::ResourceSnapshot::Current,
         None,
     )
 }
 
 pub(in crate::surface) fn resource_access_to_kernel(
     access: ResourceAccessMode,
-) -> CResourceAccessMode {
+) -> KernelResourceAccessMode {
     match access {
-        ResourceAccessMode::Own => CResourceAccessMode::Own,
-        ResourceAccessMode::View => CResourceAccessMode::View,
+        ResourceAccessMode::Own => KernelResourceAccessMode::Own,
+        ResourceAccessMode::View => KernelResourceAccessMode::View,
     }
 }
 
@@ -7703,8 +7758,8 @@ pub(in crate::surface) fn implication_body(proposition: &Proposition) -> &Propos
 /// never compares executions structurally; two equal executions from
 /// separate proofs are merely both checked.
 pub(in crate::surface) fn distinct_checked_executions(
-    verified: &[VerifiedCTheorem],
-) -> Vec<&Arc<CCheckedFunctionExecution>> {
+    verified: &[VerifiedProgramTheorem],
+) -> Vec<&Arc<CheckedFunctionExecution>> {
     let mut seen = BTreeSet::new();
     verified
         .iter()
@@ -7722,11 +7777,11 @@ pub(in crate::surface) fn assumptions_from_propositions(
 /// `parsed_function` with the block's contract value parameters after its C
 /// parameters, as the block's signature has them. Lowering the contract
 /// reads them as it reads the C parameters; the lowered function moves them
-/// back out ([`crate::kernel::CFunction::with_trailing_value_parameters`]).
+/// back out ([`crate::kernel::ProgramFunction::with_trailing_value_parameters`]).
 pub(in crate::surface) fn witnessed_function<'a>(
-    parsed_function: &'a syntax::C0Function,
+    parsed_function: &'a crate::languages::interface::ImportedFunction,
     function_block: &FunctionBlock,
-) -> std::borrow::Cow<'a, syntax::C0Function> {
+) -> std::borrow::Cow<'a, crate::languages::interface::ImportedFunction> {
     if function_block.witness_count() == 0
         || parsed_function.parameters().len() == function_block.signature().parameters().len()
     {
@@ -7738,7 +7793,11 @@ pub(in crate::surface) fn witnessed_function<'a>(
                 [function_block.signature().parameters().len() - function_block.witness_count()..]
                 .iter()
                 .map(|parameter| {
-                    syntax::C0Parameter::new(parameter.c_type(), parameter.name().to_string(), None)
+                    crate::languages::interface::ImportedParameter::new(
+                        parameter.interface_type(),
+                        parameter.name().to_string(),
+                        None,
+                    )
                 }),
         ),
     )
@@ -7750,7 +7809,7 @@ pub(in crate::surface) fn witnessed_function<'a>(
 pub(in crate::surface) fn check_signature(
     signature: &FunctionSignature,
     witness_count: usize,
-    parsed_function: &syntax::C0Function,
+    parsed_function: &crate::languages::interface::ImportedFunction,
     source_path: &str,
 ) -> Result<(), ClickError> {
     let c_parameters = &signature.parameters()[..signature.parameters().len() - witness_count];
@@ -7798,7 +7857,7 @@ pub(in crate::surface) fn check_signature(
         .zip(parsed_function.parameters())
         .enumerate()
     {
-        if expected.c_type() != actual.c_type()
+        if expected.interface_type() != actual.interface_type()
             || expected.pointee_is_constant() != actual.pointee_is_constant()
             || expected.is_reference() != actual.is_reference()
             || expected.name() != actual.name()
@@ -7810,14 +7869,14 @@ pub(in crate::surface) fn check_signature(
                 signature.name(),
                 index + 1,
                 describe_parameter_type(
-                    expected.c_type(),
+                    expected.interface_type(),
                     expected.struct_name(),
                     expected.pointee_is_constant(),
                     expected.is_reference(),
                 ),
                 written_parameter_name(expected.name(), expected.is_reference()),
                 describe_parameter_type(
-                    actual.c_type(),
+                    actual.interface_type(),
                     actual.struct_name(),
                     actual.pointee_is_constant(),
                     actual.is_reference(),
@@ -7840,19 +7899,23 @@ fn written_parameter_name(name: &str, reference: bool) -> &str {
 }
 
 pub(in crate::surface) fn describe_parameter_type(
-    c_type: C0Type,
+    interface_type: InterfaceType,
     struct_name: Option<&str>,
     pointee_constant: bool,
     reference: bool,
 ) -> String {
     let parameter_type = match struct_name {
-        Some(name) if matches!(c_type, C0Type::UInt8Array(_)) => format!("struct {name}"),
+        Some(name) if matches!(interface_type, InterfaceType::UInt8Array(_)) => {
+            format!("struct {name}")
+        }
         Some(name) if reference => format!("struct {name}&"),
         Some(name) => format!("struct {name}*"),
-        None if matches!(c_type, C0Type::FunctionPointer(_)) => describe_c0_type(c_type),
-        None => match c_type.pointee_type().filter(|_| reference) {
+        None if matches!(interface_type, InterfaceType::FunctionPointer(_)) => {
+            describe_interface_type(interface_type)
+        }
+        None => match interface_type.pointee_type().filter(|_| reference) {
             Some(referent) => format!("{}&", referent.ranked_diagnostic_name()),
-            None => c_type.ranked_diagnostic_name(),
+            None => interface_type.ranked_diagnostic_name(),
         },
     };
     if pointee_constant {
@@ -7864,7 +7927,7 @@ pub(in crate::surface) fn describe_parameter_type(
 
 pub(in crate::surface) fn validate_region_proof_clauses(
     function_block: &FunctionBlock,
-    parsed_function: &syntax::C0Function,
+    parsed_function: &crate::languages::interface::ImportedFunction,
 ) -> Result<(), ClickError> {
     let loop_count = count_loop_regions(parsed_function);
     for region_proof_clause in function_block.structural_clauses() {
@@ -7988,9 +8051,9 @@ mod prepared_scaling_tests {
                 .map(|index| format!("int function{index}(int value) {{ return value; }}\n"))
                 .collect::<String>();
             let imports = [PreparedCImport::for_test("shared.c", &source)];
-            let sources = CSourceContext::prepared(&imports);
+            let sources = ProgramSourceContext::prepared(&imports);
             let click = "verifying \"shared.c\";\n";
-            let file = parse_c0_click_file_context(click, &sources).unwrap();
+            let file = parse_click_file_with_program_sources(click, &sources).unwrap();
             let functions = parse_verified_sources_context(&file, &sources).unwrap();
             assert_eq!(functions.len(), size);
             assert_eq!(sources.prepared_parse_count.get(), 1);
@@ -8003,10 +8066,10 @@ mod prepared_scaling_tests {
     fn prepared_translation_units_parse_once_and_cache_across_sizes() {
         for size in [16usize, 32, 64, 128] {
             let imports = imports(size);
-            let sources = CSourceContext::prepared(&imports);
+            let sources = ProgramSourceContext::prepared(&imports);
             parse_c_layouts(&click(size), &sources).expect("prepared layouts parse");
             assert_eq!(sources.prepared_parse_count.get(), size);
-            let file = parse_c0_click_file_context(&click(size), &sources)
+            let file = parse_click_file_with_program_sources(&click(size), &sources)
                 .expect("prepared click file parse");
             parse_verified_sources_context(&file, &sources)
                 .expect("prepared verified sources parse");
@@ -8024,15 +8087,15 @@ mod modeled_pthread_binding_tests {
 
     fn parse_binding(click: &str, source: &str) -> Result<(), ClickError> {
         let sources = [("fork_join.c", source)];
-        let context = CSourceContext::bundle(&sources);
-        let file = parse_c0_click_file_context(click, &context)?;
+        let context = ProgramSourceContext::bundle(&sources);
+        let file = parse_click_file_with_program_sources(click, &context)?;
         parse_verified_sources_context(&file, &context).map(|_| ())
     }
 
     #[test]
     fn frozen_calls_select_the_builtin_binding_on_mac() {
         parse_binding(CLICK, FROZEN).expect("frozen call shapes bind to the built-in projection");
-        let context = CSourceContext::bundle(&[("fork_join.c", FROZEN)]);
+        let context = ProgramSourceContext::bundle(&[("fork_join.c", FROZEN)]);
         assert_ne!(
             context.environment_identity(CTarget::X86_64LinuxUserspace),
             context.environment_identity_with_runtime(
@@ -8057,7 +8120,7 @@ mod modeled_pthread_binding_tests {
                 "verifying \"fill_range.c\";",
                 "runtime \"modeled-pthread\";\nverifying \"fork_join.c\";",
             );
-        let verified = verify_c0_sources(&click, &[("fork_join.c", FROZEN)])
+        let verified = verify_c_sources(&click, &[("fork_join.c", FROZEN)])
             .expect("the original worker proof verifies against the unchanged C source");
         assert!(!verified.is_empty());
         assert_eq!(verified[0].function_block.signature().name(), "fill_range");
@@ -8103,7 +8166,7 @@ mod modeled_pthread_binding_tests {
             .split_once("\n```")
             .unwrap()
             .0;
-        verify_c0_sources_functions(
+        verify_c_sources_functions(
             click,
             &[("guarded_resource_mutex_flow.c", c)],
             ["read_counter".to_string()],
@@ -8115,12 +8178,16 @@ mod modeled_pthread_binding_tests {
     fn source_create_status_can_be_copied_and_tested_later() {
         let c = "#include <pthread.h>\n#include <stddef.h>\nstruct cell { int value; };\nvoid *worker(void *p) { struct cell *q = p; q->value = 77; return NULL; }\nint run(struct cell *p) { pthread_t h; int rc = pthread_create(&h, NULL, worker, p); int saved = rc; int unrelated = 7; if (saved != 0) return 0; pthread_join(h, NULL); return unrelated; }\n";
         let click = "target \"x86_64-unknown-linux-gnu\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns (p as (struct cell *))->value; }\nint32 run(struct cell *p) { owns p->value; ensures result == 0 or result == 7; } by { step(); step(); step(); step(); step(); step(); step(); branch { step(); solve(); } else {} step(); step(); solve(); }\n";
-        verify_c0_sources(click, &[("fork_join.c", c)])
+        verify_c_sources(click, &[("fork_join.c", c)])
             .expect("a saved status should choose the checked create outcome");
-        let expanded =
-            expand_c0_claim_source(click, &[("fork_join.c", c)], "run", CProofClaim::Grouped)
-                .expect("delayed create status proof should expand");
-        verify_c0_sources(&expanded, &[("fork_join.c", c)])
+        let expanded = expand_c_claim_source(
+            click,
+            &[("fork_join.c", c)],
+            "run",
+            ContractProofClaim::Grouped,
+        )
+        .expect("delayed create status proof should expand");
+        verify_c_sources(&expanded, &[("fork_join.c", c)])
             .expect("expanded delayed status proof should certify");
     }
 
@@ -8128,7 +8195,7 @@ mod modeled_pthread_binding_tests {
     fn source_cannot_read_transferred_memory_before_status_and_join() {
         let c = "#include <pthread.h>\n#include <stddef.h>\nstruct cell { int value; };\nvoid *worker(void *p) { struct cell *q = p; q->value = 77; return NULL; }\nint run(struct cell *p) { pthread_t h; int rc = pthread_create(&h, NULL, worker, p); int early = p->value; if (rc != 0) return 0; pthread_join(h, NULL); return early; }\n";
         let click = "target \"x86_64-unknown-linux-gnu\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns (p as (struct cell *))->value; }\nint32 run(struct cell *p) { owns p->value; } by { step(); step(); step(); step(); step(); }\n";
-        let error = verify_c0_sources(click, &[("fork_join.c", c)])
+        let error = verify_c_sources(click, &[("fork_join.c", c)])
             .expect_err("the task memory cannot be read while creation is pending");
         assert!(
             error
@@ -8143,7 +8210,7 @@ mod modeled_pthread_binding_tests {
     fn a_session_cannot_drop_the_modeled_runtime() {
         let c = "#include <pthread.h>\nint answer(void) { return 1; }\n";
         let click = "target \"x86_64-unknown-linux-gnu\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nint32 answer() { ensures result == 1; }\n";
-        let (session, _) = C0VerificationSession::new(click, &[("fork_join.c", c)])
+        let (session, _) = ProgramVerificationSession::new(click, &[("fork_join.c", c)])
             .expect("baseline modeled proof");
         let changed = click.replace("runtime \"modeled-pthread\";\n", "");
         let error = session.verify_at(&changed, 3, 47).unwrap_err();
@@ -8171,8 +8238,8 @@ mod modeled_pthread_binding_tests {
             "# 1 \"/usr/include/pthread.h\" 1 3 4\ntypedef unsigned long pthread_t;\nint pthread_join(pthread_t thread, void **result);\n",
         );
         let imports = [import];
-        let context = CSourceContext::prepared(&imports);
-        let error = parse_c0_click_file_context(CLICK, &context)
+        let context = ProgramSourceContext::prepared(&imports);
+        let error = parse_click_file_with_program_sources(CLICK, &context)
             .and_then(|file| parse_verified_sources_context(&file, &context).map(|_| ()))
             .unwrap_err();
         assert!(
@@ -8286,10 +8353,10 @@ int32 answer() {
     #[test]
     fn direct_and_targeted_routes_attach_the_same_fixed_identity() {
         let sources = [("answer.c", C_SOURCE)];
-        let direct = verify_c0_sources(CLICK, &sources).expect("direct verification");
+        let direct = verify_c_sources(CLICK, &sources).expect("direct verification");
         let (line, column) = position(CLICK, "step_until(function.exit);");
         let targeted =
-            verify_c0_sources_at(CLICK, &sources, line, column).expect("targeted verification");
+            verify_c_sources_at(CLICK, &sources, line, column).expect("targeted verification");
         assert_eq!(direct.len(), targeted.len());
         assert_eq!(direct[0].artifact_identity, targeted[0].artifact_identity);
         assert_eq!(
@@ -8300,7 +8367,7 @@ int32 answer() {
             crate::kernel::RESOURCE_SEMANTICS_VERSION
         );
         assert!(
-            std::mem::size_of::<CProofArtifactIdentity>() <= 64,
+            std::mem::size_of::<ProofArtifactIdentity>() <= 64,
             "artifact identity must remain a fixed-size comparison token"
         );
     }
@@ -8311,8 +8378,8 @@ int32 answer() {
         let helper = PreparedCImport::for_test("helper.c", "int helper(void) { return 1; }");
         let forward_imports = [first.clone(), helper.clone()];
         let reverse_imports = [helper, first];
-        let forward = CSourceContext::prepared(&forward_imports);
-        let reverse = CSourceContext::prepared(&reverse_imports);
+        let forward = ProgramSourceContext::prepared(&forward_imports);
+        let reverse = ProgramSourceContext::prepared(&reverse_imports);
         assert_eq!(
             forward.environment_identity(CTarget::SUPPORTED),
             reverse.environment_identity(CTarget::SUPPORTED)
@@ -8321,13 +8388,13 @@ int32 answer() {
 
     /// The pre-pass must see what verification parses, not what a standalone
     /// parse produces: a name whose address the C takes has to be refused on
-    /// the exact `C0Function` values the registry is built from.
+    /// the exact `ImportedFunction` values the registry is built from.
     #[test]
     fn the_address_taken_pass_reads_the_bodies_verification_parses() {
         const C: &str = "int32* echo(int32* p) { return p; }\nvoid v4(void) { int32 x; int32* q; x = 5; q = echo(&x); x = 1; }\n";
         const SIDECAR: &str = "verifying \"a2.c\";\nint32* echo(int32* p) { ensures result == p; }\nvoid v4() { ensures 1 == 1; }\n";
         let sources = [("a2.c", C)];
-        let context = CSourceContext::bundle(&sources);
+        let context = ProgramSourceContext::bundle(&sources);
         let file = super::selected_c_target(SIDECAR)
             .and_then(|target| {
                 let layouts = parse_c_layouts_for_target(SIDECAR, &context, target)?;
@@ -8349,10 +8416,10 @@ int32 answer() {
     fn session_rejects_a_stale_identity_before_reverification() {
         let sources = [("answer.c", C_SOURCE)];
         let (mut session, _) =
-            C0VerificationSession::new(CLICK, &sources).expect("baseline verification");
+            ProgramVerificationSession::new(CLICK, &sources).expect("baseline verification");
         let (line, column) = position(CLICK, "step_until(function.exit);");
         session.environment_identity =
-            CSourceContext::bundle(&[("answer.c", "int answer(void) { return 2; }")])
+            ProgramSourceContext::bundle(&[("answer.c", "int answer(void) { return 2; }")])
                 .environment_identity(CTarget::SUPPORTED);
         let error = session
             .verify_at(CLICK, line, column)
@@ -8364,7 +8431,7 @@ int32 answer() {
     fn session_identity_survives_a_proof_only_rewrite() {
         let sources = [("answer.c", C_SOURCE)];
         let (session, baseline) =
-            C0VerificationSession::new(CLICK, &sources).expect("baseline verification");
+            ProgramVerificationSession::new(CLICK, &sources).expect("baseline verification");
         let rewritten = CLICK.replace("solve();", "solve();\n    ");
         let (line, column) = position(&rewritten, "step_until(function.exit);");
         let verified = session
@@ -8375,26 +8442,26 @@ int32 answer() {
 
     #[test]
     fn artifact_identity_binds_click_source_and_target_profile() {
-        let context = CSourceContext::bundle(&[("answer.c", C_SOURCE)]);
+        let context = ProgramSourceContext::bundle(&[("answer.c", C_SOURCE)]);
         let changed_click = context.artifact_identity("proof A", CTarget::SUPPORTED);
         let other_click = context.artifact_identity("proof B", CTarget::SUPPORTED);
         assert_ne!(changed_click, other_click);
 
         let c_digest = [1; 32];
         let click_digest = [2; 32];
-        let first_target = CProofArtifactIdentity::for_components(
+        let first_target = ProofArtifactIdentity::for_components(
             c_digest,
             click_digest,
             CTarget::X86_64LinuxKernel.name(),
         );
         let second_target =
-            CProofArtifactIdentity::for_components(c_digest, click_digest, "other-target-profile");
+            ProofArtifactIdentity::for_components(c_digest, click_digest, "other-target-profile");
         assert_ne!(first_target, second_target);
     }
 
     #[test]
     fn artifact_identity_separates_the_selected_c_targets() {
-        let context = CSourceContext::bundle(&[("answer.c", C_SOURCE)]);
+        let context = ProgramSourceContext::bundle(&[("answer.c", C_SOURCE)]);
         assert_ne!(
             context.artifact_identity(CLICK, CTarget::X86_64LinuxKernel),
             context.artifact_identity(CLICK, CTarget::X86_64LinuxUserspace)
@@ -8419,8 +8486,8 @@ int32 answer() {
 }
 "#;
         let sources = [("answer.c", C_SOURCE)];
-        let userspace = verify_c0_sources(CLICK, &sources).expect("default target verification");
-        let kernel = verify_c0_sources(KERNEL_CLICK, &sources).expect("kernel target verification");
+        let userspace = verify_c_sources(CLICK, &sources).expect("default target verification");
+        let kernel = verify_c_sources(KERNEL_CLICK, &sources).expect("kernel target verification");
         assert_eq!(kernel.len(), userspace.len());
         assert_ne!(kernel[0].artifact_identity, userspace[0].artifact_identity);
         assert_eq!(kernel[0].target(), CTarget::X86_64LinuxKernel);
@@ -8428,8 +8495,8 @@ int32 answer() {
     }
 
     fn verify_sources(click: &str, source: &str) -> Result<(), ClickError> {
-        let sources = CSourceContext::bundle(&[("reader.c", source)]);
-        verify_c0_sources_with_context(click, &sources, None, None, None, None).map(|_| ())
+        let sources = ProgramSourceContext::bundle(&[("reader.c", source)]);
+        verify_program_with_context(click, &sources, None, None, None, None).map(|_| ())
     }
 
     /// A contract input view is caller-supplied shared authority: the body
@@ -8658,8 +8725,8 @@ int32 run(int32 *q) { int32 seen = peek(table, q); return table[1]; }\n";
         header: &str,
         source: &str,
     ) -> Result<(), ClickError> {
-        let sources = CSourceContext::bundle(&[("include/h.h", header), ("t.c", source)]);
-        verify_c0_sources_with_context(click, &sources, None, None, None, None).map(|_| ())
+        let sources = ProgramSourceContext::bundle(&[("include/h.h", header), ("t.c", source)]);
+        verify_program_with_context(click, &sources, None, None, None, None).map(|_| ())
     }
 
     const INLINE_HELPERS: &str = "#ifndef H_H\n#define H_H\n\
@@ -9019,8 +9086,8 @@ int32 reader(int32 p[]) {
 }
 "#;
         let source = "int reader(int *p) { return p[0]; }";
-        let sources = CSourceContext::bundle(&[("reader.c", source)]);
-        let verified = verify_c0_sources_with_context(click, &sources, None, None, None, None)
+        let sources = ProgramSourceContext::bundle(&[("reader.c", source)]);
+        let verified = verify_program_with_context(click, &sources, None, None, None, None)
             .expect("the surface route should use the kernel's stable view semantics");
         assert!(!verified.0.is_empty());
         assert_eq!(
@@ -9072,8 +9139,8 @@ int read_view(const int *(*f)(const int *), const int *p) {{
             "ensures result == p;\n}\ntheorem",
             "ensures result == p + 1;\n}\ntheorem",
         );
-        let sources = CSourceContext::bundle(&[("main.c", ONE_CALL_THEOREM_C_SOURCE)]);
-        let error = verify_c0_sources_with_context(&click, &sources, None, None, None, None)
+        let sources = ProgramSourceContext::bundle(&[("main.c", ONE_CALL_THEOREM_C_SOURCE)]);
+        let error = verify_program_with_context(&click, &sources, None, None, None, None)
             .expect_err("an unproved target obligation must still be refused");
         assert!(
             error
@@ -9102,7 +9169,7 @@ mod retained_caller_tests {
             .iter()
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
-        let (session, _) = C0VerificationSession::new(&click, &sources).unwrap();
+        let (session, _) = ProgramVerificationSession::new(&click, &sources).unwrap();
         let position =
             expansion::position_at_offset(&click, click.find("ensures result == 16").unwrap());
         for _ in 0..2 {
@@ -9134,10 +9201,10 @@ mod retained_caller_tests {
             .collect::<Vec<_>>();
         let position =
             expansion::position_at_offset(&click, click.find("ensures result == 16").unwrap());
-        verify_c0_sources(&click, &sources).unwrap();
+        verify_c_sources(&click, &sources).unwrap();
         let _tables = crate::kernel::VerificationSession::resume();
         for _ in 0..2 {
-            verify_c0_sources_at(&click, &sources, position.line, position.column)
+            verify_c_sources_at(&click, &sources, position.line, position.column)
                 .expect("a fresh target in retained tables must keep the baseline verdict");
         }
     }
@@ -9154,51 +9221,51 @@ fn rust_enum_type_name(enum_type: crate::kernel::TypeParameterName) -> String {
     let spelling = |argument: &crate::kernel::AlgebraicValueType| -> String {
         match argument {
             // A value of a Rust type parameter is a C value of that type.
-            crate::kernel::AlgebraicValueType::C(crate::kernel::CType::Parameter(name)) => {
-                name.name().to_string()
-            }
+            crate::kernel::AlgebraicValueType::Program(crate::kernel::ProgramType::Parameter(
+                name,
+            )) => name.name().to_string(),
             // The library's `Slice<T>` is Rust's shared slice: the chunk of
             // `Option<&[u8]>`.
             crate::kernel::AlgebraicValueType::Algebraic { name, arguments }
                 if name == "Slice"
-                    && let [crate::kernel::AlgebraicValueType::C(element)] =
+                    && let [crate::kernel::AlgebraicValueType::Program(element)] =
                         arguments.as_slice() =>
             {
                 let element = match element {
-                    crate::kernel::CType::Int8 => "i8",
-                    crate::kernel::CType::Int16 => "i16",
-                    crate::kernel::CType::Int32 => "i32",
-                    crate::kernel::CType::Int64 => "i64",
-                    crate::kernel::CType::UInt8 => "u8",
-                    crate::kernel::CType::UInt16 => "u16",
-                    crate::kernel::CType::UInt32 => "u32",
-                    crate::kernel::CType::UInt64 => "usize",
+                    crate::kernel::ProgramType::Int8 => "i8",
+                    crate::kernel::ProgramType::Int16 => "i16",
+                    crate::kernel::ProgramType::Int32 => "i32",
+                    crate::kernel::ProgramType::Int64 => "i64",
+                    crate::kernel::ProgramType::UInt8 => "u8",
+                    crate::kernel::ProgramType::UInt16 => "u16",
+                    crate::kernel::ProgramType::UInt32 => "u32",
+                    crate::kernel::ProgramType::UInt64 => "usize",
                     _ => "?",
                 };
                 format!("&[{element}]")
             }
             // A crate enum payload is spelled by its name.
             crate::kernel::AlgebraicValueType::Algebraic { name, .. } => name.clone(),
-            crate::kernel::AlgebraicValueType::C(c_type) => match c_type {
-                crate::kernel::CType::Int8 => "i8",
-                crate::kernel::CType::Int16 => "i16",
-                crate::kernel::CType::Int32 => "i32",
-                crate::kernel::CType::Int64 => "i64",
-                crate::kernel::CType::UInt8 => "u8",
-                crate::kernel::CType::UInt16 => "u16",
-                crate::kernel::CType::UInt32 => "u32",
-                crate::kernel::CType::UInt64 => "usize",
-                crate::kernel::CType::Bool => "bool",
+            crate::kernel::AlgebraicValueType::Program(interface_type) => match interface_type {
+                crate::kernel::ProgramType::Int8 => "i8",
+                crate::kernel::ProgramType::Int16 => "i16",
+                crate::kernel::ProgramType::Int32 => "i32",
+                crate::kernel::ProgramType::Int64 => "i64",
+                crate::kernel::ProgramType::UInt8 => "u8",
+                crate::kernel::ProgramType::UInt16 => "u16",
+                crate::kernel::ProgramType::UInt32 => "u32",
+                crate::kernel::ProgramType::UInt64 => "usize",
+                crate::kernel::ProgramType::Bool => "bool",
                 // A shared reference to a scalar, the item of a slice
                 // iterator: `Option<&u8>`.
-                crate::kernel::CType::Int8Pointer => "&i8",
-                crate::kernel::CType::Int16Pointer => "&i16",
-                crate::kernel::CType::Int32Pointer => "&i32",
-                crate::kernel::CType::Int64Pointer => "&i64",
-                crate::kernel::CType::UInt8Pointer => "&u8",
-                crate::kernel::CType::UInt16Pointer => "&u16",
-                crate::kernel::CType::UInt32Pointer => "&u32",
-                crate::kernel::CType::UInt64Pointer => "&usize",
+                crate::kernel::ProgramType::Int8Pointer => "&i8",
+                crate::kernel::ProgramType::Int16Pointer => "&i16",
+                crate::kernel::ProgramType::Int32Pointer => "&i32",
+                crate::kernel::ProgramType::Int64Pointer => "&i64",
+                crate::kernel::ProgramType::UInt8Pointer => "&u8",
+                crate::kernel::ProgramType::UInt16Pointer => "&u16",
+                crate::kernel::ProgramType::UInt32Pointer => "&u32",
+                crate::kernel::ProgramType::UInt64Pointer => "&usize",
                 _ => "?",
             }
             .into(),

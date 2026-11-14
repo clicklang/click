@@ -10,21 +10,30 @@ use super::*;
 fn checked_callee_summary_reuse_scales_with_input_not_product() {
     let mut previous = None;
     for size in [16, 64, 256, 1024] {
-        let mut body = CStatement::Skip;
+        let mut body = ProgramStatement::Skip;
         for index in 0..size {
-            body = CStatement::seq(
+            body = ProgramStatement::seq(
                 Arc::new(body),
-                Arc::new(crate::kernel::c_call(format!("callee_{index}"), vec![])),
+                Arc::new(crate::kernel::program_call(
+                    format!("callee_{index}"),
+                    vec![],
+                )),
             );
         }
-        let summary = crate::kernel::c_while(crate::kernel::c_int32_literal(1), vec![], body);
+        let summary = crate::kernel::program_while(
+            crate::kernel::program_expression::int32_literal(1),
+            vec![],
+            body,
+        );
         let events = (0..size)
             .map(|_| {
-                CheckedExecutionEvent::Statement(Theorem::new(Proposition::CStatementVerifies {
-                    state: Box::new(CState::new()),
-                    statement: Box::new(summary.clone()),
-                    outcome: CStatementOutcome::Normal(Box::new(CState::new())),
-                }))
+                CheckedExecutionEvent::Statement(Theorem::new(
+                    Proposition::ProgramStatementVerifies {
+                        state: Box::new(ExecutionState::new()),
+                        statement: Box::new(summary.clone()),
+                        outcome: StatementOutcome::Normal(Box::new(ExecutionState::new())),
+                    },
+                ))
             })
             .collect::<Vec<_>>();
         let (calls, work) = crate::instrumentation::measure_deterministic_work(|| {

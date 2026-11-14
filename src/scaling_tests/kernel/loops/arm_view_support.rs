@@ -5,24 +5,24 @@ fn republished_arm_view_keeps_support_at_growing_context_sizes() {
     let mut costs = Vec::new();
     for size in [1, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let range = CMemoryRange::new(
+        let range = MemoryRange::new(
             Pointer::symbolic(Variable(8_390_080)),
             MachineTerm::constant(0),
             MachineTerm::constant(1),
         );
-        let owner = CResourceFact::own_memory(range.clone());
-        let view = CResourceFact::view_memory(range);
+        let owner = ResourceFact::own_memory(range.clone());
+        let view = ResourceFact::view_memory(range);
         let mut resources = ResourceContext::new()
             .unchecked_with_fact(owner.clone())
             .unchecked_with_supported_facts(&owner, std::iter::repeat_n(view.clone(), size));
         for index in 0..size {
-            resources = resources.unchecked_with_fact(CResourceFact::own(CResource::Token {
+            resources = resources.unchecked_with_fact(ResourceFact::own(Resource::Token {
                 name: format!("unrelated-{index}"),
                 arguments: vec![].into(),
             }));
         }
         let before = resources.facts().len();
-        let state = CState::new().with_resource_context(resources);
+        let state = ExecutionState::new().with_resource_context(resources);
         let (after, work) = crate::instrumentation::measure_deterministic_work(|| {
             with_arm_views_preserving_support(&state, vec![view.clone()])
         });

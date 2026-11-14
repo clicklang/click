@@ -112,7 +112,11 @@ fn shared_operand_leaf_pairs_with_policy(
                 continue;
             }
             let (a, b) = (V(left), V(right));
-            if a.fold().is_some() || b.fold().is_some() {
+            if a.fold().is_some()
+                || b.fold().is_some()
+                || a.matched().is_some()
+                || b.matched().is_some()
+            {
                 pairs.insert(
                     key,
                     machine_operand_syntax_cmp(a, b)
@@ -289,6 +293,11 @@ pub(crate) fn machine_operand_syntax_cmp(
                 then_term: zero(),
                 else_term: zero(),
             }
+        } else if let Some(matched) = view.matched() {
+            MachineTerm::AlgebraicMatch {
+                scrutinee: Box::new(matched.scrutinee.into_owned()),
+                arms: vec![],
+            }
         } else if view.fold().is_some() {
             MachineTerm::RangeFold {
                 start: zero(),
@@ -358,6 +367,20 @@ pub(crate) fn machine_operand_syntax_cmp(
             }
             pending.push(Task::Pair(ae, be));
             pending.push(Task::Pair(at, bt));
+            continue;
+        }
+        if let (Some(a), Some(b)) = (a.matched(), b.matched()) {
+            let order = a.scrutinee.cmp(&b.scrutinee);
+            if !order.is_eq() {
+                return order;
+            }
+            pending.push(Task::Order(a.arms.len().cmp(&b.arms.len())));
+            for (a, b) in a.arms.iter().zip(&b.arms).rev() {
+                pending.push(Task::Pair(a.body, b.body));
+                pending.push(Task::Order(
+                    a.variant.cmp(b.variant).then(a.bindings.cmp(&b.bindings)),
+                ));
+            }
             continue;
         }
         if let (Some((aa, ai, ac)), Some((ba, bi, bc))) = (a.fold(), b.fold()) {

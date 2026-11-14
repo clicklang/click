@@ -7,24 +7,24 @@ fn external(id: u64) -> Pointer {
         offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(id)), 4),
     }
 }
-fn copy(memory: CMemory, target: &Pointer, source: &Pointer, count: u32) -> CMemory {
+fn copy(memory: Memory, target: &Pointer, source: &Pointer, count: u32) -> Memory {
     memory
         .write_scalar_array_region(
             target,
-            CType::UInt32,
+            ProgramType::UInt32,
             count,
-            CValue::pointer(source.clone()),
+            ProgramValue::pointer(source.clone()),
             true,
             false,
             &PureFactContext::new(),
         )
         .unwrap()
 }
-fn typed_load(memory: &CMemory, pointer: &Pointer) -> CValue {
+fn typed_load(memory: &Memory, pointer: &Pointer) -> ProgramValue {
     match memory.load(pointer) {
-        CExpressionOutcome::Value(value) => value,
-        _ => CValue::UInt32(crate::kernel::eval::canonical_form_of_load(
-            crate::kernel::intern_c_memory(memory.clone()),
+        ExpressionOutcome::Value(value) => value,
+        _ => ProgramValue::UInt32(crate::kernel::eval::canonical_form_of_load(
+            crate::kernel::intern_memory(memory.clone()),
             pointer.clone(),
             crate::kernel::primitives::LoadKind::UInt32,
         )),
@@ -44,21 +44,21 @@ fn external_array_sparse_copies_forward_snapshots_and_preserve_neighbors() {
             block: "local:sparse-destination".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let before = CMemory::new()
+        let before = Memory::new()
             .with_block(target.block.clone(), count * 4)
             .with_block(destination.block.clone(), count * 4)
-            .store(source.clone(), CValue::UInt32(11u32.into()))
+            .store(source.clone(), ProgramValue::UInt32(11u32.into()))
             .store(
                 source.offset_by_bytes((count - 1) * 4),
-                CValue::UInt32(17u32.into()),
+                ProgramValue::UInt32(17u32.into()),
             );
         let middle = typed_load(&before, &source.offset_by_bytes(4));
         let memory = copy(before, &target, &source, count);
         let memory = copy(memory, &destination, &target, count);
         for (index, value) in [
-            (0, CValue::UInt32(11u32.into())),
+            (0, ProgramValue::UInt32(11u32.into())),
             (1, middle),
-            (count - 1, CValue::UInt32(17u32.into())),
+            (count - 1, ProgramValue::UInt32(17u32.into())),
         ] {
             assert_eq!(
                 typed_load(&memory, &destination.offset_by_bytes(index * 4)),
@@ -68,24 +68,27 @@ fn external_array_sparse_copies_forward_snapshots_and_preserve_neighbors() {
         assert!(memory.cells.runs().count() <= 2);
         assert!(memory.cells.concrete().len() <= 6);
         let saved = typed_load(&memory, &destination.offset_by_bytes(4));
-        let changed = memory.store(target.offset_by_bytes(4), CValue::UInt32(42u32.into()));
+        let changed = memory.store(
+            target.offset_by_bytes(4),
+            ProgramValue::UInt32(42u32.into()),
+        );
         assert_eq!(typed_load(&changed, &destination.offset_by_bytes(4)), saved);
     }
     let source = Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = (0..5).fold(CMemory::new(), |memory, index| {
+    let memory = (0..5).fold(Memory::new(), |memory, index| {
         memory.store(
             source.offset_by_bytes(index * 4),
-            CValue::UInt32((index + 1).into()),
+            ProgramValue::UInt32((index + 1).into()),
         )
     });
     let copied = copy(memory, &source.offset_by_bytes(4), &source, 3);
     for (index, value) in [(0, 1), (1, 1), (2, 2), (3, 3), (4, 5)] {
         assert_eq!(
             typed_load(&copied, &source.offset_by_bytes(index * 4)),
-            CValue::UInt32(value.into())
+            ProgramValue::UInt32(value.into())
         );
     }
 }
@@ -95,8 +98,8 @@ fn external_array_read_is_not_a_reserved_variable_occurrence() {
     let _session = crate::kernel::VerificationSession::enter();
     let source = external(932_000);
     let target = external(932_001);
-    let memory = copy(CMemory::new(), &target, &source, 1_000_000);
-    let CValue::UInt32(read) = typed_load(&memory, &target.offset_by_bytes(4)) else {
+    let memory = copy(Memory::new(), &target, &source, 1_000_000);
+    let ProgramValue::UInt32(read) = typed_load(&memory, &target.offset_by_bytes(4)) else {
         panic!("copied scalar read");
     };
     // A legacy alias for a read is not an occurrence in the copied bytes.
@@ -113,7 +116,7 @@ fn external_array_read_is_not_a_reserved_variable_occurrence() {
     });
     assert_eq!(
         typed_load(&changed, &target.offset_by_bytes(4)),
-        CValue::UInt32(read)
+        ProgramValue::UInt32(read)
     );
     assert_eq!(typed_load(&changed, &target), previous);
     assert_eq!(typed_load(&changed, &target.offset_by_bytes(8)), following);
@@ -127,27 +130,27 @@ fn external_array_snapshots_reject_invalid_storage_and_preserve_empty_semantics(
     let target = external(934_001);
     let context = PureFactContext::new();
     for (source, memory) in [
-        (source.offset_by_bytes(1), CMemory::new()),
+        (source.offset_by_bytes(1), Memory::new()),
         (
             source.clone(),
-            CMemory::new().store(source.clone(), CValue::Int32(1.into())),
+            Memory::new().store(source.clone(), ProgramValue::Int32(1.into())),
         ),
         (
             Pointer {
                 block: "local:uninitialized".into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CMemory::new().with_block("local:uninitialized", 16),
+            Memory::new().with_block("local:uninitialized", 16),
         ),
-        (Pointer::null(), CMemory::new()),
+        (Pointer::null(), Memory::new()),
     ] {
         assert!(
             memory
                 .write_scalar_array_region(
                     &target,
-                    CType::UInt32,
+                    ProgramType::UInt32,
                     4,
-                    CValue::pointer(source),
+                    ProgramValue::pointer(source),
                     true,
                     false,
                     &context
@@ -155,14 +158,14 @@ fn external_array_snapshots_reject_invalid_storage_and_preserve_empty_semantics(
                 .is_err()
         );
     }
-    assert_eq!(copy(CMemory::new(), &target, &source, 0), CMemory::new());
+    assert_eq!(copy(Memory::new(), &target, &source, 0), Memory::new());
     assert!(
-        CMemory::new()
+        Memory::new()
             .write_scalar_array_region(
                 &target,
-                CType::UInt32,
+                ProgramType::UInt32,
                 0,
-                CValue::UInt32(1u32.into()),
+                ProgramValue::UInt32(1u32.into()),
                 true,
                 false,
                 &context
@@ -187,9 +190,9 @@ fn external_array_copy_representatives_cover_source_and_destination_stem_cancell
         let run = CellRun::new_with_mode(
             target,
             4,
-            CType::UInt32,
+            ProgramType::UInt32,
             8,
-            crate::kernel::intern_c_memory(CMemory::new()),
+            crate::kernel::intern_memory(Memory::new()),
             RunValueMode::Copy {
                 source_base: source,
             },
@@ -202,7 +205,7 @@ fn external_array_copy_representatives_cover_source_and_destination_stem_cancell
                 assert!(representatives.contains(&((-shift / 4) as u32)));
             }
         }
-        let memory = CMemory::new();
+        let memory = Memory::new();
         let mut cells = (*memory.cells).clone();
         cells.add_run(run);
         assert_eq!(

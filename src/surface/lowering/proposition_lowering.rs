@@ -6,12 +6,12 @@ use crate::kernel::{bits32_constant, constant_u32, int32_constant};
 
 /// Two lowered operands whose C types have no common comparison, named by
 /// value and type rather than as kernel term dumps.
-fn incomparable_values(left: &CValue, right: &CValue) -> ClickError {
-    let describe = |value: &CValue| {
+fn incomparable_values(left: &ProgramValue, right: &ProgramValue) -> ClickError {
+    let describe = |value: &ProgramValue| {
         format!(
             "`{}` of type `{}`",
-            crate::surface::diagnostics::describe_c_value(value, ParameterBinding::default()),
-            crate::kernel::c_type_spelling(value.c_type())
+            crate::surface::diagnostics::describe_program_value(value, ParameterBinding::default()),
+            crate::kernel::program_type_spelling(value.program_type())
         )
     };
     ClickError::new(format!(
@@ -22,17 +22,17 @@ fn incomparable_values(left: &CValue, right: &CValue) -> ClickError {
 }
 
 pub(in crate::surface) fn comparison_proposition(
-    left: CValue,
+    left: ProgramValue,
     operator: ComparisonOperator,
-    right: CValue,
+    right: ProgramValue,
 ) -> Result<Proposition, ClickError> {
     let left = left.numeric_value().clone();
     let right = right.numeric_value().clone();
     let pointer_and_null = match (&left, &right) {
-        (CValue::Pointer(pointer), CValue::Int32(bits32_constant!(0))) => {
+        (ProgramValue::Pointer(pointer), ProgramValue::Int32(bits32_constant!(0))) => {
             Some((pointer.pointer().clone(), Pointer::null()))
         }
-        (CValue::Int32(int32_constant!(0)), CValue::Pointer(pointer)) => {
+        (ProgramValue::Int32(int32_constant!(0)), ProgramValue::Pointer(pointer)) => {
             Some((Pointer::null(), pointer.pointer().clone()))
         }
         _ => None,
@@ -52,8 +52,10 @@ pub(in crate::surface) fn comparison_proposition(
             value,
         ));
     }
-    if let (CValue::Pointer(left), CValue::Pointer(right)) = (&left, &right)
-        && (left.c_type().pointer_types_compatible(right.c_type())
+    if let (ProgramValue::Pointer(left), ProgramValue::Pointer(right)) = (&left, &right)
+        && (left
+            .program_type()
+            .pointer_types_compatible(right.program_type())
             || left.is_null()
             || right.is_null())
     {
@@ -77,7 +79,7 @@ pub(in crate::surface) fn comparison_proposition(
             value,
         ));
     }
-    if matches!(left, CValue::UInt64(_)) || matches!(right, CValue::UInt64(_)) {
+    if matches!(left, ProgramValue::UInt64(_)) || matches!(right, ProgramValue::UInt64(_)) {
         let (Some(left), Some(right)) = (promoted_uint64_term(&left), promoted_uint64_term(&right))
         else {
             return Err(incomparable_values(&left, &right));
@@ -99,7 +101,7 @@ pub(in crate::surface) fn comparison_proposition(
             !matches!(operator, ComparisonOperator::NotEqual),
         ));
     }
-    if matches!(left, CValue::Int64(_)) || matches!(right, CValue::Int64(_)) {
+    if matches!(left, ProgramValue::Int64(_)) || matches!(right, ProgramValue::Int64(_)) {
         let (Some(left), Some(right)) = (promoted_int64_term(&left), promoted_int64_term(&right))
         else {
             return Err(incomparable_values(&left, &right));
@@ -126,18 +128,19 @@ pub(in crate::surface) fn comparison_proposition(
         ));
     }
     // A 32-bit comparison reads its operands at its own format, as the
-    // kernel's specification comparisons do (`c_value_word32_term`).
+    // kernel's specification comparisons do (`program_value_word32_term`).
     let unsigned = matches!(
         (&left, &right),
-        (CValue::UInt32(_), _) | (_, CValue::UInt32(_))
+        (ProgramValue::UInt32(_), _) | (_, ProgramValue::UInt32(_))
     );
     let format = if unsigned {
         MachineIntegerType::UInt32
     } else {
         MachineIntegerType::Int32
     };
-    let word = |value: &CValue| {
-        crate::kernel::c_value_word32_term(value, format).map(|term| normalize_bitvector(&term))
+    let word = |value: &ProgramValue| {
+        crate::kernel::program_value_word32_term(value, format)
+            .map(|term| normalize_bitvector(&term))
     };
     if let (Some(left_term), Some(right_term)) = (word(&left), word(&right)) {
         let Some((condition, value)) =
@@ -159,56 +162,58 @@ pub(in crate::surface) fn spec_range_membership_proposition(
     SpecProposition::And(
         Box::new(SpecProposition::Comparison {
             left: start,
-            operator: CComparisonOperator::LessEqual,
+            operator: KernelComparisonOperator::LessEqual,
             right: item.clone(),
         }),
         Box::new(SpecProposition::Comparison {
             left: item,
-            operator: CComparisonOperator::LessThan,
+            operator: KernelComparisonOperator::LessThan,
             right: end,
         }),
     )
 }
 
-fn promoted_int64_term(value: &CValue) -> Option<MachineTerm> {
+fn promoted_int64_term(value: &ProgramValue) -> Option<MachineTerm> {
     match value.numeric_value() {
-        CValue::PointerInteger(_) => unreachable!("numeric projection"),
-        CValue::Int64(bits) => Some(bits.clone()),
-        CValue::Bool(bits) => Some(MachineTerm::int64_from_32(bits.clone())),
-        CValue::Int8(bits) => Some(MachineTerm::int64_from_32(bits.clone())),
-        CValue::Int16(bits) | CValue::Int32(bits) | CValue::UInt8(bits) | CValue::UInt16(bits) => {
-            Some(MachineTerm::int64_from_32(bits.clone()))
-        }
-        CValue::UInt32(bits) => Some(MachineTerm::int64_from_uint32(bits.clone())),
-        CValue::Int128(_)
-        | CValue::UInt128(_)
-        | CValue::Void
-        | CValue::UInt64(_)
-        | CValue::Pointer(_)
-        | CValue::Parameter(_)
-        | CValue::Float32(_)
-        | CValue::Float64(_) => None,
+        ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
+        ProgramValue::Int64(bits) => Some(bits.clone()),
+        ProgramValue::Bool(bits) => Some(MachineTerm::int64_from_32(bits.clone())),
+        ProgramValue::Int8(bits) => Some(MachineTerm::int64_from_32(bits.clone())),
+        ProgramValue::Int16(bits)
+        | ProgramValue::Int32(bits)
+        | ProgramValue::UInt8(bits)
+        | ProgramValue::UInt16(bits) => Some(MachineTerm::int64_from_32(bits.clone())),
+        ProgramValue::UInt32(bits) => Some(MachineTerm::int64_from_uint32(bits.clone())),
+        ProgramValue::Int128(_)
+        | ProgramValue::UInt128(_)
+        | ProgramValue::Void
+        | ProgramValue::UInt64(_)
+        | ProgramValue::Pointer(_)
+        | ProgramValue::Parameter(_)
+        | ProgramValue::Float32(_)
+        | ProgramValue::Float64(_) => None,
     }
 }
 
-fn promoted_uint64_term(value: &CValue) -> Option<MachineTerm> {
+fn promoted_uint64_term(value: &ProgramValue) -> Option<MachineTerm> {
     match value.numeric_value() {
-        CValue::PointerInteger(_) => unreachable!("numeric projection"),
-        CValue::UInt64(bits) => Some(bits.clone()),
-        CValue::Bool(bits) => Some(MachineTerm::uint64_from_32(bits.clone())),
-        CValue::Int64(bits) => Some(MachineTerm::uint64_from_int64(bits.clone())),
-        CValue::Int8(bits) => Some(MachineTerm::uint64_from_int32(bits.clone())),
-        CValue::Int16(bits) | CValue::Int32(bits) | CValue::UInt8(bits) | CValue::UInt16(bits) => {
-            Some(MachineTerm::uint64_from_int32(bits.clone()))
-        }
-        CValue::UInt32(bits) => Some(MachineTerm::uint64_from_32(bits.clone())),
-        CValue::Int128(_)
-        | CValue::UInt128(_)
-        | CValue::Void
-        | CValue::Pointer(_)
-        | CValue::Parameter(_)
-        | CValue::Float32(_)
-        | CValue::Float64(_) => None,
+        ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
+        ProgramValue::UInt64(bits) => Some(bits.clone()),
+        ProgramValue::Bool(bits) => Some(MachineTerm::uint64_from_32(bits.clone())),
+        ProgramValue::Int64(bits) => Some(MachineTerm::uint64_from_int64(bits.clone())),
+        ProgramValue::Int8(bits) => Some(MachineTerm::uint64_from_int32(bits.clone())),
+        ProgramValue::Int16(bits)
+        | ProgramValue::Int32(bits)
+        | ProgramValue::UInt8(bits)
+        | ProgramValue::UInt16(bits) => Some(MachineTerm::uint64_from_int32(bits.clone())),
+        ProgramValue::UInt32(bits) => Some(MachineTerm::uint64_from_32(bits.clone())),
+        ProgramValue::Int128(_)
+        | ProgramValue::UInt128(_)
+        | ProgramValue::Void
+        | ProgramValue::Pointer(_)
+        | ProgramValue::Parameter(_)
+        | ProgramValue::Float32(_)
+        | ProgramValue::Float64(_) => None,
     }
 }
 

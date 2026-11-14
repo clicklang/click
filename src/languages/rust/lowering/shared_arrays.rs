@@ -4,7 +4,7 @@
 //! slice follows from `remaining` alone: a proof reads `iter.len()`.
 use super::*;
 /// The cursor's pointer type, as a Rust reference to the element lowers.
-fn pointer_type(element: &Type) -> Result<CType, String> {
+fn pointer_type(element: &Type) -> Result<ProgramType, String> {
     if !element.is_integer() {
         return Err("shared array iterator requires an integer element".into());
     }
@@ -15,12 +15,12 @@ fn pointer_type(element: &Type) -> Result<CType, String> {
     .to_kernel_type())
 }
 /// The element a slice iterator yields next: `base + (length - remaining)`.
-pub(super) fn shared_array_position(iterator: &str) -> CExpression {
-    c_add(
-        c_variable(format!("{iterator}_base")),
-        c_subtract(
-            c_variable(format!("{iterator}_length")),
-            c_variable(format!("{iterator}_remaining")),
+pub(super) fn shared_array_position(iterator: &str) -> ProgramExpression {
+    crate::kernel::program_expression::add(
+        crate::kernel::program_expression::variable(format!("{iterator}_base")),
+        crate::kernel::program_expression::subtract(
+            crate::kernel::program_expression::variable(format!("{iterator}_length")),
+            crate::kernel::program_expression::variable(format!("{iterator}_remaining")),
         ),
     )
 }
@@ -32,12 +32,12 @@ fn slice_iter_call(
     target: String,
     operation: &str,
     element: &Type,
-    arguments: Vec<CExpression>,
-) -> Result<CStatement, String> {
+    arguments: Vec<ProgramExpression>,
+) -> Result<ProgramStatement, String> {
     let element = element
         .scalar_name()
         .ok_or("shared array iterator requires an integer element")?;
-    Ok(c_call_assign(
+    Ok(program_call_assign(
         target,
         super::super::standard_library::slice_iter_function(operation, element),
         arguments,
@@ -52,23 +52,23 @@ impl Context<'_> {
         &mut self,
         name: &str,
         element: &Type,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         pointer_type(element)?;
         if !self.locals.insert(name.into()) {
             return Err("shared iterator state identity collision".into());
         }
         self.library_slice_iterators
             .insert(name.into(), element.clone());
-        let value_type = CType::Parameter(super::slice_iter_type(element)?);
+        let value_type = ProgramType::Parameter(super::slice_iter_type(element)?);
         // Only the iterator a `next(&mut it)` borrows lives in memory; one
         // that is only built and moved holds its value.
         if !self.library_next_options.contains_key(name) {
-            return Ok(c_declare(name, value_type));
+            return Ok(program_declare(name, value_type));
         }
         self.memory_values.insert(name.into(), value_type);
-        Ok(c_begin_aggregate_construction(
+        Ok(program_begin_aggregate_construction(
             name.to_string(),
-            CAggregateLayout::holding_value(value_type),
+            AggregateLayout::holding_value(value_type),
         ))
     }
     /// Storage of the `Option<&T>` a library slice iterator's `next()`
@@ -77,7 +77,7 @@ impl Context<'_> {
         &mut self,
         name: &str,
         element: &Type,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         let spelling = element
             .scalar_name()
             .ok_or("shared array iterator requires an integer element")?;
@@ -87,13 +87,16 @@ impl Context<'_> {
         self.library_slice_options
             .insert(name.into(), element.clone());
         let option = super::super::standard_library::option_reference_name(spelling);
-        Ok(c_declare(name, CType::Parameter(EnumTypes::get(&option)?)))
+        Ok(program_declare(
+            name,
+            ProgramType::Parameter(EnumTypes::get(&option)?),
+        ))
     }
     /// The `next(&mut it)` call a test of the library iterator `iterator`
     /// makes, assigning the `Option` it returns. The importer places the
     /// call ahead of the test that reads its `Option`, as the compiler's
     /// `match` on `next()` does.
-    pub(super) fn library_slice_next_call(&mut self, iterator: &str) -> Option<CStatement> {
+    pub(super) fn library_slice_next_call(&mut self, iterator: &str) -> Option<ProgramStatement> {
         let element = self.library_slice_iterators.get(iterator)?.clone();
         let option = self.library_next_options.get(iterator)?.clone();
         let address = self
@@ -108,8 +111,8 @@ impl Context<'_> {
     fn store_library_iterator(
         &mut self,
         target: &str,
-        assign: impl FnOnce(String) -> Result<CStatement, String>,
-    ) -> Result<CStatement, String> {
+        assign: impl FnOnce(String) -> Result<ProgramStatement, String>,
+    ) -> Result<ProgramStatement, String> {
         let Some(&value_type) = self.memory_values.get(target) else {
             return assign(target.to_string());
         };
@@ -117,12 +120,16 @@ impl Context<'_> {
         let address = self.address(&E::Local {
             name: target.to_string(),
         })?;
-        Ok(c_seq(
-            c_seq(
-                c_declare(&temporary, value_type),
+        Ok(program_seq(
+            program_seq(
+                program_declare(&temporary, value_type),
                 assign(temporary.clone())?,
             ),
-            c_typed_store(address, c_variable(&temporary), value_type),
+            program_typed_store(
+                address,
+                crate::kernel::program_expression::variable(&temporary),
+                value_type,
+            ),
         ))
     }
     pub(super) fn shared_array_storage(
@@ -130,7 +137,7 @@ impl Context<'_> {
         name: &str,
         element: &Type,
         option: bool,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         let pointer = pointer_type(element)?;
         let element = scalar_type(element)?.to_kernel_type();
         if !self.locals.insert(name.into()) {
@@ -138,29 +145,42 @@ impl Context<'_> {
         }
         let fields = if option {
             self.shared_array_options.insert(name.into(), element);
-            vec![("some", CType::Int32, false), ("pointer", pointer, true)]
+            vec![
+                ("some", ProgramType::Int32, false),
+                ("pointer", pointer, true),
+            ]
         } else {
             self.shared_array_iterators.insert(name.into(), element);
             vec![
                 ("base", pointer, true),
                 // The lengths are `usize`s.
-                ("length", CType::UInt64, false),
-                ("remaining", CType::UInt64, false),
-                ("live", CType::Int32, false),
+                ("length", ProgramType::UInt64, false),
+                ("remaining", ProgramType::UInt64, false),
+                ("live", ProgramType::Int32, false),
             ]
         };
-        let mut result = c_skip();
+        let mut result = program_skip();
         for (suffix, ty, constant) in fields {
             let field = format!("{name}_{suffix}");
             if !self.locals.insert(field.clone()) {
                 return Err("shared iterator metadata identity collision".into());
             }
-            result = c_seq(
+            result = program_seq(
                 result,
-                c_declare_with_all_qualifiers(field.clone(), ty, false, false, false, constant),
+                program_declare_with_all_qualifiers(
+                    field.clone(),
+                    ty,
+                    false,
+                    false,
+                    false,
+                    constant,
+                ),
             );
             if suffix == "live" || suffix == "some" {
-                result = c_seq(result, c_assign(field, c_int32_literal(0)));
+                result = program_seq(
+                    result,
+                    program_assign(field, crate::kernel::program_expression::int32_literal(0)),
+                );
             }
         }
         Ok(result)
@@ -169,7 +189,7 @@ impl Context<'_> {
         &mut self,
         target: &str,
         source: &E,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         let library = self.library_slice_iterators.get(target).cloned();
         let expected = match &library {
             Some(element) => scalar_type(element)?.to_kernel_type(),
@@ -199,69 +219,87 @@ impl Context<'_> {
                     temporary,
                     "iter",
                     &element,
-                    vec![c_variable(&p), c_variable(&l)],
+                    vec![
+                        crate::kernel::program_expression::variable(&p),
+                        crate::kernel::program_expression::variable(&l),
+                    ],
                 )
             };
-            return Ok(c_seq(
-                c_seq(p_capture, l_capture),
+            return Ok(program_seq(
+                program_seq(p_capture, l_capture),
                 self.store_library_iterator(target, call)?,
             ));
         }
-        let begin = |length: CExpression| {
-            c_seq(
-                c_assign(format!("{target}_base"), c_variable(&p)),
-                c_seq(
-                    c_assign(format!("{target}_length"), length.clone()),
-                    c_seq(
-                        c_assign(format!("{target}_remaining"), length),
-                        c_assign(format!("{target}_live"), c_int32_literal(1)),
+        let begin = |length: ProgramExpression| {
+            program_seq(
+                program_assign(
+                    format!("{target}_base"),
+                    crate::kernel::program_expression::variable(&p),
+                ),
+                program_seq(
+                    program_assign(format!("{target}_length"), length.clone()),
+                    program_seq(
+                        program_assign(format!("{target}_remaining"), length),
+                        program_assign(
+                            format!("{target}_live"),
+                            crate::kernel::program_expression::int32_literal(1),
+                        ),
                     ),
                 ),
             )
         };
         // A held range states its own extent limit, so the count is the
         // length as it is and nothing is asserted about it.
-        Ok(c_seq(
-            c_assert(c_equal(
-                c_variable(format!("{target}_live")),
-                c_int32_literal(0),
+        Ok(program_seq(
+            program_assert(crate::kernel::program_expression::equal(
+                crate::kernel::program_expression::variable(format!("{target}_live")),
+                crate::kernel::program_expression::int32_literal(0),
             )),
-            c_seq(p_capture, c_seq(l_capture, begin(c_variable(&l)))),
+            program_seq(
+                p_capture,
+                program_seq(
+                    l_capture,
+                    begin(crate::kernel::program_expression::variable(&l)),
+                ),
+            ),
         ))
     }
-    pub(super) fn shared_array_live(&self, iterator: &str) -> Result<CStatement, String> {
+    pub(super) fn shared_array_live(&self, iterator: &str) -> Result<ProgramStatement, String> {
         if !self.shared_array_iterators.contains_key(iterator) {
             return Err("unknown shared iterator".into());
         }
-        Ok(c_assert(c_equal(
-            c_variable(format!("{iterator}_live")),
-            c_int32_literal(1),
+        Ok(program_assert(crate::kernel::program_expression::equal(
+            crate::kernel::program_expression::variable(format!("{iterator}_live")),
+            crate::kernel::program_expression::int32_literal(1),
         )))
     }
-    pub(super) fn shared_array_has_next(&self, iterator: &str) -> Result<CExpression, String> {
+    pub(super) fn shared_array_has_next(
+        &self,
+        iterator: &str,
+    ) -> Result<ProgramExpression, String> {
         if self.library_slice_iterators.contains_key(iterator) {
             let option = self
                 .library_next_options
                 .get(iterator)
                 .ok_or("library slice iterator test without its next() call")?;
-            return Ok(CExpression::EnumIs {
-                value: Box::new(c_variable(option)),
+            return Ok(ProgramExpression::EnumIs {
+                value: Box::new(crate::kernel::program_expression::variable(option)),
                 variant: "Some".into(),
             });
         }
         if !self.shared_array_iterators.contains_key(iterator) {
             return Err("unknown shared iterator".into());
         }
-        Ok(c_less_than(
-            c_uint64_literal(0),
-            c_variable(format!("{iterator}_remaining")),
+        Ok(crate::kernel::program_expression::less_than(
+            crate::kernel::program_expression::uint64_literal(0),
+            crate::kernel::program_expression::variable(format!("{iterator}_remaining")),
         ))
     }
     pub(super) fn shared_array_move(
         &mut self,
         target: &str,
         source: &str,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         if let (Some(to), Some(from)) = (
             self.library_slice_iterators.get(target),
             self.library_slice_iterators.get(source),
@@ -273,12 +311,12 @@ impl Context<'_> {
                 name: source.to_string(),
             })?;
             let Some(&value_type) = self.memory_values.get(target) else {
-                return Ok(c_assign(target, value));
+                return Ok(program_assign(target, value));
             };
             let address = self.address(&E::Local {
                 name: target.to_string(),
             })?;
-            return Ok(c_typed_store(address, value, value_type));
+            return Ok(program_typed_store(address, value, value_type));
         }
         if self.library_slice_iterators.contains_key(source) {
             return Err(
@@ -292,27 +330,33 @@ impl Context<'_> {
         {
             return Err("invalid shared iterator move".into());
         }
-        let mut result = c_seq(
+        let mut result = program_seq(
             self.shared_array_live(source)?,
-            c_assert(c_equal(
-                c_variable(format!("{target}_live")),
-                c_int32_literal(0),
+            program_assert(crate::kernel::program_expression::equal(
+                crate::kernel::program_expression::variable(format!("{target}_live")),
+                crate::kernel::program_expression::int32_literal(0),
             )),
         );
         for suffix in ["base", "length", "remaining"] {
-            result = c_seq(
+            result = program_seq(
                 result,
-                c_assign(
+                program_assign(
                     format!("{target}_{suffix}"),
-                    c_variable(format!("{source}_{suffix}")),
+                    crate::kernel::program_expression::variable(format!("{source}_{suffix}")),
                 ),
             );
         }
-        Ok(c_seq(
+        Ok(program_seq(
             result,
-            c_seq(
-                c_assign(format!("{source}_live"), c_int32_literal(0)),
-                c_assign(format!("{target}_live"), c_int32_literal(1)),
+            program_seq(
+                program_assign(
+                    format!("{source}_live"),
+                    crate::kernel::program_expression::int32_literal(0),
+                ),
+                program_assign(
+                    format!("{target}_live"),
+                    crate::kernel::program_expression::int32_literal(1),
+                ),
             ),
         ))
     }
@@ -320,8 +364,8 @@ impl Context<'_> {
         &self,
         iterator: &str,
         option: &str,
-    ) -> Result<CStatement, String> {
-        self.shared_array_next_with(iterator, option, c_skip())
+    ) -> Result<ProgramStatement, String> {
+        self.shared_array_next_with(iterator, option, program_skip())
     }
     /// [`Self::shared_array_next`], also running `yielded` when it yields,
     /// before the iterator advances.
@@ -329,8 +373,8 @@ impl Context<'_> {
         &self,
         iterator: &str,
         option: &str,
-        yielded: CStatement,
-    ) -> Result<CStatement, String> {
+        yielded: ProgramStatement,
+    ) -> Result<ProgramStatement, String> {
         if self.library_slice_iterators.contains_key(iterator) {
             // `next(&mut it)` ran ahead of the test that reads its `Option`
             // (`library_slice_next_call`); this edge only continues.
@@ -345,25 +389,34 @@ impl Context<'_> {
             return Err("shared iterator Option element mismatch".into());
         }
         let remaining = format!("{iterator}_remaining");
-        let some = c_seq(
-            c_assign(format!("{option}_some"), c_int32_literal(1)),
-            c_seq(
-                c_assign(format!("{option}_pointer"), shared_array_position(iterator)),
-                c_seq(
+        let some = program_seq(
+            program_assign(
+                format!("{option}_some"),
+                crate::kernel::program_expression::int32_literal(1),
+            ),
+            program_seq(
+                program_assign(format!("{option}_pointer"), shared_array_position(iterator)),
+                program_seq(
                     yielded,
-                    c_assign(
+                    program_assign(
                         &remaining,
-                        c_subtract(c_variable(&remaining), c_uint64_literal(1)),
+                        crate::kernel::program_expression::subtract(
+                            crate::kernel::program_expression::variable(&remaining),
+                            crate::kernel::program_expression::uint64_literal(1),
+                        ),
                     ),
                 ),
             ),
         );
-        Ok(c_seq(
+        Ok(program_seq(
             self.shared_array_live(iterator)?,
-            c_if(
+            program_if(
                 self.shared_array_has_next(iterator)?,
                 some,
-                c_assign(format!("{option}_some"), c_int32_literal(0)),
+                program_assign(
+                    format!("{option}_some"),
+                    crate::kernel::program_expression::int32_literal(0),
+                ),
             ),
         ))
     }

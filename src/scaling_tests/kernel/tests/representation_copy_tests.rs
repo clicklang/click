@@ -9,10 +9,10 @@ fn representation_copy_lookup_work_is_linear_in_the_copied_extent() {
     let mut lookups = Vec::new();
     let mut transfers = Vec::new();
     for cells in [4_u32, 8, 16, 32, 64] {
-        let entry = source_with_cells(CMemory::new(), "extent-source", cells);
+        let entry = source_with_cells(Memory::new(), "extent-source", cells);
         let (lookup, transfer) = copy_lookup_work(
             &entry,
-            &CMemory::new(),
+            &Memory::new(),
             "extent-source",
             "extent-destination",
             cells,
@@ -37,7 +37,7 @@ fn fixed_representation_copy_lookup_work_is_independent_of_unrelated_memory() {
     let mut lookups = Vec::new();
     let mut transfers = Vec::new();
     for unrelated in [8_u32, 32, 128, 512] {
-        let mut memory = source_with_cells(CMemory::new(), "fixed-source", 4);
+        let mut memory = source_with_cells(Memory::new(), "fixed-source", 4);
         for index in 0..unrelated {
             memory = memory.store(cell(&format!("unrelated-{index}"), 0), cell_value(index));
             // Source-block cells past the copied range are not visited either.

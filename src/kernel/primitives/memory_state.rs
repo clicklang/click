@@ -4,7 +4,7 @@ use crate::kernel::CheckedPopulationMemberExchange;
 use crate::kernel::ResourceDescription;
 #[cfg(test)]
 use crate::kernel::binary_node;
-use crate::kernel::population_authority::c_creation::is_external_population_anchor;
+use crate::kernel::population_authority::storage_creation::is_external_population_anchor;
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{binary_term, unary_term};
@@ -14,7 +14,7 @@ use crate::kernel::{
 };
 use std::fmt::Write;
 
-fn memory_havoc_write_set_identity(mutable_ranges: &[CMemoryRange]) -> String {
+fn memory_havoc_write_set_identity(mutable_ranges: &[MemoryRange]) -> String {
     let mut ranges = mutable_ranges
         .iter()
         .map(havoc_range_identity)
@@ -35,7 +35,7 @@ enum HavocIdentityTask {
     Bitvector(MachineTerm),
     Condition(ConditionTerm),
     FloatCondition {
-        condition: CFloatCondition,
+        condition: FloatCondition,
         is_float64: bool,
     },
     LeaveRegisteredLoad(Variable),
@@ -194,7 +194,7 @@ fn push_havoc_comparison(
                 identity,
                 "c{}{kind}{}",
                 other.format().name(),
-                other.c_symbol()
+                other.program_symbol()
             );
             ""
         }
@@ -202,7 +202,7 @@ fn push_havoc_comparison(
     push_havoc_binary(identity, tasks, tag, left, right);
 }
 
-fn havoc_range_identity(range: &CMemoryRange) -> String {
+fn havoc_range_identity(range: &MemoryRange) -> String {
     // Keep traversal on an explicit stack so a valid deeply nested footprint
     // cannot overflow Rust's call stack. Strings are length-delimited where
     // their contents are unconstrained; fixed tags delimit every other node.
@@ -399,10 +399,10 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         right,
                     } => {
                         let tag = match operator {
-                            CFloatBinaryOperator::Add => "tf32a",
-                            CFloatBinaryOperator::Subtract => "tf32s",
-                            CFloatBinaryOperator::Multiply => "tf32m",
-                            CFloatBinaryOperator::Divide => "tf32d",
+                            FloatBinaryOperator::Add => "tf32a",
+                            FloatBinaryOperator::Subtract => "tf32s",
+                            FloatBinaryOperator::Multiply => "tf32m",
+                            FloatBinaryOperator::Divide => "tf32d",
                         };
                         push_havoc_binary(&mut identity, &mut tasks, tag, *left, *right);
                     }
@@ -412,10 +412,10 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         right,
                     } => {
                         let tag = match operator {
-                            CFloatBinaryOperator::Add => "tf64a",
-                            CFloatBinaryOperator::Subtract => "tf64s",
-                            CFloatBinaryOperator::Multiply => "tf64m",
-                            CFloatBinaryOperator::Divide => "tf64d",
+                            FloatBinaryOperator::Add => "tf64a",
+                            FloatBinaryOperator::Subtract => "tf64s",
+                            FloatBinaryOperator::Multiply => "tf64m",
+                            FloatBinaryOperator::Divide => "tf64d",
                         };
                         push_havoc_binary(&mut identity, &mut tasks, tag, *left, *right);
                     }
@@ -559,7 +559,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                 crate::instrumentation::record_deterministic_work(1);
                 let width = if is_float64 { "64" } else { "32" };
                 match condition {
-                    CFloatCondition::Comparison {
+                    FloatCondition::Comparison {
                         operator,
                         left,
                         right,
@@ -570,7 +570,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         tasks.push(HavocIdentityTask::Text(","));
                         tasks.push(HavocIdentityTask::Bitvector(*left));
                     }
-                    CFloatCondition::Classification {
+                    FloatCondition::Classification {
                         classification,
                         value,
                     } => {
@@ -699,12 +699,12 @@ mod call_havoc_local_retention_tests {
             block: block.clone(),
             offset: PointerOffsetTerm::Constant(offset),
         };
-        let before = CMemory::new()
+        let before = Memory::new()
             .with_block(block.clone(), 16)
-            .store(at(0), CValue::Int32(MachineTerm::constant(7)))
-            .store(at(8), CValue::Int32(MachineTerm::constant(1)))
-            .store(at(12), CValue::Int32(MachineTerm::constant(9)));
-        let range = CMemoryRange::new_with_element_width(at(8), 0u32.into(), 4u32.into(), 1);
+            .store(at(0), ProgramValue::Int32(MachineTerm::constant(7)))
+            .store(at(8), ProgramValue::Int32(MachineTerm::constant(1)))
+            .store(at(12), ProgramValue::Int32(MachineTerm::constant(9)));
+        let range = MemoryRange::new_with_element_width(at(8), 0u32.into(), 4u32.into(), 1);
         let facts = PureFactContext::new();
         let after = before.clone().with_call_memory_havoc(
             Variable(944_012),
@@ -727,7 +727,7 @@ mod call_havoc_local_retention_tests {
         ));
         let stale = after
             .clone()
-            .store(at(8), CValue::Int32(MachineTerm::constant(1)));
+            .store(at(8), ProgramValue::Int32(MachineTerm::constant(1)));
         assert!(!stale.matches_call_memory_havoc_result(
             &before,
             std::slice::from_ref(&range),
@@ -742,10 +742,10 @@ mod call_havoc_local_retention_tests {
             block: "local:initialization".into(),
             offset: PointerOffsetTerm::Constant(offset),
         };
-        let before = CMemory::new()
+        let before = Memory::new()
             .with_block(at(0).block.clone(), 16)
-            .store(at(0), CValue::Int32(MachineTerm::constant(7)));
-        let range = CMemoryRange::new_with_element_width(at(0), 0u32.into(), 16u32.into(), 1);
+            .store(at(0), ProgramValue::Int32(MachineTerm::constant(7)));
+        let range = MemoryRange::new_with_element_width(at(0), 0u32.into(), 16u32.into(), 1);
         let facts = PureFactContext::new();
         let after = before.clone().with_call_memory_havoc(
             Variable(944_015),
@@ -758,7 +758,7 @@ mod call_havoc_local_retention_tests {
         assert!(!after.has_initialized_bytes_at(&at(8), 4));
         let named = after.clone().materialize_named_cell(
             at(0),
-            CValue::Int32(MachineTerm::Variable(Variable(944_016))),
+            ProgramValue::Int32(MachineTerm::Variable(Variable(944_016))),
         );
         assert!(
             named.known_value(&at(0)).is_none(),
@@ -767,7 +767,7 @@ mod call_havoc_local_retention_tests {
         assert!(named.has_initialized_bytes_at(&at(0), 4));
         let fresh = after
             .clone()
-            .materialize_named_cell(at(8), CValue::Int32(MachineTerm::constant(1)));
+            .materialize_named_cell(at(8), ProgramValue::Int32(MachineTerm::constant(1)));
         assert!(fresh.known_value(&at(8)).is_none());
         let mut forged = after.clone();
         std::sync::Arc::make_mut(&mut forged.heap)
@@ -800,19 +800,19 @@ mod call_havoc_local_retention_tests {
             block: "local:borrowed-union".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let before = CMemory::new()
+        let before = Memory::new()
             .with_block(pointer.block.clone(), 8)
             .store_union_views(
                 pointer.clone(),
                 8,
                 vec![(
                     pointer.clone(),
-                    CType::Int32,
-                    CValue::Int32(MachineTerm::constant(1)),
+                    ProgramType::Int32,
+                    ProgramValue::Int32(MachineTerm::constant(1)),
                 )],
             );
         let range =
-            CMemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), 4u32.into(), 1);
+            MemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), 4u32.into(), 1);
         let facts = PureFactContext::new();
         let after = before.clone().with_call_memory_havoc(
             Variable(944_013),
@@ -820,7 +820,7 @@ mod call_havoc_local_retention_tests {
             &facts,
             None,
         );
-        assert_eq!(after.known_union_value(&pointer, CType::Int32), None);
+        assert_eq!(after.known_union_value(&pointer, ProgramType::Int32), None);
         assert!(after.matches_call_memory_havoc_result(
             &before,
             std::slice::from_ref(&range),
@@ -836,14 +836,15 @@ mod call_havoc_local_retention_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let alias = Pointer::symbolic(Variable(944_021));
-        let before = CMemory::new()
-            .with_block(pointer.block.clone(), 4)
-            .store(pointer.clone(), CValue::Int32(MachineTerm::constant(7)));
+        let before = Memory::new().with_block(pointer.block.clone(), 4).store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(7)),
+        );
         let facts = PureFactContext::new().assume_condition(
             ConditionTerm::pointer_equal(alias.clone(), pointer.offset_by_bytes(1)),
             true,
         );
-        let range = CMemoryRange::new_with_element_width(alias, 0u32.into(), 1u32.into(), 1);
+        let range = MemoryRange::new_with_element_width(alias, 0u32.into(), 1u32.into(), 1);
         let after = before.clone().with_call_memory_havoc(
             Variable(944_022),
             std::slice::from_ref(&range),
@@ -860,7 +861,7 @@ mod call_havoc_local_retention_tests {
         ));
         assert!(
             !after
-                .store(pointer, CValue::Int32(MachineTerm::constant(7)))
+                .store(pointer, ProgramValue::Int32(MachineTerm::constant(7)))
                 .matches_call_memory_havoc_result(
                     &before,
                     std::slice::from_ref(&range),
@@ -880,7 +881,7 @@ mod call_havoc_local_retention_tests {
             block: PointerBlock::Symbolic(Variable(944_001)),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let assumed_alias_range = CMemoryRange::new(
+        let assumed_alias_range = MemoryRange::new(
             symbolic.clone(),
             MachineTerm::constant(0),
             MachineTerm::constant(1),
@@ -889,7 +890,7 @@ mod call_havoc_local_retention_tests {
             ConditionTerm::pointer_equal(symbolic, local.clone()),
             true,
         ));
-        let unrelated_range = CMemoryRange::new(
+        let unrelated_range = MemoryRange::new(
             Pointer {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::Constant(0),
@@ -897,8 +898,8 @@ mod call_havoc_local_retention_tests {
             MachineTerm::constant(0),
             MachineTerm::constant(1),
         );
-        let value = CValue::Int32(MachineTerm::constant(41));
-        let before = CMemory::new()
+        let value = ProgramValue::Int32(MachineTerm::constant(41));
+        let before = Memory::new()
             .with_block(local.block.clone(), 4)
             .store(local.clone(), value.clone());
 
@@ -958,15 +959,15 @@ mod call_havoc_union_view_tests {
         let view = |pointer: &Pointer, value: u32| {
             (
                 pointer.clone(),
-                CType::Int32,
-                CValue::Int32(MachineTerm::constant(value)),
+                ProgramType::Int32,
+                ProgramValue::Int32(MachineTerm::constant(value)),
             )
         };
-        let before = CMemory::new()
+        let before = Memory::new()
             .with_block(block, 16)
             .store_union_views(written.clone(), 8, vec![view(&written, 3)])
             .store_union_views(sibling.clone(), 8, vec![view(&sibling, 5)]);
-        let range = CMemoryRange::new_with_element_width(
+        let range = MemoryRange::new_with_element_width(
             written.clone(),
             MachineTerm::constant(0),
             MachineTerm::constant(4),
@@ -979,10 +980,10 @@ mod call_havoc_union_view_tests {
             &assumptions,
             None,
         );
-        assert_eq!(after.known_union_value(&written, CType::Int32), None);
+        assert_eq!(after.known_union_value(&written, ProgramType::Int32), None);
         assert_eq!(
-            after.known_union_value(&sibling, CType::Int32),
-            Some(CValue::Int32(MachineTerm::constant(5)))
+            after.known_union_value(&sibling, ProgramType::Int32),
+            Some(ProgramValue::Int32(MachineTerm::constant(5)))
         );
         assert!(after.matches_call_memory_havoc_result(
             &before,
@@ -993,8 +994,8 @@ mod call_havoc_union_view_tests {
 
         let mut stale = after.clone();
         std::sync::Arc::make_mut(&mut stale.union_cells).insert(
-            (written.clone(), CType::Int32),
-            CValue::Int32(MachineTerm::constant(3)),
+            (written.clone(), ProgramType::Int32),
+            ProgramValue::Int32(MachineTerm::constant(3)),
         );
         assert!(!stale.matches_call_memory_havoc_result(
             &before,
@@ -1009,20 +1010,20 @@ mod call_havoc_union_view_tests {
 mod forget_cached_values_tests {
     use super::*;
 
-    fn int32_view(pointer: &Pointer, value: u32) -> (Pointer, CType, CValue) {
+    fn int32_view(pointer: &Pointer, value: u32) -> (Pointer, ProgramType, ProgramValue) {
         (
             pointer.clone(),
-            CType::Int32,
-            CValue::Int32(MachineTerm::constant(value)),
+            ProgramType::Int32,
+            ProgramValue::Int32(MachineTerm::constant(value)),
         )
     }
 
-    fn zeroed_heap_with_cell() -> (CMemory, Pointer) {
+    fn zeroed_heap_with_cell() -> (Memory, Pointer) {
         let base = Pointer {
             block: PointerBlock::Heap(944_100),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let mut memory = CMemory::new().with_block(base.block.clone(), 8);
+        let mut memory = Memory::new().with_block(base.block.clone(), 8);
         let heap = std::sync::Arc::make_mut(&mut memory.heap);
         heap.live_allocations
             .insert(base.clone(), HeapExtent::int32(8));
@@ -1043,7 +1044,7 @@ mod forget_cached_values_tests {
             block: "local:loop-union-kept".into(),
             offset: PointerOffsetTerm::Constant(4),
         };
-        let before = CMemory::new()
+        let before = Memory::new()
             .with_block(written.block.clone(), 12)
             .with_block(preserved.block.clone(), 12)
             .store_union_views(written.clone(), 8, vec![int32_view(&written, 3)])
@@ -1054,10 +1055,10 @@ mod forget_cached_values_tests {
             None,
             None,
         );
-        assert_eq!(after.known_union_value(&written, CType::Int32), None);
+        assert_eq!(after.known_union_value(&written, ProgramType::Int32), None);
         assert_eq!(
-            after.known_union_value(&preserved, CType::Int32),
-            Some(CValue::Int32(MachineTerm::constant(5)))
+            after.known_union_value(&preserved, ProgramType::Int32),
+            Some(ProgramValue::Int32(MachineTerm::constant(5)))
         );
     }
 
@@ -1098,7 +1099,7 @@ mod forget_cached_values_tests {
             block: base.block.clone(),
             offset: PointerOffsetTerm::Constant(offset),
         };
-        let mut memory = CMemory::new().with_block(base.block.clone(), 16);
+        let mut memory = Memory::new().with_block(base.block.clone(), 16);
         let heap = std::sync::Arc::make_mut(&mut memory.heap);
         heap.live_allocations
             .insert(base.clone(), HeapExtent::int32(16));
@@ -1111,9 +1112,10 @@ mod forget_cached_values_tests {
         assert!(!narrow.is_zeroed_heap_address(&at(0), 8, &facts));
         assert!(narrow.is_zeroed_heap_address(&at(8), 4, &facts));
         // Eight bytes at 0 contain the four at 4, and miss the four at 8.
-        let wide = memory
-            .clone()
-            .store(at(0), CValue::Int64(MachineTerm::int64_constant(1 << 40)));
+        let wide = memory.clone().store(
+            at(0),
+            ProgramValue::Int64(MachineTerm::int64_constant(1 << 40)),
+        );
         assert!(!wide.is_zeroed_heap_address(&at(4), 4, &facts));
         assert!(wide.is_zeroed_heap_address(&at(8), 4, &facts));
         // A symbolic offset into a block that holds a cell is not separated
@@ -1135,7 +1137,7 @@ mod forget_cached_values_tests {
     #[test]
     fn interface_join_drops_a_zero_reading_one_arm_wrote_over() {
         let (wrote, base) = zeroed_heap_with_cell();
-        let mut untouched = CMemory::new().with_block(base.block.clone(), 8);
+        let mut untouched = Memory::new().with_block(base.block.clone(), 8);
         let heap = std::sync::Arc::make_mut(&mut untouched.heap);
         heap.live_allocations
             .insert(base.clone(), HeapExtent::int32(8));
@@ -1173,8 +1175,8 @@ mod havoc_identity_tests {
         })
     }
 
-    fn range(depth: usize, tail: u32) -> CMemoryRange {
-        CMemoryRange::new(
+    fn range(depth: usize, tail: u32) -> MemoryRange {
+        MemoryRange::new(
             Pointer {
                 block: "deep-havoc-range".into(),
                 offset: PointerOffsetTerm::Constant(0),
@@ -1194,7 +1196,7 @@ mod havoc_identity_tests {
         assert!(!first_identity.contains("depth-limit"));
         assert!(!second_identity.contains("depth-limit"));
 
-        let before = CMemory::new().with_block("deep-havoc-range", 4_096);
+        let before = Memory::new().with_block("deep-havoc-range", 4_096);
         let first = before.clone().with_call_memory_havoc(
             Variable(95_000),
             std::slice::from_ref(&first_range),
@@ -1231,7 +1233,7 @@ mod havoc_identity_tests {
     }
 }
 
-fn memory_havoc_write_set_fingerprint(mutable_ranges: &[CMemoryRange]) -> u32 {
+fn memory_havoc_write_set_fingerprint(mutable_ranges: &[MemoryRange]) -> u32 {
     use std::hash::{Hash, Hasher};
 
     // This compact marker fingerprint remains form-invariant across proof
@@ -1268,46 +1270,51 @@ pub(crate) fn resource_context_has_symbolic_range_read(
     assumptions: &PureFactContext,
 ) -> bool {
     let footprint =
-        CMemoryRange::new_with_element_width(base.clone(), 0u32.into(), bytes.clone(), 1);
+        MemoryRange::new_with_element_width(base.clone(), 0u32.into(), bytes.clone(), 1);
     resources
         .symbolic_range_read_supported(&footprint, assumptions, None)
         .unwrap_or(false)
 }
 
-impl CLocalEnvironment {
+impl LocalEnvironment {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn with(mut self, name: impl Into<String>, value: CValue) -> Self {
+    pub fn with(mut self, name: impl Into<String>, value: ProgramValue) -> Self {
         self.set(name, value);
         self
     }
 
-    pub fn set(&mut self, name: impl Into<String>, value: CValue) {
-        let c_type = value.c_type();
-        self.set_typed(name, value, c_type);
+    pub fn set(&mut self, name: impl Into<String>, value: ProgramValue) {
+        let program_type = value.program_type();
+        self.set_typed(name, value, program_type);
     }
 
-    pub fn set_typed(&mut self, name: impl Into<String>, value: CValue, c_type: CType) {
-        self.set_typed_with_qualifiers(name, value, c_type, false, false);
+    pub fn set_typed(
+        &mut self,
+        name: impl Into<String>,
+        value: ProgramValue,
+        program_type: ProgramType,
+    ) {
+        self.set_typed_with_qualifiers(name, value, program_type, false, false);
     }
 
     /// Bind model data independently of any same-named automatic object.
     pub(in crate::kernel) fn bind_logical_typed(
         &mut self,
         name: impl Into<String>,
-        value: CValue,
-        c_type: CType,
+        value: ProgramValue,
+        program_type: ProgramType,
     ) {
         let name = name.into();
-        self.set_typed(name.clone(), value, c_type);
+        self.set_typed(name.clone(), value, program_type);
         let mut binding = self
             .bindings
             .get(&name)
             .expect("new logical binding")
             .clone();
-        if let CLocalBinding::Object {
+        if let LocalBinding::Object {
             storage_declared, ..
         } = &mut binding
         {
@@ -1319,15 +1326,15 @@ impl CLocalEnvironment {
     pub(in crate::kernel) fn set_typed_with_qualifiers(
         &mut self,
         name: impl Into<String>,
-        value: CValue,
-        c_type: CType,
+        value: ProgramValue,
+        program_type: ProgramType,
         volatile: bool,
         pointee_volatile: bool,
     ) {
         self.set_typed_with_all_qualifiers(
             name,
             value,
-            c_type,
+            program_type,
             volatile,
             pointee_volatile,
             false,
@@ -1338,8 +1345,8 @@ impl CLocalEnvironment {
     pub(in crate::kernel) fn set_typed_with_all_qualifiers(
         &mut self,
         name: impl Into<String>,
-        value: CValue,
-        c_type: CType,
+        value: ProgramValue,
+        program_type: ProgramType,
         volatile: bool,
         pointee_volatile: bool,
         constant: bool,
@@ -1349,13 +1356,13 @@ impl CLocalEnvironment {
         let slot = self
             .bindings
             .get(&name)
-            .map(CLocalBinding::slot)
+            .map(LocalBinding::slot)
             .cloned()
-            .unwrap_or_else(|| CMemory::local_pointer(&name));
+            .unwrap_or_else(|| Memory::local_pointer(&name));
         self.set_typed_qualified_with_all_qualifiers(
             name,
-            value.retag_pointer(c_type),
-            c_type,
+            value.retag_pointer(program_type),
+            program_type,
             slot,
             volatile,
             pointee_volatile,
@@ -1367,8 +1374,8 @@ impl CLocalEnvironment {
     pub(in crate::kernel) fn set_typed_qualified_with_all_qualifiers(
         &mut self,
         name: impl Into<String>,
-        value: CValue,
-        c_type: CType,
+        value: ProgramValue,
+        program_type: ProgramType,
         slot: Pointer,
         volatile: bool,
         pointee_volatile: bool,
@@ -1380,21 +1387,21 @@ impl CLocalEnvironment {
             binding.slot() == &slot
                 && matches!(
                     binding,
-                    CLocalBinding::Object {
+                    LocalBinding::Object {
                         storage_declared: true,
                         ..
-                    } | CLocalBinding::UninitializedObject { .. }
+                    } | LocalBinding::UninitializedObject { .. }
                 )
         });
         self.insert_binding(
             name,
-            CLocalBinding::Object {
+            LocalBinding::Object {
                 storage_declared,
                 value: value
                     .with_pointer_pointee_volatile(pointee_volatile)
                     .with_pointer_pointee_constant(pointee_constant)
                     .into(),
-                c_type,
+                program_type,
                 slot,
                 volatile,
                 pointee_volatile,
@@ -1407,7 +1414,7 @@ impl CLocalEnvironment {
     pub(in crate::kernel) fn set_global_with_all_qualifiers(
         &mut self,
         name: impl Into<String>,
-        c_type: CType,
+        program_type: ProgramType,
         slot: Pointer,
         volatile: bool,
         pointee_volatile: bool,
@@ -1416,8 +1423,8 @@ impl CLocalEnvironment {
     ) {
         self.insert_binding(
             name.into(),
-            CLocalBinding::GlobalObject {
-                c_type,
+            LocalBinding::GlobalObject {
+                program_type,
                 slot,
                 volatile,
                 pointee_volatile,
@@ -1430,7 +1437,7 @@ impl CLocalEnvironment {
     pub(in crate::kernel) fn set_uninitialized_with_all_qualifiers(
         &mut self,
         name: impl Into<String>,
-        c_type: CType,
+        program_type: ProgramType,
         slot: Pointer,
         volatile: bool,
         pointee_volatile: bool,
@@ -1439,8 +1446,8 @@ impl CLocalEnvironment {
     ) {
         self.insert_binding(
             name.into(),
-            CLocalBinding::UninitializedObject {
-                c_type,
+            LocalBinding::UninitializedObject {
+                program_type,
                 slot,
                 volatile,
                 pointee_volatile,
@@ -1453,7 +1460,7 @@ impl CLocalEnvironment {
     pub(in crate::kernel) fn set_array_object_at(
         &mut self,
         name: impl Into<String>,
-        element_type: CType,
+        element_type: ProgramType,
         length: u32,
         slot: Pointer,
     ) {
@@ -1463,14 +1470,14 @@ impl CLocalEnvironment {
     pub(in crate::kernel) fn set_array_object_at_with_constant(
         &mut self,
         name: impl Into<String>,
-        element_type: CType,
+        element_type: ProgramType,
         length: u32,
         slot: Pointer,
         constant: bool,
     ) {
         self.insert_binding(
             name.into(),
-            CLocalBinding::ArrayObject {
+            LocalBinding::ArrayObject {
                 element_type,
                 length,
                 slot,
@@ -1482,7 +1489,7 @@ impl CLocalEnvironment {
     pub(in crate::kernel) fn set_aggregate_object_at(
         &mut self,
         name: impl Into<String>,
-        layout: CAggregateLayout,
+        layout: AggregateLayout,
         slot: Pointer,
     ) {
         self.set_aggregate_object_at_with_constant(name, layout, slot, false);
@@ -1491,13 +1498,13 @@ impl CLocalEnvironment {
     pub(in crate::kernel) fn set_aggregate_object_at_with_constant(
         &mut self,
         name: impl Into<String>,
-        layout: CAggregateLayout,
+        layout: AggregateLayout,
         slot: Pointer,
         constant: bool,
     ) {
         self.insert_binding(
             name.into(),
-            CLocalBinding::AggregateObject {
+            LocalBinding::AggregateObject {
                 layout,
                 slot,
                 constant,
@@ -1509,18 +1516,18 @@ impl CLocalEnvironment {
         &mut self,
         name: impl Into<String>,
         value: impl Into<StoredExecutionValue>,
-        c_type: CType,
+        program_type: ProgramType,
         volatile: bool,
         pointee_volatile: bool,
         constant: bool,
         pointee_constant: bool,
     ) {
         let value = value.into();
-        if value.shared().is_none() || value.c_type().is_pointer() {
+        if value.shared().is_none() || value.program_type().is_pointer() {
             self.set_typed_with_all_qualifiers(
                 name,
                 value.into_native(),
-                c_type,
+                program_type,
                 volatile,
                 pointee_volatile,
                 constant,
@@ -1531,24 +1538,24 @@ impl CLocalEnvironment {
         let name = name.into();
         let old = self.bindings.get(&name);
         let slot = old
-            .map(CLocalBinding::slot)
+            .map(LocalBinding::slot)
             .cloned()
-            .unwrap_or_else(|| CMemory::local_pointer(&name));
+            .unwrap_or_else(|| Memory::local_pointer(&name));
         let storage_declared = old.is_some_and(|binding| {
             matches!(
                 binding,
-                CLocalBinding::Object {
+                LocalBinding::Object {
                     storage_declared: true,
                     ..
-                } | CLocalBinding::UninitializedObject { .. }
+                } | LocalBinding::UninitializedObject { .. }
             )
         });
         self.insert_binding(
             name,
-            CLocalBinding::Object {
+            LocalBinding::Object {
                 storage_declared,
                 value,
-                c_type,
+                program_type,
                 slot,
                 volatile,
                 pointee_volatile,
@@ -1561,24 +1568,24 @@ impl CLocalEnvironment {
     /// Borrow the exact retained value. Use `get_native` only at a native output boundary.
     pub fn get(&self, name: &str) -> Option<&StoredExecutionValue> {
         match self.bindings.get(name) {
-            Some(CLocalBinding::Object { value, .. }) => Some(value),
-            Some(CLocalBinding::UninitializedObject { .. })
-            | Some(CLocalBinding::GlobalObject { .. })
-            | Some(CLocalBinding::ArrayObject { .. })
-            | Some(CLocalBinding::AggregateObject { .. })
+            Some(LocalBinding::Object { value, .. }) => Some(value),
+            Some(LocalBinding::UninitializedObject { .. })
+            | Some(LocalBinding::GlobalObject { .. })
+            | Some(LocalBinding::ArrayObject { .. })
+            | Some(LocalBinding::AggregateObject { .. })
             | None => None,
         }
     }
 
     /// Explicit legacy output: reconstruct one selected native value, without caching it.
-    pub fn get_native(&self, name: &str) -> Option<std::borrow::Cow<'_, CValue>> {
+    pub fn get_native(&self, name: &str) -> Option<std::borrow::Cow<'_, ProgramValue>> {
         self.get(name).map(|value| value.native())
     }
 
     /// Read one automatic array's metadata by name without scanning the frame.
-    pub fn array_object_element_type(&self, name: &str) -> Option<CType> {
+    pub fn array_object_element_type(&self, name: &str) -> Option<ProgramType> {
         match self.bindings.get(name) {
-            Some(CLocalBinding::ArrayObject { element_type, .. }) => Some(*element_type),
+            Some(LocalBinding::ArrayObject { element_type, .. }) => Some(*element_type),
             _ => None,
         }
     }
@@ -1608,7 +1615,7 @@ impl CLocalEnvironment {
     pub fn is_uninitialized_object(&self, name: &str) -> bool {
         matches!(
             self.bindings.get(name),
-            Some(CLocalBinding::UninitializedObject { .. })
+            Some(LocalBinding::UninitializedObject { .. })
         )
     }
 
@@ -1617,36 +1624,36 @@ impl CLocalEnvironment {
         self.bindings
             .iter()
             .filter_map(|(name, binding)| match binding {
-                CLocalBinding::Object { value, .. } => Some((name.as_str(), value)),
-                CLocalBinding::UninitializedObject { .. }
-                | CLocalBinding::GlobalObject { .. }
-                | CLocalBinding::ArrayObject { .. }
-                | CLocalBinding::AggregateObject { .. } => None,
+                LocalBinding::Object { value, .. } => Some((name.as_str(), value)),
+                LocalBinding::UninitializedObject { .. }
+                | LocalBinding::GlobalObject { .. }
+                | LocalBinding::ArrayObject { .. }
+                | LocalBinding::AggregateObject { .. } => None,
             })
     }
 
     pub fn aggregate_object_values(
         &self,
-    ) -> impl Iterator<Item = (&str, &CAggregateLayout, &Pointer)> + '_ {
+    ) -> impl Iterator<Item = (&str, &AggregateLayout, &Pointer)> + '_ {
         self.bindings
             .iter()
             .filter_map(|(name, binding)| match binding {
-                CLocalBinding::AggregateObject { layout, slot, .. } => {
+                LocalBinding::AggregateObject { layout, slot, .. } => {
                     Some((name.as_str(), layout, slot))
                 }
-                CLocalBinding::Object { .. }
-                | CLocalBinding::UninitializedObject { .. }
-                | CLocalBinding::GlobalObject { .. }
-                | CLocalBinding::ArrayObject { .. } => None,
+                LocalBinding::Object { .. }
+                | LocalBinding::UninitializedObject { .. }
+                | LocalBinding::GlobalObject { .. }
+                | LocalBinding::ArrayObject { .. } => None,
             })
     }
 
     /// The type of the value local `name`'s object holds, and the object's
     /// address, for a local that keeps one value in memory
-    /// ([`CAggregateLayout::holding_value`]).
-    pub fn held_value_local(&self, name: &str) -> Option<(CType, &Pointer)> {
+    /// ([`AggregateLayout::holding_value`]).
+    pub fn held_value_local(&self, name: &str) -> Option<(ProgramType, &Pointer)> {
         match self.bindings.get(name)? {
-            CLocalBinding::AggregateObject { layout, slot, .. } => {
+            LocalBinding::AggregateObject { layout, slot, .. } => {
                 Some((layout.value_type()?, slot))
             }
             _ => None,
@@ -1655,7 +1662,7 @@ impl CLocalEnvironment {
 
     /// The locals that keep one value in memory, with the value's type and
     /// the object's address.
-    pub fn held_value_locals(&self) -> impl Iterator<Item = (&str, CType, &Pointer)> + '_ {
+    pub fn held_value_locals(&self) -> impl Iterator<Item = (&str, ProgramType, &Pointer)> + '_ {
         self.aggregate_object_values()
             .filter_map(|(name, layout, slot)| Some((name, layout.value_type()?, slot)))
     }
@@ -1663,8 +1670,8 @@ impl CLocalEnvironment {
     /// Read one local array's pointer and element type without scanning the frame.
     /// `None` for an array whose elements have no pointer type of their own,
     /// as [`Self::array_object_values`] leaves it out.
-    pub fn array_object_value(&self, name: &str) -> Option<(CValue, CType)> {
-        let CLocalBinding::ArrayObject {
+    pub fn array_object_value(&self, name: &str) -> Option<(ProgramValue, ProgramType)> {
+        let LocalBinding::ArrayObject {
             element_type,
             slot,
             constant,
@@ -1674,7 +1681,7 @@ impl CLocalEnvironment {
             return None;
         };
         Some((
-            CValue::typed_pointer_with_pointee_constant(
+            ProgramValue::typed_pointer_with_pointee_constant(
                 slot.clone(),
                 element_type.pointer_to()?,
                 *constant,
@@ -1687,59 +1694,61 @@ impl CLocalEnvironment {
     /// type. An array whose elements have no pointer type of their own, such
     /// as `const char *const *t[]`, has no such pointer value and is left
     /// out: a proof cannot name it, though execution reads it.
-    pub fn array_object_values(&self) -> impl Iterator<Item = (&str, CValue, CType)> + '_ {
+    pub fn array_object_values(
+        &self,
+    ) -> impl Iterator<Item = (&str, ProgramValue, ProgramType)> + '_ {
         self.bindings
             .iter()
             .filter_map(|(name, binding)| match binding {
-                CLocalBinding::ArrayObject {
+                LocalBinding::ArrayObject {
                     element_type,
                     slot,
                     constant,
                     ..
                 } => Some((
                     name.as_str(),
-                    CValue::typed_pointer_with_pointee_constant(
+                    ProgramValue::typed_pointer_with_pointee_constant(
                         slot.clone(),
                         element_type.pointer_to()?,
                         *constant,
                     ),
                     *element_type,
                 )),
-                CLocalBinding::Object { .. }
-                | CLocalBinding::UninitializedObject { .. }
-                | CLocalBinding::GlobalObject { .. }
-                | CLocalBinding::AggregateObject { .. } => None,
+                LocalBinding::Object { .. }
+                | LocalBinding::UninitializedObject { .. }
+                | LocalBinding::GlobalObject { .. }
+                | LocalBinding::AggregateObject { .. } => None,
             })
     }
 
-    pub(in crate::kernel) fn object_type(&self, name: &str) -> Option<CType> {
+    pub(in crate::kernel) fn object_type(&self, name: &str) -> Option<ProgramType> {
         match self.binding(name) {
-            Some(CLocalBinding::Object { c_type, .. }) => Some(*c_type),
-            Some(CLocalBinding::UninitializedObject { c_type, .. }) => Some(*c_type),
-            Some(CLocalBinding::GlobalObject { c_type, .. }) => Some(*c_type),
-            Some(CLocalBinding::ArrayObject { element_type, .. }) => Some(*element_type),
+            Some(LocalBinding::Object { program_type, .. }) => Some(*program_type),
+            Some(LocalBinding::UninitializedObject { program_type, .. }) => Some(*program_type),
+            Some(LocalBinding::GlobalObject { program_type, .. }) => Some(*program_type),
+            Some(LocalBinding::ArrayObject { element_type, .. }) => Some(*element_type),
             None => None,
-            Some(CLocalBinding::AggregateObject { .. }) => None,
+            Some(LocalBinding::AggregateObject { .. }) => None,
         }
     }
 
-    pub(crate) fn scalar_object_type(&self, name: &str) -> Option<CType> {
+    pub(crate) fn scalar_object_type(&self, name: &str) -> Option<ProgramType> {
         match self.binding(name) {
-            Some(CLocalBinding::Object { c_type, .. }) => Some(*c_type),
-            Some(CLocalBinding::UninitializedObject { c_type, .. }) => Some(*c_type),
-            Some(CLocalBinding::GlobalObject { .. }) => None,
-            Some(CLocalBinding::ArrayObject { .. })
-            | Some(CLocalBinding::AggregateObject { .. })
+            Some(LocalBinding::Object { program_type, .. }) => Some(*program_type),
+            Some(LocalBinding::UninitializedObject { program_type, .. }) => Some(*program_type),
+            Some(LocalBinding::GlobalObject { .. }) => None,
+            Some(LocalBinding::ArrayObject { .. })
+            | Some(LocalBinding::AggregateObject { .. })
             | None => None,
         }
     }
 
-    pub(in crate::kernel) fn binding(&self, name: &str) -> Option<&CLocalBinding> {
+    pub(in crate::kernel) fn binding(&self, name: &str) -> Option<&LocalBinding> {
         self.bindings.get(name)
     }
 
     pub(in crate::kernel) fn slot(&self, name: &str) -> Option<&Pointer> {
-        self.binding(name).map(CLocalBinding::slot)
+        self.binding(name).map(LocalBinding::slot)
     }
 
     pub(in crate::kernel) fn slots(&self) -> impl Iterator<Item = &Pointer> {
@@ -1756,11 +1765,11 @@ impl CLocalEnvironment {
     pub(crate) fn array_objects_with_slot_in(
         &self,
         block: &PointerBlock,
-    ) -> Vec<(&str, CType, &Pointer)> {
+    ) -> Vec<(&str, ProgramType, &Pointer)> {
         self.names_with_slot_in(block)
             .into_iter()
             .filter_map(|name| match self.binding(name)? {
-                CLocalBinding::ArrayObject {
+                LocalBinding::ArrayObject {
                     element_type, slot, ..
                 } => Some((name, *element_type, slot)),
                 _ => None,
@@ -1803,36 +1812,36 @@ impl CLocalEnvironment {
     }
 
     pub(in crate::kernel) fn is_array_object(&self, name: &str) -> bool {
-        matches!(self.binding(name), Some(CLocalBinding::ArrayObject { .. }))
+        matches!(self.binding(name), Some(LocalBinding::ArrayObject { .. }))
     }
 
     pub(in crate::kernel) fn is_global_object(&self, name: &str) -> bool {
-        matches!(self.binding(name), Some(CLocalBinding::GlobalObject { .. }))
+        matches!(self.binding(name), Some(LocalBinding::GlobalObject { .. }))
     }
 
     pub(in crate::kernel) fn is_aggregate_object(&self, name: &str) -> bool {
         matches!(
             self.binding(name),
-            Some(CLocalBinding::AggregateObject { .. })
+            Some(LocalBinding::AggregateObject { .. })
         )
     }
 
     pub(crate) fn aggregate_object_pointer(&self, name: &str) -> Option<&Pointer> {
         match self.binding(name) {
-            Some(CLocalBinding::AggregateObject { slot, .. }) => Some(slot),
+            Some(LocalBinding::AggregateObject { slot, .. }) => Some(slot),
             _ => None,
         }
     }
 
-    pub(crate) fn aggregate_layout(&self, name: &str) -> Option<&CAggregateLayout> {
+    pub(crate) fn aggregate_layout(&self, name: &str) -> Option<&AggregateLayout> {
         match self.binding(name) {
-            Some(CLocalBinding::AggregateObject { layout, .. }) => Some(layout),
+            Some(LocalBinding::AggregateObject { layout, .. }) => Some(layout),
             _ => None,
         }
     }
 }
 
-impl CLocalBinding {
+impl LocalBinding {
     pub(in crate::kernel) fn slot(&self) -> &Pointer {
         match self {
             Self::Object { slot, .. }
@@ -1844,42 +1853,42 @@ impl CLocalBinding {
     }
 }
 
-fn held_pointer_block(binding: &CLocalBinding) -> Option<&PointerBlock> {
-    let CLocalBinding::Object { value, .. } = binding else {
+fn held_pointer_block(binding: &LocalBinding) -> Option<&PointerBlock> {
+    let LocalBinding::Object { value, .. } = binding else {
         return None;
     };
     Some(&value.pointer()?.pointer().block)
 }
 
 /// The numeric value of a scalar of integer or truth type.
-fn held_integer_term(binding: &CLocalBinding) -> Option<&MachineTerm> {
-    let CLocalBinding::Object { value, .. } = binding else {
+fn held_integer_term(binding: &LocalBinding) -> Option<&MachineTerm> {
+    let LocalBinding::Object { value, .. } = binding else {
         return None;
     };
     match value.native_payload()?.numeric_value() {
-        CValue::Bool(term)
-        | CValue::Int8(term)
-        | CValue::Int16(term)
-        | CValue::Int32(term)
-        | CValue::UInt8(term)
-        | CValue::UInt16(term)
-        | CValue::UInt32(term)
-        | CValue::Int64(term)
-        | CValue::UInt64(term)
-        | CValue::Int128(term)
-        | CValue::UInt128(term) => Some(term),
+        ProgramValue::Bool(term)
+        | ProgramValue::Int8(term)
+        | ProgramValue::Int16(term)
+        | ProgramValue::Int32(term)
+        | ProgramValue::UInt8(term)
+        | ProgramValue::UInt16(term)
+        | ProgramValue::UInt32(term)
+        | ProgramValue::Int64(term)
+        | ProgramValue::UInt64(term)
+        | ProgramValue::Int128(term)
+        | ProgramValue::UInt128(term) => Some(term),
         _ => None,
     }
 }
 
 /// The specification value a local of an abstract type holds, when it is a
 /// named value: a Rust local holding an enum, a `Vec` or a library iterator.
-fn held_algebraic_value(binding: &CLocalBinding) -> Option<&AlgebraicTerm> {
-    let CLocalBinding::Object { value, .. } = binding else {
+fn held_algebraic_value(binding: &LocalBinding) -> Option<&AlgebraicTerm> {
+    let LocalBinding::Object { value, .. } = binding else {
         return None;
     };
     match value.native_payload()?.numeric_value() {
-        CValue::Parameter(term) if matches!(term.node, AlgebraicTermNode::Variable(_)) => {
+        ProgramValue::Parameter(term) if matches!(term.node, AlgebraicTermNode::Variable(_)) => {
             Some(term)
         }
         _ => None,
@@ -1899,8 +1908,8 @@ fn held_algebraic_fingerprint(term: &AlgebraicTerm) -> Option<u64> {
 
 /// The index key of what a binding holds: an integer term's fingerprint or
 /// a named specification value's. A lookup compares what it finds.
-fn held_fingerprint(binding: &CLocalBinding) -> Option<u64> {
-    if let CLocalBinding::Object { value, .. } = binding
+fn held_fingerprint(binding: &LocalBinding) -> Option<u64> {
+    if let LocalBinding::Object { value, .. } = binding
         && let Some(root) = value.shared()
     {
         return held_kernel_term_fingerprint(root);
@@ -2024,11 +2033,11 @@ fn held_kernel_term_fingerprint(term: &KernelTerm) -> Option<u64> {
     Some(hash.finish())
 }
 
-impl CLocalEnvironment {
+impl LocalEnvironment {
     /// An environment of these bindings and slots, with its held-term index
     /// built from the bindings.
     pub(in crate::kernel) fn from_parts(
-        bindings: crate::persistent::PersistentMap<String, CLocalBinding>,
+        bindings: crate::persistent::PersistentMap<String, LocalBinding>,
         slots: crate::persistent::PersistentMap<Pointer, String>,
     ) -> Self {
         let held_terms = bindings
@@ -2059,10 +2068,10 @@ impl CLocalEnvironment {
         }
     }
 
-    pub(in crate::kernel) fn insert_binding(&mut self, name: String, binding: CLocalBinding) {
+    pub(in crate::kernel) fn insert_binding(&mut self, name: String, binding: LocalBinding) {
         let slot = binding.slot().clone();
         let old = self.bindings.get(&name);
-        let old_slot = old.map(CLocalBinding::slot).cloned();
+        let old_slot = old.map(LocalBinding::slot).cloned();
         let old_held = old.and_then(held_fingerprint);
         let new_held = held_fingerprint(&binding);
         let old_block = old.and_then(held_pointer_block).cloned();
@@ -2115,7 +2124,7 @@ impl CLocalEnvironment {
     pub(crate) fn pointer_objects_in_block<'a>(
         &'a self,
         block: &PointerBlock,
-    ) -> impl Iterator<Item = (&'a str, &'a CPointerValue)> {
+    ) -> impl Iterator<Item = (&'a str, &'a PointerValue)> {
         self.pointer_objects_by_block
             .get(block)
             .into_iter()
@@ -2143,7 +2152,7 @@ impl CLocalEnvironment {
             } else {
                 held.native_payload()
                     .is_some_and(|value| match value.numeric_value() {
-                        CValue::Bool(bits) | integer_c_value!(bits) => bits == term,
+                        ProgramValue::Bool(bits) | integer_c_value!(bits) => bits == term,
                         _ => false,
                     })
             }
@@ -2157,10 +2166,10 @@ impl CLocalEnvironment {
         term: &'t KernelTerm,
     ) -> impl Iterator<Item = &'a str> + use<'a, 't> {
         self.names_holding_integer_matching(held_kernel_term_fingerprint(term), move |held| {
-            let KernelType::C(ty) = term.ty() else {
+            let KernelType::Program(ty) = term.ty() else {
                 return false;
             };
-            let Some(format) = MachineIntegerType::from_c_type(*ty) else {
+            let Some(format) = MachineIntegerType::from_program_type(*ty) else {
                 return false;
             };
             if let Some(root) = held.shared() {
@@ -2168,7 +2177,7 @@ impl CLocalEnvironment {
             } else {
                 held.native_payload()
                     .is_some_and(|value| match value.numeric_value() {
-                        CValue::Bool(bits) | integer_c_value!(bits) => {
+                        ProgramValue::Bool(bits) | integer_c_value!(bits) => {
                             KernelTermImport::default().machine(format, bits) == *term
                         }
                         _ => false,
@@ -2211,7 +2220,7 @@ impl CLocalEnvironment {
                     .bindings
                     .get(name)
                     .and_then(|binding| match binding {
-                        CLocalBinding::Object { value, .. } => Some(value),
+                        LocalBinding::Object { value, .. } => Some(value),
                         _ => None,
                     })
                     .is_some_and(&mut matches)
@@ -2265,7 +2274,7 @@ impl CLocalEnvironment {
         earlier: Option<&'a Self>,
     ) -> Vec<(&'a str, &'a MachineTerm)> {
         let changed =
-            |name: &'a String, now: Option<&'a CLocalBinding>, before: Option<&CLocalBinding>| {
+            |name: &'a String, now: Option<&'a LocalBinding>, before: Option<&LocalBinding>| {
                 let held = held_integer_term(now?)?;
                 (before.and_then(held_integer_term) != Some(held)).then_some((name.as_str(), held))
             };
@@ -2293,8 +2302,8 @@ impl CLocalEnvironment {
         earlier: Option<&'a Self>,
     ) -> Vec<(&'a str, &'a PointerBlock)> {
         let changed = |name: &'a String,
-                       now: Option<&'a CLocalBinding>,
-                       before: Option<&CLocalBinding>| {
+                       now: Option<&'a LocalBinding>,
+                       before: Option<&LocalBinding>| {
             let block = held_pointer_block(now?)?;
             (before.and_then(held_pointer_block) != Some(block)).then_some((name.as_str(), block))
         };
@@ -2324,7 +2333,7 @@ impl CLocalEnvironment {
 
     /// Puts back a binding read from another environment with
     /// [`Self::binding`].
-    pub(in crate::kernel) fn restore_binding(&mut self, name: &str, binding: CLocalBinding) {
+    pub(in crate::kernel) fn restore_binding(&mut self, name: &str, binding: LocalBinding) {
         self.insert_binding(name.to_string(), binding);
     }
 
@@ -2332,8 +2341,8 @@ impl CLocalEnvironment {
     /// slot, type and qualifiers, so a read of it is refused. Returns whether
     /// the name held such an object.
     pub(in crate::kernel) fn forget_initialization(&mut self, name: &str) -> bool {
-        let Some(CLocalBinding::Object {
-            c_type,
+        let Some(LocalBinding::Object {
+            program_type,
             slot,
             volatile,
             pointee_volatile,
@@ -2346,8 +2355,8 @@ impl CLocalEnvironment {
         };
         self.insert_binding(
             name.to_string(),
-            CLocalBinding::UninitializedObject {
-                c_type,
+            LocalBinding::UninitializedObject {
+                program_type,
                 slot,
                 volatile,
                 pointee_volatile,
@@ -2378,7 +2387,7 @@ impl CLocalEnvironment {
     }
 }
 
-impl CBlock {
+impl MemoryBlock {
     pub fn new(size: u32) -> Self {
         Self {
             size: HeapExtent::int32(size),
@@ -2425,7 +2434,7 @@ impl CBlock {
 /// proven distinct from some mutable range's base. Every other cell is kept
 /// by the first rung of `range_proven_disjoint_from_pointer`, so the producer
 /// and the checker both visit these alone.
-fn call_havoc_candidates(mutable_ranges: &[CMemoryRange]) -> AliasCandidates {
+fn call_havoc_candidates(mutable_ranges: &[MemoryRange]) -> AliasCandidates {
     AliasCandidates::of_blocks(mutable_ranges.iter().map(|range| &range.base().block))
 }
 
@@ -2457,7 +2466,7 @@ pub(in crate::kernel) struct CallKeptOwnership {
 
 /// The kept memory a call havoc records on its edge: owned and viewed ranges,
 /// and the condition premises that place a cell in them. See
-/// [`CMemoryDerivation::CallHavoc`].
+/// [`MemoryDerivation::CallHavoc`].
 #[derive(Clone, Debug)]
 pub struct CallKeptRanges {
     ranges: ResourceContext,
@@ -2469,7 +2478,7 @@ pub struct CallKeptRanges {
     /// the call: the ranges a question about one address needs are opened
     /// from the residual's composites whose arguments can spell it
     /// ([`Self::range_holding`]), and the identity names the composites.
-    direct: Option<std::sync::Arc<Vec<CCompositeResourceDefinition>>>,
+    direct: Option<std::sync::Arc<Vec<CompositeResourceDefinition>>>,
     /// The caller's composition before transferring call inputs. Its flat
     /// owners exclude unchanged composite owners of the same bytes.
     caller_before_transfer: Option<ResourceContext>,
@@ -2481,14 +2490,14 @@ pub struct CallKeptRanges {
 #[derive(Debug)]
 struct KeptRangeSet {
     id: u64,
-    ranges: SnapshotMap<CMemoryRange, ()>,
+    ranges: SnapshotMap<MemoryRange, ()>,
     /// The residual's owned composites, with multiplicity, when some of
     /// their ranges are answered per address rather than listed in `ranges`.
-    composites: SnapshotMap<CResourceFact, usize>,
-    original_memory: SnapshotMap<CResourceFact, ()>,
-    introduced_composites: SnapshotMap<CResourceFact, usize>,
+    composites: SnapshotMap<ResourceFact, usize>,
+    original_memory: SnapshotMap<ResourceFact, ()>,
+    introduced_composites: SnapshotMap<ResourceFact, usize>,
     // Share the flat input index, including views, without enumerating it.
-    memory_inputs: SnapshotMap<CResourceFact, ()>,
+    memory_inputs: SnapshotMap<ResourceFact, ()>,
 }
 
 impl PartialEq for CallKeptRanges {
@@ -2499,8 +2508,8 @@ impl PartialEq for CallKeptRanges {
 impl Eq for CallKeptRanges {}
 
 fn intern_kept_range_set(
-    ranges: SnapshotMap<CMemoryRange, ()>,
-    composites: SnapshotMap<CResourceFact, usize>,
+    ranges: SnapshotMap<MemoryRange, ()>,
+    composites: SnapshotMap<ResourceFact, usize>,
 ) -> std::sync::Arc<KeptRangeSet> {
     intern_kept_range_set_with_exclusions(
         ranges,
@@ -2512,11 +2521,11 @@ fn intern_kept_range_set(
 }
 
 fn intern_kept_range_set_with_exclusions(
-    ranges: SnapshotMap<CMemoryRange, ()>,
-    composites: SnapshotMap<CResourceFact, usize>,
-    original_memory: SnapshotMap<CResourceFact, ()>,
-    introduced_composites: SnapshotMap<CResourceFact, usize>,
-    memory_inputs: SnapshotMap<CResourceFact, ()>,
+    ranges: SnapshotMap<MemoryRange, ()>,
+    composites: SnapshotMap<ResourceFact, usize>,
+    original_memory: SnapshotMap<ResourceFact, ()>,
+    introduced_composites: SnapshotMap<ResourceFact, usize>,
+    memory_inputs: SnapshotMap<ResourceFact, ()>,
 ) -> std::sync::Arc<KeptRangeSet> {
     let mut hash = std::collections::hash_map::DefaultHasher::new();
     std::hash::Hash::hash(&original_memory, &mut hash);
@@ -2537,8 +2546,8 @@ fn intern_kept_range_set_with_exclusions(
 
 #[cfg(test)]
 fn intern_kept_range_set_with_hash(
-    ranges: SnapshotMap<CMemoryRange, ()>,
-    composites: SnapshotMap<CResourceFact, usize>,
+    ranges: SnapshotMap<MemoryRange, ()>,
+    composites: SnapshotMap<ResourceFact, usize>,
     hash: u64,
 ) -> std::sync::Arc<KeptRangeSet> {
     intern_kept_range_set_with_exclusions_and_hash(
@@ -2552,11 +2561,11 @@ fn intern_kept_range_set_with_hash(
 }
 
 fn intern_kept_range_set_with_exclusions_and_hash(
-    ranges: SnapshotMap<CMemoryRange, ()>,
-    composites: SnapshotMap<CResourceFact, usize>,
-    original_memory: SnapshotMap<CResourceFact, ()>,
-    introduced_composites: SnapshotMap<CResourceFact, usize>,
-    memory_inputs: SnapshotMap<CResourceFact, ()>,
+    ranges: SnapshotMap<MemoryRange, ()>,
+    composites: SnapshotMap<ResourceFact, usize>,
+    original_memory: SnapshotMap<ResourceFact, ()>,
+    introduced_composites: SnapshotMap<ResourceFact, usize>,
+    memory_inputs: SnapshotMap<ResourceFact, ()>,
     hash: u64,
 ) -> std::sync::Arc<KeptRangeSet> {
     type Buckets = std::collections::HashMap<u64, Vec<std::sync::Weak<KeptRangeSet>>>;
@@ -2612,7 +2621,7 @@ impl CallKeptRanges {
     pub(in crate::kernel) fn new(
         ranges: ResourceContext,
         premises: Vec<(ConditionTerm, bool)>,
-        direct: Option<std::sync::Arc<Vec<CCompositeResourceDefinition>>>,
+        direct: Option<std::sync::Arc<Vec<CompositeResourceDefinition>>>,
     ) -> Self {
         let identity = intern_kept_range_set(
             ranges.flat_owned_memory_ranges().clone(),
@@ -2683,8 +2692,8 @@ impl CallKeptRanges {
 
     /// The ranges of `fact`, one of the residual's composites, when its
     /// family is argument-direct.
-    fn direct_ranges(&self, fact: &CResourceFact) -> Vec<CMemoryRange> {
-        let (Some(direct), CResource::Composite { name, .. }) = (&self.direct, fact.resource())
+    fn direct_ranges(&self, fact: &ResourceFact) -> Vec<MemoryRange> {
+        let (Some(direct), Resource::Composite { name, .. }) = (&self.direct, fact.resource())
         else {
             return Vec::new();
         };
@@ -2707,7 +2716,7 @@ impl CallKeptRanges {
             }
         }
         ResourceContext::new()
-            .unchecked_with_facts(ranges.keys().cloned().map(CResourceFact::own_memory))
+            .unchecked_with_facts(ranges.keys().cloned().map(ResourceFact::own_memory))
             .unchecked_with_facts(
                 self.identity
                     .memory_inputs
@@ -2745,9 +2754,9 @@ impl CallKeptRanges {
     /// The kept memory recorded on the call havoc edge that derived `after`,
     /// if that edge is one: what a call's effect summary may keep beside its
     /// declared write set.
-    pub(in crate::kernel) fn recorded_on(after: &CMemory) -> Option<Self> {
-        let derivation = crate::kernel::intern_c_memory_ref(after).derivation()?;
-        let CMemoryDerivation::CallHavoc {
+    pub(in crate::kernel) fn recorded_on(after: &Memory) -> Option<Self> {
+        let derivation = crate::kernel::intern_memory_ref(after).derivation()?;
+        let MemoryDerivation::CallHavoc {
             kept_by_caller: Some(kept),
             ..
         } = &*derivation
@@ -2772,12 +2781,12 @@ impl CallKeptRanges {
 
     /// Whether `range` is kept: listed, or a range of an argument-direct
     /// composite whose arguments spell its base.
-    pub(in crate::kernel) fn contains_range(&self, range: &CMemoryRange) -> bool {
+    pub(in crate::kernel) fn contains_range(&self, range: &MemoryRange) -> bool {
         if self.identity.ranges.contains_key(range)
             || self
                 .identity
                 .memory_inputs
-                .contains_key(&CResourceFact::view_memory(range.clone()))
+                .contains_key(&ResourceFact::view_memory(range.clone()))
         {
             return true;
         }
@@ -2806,7 +2815,7 @@ impl CallKeptRanges {
         placement: Option<&PureFactContext>,
         pointer: &Pointer,
         bytes: u32,
-    ) -> Option<CMemoryRange> {
+    ) -> Option<MemoryRange> {
         let query = |ranges: &ResourceContext, include_views| {
             let context = placement.unwrap_or(assumptions);
             let place = || {
@@ -2853,7 +2862,7 @@ impl CallKeptRanges {
                                 .owned_memory_members_with_base(base)
                                 .any(|(_, range)| {
                                     original
-                                        .exact_resource_facts(&CResource::Memory(range.clone()))
+                                        .exact_resource_facts(&Resource::Memory(range.clone()))
                                         .into_iter()
                                         .any(|fact| fact.has_proven_positive_quantity(assumptions))
                                         && assumptions
@@ -2865,7 +2874,7 @@ impl CallKeptRanges {
                 } else {
                     residual
                 };
-                let opened = |facts: &mut dyn Iterator<Item = &CResourceFact>| {
+                let opened = |facts: &mut dyn Iterator<Item = &ResourceFact>| {
                     let mut seen = BTreeSet::new();
                     let mut ranges = Vec::new();
                     for fact in facts {
@@ -2874,7 +2883,7 @@ impl CallKeptRanges {
                         }
                     }
                     ResourceContext::new_with_equalities(assumptions)
-                        .unchecked_with_facts(ranges.into_iter().map(CResourceFact::own_memory))
+                        .unchecked_with_facts(ranges.into_iter().map(ResourceFact::own_memory))
                 };
                 query(
                     &opened(
@@ -2951,7 +2960,7 @@ impl CallKeptOwnership {
     /// bodies. The write-set marker spells both, so a content-equal snapshot
     /// whose edge was recorded first carries the same ones.
     pub(in crate::kernel) fn recorded_on(
-        after: &CMemory,
+        after: &Memory,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
         let kept = CallKeptRanges::recorded_on(after)?;
@@ -2969,7 +2978,7 @@ impl CallKeptOwnership {
         pointer: &Pointer,
         bytes: u32,
         assumptions: &PureFactContext,
-    ) -> Option<CMemoryRange> {
+    ) -> Option<MemoryRange> {
         self.opened
             .range_holding(assumptions, self.placement.as_ref(), pointer, bytes)
             .or_else(|| {
@@ -3007,8 +3016,8 @@ enum CallHavocCellRule {
 /// part of a cached cell even when its start differs from the cell's start.
 fn call_havoc_keeps_cell(
     pointer: &Pointer,
-    value: &CValue,
-    mutable_ranges: &[CMemoryRange],
+    value: &ProgramValue,
+    mutable_ranges: &[MemoryRange],
     assumptions: &PureFactContext,
     kept: Option<&CallKeptOwnership>,
     preserve_local_slots: bool,
@@ -3068,7 +3077,7 @@ fn call_havoc_kept_ranges(kept: Option<&CallKeptOwnership>) -> Option<CallKeptRa
 
 fn call_write_set_marker(
     variable: u64,
-    mutable_ranges: &[CMemoryRange],
+    mutable_ranges: &[MemoryRange],
     kept_ranges: Option<&CallKeptRanges>,
 ) -> PointerBlock {
     let mut marker = format!(
@@ -3119,7 +3128,7 @@ fn loan_preserving_havoc_keeps_cell(
     preserved_blocks.contains_block(&pointer.block)
         || ledger.is_some_and(|ledger| {
             byte_width != 0
-                && ledger.has_indexed_memory_overlap(&CMemoryRange::new_with_element_width(
+                && ledger.has_indexed_memory_overlap(&MemoryRange::new_with_element_width(
                     pointer.clone(),
                     MachineTerm::constant(0),
                     MachineTerm::constant(byte_width),
@@ -3146,7 +3155,7 @@ fn loan_preserving_havoc_keeps_run(
     let Some(ledger) = ledger else {
         return (SlotSet::Nothing, exact);
     };
-    let whole = CMemoryRange::new_with_element_width(
+    let whole = MemoryRange::new_with_element_width(
         run.base().clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(
@@ -3221,13 +3230,13 @@ where
 
 /// The widest typed overlay recorded at each address, so that the loan
 /// question above covers every byte the cell can be read as.
-fn union_overlay_widths(memory: &CMemory) -> BTreeMap<Pointer, u32> {
+fn union_overlay_widths(memory: &Memory) -> BTreeMap<Pointer, u32> {
     let mut widths = BTreeMap::<Pointer, u32>::new();
-    for (pointer, c_type) in memory.union_cells.keys() {
+    for (pointer, program_type) in memory.union_cells.keys() {
         widths
             .entry(pointer.clone())
-            .and_modify(|width| *width = (*width).max(c_type.byte_width()))
-            .or_insert_with(|| c_type.byte_width());
+            .and_modify(|width| *width = (*width).max(program_type.byte_width()))
+            .or_insert_with(|| program_type.byte_width());
     }
     widths
 }
@@ -3298,14 +3307,14 @@ fn external_argument_offset_derives_from(base: &Pointer, pointer: &Pointer) -> b
 /// body fact applying a pure predicate to a pointer. The snapshot is empty, so
 /// nothing can be read through it by construction, and it is cached per thread
 /// so repeated uses share one storage root.
-pub fn value_independent_click_memory() -> CMemory {
+pub fn value_independent_click_memory() -> Memory {
     thread_local! {
-        static CANONICAL: CMemory = CMemory::new();
+        static CANONICAL: Memory = Memory::new();
     }
     CANONICAL.with(Clone::clone)
 }
 
-impl CMemory {
+impl Memory {
     pub fn new() -> Self {
         Self::default()
     }
@@ -3327,11 +3336,12 @@ impl CMemory {
         // constructor, so the refusal lives here.
         if block.is_havoc_block() || block.is_call_havoc_block() {
             let diagnostic_base = self.clone();
-            std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), CBlock::new(size));
+            std::sync::Arc::make_mut(&mut self.blocks)
+                .insert(block.clone(), MemoryBlock::new(size));
             self.record_diagnostic_transform(
                 "insert havoc marker",
                 vec![diagnostic_base],
-                vec![CValue::pointer(Pointer {
+                vec![ProgramValue::pointer(Pointer {
                     block,
                     offset: PointerOffsetTerm::Constant(0),
                 })],
@@ -3339,8 +3349,8 @@ impl CMemory {
             return self;
         }
         let base = intern_derivation_base(&mut self);
-        std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), CBlock::new(size));
-        record_c_memory_derivation(&mut self, CMemoryDerivation::BlockDeclared { base, block });
+        std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), MemoryBlock::new(size));
+        record_memory_derivation(&mut self, MemoryDerivation::BlockDeclared { base, block });
         self
     }
 
@@ -3387,7 +3397,7 @@ impl CMemory {
         pointer: &Pointer,
         width: u32,
         class: Option<crate::kernel::effective_type::CAccessClass>,
-        value: &CValue,
+        value: &ProgramValue,
     ) -> Self {
         if !matches!(pointer.block, PointerBlock::Heap(_)) {
             return self;
@@ -3423,14 +3433,11 @@ impl CMemory {
         };
         let mut memory = self;
         let base = intern_derivation_base(&mut memory);
-        let mut declaration = CBlock::new(size);
+        let mut declaration = MemoryBlock::new(size);
         declaration.declared_class = Some(declared_class);
         declaration.read_only = read_only;
         std::sync::Arc::make_mut(&mut memory.blocks).insert(block.clone(), declaration);
-        record_c_memory_derivation(
-            &mut memory,
-            CMemoryDerivation::BlockDeclared { base, block },
-        );
+        record_memory_derivation(&mut memory, MemoryDerivation::BlockDeclared { base, block });
         memory
     }
 
@@ -3441,9 +3448,9 @@ impl CMemory {
         self,
         block: PointerBlock,
         size: u32,
-        c_type: CType,
+        program_type: ProgramType,
     ) -> Self {
-        self.with_classed_scalar_block(block, size, c_type, None)
+        self.with_classed_scalar_block(block, size, program_type, None)
     }
 
     /// Declares one complete automatic scalar, retaining its type while its
@@ -3454,16 +3461,16 @@ impl CMemory {
         mut self,
         block: PointerBlock,
         size: u32,
-        c_type: CType,
+        program_type: ProgramType,
         declared_class: Option<crate::kernel::effective_type::CAccessClass>,
     ) -> Self {
         let base = intern_derivation_base(&mut self);
-        let mut declaration = CBlock::new(size);
-        declaration.declared_scalar_type = Some(c_type);
+        let mut declaration = MemoryBlock::new(size);
+        declaration.declared_scalar_type = Some(program_type);
         declaration.declared_class = declared_class
-            .or_else(|| crate::kernel::effective_type::CAccessClass::of_kernel_type(c_type));
+            .or_else(|| crate::kernel::effective_type::CAccessClass::of_kernel_type(program_type));
         std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), declaration);
-        record_c_memory_derivation(&mut self, CMemoryDerivation::BlockDeclared { base, block });
+        record_memory_derivation(&mut self, MemoryDerivation::BlockDeclared { base, block });
         self
     }
 
@@ -3480,9 +3487,9 @@ impl CMemory {
         assert!(declaration.declared_scalar_type.is_some());
         declaration.read_only = true;
         std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), declaration);
-        record_c_memory_derivation(
+        record_memory_derivation(
             &mut self,
-            CMemoryDerivation::BlockDeclared {
+            MemoryDerivation::BlockDeclared {
                 base,
                 block: block.clone(),
             },
@@ -3497,16 +3504,16 @@ impl CMemory {
     pub fn with_uninitialized_block(mut self, block: impl Into<PointerBlock>, size: u32) -> Self {
         let diagnostic_base = self.clone();
         let block = block.into();
-        std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), CBlock::new(size));
+        std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), MemoryBlock::new(size));
         self.record_diagnostic_transform(
             "declare uninitialized block",
             vec![diagnostic_base],
             vec![
-                CValue::pointer(Pointer {
+                ProgramValue::pointer(Pointer {
                     block: block.clone(),
                     offset: PointerOffsetTerm::Constant(0),
                 }),
-                CValue::Int32(size.into()),
+                ProgramValue::Int32(size.into()),
             ],
         );
         self.with_uninitialized_object(
@@ -3536,7 +3543,10 @@ impl CMemory {
         self.record_diagnostic_transform(
             "mark uninitialized object",
             vec![diagnostic_base],
-            vec![CValue::pointer(pointer.clone()), CValue::Int32(size.into())],
+            vec![
+                ProgramValue::pointer(pointer.clone()),
+                ProgramValue::Int32(size.into()),
+            ],
         );
         self
     }
@@ -3603,8 +3613,9 @@ impl CMemory {
     ) -> Self {
         let block = block.into();
         let base = intern_derivation_base(&mut self);
-        std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), CBlock::read_only(size));
-        record_c_memory_derivation(&mut self, CMemoryDerivation::BlockDeclared { base, block });
+        std::sync::Arc::make_mut(&mut self.blocks)
+            .insert(block.clone(), MemoryBlock::read_only(size));
+        record_memory_derivation(&mut self, MemoryDerivation::BlockDeclared { base, block });
         self
     }
 
@@ -3627,7 +3638,7 @@ impl CMemory {
             self.record_diagnostic_transform(
                 "declare block access class",
                 vec![diagnostic_base],
-                vec![CValue::pointer(Pointer {
+                vec![ProgramValue::pointer(Pointer {
                     block: block.clone(),
                     offset: PointerOffsetTerm::Constant(0),
                 })],
@@ -3643,16 +3654,16 @@ impl CMemory {
     ) -> Self {
         let diagnostic_base = self.clone();
         let block = block.into();
-        std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), CBlock::new(size));
+        std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), MemoryBlock::new(size));
         self.record_diagnostic_transform(
             "declare synthetic block",
             vec![diagnostic_base],
             vec![
-                CValue::pointer(Pointer {
+                ProgramValue::pointer(Pointer {
                     block: block.clone(),
                     offset: PointerOffsetTerm::Constant(0),
                 }),
-                CValue::Int32(size.into()),
+                ProgramValue::Int32(size.into()),
             ],
         );
         self
@@ -3693,9 +3704,9 @@ impl CMemory {
                 .initialized
                 .forget_block(block);
         }
-        record_c_memory_derivation(
+        record_memory_derivation(
             &mut memory,
-            CMemoryDerivation::LocalLifetimeEnded {
+            MemoryDerivation::LocalLifetimeEnded {
                 base,
                 block: block.clone(),
             },
@@ -3707,7 +3718,7 @@ impl CMemory {
         self,
         pointer: &Pointer,
         assumptions: &PureFactContext,
-    ) -> Result<Self, CInvalidFree> {
+    ) -> Result<Self, InvalidFree> {
         self.free_heap_block_with_owned_frame(pointer, assumptions, &ResourceContext::new())
     }
 
@@ -3719,7 +3730,7 @@ impl CMemory {
         pointer: &Pointer,
         assumptions: &PureFactContext,
         kept_owners: &ResourceContext,
-    ) -> Result<Self, CInvalidFree> {
+    ) -> Result<Self, InvalidFree> {
         self.free_heap_block_and_owned_pointer_frames(pointer, assumptions, kept_owners)
             .map(|(memory, _)| memory)
     }
@@ -3732,7 +3743,7 @@ impl CMemory {
         pointer: &Pointer,
         assumptions: &PureFactContext,
         kept_owners: &ResourceContext,
-    ) -> Result<(Self, Vec<(Pointer, CType)>), CInvalidFree> {
+    ) -> Result<(Self, Vec<(Pointer, ProgramType)>), InvalidFree> {
         // An aliased spelling of this allocation (a contract-returned pointer
         // proven equal to it, e.g. `ensures result == p`) is one address too.
         // Retiring through one identity has to retire it through both, else a
@@ -3746,7 +3757,7 @@ impl CMemory {
             }
         }
         if self.heap.deallocated_allocations.contains_key(pointer) {
-            return Err(CInvalidFree::DoubleFree);
+            return Err(InvalidFree::DoubleFree);
         }
         // Every heap entry and cell this free can retire is in a block not
         // proven distinct from the freed pointer's: `heap_allocation_may_
@@ -3758,9 +3769,9 @@ impl CMemory {
                 if candidates.any_entry(&self.heap.live_allocations, |base, _| {
                     heap_allocation_may_contain_pointer(base, pointer, assumptions)
                 }) {
-                    CInvalidFree::InteriorPointer
+                    InvalidFree::InteriorPointer
                 } else {
-                    CInvalidFree::NonHeapPointer
+                    InvalidFree::NonHeapPointer
                 },
             );
         }
@@ -3822,12 +3833,12 @@ impl CMemory {
                     .is_some()
                 {
                     let value_type = match value {
-                        CachedValue::Cell(value) => value.c_type(),
+                        CachedValue::Cell(value) => value.program_type(),
                         CachedValue::UnionView(value_type, _) => value_type,
                     };
                     // Function pointers do not yet use logical version reads.
                     if value_type.pointee_type().is_some()
-                        && !matches!(value_type, CType::FunctionPointer(_))
+                        && !matches!(value_type, ProgramType::FunctionPointer(_))
                         && !crate::instrumentation::in_uncharged_debug_check()
                     {
                         pointer_frames.push((cell.clone(), value_type));
@@ -3840,9 +3851,9 @@ impl CMemory {
             ask_every_slot,
         );
         if let Some(base) = base {
-            record_c_memory_derivation(
+            record_memory_derivation(
                 &mut self,
-                CMemoryDerivation::HeapFreed {
+                MemoryDerivation::HeapFreed {
                     base,
                     allocation_base: pointer.clone(),
                     bytes: bytes.bytes().clone(),
@@ -3910,7 +3921,7 @@ impl CMemory {
     /// where a callee or loop body may store, not where it did.
     fn forget_zeroed_allocations_written_by(
         &mut self,
-        mutable_ranges: &[CMemoryRange],
+        mutable_ranges: &[MemoryRange],
         assumptions: &PureFactContext,
     ) {
         if mutable_ranges.is_empty() {
@@ -4115,9 +4126,9 @@ impl CMemory {
                     .live_allocations
                     .insert(base, bytes);
                 if let Some(prior) = prior {
-                    record_c_memory_derivation(
+                    record_memory_derivation(
                         &mut self,
-                        CMemoryDerivation::ContractAllocationClaimsChanged { base: prior },
+                        MemoryDerivation::ContractAllocationClaimsChanged { base: prior },
                     );
                 }
                 Some(self)
@@ -4197,9 +4208,9 @@ impl CMemory {
         if !retirement_keeps_its_call_havocs_forget_mark(&prior, base, bytes) {
             self.mark_forgotten_from(&prior);
         }
-        record_c_memory_derivation(
+        record_memory_derivation(
             &mut self,
-            CMemoryDerivation::ContractAllocationRetired {
+            MemoryDerivation::ContractAllocationRetired {
                 base: prior,
                 allocation_base: base.clone(),
                 bytes: bytes.clone(),
@@ -4239,9 +4250,9 @@ impl CMemory {
                 .insert(base.clone());
         }
         if let Some(prior) = prior {
-            record_c_memory_derivation(
+            record_memory_derivation(
                 &mut self,
-                CMemoryDerivation::HeapAllocationPending {
+                MemoryDerivation::HeapAllocationPending {
                     base: prior,
                     allocation_base: base,
                     bytes: bytes.bytes().clone(),
@@ -4257,7 +4268,7 @@ impl CMemory {
         old_pointer: Pointer,
         old_bytes: HeapExtent,
         zeroed_prefix: Option<MachineTerm>,
-        copied_cells: Vec<(PointerOffsetTerm, CValue)>,
+        copied_cells: Vec<(PointerOffsetTerm, ProgramValue)>,
         initialized_prefix: Vec<(i64, u32)>,
     ) -> Self {
         let diagnostic_base = self.clone();
@@ -4265,7 +4276,7 @@ impl CMemory {
             .pending_reallocations
             .insert(
                 base.clone(),
-                CPendingReallocation {
+                PendingReallocation {
                     old_pointer: old_pointer.clone(),
                     old_bytes: old_bytes.clone(),
                     zeroed_prefix,
@@ -4277,8 +4288,8 @@ impl CMemory {
             "register pending reallocation",
             vec![diagnostic_base],
             vec![
-                CValue::pointer(base.clone()),
-                CValue::pointer(old_pointer.clone()),
+                ProgramValue::pointer(base.clone()),
+                ProgramValue::pointer(old_pointer.clone()),
                 old_bytes.token_value(),
             ],
         );
@@ -4305,10 +4316,7 @@ impl CMemory {
     /// Name the success identity already reserved by this allocation producer.
     /// This is a value observation, not evidence that allocation succeeded or
     /// that the object is still live. No facts or memory history are consulted.
-    pub(crate) fn fresh_allocation_identity(
-        &self,
-        result: &CPointerValue,
-    ) -> Option<CPointerValue> {
+    pub(crate) fn fresh_allocation_identity(&self, result: &PointerValue) -> Option<PointerValue> {
         let base = result.pointer();
         match base.block {
             PointerBlock::Heap(_) => Some(result.clone()),
@@ -4426,7 +4434,7 @@ impl CMemory {
             .pending_object_classes
             .remove(base);
         if succeeds {
-            let mut block = CBlock::with_symbolic_size(bytes.clone());
+            let mut block = MemoryBlock::with_symbolic_size(bytes.clone());
             block.declared_class = object_class;
             std::sync::Arc::make_mut(&mut self.blocks).insert(resolved_base.block.clone(), block);
             std::sync::Arc::make_mut(&mut self.heap)
@@ -4442,9 +4450,9 @@ impl CMemory {
                     .insert(resolved_base.clone());
             }
             if let Some(prior) = prior {
-                record_c_memory_derivation(
+                record_memory_derivation(
                     &mut self,
-                    CMemoryDerivation::HeapAllocated {
+                    MemoryDerivation::HeapAllocated {
                         base: prior,
                         block: resolved_base.block.clone(),
                         bytes: bytes.bytes().clone(),
@@ -4452,9 +4460,9 @@ impl CMemory {
                 );
             }
         } else if let Some(prior) = prior {
-            record_c_memory_derivation(
+            record_memory_derivation(
                 &mut self,
-                CMemoryDerivation::HeapAllocationFailed { base: prior },
+                MemoryDerivation::HeapAllocationFailed { base: prior },
             );
         }
         Some((self, bytes, resolved_base))
@@ -4465,7 +4473,7 @@ impl CMemory {
         base: &Pointer,
         succeeds: bool,
         assumptions: &PureFactContext,
-    ) -> Option<(Self, HeapExtent, Pointer, CPendingReallocation)> {
+    ) -> Option<(Self, HeapExtent, Pointer, PendingReallocation)> {
         let diagnostic_base = self.clone();
         let pending = std::sync::Arc::make_mut(&mut self.heap)
             .pending_reallocations
@@ -4473,7 +4481,7 @@ impl CMemory {
         self.record_diagnostic_transform(
             "consume pending reallocation",
             vec![diagnostic_base.clone()],
-            vec![CValue::pointer(base.clone())],
+            vec![ProgramValue::pointer(base.clone())],
         );
         let (mut memory, bytes, resolved_base) = if succeeds {
             self = self
@@ -4505,7 +4513,7 @@ impl CMemory {
             memory.record_diagnostic_transform(
                 "restore reallocation zeroed prefix",
                 vec![diagnostic_base.clone()],
-                vec![CValue::pointer(resolved_base.clone())],
+                vec![ProgramValue::pointer(resolved_base.clone())],
             );
             for (offset, value) in &pending.copied_cells {
                 memory = memory.store(
@@ -4535,7 +4543,7 @@ impl CMemory {
         self,
         variable: Variable,
         preserved_blocks: &dyn BlockMembership,
-        mutable_ranges: Option<&[CMemoryRange]>,
+        mutable_ranges: Option<&[MemoryRange]>,
         ledger: Option<&crate::kernel::loans::LoanLedger>,
     ) -> Self {
         self.with_loop_memory_havoc_preserving_frame(
@@ -4551,7 +4559,7 @@ impl CMemory {
         mut self,
         variable: Variable,
         preserved_blocks: &dyn BlockMembership,
-        mutable_ranges: Option<&[CMemoryRange]>,
+        mutable_ranges: Option<&[MemoryRange]>,
         ledger: Option<&crate::kernel::loans::LoanLedger>,
         kept_by_function: Option<CallKeptRanges>,
     ) -> Self {
@@ -4583,12 +4591,12 @@ impl CMemory {
         );
         std::sync::Arc::make_mut(&mut self.blocks).insert(
             marker.into(),
-            CBlock::new(mutable_ranges.map_or(0, memory_havoc_write_set_fingerprint)),
+            MemoryBlock::new(mutable_ranges.map_or(0, memory_havoc_write_set_fingerprint)),
         );
         if let Some(base) = base {
-            record_c_memory_derivation(
+            record_memory_derivation(
                 &mut self,
-                CMemoryDerivation::LoopHavoc {
+                MemoryDerivation::LoopHavoc {
                     base,
                     variable,
                     mutable_ranges: mutable_ranges.map(|ranges| ranges.to_vec()),
@@ -4616,7 +4624,7 @@ impl CMemory {
         &mut self,
         preserved_blocks: &dyn BlockMembership,
         ledger: Option<&crate::kernel::loans::LoanLedger>,
-        agreeing: &[&CMemory],
+        agreeing: &[&Memory],
     ) {
         let union_widths = union_overlay_widths(self);
         let arm_overlays = agreeing
@@ -4702,7 +4710,7 @@ impl CMemory {
         self,
         variable: Variable,
         preserved_blocks: &dyn BlockMembership,
-        sibling_memories: &[&CMemory],
+        sibling_memories: &[&Memory],
     ) -> Result<Self, String> {
         self.with_interface_memory_havoc_preserving_loans(
             variable,
@@ -4716,14 +4724,14 @@ impl CMemory {
         mut self,
         variable: Variable,
         preserved_blocks: &dyn BlockMembership,
-        sibling_memories: &[&CMemory],
+        sibling_memories: &[&Memory],
         ledger: Option<&crate::kernel::loans::LoanLedger>,
     ) -> Result<Self, String> {
         let mut incoming = std::iter::once(&self)
             .chain(sibling_memories.iter().copied())
-            .map(intern_c_memory_ref)
+            .map(intern_memory_ref)
             .collect::<Vec<_>>();
-        incoming.sort_by_key(SharedCMemory::arena_id);
+        incoming.sort_by_key(SharedMemory::arena_id);
         incoming.dedup();
         let Some(first) = sibling_memories.first() else {
             return Err("an interface memory join has no sibling states".to_string());
@@ -4817,7 +4825,7 @@ impl CMemory {
         // until the join forgets it). This carries initialization, not a
         // value, so it remains useful after the join's conservative value
         // havoc. Cells of preserved blocks survive the join as cells.
-        let arm_initialized = |memory: &CMemory| {
+        let arm_initialized = |memory: &Memory| {
             let mut record = memory.heap.initialized.clone();
             let mut visited = 0usize;
             for (pointer, value) in local_block_entries(memory.cells.logical()) {
@@ -4826,10 +4834,10 @@ impl CMemory {
                     record.record(pointer, value.byte_width());
                 }
             }
-            for ((pointer, c_type), _) in local_block_entries(&memory.union_cells) {
+            for ((pointer, program_type), _) in local_block_entries(&memory.union_cells) {
                 visited += 1;
                 if !preserved_blocks.contains_block(&pointer.block) {
-                    record.record(pointer, c_type.byte_width());
+                    record.record(pointer, program_type.byte_width());
                 }
             }
             crate::instrumentation::record_deterministic_work(visited);
@@ -4951,7 +4959,7 @@ impl CMemory {
         // forgotten here. So a reading goes wherever *any* arm caches a value
         // the join forgets, which is also what keeps every arm's abstraction
         // the same one.
-        let forgotten_value_blocks = |memory: &CMemory| {
+        let forgotten_value_blocks = |memory: &Memory| {
             if zeroed_allocations.len() == 0 && zeroed_prefix_allocations.is_empty() {
                 return BTreeSet::new();
             }
@@ -4971,11 +4979,11 @@ impl CMemory {
                     blocks.insert(pointer.block.clone());
                 }
             }
-            for ((pointer, c_type), _) in memory.union_cells.iter() {
+            for ((pointer, program_type), _) in memory.union_cells.iter() {
                 visited += 1;
                 if !loan_preserving_havoc_keeps_cell(
                     pointer,
-                    c_type.byte_width(),
+                    program_type.byte_width(),
                     preserved_blocks,
                     ledger,
                 ) {
@@ -4995,7 +5003,7 @@ impl CMemory {
                 .collect::<BTreeSet<_>>(),
         };
         let mut blocks = blocks;
-        blocks.insert(format!("havoc:{}", variable.0).into(), CBlock::new(0));
+        blocks.insert(format!("havoc:{}", variable.0).into(), MemoryBlock::new(0));
         self.blocks = std::sync::Arc::new(blocks);
         let forgotten = std::sync::Arc::make_mut(&mut self.forgotten);
         forgotten.ended_local_blocks = ended_local_blocks;
@@ -5009,11 +5017,11 @@ impl CMemory {
         forgotten.join_inputs = incoming
             .iter()
             .map(|memory| ForgottenFrom {
-                content_hash: c_memory_content_hash(memory.memory()),
+                content_hash: memory_content_hash(memory.memory()),
                 arena_id: memory.arena_id(),
             })
             .collect();
-        self.heap = std::sync::Arc::new(CHeapMemory {
+        self.heap = std::sync::Arc::new(HeapMemory {
             live_allocations,
             deallocated_allocations,
             pending_allocations,
@@ -5028,9 +5036,9 @@ impl CMemory {
             effective_types,
         });
         self.forget_zero_readings_under(forgotten_blocks.iter());
-        record_c_memory_derivation(
+        record_memory_derivation(
             &mut self,
-            CMemoryDerivation::BranchJoin {
+            MemoryDerivation::BranchJoin {
                 base: incoming[0].clone(),
                 incoming,
             },
@@ -5044,7 +5052,7 @@ impl CMemory {
     pub(in crate::kernel) fn with_storage_memory_havoc(
         self,
         variable: Variable,
-        mutable_ranges: &[CMemoryRange],
+        mutable_ranges: &[MemoryRange],
         assumptions: &PureFactContext,
     ) -> Self {
         self.with_memory_havoc(variable, mutable_ranges, assumptions, None, false)
@@ -5053,7 +5061,7 @@ impl CMemory {
     pub(in crate::kernel) fn with_call_memory_havoc(
         self,
         variable: Variable,
-        mutable_ranges: &[CMemoryRange],
+        mutable_ranges: &[MemoryRange],
         assumptions: &PureFactContext,
         kept: Option<&CallKeptOwnership>,
     ) -> Self {
@@ -5063,7 +5071,7 @@ impl CMemory {
     fn with_memory_havoc(
         mut self,
         variable: Variable,
-        mutable_ranges: &[CMemoryRange],
+        mutable_ranges: &[MemoryRange],
         assumptions: &PureFactContext,
         kept: Option<&CallKeptOwnership>,
         preserve_local_slots: bool,
@@ -5111,7 +5119,7 @@ impl CMemory {
         self.forget_zeroed_allocations_written_by(mutable_ranges, assumptions);
         std::sync::Arc::make_mut(&mut self.blocks).insert(
             format!("call-havoc:{}", variable.0).into(),
-            CBlock::new(memory_havoc_write_set_fingerprint(mutable_ranges)),
+            MemoryBlock::new(memory_havoc_write_set_fingerprint(mutable_ranges)),
         );
         // Keep the legacy marker's semantic shape and add a collision-free
         // structural key for the checked write set, and for the memory the
@@ -5120,12 +5128,12 @@ impl CMemory {
         // call-havoc edge as the only global memory barrier.
         std::sync::Arc::make_mut(&mut self.blocks).insert(
             call_write_set_marker(variable.0, mutable_ranges, kept_ranges.as_ref()),
-            CBlock::new(0),
+            MemoryBlock::new(0),
         );
         if let Some(base) = base {
-            record_c_memory_derivation(
+            record_memory_derivation(
                 &mut self,
-                CMemoryDerivation::CallHavoc {
+                MemoryDerivation::CallHavoc {
                     base,
                     variable,
                     mutable_ranges: mutable_ranges.to_vec(),
@@ -5144,7 +5152,7 @@ impl CMemory {
     pub(in crate::kernel) fn matches_call_memory_havoc_result(
         &self,
         before: &Self,
-        mutable_ranges: &[CMemoryRange],
+        mutable_ranges: &[MemoryRange],
         assumptions: &PureFactContext,
         kept: Option<&CallKeptOwnership>,
     ) -> bool {
@@ -5228,7 +5236,7 @@ impl CMemory {
         crate::instrumentation::record_deterministic_work(visited);
         // The producer's heap: `before`'s, with the automatic values it
         // dropped recorded initialized, and without the zero readings under
-        // a dropped value or the write set ([`CMemory::forget_cached_values`]).
+        // a dropped value or the write set ([`Memory::forget_cached_values`]).
         let mut expected = before.clone();
         expected.record_dropped_local_cells(&dropped_initialized);
         expected.forget_zero_readings_under(
@@ -5244,8 +5252,9 @@ impl CMemory {
         let write_set_marker =
             call_write_set_marker(variable, mutable_ranges, kept_ranges.as_ref());
         if added_blocks.len() != 2
-            || **marker_block != CBlock::new(memory_havoc_write_set_fingerprint(mutable_ranges))
-            || self.blocks.get(&write_set_marker) != Some(&CBlock::new(0))
+            || **marker_block
+                != MemoryBlock::new(memory_havoc_write_set_fingerprint(mutable_ranges))
+            || self.blocks.get(&write_set_marker) != Some(&MemoryBlock::new(0))
         {
             return false;
         }
@@ -5271,10 +5280,10 @@ impl CMemory {
         mut self,
         base: Pointer,
         element_width: u32,
-        element_type: CType,
+        element_type: ProgramType,
         first: u32,
         count: u32,
-        source: SharedCMemory,
+        source: SharedMemory,
     ) -> Self {
         if first >= count {
             return self;
@@ -5290,7 +5299,7 @@ impl CMemory {
             );
             for index in first..count {
                 let pointer = run.slot_pointer(index);
-                if !matches!(self.load(&pointer), CExpressionOutcome::Value(_)) {
+                if !matches!(self.load(&pointer), ExpressionOutcome::Value(_)) {
                     self = self.store(pointer, run.value(index));
                 }
             }
@@ -5325,10 +5334,10 @@ impl CMemory {
         self,
         base: Pointer,
         element_width: u32,
-        element_type: CType,
+        element_type: ProgramType,
         first: u32,
         count: u32,
-        source: SharedCMemory,
+        source: SharedMemory,
     ) -> Result<Self, Self> {
         if first >= count {
             return Ok(self);
@@ -5360,9 +5369,9 @@ impl CMemory {
     pub(crate) fn with_symbolic_storage_run(
         self,
         base: Pointer,
-        element_type: CType,
+        element_type: ProgramType,
         count: u32,
-        source: SharedCMemory,
+        source: SharedMemory,
     ) -> Result<Self, Self> {
         if count == 0 {
             return Ok(self);
@@ -5397,8 +5406,8 @@ impl CMemory {
         base: &Pointer,
         stride: u32,
         count: u32,
-        fields: &[(u32, CType)],
-        source: SharedCMemory,
+        fields: &[(u32, ProgramType)],
+        source: SharedMemory,
     ) -> Result<Self, Self> {
         if base.block.is_local_block()
             || matches!(base.block, PointerBlock::Heap(_))
@@ -5434,9 +5443,9 @@ impl CMemory {
             let run = probe.with_holes(holes);
             let derivation_base = intern_derivation_base(&mut self);
             std::sync::Arc::make_mut(&mut self.cells).add_run(run.clone());
-            record_c_memory_derivation(
+            record_memory_derivation(
                 &mut self,
-                CMemoryDerivation::CellsSeeded {
+                MemoryDerivation::CellsSeeded {
                     base: derivation_base,
                     run: std::sync::Arc::new(run),
                 },
@@ -5461,16 +5470,16 @@ impl CMemory {
     pub(crate) fn with_constant_run(
         self,
         base: Pointer,
-        element_type: CType,
+        element_type: ProgramType,
         count: u32,
-        value: CValue,
+        value: ProgramValue,
     ) -> Result<Self, Self> {
         if count == 0 {
             return Ok(self);
         }
         if base.block.is_local_block()
             || matches!(base.block, PointerBlock::Heap(_))
-            || value.c_type() != element_type
+            || value.program_type() != element_type
             || !self.run_can_stand_for_cells_at(&base)
             || AliasCandidates::only_block(&base.block)
                 .entries(self.cells.concrete())
@@ -5480,7 +5489,7 @@ impl CMemory {
         {
             return Err(self);
         }
-        let source = crate::kernel::intern_c_memory(CMemory::new());
+        let source = crate::kernel::intern_memory(Memory::new());
         Ok(self.with_run_of_cells(
             base,
             element_type.byte_width(),
@@ -5513,7 +5522,7 @@ impl CMemory {
     pub(crate) fn with_constant_runs(
         mut self,
         base: &Pointer,
-        runs: &[CConstantRun],
+        runs: &[ConstantRun],
     ) -> Result<Self, Self> {
         if matches!(base.block, PointerBlock::Heap(_))
             || !self.run_can_stand_for_cells_at(base)
@@ -5528,13 +5537,13 @@ impl CMemory {
         {
             return Err(self);
         }
-        let source = crate::kernel::intern_c_memory(CMemory::new());
+        let source = crate::kernel::intern_memory(Memory::new());
         for run in runs.iter().filter(|run| run.count > 0) {
             crate::instrumentation::record_deterministic_work(1);
             let run = CellRun::new_with_mode(
                 base.offset_by_bytes(run.offset),
                 run.stride,
-                run.value.c_type(),
+                run.value.program_type(),
                 run.count,
                 source.clone(),
                 RunValueMode::Constant(run.value.clone()),
@@ -5542,9 +5551,9 @@ impl CMemory {
             );
             let derivation_base = intern_derivation_base(&mut self);
             std::sync::Arc::make_mut(&mut self.cells).add_run(run.clone());
-            record_c_memory_derivation(
+            record_memory_derivation(
                 &mut self,
-                CMemoryDerivation::CellsSeeded {
+                MemoryDerivation::CellsSeeded {
                     base: derivation_base,
                     run: std::sync::Arc::new(run),
                 },
@@ -5558,11 +5567,11 @@ impl CMemory {
     pub(in crate::kernel) fn initialize_scalar_array(
         self,
         base: &Pointer,
-        element_type: CType,
+        element_type: ProgramType,
         count: u32,
-        value: CValue,
+        value: ProgramValue,
         copy: bool,
-    ) -> Result<Self, CRuntimeError> {
+    ) -> Result<Self, RuntimeError> {
         self.write_scalar_array_region(
             base,
             element_type,
@@ -5577,19 +5586,19 @@ impl CMemory {
     pub(in crate::kernel) fn write_scalar_array_region(
         mut self,
         base: &Pointer,
-        element_type: CType,
+        element_type: ProgramType,
         count: u32,
-        value: CValue,
+        value: ProgramValue,
         copy: bool,
         fresh: bool,
         assumptions: &PureFactContext,
-    ) -> Result<Self, CRuntimeError> {
+    ) -> Result<Self, RuntimeError> {
         let bytes = count
             .checked_mul(element_type.byte_width())
             .filter(|bytes| *bytes <= i32::MAX as u32)
-            .ok_or(CRuntimeError::TypeMismatch)?;
+            .ok_or(RuntimeError::TypeMismatch)?;
         let snapshot_copy = copy
-            && matches!(&value, CValue::Pointer(source) if
+            && matches!(&value, ProgramValue::Pointer(source) if
             !source.pointer().block.is_local_block()
             || self.cells.runs_in_block(&source.pointer().block)
                 .any(|run| !matches!(run.value_mode(), RunValueMode::Constant(_))));
@@ -5619,8 +5628,10 @@ impl CMemory {
                             })
                 })
         };
-        if !matches!(element_type, CType::Int32 | CType::UInt8 | CType::UInt32)
-            || !valid_region(base)
+        if !matches!(
+            element_type,
+            ProgramType::Int32 | ProgramType::UInt8 | ProgramType::UInt32
+        ) || !valid_region(base)
             || !self.run_can_stand_for_cells_at(base)
             || (fresh
                 && (base.offset != PointerOffsetTerm::Constant(0)
@@ -5631,7 +5642,7 @@ impl CMemory {
                         .is_some()
                     || self.cells.runs_in_block(&base.block).next().is_some()))
         {
-            return Err(CRuntimeError::FunctionContract(
+            return Err(RuntimeError::FunctionContract(
                 "scalar-array write requires a valid aligned local region; fresh initialization requires complete empty storage".into(),
             ));
         }
@@ -5641,8 +5652,8 @@ impl CMemory {
         let mut spans = Vec::new();
         let mut cells = Vec::new();
         if copy {
-            let CValue::Pointer(pointer) = &value else {
-                return Err(CRuntimeError::TypeMismatch);
+            let ProgramValue::Pointer(pointer) = &value else {
+                return Err(RuntimeError::TypeMismatch);
             };
             let pointer = pointer.pointer();
             if !valid_region(pointer)
@@ -5655,7 +5666,7 @@ impl CMemory {
                             .and_then(MachineTerm::as_const)
                             != Some(bytes)))
             {
-                return Err(CRuntimeError::FunctionContract(
+                return Err(RuntimeError::FunctionContract(
                     "scalar-array copy requires a valid aligned initialized local source region"
                         .into(),
                 ));
@@ -5668,7 +5679,7 @@ impl CMemory {
             let width = i64::from(element_type.byte_width());
             let mut covered = IndexIntervals::default();
             let invalid = |reason: &str| {
-                CRuntimeError::FunctionContract(format!(
+                RuntimeError::FunctionContract(format!(
                     "scalar-array copy requires complete represented scalar values: {reason}"
                 ))
             };
@@ -5688,7 +5699,7 @@ impl CMemory {
                     return Err(invalid("unsupported run values"));
                 };
                 if run.element_type() != element_type
-                    || value.c_type() != element_type
+                    || value.program_type() != element_type
                     || run.element_width() != element_type.byte_width()
                     || (run_start - start) % width != 0
                 {
@@ -5741,11 +5752,11 @@ impl CMemory {
                 if offset < start
                     || offset + width > end
                     || (offset - start) % width != 0
-                    || value.c_type() != element_type
+                    || value.program_type() != element_type
                 {
                     return Err(invalid(&format!(
                         "cell at byte {offset} with type {:?} does not fit {element_type:?} region {start}..{end}",
-                        value.c_type()
+                        value.program_type()
                     )));
                 }
                 let index = ((offset - start) / width) as u32;
@@ -5768,8 +5779,8 @@ impl CMemory {
                 );
             }
         } else {
-            if value.c_type() != element_type {
-                return Err(CRuntimeError::TypeMismatch);
+            if value.program_type() != element_type {
+                return Err(RuntimeError::TypeMismatch);
             }
             spans.push((0, count, value));
         }
@@ -5792,15 +5803,15 @@ impl CMemory {
                 element_type.byte_width(),
                 element_type,
                 length,
-                crate::kernel::intern_c_memory(CMemory::new()),
+                crate::kernel::intern_memory(Memory::new()),
                 RunValueMode::Constant(value),
                 IndexIntervals::default(),
             );
             let derivation_base = intern_derivation_base(&mut self);
             std::sync::Arc::make_mut(&mut self.cells).add_run(run.clone());
-            record_c_memory_derivation(
+            record_memory_derivation(
                 &mut self,
-                CMemoryDerivation::CellsSeeded {
+                MemoryDerivation::CellsSeeded {
                     base: derivation_base,
                     run: std::sync::Arc::new(run),
                 },
@@ -5818,25 +5829,28 @@ impl CMemory {
     pub(in crate::kernel) fn write_scalar_array_snapshot(
         mut self,
         base: &Pointer,
-        element: CType,
+        element: ProgramType,
         count: u32,
-        value: CValue,
+        value: ProgramValue,
         copy: bool,
         fresh: bool,
         assumptions: &PureFactContext,
-    ) -> Result<Self, CRuntimeError> {
+    ) -> Result<Self, RuntimeError> {
         let bytes = count
             .checked_mul(element.byte_width())
             .filter(|bytes| *bytes <= i32::MAX as u32)
-            .ok_or(CRuntimeError::TypeMismatch)?;
-        if !matches!(element, CType::Int32 | CType::UInt8 | CType::UInt32) {
-            return Err(CRuntimeError::TypeMismatch);
+            .ok_or(RuntimeError::TypeMismatch)?;
+        if !matches!(
+            element,
+            ProgramType::Int32 | ProgramType::UInt8 | ProgramType::UInt32
+        ) {
+            return Err(RuntimeError::TypeMismatch);
         }
         if count == 0 {
-            if (copy && !matches!(value, CValue::Pointer(_)))
-                || (!copy && value.c_type() != element)
+            if (copy && !matches!(value, ProgramValue::Pointer(_)))
+                || (!copy && value.program_type() != element)
             {
-                return Err(CRuntimeError::TypeMismatch);
+                return Err(RuntimeError::TypeMismatch);
             }
             return Ok(self);
         }
@@ -5875,21 +5889,21 @@ impl CMemory {
                         .next()
                         .is_some()))
         {
-            return Err(CRuntimeError::FunctionContract("scalar-array snapshot requires valid aligned storage; fresh storage must be complete and empty".into()));
+            return Err(RuntimeError::FunctionContract("scalar-array snapshot requires valid aligned storage; fresh storage must be complete and empty".into()));
         }
-        let snapshot = crate::kernel::intern_c_memory(self.clone());
+        let snapshot = crate::kernel::intern_memory(self.clone());
         let mut captured_runs = Vec::new();
         let mut captured_cells = Vec::new();
         if copy {
-            let CValue::Pointer(pointer) = value else {
-                return Err(CRuntimeError::TypeMismatch);
+            let ProgramValue::Pointer(pointer) = value else {
+                return Err(RuntimeError::TypeMismatch);
             };
             let pointer = pointer.pointer();
             if !valid(pointer)
                 || (pointer.block.is_local_block()
                     && !self.has_initialized_bytes_under(pointer, bytes, assumptions))
             {
-                return Err(CRuntimeError::FunctionContract(
+                return Err(RuntimeError::FunctionContract(
                     "scalar-array snapshot requires a valid initialized source region".into(),
                 ));
             }
@@ -5904,10 +5918,10 @@ impl CMemory {
                 }
                 let delta = run_start
                     .checked_sub(start)
-                    .ok_or(CRuntimeError::TypeMismatch)?;
+                    .ok_or(RuntimeError::TypeMismatch)?;
                 let end = delta
                     .checked_add(i64::from(run.count()) * i64::from(run.element_width()))
-                    .ok_or(CRuntimeError::TypeMismatch)?;
+                    .ok_or(RuntimeError::TypeMismatch)?;
                 if end <= 0 || delta >= i64::from(bytes) {
                     continue;
                 }
@@ -5915,7 +5929,7 @@ impl CMemory {
                     || run.element_width() != element.byte_width()
                     || delta % width != 0
                 {
-                    return Err(CRuntimeError::TypeMismatch);
+                    return Err(RuntimeError::TypeMismatch);
                 }
                 for (low, high) in run.live_intervals().intervals() {
                     crate::instrumentation::record_deterministic_work(1);
@@ -5957,16 +5971,16 @@ impl CMemory {
                 }
                 let delta = cell_start
                     .checked_sub(start)
-                    .ok_or(CRuntimeError::TypeMismatch)?;
+                    .ok_or(RuntimeError::TypeMismatch)?;
                 if delta + i64::from(value.byte_width()) <= 0 || delta >= i64::from(bytes) {
                     continue;
                 }
                 if delta < 0
                     || delta + width > i64::from(bytes)
                     || delta % width != 0
-                    || value.c_type() != element
+                    || value.program_type() != element
                 {
-                    return Err(CRuntimeError::TypeMismatch);
+                    return Err(RuntimeError::TypeMismatch);
                 }
                 let index = (delta / width) as u32;
                 represented.insert(index);
@@ -5989,15 +6003,15 @@ impl CMemory {
                 ));
             }
         } else {
-            if value.c_type() != element {
-                return Err(CRuntimeError::TypeMismatch);
+            if value.program_type() != element {
+                return Err(RuntimeError::TypeMismatch);
             }
             captured_runs.push(CellRun::new_with_mode(
                 base.clone(),
                 element.byte_width(),
                 element,
                 count,
-                crate::kernel::intern_c_memory(CMemory::new()),
+                crate::kernel::intern_memory(Memory::new()),
                 RunValueMode::Constant(value),
                 IndexIntervals::default(),
             ));
@@ -6008,9 +6022,9 @@ impl CMemory {
         for run in captured_runs {
             let derivation_base = intern_derivation_base(&mut self);
             std::sync::Arc::make_mut(&mut self.cells).add_run(run.clone());
-            record_c_memory_derivation(
+            record_memory_derivation(
                 &mut self,
-                CMemoryDerivation::CellsSeeded {
+                MemoryDerivation::CellsSeeded {
                     base: derivation_base,
                     run: std::sync::Arc::new(run),
                 },
@@ -6037,10 +6051,10 @@ impl CMemory {
         mut self,
         base: Pointer,
         element_width: u32,
-        element_type: CType,
+        element_type: ProgramType,
         first: u32,
         count: u32,
-        source: SharedCMemory,
+        source: SharedMemory,
         mode: RunValueMode,
     ) -> Self {
         let mut holes = IndexIntervals::default();
@@ -6089,9 +6103,9 @@ impl CMemory {
         let run = probe.with_holes(holes);
         let derivation_base = intern_derivation_base(&mut self);
         std::sync::Arc::make_mut(&mut self.cells).add_run(run.clone());
-        record_c_memory_derivation(
+        record_memory_derivation(
             &mut self,
-            CMemoryDerivation::CellsSeeded {
+            MemoryDerivation::CellsSeeded {
                 base: derivation_base,
                 run: std::sync::Arc::new(run),
             },
@@ -6099,7 +6113,7 @@ impl CMemory {
         self
     }
 
-    pub fn store(self, pointer: Pointer, value: CValue) -> Self {
+    pub fn store(self, pointer: Pointer, value: ProgramValue) -> Self {
         self.store_with_context(pointer, value, &PureFactContext::new())
     }
 
@@ -6107,8 +6121,13 @@ impl CMemory {
     /// The observation is computed here so callers cannot supply a new value
     /// under the guise of a read.
     #[cfg(test)]
-    pub(crate) fn materialize_symbolic_cell(self, pointer: Pointer, c_type: CType) -> Self {
-        let value = crate::kernel::eval::symbolic_storage_cell_value(&self, &pointer, c_type, true);
+    pub(crate) fn materialize_symbolic_cell(
+        self,
+        pointer: Pointer,
+        program_type: ProgramType,
+    ) -> Self {
+        let value =
+            crate::kernel::eval::symbolic_storage_cell_value(&self, &pointer, program_type, true);
         match value {
             Some(value) => self.materialize_named_cell(pointer, value),
             None => self,
@@ -6122,14 +6141,15 @@ impl CMemory {
     pub(crate) fn materialize_cell_from_source(
         self,
         pointer: Pointer,
-        c_type: CType,
-        source: SharedCMemory,
+        program_type: ProgramType,
+        source: SharedMemory,
     ) -> Self {
-        let value = if let CType::Parameter(parameter) = c_type {
+        let value = if let ProgramType::Parameter(parameter) = program_type {
             AlgebraicTermNode::parameter_load(source, pointer.clone(), parameter)
         } else {
-            let load = crate::kernel::eval::canonical_cell_load(source, pointer.clone(), c_type);
-            crate::kernel::cell_run_value(c_type, load)
+            let load =
+                crate::kernel::eval::canonical_cell_load(source, pointer.clone(), program_type);
+            crate::kernel::cell_run_value(program_type, load)
         };
         self.materialize_named_cell(pointer, value)
     }
@@ -6140,7 +6160,7 @@ impl CMemory {
     pub(in crate::kernel) fn materialize_named_cell(
         mut self,
         pointer: Pointer,
-        value: CValue,
+        value: ProgramValue,
     ) -> Self {
         if self.cells.contains_key(&pointer) {
             return self;
@@ -6173,7 +6193,7 @@ impl CMemory {
         }
         let base = intern_derivation_base(&mut self);
         std::sync::Arc::make_mut(&mut self.cells).insert(pointer, value);
-        record_c_memory_derivation(&mut self, CMemoryDerivation::CellObserved { base });
+        record_memory_derivation(&mut self, MemoryDerivation::CellObserved { base });
         self
     }
 
@@ -6183,7 +6203,7 @@ impl CMemory {
     pub fn store_with_context(
         self,
         pointer: Pointer,
-        value: CValue,
+        value: ProgramValue,
         context: &PureFactContext,
     ) -> Self {
         self.store_with_effective_type(pointer, value, context, None, false)
@@ -6197,7 +6217,7 @@ impl CMemory {
     pub(in crate::kernel) fn store_classed_with_context(
         self,
         pointer: Pointer,
-        value: CValue,
+        value: ProgramValue,
         context: &PureFactContext,
         class: Option<crate::kernel::effective_type::CAccessClass>,
     ) -> Self {
@@ -6208,7 +6228,7 @@ impl CMemory {
     pub(in crate::kernel) fn store_invalidating_with_context(
         self,
         pointer: Pointer,
-        value: CValue,
+        value: ProgramValue,
         context: &PureFactContext,
     ) -> Self {
         self.store_with_effective_type(pointer, value, context, None, true)
@@ -6217,7 +6237,7 @@ impl CMemory {
     fn store_with_effective_type(
         mut self,
         pointer: Pointer,
-        value: CValue,
+        value: ProgramValue,
         context: &PureFactContext,
         effective_type: Option<Option<crate::kernel::effective_type::CAccessClass>>,
         invalidate_aliases: bool,
@@ -6261,9 +6281,9 @@ impl CMemory {
         if !self.union_cells.is_empty() {
             self.remove_union_views_at(&pointer);
         }
-        record_c_memory_derivation(
+        record_memory_derivation(
             &mut self,
-            CMemoryDerivation::Store {
+            MemoryDerivation::Store {
                 base,
                 pointer,
                 value,
@@ -6272,10 +6292,10 @@ impl CMemory {
         self
     }
 
-    pub fn load(&self, pointer: &Pointer) -> CExpressionOutcome {
+    pub fn load(&self, pointer: &Pointer) -> ExpressionOutcome {
         match self.cells.get(pointer) {
-            Some(value) => CExpressionOutcome::Value(value),
-            None => CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory),
+            Some(value) => ExpressionOutcome::Value(value),
+            None => ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),
         }
     }
 
@@ -6363,7 +6383,7 @@ impl CMemory {
         pointers.into_iter().collect()
     }
 
-    pub(in crate::kernel) fn known_value(&self, pointer: &Pointer) -> Option<CValue> {
+    pub(in crate::kernel) fn known_value(&self, pointer: &Pointer) -> Option<ProgramValue> {
         self.cells.get(pointer)
     }
 
@@ -6379,17 +6399,17 @@ impl CMemory {
             .changed_concrete_cells(earlier.map(|earlier| earlier.cells.as_ref()))
             .into_iter()
             .filter_map(|(_, value)| match value.numeric_value() {
-                CValue::Bool(term)
-                | CValue::Int8(term)
-                | CValue::Int16(term)
-                | CValue::Int32(term)
-                | CValue::UInt8(term)
-                | CValue::UInt16(term)
-                | CValue::UInt32(term)
-                | CValue::Int64(term)
-                | CValue::UInt64(term)
-                | CValue::Int128(term)
-                | CValue::UInt128(term) => Some(term),
+                ProgramValue::Bool(term)
+                | ProgramValue::Int8(term)
+                | ProgramValue::Int16(term)
+                | ProgramValue::Int32(term)
+                | ProgramValue::UInt8(term)
+                | ProgramValue::UInt16(term)
+                | ProgramValue::UInt32(term)
+                | ProgramValue::Int64(term)
+                | ProgramValue::UInt64(term)
+                | ProgramValue::Int128(term)
+                | ProgramValue::UInt128(term) => Some(term),
                 _ => None,
             })
             .collect()
@@ -6400,13 +6420,13 @@ impl CMemory {
     }
 
     /// The typed union views recorded at exactly `pointer`: one key range,
-    /// since `(Pointer, CType)` keys order by pointer first.
+    /// since `(Pointer, ProgramType)` keys order by pointer first.
     fn union_views_at<'a>(
         &'a self,
         pointer: &'a Pointer,
-    ) -> impl Iterator<Item = (&'a (Pointer, CType), &'a CValue)> + 'a {
+    ) -> impl Iterator<Item = (&'a (Pointer, ProgramType), &'a ProgramValue)> + 'a {
         self.union_cells
-            .range::<_, (Pointer, CType)>((pointer.clone(), CType::Void)..)
+            .range::<_, (Pointer, ProgramType)>((pointer.clone(), ProgramType::Void)..)
             .take_while(move |((cell_pointer, _), _)| cell_pointer == pointer)
     }
 
@@ -6562,8 +6582,8 @@ impl CMemory {
     pub(in crate::kernel) fn known_union_value(
         &self,
         pointer: &Pointer,
-        value_type: CType,
-    ) -> Option<CValue> {
+        value_type: ProgramType,
+    ) -> Option<ProgramValue> {
         self.union_cells
             .get(&(pointer.clone(), value_type))
             .cloned()
@@ -6571,9 +6591,9 @@ impl CMemory {
 
     /// The pointer a typed union view records at exactly `pointer`, when one
     /// does: one key range, as [`Self::union_views_at`] reads it.
-    pub(in crate::kernel) fn known_union_pointer(&self, pointer: &Pointer) -> Option<CValue> {
+    pub(in crate::kernel) fn known_union_pointer(&self, pointer: &Pointer) -> Option<ProgramValue> {
         self.union_views_at(pointer)
-            .find(|(_, value)| matches!(value, CValue::Pointer(_)))
+            .find(|(_, value)| matches!(value, ProgramValue::Pointer(_)))
             .map(|(_, value)| value.clone())
     }
 
@@ -6581,8 +6601,8 @@ impl CMemory {
     pub(in crate::kernel) fn store_union(
         self,
         pointer: Pointer,
-        value_type: CType,
-        value: CValue,
+        value_type: ProgramType,
+        value: ProgramValue,
     ) -> Self {
         self.store_union_views(
             pointer.clone(),
@@ -6602,7 +6622,7 @@ impl CMemory {
         self,
         written_pointer: Pointer,
         written_bytes: u32,
-        views: Vec<(Pointer, CType, CValue)>,
+        views: Vec<(Pointer, ProgramType, ProgramValue)>,
     ) -> Self {
         let diagnostic_base = self.clone();
         let mut memory = self.without_possible_aliasing_cells(
@@ -6631,14 +6651,14 @@ impl CMemory {
             "replace union views",
             vec![diagnostic_base],
             vec![
-                CValue::pointer(written_pointer.clone()),
-                CValue::Int32(written_bytes.into()),
+                ProgramValue::pointer(written_pointer.clone()),
+                ProgramValue::Int32(written_bytes.into()),
             ],
         );
         memory
     }
 
-    /// Drops every cell a field of `c_type` at `offset_bytes` from `base`
+    /// Drops every cell a field of `program_type` at `offset_bytes` from `base`
     /// could occupy.
     ///
     /// Used where a copy cannot carry a field's value: leaving the
@@ -6648,7 +6668,7 @@ impl CMemory {
         &self,
         base: &Pointer,
         offset_bytes: u32,
-        c_type: CType,
+        program_type: ProgramType,
     ) -> Self {
         let diagnostic_base = self.clone();
         let Some(field_start) = base
@@ -6658,9 +6678,9 @@ impl CMemory {
         else {
             return self.clone();
         };
-        let field_end = field_start + i64::from(c_type.byte_width());
+        let field_end = field_start + i64::from(program_type.byte_width());
         let mut memory = self.clone();
-        let source = intern_c_memory_ref(&memory);
+        let source = intern_memory_ref(&memory);
         let overlaps = |pointer: &Pointer| {
             pointer.block == base.block
                 && pointer
@@ -6693,12 +6713,12 @@ impl CMemory {
                 block: base.block.clone(),
                 offset: PointerOffsetTerm::Constant(field_start),
             },
-            c_type.byte_width(),
+            program_type.byte_width(),
         );
         // Nothing restores these cells — the copy could not carry the field —
         // so the result knows strictly less than its source and must not be
         // able to re-intern as a state that never knew it. See
-        // [`CMemory::mark_forgotten_from`].
+        // [`Memory::mark_forgotten_from`].
         if memory.cells.len() != self.cells.len()
             || memory.union_cells.len() != self.union_cells.len()
         {
@@ -6708,9 +6728,9 @@ impl CMemory {
             "forget copied field contents",
             vec![diagnostic_base],
             vec![
-                CValue::pointer(base.clone()),
-                CValue::Int32(offset_bytes.into()),
-                CValue::Int32(c_type.byte_width().into()),
+                ProgramValue::pointer(base.clone()),
+                ProgramValue::Int32(offset_bytes.into()),
+                ProgramValue::Int32(program_type.byte_width().into()),
             ],
         );
         memory
@@ -6734,7 +6754,7 @@ impl CMemory {
         memory.record_diagnostic_transform(
             "remove cell for conditional load",
             vec![diagnostic_base],
-            vec![CValue::pointer(pointer.clone())],
+            vec![ProgramValue::pointer(pointer.clone())],
         );
         memory
     }
@@ -6800,18 +6820,20 @@ impl CMemory {
         let mut forgotten_cells = Vec::new();
         let dropped_run_slots;
         {
-            let mut keep_cell =
-                |pointer: &Pointer, value: &CValue| match fate(pointer, CachedValue::Cell(value)) {
-                    CachedValueFate::Kept => true,
-                    CachedValueFate::Overwritten | CachedValueFate::Retired => false,
-                    CachedValueFate::Forgotten => {
-                        push_dropped_initialized(
-                            &mut forgotten_cells,
-                            (pointer.clone(), value.byte_width()),
-                        );
-                        false
-                    }
-                };
+            let mut keep_cell = |pointer: &Pointer, value: &ProgramValue| match fate(
+                pointer,
+                CachedValue::Cell(value),
+            ) {
+                CachedValueFate::Kept => true,
+                CachedValueFate::Overwritten | CachedValueFate::Retired => false,
+                CachedValueFate::Forgotten => {
+                    push_dropped_initialized(
+                        &mut forgotten_cells,
+                        (pointer.clone(), value.byte_width()),
+                    );
+                    false
+                }
+            };
             let cells = std::sync::Arc::make_mut(&mut self.cells);
             dropped_run_slots = match scope {
                 ForgetScope::Everywhere => cells.retain_by(&mut keep_cell, run_rule),
@@ -6838,16 +6860,17 @@ impl CMemory {
             };
         }
         if !self.union_cells.is_empty() {
-            let mut keep_view = |(pointer, c_type): &(Pointer, CType), value: &CValue| match fate(
+            let mut keep_view = |(pointer, program_type): &(Pointer, ProgramType),
+                                 value: &ProgramValue| match fate(
                 pointer,
-                CachedValue::UnionView(*c_type, value),
+                CachedValue::UnionView(*program_type, value),
             ) {
                 CachedValueFate::Kept => true,
                 CachedValueFate::Overwritten | CachedValueFate::Retired => false,
                 CachedValueFate::Forgotten => {
                     push_dropped_initialized(
                         &mut forgotten_cells,
-                        (pointer.clone(), c_type.byte_width()),
+                        (pointer.clone(), program_type.byte_width()),
                     );
                     false
                 }
@@ -6964,9 +6987,9 @@ impl CMemory {
             std::sync::Arc::make_mut(&mut self.heap)
                 .initialized
                 .record(pointer, bytes);
-            record_c_memory_derivation(
+            record_memory_derivation(
                 &mut self,
-                CMemoryDerivation::ObjectInitializationRecorded {
+                MemoryDerivation::ObjectInitializationRecorded {
                     base,
                     pointer: pointer.clone(),
                     bytes,
@@ -7044,9 +7067,9 @@ impl CMemory {
             memory.mark_forgotten_from(&base);
         }
         let base_id = base.arena_id();
-        record_c_memory_derivation(&mut memory, CMemoryDerivation::CellsForgotten { base });
+        record_memory_derivation(&mut memory, MemoryDerivation::CellsForgotten { base });
         debug_assert!(
-            !lost_knowledge || intern_c_memory_ref(&memory).arena_id() > base_id,
+            !lost_knowledge || intern_memory_ref(&memory).arena_id() > base_id,
             "a forget that lost knowledge landed on an older snapshot"
         );
         memory
@@ -7112,7 +7135,7 @@ impl CMemory {
         // Objects a known address equality ties to the written one may share
         // the written bytes.
         let address_connected = assumptions.address_connected_objects(&normalized_pointer);
-        let cell_fate = |cell_pointer: &Pointer, cell_value: &CValue| {
+        let cell_fate = |cell_pointer: &Pointer, cell_value: &ProgramValue| {
             let normalized_cell_pointer = Pointer {
                 block: cell_pointer.block.clone(),
                 offset: normalize_exact_memory_loads_in_pointer_offset(
@@ -7183,7 +7206,7 @@ impl CMemory {
                 CachedValueFate::Forgotten
             }
         };
-        let view_fate = |cell_pointer: &Pointer, cell_type: CType| {
+        let view_fate = |cell_pointer: &Pointer, cell_type: ProgramType| {
             let normalized_cell_pointer = Pointer {
                 block: cell_pointer.block.clone(),
                 offset: normalize_exact_memory_loads_in_pointer_offset(
@@ -7295,7 +7318,7 @@ impl CMemory {
             scope,
             |pointer, value| match value {
                 CachedValue::Cell(value) => cell_fate(pointer, value),
-                CachedValue::UnionView(c_type, _) => view_fate(pointer, c_type),
+                CachedValue::UnionView(program_type, _) => view_fate(pointer, program_type),
             },
             run_rule,
         );
@@ -7455,16 +7478,18 @@ impl CMemory {
     }
 
     pub(in crate::kernel) fn is_read_only_block(&self, block: &PointerBlock) -> bool {
-        self.blocks.get(block).is_some_and(CBlock::is_read_only)
+        self.blocks
+            .get(block)
+            .is_some_and(MemoryBlock::is_read_only)
     }
 
     pub(in crate::kernel) fn block_size(&self, block: &PointerBlock) -> Option<&MachineTerm> {
-        self.blocks.get(block).map(CBlock::size)
+        self.blocks.get(block).map(MemoryBlock::size)
     }
 
-    /// The block's byte count with its format; see [`CBlock::extent`].
+    /// The block's byte count with its format; see [`MemoryBlock::extent`].
     pub(in crate::kernel) fn block_extent(&self, block: &PointerBlock) -> Option<&HeapExtent> {
-        self.blocks.get(block).map(CBlock::extent)
+        self.blocks.get(block).map(MemoryBlock::extent)
     }
 
     /// Whether some allocation this snapshot has already freed may contain
@@ -7504,7 +7529,7 @@ impl CMemory {
             .filter(|&(block, contents)| {
                 contents.is_read_only() && matches!(block, PointerBlock::StringLiteral { .. })
             })
-            .map(|(block, contents)| Proposition::CMemoryLoadable {
+            .map(|(block, contents)| Proposition::MemoryLoadable {
                 memory: self.clone(),
                 base: Pointer {
                     block: block.clone(),
@@ -7519,7 +7544,7 @@ impl CMemory {
     pub(in crate::kernel) fn can_store_concretely(
         &self,
         pointer: &Pointer,
-        value: &CValue,
+        value: &ProgramValue,
     ) -> bool {
         !self.is_read_only_block(&pointer.block)
             && (self.cells.contains_key(pointer)
@@ -7544,9 +7569,9 @@ impl CMemory {
             .is_some_and(|end| end <= block_size)
     }
 
-    pub(in crate::kernel) fn symbolic_int32_load(&self, pointer: &Pointer) -> CValue {
+    pub(in crate::kernel) fn symbolic_int32_load(&self, pointer: &Pointer) -> ProgramValue {
         int32(MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(self.clone()),
+            crate::kernel::intern_memory(self.clone()),
             Box::new(pointer.clone()),
             LoadKind::Int32,
         ))
@@ -7554,57 +7579,57 @@ impl CMemory {
 
     /// A signed byte read: the two's-complement conversion of the byte's
     /// one unsigned read ([`MachineTerm::memory_read`]).
-    pub(in crate::kernel) fn symbolic_int8_load(&self, pointer: &Pointer) -> CValue {
+    pub(in crate::kernel) fn symbolic_int8_load(&self, pointer: &Pointer) -> ProgramValue {
         int8(MachineTerm::memory_read(
-            crate::kernel::intern_c_memory(self.clone()),
+            crate::kernel::intern_memory(self.clone()),
             pointer.clone(),
             LoadKind::Int8,
         ))
     }
 
-    pub(in crate::kernel) fn symbolic_int16_load(&self, pointer: &Pointer) -> CValue {
+    pub(in crate::kernel) fn symbolic_int16_load(&self, pointer: &Pointer) -> ProgramValue {
         int16(MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(self.clone()),
+            crate::kernel::intern_memory(self.clone()),
             Box::new(pointer.clone()),
             LoadKind::Int16,
         ))
     }
 
-    pub(in crate::kernel) fn symbolic_uint8_load(&self, pointer: &Pointer) -> CValue {
+    pub(in crate::kernel) fn symbolic_uint8_load(&self, pointer: &Pointer) -> ProgramValue {
         uint8(MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(self.clone()),
+            crate::kernel::intern_memory(self.clone()),
             Box::new(pointer.clone()),
             LoadKind::UInt8,
         ))
     }
 
-    pub(in crate::kernel) fn symbolic_uint16_load(&self, pointer: &Pointer) -> CValue {
+    pub(in crate::kernel) fn symbolic_uint16_load(&self, pointer: &Pointer) -> ProgramValue {
         uint16(MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(self.clone()),
+            crate::kernel::intern_memory(self.clone()),
             Box::new(pointer.clone()),
             LoadKind::UInt16,
         ))
     }
 
-    pub(in crate::kernel) fn symbolic_uint32_load(&self, pointer: &Pointer) -> CValue {
+    pub(in crate::kernel) fn symbolic_uint32_load(&self, pointer: &Pointer) -> ProgramValue {
         uint32(MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(self.clone()),
+            crate::kernel::intern_memory(self.clone()),
             Box::new(pointer.clone()),
             LoadKind::UInt32,
         ))
     }
 
-    pub(in crate::kernel) fn symbolic_int64_load(&self, pointer: &Pointer) -> CValue {
-        CValue::Int64(MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(self.clone()),
+    pub(in crate::kernel) fn symbolic_int64_load(&self, pointer: &Pointer) -> ProgramValue {
+        ProgramValue::Int64(MachineTerm::MemoryLoad(
+            crate::kernel::intern_memory(self.clone()),
             Box::new(pointer.clone()),
             LoadKind::Bits64,
         ))
     }
 
-    pub(in crate::kernel) fn symbolic_uint64_load(&self, pointer: &Pointer) -> CValue {
-        CValue::UInt64(MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(self.clone()),
+    pub(in crate::kernel) fn symbolic_uint64_load(&self, pointer: &Pointer) -> ProgramValue {
+        ProgramValue::UInt64(MachineTerm::MemoryLoad(
+            crate::kernel::intern_memory(self.clone()),
             Box::new(pointer.clone()),
             LoadKind::Bits64,
         ))
@@ -7614,33 +7639,33 @@ impl CMemory {
         &self,
         pointer: &Pointer,
         ty: MachineIntegerType,
-    ) -> Option<CValue> {
+    ) -> Option<ProgramValue> {
         if ty.format().bits() != 128 {
             return None;
         }
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(self.clone()),
+            crate::kernel::intern_memory(self.clone()),
             Box::new(pointer.clone()),
-            LoadKind::of_type(ty.c_type())?,
+            LoadKind::of_type(ty.program_type())?,
         );
         Some(match ty {
-            MachineIntegerType::Int128 => CValue::Int128(load),
-            MachineIntegerType::UInt128 => CValue::UInt128(load),
+            MachineIntegerType::Int128 => ProgramValue::Int128(load),
+            MachineIntegerType::UInt128 => ProgramValue::UInt128(load),
             _ => return None,
         })
     }
 
-    pub(in crate::kernel) fn symbolic_float32_load(&self, pointer: &Pointer) -> CValue {
-        CValue::Float32(MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(self.clone()),
+    pub(in crate::kernel) fn symbolic_float32_load(&self, pointer: &Pointer) -> ProgramValue {
+        ProgramValue::Float32(MachineTerm::MemoryLoad(
+            crate::kernel::intern_memory(self.clone()),
             Box::new(pointer.clone()),
             LoadKind::Float32,
         ))
     }
 
-    pub(in crate::kernel) fn symbolic_float64_load(&self, pointer: &Pointer) -> CValue {
-        CValue::Float64(MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(self.clone()),
+    pub(in crate::kernel) fn symbolic_float64_load(&self, pointer: &Pointer) -> ProgramValue {
+        ProgramValue::Float64(MachineTerm::MemoryLoad(
+            crate::kernel::intern_memory(self.clone()),
             Box::new(pointer.clone()),
             LoadKind::Float64,
         ))
@@ -7651,14 +7676,14 @@ impl CMemory {
     pub(in crate::kernel) fn symbolic_pointer_version_load(
         &self,
         pointer: &Pointer,
-        value_type: CType,
-    ) -> CValue {
-        let snapshot = crate::kernel::intern_c_memory(self.clone());
+        value_type: ProgramType,
+    ) -> ProgramValue {
+        let snapshot = crate::kernel::intern_memory(self.clone());
         // A version read is a named read, or a value the memory holds for the
         // cell, either of which already carries its definition.
         match Pointer::version_read_value(&snapshot, pointer) {
-            Ok(held) => CValue::Pointer(held.with_type(value_type)),
-            Err(value) => CValue::Pointer(CPointerValue::from_read(
+            Ok(held) => ProgramValue::Pointer(held.with_type(value_type)),
+            Err(value) => ProgramValue::Pointer(PointerValue::from_read(
                 value, value_type, &snapshot, pointer,
             )),
         }
@@ -7667,9 +7692,9 @@ impl CMemory {
     pub(in crate::kernel) fn symbolic_pointer_load(
         &self,
         pointer: &Pointer,
-        value_type: CType,
-    ) -> CValue {
-        let snapshot = crate::kernel::intern_c_memory(self.clone());
+        value_type: ProgramType,
+    ) -> ProgramValue {
+        let snapshot = crate::kernel::intern_memory(self.clone());
         let value = Pointer::loaded(&MachineTerm::MemoryLoad(
             snapshot.clone(),
             Box::new(pointer.clone()),
@@ -7681,23 +7706,24 @@ impl CMemory {
         // resource argument evaluator does not retain a C load's fact stream.
         crate::kernel::equality_graph::EqualityGraph::default()
             .register_pointer_read_definition(&value, &snapshot, pointer);
-        CValue::Pointer(CPointerValue::from_read(
+        ProgramValue::Pointer(PointerValue::from_read(
             value, value_type, &snapshot, pointer,
         ))
     }
 }
 
-impl CState {
+impl ExecutionState {
     /// The value local `name` keeps in its object, for a local that keeps
     /// one value of an abstract or enum type in memory, as a Click name reads
     /// it: the read of the object at the point it was last written, never
     /// the value a store left there, so `o` names one read per version.
-    pub fn held_local_value(&self, name: &str) -> Option<CValue> {
-        let (CType::Parameter(value_type), slot) = self.locals().held_value_local(name)? else {
+    pub fn held_local_value(&self, name: &str) -> Option<ProgramValue> {
+        let (ProgramType::Parameter(value_type), slot) = self.locals().held_value_local(name)?
+        else {
             return None;
         };
         Some(AlgebraicTermNode::parameter_load(
-            crate::kernel::intern_c_memory(self.memory().clone()),
+            crate::kernel::intern_memory(self.memory().clone()),
             slot.clone(),
             value_type,
         ))
@@ -7707,13 +7733,13 @@ impl CState {
     /// diagnostic, or `None` when the states are equal. A differing resource
     /// context names a resource fact held on one side only; every other part
     /// is named by what it is.
-    pub(crate) fn first_difference(&self, other: &CState) -> Option<String> {
+    pub(crate) fn first_difference(&self, other: &ExecutionState) -> Option<String> {
         if self.resources != other.resources {
             let only_in = |left: &ResourceContext, right: &ResourceContext| {
                 left.facts()
                     .iter()
                     .find(|fact| !right.facts().contains(fact))
-                    .map(CResourceFact::diagnostic_summary)
+                    .map(ResourceFact::diagnostic_summary)
             };
             return Some(match only_in(&self.resources, &other.resources) {
                 Some(fact) => format!("`{fact}` is held only before the rewrite"),
@@ -7809,9 +7835,9 @@ impl CState {
     pub fn with_aggregate_return_destination(
         mut self,
         pointer: Pointer,
-        layout: CAggregateLayout,
+        layout: AggregateLayout,
     ) -> Self {
-        self.aggregate_destination = Some(Arc::new(CAggregateDestination { pointer, layout }));
+        self.aggregate_destination = Some(Arc::new(AggregateDestination { pointer, layout }));
         self
     }
 
@@ -7910,7 +7936,7 @@ impl CState {
     pub(crate) fn resolve_named_mutex_authority(
         &self,
         identity: Variable,
-    ) -> Option<&CResourceFact> {
+    ) -> Option<&ResourceFact> {
         self.named_mutex_authorities
             .as_ref()?
             .resolve(identity, self)
@@ -7919,7 +7945,7 @@ impl CState {
     pub(in crate::kernel) fn bind_named_mutex_authority(
         mut self,
         identity: Variable,
-        fact: &CResourceFact,
+        fact: &ResourceFact,
     ) -> Result<Self, super::super::named_authority::NamedMutexAuthorityError> {
         let current = self
             .named_mutex_authorities
@@ -7934,7 +7960,7 @@ impl CState {
     pub(in crate::kernel) fn rebind_named_mutex_authority(
         mut self,
         identity: Variable,
-        expected: &CResourceFact,
+        expected: &ResourceFact,
     ) -> Result<Self, super::super::named_authority::NamedMutexAuthorityError> {
         let current = self
             .named_mutex_authorities
@@ -7947,8 +7973,8 @@ impl CState {
     pub(in crate::kernel) fn transport_named_mutex_use(
         mut self,
         identity: Variable,
-        source: &CResourceFact,
-        derived: &CResourceFact,
+        source: &ResourceFact,
+        derived: &ResourceFact,
     ) -> Result<Self, super::super::named_authority::NamedMutexAuthorityError> {
         let current = self
             .named_mutex_authorities
@@ -7971,7 +7997,7 @@ impl CState {
     pub(crate) fn with_population_creation_tracking(mut self) -> Self {
         if self.population_effects.creation.is_none() {
             Arc::make_mut(&mut self.population_effects).creation =
-                Some(super::super::population_authority::c_creation::CreationEvents::new());
+                Some(super::super::population_authority::storage_creation::CreationEvents::new());
         }
         self
     }
@@ -8027,10 +8053,10 @@ impl CState {
     /// population. Its observable entry total is arbitrary, with no creator right.
     pub(crate) fn import_opaque_population(
         &self,
-        authority: &CResourceFact,
+        authority: &ResourceFact,
         owned_members: u32,
     ) -> Result<Self, String> {
-        let CResourceFact::Own(CResource::PopulationAuthority(description), quantity) = authority
+        let ResourceFact::Own(Resource::PopulationAuthority(description), quantity) = authority
         else {
             return Err("opaque import requires owns authority(R(p))".into());
         };
@@ -8043,7 +8069,7 @@ impl CState {
             return Err("opaque import supports at most one declared member".into());
         }
         if owned_members == 1 {
-            let member = CResourceFact::own(CResource::Composite {
+            let member = ResourceFact::own(Resource::Composite {
                 name: description.family().to_owned(),
                 arguments: description.arguments().to_vec().into(),
             });
@@ -8065,9 +8091,9 @@ impl CState {
 
     pub(crate) fn import_opaque_population_inputs(
         &self,
-        authority: &CResourceFact,
+        authority: &ResourceFact,
     ) -> Result<Self, String> {
-        let CResource::PopulationAuthority(description) = authority.resource() else {
+        let Resource::PopulationAuthority(description) = authority.resource() else {
             return Err("population import requires authority".into());
         };
         if !description.schema().is_fieldless() {
@@ -8090,7 +8116,7 @@ impl CState {
             Arc::make_mut(&mut next.population_effects).creation = Some(events);
             return Ok(next);
         }
-        let member = CResourceFact::own(CResource::Composite {
+        let member = ResourceFact::own(Resource::Composite {
             name: description.family().to_owned(),
             arguments: description.arguments().to_vec().into(),
         });
@@ -8146,15 +8172,15 @@ impl CState {
     /// global entry total. No population creation occurs at helper entry.
     pub(crate) fn import_opaque_population_quantity(
         &self,
-        authority: &CResourceFact,
-        member: &CResourceFact,
+        authority: &ResourceFact,
+        member: &ResourceFact,
     ) -> Result<Self, String> {
-        let CResourceFact::Own(CResource::PopulationAuthority(description), authority_quantity) =
+        let ResourceFact::Own(Resource::PopulationAuthority(description), authority_quantity) =
             authority
         else {
             return Err("batch import requires owned authority".into());
         };
-        let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = member else {
+        let ResourceFact::Own(Resource::Composite { name, arguments }, quantity) = member else {
             return Err("batch import requires an owned declared member quantity".into());
         };
         if authority_quantity.as_const() != Some(1)
@@ -8183,13 +8209,13 @@ impl CState {
     /// wildcard helper entry. Neither input is a population creation event.
     pub(crate) fn import_opaque_wildcard_population(
         &self,
-        authority: &CResourceFact,
-        member: &CResourceFact,
+        authority: &ResourceFact,
+        member: &ResourceFact,
     ) -> Result<Self, String> {
-        let CResourceFact::Own(CResource::PopulationAuthority(scope), quantity) = authority else {
+        let ResourceFact::Own(Resource::PopulationAuthority(scope), quantity) = authority else {
             return Err("Requires owns authority(R(anchor, _))".into());
         };
-        let CResourceFact::Own(CResource::Composite { name, arguments }, member_quantity) = member
+        let ResourceFact::Own(Resource::Composite { name, arguments }, member_quantity) = member
         else {
             return Err("Requires owns R(anchor, member)".into());
         };
@@ -8219,9 +8245,9 @@ impl CState {
 
     pub(crate) fn import_opaque_wildcard_authority(
         &self,
-        authority: &CResourceFact,
+        authority: &ResourceFact,
     ) -> Result<Self, String> {
-        let CResourceFact::Own(CResource::PopulationAuthority(scope), quantity) = authority else {
+        let ResourceFact::Own(Resource::PopulationAuthority(scope), quantity) = authority else {
             return Err("Requires owns authority(R(anchor, _))".into());
         };
         if quantity.as_const() != Some(1)
@@ -8246,8 +8272,8 @@ impl CState {
 
     pub(crate) fn with_checked_current_control_wrapper(
         &self,
-        selected: &CResourceFact,
-        definition: &super::super::CCompositeResourceDefinition,
+        selected: &ResourceFact,
+        definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
     ) -> Result<Self, String> {
         let events = self
@@ -8275,8 +8301,8 @@ impl CState {
 
     /// Whether an exact resource belongs to an established or imported population.
     /// Wrapping such a resource's body must use the population exchange law.
-    pub(crate) fn tracks_authority_member(&self, selected: &CResourceFact) -> bool {
-        let CResource::Composite { name, arguments } = selected.resource() else {
+    pub(crate) fn tracks_authority_member(&self, selected: &ResourceFact) -> bool {
+        let Resource::Composite { name, arguments } = selected.resource() else {
             return false;
         };
         let description = super::super::ResourceDescription::new(
@@ -8298,8 +8324,8 @@ impl CState {
     /// resource-rewrite certificate independently checks the eventual exchange.
     pub(crate) fn checked_authority_wrapper_projection(
         &self,
-        selected: &CResourceFact,
-        definition: &super::super::CCompositeResourceDefinition,
+        selected: &ResourceFact,
+        definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
     ) -> Result<(ResourceContext, Vec<MachineTerm>), String> {
         self.authority_wrapper_fact_projection(selected, definition, assumptions, true)
@@ -8309,8 +8335,8 @@ impl CState {
     /// invariant. This projection grants custody reads and publishes no facts.
     pub(crate) fn checked_authority_wrapper_closing_projection(
         &self,
-        selected: &CResourceFact,
-        definition: &super::super::CCompositeResourceDefinition,
+        selected: &ResourceFact,
+        definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
     ) -> Result<(ResourceContext, Vec<MachineTerm>), String> {
         self.authority_wrapper_fact_projection(selected, definition, assumptions, false)
@@ -8318,8 +8344,8 @@ impl CState {
 
     fn authority_wrapper_fact_projection(
         &self,
-        selected: &CResourceFact,
-        definition: &super::super::CCompositeResourceDefinition,
+        selected: &ResourceFact,
+        definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
         require_folded: bool,
     ) -> Result<(ResourceContext, Vec<MachineTerm>), String> {
@@ -8347,10 +8373,10 @@ impl CState {
 
     pub(crate) fn checked_authority_wrapper_body(
         &self,
-        selected: &CResourceFact,
-        definition: &super::super::CCompositeResourceDefinition,
+        selected: &ResourceFact,
+        definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
-    ) -> Result<(Vec<CResourceFact>, Vec<MachineTerm>), String> {
+    ) -> Result<(Vec<ResourceFact>, Vec<MachineTerm>), String> {
         self.authority_wrapper_body(selected, definition, assumptions, true)
     }
 
@@ -8358,8 +8384,8 @@ impl CState {
     /// Unlike opening its body, this grants no ownership or count observations.
     pub(in crate::kernel) fn authority_wrapper_descriptions(
         &self,
-        selected: &CResourceFact,
-        definition: &super::super::CCompositeResourceDefinition,
+        selected: &ResourceFact,
+        definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
     ) -> Result<Vec<ResourceDescription>, String> {
         self.authority_wrapper_candidates(selected, definition, assumptions, false)
@@ -8371,8 +8397,8 @@ impl CState {
     /// fold whose body is not yet owned.
     pub(crate) fn checked_authority_wrapper_fold_preflight(
         &self,
-        selected: &CResourceFact,
-        definition: &super::super::CCompositeResourceDefinition,
+        selected: &ResourceFact,
+        definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
     ) -> Result<Vec<MachineTerm>, String> {
         let (_, count) = self.authority_wrapper_body(selected, definition, assumptions, false)?;
@@ -8381,16 +8407,17 @@ impl CState {
 
     fn authority_wrapper_body(
         &self,
-        selected: &CResourceFact,
-        definition: &super::super::CCompositeResourceDefinition,
+        selected: &ResourceFact,
+        definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
         require_folded: bool,
-    ) -> Result<(Vec<CResourceFact>, Vec<MachineTerm>), String> {
+    ) -> Result<(Vec<ResourceFact>, Vec<MachineTerm>), String> {
         let (children, descriptions) =
             self.authority_wrapper_candidates(selected, definition, assumptions, require_folded)?;
         let mut counts = Vec::with_capacity(descriptions.len());
         for description in descriptions {
-            let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+            let [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] = description.arguments()
+            else {
                 return Err("control authority needs one pointer anchor".into());
             };
             let anchor = pointer.pointer();
@@ -8444,13 +8471,13 @@ impl CState {
     pub(crate) fn import_acquired_control_authorities(
         &self,
         instance: &super::super::ResourceInstance,
-        definition: &super::super::CCompositeResourceDefinition,
+        definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
     ) -> Result<Self, String> {
         if !definition.contains().iter().any(|spec| {
             matches!(
                 spec.term(),
-                super::super::CResourceTerm::PopulationAuthority { .. }
+                super::super::ResourceTerm::PopulationAuthority { .. }
             )
         }) {
             return Ok(self.clone());
@@ -8462,7 +8489,7 @@ impl CState {
         for spec in definition.contains() {
             if !matches!(
                 spec.term(),
-                super::super::CResourceTerm::PopulationAuthority { .. }
+                super::super::ResourceTerm::PopulationAuthority { .. }
             ) {
                 continue;
             }
@@ -8480,7 +8507,7 @@ impl CState {
                     crate::kernel::api::describe_certification_runtime_error(&error)
                 )
             })?;
-            let CResource::PopulationAuthority(description) = authority.resource() else {
+            let Resource::PopulationAuthority(description) = authority.resource() else {
                 return Err("the acquired control authority is not a population authority".into());
             };
             let events = next
@@ -8494,7 +8521,7 @@ impl CState {
                     description.family()
                 ));
             }
-            let member = CResourceFact::own(CResource::Composite {
+            let member = ResourceFact::own(Resource::Composite {
                 name: description.family().to_owned(),
                 arguments: description.arguments().to_vec().into(),
             });
@@ -8517,12 +8544,12 @@ impl CState {
     /// inputs; no direct authority or creator right is manufactured here.
     pub(crate) fn import_opaque_control_wrapper(
         &self,
-        selected: &CResourceFact,
-        definition: &super::super::CCompositeResourceDefinition,
+        selected: &ResourceFact,
+        definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
         wildcard_members: &std::collections::BTreeMap<
             super::super::ResourceDescription,
-            Vec<CResourceFact>,
+            Vec<ResourceFact>,
         >,
     ) -> Result<Self, String> {
         let events = self
@@ -8547,8 +8574,8 @@ impl CState {
     /// generic wrapper leaves the count arbitrary for the ledger to name.
     pub(in crate::kernel) fn checked_authority_wrapper_import_components(
         &self,
-        selected: &CResourceFact,
-        definition: &super::super::CCompositeResourceDefinition,
+        selected: &ResourceFact,
+        definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
     ) -> Result<Vec<(ResourceDescription, Option<MachineTerm>)>, String> {
         if !self.resources.contains_exact_representation(selected) {
@@ -8558,11 +8585,13 @@ impl CState {
             self.authority_wrapper_candidates(selected, definition, assumptions, true)?;
         let mut components = Vec::with_capacity(descriptions.len());
         for description in &descriptions {
-            let [AlgebraicValue::C(CValue::Pointer(anchor_value))] = description.arguments() else {
+            let [AlgebraicValue::Program(ProgramValue::Pointer(anchor_value))] =
+                description.arguments()
+            else {
                 return Err("control authority needs one pointer anchor".into());
             };
             let anchor = anchor_value.pointer().clone();
-            let CResourceFact::Own(CResource::Composite { arguments, .. }, _) = selected else {
+            let ResourceFact::Own(Resource::Composite { arguments, .. }, _) = selected else {
                 return Err("Requires owns control resource".into());
             };
             if arguments.as_ref() != description.arguments() || definition.parameters().len() != 1 {
@@ -8571,11 +8600,11 @@ impl CState {
             let parameter = definition.parameters()[0].name();
             let memory_cells = children
                 .iter()
-                .filter_map(CResourceFact::memory_own_range)
+                .filter_map(ResourceFact::memory_own_range)
                 .collect::<Vec<_>>();
             let allocations = children
                 .iter()
-                .filter_map(CResourceFact::allocation)
+                .filter_map(ResourceFact::allocation)
                 .collect::<Vec<_>>();
             let owns_counter = memory_cells.iter().any(|range| {
                 range.base() == &anchor
@@ -8591,12 +8620,12 @@ impl CState {
             {
                 return Err("control must own exact memory, allocation, and authority".into());
             }
-            let is_parameter = |expression: &SpecExpression| matches!(expression, SpecExpression::CExpression(CExpression::Variable(name)) if name == parameter);
+            let is_parameter = |expression: &SpecExpression| matches!(expression, SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) if name == parameter);
             let is_counter_load = |expression: &SpecExpression| {
                 let SpecExpression::MemoryLoad {
                     memory: SpecMemory::Current,
                     pointer,
-                    value_type: CType::Int32,
+                    value_type: ProgramType::Int32,
                 } = expression
                 else {
                     return false;
@@ -8611,7 +8640,7 @@ impl CState {
                         byte_width: 4,
                     } => {
                         is_parameter(pointer)
-                            && matches!(elements.as_ref(), SpecExpression::Value(CValue::Int32(zero)) if zero.as_const() == Some(0))
+                            && matches!(elements.as_ref(), SpecExpression::Value(ProgramValue::Int32(zero)) if zero.as_const() == Some(0))
                     }
                     _ => false,
                 }
@@ -8626,7 +8655,7 @@ impl CState {
             let exact_count_fact = definition.facts().iter().any(|fact| {
                 matches!(fact, SpecProposition::Comparison {
             left,
-            operator: CComparisonOperator::Equal,
+            operator: ComparisonOperator::Equal,
             right,
         } if (is_counter_load(left) && is_population_count(right))
             || (is_population_count(left) && is_counter_load(right)))
@@ -8641,7 +8670,7 @@ impl CState {
             components.push((
                 description.clone(),
                 Some(MachineTerm::MemoryLoad(
-                    intern_c_memory_ref(&self.memory),
+                    intern_memory_ref(&self.memory),
                     Box::new(anchor.clone()),
                     LoadKind::Int32,
                 )),
@@ -8652,13 +8681,12 @@ impl CState {
 
     fn authority_wrapper_candidates(
         &self,
-        selected: &CResourceFact,
-        definition: &super::super::CCompositeResourceDefinition,
+        selected: &ResourceFact,
+        definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
         require_folded: bool,
-    ) -> Result<(Vec<CResourceFact>, Vec<ResourceDescription>), String> {
-        let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = selected
-        else {
+    ) -> Result<(Vec<ResourceFact>, Vec<ResourceDescription>), String> {
+        let ResourceFact::Own(Resource::Composite { name, arguments }, quantity) = selected else {
             return Err("Requires owns control resource".into());
         };
         if name != definition.name()
@@ -8677,19 +8705,19 @@ impl CState {
         {
             return Err("Requires one folded authority control resource".into());
         }
-        let mut evaluation = CState::new().with_memory(self.memory.clone());
+        let mut evaluation = ExecutionState::new().with_memory(self.memory.clone());
         evaluation.population_effects = self.population_effects.clone();
         for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
             let value = argument
-                .as_c_value()
+                .as_program_value()
                 .ok_or("control resource needs concrete arguments")?;
-            if parameter.c_type() != value.c_type() {
+            if parameter.program_type() != value.program_type() {
                 return Err("control resource argument has the wrong type".into());
             }
             evaluation.locals.set_typed(
                 parameter.name().to_string(),
                 value.clone(),
-                parameter.c_type(),
+                parameter.program_type(),
             );
         }
         let mut children = Vec::with_capacity(definition.contains().len());
@@ -8697,15 +8725,15 @@ impl CState {
         let mut seen_authorities = std::collections::BTreeSet::new();
         let mut budget = ExecutionBudget::beside_live_state();
         for spec in definition.contains() {
-            if spec.access() != super::super::CResourceAccessMode::Own
-                || spec.quantity() != &super::super::CResourceQuantity::One
+            if spec.access() != super::super::ResourceAccessMode::Own
+                || spec.quantity() != &super::super::ResourceQuantity::One
                 || spec.guard().is_some()
                 || !spec.resource_arguments().is_empty()
             {
                 return Err("control body requires exact owned resources".into());
             }
             let child = match spec.term() {
-                super::super::CResourceTerm::PopulationAuthority { .. } => {
+                super::super::ResourceTerm::PopulationAuthority { .. } => {
                     if authorities.len() == 2 {
                         return Err(
                             "control body currently supports at most two authorities".into()
@@ -8721,7 +8749,7 @@ impl CState {
                     .map_err(|error| format!("control authority evaluation failed: {error}"))?
                     .map_err(|error| format!("control authority evaluation failed: {error}"))?
                 }
-                super::super::CResourceTerm::Memory(_) => {
+                super::super::ResourceTerm::Memory(_) => {
                     // The held control's body, as its fold established it
                     // (`assume_entry_clause_extents`).
                     super::super::functions::evaluate_function_resource_spec(
@@ -8733,8 +8761,8 @@ impl CState {
                     .map_err(|error| format!("control memory evaluation failed: {error}"))?
                     .map_err(|error| format!("control memory evaluation failed: {error}"))?
                 }
-                super::super::CResourceTerm::Token { name, .. }
-                    if name == CResourceFact::ALLOCATION_RESOURCE_NAME =>
+                super::super::ResourceTerm::Token { name, .. }
+                    if name == ResourceFact::ALLOCATION_RESOURCE_NAME =>
                 {
                     // The held control's body, as its fold established it
                     // (`assume_entry_clause_extents`).
@@ -8753,7 +8781,7 @@ impl CState {
                     );
                 }
             };
-            if let CResource::PopulationAuthority(description) = child.resource() {
+            if let Resource::PopulationAuthority(description) = child.resource() {
                 if !seen_authorities.insert(description.clone()) {
                     return Err("control body repeats a population authority".into());
                 }
@@ -8778,8 +8806,8 @@ impl CState {
                 "allocation"
             } else {
                 match missing.resource() {
-                    CResource::Memory(_) => "memory",
-                    CResource::PopulationAuthority(_) => "population authority",
+                    Resource::Memory(_) => "memory",
+                    Resource::PopulationAuthority(_) => "population authority",
                     _ => "resource",
                 }
             };
@@ -8819,10 +8847,10 @@ impl CState {
     /// checks exclusive possession of the visible fact.
     pub(crate) fn checked_population_authority_exchange(
         &self,
-        selected: &CResourceFact,
+        selected: &ResourceFact,
         establish: bool,
         assumptions: &PureFactContext,
-    ) -> Result<(CState, CheckedPopulationAuthorityExchange), String> {
+    ) -> Result<(ExecutionState, CheckedPopulationAuthorityExchange), String> {
         if self
             .population_effects
             .predicate_count_permissions
@@ -8830,14 +8858,15 @@ impl CState {
         {
             return Err("predicate count snapshots cannot change authority".into());
         }
-        let CResourceFact::Own(CResource::PopulationAuthority(description), quantity) = selected
+        let ResourceFact::Own(Resource::PopulationAuthority(description), quantity) = selected
         else {
             return Err("Requires owns authority(R(p))".into());
         };
         if quantity.as_const() != Some(1) {
             return Err("Requires one authority(R(p))".into());
         }
-        let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+        let [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] = description.arguments()
+        else {
             return Err("authority requires one pointer anchor".into());
         };
         let anchor = pointer.pointer();
@@ -8903,11 +8932,11 @@ impl CState {
     /// advance together.
     pub(crate) fn checked_population_member_exchange(
         &self,
-        selected: &CResourceFact,
+        selected: &ResourceFact,
         produce: bool,
-        definition: &super::super::CCompositeResourceDefinition,
+        definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
-    ) -> Result<(CState, CheckedPopulationMemberExchange), String> {
+    ) -> Result<(ExecutionState, CheckedPopulationMemberExchange), String> {
         if self
             .population_effects
             .predicate_count_permissions
@@ -8915,8 +8944,7 @@ impl CState {
         {
             return Err("predicate count snapshots cannot change membership".into());
         }
-        let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = selected
-        else {
+        let ResourceFact::Own(Resource::Composite { name, arguments }, quantity) = selected else {
             return Err("Requires owns R(p)".into());
         };
         if let Some(value) = quantity.as_const()
@@ -8942,11 +8970,11 @@ impl CState {
             || definition.contains().iter().any(|spec| {
                 !matches!(
                     spec.term(),
-                    super::super::CResourceTerm::Memory(_)
-                        | super::super::CResourceTerm::Token { .. }
-                        | super::super::CResourceTerm::Composite { .. }
-                ) || spec.access() != super::super::CResourceAccessMode::Own
-                    || spec.quantity() != &super::super::CResourceQuantity::One
+                    super::super::ResourceTerm::Memory(_)
+                        | super::super::ResourceTerm::Token { .. }
+                        | super::super::ResourceTerm::Composite { .. }
+                ) || spec.access() != super::super::ResourceAccessMode::Own
+                    || spec.quantity() != &super::super::ResourceQuantity::One
                     || spec.guard().is_some()
                     || !spec.resource_arguments().is_empty()
             })
@@ -8958,7 +8986,8 @@ impl CState {
             arguments.clone(),
             super::super::ResourceFieldSchema::new(vec![]).expect("empty resource schema is valid"),
         );
-        let Some(AlgebraicValue::C(CValue::Pointer(pointer))) = description.arguments().first()
+        let Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) =
+            description.arguments().first()
         else {
             return Err("Requires an exact pointer-anchored authorized resource R(p)".into());
         };
@@ -9011,7 +9040,7 @@ impl CState {
                         .join(", ")
                 )
             })?;
-        let authority = CResourceFact::own(CResource::PopulationAuthority(governing.clone()));
+        let authority = ResourceFact::own(Resource::PopulationAuthority(governing.clone()));
         if !self.resources.satisfies_fact(&authority, assumptions) {
             return Err(format!("Requires owns authority({name}(p))"));
         }
@@ -9043,8 +9072,8 @@ impl CState {
         };
         for child in &body {
             let Some(range) = child.memory_own_range() else {
-                if let CResourceFact::Own(
-                    CResource::Token { .. } | CResource::Composite { .. },
+                if let ResourceFact::Own(
+                    Resource::Token { .. } | Resource::Composite { .. },
                     quantity,
                 ) = child
                     && quantity.as_const() == Some(1)
@@ -9144,7 +9173,7 @@ impl CState {
             .map_err(|error| {
                 if produce && governing.population_arity().is_some()
                     && events.observe_symbolic(&governing).is_some()
-                    && matches!(error, super::super::population_authority::c_creation::CreationRefusal::InvalidQuantity)
+                    && matches!(error, super::super::population_authority::storage_creation::CreationRefusal::InvalidQuantity)
                 {
                     format!("Requires defined(count({name}({}, {})) + 1)", definition.parameters().first().map_or("anchor", |parameter| parameter.name()),
                         std::iter::repeat_n("_", arguments.len() - 1).collect::<Vec<_>>().join(", "))
@@ -9161,7 +9190,7 @@ impl CState {
     /// operation and does not use this lifecycle exchange.
     pub(in crate::kernel) fn record_instance_population_exchange(
         &mut self,
-        before: &CState,
+        before: &ExecutionState,
         instance: &super::super::ResourceInstance,
         produce: bool,
         assumptions: &PureFactContext,
@@ -9181,13 +9210,13 @@ impl CState {
             let governing = events
                 .governing_authority(&description)
                 .ok_or("Requires a matching population authority")?;
-            let authority = CResourceFact::own(CResource::PopulationAuthority(governing.clone()));
+            let authority = ResourceFact::own(Resource::PopulationAuthority(governing.clone()));
             if !before.resources.satisfies_fact(&authority, assumptions) {
                 return Err(format!("Requires owns authority({}(...))", instance.name()));
             }
             let reference = super::super::ResourceReference::from_instance(instance);
             if events.recognizes_imported_population(&description) {
-                let owned = CResourceFact::own(CResource::Instance(instance.clone()));
+                let owned = ResourceFact::own(Resource::Instance(instance.clone()));
                 if !produce && !before.resources.satisfies_fact(&owned, assumptions) {
                     return Err("Requires owning the exact named member before consumption".into());
                 }
@@ -9200,7 +9229,8 @@ impl CState {
                     .map_err(|refusal| format!("named member change refused: {refusal}"))?
             }
         } else if produce {
-            let Some(AlgebraicValue::C(CValue::Pointer(pointer))) = description.arguments().first()
+            let Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) =
+                description.arguments().first()
             else {
                 return Ok(());
             };
@@ -9244,10 +9274,10 @@ impl CState {
     pub(in crate::kernel) fn retire_population_storage(
         &mut self,
         block: &PointerBlock,
-    ) -> Result<(), CRuntimeError> {
+    ) -> Result<(), RuntimeError> {
         if let Some(events) = &self.population_effects.creation {
             let next = events.retired(block).map_err(|refusal| {
-                CRuntimeError::FunctionContract(format!(
+                RuntimeError::FunctionContract(format!(
                     "population authority prevents storage retirement: {refusal}"
                 ))
             })?;
@@ -9261,14 +9291,16 @@ impl CState {
     pub(in crate::kernel) fn retired_population_creation_for_blocks(
         &self,
         blocks: &[PointerBlock],
-    ) -> Result<Option<super::super::population_authority::c_creation::CreationEvents>, CRuntimeError>
-    {
+    ) -> Result<
+        Option<super::super::population_authority::storage_creation::CreationEvents>,
+        RuntimeError,
+    > {
         let Some(mut events) = self.population_effects.creation.clone() else {
             return Ok(None);
         };
         for block in blocks {
             events = events.retired(block).map_err(|refusal| {
-                CRuntimeError::FunctionContract(format!(
+                RuntimeError::FunctionContract(format!(
                     "population authority prevents storage retirement: {refusal}"
                 ))
             })?;
@@ -9279,13 +9311,13 @@ impl CState {
     pub(in crate::kernel) fn population_storage_retirement_refusal(
         &self,
         block: &PointerBlock,
-    ) -> Option<CRuntimeError> {
+    ) -> Option<RuntimeError> {
         self.population_effects
             .creation
             .as_ref()
             .and_then(|events| events.retirement_refusal(block))
             .map(|refusal| {
-                CRuntimeError::FunctionContract(format!(
+                RuntimeError::FunctionContract(format!(
                     "population authority prevents storage retirement: {refusal}"
                 ))
             })
@@ -9295,8 +9327,8 @@ impl CState {
     /// events produced by a body that actually executed.
     pub(in crate::kernel) fn restore_population_creation_after_call(
         &mut self,
-        caller: Option<&super::super::population_authority::c_creation::CreationEvents>,
-        callee: Option<&super::super::population_authority::c_creation::CreationEvents>,
+        caller: Option<&super::super::population_authority::storage_creation::CreationEvents>,
+        callee: Option<&super::super::population_authority::storage_creation::CreationEvents>,
     ) {
         let next = match (caller, callee) {
             (Some(caller), Some(callee)) => Some(callee.return_to(caller)),
@@ -9351,12 +9383,12 @@ impl CState {
                 .shares_storage_with(&other.observed_population_families)
     }
 
-    pub fn with_local(mut self, name: impl Into<String>, value: CValue) -> Self {
+    pub fn with_local(mut self, name: impl Into<String>, value: ProgramValue) -> Self {
         self.locals.set(name, value);
         self
     }
 
-    pub fn with_memory(mut self, memory: CMemory) -> Self {
+    pub fn with_memory(mut self, memory: Memory) -> Self {
         self.set_memory(memory);
         self
     }
@@ -9369,7 +9401,7 @@ impl CState {
     /// writes, but using it for this proof representation step would discard
     /// unrelated resource views and make a resource rewrite appear to change
     /// more authority than its definition exchanges.
-    pub(crate) fn with_materialized_memory(mut self, memory: CMemory) -> Self {
+    pub(crate) fn with_materialized_memory(mut self, memory: Memory) -> Self {
         self.memory = memory;
         self
     }
@@ -9381,9 +9413,9 @@ impl CState {
     /// derived from `base` by persistent updates, as the abstractions of two
     /// arms are derived from the memory at their split. The memories are
     /// compared by what each changed from `base`
-    /// ([`CMemory::eq_relative_to`]), so the cost is the arms' changes; the
+    /// ([`Memory::eq_relative_to`]), so the cost is the arms' changes; the
     /// answer is exact whatever the memories share.
-    pub(crate) fn eq_with_memories_from(&self, other: &Self, base: &CMemory) -> bool {
+    pub(crate) fn eq_with_memories_from(&self, other: &Self, base: &Memory) -> bool {
         if !self.memory.eq_relative_to(&other.memory, base) {
             return false;
         }
@@ -9394,14 +9426,14 @@ impl CState {
         *self == other
     }
 
-    pub(crate) fn set_memory(&mut self, memory: CMemory) {
+    pub(crate) fn set_memory(&mut self, memory: Memory) {
         self.set_memory_with_checked_stores(memory, false);
     }
 
     /// [`Self::set_memory`] for the C store path, which has already applied
     /// the iterated-ownership store rule (`plan_iterated_guard_store`) to its
     /// one store. Every other transition keeps the conservative rule.
-    pub(crate) fn set_memory_with_checked_stores(&mut self, memory: CMemory, stores_checked: bool) {
+    pub(crate) fn set_memory_with_checked_stores(&mut self, memory: Memory, stores_checked: bool) {
         self.resources = self
             .resources
             .clone()
@@ -9415,7 +9447,7 @@ impl CState {
 
     pub fn with_resource_context(mut self, resources: ResourceContext) -> Self {
         // ResourceContext owns the canonical persistent dependency root. The
-        // CState field is only a shared mirror, so replacing a context does
+        // ExecutionState field is only a shared mirror, so replacing a context does
         // not scan unrelated resources or active loans.
         self.loan_view_bindings =
             crate::kernel::loans::LoanViewBindings::from_state(resources.loan_dependency_state());
@@ -9501,7 +9533,7 @@ impl CState {
     /// access is permitted or no ledger is active.
     pub(crate) fn stable_loan_memory_access_refusal(
         &self,
-        range: &CMemoryRange,
+        range: &MemoryRange,
         assumptions: &PureFactContext,
         operation: crate::kernel::LoanRefusalOperation,
     ) -> Option<crate::kernel::LoanRefusalDiagnostic> {
@@ -9510,38 +9542,38 @@ impl CState {
             .and_then(|ledger| ledger.memory_access_refusal(range, assumptions, operation))
     }
 
-    pub fn locals(&self) -> &CLocalEnvironment {
+    pub fn locals(&self) -> &LocalEnvironment {
         &self.locals
     }
 
-    pub(crate) fn local_object_type(&self, name: &str) -> Option<CType> {
+    pub(crate) fn local_object_type(&self, name: &str) -> Option<ProgramType> {
         self.locals.object_type(name)
     }
 
-    pub(crate) fn global_object_type(&self, name: &str) -> Option<CType> {
+    pub(crate) fn global_object_type(&self, name: &str) -> Option<ProgramType> {
         self.locals
             .is_global_object(name)
             .then(|| self.locals.object_type(name))
             .flatten()
     }
 
-    pub(crate) fn global_array_element_type(&self, name: &str) -> Option<CType> {
+    pub(crate) fn global_array_element_type(&self, name: &str) -> Option<ProgramType> {
         self.locals
             .is_array_object(name)
             .then(|| self.locals.object_type(name))
             .flatten()
     }
 
-    pub fn memory(&self) -> &CMemory {
+    pub fn memory(&self) -> &Memory {
         &self.memory
     }
 
     /// The value one scalar local or parameter holds now, by name: a stored
     /// local's slot cell, or a logical parameter's binding, which no store
     /// can change. Nothing when a stored slot's cell is not known.
-    pub(crate) fn scalar_local_value(&self, name: &str) -> Option<CValue> {
+    pub(crate) fn scalar_local_value(&self, name: &str) -> Option<ProgramValue> {
         match self.locals.binding(name)? {
-            CLocalBinding::Object {
+            LocalBinding::Object {
                 storage_declared: false,
                 value,
                 slot,
@@ -9550,7 +9582,7 @@ impl CState {
                 .memory
                 .known_value(slot)
                 .or_else(|| Some(value.clone().into_native())),
-            CLocalBinding::Object { slot, .. } => self.memory.known_value(slot),
+            LocalBinding::Object { slot, .. } => self.memory.known_value(slot),
             _ => None,
         }
     }
@@ -9558,7 +9590,7 @@ impl CState {
     /// The values held by memory-resident scalar locals at offset zero.
     /// Resolve names through the local-slot index so framed parameter blocks
     /// are exposed with their source name rather than their internal block id.
-    pub fn local_cell_values(&self) -> impl Iterator<Item = (&str, CValue)> + '_ {
+    pub fn local_cell_values(&self) -> impl Iterator<Item = (&str, ProgramValue)> + '_ {
         // A local's slot is at offset zero of its block, so a run holds one
         // only at the slot spelled that way, looked up rather than visited.
         let run_slots = self.memory.cells.runs().filter_map(|run| {
@@ -9635,16 +9667,16 @@ impl CState {
     /// address-backed cells. Ordinary function frames keep their own local
     /// environment, but inline bodies execute with a separate parameter
     /// environment while retaining the caller's memory.
-    pub(in crate::kernel) fn sync_scalar_locals_from_memory(&mut self, memory: &CMemory) {
+    pub(in crate::kernel) fn sync_scalar_locals_from_memory(&mut self, memory: &Memory) {
         let updates = self
             .locals
             .bindings
             .iter()
             .filter_map(|(name, binding)| {
-                let (c_type, slot, volatile, pointee_volatile, constant, pointee_constant) =
+                let (program_type, slot, volatile, pointee_volatile, constant, pointee_constant) =
                     match binding {
-                        CLocalBinding::Object {
-                            c_type,
+                        LocalBinding::Object {
+                            program_type,
                             slot,
                             volatile,
                             pointee_volatile,
@@ -9652,8 +9684,8 @@ impl CState {
                             pointee_constant,
                             ..
                         }
-                        | CLocalBinding::UninitializedObject {
-                            c_type,
+                        | LocalBinding::UninitializedObject {
+                            program_type,
                             slot,
                             volatile,
                             pointee_volatile,
@@ -9661,25 +9693,25 @@ impl CState {
                             pointee_constant,
                             ..
                         } => (
-                            *c_type,
+                            *program_type,
                             slot.clone(),
                             *volatile,
                             *pointee_volatile,
                             *constant,
                             *pointee_constant,
                         ),
-                        CLocalBinding::GlobalObject { .. }
-                        | CLocalBinding::ArrayObject { .. }
-                        | CLocalBinding::AggregateObject { .. } => return None,
+                        LocalBinding::GlobalObject { .. }
+                        | LocalBinding::ArrayObject { .. }
+                        | LocalBinding::AggregateObject { .. } => return None,
                     };
                 // A store through a pointer to the other signedness of the
                 // object's width wrote the same bits; the local reads them in
-                // its own type (`CType::read_cell`).
+                // its own type (`ProgramType::read_cell`).
                 memory
                     .known_value(&slot)
                     .and_then(|value| {
-                        c_type.read_cell(&value).or_else(|| {
-                            (!matches!(binding, CLocalBinding::UninitializedObject { .. }))
+                        program_type.read_cell(&value).or_else(|| {
+                            (!matches!(binding, LocalBinding::UninitializedObject { .. }))
                                 .then_some(value)
                         })
                     })
@@ -9687,7 +9719,7 @@ impl CState {
                         (
                             name.clone(),
                             value,
-                            c_type,
+                            program_type,
                             slot,
                             volatile,
                             pointee_volatile,
@@ -9697,13 +9729,21 @@ impl CState {
                     })
             })
             .collect::<Vec<_>>();
-        for (name, value, c_type, slot, volatile, pointee_volatile, constant, pointee_constant) in
-            updates
+        for (
+            name,
+            value,
+            program_type,
+            slot,
+            volatile,
+            pointee_volatile,
+            constant,
+            pointee_constant,
+        ) in updates
         {
             self.locals.set_typed_qualified_with_all_qualifiers(
                 name,
                 value,
-                c_type,
+                program_type,
                 slot,
                 volatile,
                 pointee_volatile,
@@ -9957,7 +9997,7 @@ fn local_block_object_name(block: &PointerBlock) -> Option<&str> {
 /// it. No other pointer can reach the object either: arithmetic that leaves
 /// the object it was derived from is undefined behaviour, which Click enforces
 /// with the bounds obligation on every displaced access
-/// (`CMemoryCanStore` / `access_in_bounds`), and an integer cast to a pointer
+/// (`MemoryCanStore` / `access_in_bounds`), and an integer cast to a pointer
 /// is outside the supported C0 subset. A `&x` written in a *proof* creates no
 /// runtime pointer, so an annotation cannot make an object addressable that
 /// the program never addresses.
@@ -10036,7 +10076,7 @@ mod contract_retirement_tests {
                 true,
             ))
         });
-        let mut memory = CMemory::new()
+        let mut memory = Memory::new()
             .with_heap_allocation_claim(base.clone(), HeapExtent::int32(4))
             .expect("fresh input allocation");
         let heap = std::sync::Arc::make_mut(&mut memory.heap);
@@ -10074,21 +10114,21 @@ mod union_store_tests {
             block: PointerBlock::Concrete("local:u".to_string()),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let memory = CMemory::new()
-            .store_union(base.clone(), CType::UInt8, crate::kernel::uint8(0xAA))
+        let memory = Memory::new()
+            .store_union(base.clone(), ProgramType::UInt8, crate::kernel::uint8(0xAA))
             .store_union(
                 base.clone(),
-                CType::Int32,
-                CValue::Int32(MachineTerm::constant(0x51)),
+                ProgramType::Int32,
+                ProgramValue::Int32(MachineTerm::constant(0x51)),
             );
         assert_eq!(
-            memory.known_union_value(&base, CType::UInt8),
+            memory.known_union_value(&base, ProgramType::UInt8),
             None,
             "the old byte view must not survive the wider member write"
         );
         assert_eq!(
-            memory.known_union_value(&base, CType::Int32),
-            Some(CValue::Int32(MachineTerm::constant(0x51))),
+            memory.known_union_value(&base, ProgramType::Int32),
+            Some(ProgramValue::Int32(MachineTerm::constant(0x51))),
         );
     }
 }
@@ -10108,7 +10148,7 @@ mod interface_join_tombstone_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         // Arm B kept it live.
-        let alive = CMemory::new()
+        let alive = Memory::new()
             .with_block(base.block.clone(), 8)
             .with_heap_allocation_claim(base.clone(), HeapExtent::int32(8))
             .expect("fresh allocation on arm B");
@@ -10155,12 +10195,12 @@ mod join_allocation_spelling_tests {
 
     /// Each arm holds its allocation live under its own spelling, so the
     /// join unions two live entries.
-    fn joined(p: &Pointer, q: &Pointer) -> CMemory {
-        let arm_a = CMemory::new()
+    fn joined(p: &Pointer, q: &Pointer) -> Memory {
+        let arm_a = Memory::new()
             .with_block(p.block.clone(), 8)
             .with_heap_allocation_claim(p.clone(), HeapExtent::int32(8))
             .expect("arm A claim");
-        let arm_b = CMemory::new()
+        let arm_b = Memory::new()
             .with_block(q.block.clone(), 8)
             .with_heap_allocation_claim(q.clone(), HeapExtent::int32(8))
             .expect("arm B claim");
@@ -10239,23 +10279,23 @@ mod join_allocation_spelling_tests {
             .expect("the second allocation frees");
         assert!(matches!(
             twice.free_heap_block(&q, &assumptions),
-            Err(CInvalidFree::DoubleFree)
+            Err(InvalidFree::DoubleFree)
         ));
     }
 }
 
 /// One cached value a forgetting transition is asked about
-/// ([`CMemory::forget_cached_values`]).
+/// ([`Memory::forget_cached_values`]).
 #[derive(Clone, Copy, Debug)]
 pub(super) enum CachedValue<'a> {
     /// A cell, or one slot of a run.
-    Cell(&'a CValue),
+    Cell(&'a ProgramValue),
     /// A typed view of union storage, keyed by the member type it records.
-    UnionView(CType, &'a CValue),
+    UnionView(ProgramType, &'a ProgramValue),
 }
 
 impl<'a> CachedValue<'a> {
-    pub(super) fn value(self) -> &'a CValue {
+    pub(super) fn value(self) -> &'a ProgramValue {
         match self {
             Self::Cell(value) | Self::UnionView(_, value) => value,
         }
@@ -10266,7 +10306,7 @@ impl<'a> CachedValue<'a> {
     pub(super) fn byte_width(self) -> u32 {
         match self {
             Self::Cell(value) => value.byte_width(),
-            Self::UnionView(c_type, _) => c_type.byte_width(),
+            Self::UnionView(program_type, _) => program_type.byte_width(),
         }
     }
 }
@@ -10322,7 +10362,7 @@ fn ask_every_slot(_: &CellRun) -> (SlotSet, crate::kernel::primitives::RuleAnswe
     )
 }
 
-/// Collects one dropped cell for [`CMemory::record_dropped_local_cells`],
+/// Collects one dropped cell for [`Memory::record_dropped_local_cells`],
 /// except from inside a debug self-check that re-asks a retain predicate:
 /// that would record, in a debug build only, cells a release build keeps
 /// by a whole-run answer.
@@ -10360,14 +10400,20 @@ mod initialization_record_tests {
         }
     }
 
-    fn written_pair(block: &str) -> CMemory {
-        CMemory::new()
+    fn written_pair(block: &str) -> Memory {
+        Memory::new()
             .with_block(block, 8)
-            .store(element(block, 0), CValue::Int32(MachineTerm::constant(5)))
-            .store(element(block, 1), CValue::Int32(MachineTerm::constant(5)))
+            .store(
+                element(block, 0),
+                ProgramValue::Int32(MachineTerm::constant(5)),
+            )
+            .store(
+                element(block, 1),
+                ProgramValue::Int32(MachineTerm::constant(5)),
+            )
     }
 
-    fn forgotten_pair(block: &str) -> CMemory {
+    fn forgotten_pair(block: &str) -> Memory {
         written_pair(block).without_possible_aliasing_cells(
             &unplaced(block),
             4,
@@ -10384,7 +10430,10 @@ mod initialization_record_tests {
         assert!(forgotten.has_initialized_bytes_at(&element(block, 0), 8));
         assert!(!forgotten.has_initialized_bytes_at(&element(block, 1), 8));
         // The store the forgetting precedes only initializes more.
-        let stored = forgotten.store(unplaced(block), CValue::Int32(MachineTerm::constant(7)));
+        let stored = forgotten.store(
+            unplaced(block),
+            ProgramValue::Int32(MachineTerm::constant(7)),
+        );
         assert!(stored.has_initialized_bytes_at(&element(block, 0), 8));
     }
 
@@ -10407,9 +10456,10 @@ mod initialization_record_tests {
         // One arm forgot both values but keeps their initialization; the
         // other still caches only the first element.
         let forgotten = forgotten_pair(block);
-        let first_only = CMemory::new()
-            .with_block(block, 8)
-            .store(element(block, 0), CValue::Int32(MachineTerm::constant(5)));
+        let first_only = Memory::new().with_block(block, 8).store(
+            element(block, 0),
+            ProgramValue::Int32(MachineTerm::constant(5)),
+        );
         let arms = [&forgotten, &first_only];
         let joined = forgotten
             .clone()
@@ -10427,23 +10477,23 @@ mod initialization_record_tests {
     /// A fresh local block of `count` two-field structs (`stride` 8) or
     /// `count` int32s (`stride` 4), its zero contents seeded as constant runs
     /// with no initialization recorded, so only the runs say it was written.
-    fn zero_runs(block: &str, count: u32, stride: u32) -> CMemory {
-        let zero = CValue::Int32(MachineTerm::constant(0));
+    fn zero_runs(block: &str, count: u32, stride: u32) -> Memory {
+        let zero = ProgramValue::Int32(MachineTerm::constant(0));
         let runs = (0..stride / 4)
-            .map(|field| CConstantRun {
+            .map(|field| ConstantRun {
                 offset: 4 * field,
                 stride,
                 count,
                 value: zero.clone(),
             })
             .collect::<Vec<_>>();
-        CMemory::new()
+        Memory::new()
             .with_block(block, count * stride)
             .with_constant_runs(&element(block, 0), &runs)
             .expect("a fresh local block takes constant runs")
     }
 
-    fn loop_havoc(memory: CMemory, variable: u64) -> CMemory {
+    fn loop_havoc(memory: Memory, variable: u64) -> Memory {
         memory.with_loop_memory_havoc_preserving_loans(
             Variable(variable),
             &BTreeSet::new(),
@@ -10525,10 +10575,16 @@ mod initialization_record_tests {
         };
         assert!(written.has_initialized_bytes_under(&read, 4, &index_between(&index, 0, 1)));
         assert!(!written.has_initialized_bytes_under(&read, 4, &index_between(&index, 0, 2)));
-        let gap = CMemory::new()
+        let gap = Memory::new()
             .with_block(block, 12)
-            .store(element(block, 0), CValue::Int32(MachineTerm::constant(5)))
-            .store(element(block, 2), CValue::Int32(MachineTerm::constant(5)));
+            .store(
+                element(block, 0),
+                ProgramValue::Int32(MachineTerm::constant(5)),
+            )
+            .store(
+                element(block, 2),
+                ProgramValue::Int32(MachineTerm::constant(5)),
+            );
         assert!(!gap.has_initialized_bytes_under(&read, 4, &index_between(&index, 0, 2)));
         assert!(gap.has_initialized_bytes_under(&read, 4, &index_between(&index, 2, 2)));
     }
@@ -10545,11 +10601,11 @@ mod initialization_record_tests {
 mod local_variable_spelling_tests {
     use super::*;
 
-    fn scalar(state: CState, name: &str, value: CValue) -> CState {
+    fn scalar(state: ExecutionState, name: &str, value: ProgramValue) -> ExecutionState {
         let memory = state
             .memory()
             .clone()
-            .store(CMemory::local_pointer(name), value.clone());
+            .store(Memory::local_pointer(name), value.clone());
         state.with_local(name, value).with_memory(memory)
     }
 
@@ -10559,7 +10615,7 @@ mod local_variable_spelling_tests {
             PointerBlock::Symbolic(Variable(971_030)),
             PointerBlock::Symbolic(Variable(971_031)),
         ];
-        let mut locals = CLocalEnvironment::new();
+        let mut locals = LocalEnvironment::new();
         for step in 0..60usize {
             let name = format!("p{}", step % 7);
             if step % 5 == 0 {
@@ -10569,7 +10625,7 @@ mod local_variable_spelling_tests {
             } else {
                 locals.set(
                     &name,
-                    CValue::pointer(Pointer {
+                    ProgramValue::pointer(Pointer {
                         block: blocks[step % 2].clone(),
                         offset: PointerOffsetTerm::Constant(step as i64),
                     }),
@@ -10584,7 +10640,7 @@ mod local_variable_spelling_tests {
                 locals.restore_binding(&name, binding);
             }
             let rebuilt =
-                CLocalEnvironment::from_parts(locals.bindings.clone(), locals.slots.clone());
+                LocalEnvironment::from_parts(locals.bindings.clone(), locals.slots.clone());
             for block in &blocks {
                 let scanned = locals
                     .object_values()
@@ -10632,17 +10688,20 @@ mod local_variable_spelling_tests {
             deep(y.clone()),
             MachineTerm::constant(7),
         ];
-        let mut state = CState::new();
+        let mut state = ExecutionState::new();
         for step in 0..60usize {
             let name = format!("v{}", step % 13);
             if step % 7 == 6 {
                 state.locals.remove(&name);
             } else {
                 let term = terms[step % terms.len()].clone();
-                state = state.with_local(name, CValue::Int32(term));
+                state = state.with_local(name, ProgramValue::Int32(term));
             }
         }
-        state = state.with_local("pointer", CValue::pointer(CMemory::local_pointer("v0")));
+        state = state.with_local(
+            "pointer",
+            ProgramValue::pointer(Memory::local_pointer("v0")),
+        );
         for term in &terms {
             let scanned = state
                 .locals()
@@ -10660,7 +10719,7 @@ mod local_variable_spelling_tests {
 
     fn held_integer_term_of(value: &StoredExecutionValue) -> Option<&MachineTerm> {
         match value.native_payload()?.numeric_value() {
-            crate::kernel::integer_c_value!(term) | CValue::Bool(term) => Some(term),
+            crate::kernel::integer_c_value!(term) | ProgramValue::Bool(term) => Some(term),
             _ => None,
         }
     }
@@ -10668,20 +10727,24 @@ mod local_variable_spelling_tests {
     #[test]
     fn local_variable_spelling_uses_current_memory_and_stable_slot_order() {
         let variable = Variable(971_010);
-        let value = CValue::UInt64(MachineTerm::Variable(variable));
-        let state = scalar(scalar(CState::new(), "z", value.clone()), "a", value);
+        let value = ProgramValue::UInt64(MachineTerm::Variable(variable));
+        let state = scalar(
+            scalar(ExecutionState::new(), "z", value.clone()),
+            "a",
+            value,
+        );
         assert_eq!(
             state.local_name_holding_bitvector_variable(variable),
             Some("a")
         );
-        let pointer = CMemory::local_pointer("a");
+        let pointer = Memory::local_pointer("a");
         assert_eq!(
             state.local_name_holding_bitvector_variable_at(variable, &pointer),
             Some("a")
         );
         let state = state.clone().with_memory(state.memory().clone().store(
-            CMemory::local_pointer("a"),
-            CValue::UInt64(MachineTerm::uint64_constant(0)),
+            Memory::local_pointer("a"),
+            ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
         ));
         assert_eq!(
             state.local_name_holding_bitvector_variable(variable),
@@ -10693,8 +10756,8 @@ mod local_variable_spelling_tests {
             "a recorded address must still hold the atom in current memory"
         );
         let state = state.clone().with_memory(state.memory().clone().store(
-            CMemory::local_pointer("z"),
-            CValue::UInt64(MachineTerm::uint64_constant(0)),
+            Memory::local_pointer("z"),
+            ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
         ));
         assert_eq!(state.local_name_holding_bitvector_variable(variable), None);
     }
@@ -10711,9 +10774,9 @@ mod local_variable_spelling_tests {
 mod kept_range_identity_tests {
     use super::*;
 
-    fn ranges(id: u64) -> SnapshotMap<CMemoryRange, ()> {
+    fn ranges(id: u64) -> SnapshotMap<MemoryRange, ()> {
         ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+            .unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
                 Pointer::symbolic(Variable(id)),
                 0.into(),
                 4.into(),
@@ -10739,9 +10802,9 @@ mod kept_range_identity_tests {
 
     #[test]
     fn kept_range_hash_collisions_distinguish_composite_exclusions() {
-        let composite = ResourceContext::new().unchecked_with_fact(CResourceFact::own_composite(
+        let composite = ResourceContext::new().unchecked_with_fact(ResourceFact::own_composite(
             "boxed".into(),
-            vec![CValue::pointer(Pointer::symbolic(Variable(9)))],
+            vec![ProgramValue::pointer(Pointer::symbolic(Variable(9)))],
         ));
         let intern = |original, introduced| {
             intern_kept_range_set_with_exclusions_and_hash(
@@ -10754,7 +10817,7 @@ mod kept_range_identity_tests {
             )
         };
         let original = ResourceContext::new()
-            .unchecked_with_facts(ranges(8).keys().cloned().map(CResourceFact::own_memory));
+            .unchecked_with_facts(ranges(8).keys().cloned().map(ResourceFact::own_memory));
         let original = original.memory_input_facts();
         let plain = intern(SnapshotMap::new(), SnapshotMap::new());
         let excluded = intern(original.clone(), SnapshotMap::new());
@@ -10770,7 +10833,7 @@ mod kept_range_identity_tests {
     #[test]
     fn kept_range_hash_collisions_distinguish_surviving_views() {
         let range = ranges(7).keys().next().unwrap().clone();
-        let viewed = ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(range));
+        let viewed = ResourceContext::new().unchecked_with_fact(ResourceFact::view_memory(range));
         let intern = |inputs| {
             intern_kept_range_set_with_exclusions_and_hash(
                 SnapshotMap::new(),
@@ -10789,7 +10852,7 @@ mod kept_range_identity_tests {
 
     #[test]
     fn owned_range_index_keeps_duplicates_until_the_last_withdrawal() {
-        let fact = CResourceFact::own_memory(CMemoryRange::new(
+        let fact = ResourceFact::own_memory(MemoryRange::new(
             Pointer::symbolic(Variable(7)),
             0.into(),
             4.into(),

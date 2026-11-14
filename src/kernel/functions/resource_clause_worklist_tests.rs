@@ -6,17 +6,17 @@ fn memory_waiter_requires_a_whole_range_supplier() {
         block: PointerBlock::Concrete("resource-clause-adjacent".to_string()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let wide = CResourceFact::view_memory(CMemoryRange::new(
+    let wide = ResourceFact::view_memory(MemoryRange::new(
         base.clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(2),
     ));
-    let left = CResourceFact::view_memory(CMemoryRange::new(
+    let left = ResourceFact::view_memory(MemoryRange::new(
         base.clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(1),
     ));
-    let right = CResourceFact::view_memory(CMemoryRange::new(
+    let right = ResourceFact::view_memory(MemoryRange::new(
         base,
         MachineTerm::constant(1),
         MachineTerm::constant(2),
@@ -90,7 +90,7 @@ fn same_block_disjoint_waiters_use_interval_candidates() {
                 let mut waiters = ResourceClauseWaiterIndex::default();
                 for index in 0..size {
                     let start = (index * 2) as u32;
-                    let dependency = CResourceFact::view_memory(CMemoryRange::new(
+                    let dependency = ResourceFact::view_memory(MemoryRange::new(
                         base.clone(),
                         MachineTerm::constant(start),
                         MachineTerm::constant(start + 1),
@@ -105,7 +105,7 @@ fn same_block_disjoint_waiters_use_interval_candidates() {
                 let mut candidate_visits = 0;
                 for index in 0..size {
                     let start = (index * 2) as u32;
-                    let supplied = CResourceFact::view_memory(CMemoryRange::new(
+                    let supplied = ResourceFact::view_memory(MemoryRange::new(
                         base.clone(),
                         MachineTerm::constant(start),
                         MachineTerm::constant(start + 1),
@@ -139,12 +139,12 @@ fn comparable_constant_bases_share_interval_space() {
         block,
         offset: PointerOffsetTerm::Constant(8),
     };
-    let dependency = CResourceFact::view_memory(CMemoryRange::new(
+    let dependency = ResourceFact::view_memory(MemoryRange::new(
         dependency_base,
         MachineTerm::constant(2),
         MachineTerm::constant(3),
     ));
-    let supplied = CResourceFact::view_memory(CMemoryRange::new(
+    let supplied = ResourceFact::view_memory(MemoryRange::new(
         supplied_base,
         MachineTerm::constant(0),
         MachineTerm::constant(1),
@@ -164,13 +164,13 @@ fn concrete_memory_waiters_share_physical_byte_space_across_widths() {
         block: PointerBlock::Concrete("resource-clause-byte-space".to_string()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let dependency = CResourceFact::view_memory(CMemoryRange::new_with_element_width(
+    let dependency = ResourceFact::view_memory(MemoryRange::new_with_element_width(
         base.clone(),
         MachineTerm::constant(8),
         MachineTerm::constant(12),
         1,
     ));
-    let supplied = CResourceFact::view_memory(CMemoryRange::new_with_element_width(
+    let supplied = ResourceFact::view_memory(MemoryRange::new_with_element_width(
         base,
         MachineTerm::constant(2),
         MachineTerm::constant(3),
@@ -191,12 +191,12 @@ fn symbolic_memory_waiters_keep_conservative_block_fallback() {
         block: PointerBlock::Concrete("resource-clause-symbolic".to_string()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let dependency = CResourceFact::view_memory(CMemoryRange::new(
+    let dependency = ResourceFact::view_memory(MemoryRange::new(
         base.clone(),
         MachineTerm::constant(0),
         MachineTerm::Variable(Variable(9_901)),
     ));
-    let supplied = CResourceFact::view_memory(CMemoryRange::new(
+    let supplied = ResourceFact::view_memory(MemoryRange::new(
         base,
         MachineTerm::constant(0),
         MachineTerm::constant(1),
@@ -216,12 +216,12 @@ fn concrete_waiter_block_fallback_registers_and_unregisters_symmetrically() {
         block: PointerBlock::Concrete("resource-clause-fallback-lifetime".to_string()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let dependency = CResourceFact::view_memory(CMemoryRange::new(
+    let dependency = ResourceFact::view_memory(MemoryRange::new(
         base.clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(1),
     ));
-    let symbolic_supplied = CResourceFact::view_memory(CMemoryRange::new(
+    let symbolic_supplied = ResourceFact::view_memory(MemoryRange::new(
         base,
         MachineTerm::constant(0),
         MachineTerm::Variable(Variable(9_902)),

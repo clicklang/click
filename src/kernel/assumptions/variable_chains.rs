@@ -389,7 +389,7 @@ mod memory_tests {
             block: PointerBlock::from("ordered"),
             offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(variable), stride),
         };
-        let mut memory = CMemory::new().with_block("ordered", 4096);
+        let mut memory = Memory::new().with_block("ordered", 4096);
         for (index, variable) in variables.iter().enumerate() {
             memory = memory.store(pointer(*variable, 4), int32(index as u32));
         }
@@ -421,7 +421,7 @@ mod memory_tests {
             .without_possible_aliasing_cells(&near, 8, &context)
             .store(
                 near.clone(),
-                CValue::UInt64(MachineTerm::uint64_constant(7)),
+                ProgramValue::UInt64(MachineTerm::uint64_constant(7)),
             );
         let after = wide.without_possible_aliasing_cells(&pointer(variables[4], 4), 4, &context);
         assert!(

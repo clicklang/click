@@ -5,7 +5,8 @@ fn retained_index_checks_scale_with_growing_prefixes_without_exports() {
         for size in [16, 64, 256] {
             let _session = VerificationSession::enter();
             let ty = MachineIntegerType::UInt64;
-            let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(994520));
+            let mut root =
+                KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(994520));
             let context = PureFactContext::new();
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {

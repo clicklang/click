@@ -10,19 +10,24 @@ use super::*;
 /// consume (`roadmap/scaling.md`).
 #[test]
 fn allocating_call_does_not_expand_the_callers_kept_objects() {
-    let boxed = c_function(CType::Void, "unused", vec![], c_return(c_void_value()))
-        .with_composite_resource_definitions(vec![CCompositeResourceDefinition::new(
-            "boxed",
-            vec![c_parameter("p", CType::Int32Pointer)],
-            None,
-            false,
-            vec![CResourceSpec::owned_memory(CMemorySegment::new(
-                c_variable("p"),
-                c_int32_literal(0),
-                c_int32_literal(1),
-            ))],
-            vec![],
-        )]);
+    let boxed = program_function(
+        ProgramType::Void,
+        "unused",
+        vec![],
+        program_return(program_void_value()),
+    )
+    .with_composite_resource_definitions(vec![CompositeResourceDefinition::new(
+        "boxed",
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        None,
+        false,
+        vec![ResourceSpec::owned_memory(MemorySegment::new(
+            crate::kernel::program_expression::variable("p"),
+            crate::kernel::program_expression::int32_literal(0),
+            crate::kernel::program_expression::int32_literal(1),
+        ))],
+        vec![],
+    )]);
     let interface = boxed.contract_interface();
     let heap = |id: u64| Pointer {
         block: PointerBlock::Heap(id),
@@ -32,24 +37,22 @@ fn allocating_call_does_not_expand_the_callers_kept_objects() {
     let samples = [16, 64, 256]
         .into_iter()
         .map(|size| {
-            let mut memory = CMemory::new();
+            let mut memory = Memory::new();
             let mut kept = ResourceContext::new();
             for index in 0..size {
                 let object = heap(931_000 + index as u64);
                 memory = memory
                     .with_heap_allocation_claim(object.clone(), HeapExtent::int32(bytes.clone()))
                     .expect("a fresh live object");
-                kept = kept.unchecked_with_fact(CResourceFact::own_composite(
+                kept = kept.unchecked_with_fact(ResourceFact::own_composite(
                     "boxed".into(),
-                    vec![CValue::pointer(object)],
+                    vec![ProgramValue::pointer(object)],
                 ));
             }
             let created = heap(932_000);
-            let output = ResourceContext::new().unchecked_with_fact(CResourceFact::own_allocation(
-                created.clone(),
-                bytes.clone(),
-            ));
-            let state = CState::new().with_memory(memory.clone());
+            let output = ResourceContext::new()
+                .unchecked_with_fact(ResourceFact::own_allocation(created.clone(), bytes.clone()));
+            let state = ExecutionState::new().with_memory(memory.clone());
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
                 apply_verified_heap_allocation_delta(
                     memory.clone(),

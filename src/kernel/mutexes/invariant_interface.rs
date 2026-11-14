@@ -18,7 +18,7 @@ impl MutexInvariantInterface {
     pub(super) fn check_definition(
         instance: &ResourceInstance,
         mutex: &Pointer,
-        definition: &crate::kernel::CCompositeResourceDefinition,
+        definition: &crate::kernel::CompositeResourceDefinition,
     ) -> Result<Self, &'static str> {
         if definition.name() != instance.name()
             || definition.instance_field_schema() != Some(instance.schema())
@@ -28,7 +28,10 @@ impl MutexInvariantInterface {
                 .iter()
                 .zip(instance.arguments())
                 .any(|(parameter, argument)| {
-                    argument.as_c_value().map(|value| value.c_type()) != Some(parameter.c_type())
+                    argument
+                        .as_program_value()
+                        .map(|value| value.program_type())
+                        != Some(parameter.program_type())
                 })
         {
             return Err("selected mutex resource does not match its declaration");
@@ -52,7 +55,8 @@ impl MutexInvariantInterface {
 mod tests {
     use super::*;
     use crate::kernel::{
-        CType, CValue, ResourceContext, ResourceFieldSchema, ResourceFieldType, Variable, int32,
+        ProgramType, ProgramValue, ResourceContext, ResourceFieldSchema, ResourceFieldType,
+        Variable, int32,
     };
     use std::collections::BTreeMap;
 
@@ -60,9 +64,12 @@ mod tests {
         ResourceInstance::new(
             Variable(identity),
             "counter_state".into(),
-            vec![CValue::pointer(Pointer::symbolic(Variable(70))).into()].into(),
-            ResourceFieldSchema::new(vec![("value".into(), ResourceFieldType::C(CType::Int32))])
-                .unwrap(),
+            vec![ProgramValue::pointer(Pointer::symbolic(Variable(70))).into()].into(),
+            ResourceFieldSchema::new(vec![(
+                "value".into(),
+                ResourceFieldType::Program(ProgramType::Int32),
+            )])
+            .unwrap(),
             vec![int32(value).into()].into(),
         )
         .unwrap()
@@ -72,10 +79,13 @@ mod tests {
         Pointer::symbolic(Variable(70)).offset_by_bytes(8)
     }
 
-    fn definitions() -> BTreeMap<String, crate::kernel::CCompositeResourceDefinition> {
-        let definition = crate::kernel::CCompositeResourceDefinition::new(
+    fn definitions() -> BTreeMap<String, crate::kernel::CompositeResourceDefinition> {
+        let definition = crate::kernel::CompositeResourceDefinition::new(
             "counter_state",
-            vec![crate::kernel::CParameter::new("p", CType::Int32Pointer)],
+            vec![crate::kernel::ProgramParameter::new(
+                "p",
+                ProgramType::Int32Pointer,
+            )],
             None,
             false,
             vec![],
@@ -91,10 +101,10 @@ mod tests {
         let resource = instance(1, 7);
         let definitions = definitions();
         let context = MutexContext::new(
-            CState::new()
-                .with_resource_context(ResourceContext::new().unchecked_with_fact(
-                    CResourceFact::own(CResource::Instance(resource.clone())),
-                )),
+            ExecutionState::new().with_resource_context(
+                ResourceContext::new()
+                    .unchecked_with_fact(ResourceFact::own(Resource::Instance(resource.clone()))),
+            ),
         );
         let mutex = Pointer::symbolic(Variable(99));
         let published = context
@@ -124,7 +134,7 @@ mod tests {
         let released = held
             .release(
                 guard,
-                CResourceFact::own(CResource::Instance(resource.clone())),
+                ResourceFact::own(Resource::Instance(resource.clone())),
                 &assumptions,
             )
             .unwrap();
@@ -143,10 +153,10 @@ mod tests {
         let assumptions = PureFactContext::new();
         let resource = instance(1, 7);
         let context = MutexContext::new(
-            CState::new()
-                .with_resource_context(ResourceContext::new().unchecked_with_fact(
-                    CResourceFact::own(CResource::Instance(resource.clone())),
-                )),
+            ExecutionState::new().with_resource_context(
+                ResourceContext::new()
+                    .unchecked_with_fact(ResourceFact::own(Resource::Instance(resource.clone()))),
+            ),
         );
         assert!(
             context
@@ -163,7 +173,7 @@ mod tests {
         let definition = definitions.remove("counter_state").unwrap();
         let wrong_schema = ResourceFieldSchema::new(vec![(
             "different".into(),
-            ResourceFieldType::C(CType::Int32),
+            ResourceFieldType::Program(ProgramType::Int32),
         )])
         .unwrap();
         definitions.insert(
@@ -219,7 +229,7 @@ mod tests {
     fn declared_publication_requires_owned_folded_instance_and_escrows_it() {
         let assumptions = PureFactContext::new();
         let resource = instance(1, 10);
-        let empty = MutexContext::new(CState::new());
+        let empty = MutexContext::new(ExecutionState::new());
         assert!(
             empty
                 .publish_declared(
@@ -231,9 +241,9 @@ mod tests {
                 )
                 .is_err()
         );
-        let fact = CResourceFact::own(CResource::Instance(resource.clone()));
+        let fact = ResourceFact::own(Resource::Instance(resource.clone()));
         let context = MutexContext::new(
-            CState::new()
+            ExecutionState::new()
                 .with_resource_context(ResourceContext::new().unchecked_with_fact(fact.clone())),
         );
         let published = context
@@ -254,11 +264,11 @@ mod tests {
         let (held, _) = published.acquire(&address(), &assumptions).unwrap();
         assert!(held.state.resources.contains_exact_representation(&fact));
     }
-    fn published() -> (MutexContext, CResourceFact) {
+    fn published() -> (MutexContext, ResourceFact) {
         let resource = instance(1, 10);
-        let fact = CResourceFact::own(CResource::Instance(resource.clone()));
+        let fact = ResourceFact::own(Resource::Instance(resource.clone()));
         let context = MutexContext::new(
-            CState::new()
+            ExecutionState::new()
                 .with_resource_context(ResourceContext::new().unchecked_with_fact(fact.clone())),
         );
         (
@@ -292,7 +302,7 @@ mod tests {
     fn declared_release_accepts_owned_replacement_with_the_full_description() {
         let assumptions = PureFactContext::new();
         let (published, original) = published();
-        let replacement = CResourceFact::own(CResource::Instance(instance(2, 99)));
+        let replacement = ResourceFact::own(Resource::Instance(instance(2, 99)));
         let (mut held, guard) = published.acquire(&address(), &assumptions).unwrap();
         held.state.resources = held
             .state
@@ -333,8 +343,8 @@ mod tests {
         let (published, original) = published();
         let mut replacement = instance(2, 99);
         let other = Pointer::symbolic(Variable(71));
-        replacement.arguments = vec![CValue::pointer(other.clone()).into()].into();
-        let replacement = CResourceFact::own(CResource::Instance(replacement));
+        replacement.arguments = vec![ProgramValue::pointer(other.clone()).into()].into();
+        let replacement = ResourceFact::own(Resource::Instance(replacement));
         let (mut held, guard) = published.acquire(&address(), &assumptions).unwrap();
         held.state.resources = held
             .state
@@ -359,13 +369,13 @@ mod tests {
         );
         let equality = assumptions.assume_condition(
             crate::kernel::ConditionTerm::PointerValueEqual(
-                Box::new(crate::kernel::CPointerValue::new(
+                Box::new(crate::kernel::PointerValue::new(
                     Pointer::symbolic(Variable(70)),
-                    CType::Int32Pointer,
+                    ProgramType::Int32Pointer,
                 )),
-                Box::new(crate::kernel::CPointerValue::new(
+                Box::new(crate::kernel::PointerValue::new(
                     other,
-                    CType::Int32Pointer,
+                    ProgramType::Int32Pointer,
                 )),
             ),
             true,
@@ -385,7 +395,7 @@ mod tests {
         let assumptions = PureFactContext::new();
         let (published, original) = published();
         // An equal description alone is insufficient: this instance is not owned.
-        let absent = CResourceFact::own(CResource::Instance(instance(2, 99)));
+        let absent = ResourceFact::own(Resource::Instance(instance(2, 99)));
         let (held, guard) = published.acquire(&address(), &assumptions).unwrap();
         assert_eq!(
             held.release(guard, absent.clone(), &assumptions).err(),
@@ -395,14 +405,16 @@ mod tests {
         wrong_family.name = "other_state".into();
         let mut wrong_arguments = instance(2, 99);
         wrong_arguments.arguments =
-            vec![CValue::pointer(Pointer::symbolic(Variable(71))).into()].into();
+            vec![ProgramValue::pointer(Pointer::symbolic(Variable(71))).into()].into();
         let mut wrong_schema = instance(2, 99);
-        wrong_schema.schema =
-            ResourceFieldSchema::new(vec![("other".into(), ResourceFieldType::C(CType::Int32))])
-                .unwrap();
+        wrong_schema.schema = ResourceFieldSchema::new(vec![(
+            "other".into(),
+            ResourceFieldType::Program(ProgramType::Int32),
+        )])
+        .unwrap();
         for candidate in [wrong_family, wrong_arguments, wrong_schema] {
             let (mut held, guard) = published.acquire(&address(), &assumptions).unwrap();
-            let candidate = CResourceFact::own(CResource::Instance(candidate));
+            let candidate = ResourceFact::own(Resource::Instance(candidate));
             held.state.resources = held
                 .state
                 .resources
@@ -593,7 +605,7 @@ mod tests {
         );
         transfer.bind_interface(first_protocols).unwrap();
         transfer.bind_interface(first_protocols).unwrap();
-        let empty = MutexContext::new(CState::new());
+        let empty = MutexContext::new(ExecutionState::new());
         assert!(
             transfer
                 .bind_interface(empty.state.mutex_ledger.as_ref().unwrap())

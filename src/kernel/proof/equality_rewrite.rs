@@ -759,7 +759,7 @@ fn rewrite_through_loaded_pointer_block(
     cache: &PointerReadRewrites,
 ) -> Option<Pointer> {
     fn name_read(
-        memory: SharedCMemory,
+        memory: SharedMemory,
         address: Pointer,
         kind: Option<LoadKind>,
     ) -> Option<Pointer> {
@@ -1256,44 +1256,48 @@ fn rewrite_atomic_proposition_by_exact_equality(
             return Ok(rewritten);
         }
     }
-    fn rewrite_c_value(
-        value: &CValue,
+    fn rewrite_program_value(
+        value: &ProgramValue,
         rewrite_term: &impl Fn(&MachineTerm) -> MachineTerm,
         rewrite_pointer: &impl Fn(&Pointer) -> Pointer,
         rewrite_shared: &impl Fn(&SharedMachineIntegerTerm) -> SharedMachineIntegerTerm,
-    ) -> CValue {
+    ) -> ProgramValue {
         match value {
-            CValue::PointerInteger(record) => CValue::PointerInteger(PointerIntegerValue {
-                kind: record.kind.clone(),
-                numeric: Box::new(rewrite_c_value(
-                    &record.numeric,
-                    rewrite_term,
-                    rewrite_pointer,
-                    rewrite_shared,
-                )),
-                pointer: Box::new(record.pointer.map_addresses(rewrite_pointer)),
-            }),
-            CValue::Parameter(term) => CValue::Parameter(Box::new(rewrite_algebraic(
+            ProgramValue::PointerInteger(record) => {
+                ProgramValue::PointerInteger(PointerIntegerValue {
+                    kind: record.kind.clone(),
+                    numeric: Box::new(rewrite_program_value(
+                        &record.numeric,
+                        rewrite_term,
+                        rewrite_pointer,
+                        rewrite_shared,
+                    )),
+                    pointer: Box::new(record.pointer.map_addresses(rewrite_pointer)),
+                })
+            }
+            ProgramValue::Parameter(term) => ProgramValue::Parameter(Box::new(rewrite_algebraic(
                 term,
                 rewrite_term,
                 rewrite_pointer,
                 rewrite_shared,
             ))),
-            CValue::Void => CValue::Void,
-            CValue::Bool(term) => CValue::Bool(rewrite_term(term)),
-            CValue::Int8(term) => CValue::Int8(rewrite_term(term)),
-            CValue::Int16(term) => CValue::Int16(rewrite_term(term)),
-            CValue::Int32(term) => CValue::Int32(rewrite_term(term)),
-            CValue::UInt8(term) => CValue::UInt8(rewrite_term(term)),
-            CValue::UInt16(term) => CValue::UInt16(rewrite_term(term)),
-            CValue::UInt32(term) => CValue::UInt32(rewrite_term(term)),
-            CValue::Int64(term) => CValue::Int64(rewrite_term(term)),
-            CValue::UInt64(term) => CValue::UInt64(rewrite_term(term)),
-            CValue::Int128(term) => CValue::Int128(rewrite_term(term)),
-            CValue::UInt128(term) => CValue::UInt128(rewrite_term(term)),
-            CValue::Float32(term) => CValue::Float32(rewrite_term(term)),
-            CValue::Float64(term) => CValue::Float64(rewrite_term(term)),
-            CValue::Pointer(pointer) => CValue::Pointer(pointer.map_addresses(rewrite_pointer)),
+            ProgramValue::Void => ProgramValue::Void,
+            ProgramValue::Bool(term) => ProgramValue::Bool(rewrite_term(term)),
+            ProgramValue::Int8(term) => ProgramValue::Int8(rewrite_term(term)),
+            ProgramValue::Int16(term) => ProgramValue::Int16(rewrite_term(term)),
+            ProgramValue::Int32(term) => ProgramValue::Int32(rewrite_term(term)),
+            ProgramValue::UInt8(term) => ProgramValue::UInt8(rewrite_term(term)),
+            ProgramValue::UInt16(term) => ProgramValue::UInt16(rewrite_term(term)),
+            ProgramValue::UInt32(term) => ProgramValue::UInt32(rewrite_term(term)),
+            ProgramValue::Int64(term) => ProgramValue::Int64(rewrite_term(term)),
+            ProgramValue::UInt64(term) => ProgramValue::UInt64(rewrite_term(term)),
+            ProgramValue::Int128(term) => ProgramValue::Int128(rewrite_term(term)),
+            ProgramValue::UInt128(term) => ProgramValue::UInt128(rewrite_term(term)),
+            ProgramValue::Float32(term) => ProgramValue::Float32(rewrite_term(term)),
+            ProgramValue::Float64(term) => ProgramValue::Float64(rewrite_term(term)),
+            ProgramValue::Pointer(pointer) => {
+                ProgramValue::Pointer(pointer.map_addresses(rewrite_pointer))
+            }
         }
     }
 
@@ -1366,7 +1370,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                                 PureFunctionArgument::SharedMachine(rewrite_shared(value))
                             }
                             PureFunctionArgument::Value(value) => {
-                                PureFunctionArgument::Value(rewrite_c_value(
+                                PureFunctionArgument::Value(rewrite_program_value(
                                     value,
                                     rewrite_term,
                                     rewrite_pointer,
@@ -1390,7 +1394,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                                 element_type,
                             } => PureFunctionArgument::ArrayRef {
                                 memory: memory.clone(),
-                                pointer: rewrite_c_value(
+                                pointer: rewrite_program_value(
                                     pointer,
                                     rewrite_term,
                                     rewrite_pointer,
@@ -1427,7 +1431,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
         rewrite_shared: &impl Fn(&SharedMachineIntegerTerm) -> SharedMachineIntegerTerm,
     ) -> AlgebraicValue {
         match value {
-            AlgebraicValue::C(value) => AlgebraicValue::C(rewrite_c_value(
+            AlgebraicValue::Program(value) => AlgebraicValue::Program(rewrite_program_value(
                 value,
                 rewrite_term,
                 rewrite_pointer,
@@ -1617,19 +1621,17 @@ fn rewrite_atomic_proposition_by_exact_equality(
             }
         }
         fn rewrite_resource_offset(
-            resource: &CResource,
+            resource: &Resource,
             left: &PointerOffsetTerm,
             right: &PointerOffsetTerm,
-        ) -> CResource {
+        ) -> Resource {
             match resource {
-                CResource::Star(pair) => CResource::star(
+                Resource::Star(pair) => Resource::star(
                     rewrite_resource_offset(&pair.0, left, right),
                     rewrite_resource_offset(&pair.1, left, right),
                 ),
-                CResource::Footprint(_) | CResource::Parameter(_) | CResource::Emp => {
-                    resource.clone()
-                }
-                CResource::Memory(range) => CResource::Memory(range.with_bounds(
+                Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp => resource.clone(),
+                Resource::Memory(range) => Resource::Memory(range.with_bounds(
                     Pointer {
                         block: range.base().block.clone(),
                         offset: rewrite_offset(&range.base().offset, left, right),
@@ -1637,24 +1639,24 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     rewrite_term_offset(range.bound_terms().0, left, right),
                     rewrite_term_offset(range.bound_terms().1, left, right),
                 )),
-                CResource::Composite { .. }
-                | CResource::Token { .. }
-                | CResource::PopulationAuthority(_)
-                | CResource::Instance(_)
-                | CResource::MutexGuard(_)
-                | CResource::MutexLive(_)
-                | CResource::MutexUse(_)
-                | CResource::Publication(_)
-                | CResource::Iterated(_) => resource.clone(),
+                Resource::Composite { .. }
+                | Resource::Token { .. }
+                | Resource::PopulationAuthority(_)
+                | Resource::Instance(_)
+                | Resource::MutexGuard(_)
+                | Resource::MutexLive(_)
+                | Resource::MutexUse(_)
+                | Resource::Publication(_)
+                | Resource::Iterated(_) => resource.clone(),
             }
         }
         let rewritten = match goal {
-            Proposition::CMemoryLoadable {
+            Proposition::MemoryLoadable {
                 memory,
                 base,
                 bytes,
                 wide,
-            } => Proposition::CMemoryLoadable {
+            } => Proposition::MemoryLoadable {
                 // Same-block pointer equalities use offsets rather than the
                 // PointerEqual carrier. Substitute the selected address while
                 // retaining the exact snapshot and readable byte extent.
@@ -1774,20 +1776,18 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 };
                 Proposition::ConditionIs(rewritten, *expected)
             }
-            Proposition::CResourceSeparate {
+            Proposition::ResourceSeparate {
                 left: goal_left,
                 right: goal_right,
-            } => Proposition::CResourceSeparate {
+            } => Proposition::ResourceSeparate {
                 left: Box::new(rewrite_resource_offset(goal_left, left, right)),
                 right: Box::new(rewrite_resource_offset(goal_right, left, right)),
             },
-            Proposition::CResourceViewable { memory, resource } => {
-                crate::kernel::resource_viewable(
-                    memory,
-                    rewrite_resource_offset(resource, left, right),
-                )
-            }
-            Proposition::CResourceContains { parent, child } => Proposition::CResourceContains {
+            Proposition::ResourceViewable { memory, resource } => crate::kernel::resource_viewable(
+                memory,
+                rewrite_resource_offset(resource, left, right),
+            ),
+            Proposition::ResourceContains { parent, child } => Proposition::ResourceContains {
                 parent: Box::new(rewrite_resource_offset(parent, left, right)),
                 child: Box::new(rewrite_resource_offset(child, left, right)),
             },
@@ -2002,13 +2002,13 @@ fn rewrite_atomic_proposition_by_exact_equality(
             }
         }
         let rewritten = match goal {
-            Proposition::CMemoryLoadable {
+            Proposition::MemoryLoadable {
                 memory,
                 base,
                 bytes,
                 wide,
             } => {
-                Proposition::CMemoryLoadable {
+                Proposition::MemoryLoadable {
                     // Clone only shared snapshot roots. Equality changes the
                     // selected address, never the memory or view extent.
                     memory: memory.clone(),
@@ -2269,17 +2269,17 @@ fn rewrite_atomic_proposition_by_exact_equality(
                                     value, from, to,
                                 ));
                             }
-                            PureFunctionArgument::Value(CValue::Int32(value)) => {
-                                CValue::Int32(rewrite_term(value, from, to))
+                            PureFunctionArgument::Value(ProgramValue::Int32(value)) => {
+                                ProgramValue::Int32(rewrite_term(value, from, to))
                             }
-                            PureFunctionArgument::Value(CValue::UInt32(value)) => {
-                                CValue::UInt32(rewrite_term(value, from, to))
+                            PureFunctionArgument::Value(ProgramValue::UInt32(value)) => {
+                                ProgramValue::UInt32(rewrite_term(value, from, to))
                             }
-                            PureFunctionArgument::Value(CValue::Int64(value)) => {
-                                CValue::Int64(rewrite_term(value, from, to))
+                            PureFunctionArgument::Value(ProgramValue::Int64(value)) => {
+                                ProgramValue::Int64(rewrite_term(value, from, to))
                             }
-                            PureFunctionArgument::Value(CValue::UInt64(value)) => {
-                                CValue::UInt64(rewrite_term(value, from, to))
+                            PureFunctionArgument::Value(ProgramValue::UInt64(value)) => {
+                                ProgramValue::UInt64(rewrite_term(value, from, to))
                             }
                             _ => return argument.clone(),
                         };
@@ -2363,7 +2363,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
             true
         )
     );
-    let rewrite_range_bound = |range: &CMemoryRange, bound: &MachineTerm| {
+    let rewrite_range_bound = |range: &MemoryRange, bound: &MachineTerm| {
         // A narrow equality cannot replace the complete value of a native
         // bound, even when both are represented by the same term variant.
         if range.wide_bounds().is_some() && !full_width_equality {
@@ -2372,11 +2372,11 @@ fn rewrite_atomic_proposition_by_exact_equality(
             rewrite_term(bound, left, right)
         }
     };
-    let rewrite_resource_leaf = |resource: &CResource| match resource {
-        CResource::Footprint(_) | CResource::Parameter(_) | CResource::Emp | CResource::Star(_) => {
+    let rewrite_resource_leaf = |resource: &Resource| match resource {
+        Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_) => {
             resource.clone()
         }
-        CResource::Memory(range) => CResource::Memory(range.with_bounds(
+        Resource::Memory(range) => Resource::Memory(range.with_bounds(
             Pointer {
                 block: range.base().block.clone(),
                 offset: rewrite_offset_term(&range.base().offset, left, right),
@@ -2384,26 +2384,26 @@ fn rewrite_atomic_proposition_by_exact_equality(
             rewrite_range_bound(range, range.bound_terms().0),
             rewrite_range_bound(range, range.bound_terms().1),
         )),
-        CResource::Composite { .. }
-        | CResource::Token { .. }
-        | CResource::PopulationAuthority(_)
-        | CResource::Instance(_)
-        | CResource::MutexGuard(_)
-        | CResource::MutexLive(_)
-        | CResource::MutexUse(_)
-        | CResource::Publication(_)
-        | CResource::Iterated(_) => resource.clone(),
+        Resource::Composite { .. }
+        | Resource::Token { .. }
+        | Resource::PopulationAuthority(_)
+        | Resource::Instance(_)
+        | Resource::MutexGuard(_)
+        | Resource::MutexLive(_)
+        | Resource::MutexUse(_)
+        | Resource::Publication(_)
+        | Resource::Iterated(_) => resource.clone(),
     };
-    fn map_resource(resource: &CResource, leaf: &impl Fn(&CResource) -> CResource) -> CResource {
+    fn map_resource(resource: &Resource, leaf: &impl Fn(&Resource) -> Resource) -> Resource {
         match resource {
-            CResource::Star(pair) => {
-                CResource::star(map_resource(&pair.0, leaf), map_resource(&pair.1, leaf))
+            Resource::Star(pair) => {
+                Resource::star(map_resource(&pair.0, leaf), map_resource(&pair.1, leaf))
             }
             other => leaf(other),
         }
     }
     let rewrite_resource_term =
-        |resource: &CResource| map_resource(resource, &rewrite_resource_leaf);
+        |resource: &Resource| map_resource(resource, &rewrite_resource_leaf);
     let rewritten = match goal {
         Proposition::ConditionIs(condition, expected) => {
             let rewritten_condition = if let Some((operator, goal_left, goal_right)) =
@@ -2499,25 +2499,25 @@ fn rewrite_atomic_proposition_by_exact_equality(
             };
             Proposition::ConditionIs(rewritten_condition, *expected)
         }
-        Proposition::CResourceSeparate {
+        Proposition::ResourceSeparate {
             left: goal_left,
             right: goal_right,
-        } => Proposition::CResourceSeparate {
+        } => Proposition::ResourceSeparate {
             left: Box::new(rewrite_resource_term(goal_left)),
             right: Box::new(rewrite_resource_term(goal_right)),
         },
-        Proposition::CResourceViewable { memory, resource } => {
+        Proposition::ResourceViewable { memory, resource } => {
             crate::kernel::resource_viewable(memory, rewrite_resource_term(resource))
         }
-        Proposition::CResourceContains { parent, child } => Proposition::CResourceContains {
+        Proposition::ResourceContains { parent, child } => Proposition::ResourceContains {
             parent: Box::new(rewrite_resource_term(parent)),
             child: Box::new(rewrite_resource_term(child)),
         },
-        Proposition::CMemoryReadDefined {
+        Proposition::MemoryReadDefined {
             memory,
             pointer,
             value_type,
-        } => Proposition::CMemoryReadDefined {
+        } => Proposition::MemoryReadDefined {
             memory: memory.clone(),
             pointer: Pointer {
                 block: pointer.block.clone(),
@@ -2525,12 +2525,12 @@ fn rewrite_atomic_proposition_by_exact_equality(
             },
             value_type: *value_type,
         },
-        Proposition::CMemoryLoadable {
+        Proposition::MemoryLoadable {
             memory,
             base,
             bytes,
             wide,
-        } => Proposition::CMemoryLoadable {
+        } => Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: Pointer {
                 block: base.block.clone(),
@@ -2641,7 +2641,7 @@ mod tests {
     fn address_rewrite_preserves_the_registered_read_width_without_prior_target_reads() {
         for bytes in [4, 8] {
             let _session = VerificationSession::enter();
-            let memory = intern_c_memory(CMemory::new());
+            let memory = intern_memory(Memory::new());
             let index = MachineTerm::Variable(Variable(73_001));
             let base = Pointer {
                 block: PointerBlock::ExternalArgument,
@@ -2671,7 +2671,7 @@ mod tests {
     #[test]
     fn address_rewrite_reaches_legacy_pointer_reads_beyond_eight_levels() {
         let _session = VerificationSession::enter();
-        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let memory = crate::kernel::intern_memory(Memory::new());
         let from = Pointer::symbolic(Variable(998_930));
         let to = Pointer::symbolic(Variable(998_931));
         let other = from.clone();
@@ -2710,9 +2710,9 @@ mod tests {
         let _session = VerificationSession::enter();
         let from = Pointer::symbolic(Variable(998_940));
         let to = Pointer::symbolic(Variable(998_941));
-        let stored = CValue::pointer(Pointer::symbolic(Variable(998_942)));
-        let memory = CMemory::new().store(to.clone(), stored);
-        let memory = crate::kernel::intern_c_memory(memory);
+        let stored = ProgramValue::pointer(Pointer::symbolic(Variable(998_942)));
+        let memory = Memory::new().store(to.clone(), stored);
+        let memory = crate::kernel::intern_memory(memory);
         let cited =
             Proposition::ConditionIs(ConditionTerm::pointer_equal(from.clone(), to.clone()), true);
         let facts = ProofFacts::default().with_fact(cited.clone());
@@ -2740,9 +2740,9 @@ mod tests {
         }
         let later = memory.memory().clone().store(
             to.clone(),
-            CValue::pointer(Pointer::symbolic(Variable(998_943))),
+            ProgramValue::pointer(Pointer::symbolic(Variable(998_943))),
         );
-        let _ = later.symbolic_pointer_version_load(&to, CType::Int32Pointer);
+        let _ = later.symbolic_pointer_version_load(&to, ProgramType::Int32Pointer);
         let goal = Proposition::ConditionIs(
             ConditionTerm::pointer_equal(input.offset_by_bytes(8), from.clone()),
             true,
@@ -2766,8 +2766,8 @@ mod tests {
         let _session = VerificationSession::enter();
         let from = Pointer::symbolic(Variable(998_960));
         let to = Pointer::symbolic(Variable(998_961));
-        let memory = crate::kernel::intern_c_memory(
-            CMemory::new().store(to.clone(), CValue::Int32(7u32.into())),
+        let memory = crate::kernel::intern_memory(
+            Memory::new().store(to.clone(), ProgramValue::Int32(7u32.into())),
         );
         let read = |address: &Pointer| {
             let load =
@@ -3028,7 +3028,7 @@ mod tests {
         let goal = Proposition::ForAll {
             name: Default::default(),
             var: variable,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(Proposition::ConditionIs(
                 observed_native_condition(
                     MachineIntegerType::Int32,
@@ -3068,7 +3068,7 @@ mod tests {
     fn modular_rewrite_retains_shared_residue_operands() {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let x = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1007190));
+        let x = KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1007190));
         let root = KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [x.clone(), x]);
         let observed = |format| {
             IntegerTerm::Machine(
@@ -3322,7 +3322,7 @@ mod tests {
     fn native_read_rewrite_preserves_literal_guards_of_integer_claims() {
         let _session = crate::kernel::VerificationSession::enter();
         let read = MachineTerm::MemoryLoad(
-            intern_c_memory(CMemory::new()),
+            intern_memory(Memory::new()),
             Box::new(Pointer::symbolic(Variable(193_024))),
             LoadKind::Int32,
         );
@@ -3625,16 +3625,16 @@ mod tests {
             block: "integer-rewrite-snapshot".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let before = CMemory::new().with_block("integer-rewrite-snapshot", 8);
+        let before = Memory::new().with_block("integer-rewrite-snapshot", 8);
         let after = before.clone().store(
             pointer.clone(),
-            CValue::Int64(MachineTerm::int64_constant(9)),
+            ProgramValue::Int64(MachineTerm::int64_constant(9)),
         );
-        let observe = |memory: CMemory| {
+        let observe = |memory: Memory| {
             IntegerTerm::from_machine(
                 MachineIntegerType::Int64,
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_c_memory(memory),
+                    crate::kernel::intern_memory(memory),
                     Box::new(pointer.clone()),
                     LoadKind::Bits64,
                 ),
@@ -3819,14 +3819,14 @@ mod tests {
                 block: "compound-rewrite".into(),
                 offset: PointerOffsetTerm::Constant(0),
             };
-            let before = CMemory::new().with_block("compound-rewrite", 16);
+            let before = Memory::new().with_block("compound-rewrite", 16);
             let after = before.clone().with_block("local:compound-unrelated", 4);
             let changed = after.clone().store(
                 pointer.clone(),
                 if wide {
-                    CValue::UInt64(MachineTerm::uint64_constant(7))
+                    ProgramValue::UInt64(MachineTerm::uint64_constant(7))
                 } else {
-                    CValue::Int32(MachineTerm::constant(7))
+                    ProgramValue::Int32(MachineTerm::constant(7))
                 },
             );
             let kind = if wide {
@@ -3835,9 +3835,9 @@ mod tests {
                 LoadKind::Int32
             };
             crate::kernel::eval::declare_load_access_width(&pointer, if wide { 8 } else { 4 });
-            let load = |memory: &CMemory, pointer: Pointer, kind| {
+            let load = |memory: &Memory, pointer: Pointer, kind| {
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_c_memory_ref(memory),
+                    crate::kernel::intern_memory_ref(memory),
                     Box::new(pointer),
                     kind,
                 )
@@ -3953,11 +3953,11 @@ mod tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         crate::kernel::eval::declare_load_access_width(&pointer, 8);
-        let before = CMemory::new().with_block("compound-rewrite-work", 8);
+        let before = Memory::new().with_block("compound-rewrite-work", 8);
         let after = before.clone().with_block("local:compound-rewrite-work", 4);
-        let expression = |memory: &CMemory, size| {
+        let expression = |memory: &Memory, size| {
             let mut term = MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory_ref(memory),
+                crate::kernel::intern_memory_ref(memory),
                 Box::new(pointer.clone()),
                 LoadKind::Bits64,
             );
@@ -4024,15 +4024,17 @@ mod tests {
         // of its own width, and a load whose width nobody recorded is taken
         // as the widest scalar access, which no `int32` store supplies.
         crate::kernel::eval::declare_load_access_width(&pointer, 4);
-        let memory = CMemory::new()
-            .with_block("rewrite-presentation", 4)
-            .store(pointer.clone(), CValue::Int32(MachineTerm::constant(42)));
-        let changed = memory
-            .clone()
-            .store(pointer.clone(), CValue::Int32(MachineTerm::constant(43)));
+        let memory = Memory::new().with_block("rewrite-presentation", 4).store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(42)),
+        );
+        let changed = memory.clone().store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(43)),
+        );
         let load = |memory| {
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(memory),
+                crate::kernel::intern_memory(memory),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             )
@@ -4081,7 +4083,7 @@ mod tests {
         let quantified = |body| Proposition::ForAll {
             name: Default::default(),
             var: bound,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(body),
         };
 
@@ -4106,7 +4108,7 @@ mod tests {
         let existential = Proposition::Exists {
             name: "witness".to_string(),
             var: bound,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(atom(variable(free), MachineTerm::constant(0))),
         };
         assert!(
@@ -4118,7 +4120,9 @@ mod tests {
             variable(free),
             MachineTerm::ClickFunctionApplication {
                 name: "f".to_string(),
-                arguments: vec![PureFunctionArgument::Value(CValue::Int32(variable(bound)))],
+                arguments: vec![PureFunctionArgument::Value(ProgramValue::Int32(variable(
+                    bound,
+                )))],
             },
         );
         assert!(
@@ -4162,15 +4166,15 @@ mod wide_range_reader_tests {
             block: crate::kernel::PointerBlock::Symbolic(Variable(984_701)),
             offset: offset.clone(),
         };
-        let wide = CMemoryRange::new_wide(
+        let wide = MemoryRange::new_wide(
             base,
             MachineTerm::uint64_constant(0),
             MachineTerm::uint64_constant(1 << 33),
             4,
         );
-        let goal = Proposition::CResourceContains {
-            parent: Box::new(CResource::Memory(wide.clone())),
-            child: Box::new(CResource::Memory(wide.clone())),
+        let goal = Proposition::ResourceContains {
+            parent: Box::new(Resource::Memory(wide.clone())),
+            child: Box::new(Resource::Memory(wide.clone())),
         };
         let equality = Proposition::ConditionIs(
             ConditionTerm::PointerOffsetEqual(
@@ -4203,15 +4207,15 @@ mod wide_bound_equality_reader_tests {
     fn wide_range_bound_substitution_requires_full_width_equality() {
         let _session = crate::kernel::VerificationSession::enter();
         let end = MachineTerm::Variable(Variable(985_900));
-        let wide = CMemoryRange::new_wide(
+        let wide = MemoryRange::new_wide(
             Pointer::symbolic(Variable(985_901)),
             MachineTerm::uint64_constant(0),
             end.clone(),
             1,
         );
-        let goal = Proposition::CResourceContains {
-            parent: Box::new(CResource::Memory(wide.clone())),
-            child: Box::new(CResource::Memory(wide.clone())),
+        let goal = Proposition::ResourceContains {
+            parent: Box::new(Resource::Memory(wide.clone())),
+            child: Box::new(Resource::Memory(wide.clone())),
         };
         // Equality of a low word cannot turn a full native endpoint into zero.
         let narrow = Proposition::ConditionIs(
@@ -4293,10 +4297,10 @@ mod numeric_address_annotation_tests {
                 .proposition(),
             &equality,
         );
-        let left = CPointerValue::new(p.clone(), CType::Int32Pointer)
+        let left = PointerValue::new(p.clone(), ProgramType::Int32Pointer)
             .with_extent(Some(SubobjectExtent::constant(p, 4)));
         for width in [4, 8] {
-            let right = CPointerValue::new(q.clone(), CType::Int32Pointer)
+            let right = PointerValue::new(q.clone(), ProgramType::Int32Pointer)
                 .with_extent(Some(SubobjectExtent::constant(q.clone(), width)));
             assert!(
                 !facts

@@ -2,11 +2,16 @@ use super::*;
 
 #[test]
 fn mutex_automatic_frame_retirement_requires_destruction() {
-    let function = c_function(CType::Int32, "scope", vec![], c_return(c_int32_literal(0)));
+    let function = program_function(
+        ProgramType::Int32,
+        "scope",
+        vec![],
+        program_return(crate::kernel::program_expression::int32_literal(0)),
+    );
     for name in ["holder", "frame:holder", "lifetime:holder"] {
-        let state = CState::new().with_local(name, int32(0));
+        let state = ExecutionState::new().with_local(name, int32(0));
         let address = state.locals.slot(name).unwrap().clone();
-        let memory = CMemory::new().with_block(address.block.clone(), 40);
+        let memory = Memory::new().with_block(address.block.clone(), 40);
         let initialized =
             crate::kernel::mutexes::MutexContext::new(state.with_memory(memory.clone()))
                 .initialize_empty(address.clone(), 40)
@@ -15,10 +20,10 @@ fn mutex_automatic_frame_retirement_requires_destruction() {
             end_function_body_automatic_lifetimes(
                 initialized.state(),
                 &function,
-                &CMemory::new(),
+                &Memory::new(),
                 None
             ),
-            Err(CRuntimeError::MutexStorageScopeEnd { .. })
+            Err(RuntimeError::MutexStorageScopeEnd { .. })
         ));
         // The caller's object remains live across a callee return.
         assert_eq!(
@@ -28,7 +33,7 @@ fn mutex_automatic_frame_retirement_requires_destruction() {
         if name != "holder" {
             assert!(matches!(
                 end_inline_frame_automatic_lifetimes(initialized.state()),
-                Err(CRuntimeError::MutexStorageScopeEnd { .. })
+                Err(RuntimeError::MutexStorageScopeEnd { .. })
             ));
         }
         let destroyed = initialized
@@ -38,7 +43,7 @@ fn mutex_automatic_frame_retirement_requires_destruction() {
             !end_function_body_automatic_lifetimes(
                 destroyed.state(),
                 &function,
-                &CMemory::new(),
+                &Memory::new(),
                 None
             )
             .unwrap()

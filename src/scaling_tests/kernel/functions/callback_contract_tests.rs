@@ -10,9 +10,9 @@ fn authoritative_memory_projection_scales_with_used_members_not_unrelated_frames
         block: PointerBlock::Concrete("local:projection:data".to_string()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let state = CState::new()
-        .with_local("p", CValue::pointer(pointer.clone()))
-        .with_memory(CMemory::new().with_block(pointer.block.clone(), 512));
+    let state = ExecutionState::new()
+        .with_local("p", ProgramValue::pointer(pointer.clone()))
+        .with_memory(Memory::new().with_block(pointer.block.clone(), 512));
     let mut samples = Vec::new();
     for used_members in [1usize, 4, 16, 64] {
         let mut memory = state.memory.clone();
@@ -20,21 +20,21 @@ fn authoritative_memory_projection_scales_with_used_members_not_unrelated_frames
             memory = memory.with_block(format!("local:projection:frame:{unrelated}"), 4);
         }
         let state = state.clone().with_memory(memory);
-        let function = c_function(
-            CType::Void,
+        let function = program_function(
+            ProgramType::Void,
             format!("project_{used_members}"),
-            vec![c_parameter("p", CType::Int32Pointer)],
-            CStatement::Skip,
+            vec![program_parameter("p", ProgramType::Int32Pointer)],
+            ProgramStatement::Skip,
         )
         .with_contract(
             vec![],
             vec![],
             (0..used_members)
                 .map(|index| {
-                    CMemorySegment::new(
-                        c_variable("p"),
-                        c_int32_literal(index as u32),
-                        c_int32_literal(index as u32 + 1),
+                    MemorySegment::new(
+                        crate::kernel::program_expression::variable("p"),
+                        crate::kernel::program_expression::int32_literal(index as u32),
+                        crate::kernel::program_expression::int32_literal(index as u32 + 1),
                     )
                 })
                 .collect(),
@@ -64,27 +64,27 @@ fn authoritative_memory_projection_scales_with_used_members_not_unrelated_frames
     // Resource-derived frames use the checked transition as their source of
     // memory authority. A bare resource summary without this marker must not
     // turn an abstract callback into an unconditional memory havoc.
-    let resource = CResourceSpec::owned_memory(CMemorySegment::new(
-        c_variable("p"),
-        c_int32_literal(0),
-        c_int32_literal(1),
+    let resource = ResourceSpec::owned_memory(MemorySegment::new(
+        crate::kernel::program_expression::variable("p"),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(1),
     ));
-    let resource_function = c_function(
-        CType::Void,
+    let resource_function = program_function(
+        ProgramType::Void,
         "project_resource",
-        vec![c_parameter("p", CType::Int32Pointer)],
-        CStatement::Skip,
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        ProgramStatement::Skip,
     )
     .with_resource_summary(vec![resource], vec![])
     .with_resource_derived_mutable_frame();
-    let checked_resources = [CCheckedResourceFact {
-        fact: CResourceFact::own_memory(CMemoryRange::new(
+    let checked_resources = [CheckedResourceFact {
+        fact: ResourceFact::own_memory(MemoryRange::new(
             pointer,
             MachineTerm::constant(0),
             MachineTerm::constant(1),
         )),
-        role: CResourceTransferRole::Consume,
-        snapshot: CResourceSnapshot::Entry,
+        role: ResourceTransferRole::Consume,
+        snapshot: ResourceSnapshot::Entry,
         clause_position: None,
         section_index: None,
         selected_mutex_source: None,
@@ -115,34 +115,34 @@ fn checked_transition_projection_ignores_unrelated_caller_frame() {
             let _session = crate::kernel::VerificationSession::enter();
             let requirements = (0..used_members)
                 .map(|index| {
-                    CResourceSpec::owned_memory(CMemorySegment::new(
-                        CExpression::Variable("p".into()),
-                        CExpression::Value(int32(index as u32)),
-                        CExpression::Value(int32(index as u32 + 1)),
+                    ResourceSpec::owned_memory(MemorySegment::new(
+                        ProgramExpression::Variable("p".into()),
+                        ProgramExpression::Value(int32(index as u32)),
+                        ProgramExpression::Value(int32(index as u32 + 1)),
                     ))
                 })
                 .collect::<Vec<_>>();
             let owned = (0..used_members)
                 .map(|index| {
-                    CResourceFact::own_memory(CMemoryRange::new(
+                    ResourceFact::own_memory(MemoryRange::new(
                         pointer.clone(),
                         MachineTerm::constant(index as u32),
                         MachineTerm::constant(index as u32 + 1),
                     ))
                 })
                 .chain((0..unrelated).map(|index| {
-                    CResourceFact::own_token(format!("unrelated_transition_token_{index}"), vec![])
+                    ResourceFact::own_token(format!("unrelated_transition_token_{index}"), vec![])
                 }))
                 .collect::<Vec<_>>();
-            let state = CState::new()
-                .with_local("p", CValue::pointer(pointer.clone()))
-                .with_memory(CMemory::new().with_block(pointer.block.clone(), 512))
+            let state = ExecutionState::new()
+                .with_local("p", ProgramValue::pointer(pointer.clone()))
+                .with_memory(Memory::new().with_block(pointer.block.clone(), 512))
                 .with_resource_context(ResourceContext::new().unchecked_with_facts(owned));
-            let function = c_function(
-                CType::Void,
+            let function = program_function(
+                ProgramType::Void,
                 format!("transition_projection_{used_members}"),
-                vec![c_parameter("p", CType::Int32Pointer)],
-                CStatement::Skip,
+                vec![program_parameter("p", ProgramType::Int32Pointer)],
+                ProgramStatement::Skip,
             )
             .with_contract(vec![], vec![], vec![], vec![], true)
             .with_resource_summary(requirements, vec![])
@@ -206,41 +206,41 @@ fn checked_wrapper_projection_scales_with_used_members() {
     for used_members in [1usize, 4, 16, 64] {
         let contains = (0..used_members)
             .map(|index| {
-                CResourceSpec::owned_memory(CMemorySegment::new(
-                    CExpression::Variable("data".into()),
-                    CExpression::Value(int32(index as u32)),
-                    CExpression::Value(int32(index as u32 + 1)),
+                ResourceSpec::owned_memory(MemorySegment::new(
+                    ProgramExpression::Variable("data".into()),
+                    ProgramExpression::Value(int32(index as u32)),
+                    ProgramExpression::Value(int32(index as u32 + 1)),
                 ))
             })
             .collect();
-        let definition = CCompositeResourceDefinition::new(
+        let definition = CompositeResourceDefinition::new(
             "TransitionWrapper",
-            vec![c_parameter("data", CType::Int32Pointer)],
+            vec![program_parameter("data", ProgramType::Int32Pointer)],
             None,
             false,
             contains,
             vec![],
         );
-        let requirement = CResourceSpec::composite(
-            CResourceAccessMode::Own,
+        let requirement = ResourceSpec::composite(
+            ResourceAccessMode::Own,
             "TransitionWrapper".into(),
-            vec![CExpression::Variable("p".into())],
-            vec![CType::Int32Pointer],
+            vec![ProgramExpression::Variable("p".into())],
+            vec![ProgramType::Int32Pointer],
         );
-        let state = CState::new()
-            .with_local("p", CValue::pointer(pointer.clone()))
-            .with_memory(CMemory::new().with_block(pointer.block.clone(), 512))
+        let state = ExecutionState::new()
+            .with_local("p", ProgramValue::pointer(pointer.clone()))
+            .with_memory(Memory::new().with_block(pointer.block.clone(), 512))
             .with_resource_context(ResourceContext::new().unchecked_with_fact(
-                CResourceFact::own_composite(
+                ResourceFact::own_composite(
                     "TransitionWrapper".into(),
-                    vec![CValue::pointer(pointer.clone())],
+                    vec![ProgramValue::pointer(pointer.clone())],
                 ),
             ));
-        let function = c_function(
-            CType::Void,
+        let function = program_function(
+            ProgramType::Void,
             format!("wrapper_projection_{used_members}"),
-            vec![c_parameter("p", CType::Int32Pointer)],
-            CStatement::Skip,
+            vec![program_parameter("p", ProgramType::Int32Pointer)],
+            ProgramStatement::Skip,
         )
         .with_contract(vec![], vec![], vec![], vec![], true)
         .with_resource_summary(vec![requirement], vec![])
@@ -285,14 +285,14 @@ fn checked_wrapper_projection_scales_with_used_members() {
 #[test]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn callback_fact_lookup_scales_with_calls_not_unrelated_supported_facts() {
-    fn callback_fact(name: &str, pointer: Pointer, state: CState) -> Proposition {
+    fn callback_fact(name: &str, pointer: Pointer, state: ExecutionState) -> Proposition {
         Proposition::Predicate {
-            name: CFunctionContract::predicate_name_for(name),
+            name: FunctionContract::predicate_name_for(name),
             arguments: vec![
-                Term::CState(Box::new(state)),
-                Term::CValue(CValue::typed_pointer(
+                Term::ExecutionState(Box::new(state)),
+                Term::ProgramValue(ProgramValue::typed_pointer(
                     pointer,
-                    CType::FunctionPointer(CallbackSignature::from_encoded(91_000)),
+                    ProgramType::FunctionPointer(CallbackSignature::from_encoded(91_000)),
                 )),
             ],
         }
@@ -305,13 +305,13 @@ fn callback_fact_lookup_scales_with_calls_not_unrelated_supported_facts() {
             let mut assumptions = PureFactContext::new().assume_proposition(callback_fact(
                 "Target",
                 target.clone(),
-                CState::new(),
+                ExecutionState::new(),
             ));
             for index in 0..unrelated {
                 assumptions = assumptions.assume_proposition(callback_fact(
                     "Unrelated",
                     Pointer::symbolic_function(Variable(93_000 + index as u64)),
-                    CState::new(),
+                    ExecutionState::new(),
                 ));
             }
             let before_allocations = crate::persistent::persistent_node_allocations();

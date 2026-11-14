@@ -7,7 +7,8 @@ fn shared_interval_planning_keeps_operands_and_checks_selected_bounds() {
     for size in [8, 32, 96] {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(986301));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(986301));
         for _ in 0..size {
             root = KernelTerm::machine_binary_shared(
                 ty,
@@ -88,7 +89,8 @@ fn pointer_relevance_visits_shared_prefixes_once() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::UInt64;
-        let mut root = KernelTerm::variable(KernelType::C(format.c_type()), Variable(986320));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(format.program_type()), Variable(986320));
         for _ in 0..size {
             root = KernelTerm::machine_binary_shared(
                 format,

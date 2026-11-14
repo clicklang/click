@@ -145,7 +145,11 @@ impl Comparison {
                 }
                 continue;
             }
-            if left.fold().is_some() || right.fold().is_some() {
+            if left.fold().is_some()
+                || right.fold().is_some()
+                || left.matched().is_some()
+                || right.matched().is_some()
+            {
                 if !crate::kernel::machine_operand_syntax_cmp(left, right).is_eq() {
                     return false;
                 }
@@ -295,8 +299,8 @@ impl Comparison {
 
     fn pointer_value(
         &mut self,
-        a: &crate::kernel::CPointerValue,
-        b: &crate::kernel::CPointerValue,
+        a: &crate::kernel::PointerValue,
+        b: &crate::kernel::PointerValue,
     ) -> bool {
         if !a.retained_nonaddress_metadata_eq(b) {
             return false;
@@ -322,10 +326,12 @@ impl Comparison {
     }
 
     fn argument(&mut self, left: &A, right: &A) -> bool {
-        fn scalar(value: &CValue) -> Option<&MachineTerm> {
+        fn scalar(value: &ProgramValue) -> Option<&MachineTerm> {
             match value {
                 crate::kernel::integer_c_value!(term) => Some(term),
-                CValue::Bool(term) | CValue::Float32(term) | CValue::Float64(term) => Some(term),
+                ProgramValue::Bool(term)
+                | ProgramValue::Float32(term)
+                | ProgramValue::Float64(term) => Some(term),
                 _ => None,
             }
         }
@@ -334,18 +340,20 @@ impl Comparison {
                 a.ty() == b.ty() && self.machine(a.operand_view(), b.operand_view())
             }
             (A::SharedMachine(a), A::Value(b)) | (A::Value(b), A::SharedMachine(a)) => {
-                a.ty().c_type() == b.c_type()
+                a.ty().program_type() == b.program_type()
                     && scalar(b).is_some_and(|b| self.machine(a.operand_view(), Operand::Legacy(b)))
             }
             (A::Value(a), A::Value(b)) => {
-                if a.c_type() != b.c_type() {
+                if a.program_type() != b.program_type() {
                     return false;
                 }
                 match (scalar(a), scalar(b)) {
                     (Some(a), Some(b)) => self.machine(Operand::Legacy(a), Operand::Legacy(b)),
                     _ => match (a, b) {
-                        (CValue::Void, CValue::Void) => true,
-                        (CValue::Pointer(a), CValue::Pointer(b)) => self.pointer_value(a, b),
+                        (ProgramValue::Void, ProgramValue::Void) => true,
+                        (ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
+                            self.pointer_value(a, b)
+                        }
                         _ => false,
                     },
                 }
@@ -363,8 +371,8 @@ impl Comparison {
                 },
             ) => {
                 at == bt
-                    && crate::kernel::intern_c_memory_ref(am).arena_id()
-                        == crate::kernel::intern_c_memory_ref(bm).arena_id()
+                    && crate::kernel::intern_memory_ref(am).arena_id()
+                        == crate::kernel::intern_memory_ref(bm).arena_id()
                     && self.argument(&A::Value(ap.clone()), &A::Value(bp.clone()))
             }
             (A::Algebraic(a), A::Algebraic(b)) => self.algebraic(a, b),
@@ -385,7 +393,7 @@ mod tests {
             MachineIntegerType::UInt64,
             &MachineTerm::ClickFunctionApplication {
                 name: "strict_leaf".into(),
-                arguments: vec![A::Value(CValue::Int32(MachineTerm::constant(value)))],
+                arguments: vec![A::Value(ProgramValue::Int32(MachineTerm::constant(value)))],
             },
         )
     }
@@ -430,7 +438,7 @@ mod tests {
 
     #[test]
     fn algebraic_call_certification_ignores_allocation_but_keeps_written_inputs() {
-        use crate::kernel::{AlgebraicTermNode, AlgebraicType, CMemory, Pointer, Variable};
+        use crate::kernel::{AlgebraicTermNode, AlgebraicType, Memory, Pointer, Variable};
         let _session = VerificationSession::enter();
         let ty = AlgebraicType::parameter("T".into());
         let variable = AlgebraicTerm {
@@ -458,14 +466,14 @@ mod tests {
             node: AlgebraicTermNode::Variable(Variable(995951)),
         };
         assert!(!algebraic_equal(&left, &algebraic_call(changed, "wrap")));
-        let memory = CMemory::new();
+        let memory = Memory::new();
         let other = memory
             .clone()
-            .store(Pointer::null(), CValue::Int32(1u32.into()));
-        let read = |memory: &CMemory| AlgebraicTerm {
+            .store(Pointer::null(), ProgramValue::Int32(1u32.into()));
+        let read = |memory: &Memory| AlgebraicTerm {
             algebraic_type: ty.clone(),
             node: AlgebraicTermNode::MemoryLoad {
-                memory: crate::kernel::intern_c_memory_ref(memory),
+                memory: crate::kernel::intern_memory_ref(memory),
                 pointer: Box::new(Pointer::null()),
             },
         };
@@ -530,14 +538,14 @@ mod tests {
     #[test]
     fn retained_syntax_keeps_snapshots_and_pointer_qualifiers_exact() {
         let _session = VerificationSession::enter();
-        let memory = crate::kernel::CMemory::new();
+        let memory = crate::kernel::Memory::new();
         let changed = memory.clone().store(
             crate::kernel::Pointer::null(),
-            CValue::Int32(MachineTerm::constant(1)),
+            ProgramValue::Int32(MachineTerm::constant(1)),
         );
-        let read = |memory: &crate::kernel::CMemory| {
+        let read = |memory: &crate::kernel::Memory| {
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory_ref(memory),
+                crate::kernel::intern_memory_ref(memory),
                 Box::new(crate::kernel::Pointer::null()),
                 crate::kernel::LoadKind::Int32,
             )
@@ -546,14 +554,14 @@ mod tests {
             Operand::Legacy(&read(&memory)),
             Operand::Legacy(&read(&changed))
         ));
-        let pointer = crate::kernel::CPointerValue::new(
+        let pointer = crate::kernel::PointerValue::new(
             crate::kernel::Pointer::null(),
-            crate::kernel::CType::Int32Pointer,
+            crate::kernel::ProgramType::Int32Pointer,
         );
         let qualified = pointer.clone().with_pointee_constant(true);
         assert!(!Comparison::default().argument(
-            &A::Value(CValue::Pointer(pointer)),
-            &A::Value(CValue::Pointer(qualified))
+            &A::Value(ProgramValue::Pointer(pointer)),
+            &A::Value(ProgramValue::Pointer(qualified))
         ));
     }
     #[test]
@@ -620,22 +628,23 @@ mod tests {
     #[test]
     fn retained_syntax_preserves_captured_and_pointer_index_snapshots() {
         use crate::kernel::{
-            CMemory, CPointerValue, CType, LoadKind, Pointer, PointerOffsetTerm, Variable,
+            LoadKind, Memory, Pointer, PointerOffsetTerm, PointerValue, ProgramType, Variable,
         };
         let _session = VerificationSession::enter();
-        let memory = CMemory::new();
-        let other = memory
-            .clone()
-            .store(Pointer::null(), CValue::Int32(MachineTerm::constant(5)));
-        let pointer = |snapshot: &CMemory| {
-            CPointerValue::new(
+        let memory = Memory::new();
+        let other = memory.clone().store(
+            Pointer::null(),
+            ProgramValue::Int32(MachineTerm::constant(5)),
+        );
+        let pointer = |snapshot: &Memory| {
+            PointerValue::new(
                 Pointer {
                     block: "indexed".into(),
                     offset: PointerOffsetTerm::Int32Scaled {
                         value: SharedMachineIntegerTerm::index(
                             MachineIntegerType::Int32,
                             MachineTerm::MemoryLoad(
-                                crate::kernel::intern_c_memory_ref(snapshot),
+                                crate::kernel::intern_memory_ref(snapshot),
                                 Box::new(Pointer::symbolic(Variable(712))),
                                 LoadKind::Int32,
                             ),
@@ -643,13 +652,13 @@ mod tests {
                         byte_width: 4,
                     },
                 },
-                CType::Int32Pointer,
+                ProgramType::Int32Pointer,
             )
         };
-        let captured = |snapshot: &CMemory, address| A::ArrayRef {
+        let captured = |snapshot: &Memory, address| A::ArrayRef {
             memory: snapshot.clone(),
-            pointer: CValue::Pointer(address),
-            element_type: CType::Int32,
+            pointer: ProgramValue::Pointer(address),
+            element_type: ProgramType::Int32,
         };
         let left = captured(&memory, pointer(&memory));
         assert!(Comparison::default().argument(&left, &captured(&memory, pointer(&memory))));
@@ -660,9 +669,9 @@ mod tests {
     #[test]
     fn retained_syntax_preserves_unchecked_evidence_and_hidden_declaration_class() {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
-        use crate::kernel::{CPointerValue, CType, ObjectTypeEvidence, Pointer};
+        use crate::kernel::{ObjectTypeEvidence, Pointer, PointerValue, ProgramType};
         let _session = VerificationSession::enter();
-        let base = CPointerValue::new(Pointer::null(), CType::Int32Pointer);
+        let base = PointerValue::new(Pointer::null(), ProgramType::Int32Pointer);
         let class = CAccessClass::Scalar(CScalarClass::Int);
         let evidence = |fingerprint| ObjectTypeEvidence {
             class: class.clone(),

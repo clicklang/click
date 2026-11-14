@@ -26,7 +26,7 @@ fn integer_truncation_guard_lookup_ignores_unrelated_facts() {
                 );
             }
             let (value, work) = crate::instrumentation::measure_deterministic_work(|| {
-                capture_spec_integer_value(&CState::new(), &expression, None, &assumptions)
+                capture_spec_integer_value(&ExecutionState::new(), &expression, None, &assumptions)
             });
             value.unwrap();
             measured.push(work);

@@ -9,7 +9,7 @@ fn word(format: MachineIntegerType, value: i64) -> SpecValue {
 }
 fn variable(format: MachineIntegerType, id: u64) -> SpecValue {
     SpecValue::Shared(KernelTerm::variable(
-        KernelType::C(format.c_type()),
+        KernelType::Program(format.program_type()),
         Variable(id),
     ))
 }
@@ -98,7 +98,7 @@ fn conditional_join_preserves_mixed_word_rules_and_bool_refusals() {
     let right = variable(MachineIntegerType::UInt32, 998121);
     let guard = ConditionTerm::Variable(Variable(998122));
     let result = join(&guard, &left, &right);
-    assert_eq!(result.c_type(), CType::UInt32);
+    assert_eq!(result.program_type(), ProgramType::UInt32);
     let expected = conditional_spec_value(
         &Proposition::ConditionIs(guard.clone(), true),
         left.clone().into_native(),
@@ -106,7 +106,7 @@ fn conditional_join_preserves_mixed_word_rules_and_bool_refusals() {
     )
     .unwrap();
     assert_eq!(result.into_native(), expected);
-    let boolean = SpecValue::Native(CValue::Bool(MachineTerm::bool_cast(
+    let boolean = SpecValue::Native(ProgramValue::Bool(MachineTerm::bool_cast(
         MachineIntegerType::UInt8,
         guard.clone(),
     )));
@@ -124,11 +124,12 @@ fn conditional_join_preserves_mixed_word_rules_and_bool_refusals() {
 #[test]
 fn conditional_evaluation_keeps_guarded_domains_and_ignores_ambient_truth() {
     let _session = VerificationSession::enter();
-    let state = CState::new().with_local("x", int32(MachineTerm::Variable(Variable(998130))));
-    let x = || SpecExpression::CExpression(CExpression::Variable("x".into()));
+    let state =
+        ExecutionState::new().with_local("x", int32(MachineTerm::Variable(Variable(998130))));
+    let x = || SpecExpression::ProgramExpression(ProgramExpression::Variable("x".into()));
     let condition = SpecProposition::Comparison {
         left: x(),
-        operator: CComparisonOperator::GreaterThan,
+        operator: ComparisonOperator::GreaterThan,
         right: SpecExpression::Value(int32(0)),
     };
     let expression = SpecExpression::If {

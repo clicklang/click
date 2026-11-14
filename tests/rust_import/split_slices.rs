@@ -19,9 +19,9 @@ fn charon_split_at_empty_endpoints_and_full_width_lengths() {
         include_str!("../../design/charon-trial/split-slices/empty.click"),
         include_str!("../../design/charon-trial/split-slices/endpoints.click"),
     ] {
-        C0VerificationSession::new_program_prepared(claim, &prepared).unwrap();
+        ProgramVerificationSession::new_program_prepared(claim, &prepared).unwrap();
         assert!(
-            C0VerificationSession::new_program_prepared(
+            ProgramVerificationSession::new_program_prepared(
                 &claim.replace("result == 0u64", "result == 1u64"),
                 &prepared
             )
@@ -40,13 +40,13 @@ fn charon_split_at_empty_endpoints_and_full_width_lengths() {
             "verifying \"split.rs\"; fn right_length(bytes: &[u8], mid: usize) -> usize {{ requires bytes.len() == {length}u64; requires mid == {mid}u64; ensures result == {}u64; }}",
             length - mid
         );
-        C0VerificationSession::new_program_prepared(&claim, &prepared).unwrap();
+        ProgramVerificationSession::new_program_prepared(&claim, &prepared).unwrap();
     }
     for claim in [
         "verifying \"split.rs\"; fn left_length(bytes: &[u8], mid: usize) -> usize { requires bytes.len() == 0u64; requires mid == 1u64; ensures result == 1u64; }",
         "verifying \"split.rs\"; fn left_first(bytes: &[u8], mid: usize) -> u8 { requires bytes.len() == 0u64; requires mid == 0u64; ensures result == 0; }",
     ] {
-        assert!(C0VerificationSession::new_program_prepared(claim, &prepared).is_err());
+        assert!(ProgramVerificationSession::new_program_prepared(claim, &prepared).is_err());
     }
 }
 
@@ -115,7 +115,7 @@ fn charon_split_at_live_refresh_and_rejected_mutable_or_nonbyte_pairs() {
         let p = project(name);
         p.refresh().unwrap();
         let prepared = p.prepared().unwrap();
-        C0VerificationSession::new_program_prepared(
+        ProgramVerificationSession::new_program_prepared(
             &fs::read_to_string(p.root.join("borrow.click")).unwrap(),
             &prepared,
         )

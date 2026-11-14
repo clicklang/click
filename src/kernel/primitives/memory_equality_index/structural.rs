@@ -157,10 +157,10 @@ mod tests {
     fn structural_selection_preserves_width_forks_and_consumption() {
         let base = Pointer::symbolic(Variable(873_000));
         let owner =
-            CResourceFact::own_memory(CMemoryRange::new(base.clone(), 0u32.into(), 4u32.into()));
+            ResourceFact::own_memory(MemoryRange::new(base.clone(), 0u32.into(), 4u32.into()));
         let resources = ResourceContext::new().unchecked_with_fact(owner.clone());
         let empty = PureFactContext::new();
-        let partial = CResourceFact::view_memory(CMemoryRange::new(
+        let partial = ResourceFact::view_memory(MemoryRange::new(
             base.offset_by_bytes(4),
             0u32.into(),
             1u32.into(),
@@ -176,7 +176,7 @@ mod tests {
         assert!(restored.satisfies_memory_fact_structurally(&partial));
 
         let slot = ResourceContext::new_with_equalities(&empty).unchecked_with_fact(
-            CResourceFact::own_memory(CMemoryRange::new(base.clone(), 0u32.into(), 1u32.into())),
+            ResourceFact::own_memory(MemoryRange::new(base.clone(), 0u32.into(), 1u32.into())),
         );
         assert!(slot.permits_memory_read(&base, 8, &empty));
         assert!(!slot.permits_memory_read(&base, 9, &empty));
@@ -185,9 +185,11 @@ mod tests {
         assert!(equal.pointers_known_equal(&alias, &Pointer::symbolic(Variable(873_000)),));
         assert!(slot.permits_memory_read(&alias, 4, &equal));
         assert!(
-            !slot.satisfies_memory_fact_structurally(&CResourceFact::view_memory(
-                CMemoryRange::new(alias, 0u32.into(), 1u32.into()),
-            ))
+            !slot.satisfies_memory_fact_structurally(&ResourceFact::view_memory(MemoryRange::new(
+                alias,
+                0u32.into(),
+                1u32.into()
+            ),))
         );
     }
 }

@@ -73,12 +73,12 @@ mod tests {
 #[should_panic(expected = "entered discovery condition fact transport")]
 fn condition_transport_cannot_hide_inside_statement_publication() {
     let _operation = FastOperationScope::enter("statement result publication");
-    crate::kernel::memory_provenance::prove_c_condition_fact_direct_transport(
+    crate::kernel::memory_provenance::prove_program_condition_fact_direct_transport(
         &crate::kernel::Proposition::ConditionIs(
             crate::kernel::ConditionTerm::Constant(true),
             true,
         ),
-        &crate::kernel::CMemory::new(),
+        &crate::kernel::Memory::new(),
         &crate::kernel::PureFactContext::new(),
     );
 }

@@ -3,10 +3,10 @@ use super::*;
 fn candidate_work(steps: u64, unrelated: u64) -> usize {
     let _session = crate::kernel::VerificationSession::enter();
     let base = Pointer::symbolic(Variable(977_000));
-    let held = CResourceFact::own_allocation(base.clone(), 4);
+    let held = ResourceFact::own_allocation(base.clone(), 4);
     let mut resources = ResourceContext::new().unchecked_with_fact(held.clone());
     for i in 0..unrelated {
-        resources = resources.unchecked_with_fact(CResourceFact::own_allocation(
+        resources = resources.unchecked_with_fact(ResourceFact::own_allocation(
             Pointer::symbolic(Variable(978_000 + i)),
             4,
         ));
@@ -19,12 +19,12 @@ fn candidate_work(steps: u64, unrelated: u64) -> usize {
             let next = Pointer::symbolic(Variable(979_000 + i));
             facts = facts.assume_proposition(Proposition::ConditionIs(
                 ConditionTerm::pointer_value_equal(
-                    CPointerValue::new(previous, CType::Int32Pointer),
-                    CPointerValue::new(next.clone(), CType::Int32Pointer),
+                    PointerValue::new(previous, ProgramType::Int32Pointer),
+                    PointerValue::new(next.clone(), ProgramType::Int32Pointer),
                 ),
                 true,
             ));
-            let required = CResourceFact::own_allocation(next.clone(), 4);
+            let required = ResourceFact::own_allocation(next.clone(), 4);
             assert_eq!(
                 resources.directly_supporting_fact(&required, &facts),
                 Some(&held)

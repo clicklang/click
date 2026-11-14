@@ -26,12 +26,14 @@ fn graph_condition_reduction_scales_with_the_expression_not_ambient_facts() {
         );
         let input = MachineTerm::ClickFunctionApplication {
             name: "many".into(),
-            arguments: vec![PureFunctionArgument::Value(CValue::Int32(choice())); size],
+            arguments: vec![PureFunctionArgument::Value(ProgramValue::Int32(choice())); size],
         };
         let expected = MachineTerm::ClickFunctionApplication {
             name: "many".into(),
             arguments: vec![
-                PureFunctionArgument::Value(CValue::Int32(MachineTerm::constant(7)));
+                PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::constant(
+                    7
+                )));
                 size
             ],
         };

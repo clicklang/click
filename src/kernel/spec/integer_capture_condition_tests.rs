@@ -6,7 +6,7 @@ const ACCUMULATOR: Variable = Variable(72_202);
 const ITEM: Variable = Variable(72_203);
 
 fn int32(term: MachineTerm) -> SpecExpression {
-    SpecExpression::Value(CValue::Int32(term))
+    SpecExpression::Value(ProgramValue::Int32(term))
 }
 
 fn predecessor_of_hi() -> SpecExpression {
@@ -66,7 +66,7 @@ fn endpoint_definedness_the_context_decides_is_discharged() {
     // Without the guard the capture is refused, and the refusal names the
     // endpoint rather than the constant initializer.
     let refusal = capture_spec_integer_value(
-        &CState::default(),
+        &ExecutionState::default(),
         &expression,
         None,
         &PureFactContext::new(),
@@ -83,8 +83,13 @@ fn endpoint_definedness_the_context_decides_is_discharged() {
     assert_eq!(proposition, subtraction_is_defined());
 
     // The same capture succeeds once the context decides that condition.
-    capture_spec_integer_value(&CState::default(), &expression, None, &hi_is_positive())
-        .expect("an endpoint whose definedness the context proves is capturable");
+    capture_spec_integer_value(
+        &ExecutionState::default(),
+        &expression,
+        None,
+        &hi_is_positive(),
+    )
+    .expect("an endpoint whose definedness the context proves is capturable");
 }
 
 #[test]
@@ -96,7 +101,7 @@ fn an_exactly_stated_endpoint_condition_is_discharged() {
         zero(),
     );
     let stated = PureFactContext::new().assume_proposition(subtraction_is_defined());
-    capture_spec_integer_value(&CState::default(), &expression, None, &stated)
+    capture_spec_integer_value(&ExecutionState::default(), &expression, None, &stated)
         .expect("the exact stated condition discharges the endpoint path fact");
 }
 
@@ -109,7 +114,7 @@ fn an_initializer_condition_is_named_as_the_initializer() {
         zero(),
     );
     let refusal = capture_spec_integer_value(
-        &CState::default(),
+        &ExecutionState::default(),
         &expression,
         None,
         &PureFactContext::new(),

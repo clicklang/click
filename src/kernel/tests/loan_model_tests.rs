@@ -32,11 +32,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::kernel::functions::CCheckedResourceFact;
+use crate::kernel::functions::CheckedResourceFact;
 use crate::kernel::loans::{LoanLedger, LoanRefusal, LoanViewBinding, plan_stable_view_transfer};
 use crate::kernel::{
-    CMemoryRange, CResourceFact, CResourceSnapshot, CResourceTransferRole, MachineTerm, Pointer,
-    PointerOffsetTerm, PureFactContext, ResourceContext, ResourceOccurrenceId,
+    MachineTerm, MemoryRange, Pointer, PointerOffsetTerm, PureFactContext, ResourceContext,
+    ResourceFact, ResourceOccurrenceId, ResourceSnapshot, ResourceTransferRole,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -1226,8 +1226,8 @@ impl ThreadLocalCellModel {
     }
 }
 
-fn production_memory_fact(start: u32, end: u32, own: bool) -> CResourceFact {
-    let range = CMemoryRange::new(
+fn production_memory_fact(start: u32, end: u32, own: bool) -> ResourceFact {
+    let range = MemoryRange::new(
         Pointer {
             block: "v14-buffer".into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -1236,24 +1236,24 @@ fn production_memory_fact(start: u32, end: u32, own: bool) -> CResourceFact {
         MachineTerm::constant(end),
     );
     if own {
-        CResourceFact::own_memory(range)
+        ResourceFact::own_memory(range)
     } else {
-        CResourceFact::view_memory(range)
+        ResourceFact::view_memory(range)
     }
 }
 
-fn production_checked(fact: CResourceFact) -> CCheckedResourceFact {
-    CCheckedResourceFact {
+fn production_checked(fact: ResourceFact) -> CheckedResourceFact {
+    CheckedResourceFact {
         fact,
-        role: CResourceTransferRole::Borrow,
-        snapshot: CResourceSnapshot::Entry,
+        role: ResourceTransferRole::Borrow,
+        snapshot: ResourceSnapshot::Entry,
         clause_position: None,
         section_index: None,
         selected_mutex_source: None,
     }
 }
 
-fn production_backing(fact: &CResourceFact) -> ResourceOccurrenceId {
+fn production_backing(fact: &ResourceFact) -> ResourceOccurrenceId {
     ResourceContext::new()
         .unchecked_with_fact(fact.clone())
         .unique_owned_occurrence_for_fact(fact)
@@ -1639,7 +1639,7 @@ fn correspondence_calls_production_shared_reborrow_and_end_ordering() {
     let ledger = LoanLedger::new();
     let parent_holder = ledger.fresh_participant().unwrap();
     let child_holder = ledger.fresh_participant().unwrap();
-    let fact = CResourceFact::own_token("v14-parent".to_string(), Vec::new());
+    let fact = ResourceFact::own_token("v14-parent".to_string(), Vec::new());
     let opening = ledger
         .lend(
             parent_holder,

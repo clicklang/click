@@ -164,7 +164,7 @@ fn clean(text: &str) -> String {
 #[cfg(all(test, debug_assertions))]
 mod tests {
     use super::*;
-    use crate::kernel::{CValue, IntegerTerm, MachineIntegerType, MachineTerm, Variable};
+    use crate::kernel::{IntegerTerm, MachineIntegerType, MachineTerm, ProgramValue, Variable};
 
     fn kinds(lines: &[String]) -> Vec<&str> {
         lines
@@ -276,6 +276,6 @@ mod tests {
         assert!(!lines.is_empty());
         assert_eq!(on, off);
         assert_eq!(on_work, off_work);
-        assert!(matches!(on, CValue::UInt32(_)));
+        assert!(matches!(on, ProgramValue::UInt32(_)));
     }
 }

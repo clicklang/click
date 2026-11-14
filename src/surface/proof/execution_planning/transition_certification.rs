@@ -160,7 +160,7 @@ pub(in crate::surface) fn refuse_or_record_open_obligation(
 fn missing_condition_prerequisite_error(
     context_label: &str,
     obligation: &ProofObligation,
-    state: &CState,
+    state: &ExecutionState,
 ) -> ClickError {
     missing_prerequisite_error(
         format!(
@@ -179,14 +179,14 @@ fn missing_condition_prerequisite_error(
 
 fn proof_condition_runtime_error(
     context_label: &str,
-    error: &crate::kernel::CRuntimeError,
-    state: &CState,
-    function: Option<&syntax::C0Function>,
+    error: &crate::kernel::RuntimeError,
+    state: &ExecutionState,
+    function: Option<&crate::languages::interface::ImportedFunction>,
 ) -> ClickError {
     let (parameters, arguments) =
         crate::surface::diagnostics::local_naming_tables_with_source(state, function);
     let (detail, guidance) = match error {
-        crate::kernel::CRuntimeError::MissingResource { resource }
+        crate::kernel::RuntimeError::MissingResource { resource }
             if resource.memory_view_range().is_some() =>
         {
             let required =
@@ -229,27 +229,27 @@ pub(in crate::surface::proof) struct CertifiedProofConditionTransition {
 /// kernel-issued path facts, appended persistently to the shared ancestor.
 #[cfg(test)]
 pub(in crate::surface::proof) fn certified_proof_condition_transitions(
-    state: &CState,
+    state: &ExecutionState,
     pure_facts: &ProofFacts,
-    condition: &CExpression,
+    condition: &ProgramExpression,
     context_label: &str,
 ) -> Result<Vec<CertifiedProofConditionTransition>, ClickError> {
-    let branch = CStatement::If {
+    let branch = ProgramStatement::If {
         condition: condition.clone(),
-        then_branch: Box::new(CStatement::Skip),
-        else_branch: Box::new(CStatement::Skip),
+        then_branch: Box::new(ProgramStatement::Skip),
+        else_branch: Box::new(ProgramStatement::Skip),
     };
     certified_proof_condition_split(state, pure_facts, &branch, None, context_label, None)
         .map(|(_, transitions)| transitions)
 }
 
 pub(in crate::surface::proof) fn certified_proof_condition_split(
-    state: &CState,
+    state: &ExecutionState,
     pure_facts: &ProofFacts,
-    branch_statement: &CStatement,
-    continuation: Option<&CStatement>,
+    branch_statement: &ProgramStatement,
+    continuation: Option<&ProgramStatement>,
     context_label: &str,
-    function: Option<&syntax::C0Function>,
+    function: Option<&crate::languages::interface::ImportedFunction>,
 ) -> Result<(CheckedBranchSplit, Vec<CertifiedProofConditionTransition>), ClickError> {
     let split = CheckedBranchSplit::check(
         state.clone(),
@@ -298,13 +298,13 @@ pub(in crate::surface::proof) fn certified_proof_condition_split(
                 }
             }
             match path.outcome() {
-                CConditionOutcome::Value(is_true) => Ok(CertifiedProofConditionTransition {
+                ConditionOutcome::Value(is_true) => Ok(CertifiedProofConditionTransition {
                     is_true: *is_true,
                     pure_facts: successor_facts,
                     path_facts,
                     theorem: path.theorem().clone(),
                 }),
-                CConditionOutcome::UndefinedBehavior(kind) => Err(ClickError::new(format!(
+                ConditionOutcome::UndefinedBehavior(kind) => Err(ClickError::new(format!(
                     "{context_label} could not evaluate the C condition because it has undefined behavior: {}{}{}",
                     kind.description(),
                     crate::surface::diagnostics::describe_undefined_behavior_site(
@@ -313,9 +313,9 @@ pub(in crate::surface::proof) fn certified_proof_condition_split(
                         pure_facts.assumptions(),
                         kind,
                     ),
-                    crate::surface::diagnostics::describe_c_statement_site()
+                    crate::surface::diagnostics::describe_execution_statement_site()
                 )).with_reported_assertion_goal(kind.required_goal().cloned())),
-                CConditionOutcome::RuntimeError(error) => Err(proof_condition_runtime_error(
+                ConditionOutcome::RuntimeError(error) => Err(proof_condition_runtime_error(
                     context_label,
                     error,
                     state,
@@ -328,9 +328,9 @@ pub(in crate::surface::proof) fn certified_proof_condition_split(
 }
 
 pub(in crate::surface::proof) fn certified_condition_transitions(
-    state: &CState,
+    state: &ExecutionState,
     pure_facts: &PureFactList,
-    condition: &CExpression,
+    condition: &ProgramExpression,
     context_label: &str,
     prerequisite_policy: StatementPrerequisitePolicy,
     context: Option<&PureFactContext>,
@@ -347,7 +347,7 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
         assumptions = assumptions.defer_non_exact_loadability_obligations();
         assumptions = assumptions.defer_non_exact_condition_reasoning();
     }
-    let evaluation = prove_symbolic_c_condition_evaluation(
+    let evaluation = prove_symbolic_program_condition_evaluation(
         state.clone(),
         condition.clone(),
         assumptions.clone(),
@@ -430,8 +430,8 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                 }
             }
             match implication_body(path.theorem().proposition()) {
-                Proposition::CConditionEvaluates {
-                    outcome: CConditionOutcome::Value(is_true),
+                Proposition::ProgramConditionEvaluates {
+                    outcome: ConditionOutcome::Value(is_true),
                     ..
                 } => Ok(CertifiedConditionTransition {
                     is_true: *is_true,
@@ -444,8 +444,8 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                         .collect(),
                     theorem: path.theorem().clone(),
                 }),
-                Proposition::CConditionEvaluates {
-                    outcome: CConditionOutcome::UndefinedBehavior(kind),
+                Proposition::ProgramConditionEvaluates {
+                    outcome: ConditionOutcome::UndefinedBehavior(kind),
                     ..
                 } => Err(ClickError::new(format!(
                     "{context_label} produced undefined behavior while evaluating the condition: {}{}{}",
@@ -456,15 +456,15 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                         &assumptions,
                         kind,
                     ),
-                    crate::surface::diagnostics::describe_c_statement_site()
+                    crate::surface::diagnostics::describe_execution_statement_site()
                 )).with_reported_assertion_goal(kind.required_goal().cloned())),
-                Proposition::CConditionEvaluates {
-                    outcome: CConditionOutcome::RuntimeError(error),
+                Proposition::ProgramConditionEvaluates {
+                    outcome: ConditionOutcome::RuntimeError(error),
                     ..
                 } => Err(ClickError::new(format!(
                     "{context_label} could not verify the C condition: {}{}",
                     crate::surface::diagnostics::describe_runtime_error_over_locals(error, state),
-                    crate::surface::diagnostics::describe_c_statement_site(),
+                    crate::surface::diagnostics::describe_execution_statement_site(),
                 )).with_kind(crate::surface::diagnostics::runtime_refusal_kind(error))),
                 proposition => Err(ClickError::new(format!(
                     "{context_label} saw unexpected condition theorem `{}`",
@@ -476,18 +476,18 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
 }
 
 pub(in crate::surface) fn certified_statement_transitions(
-    state: &CState,
+    state: &ExecutionState,
     pure_facts: &PureFactList,
-    statement: &CStatement,
-    function_environment: &CExecutionEnvironment,
+    statement: &ProgramStatement,
+    function_environment: &ExecutionEnvironment,
     predicate_environment: Option<&PredicateEnvironment>,
-    execution_semantics: CExecutionSemantics,
+    execution_semantics: ExecutionSemantics,
     context_label: &str,
     next_opaque_call: &mut u64,
     next_kernel_variable: &mut u64,
     prerequisite_policy: StatementPrerequisitePolicy,
     context: Option<&PureFactContext>,
-) -> Result<(Vec<CertifiedStatementTransition>, Option<CVerifiedLoopRule>), ClickError> {
+) -> Result<(Vec<CertifiedStatementTransition>, Option<VerifiedLoopRule>), ClickError> {
     // A statement executed in a proof context sees that context as the
     // kernel already keeps it: incrementally indexed, shared by clone. The
     // slice then carries only the statement-local delta bookkeeping.
@@ -508,7 +508,7 @@ pub(in crate::surface) fn certified_statement_transitions(
         .with_next_opaque_call(*next_opaque_call);
     let executed_under = assumptions.clone();
     let execute = || {
-        prove_symbolic_c_statement_verification_paths_with_environment_and_loop_rule_using_budget(
+        prove_symbolic_execution_statement_verification_paths_with_environment_and_loop_rule_using_budget(
             state.clone(),
             statement.clone(),
             assumptions,
@@ -537,20 +537,20 @@ pub(in crate::surface) fn certified_statement_transitions(
 }
 
 pub(in crate::surface::proof) fn certified_loop_exit_transitions_with_proven_phases(
-    state: &CState,
+    state: &ExecutionState,
     pure_facts: &PureFactList,
-    statement: &CStatement,
-    function_environment: &CExecutionEnvironment,
+    statement: &ProgramStatement,
+    function_environment: &ExecutionEnvironment,
     predicate_environment: Option<&PredicateEnvironment>,
     context_label: &str,
     initialization_proven: bool,
     preservation_proven: bool,
-    final_exit_candidates: &[CLoopFinalExitCandidate],
-    break_exits: &[CLoopBreakExit],
-    return_exits: &[CLoopReturnExit],
+    final_exit_candidates: &[LoopFinalExitCandidate],
+    break_exits: &[LoopBreakExit],
+    return_exits: &[LoopReturnExit],
     next_opaque_call: &mut u64,
     next_kernel_variable: &mut u64,
-) -> Result<(Vec<CertifiedStatementTransition>, Option<CVerifiedLoopRule>), ClickError> {
+) -> Result<(Vec<CertifiedStatementTransition>, Option<VerifiedLoopRule>), ClickError> {
     let assumptions = assumptions_from_propositions(pure_facts);
     let executed_under = assumptions.clone();
     let mut budget = ExecutionBudget::continuing_from(*next_kernel_variable)
@@ -560,7 +560,7 @@ pub(in crate::surface::proof) fn certified_loop_exit_transitions_with_proven_pha
     crate::instrumentation::record_deterministic_work(
         final_exit_candidates.len() + break_exits.len() + return_exits.len(),
     );
-    let (execution, loop_rule) = prove_symbolic_c_loop_exit_with_proven_phases_using_budget(
+    let (execution, loop_rule) = prove_symbolic_loop_exit_with_proven_phases_using_budget(
         state.clone(),
         statement.clone(),
         assumptions,
@@ -589,63 +589,65 @@ pub(in crate::surface::proof) fn certified_loop_exit_transitions_with_proven_pha
     )
 }
 
-pub(in crate::surface::proof) fn statement_contains_call(statement: &CStatement) -> bool {
+pub(in crate::surface::proof) fn statement_contains_call(statement: &ProgramStatement) -> bool {
     match statement {
-        CStatement::CallAssign { .. } | CStatement::Call { .. } => true,
-        CStatement::Seq(statements) => statements
+        ProgramStatement::CallAssign { .. }
+        | ProgramStatement::Call { .. }
+        | ProgramStatement::CallResult { .. } => true,
+        ProgramStatement::Seq(statements) => statements
             .iter()
             .any(|statement| statement_contains_call(statement)),
-        CStatement::TryCatchInt32 {
+        ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
         } => statement_contains_call(try_body) || statement_contains_call(handler),
-        CStatement::If {
+        ProgramStatement::If {
             then_branch,
             else_branch,
             ..
         } => statement_contains_call(then_branch) || statement_contains_call(else_branch),
-        CStatement::While { body, .. } => statement_contains_call(body),
-        CStatement::Switch { cases, .. } => {
+        ProgramStatement::While { body, .. } => statement_contains_call(body),
+        ProgramStatement::Switch { cases, .. } => {
             cases.iter().any(|case| statement_contains_call(&case.body))
         }
-        CStatement::ForStep { step, .. } => statement_contains_call(step),
-        CStatement::Skip
-        | CStatement::EndScalarReference(_)
-        | CStatement::ScalarReferenceScope(_)
-        | CStatement::Break
-        | CStatement::Continue
-        | CStatement::Goto { .. }
-        | CStatement::Declare { .. }
-        | CStatement::DeclareAggregate { .. }
-        | CStatement::Assign { .. }
-        | CStatement::Assert { .. }
-        | CStatement::LoopTest { .. }
-        | CStatement::Throw(_)
-        | CStatement::Return(_)
-        | CStatement::Store { .. }
-        | CStatement::TypedStore { .. }
-        | CStatement::Update { .. } => false,
-        CStatement::HeapAllocate { .. }
-        | CStatement::HeapFree { .. }
-        | CStatement::CopyAggregate { .. }
-        | CStatement::InitializeScalarArray { .. }
-        | CStatement::EndAutomaticLifetimes { .. } => false,
+        ProgramStatement::ForStep { step, .. } => statement_contains_call(step),
+        ProgramStatement::Skip
+        | ProgramStatement::EndScalarReference(_)
+        | ProgramStatement::ScalarReferenceScope(_)
+        | ProgramStatement::Break
+        | ProgramStatement::Continue
+        | ProgramStatement::Goto { .. }
+        | ProgramStatement::Declare { .. }
+        | ProgramStatement::DeclareAggregate { .. }
+        | ProgramStatement::Assign { .. }
+        | ProgramStatement::Assert { .. }
+        | ProgramStatement::LoopTest { .. }
+        | ProgramStatement::Throw(_)
+        | ProgramStatement::Return(_)
+        | ProgramStatement::Store { .. }
+        | ProgramStatement::TypedStore { .. }
+        | ProgramStatement::Update { .. } => false,
+        ProgramStatement::HeapAllocate { .. }
+        | ProgramStatement::HeapFree { .. }
+        | ProgramStatement::CopyAggregate { .. }
+        | ProgramStatement::InitializeScalarArray { .. }
+        | ProgramStatement::EndAutomaticLifetimes { .. } => false,
     }
 }
 
 #[allow(clippy::too_many_arguments)]
 fn certified_transitions_from_execution(
-    execution: SymbolicCExecution,
-    state: &CState,
-    statement: &CStatement,
-    loop_rule: Option<CVerifiedLoopRule>,
+    execution: SymbolicExecution,
+    state: &ExecutionState,
+    statement: &ProgramStatement,
+    loop_rule: Option<VerifiedLoopRule>,
     pure_facts: &PureFactList,
-    environment: &CExecutionEnvironment,
+    environment: &ExecutionEnvironment,
     predicate_environment: Option<&PredicateEnvironment>,
     context_label: &str,
     prerequisite_policy: StatementPrerequisitePolicy,
     context: Option<&PureFactContext>,
     executed_under: &PureFactContext,
-) -> Result<(Vec<CertifiedStatementTransition>, Option<CVerifiedLoopRule>), ClickError> {
+) -> Result<(Vec<CertifiedStatementTransition>, Option<VerifiedLoopRule>), ClickError> {
     if let Some(limit) = execution.limit() {
         if matches!(limit, crate::kernel::ExecutionLimit::Deadline) {
             return Err(ClickError::new(format!(
@@ -660,7 +662,7 @@ fn certified_transitions_from_execution(
     }
     // `exact_facts_directly_conflict` against every listed fact, decided
     // through the list's conjunct index.
-    let feasible = |path: &&crate::kernel::SymbolicCExecutionPath| {
+    let feasible = |path: &&crate::kernel::SymbolicExecutionPath| {
         !path
             .facts()
             .iter()
@@ -704,11 +706,11 @@ fn certified_transitions_from_execution(
             // contract boundaries refuse with `FunctionContract`.
             let rejected_contract_call = matches!(
                 implication_body(path.theorem().proposition()),
-                Proposition::CStatementVerifies {
-                    outcome: CStatementOutcome::RuntimeError(
-                        crate::kernel::CRuntimeError::FunctionContract(_)
-                            | crate::kernel::CRuntimeError::UnsuppliedResourceValue(_)
-                            | crate::kernel::CRuntimeError::PendingCallObligations(_)
+                Proposition::ProgramStatementVerifies {
+                    outcome: StatementOutcome::RuntimeError(
+                        crate::kernel::RuntimeError::FunctionContract(_)
+                            | crate::kernel::RuntimeError::UnsuppliedResourceValue(_)
+                            | crate::kernel::RuntimeError::PendingCallObligations(_)
                     ),
                     ..
                 }
@@ -729,7 +731,7 @@ fn certified_transitions_from_execution(
                         .unwrap_or_default();
                     refuse_or_probe(prerequisite_policy, ClickError::new(format!(
                         "{context_label} requires an explicit prerequisite proof{description}{}",
-                        crate::surface::diagnostics::describe_c_statement_site()
+                        crate::surface::diagnostics::describe_execution_statement_site()
                     )).with_unresolved_requirement(obligation)
                         .with_assertion_condition(
                             crate::surface::proof::fact_reasoning::asserted_condition(proposition, statement),
@@ -794,7 +796,7 @@ fn certified_transitions_from_execution(
                         // by a search whose answer nothing records.
                         // Load names are not preserved across call-havoc and
                         // store edges by path assumptions (see
-                        // `CMemoryDerivation`). A prerequisite naming a cell
+                        // `MemoryDerivation`). A prerequisite naming a cell
                         // whose load the assumption-free naming walk left
                         // symbolic is checked in the form this context
                         // decides: each such load is resolved along the
@@ -907,7 +909,7 @@ fn certified_transitions_from_execution(
                 "statement result publication",
             );
             let introduced_facts = statement_facts.clone();
-            let Proposition::CStatementVerifies {
+            let Proposition::ProgramStatementVerifies {
                 state: _,
                 outcome,
                 ..
@@ -918,7 +920,7 @@ fn certified_transitions_from_execution(
                     "{context_label} saw an unexpected execution theorem"
                 )));
             };
-            if matches!(outcome, CStatementOutcome::Normal(_) | CStatementOutcome::Return { .. })
+            if matches!(outcome, StatementOutcome::Normal(_) | StatementOutcome::Return { .. })
             {
                 // Publish the producer's facts at their original snapshots.
                 // Extra current-state consequences belong to explicit proof or
@@ -932,7 +934,7 @@ fn certified_transitions_from_execution(
                         continue;
                     };
                     let Some((frame_premises, theorem_target)) =
-                        crate::kernel::c_condition_fact_transport_parts(theorem, source)
+                        crate::kernel::program_condition_fact_transport_parts(theorem, source)
                     else {
                         continue;
                     };
@@ -1069,18 +1071,20 @@ fn generated_load_source_events_from_facts(
 #[cfg(test)]
 mod condition_transition_tests {
     use super::*;
-    use crate::kernel::{CRuntimeError, c_load, c_variable};
+    use crate::kernel::RuntimeError;
 
     #[test]
     fn condition_transition_still_checks_execution_obligations() {
-        let state = CState::new().with_local(
+        let state = ExecutionState::new().with_local(
             "p",
-            CValue::pointer(Pointer {
+            ProgramValue::pointer(Pointer {
                 block: "havoc:condition-obligation".into(),
                 offset: PointerOffsetTerm::Constant(0),
             }),
         );
-        let condition = c_load(c_variable("p"));
+        let condition = crate::kernel::program_expression::load(
+            crate::kernel::program_expression::variable("p"),
+        );
 
         let error = match certified_condition_transitions(
             &state,
@@ -1104,7 +1108,7 @@ mod condition_transition_tests {
 
     #[test]
     fn generated_load_binding_collection_tombstones_conflicting_keys() {
-        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let memory = crate::kernel::intern_memory(Memory::new());
         let pointer = Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
@@ -1166,10 +1170,10 @@ mod condition_transition_tests {
         )
         .expect("field getter should parse with source identity");
         let statement = parsed[0].body_kernel_statement();
-        let state = CState::new()
-            .with_local("owner", CValue::pointer(pointer.clone()))
+        let state = ExecutionState::new()
+            .with_local("owner", ProgramValue::pointer(pointer.clone()))
             .with_resource_context(ResourceContext::new().unchecked_with_fact(
-                CResourceFact::own_memory(CMemoryRange::new(
+                ResourceFact::own_memory(MemoryRange::new(
                     pointer.clone(),
                     MachineTerm::constant(0),
                     MachineTerm::constant(1),
@@ -1181,9 +1185,9 @@ mod condition_transition_tests {
             &state,
             &PureFactList::default(),
             &statement,
-            &CExecutionEnvironment::new(),
+            &ExecutionEnvironment::new(),
             None,
-            CExecutionSemantics::APPLY_VERIFIED_RULES,
+            ExecutionSemantics::APPLY_VERIFIED_RULES,
             "real load transition test",
             &mut next_opaque_call,
             &mut next_kernel_variable,
@@ -1197,8 +1201,8 @@ mod condition_transition_tests {
         assert!(transition.generated_load_bindings.is_empty());
         assert!(transition.generated_load_source_events.is_empty());
         assert!(matches!(&transition.outcome,
-            CStatementOutcome::Return { value, .. }
-                if matches!(value.native().as_ref(), CValue::Int32(MachineTerm::MemoryLoad(_, at, crate::kernel::LoadKind::Int32)) if **at == pointer)));
+            StatementOutcome::Return { value, .. }
+                if matches!(value.native().as_ref(), ProgramValue::Int32(MachineTerm::MemoryLoad(_, at, crate::kernel::LoadKind::Int32)) if **at == pointer)));
 
         // Feed the producer-issued transition metadata through the same
         // persistent presentation store used by the execution cursor. This
@@ -1249,10 +1253,10 @@ mod condition_transition_tests {
         )
         .expect("compound field update should parse with source identity");
         let statement = parsed[0].body_kernel_statement();
-        let state = CState::new()
-            .with_local("counter", CValue::pointer(pointer.clone()))
+        let state = ExecutionState::new()
+            .with_local("counter", ProgramValue::pointer(pointer.clone()))
             .with_resource_context(ResourceContext::new().unchecked_with_fact(
-                CResourceFact::own_memory(CMemoryRange::new(
+                ResourceFact::own_memory(MemoryRange::new(
                     pointer.clone(),
                     MachineTerm::constant(0),
                     MachineTerm::constant(1),
@@ -1264,9 +1268,9 @@ mod condition_transition_tests {
             &state,
             &PureFactList::default(),
             &statement,
-            &CExecutionEnvironment::new(),
+            &ExecutionEnvironment::new(),
             None,
-            CExecutionSemantics::APPLY_VERIFIED_RULES,
+            ExecutionSemantics::APPLY_VERIFIED_RULES,
             "compound field update source-event test",
             &mut next_opaque_call,
             &mut next_kernel_variable,
@@ -1279,12 +1283,13 @@ mod condition_transition_tests {
         };
         assert!(transition.generated_load_source_events.is_empty());
         let after = match &transition.outcome {
-            CStatementOutcome::Normal(after) | CStatementOutcome::Return { state: after, .. } => {
+            StatementOutcome::Normal(after) | StatementOutcome::Return { state: after, .. } => {
                 after
             }
             other => panic!("completed update: {other:?}"),
         };
-        let CExpressionOutcome::Value(CValue::UInt32(value)) = after.memory().load(&pointer) else {
+        let ExpressionOutcome::Value(ProgramValue::UInt32(value)) = after.memory().load(&pointer)
+        else {
             panic!("unsigned field");
         };
         assert!(crate::kernel::proposition_mentions_scalar_read(
@@ -1302,13 +1307,15 @@ mod condition_transition_tests {
 
     #[test]
     fn failed_typed_load_publishes_no_source_event() {
-        let statement = CStatement::Return(CExpression::TypedLoad {
-            pointer: Box::new(CExpression::Value(CValue::Int32(MachineTerm::constant(7)))),
-            value_type: CType::Int32,
+        let statement = ProgramStatement::Return(ProgramExpression::TypedLoad {
+            pointer: Box::new(ProgramExpression::Value(ProgramValue::Int32(
+                MachineTerm::constant(7),
+            ))),
+            value_type: ProgramType::Int32,
             volatile: false,
             pointee_constant: false,
             access_class: None,
-            source: crate::kernel::CExpressionLoadSource::new(crate::kernel::LoadSourceId {
+            source: crate::kernel::ExpressionLoadSource::new(crate::kernel::LoadSourceId {
                 owner: crate::kernel::LoadSourceOwnerId {
                     source_unit: std::sync::Arc::from("bad.c"),
                     function: std::sync::Arc::from("bad"),
@@ -1320,12 +1327,12 @@ mod condition_transition_tests {
         let mut next_opaque_call = 0;
         let mut next_kernel_variable = 0;
         let (transitions, _) = certified_statement_transitions(
-            &CState::new(),
+            &ExecutionState::new(),
             &PureFactList::default(),
             &statement,
-            &CExecutionEnvironment::new(),
+            &ExecutionEnvironment::new(),
             None,
-            CExecutionSemantics::APPLY_VERIFIED_RULES,
+            ExecutionSemantics::APPLY_VERIFIED_RULES,
             "failed load source-event test",
             &mut next_opaque_call,
             &mut next_kernel_variable,
@@ -1338,7 +1345,7 @@ mod condition_transition_tests {
         };
         assert!(matches!(
             transition.outcome,
-            CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch)
+            StatementOutcome::RuntimeError(RuntimeError::TypeMismatch)
         ));
         assert!(transition.generated_load_source_events.is_empty());
     }
@@ -1346,12 +1353,12 @@ mod condition_transition_tests {
     #[test]
     fn typed_load_source_metadata_is_semantically_neutral() {
         use std::collections::HashSet;
-        let pointer = CExpression::Value(CValue::pointer(Pointer {
+        let pointer = ProgramExpression::Value(ProgramValue::pointer(Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(8),
         }));
         let source = |occurrence| {
-            crate::kernel::CExpressionLoadSource::new(crate::kernel::LoadSourceId {
+            crate::kernel::ExpressionLoadSource::new(crate::kernel::LoadSourceId {
                 owner: crate::kernel::LoadSourceOwnerId {
                     source_unit: std::sync::Arc::from("f.c"),
                     function: std::sync::Arc::from("f"),
@@ -1360,17 +1367,17 @@ mod condition_transition_tests {
                 reference_access: None,
             })
         };
-        let first = CExpression::TypedLoad {
+        let first = ProgramExpression::TypedLoad {
             pointer: Box::new(pointer.clone()),
-            value_type: CType::Int32,
+            value_type: ProgramType::Int32,
             volatile: false,
             pointee_constant: false,
             access_class: None,
             source: source(0),
         };
-        let second = CExpression::TypedLoad {
+        let second = ProgramExpression::TypedLoad {
             pointer: Box::new(pointer),
-            value_type: CType::Int32,
+            value_type: ProgramType::Int32,
             volatile: false,
             pointee_constant: false,
             access_class: None,

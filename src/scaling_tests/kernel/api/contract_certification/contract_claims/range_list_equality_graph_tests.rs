@@ -10,7 +10,7 @@ fn certified_range_list_graph_queries_scale_without_fact_index() {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Pointer::symbolic(Variable(9200));
         let range = |value| {
-            CMemoryRange::new(
+            MemoryRange::new(
                 base.clone(),
                 MachineTerm::add(value, MachineTerm::constant(1)),
                 MachineTerm::constant(16),
