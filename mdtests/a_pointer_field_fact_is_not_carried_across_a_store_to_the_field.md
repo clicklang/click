@@ -113,10 +113,7 @@ void probe(struct node* g, struct node* n) {
                     step();
 
                     have n->right == saved by {
-                        transport(at(before_call, n->right == saved), n->right == saved) using {
-                            at(before_call, n->right == saved);
-                            n == old(n);
-                        };
+                        solve();
                     }
 
                     step(); step();
@@ -130,5 +127,5 @@ void probe(struct node* g, struct node* n) {
 ```
 
 ```expect
-fail: `transport using` found no frame evidence carrying its source fact to the target's state
+fail: `solve` failed
 ```

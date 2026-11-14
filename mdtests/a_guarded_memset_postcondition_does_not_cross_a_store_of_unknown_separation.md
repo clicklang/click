@@ -28,12 +28,10 @@ void fill(uint8* dst, uint64 i) {
     step();
     mark filled;
     step();
-    transport(at(filled, (0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 })), (0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 })) using {
-        at(filled, (0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 }));
-    };
+    have (0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 }) by { solve(); }
 }
 ```
 
 ```expect
-fail: found no frame evidence
+fail: `solve` failed
 ```

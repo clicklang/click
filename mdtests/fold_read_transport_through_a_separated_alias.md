@@ -18,6 +18,50 @@ function zeros(v: int32[], lo: int32, hi: int32) -> Integer {
     (lo..hi).fold(0, |acc, k| { acc + to_integer(if v[k] == 0 { 1 } else { 0 }) })
 }
 
+theorem same_zeros(p: int32[], q: int32[], lo: int32, n: int32, hi: int32) {
+    requires 0 <= lo;
+    requires 0 <= hi;
+    requires hi <= n;
+    requires viewable(p[0..n]);
+    requires viewable(q[0..n]);
+    requires forall (k: int32) { lo <= k and k < n implies p[k] == q[k] };
+    ensures zeros(p, lo, hi) == zeros(q, lo, hi) by {
+        induct(hi) as ih;
+        if hi <= lo {
+            peel(zeros(p, lo, hi)) using { hi <= lo; };
+            peel(zeros(q, lo, hi)) using { hi <= lo; };
+            assumption();
+        } else {
+            have lo < hi;
+            have 0 <= to_integer(hi - 1) by { solve(); }
+            have to_integer(hi - 1) < to_integer(hi) by { solve(); }
+            have to_integer(hi - 1) <= to_integer(n) by { solve(); }
+            apply(ih(hi - 1)) using {
+                0 <= to_integer(hi - 1);
+                to_integer(hi - 1) < to_integer(hi);
+                0 <= lo;
+                to_integer(hi - 1) <= to_integer(n);
+                viewable(p[0..n]);
+                viewable(q[0..n]);
+                forall (k: int32) { lo <= k and k < n implies p[k] == q[k] };
+            };
+            have to_integer(hi - 1) < to_integer(n) by { solve(); }
+            have to_integer(lo) <= to_integer(hi - 1) by { solve(); }
+            instantiate(forall (k: int32) { lo <= k and k < n implies p[k] == q[k] }, hi - 1) using {
+                to_integer(lo) <= to_integer(hi - 1);
+                to_integer(hi - 1) < to_integer(n);
+            };
+            have to_integer(lo) <= to_integer(hi - 1) by { solve(); }
+            have to_integer(hi - 1) < 2147483647 by { solve(); }
+            peel(zeros(p, lo, hi)) using { to_integer(lo) <= to_integer(hi - 1); to_integer(hi - 1) < 2147483647; };
+            peel(zeros(q, lo, hi)) using { to_integer(lo) <= to_integer(hi - 1); to_integer(hi - 1) < 2147483647; };
+            rewrite(p[hi - 1] == q[hi - 1]);
+            assumption();
+        }
+    }
+}
+
+
 void mark_other(int32 *a, int32 *b, int32 j, int32 n) {
     requires 0 <= j;
     requires j < n;
@@ -41,13 +85,36 @@ void mark_other(int32 *a, int32 *b, int32 j, int32 n) {
             contains(memory(a[0..n]), memory(a[0..n]));
         };
     }
+    have 0 <= 0 by { normalize(); }
+    have 0 <= n by { solve(); }
+    have viewable(a[0..n]) by { observe(a[0..n]); assumption(); }
     step();
     have zeros(at(entry, a), 0, n) == zeros(a, 0, n) by {
-        transport(
-            zeros(at(entry, a), 0, n) == zeros(at(entry, a), 0, n),
-            zeros(at(entry, a), 0, n) == zeros(a, 0, n)
-        ) using {
-            zeros(at(entry, a), 0, n) == zeros(at(entry, a), 0, n);
+        have forall (k: int32) { 0 <= k and k < n implies a[k] == at(entry, a[k]) } by {
+            intro(); intro();
+            have contains(memory(a[0..n]), memory(a[k])) by {
+                apply(click::separation::contains_element(a, 0, n, k)) using { 0 <= k; k < n; };
+            }
+            have contains(memory(b[j]), memory(b[j])) by {
+                apply(click::separation::contains_refl(memory(b[j])));
+            }
+            have separate(memory(b[j]), memory(a[k])) by {
+                apply(click::separation::restrict(memory(b[j]), memory(a[0..n]), memory(b[j]), memory(a[k]))) using {
+                    separate(memory(b[j]), memory(a[0..n]));
+                    contains(memory(b[j]), memory(b[j]));
+                    contains(memory(a[0..n]), memory(a[k]));
+                };
+            }
+            have separate(statement(0).footprint, memory(a[k])) by {
+                normalize() using { separate(memory(b[j]), memory(a[k])); };
+            }
+            preserve(separate(statement(0).footprint, memory(a[k])));
+        }
+        have viewable(a[0..n]) by { observe(a[0..n]); assumption(); }
+        apply(same_zeros(a, at(entry, a), 0, n, n)) using {
+            0 <= 0; 0 <= n; n <= n;
+            viewable(a[0..n]); at(entry, viewable(a[0..n]));
+            forall (k: int32) { 0 <= k and k < n implies a[k] == at(entry, a[k]) };
         };
         assumption();
     }

@@ -39,12 +39,7 @@ uint64 read_terminator(uint8 bytes[]) {
                             both {
                                 solve();
                             } and {
-                                transport(
-                                    at(function.entry, viewable(bytes[0..found_len + 1u64])),
-                                    viewable(bytes[0..found_len + 1u64])
-                                ) using {
-                                    at(region(1).entry, viewable(bytes[0..found_len + 1u64]));
-                                };
+                                have viewable(bytes[0..found_len + 1u64]) by { solve(); }
                             }
                         } and {
                             solve();
@@ -62,5 +57,5 @@ uint64 read_terminator(uint8 bytes[]) {
 ```
 
 ```expect
-fail: `transport using` requires an exact premise
+fail: `solve` failed
 ```

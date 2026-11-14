@@ -13,11 +13,22 @@ void write_first(struct Descriptor *owner) {
     requires separate(memory(owner[1].data[0..1]), memory(owner[0..2]));
     ensures owner[1].length == old(owner[1].length);
 } by {
+    have contains(memory(owner[1].data[0..1]), memory(owner[1].data[0..1])) by { normalize(); }
+    have contains(memory(owner[0..2]), memory((&owner[1].length)[0..1])) by { normalize(); }
+    have separate(memory(owner[1].data[0..1]), memory((&owner[1].length)[0..1])) by {
+        apply(click::separation::restrict(memory(owner[1].data[0..1]), memory(owner[0..2]), memory(owner[1].data[0..1]), memory((&owner[1].length)[0..1]))) using {
+            separate(memory(owner[1].data[0..1]), memory(owner[0..2]));
+            contains(memory(owner[1].data[0..1]), memory(owner[1].data[0..1]));
+            contains(memory(owner[0..2]), memory((&owner[1].length)[0..1]));
+        };
+    }
     step();
-    transport(old(owner[1].length) == old(owner[1].length),
-              owner[1].length == old(owner[1].length)) using {
-        at(function.entry, separate(memory(owner[1].data[0..1]), memory(owner[0..2])));
-    };
+    have separate(statement(0).footprint, memory((&owner[1].length)[0..1])) by {
+        normalize() using { at(statement(0).entry, separate(memory(owner[1].data[0..1]), memory((&owner[1].length)[0..1]))); };
+    }
+    have owner[1].length == old(owner[1].length) by {
+        preserve(separate(statement(0).footprint, memory((&owner[1].length)[0..1])));
+    }
     step_until(function.exit);
 }
 ```

@@ -20,15 +20,10 @@ void poke(int32 *a, int32 n) {
     ensures forall (k: int32) { 0 <= k and k < 2 implies a[k] == old(a[k]) };
 } by {
     step();
-    transport(
-        forall (k: int32) { 0 <= k and k < 2 implies old(a[k]) == old(a[k]) },
-        forall (k: int32) { 0 <= k and k < 2 implies a[k] == old(a[k]) }
-    ) using {
-        forall (k: int32) { 0 <= k and k < 2 implies old(a[k]) == old(a[k]) };
-    };
+    have forall (k: int32) { 0 <= k and k < 2 implies a[k] == old(a[k]) } by { solve(); }
 }
 ```
 
 ```expect
-fail: quantified frame: a leaf was not carried
+fail: `solve` failed
 ```

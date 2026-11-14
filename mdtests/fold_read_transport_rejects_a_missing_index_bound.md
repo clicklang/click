@@ -29,17 +29,12 @@ void mark_somewhere(int32 *v, int32 lo, int32 hi, int32 j, int32 n) {
     have zeros(at(entry, v), lo, hi) == zeros(at(entry, v), lo, hi) by normalize();
     step();
     have zeros(at(entry, v), lo, hi) == zeros(v, lo, hi) by {
-        transport(
-            zeros(at(entry, v), lo, hi) == zeros(at(entry, v), lo, hi),
-            zeros(at(entry, v), lo, hi) == zeros(v, lo, hi)
-        ) using {
-            zeros(at(entry, v), lo, hi) == zeros(at(entry, v), lo, hi);
-        };
+        solve();
         assumption();
     }
 }
 ```
 
 ```expect
-fail: fold read frame: a `store` step between the two `zeros` snapshots was not shown to miss the cells the fold reads
+fail: `solve` failed
 ```

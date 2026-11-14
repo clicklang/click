@@ -23,15 +23,10 @@ void mark(int32 *v, int32 n, int32 j) {
     step();
     mark after;
     have forall (k: int32) { 0 <= k and k < n and k == j implies at(after, v[k]) == 1 };
-    transport(
-        forall (k: int32) { 0 <= k and k < n implies at(after, v[k]) == at(after, v[k]) },
-        forall (k: int32) { 0 <= k and k < n implies at(before, v[k]) == at(after, v[k]) }
-    ) using {
-        forall (k: int32) { 0 <= k and k < n implies at(after, v[k]) == at(after, v[k]) };
-    };
+    have forall (k: int32) { 0 <= k and k < n implies at(before, v[k]) == at(after, v[k]) } by { solve(); }
 }
 ```
 
 ```expect
-fail: quantified frame: a leaf was not carried
+fail: `solve` failed
 ```
