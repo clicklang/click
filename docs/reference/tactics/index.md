@@ -2054,7 +2054,7 @@ release, or additional unaccounted changes do not receive this bound. A one-tran
 source selector names the same descriptor that the step published.
 
 Use `assumption()` to select the published containment, then apply
-`separation::contains_refl` and `separation::restrict` with the explicitly
+`separation::contains_refl` and `separation::separate_restrict` with the explicitly
 available resource separation. For several inputs, first use
 `separation::separate_star`. The resulting footprint separation is an ordinary
 premise of `preserve`; this route needs no footprint normalization.
@@ -3507,7 +3507,7 @@ For current-point `viewable(A)` to `viewable(B)` with explicitly cited
 `apply(separation::viewable_restrict(A, B)) using { ... }` steps. When both
 are memory ranges with the same written base and int32 endpoints, citing
 `lo <= inner_lo`, `inner_lo <= inner_hi`, and `inner_hi <= hi` instead
-produces an explicit `have contains(...)` using `separation::subrange` first.
+produces an explicit `have contains(...)` using `separation::contains_subrange` first.
 These cases leave no `transport` or `transport_certificate` in the expansion.
 See `mdtests/viewable_restrict_transport_expansion.md`.
 
@@ -4159,7 +4159,7 @@ permission lookups, without looking for a covering range or following
 history. The held resources do not change.
 
 This establishes live storage, not initialized contents or any stored value.
-To restrict the resulting fact to a smaller range, use `separation::subrange`
+To restrict the resulting fact to a smaller range, use `separation::contains_subrange`
 and `separation::viewable_restrict`. For example, see
 [`observe_memory_after_store.md`](https://github.com/clicklang/click/blob/master/mdtests/observe_memory_after_store.md).
 [`observe_uninitialized_memory_rejected.md`](https://github.com/clicklang/click/blob/master/mdtests/observe_uninitialized_memory_rejected.md)

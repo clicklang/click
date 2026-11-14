@@ -20,7 +20,7 @@ void copy_pos(struct cursor *target, struct cursor *source) {
     have contains(memory(*target), memory(target->pos)) by { normalize(); }
     have contains(memory(*source), memory(source->data)) by { normalize(); }
     have separate(memory(target->pos), memory(source->data)) by {
-        apply(separation::restrict(memory(*target), memory(*source),
+        apply(separation::separate_restrict(memory(*target), memory(*source),
             memory(target->pos), memory(source->data))) using {
             separate(memory(*target), memory(*source));
             contains(memory(*target), memory(target->pos));
@@ -29,7 +29,7 @@ void copy_pos(struct cursor *target, struct cursor *source) {
     }
     have contains(memory(*source), memory(*source)) by { apply(separation::contains_refl(memory(*source))); }
     have separate(memory(target->pos), memory(*source)) by {
-        apply(separation::restrict(memory(*target), memory(*source), memory(target->pos), memory(*source))) using {
+        apply(separation::separate_restrict(memory(*target), memory(*source), memory(target->pos), memory(*source))) using {
             separate(memory(*target), memory(*source));
             contains(memory(*target), memory(target->pos));
             contains(memory(*source), memory(*source));

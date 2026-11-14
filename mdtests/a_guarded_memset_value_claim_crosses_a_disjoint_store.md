@@ -29,7 +29,7 @@ void fill(uint8* dst) {
         unfold(bytes::all_equal);
         intro(); intro();
         have separate(memory(dst[4u64]), memory(dst[k])) by {
-            apply(separation::elements(dst, 4u64, k));
+            apply(separation::separate_elements(dst, 4u64, k));
         }
         have separate(statement(1).footprint, memory(dst[k])) by {
             normalize() using { separate(memory(dst[4u64]), memory(dst[k])); };

@@ -79,7 +79,7 @@ void mark_other(int32 *a, int32 *b, int32 j, int32 n) {
         apply(click::separation::contains_refl(memory(a[0..n])));
     }
     have separate(memory(b[j]), memory(a[0..n])) by {
-        apply(click::separation::restrict(memory(b[0..n]), memory(a[0..n]), memory(b[j]), memory(a[0..n]))) using {
+        apply(click::separation::separate_restrict(memory(b[0..n]), memory(a[0..n]), memory(b[j]), memory(a[0..n]))) using {
             separate(memory(b[0..n]), memory(a[0..n]));
             contains(memory(b[0..n]), memory(b[j]));
             contains(memory(a[0..n]), memory(a[0..n]));
@@ -99,7 +99,7 @@ void mark_other(int32 *a, int32 *b, int32 j, int32 n) {
                 apply(click::separation::contains_refl(memory(b[j])));
             }
             have separate(memory(b[j]), memory(a[k])) by {
-                apply(click::separation::restrict(memory(b[j]), memory(a[0..n]), memory(b[j]), memory(a[k]))) using {
+                apply(click::separation::separate_restrict(memory(b[j]), memory(a[0..n]), memory(b[j]), memory(a[k]))) using {
                     separate(memory(b[j]), memory(a[0..n]));
                     contains(memory(b[j]), memory(b[j]));
                     contains(memory(a[0..n]), memory(a[k]));

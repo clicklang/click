@@ -24,7 +24,7 @@ void set_at(int32* p, const struct S* s, uint64 i, int32 v) {
         apply(click::separation::contains_refl(memory(s->e.n)));
     }
     have separate(memory(p[i]), memory(s->e.n)) by {
-        apply(click::separation::restrict(memory(p[0u64..s->e.n]), memory(s->e.n), memory(p[i]), memory(s->e.n))) using {
+        apply(click::separation::separate_restrict(memory(p[0u64..s->e.n]), memory(s->e.n), memory(p[i]), memory(s->e.n))) using {
             separate(memory(p[0u64..s->e.n]), memory(s->e.n));
             contains(memory(p[0u64..s->e.n]), memory(p[i]));
             contains(memory(s->e.n), memory(s->e.n));

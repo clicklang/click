@@ -12,7 +12,7 @@ theorem nested<T>(p: T*, lo: int32, hi: int32, a: int32, b: int32) {
     requires a <= b;
     requires b <= hi;
     ensures contains(memory(p[lo..hi]), memory(p[a..b])) by {
-        apply(separation::subrange(p, lo, hi, a, b)) using {
+        apply(separation::contains_subrange(p, lo, hi, a, b)) using {
             lo <= a; a <= b; b <= hi;
         };
     }

@@ -85,14 +85,14 @@ int32 owned_split_buffer_set_left(
     have index <= ((index + 1) as int32);
     have ((index + 1) as int32) <= owner->len;
     have contains(memory(owner->data[0..owner->len]), memory(owner->data[index..index + 1])) by {
-        apply(separation::subrange(owner->data, 0, owner->len, index, index + 1)) using {
+        apply(separation::contains_subrange(owner->data, 0, owner->len, index, index + 1)) using {
             0 <= index; index <= ((index + 1) as int32);
             ((index + 1) as int32) <= owner->len;
         };
     }
     have contains(memory(*owner), memory(owner->data)) by { normalize(); }
     have separate(memory(owner->data), memory(owner->data[index..index + 1])) by {
-        apply(separation::restrict(memory(*owner), memory(owner->data[0..owner->len]),
+        apply(separation::separate_restrict(memory(*owner), memory(owner->data[0..owner->len]),
             memory(owner->data), memory(owner->data[index..index + 1]))) using {
             separate(memory(*owner), memory(owner->data[0..owner->len]));
             contains(memory(owner->data[0..owner->len]), memory(owner->data[index..index + 1]));
@@ -102,7 +102,7 @@ int32 owned_split_buffer_set_left(
     have contains(memory(owner->data[index..index + 1]), memory(owner->data[index])) by { normalize(); }
     have contains(memory(owner->data), memory(owner->data)) by { normalize(); }
     have separate(memory(owner->data), memory(owner->data[index])) by {
-        apply(separation::restrict(memory(owner->data), memory(owner->data[index..index + 1]),
+        apply(separation::separate_restrict(memory(owner->data), memory(owner->data[index..index + 1]),
             memory(owner->data), memory(owner->data[index]))) using {
             separate(memory(owner->data), memory(owner->data[index..index + 1]));
             contains(memory(owner->data[index..index + 1]), memory(owner->data[index]));
@@ -158,14 +158,14 @@ int32 owned_split_buffer_set_right(
     have index <= ((index + 1) as int32);
     have ((index + 1) as int32) <= owner->len;
     have contains(memory(owner->data[0..owner->len]), memory(owner->data[index..index + 1])) by {
-        apply(separation::subrange(owner->data, 0, owner->len, index, index + 1)) using {
+        apply(separation::contains_subrange(owner->data, 0, owner->len, index, index + 1)) using {
             0 <= index; index <= ((index + 1) as int32);
             ((index + 1) as int32) <= owner->len;
         };
     }
     have contains(memory(*owner), memory(owner->data)) by { normalize(); }
     have separate(memory(owner->data), memory(owner->data[index..index + 1])) by {
-        apply(separation::restrict(memory(*owner), memory(owner->data[0..owner->len]),
+        apply(separation::separate_restrict(memory(*owner), memory(owner->data[0..owner->len]),
             memory(owner->data), memory(owner->data[index..index + 1]))) using {
             separate(memory(*owner), memory(owner->data[0..owner->len]));
             contains(memory(owner->data[0..owner->len]), memory(owner->data[index..index + 1]));
@@ -175,7 +175,7 @@ int32 owned_split_buffer_set_right(
     have contains(memory(owner->data[index..index + 1]), memory(owner->data[index])) by { normalize(); }
     have contains(memory(owner->data), memory(owner->data)) by { normalize(); }
     have separate(memory(owner->data), memory(owner->data[index])) by {
-        apply(separation::restrict(memory(owner->data), memory(owner->data[index..index + 1]),
+        apply(separation::separate_restrict(memory(owner->data), memory(owner->data[index..index + 1]),
             memory(owner->data), memory(owner->data[index]))) using {
             separate(memory(owner->data), memory(owner->data[index..index + 1]));
             contains(memory(owner->data[index..index + 1]), memory(owner->data[index]));

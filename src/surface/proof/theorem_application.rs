@@ -867,9 +867,9 @@ pub(in crate::surface::proof) fn instantiate_generic_theorem_application_definit
         if !admitted {
             return Err(if matches!(
                 definition.name(),
-                "click::separation::subrange"
+                "click::separation::contains_subrange"
                     | "click::separation::contains_element"
-                    | "click::separation::rebase"
+                    | "click::separation::contains_rebase"
             ) {
                 "interval law bounds must be int32 or uint64"
             } else {
@@ -881,11 +881,11 @@ pub(in crate::surface::proof) fn instantiate_generic_theorem_application_definit
     let concrete = generics::instantiate_theorem_statement(definition, &substitution)?;
     if matches!(
         definition.name(),
-        "click::separation::elements"
+        "click::separation::separate_elements"
             | "click::separation::distinct_elements"
-            | "click::separation::subrange"
+            | "click::separation::contains_subrange"
             | "click::separation::contains_element"
-            | "click::separation::rebase"
+            | "click::separation::contains_rebase"
     ) {
         let parameter = &concrete.parameters()[0];
         let element = parameter

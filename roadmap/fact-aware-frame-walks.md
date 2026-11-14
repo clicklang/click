@@ -70,7 +70,7 @@ Keep these expansion/replay checks passing:
   `store_index_separation_variants_expand_and_replay`
 
 The recursive witness proof now selects the call's containment, applies
-`separation::restrict`, and preserves the complete pointer read. It needs no
+`separation::separate_restrict`, and preserves the complete pointer read. It needs no
 recursive resource unfolding or footprint reasoning in `normalize`.
 
 ## Next walks and invariants

@@ -858,7 +858,7 @@ migrated operation scopes.
 Generic declarations are proved at arbitrary rigid types before use. Application
 instantiates their statements without traversing proof bodies or re-running
 verification; there is no cold-instance proof cache or discovery-guard exception.
-The type-specific `separation::elements` and `separation::distinct_elements`
+The type-specific `separation::separate_elements` and `separation::distinct_elements`
 laws retain explicit checks for their supported index types. Generic separation
 laws also retain the nonzero storage-width requirement. Declaration verification
 still instantiates proofs where required. `cold_theorem_application_ignores_declaration_proof_length`

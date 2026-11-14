@@ -5,7 +5,7 @@ is nonzero, it establishes separation of `buf[u]` from `buf[0]`, then uses
 `statement(5).footprint` and a transport certificate to preserve the earlier
 `3`. No memory-history recovery is needed.
 
-The `separation::subrange` law derives containment in `buf[1..4]` from
+The `separation::contains_subrange` law derives containment in `buf[1..4]` from
 explicit arithmetic bounds, without enumerating the possible indices.
 Both original functions and contracts are unchanged.
 
@@ -64,13 +64,13 @@ int32 read_back(int32 u) {
             have u <= ((u + 1) as int32) by { solve() using { 1 <= u; u < 4; }; }
             have ((u + 1) as int32) <= 4 by { solve() using { 1 <= u; u < 4; }; }
             have contains(memory(buf[1..4]), memory(buf[u..u + 1])) by {
-                apply(separation::subrange(buf, 1, 4, u, u + 1)) using {
+                apply(separation::contains_subrange(buf, 1, 4, u, u + 1)) using {
                     1 <= u; u <= ((u + 1) as int32); ((u + 1) as int32) <= 4;
                 };
             }
             have contains(memory(buf[0..1]), memory(buf[0])) by { normalize(); }
             have separate(memory(buf[u..u + 1]), memory(buf[0])) by {
-                apply(separation::restrict(memory(buf[1..4]), memory(buf[0..1]),
+                apply(separation::separate_restrict(memory(buf[1..4]), memory(buf[0..1]),
                     memory(buf[u..u + 1]), memory(buf[0]))) using {
                     separate(memory(buf[1..4]), memory(buf[0..1]));
                     contains(memory(buf[1..4]), memory(buf[u..u + 1]));
@@ -80,7 +80,7 @@ int32 read_back(int32 u) {
             have contains(memory(buf[u..u + 1]), memory(buf[u])) by { normalize(); }
             have contains(memory(buf[0]), memory(buf[0])) by { normalize(); }
             have separate(memory(buf[u]), memory(buf[0])) by {
-                apply(separation::restrict(memory(buf[u..u + 1]), memory(buf[0]),
+                apply(separation::separate_restrict(memory(buf[u..u + 1]), memory(buf[0]),
                     memory(buf[u]), memory(buf[0]))) using {
                     separate(memory(buf[u..u + 1]), memory(buf[0]));
                     contains(memory(buf[u..u + 1]), memory(buf[u]));
@@ -125,13 +125,13 @@ int32 read_back_stepped(int32 u) {
             have u <= ((u + 1) as int32) by { solve() using { 1 <= u; u < 4; }; }
             have ((u + 1) as int32) <= 4 by { solve() using { 1 <= u; u < 4; }; }
             have contains(memory(buf[1..4]), memory(buf[u..u + 1])) by {
-                apply(separation::subrange(buf, 1, 4, u, u + 1)) using {
+                apply(separation::contains_subrange(buf, 1, 4, u, u + 1)) using {
                     1 <= u; u <= ((u + 1) as int32); ((u + 1) as int32) <= 4;
                 };
             }
             have contains(memory(buf[0..1]), memory(buf[0])) by { normalize(); }
             have separate(memory(buf[u..u + 1]), memory(buf[0])) by {
-                apply(separation::restrict(memory(buf[1..4]), memory(buf[0..1]),
+                apply(separation::separate_restrict(memory(buf[1..4]), memory(buf[0..1]),
                     memory(buf[u..u + 1]), memory(buf[0]))) using {
                     separate(memory(buf[1..4]), memory(buf[0..1]));
                     contains(memory(buf[1..4]), memory(buf[u..u + 1]));
@@ -141,7 +141,7 @@ int32 read_back_stepped(int32 u) {
             have contains(memory(buf[u..u + 1]), memory(buf[u])) by { normalize(); }
             have contains(memory(buf[0]), memory(buf[0])) by { normalize(); }
             have separate(memory(buf[u]), memory(buf[0])) by {
-                apply(separation::restrict(memory(buf[u..u + 1]), memory(buf[0]),
+                apply(separation::separate_restrict(memory(buf[u..u + 1]), memory(buf[0]),
                     memory(buf[u]), memory(buf[0]))) using {
                     separate(memory(buf[u..u + 1]), memory(buf[0]));
                     contains(memory(buf[u..u + 1]), memory(buf[u]));

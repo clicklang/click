@@ -7041,10 +7041,14 @@ width.
 
 Source: `library/separation.click`, `import click::separation;`.
 
-### `separation::restrict`
+Law names identify their conclusion: `separate_*` establishes resource separation,
+`contains_*` establishes containment, and `viewable_*` establishes viewability.
+`distinct_elements` establishes element-address inequality.
+
+### `separation::separate_restrict`
 
 ```click
-theorem restrict(A: Resource, B: Resource, a: Resource, b: Resource) {
+theorem separate_restrict(A: Resource, B: Resource, a: Resource, b: Resource) {
     requires separate(A, B);
     requires contains(A, a);
     requires contains(B, b);
@@ -7101,7 +7105,7 @@ Import `click::separation`; each theorem above is in the `separation::`
 namespace. All parameters have type `Resource`. There is no rule deriving
 separation between the two operands merely from writing their conjunction.
 For example, `A * A` retains two occurrences and is not identified with `A`.
-Use `restrict` to pass separation from a containing resource to a selected part.
+Use `separate_restrict` to pass separation from a containing resource to a selected part.
 
 **Checked examples:** `mdtests/separation_conjunction.md` and
 `mdtests/separation_conjunction_missing_premise.md`.
@@ -7159,10 +7163,10 @@ theorem separate_star(A: Resource, B: Resource, C: Resource) {
 theorem separate_emp(A: Resource) { ensures separate(separation::emp, A); }
 ```
 
-### `separation::elements`
+### `separation::separate_elements`
 
 ```click
-theorem elements<T, I>(p: T*, i: I, j: I) {
+theorem separate_elements<T, I>(p: T*, i: I, j: I) {
     requires i != j;
     ensures separate(memory(p[i]), memory(p[j]));
 }
@@ -7199,7 +7203,7 @@ theorem distinct_elements<T, I>(p: T*, i: I, j: I) {
 ```
 
 **Meaning:** Unequal indices of one typed array give unequal element
-addresses. Like `separation::elements`, both indices have the same inferred
+addresses. Like `separation::separate_elements`, both indices have the same inferred
 type `I` (`int32`, `int64`, or `uint64`), the addresses are the exact scaled
 offsets `p + i * sizeof(T)` and `p + j * sizeof(T)`, and the premise is the
 disequality of the index values at type `I`, such as
@@ -7210,10 +7214,10 @@ disequality, and its expansion writes the `apply` with an explicit `using`
 ([tactics](../tactics/index.md#arithmetic-with-selected-premises)).
 
 **Verified use:** [`mdtests/solve_proves_element_addresses_distinct_from_their_indices.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_proves_element_addresses_distinct_from_their_indices.md) applies it explicitly and through `solve`, and [`mdtests/solve_proves_element_addresses_distinct_at_each_index_type.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_proves_element_addresses_distinct_at_each_index_type.md) at `uint64` and `int64` indices; [`mdtests/solve_does_not_prove_element_addresses_distinct_when_the_indices_may_be_equal.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_does_not_prove_element_addresses_distinct_when_the_indices_may_be_equal.md) refuses equal-possible indices.
-### `separation::subrange`
+### `separation::contains_subrange`
 
 ```click
-theorem subrange<T, I>(p: T*, lo: I, hi: I, inner_lo: I, inner_hi: I) {
+theorem contains_subrange<T, I>(p: T*, lo: I, hi: I, inner_lo: I, inner_hi: I) {
     requires lo <= inner_lo;
     requires inner_lo <= inner_hi;
     requires inner_hi <= hi;
@@ -7251,10 +7255,10 @@ endpoint, inspect memory, or search facts. It grants no ownership.
 
 **Verified use:** [`mdtests/separation_element_contains_the_selected_cell.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_element_contains_the_selected_cell.md).
 
-### `separation::rebase`
+### `separation::contains_rebase`
 
 ```click
-theorem rebase<T, I>(p: T*, lo: I, hi: I) {
+theorem contains_rebase<T, I>(p: T*, lo: I, hi: I) {
     requires 0 <= to_integer(lo);
     requires lo <= hi;
     ensures contains(memory(p[lo..hi]), memory((p + lo)[0..hi-lo]));

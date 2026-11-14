@@ -5486,7 +5486,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 };
                 proof = proof.driver().apply_step(ProofStep::ApplyTheoremUsing {
                     application: TheoremApplication {
-                        name: "click::separation::restrict".into(),
+                        name: "click::separation::separate_restrict".into(),
                         arguments: vec![
                             resource_arg(&a),
                             resource_arg(&b),

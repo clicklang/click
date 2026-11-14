@@ -16,7 +16,7 @@ void advance(struct pair *p, struct pair *q, uint64 i) {
     step();
     have i != 0;
     have separate(memory(old(p)[i]), memory(old(p)[0])) by {
-        apply(separation::elements(old(p), i, 0u64)) using { i != 0; };
+        apply(separation::separate_elements(old(p), i, 0u64)) using { i != 0; };
     }
     step();
 }

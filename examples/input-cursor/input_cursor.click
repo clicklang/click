@@ -121,7 +121,7 @@ int32 input_cursor_clone(
     have contains(memory(*source), memory(source->data)) by { normalize(); }
     have contains(memory(*target), memory(target->pos)) by { normalize(); }
     have separate(memory(target->pos), memory(source->data)) by {
-        apply(separation::restrict(memory(*target), memory(*source),
+        apply(separation::separate_restrict(memory(*target), memory(*source),
             memory(target->pos), memory(source->data))) using {
             separate(memory(*target), memory(*source));
             contains(memory(*target), memory(target->pos));
@@ -130,7 +130,7 @@ int32 input_cursor_clone(
     }
     have contains(memory(*target), memory(target->len)) by { normalize(); }
     have separate(memory(target->len), memory(source->data)) by {
-        apply(separation::restrict(memory(*target), memory(*source),
+        apply(separation::separate_restrict(memory(*target), memory(*source),
             memory(target->len), memory(source->data))) using {
             separate(memory(*target), memory(*source));
             contains(memory(*target), memory(target->len));
@@ -139,7 +139,7 @@ int32 input_cursor_clone(
     }
     have contains(memory(*target), memory(target->data)) by { normalize(); }
     have separate(memory(target->data), memory(source->data)) by {
-        apply(separation::restrict(memory(*target), memory(*source),
+        apply(separation::separate_restrict(memory(*target), memory(*source),
             memory(target->data), memory(source->data))) using {
             separate(memory(*target), memory(*source));
             contains(memory(*target), memory(target->data));

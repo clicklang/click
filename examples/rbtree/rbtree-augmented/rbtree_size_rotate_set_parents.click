@@ -159,7 +159,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                     at(words, separate(memory((old as (void *) as (struct sized_node *))->size), memory(new->__rb_parent_color)));
                 };
                 apply(separation::contains_refl(memory(new->__rb_parent_color))) using {};
-                apply(separation::restrict((at(words, d) * memory(old->__rb_parent_color)) * memory((old as (void *) as (struct sized_node *))->size), memory(new->__rb_parent_color), statement(3).footprint, memory(new->__rb_parent_color))) using {
+                apply(separation::separate_restrict((at(words, d) * memory(old->__rb_parent_color)) * memory((old as (void *) as (struct sized_node *))->size), memory(new->__rb_parent_color), statement(3).footprint, memory(new->__rb_parent_color))) using {
                     separate((at(words, d) * memory(old->__rb_parent_color)) * memory((old as (void *) as (struct sized_node *))->size), memory(new->__rb_parent_color));
                     contains((at(words, d) * memory(old->__rb_parent_color)) * memory((old as (void *) as (struct sized_node *))->size), statement(3).footprint);
                     contains(memory(new->__rb_parent_color), memory(new->__rb_parent_color));
@@ -250,7 +250,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                     at(words, separate(memory((old as (void *) as (struct sized_node *))->size), memory(new->__rb_parent_color)));
                 };
                 apply(separation::contains_refl(memory(new->__rb_parent_color))) using {};
-                apply(separation::restrict((at(words, d) * memory(old->__rb_parent_color)) * memory((old as (void *) as (struct sized_node *))->size), memory(new->__rb_parent_color), statement(3).footprint, memory(new->__rb_parent_color))) using {
+                apply(separation::separate_restrict((at(words, d) * memory(old->__rb_parent_color)) * memory((old as (void *) as (struct sized_node *))->size), memory(new->__rb_parent_color), statement(3).footprint, memory(new->__rb_parent_color))) using {
                     separate((at(words, d) * memory(old->__rb_parent_color)) * memory((old as (void *) as (struct sized_node *))->size), memory(new->__rb_parent_color));
                     contains((at(words, d) * memory(old->__rb_parent_color)) * memory((old as (void *) as (struct sized_node *))->size), statement(3).footprint);
                     contains(memory(new->__rb_parent_color), memory(new->__rb_parent_color));
@@ -341,7 +341,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                     at(words, separate(memory((old as (void *) as (struct sized_node *))->size), memory(new->__rb_parent_color)));
                 };
                 apply(separation::contains_refl(memory(new->__rb_parent_color))) using {};
-                apply(separation::restrict((at(words, d) * memory(old->__rb_parent_color)) * memory((old as (void *) as (struct sized_node *))->size), memory(new->__rb_parent_color), statement(3).footprint, memory(new->__rb_parent_color))) using {
+                apply(separation::separate_restrict((at(words, d) * memory(old->__rb_parent_color)) * memory((old as (void *) as (struct sized_node *))->size), memory(new->__rb_parent_color), statement(3).footprint, memory(new->__rb_parent_color))) using {
                     separate((at(words, d) * memory(old->__rb_parent_color)) * memory((old as (void *) as (struct sized_node *))->size), memory(new->__rb_parent_color));
                     contains((at(words, d) * memory(old->__rb_parent_color)) * memory((old as (void *) as (struct sized_node *))->size), statement(3).footprint);
                     contains(memory(new->__rb_parent_color), memory(new->__rb_parent_color));

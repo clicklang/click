@@ -95,7 +95,7 @@ void probe(struct node *p, struct root *root) {
   let { after: c } = step(helper, { before: c });
   have contains(at(before_call, c), statement(3).footprint) by { assumption(); }
   apply(separation::contains_refl(memory(nid->right))) using {};
-  apply(separation::restrict(at(before_call, c), memory(nid->right), statement(3).footprint, memory(nid->right))) using {
+  apply(separation::separate_restrict(at(before_call, c), memory(nid->right), statement(3).footprint, memory(nid->right))) using {
    at(before_call, separate(c, memory(nid->right)));
    contains(at(before_call, c), statement(3).footprint);
    contains(memory(nid->right), memory(nid->right));

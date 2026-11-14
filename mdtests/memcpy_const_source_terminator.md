@@ -26,7 +26,7 @@ void copy_prefix(char* dst, const char* src, uint64 n) {
         apply(click::separation::contains_refl(memory(src[0u64..n])));
     }
     have separate(memory(dst[n]), memory(src[0u64..n])) by {
-        apply(click::separation::restrict(memory(dst[0u64..32u64]), memory(src[0u64..n]), memory(dst[n]), memory(src[0u64..n]))) using {
+        apply(click::separation::separate_restrict(memory(dst[0u64..32u64]), memory(src[0u64..n]), memory(dst[n]), memory(src[0u64..n]))) using {
             separate(memory(dst[0u64..32u64]), memory(src[0u64..n]));
             contains(memory(dst[0u64..32u64]), memory(dst[n]));
             contains(memory(src[0u64..n]), memory(src[0u64..n]));

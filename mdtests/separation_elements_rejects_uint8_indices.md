@@ -5,7 +5,7 @@ import click::separation;
 theorem unsupported(p: uint8*, i: uint8, j: uint8) {
     requires i != j;
     ensures separate(memory(p[i]), memory(p[j])) by {
-        apply(separation::elements(p, i, j)) using { i != j; };
+        apply(separation::separate_elements(p, i, j)) using { i != j; };
     }
 }
 ```

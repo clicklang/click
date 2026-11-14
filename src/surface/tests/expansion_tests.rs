@@ -22314,7 +22314,10 @@ fn displaced_native_view_expands_to_rebase_and_restriction() {
         .collect::<Vec<_>>();
     let expanded = expand_function_proof_source(&source, &sources, "window").unwrap();
     assert!(!expanded.contains("transport("), "{expanded}");
-    assert!(expanded.contains("separation::rebase"), "{expanded}");
+    assert!(
+        expanded.contains("separation::contains_rebase"),
+        "{expanded}"
+    );
     assert!(
         expanded.contains("separation::viewable_restrict"),
         "{expanded}"

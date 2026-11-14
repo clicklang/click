@@ -21,7 +21,7 @@ void write_cell(int *p, int *q) {
         normalize() using { separate(memory(*p), memory(*q)); };
     }
     have separate(statement(0).footprint, memory(*q)) by {
-        apply(separation::restrict(statement(0).footprint, memory(*q),
+        apply(separation::separate_restrict(statement(0).footprint, memory(*q),
             statement(0).footprint, memory(*q))) using {
             separate(statement(0).footprint, memory(*q));
             contains(statement(0).footprint, statement(0).footprint);

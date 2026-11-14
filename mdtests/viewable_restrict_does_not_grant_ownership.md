@@ -14,7 +14,7 @@ void copy4(uint8* dst, const uint8* src) {
     requires separate(memory(dst[0..4]), memory(src[0..4]));
 } by {
     have contains(memory(src[0..8]), memory(src[0..4])) by {
-        apply(separation::subrange(src, 0, 8, 0, 4)) using {};
+        apply(separation::contains_subrange(src, 0, 8, 0, 4)) using {};
     }
     have viewable(memory(src[0..4])) by {
         apply(separation::viewable_restrict(memory(src[0..8]), memory(src[0..4]))) using {
