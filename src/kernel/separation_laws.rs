@@ -216,18 +216,26 @@ pub(crate) fn prove_separation_rebase(
         parent: Box::new(Resource::Memory(range(&base, lo.clone(), hi.clone()))),
         child: Box::new(Resource::Memory(range(&shifted, zero.clone(), length))),
     };
-    Theorem::new([(zero, lo.clone()), (lo, hi)].into_iter().rev().fold(
-        conclusion,
-        |body, (left, right)| {
-            Proposition::Implies(
-                Box::new(Proposition::ConditionIs(
-                    ConditionTerm::machine_compare(format, CompareRelation::LessEqual, left, right),
-                    true,
-                )),
-                Box::new(body),
-            )
-        },
-    ))
+    // Retain the declaration's exact observation premise even for unsigned
+    // indices, where a native zero comparison would simplify to `true`.
+    let nonnegative = ConditionTerm::IntegerLessEqual(
+        IntegerTerm::constant_i64(0).into(),
+        IntegerTerm::from_machine(format, lo.clone())
+            .expect("rebase admits machine integer bounds")
+            .into(),
+    );
+    let ordered = ConditionTerm::machine_compare(format, CompareRelation::LessEqual, lo, hi);
+    Theorem::new(
+        [nonnegative, ordered]
+            .into_iter()
+            .rev()
+            .fold(conclusion, |body, condition| {
+                Proposition::Implies(
+                    Box::new(Proposition::ConditionIs(condition, true)),
+                    Box::new(body),
+                )
+            }),
+    )
 }
 
 /// An explicitly bounded index denotes one complete element of its interval.
