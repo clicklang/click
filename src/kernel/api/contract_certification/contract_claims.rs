@@ -1,6 +1,13 @@
 use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
+mod closing;
+#[cfg(test)]
+pub(crate) use closing::check_empty_footprint as check_empty_contract_write_footprint;
+pub(crate) use closing::{
+    CClosedContractExit, CContractClosingContext, CContractClosingRefusal, CContractExitObligations,
+};
+
 /// A specification made from this path's own entry premises. Generic
 /// specifications can add arbitrary premises and carry no such authority.
 pub(crate) struct CheckedPathSpecification {
@@ -2849,6 +2856,9 @@ fn collect_function_contract_claims(
     if !contract_execution.is_complete() {
         return None;
     }
+    if require_closing_evidence && !closed_exit_obligations_cover_every_case(contract_execution) {
+        return None;
+    }
     let timings = crate::instrumentation::enabled();
     let prepare_started = std::time::Instant::now();
     let cases = contract_path_set_views(contract_execution, false);
@@ -2883,6 +2893,8 @@ fn collect_function_contract_claims(
                             &cases,
                             &checked_propositions,
                         )
+                    } else if require_closing_evidence {
+                        closed_resource_effect_claim_holds(claim, &cases)
                     } else {
                         claim_holds_on_some_path_set_of_every_case(
                             function,
@@ -3053,6 +3065,52 @@ fn is_proposition_claim(target: &CFunctionContractClaimTarget) -> bool {
     )
 }
 
+fn closing_path_is_unreachable(path: &SymbolicCExecutionPath) -> bool {
+    path.post_assumptions
+        .as_ref()
+        .unwrap_or(&path.assumptions)
+        .has_retained_contradiction()
+        || matches!(
+            path.completion_origin,
+            Some(CFunctionOutcome::VerificationDiverges)
+        )
+}
+
+fn closed_exit_obligations_cover_every_case(execution: &CFunctionContractExecution) -> bool {
+    execution.cases.iter().all(|alternatives| {
+        alternatives.iter().any(|set| {
+            set.paths.iter().enumerate().all(|(index, path)| {
+                crate::instrumentation::record_deterministic_work(1);
+                closing_path_is_unreachable(path)
+                    || set
+                        .closed_exit_obligations
+                        .get(index)
+                        .is_some_and(Option::is_some)
+            })
+        })
+    })
+}
+
+fn closed_resource_effect_claim_holds(
+    claim: &CFunctionContractClaim,
+    cases: &[Vec<ContractPathSetView<'_>>],
+) -> bool {
+    cases.iter().all(|alternatives| {
+        alternatives.iter().any(|view| {
+            view.set.paths.iter().enumerate().all(|(index, path)| {
+                crate::instrumentation::record_deterministic_work(1);
+                closing_path_is_unreachable(path)
+                    || view
+                        .set
+                        .closed_exit_obligations
+                        .get(index)
+                        .and_then(Option::as_ref)
+                        .is_some_and(|completion| completion.covers(claim))
+            })
+        })
+    })
+}
+
 /// Contract closing already proved this clause on its producer-owned paths.
 /// Consume that association without rebuilding states or lowering the clause.
 fn closed_proposition_holds_on_every_case(
@@ -3215,6 +3273,8 @@ fn unverified_function_contract_claims(
                     &cases,
                     &checked_propositions,
                 )
+            } else if require_closing_evidence {
+                !closed_resource_effect_claim_holds(claim, &cases)
             } else {
                 !claim_holds_on_some_path_set_of_every_case(
                     function,
@@ -4092,6 +4152,11 @@ mod contract_closing_tests {
             })
             .collect::<Vec<_>>();
         let set = CContractPathSet {
+            closed_exit_obligations: paths
+                .iter()
+                .enumerate()
+                .map(|(index, path)| Some(CClosedContractExit::fixture(index, path)))
+                .collect(),
             completion_path_origins: paths.iter().map(|path| path.theorem.clone()).collect(),
             paths,
             checked_resource_claims: vec![],
@@ -4195,6 +4260,20 @@ mod contract_closing_tests {
         assert!(
             c_function_contract_claims_from_completions(&function, &execution, &proofs).is_none()
         );
+    }
+
+    #[test]
+    fn completed_contracts_require_resource_and_effect_completions() {
+        let (function, mut execution) = fixture(1);
+        let proofs = completions(&function, &execution);
+        assert!(
+            c_function_contract_claims_from_completions(&function, &execution, &proofs).is_some()
+        );
+        execution.cases[0][0].closed_exit_obligations.clear();
+        assert!(
+            c_function_contract_claims_from_completions(&function, &execution, &proofs).is_none()
+        );
+        assert!(c_verified_function_contract_claims(&function, &execution).is_some());
     }
 
     mod scaling_tests {

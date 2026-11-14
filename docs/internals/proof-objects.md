@@ -390,9 +390,17 @@ retains its contract clause and evaluation requirements. A failed goal construct
 reported at contract closing; the driver never substitutes a separately
 lowered surface goal. Completed claims retain their producer path identity.
 Registration consumes these claim/path associations across every entry case
-without reconstructing the postcondition or proving it again. Resource and
-effect boundary checking still has legacy reconstruction paths to migrate;
-these are not an additional semantic stage after a completed proof.
+without reconstructing the postcondition or proving it again.
+
+Outcome proofs also own joint returned-resource, allocation-lifetime and
+write-footprint obligations. Resource claim receipts describe individual
+clauses; a checked resource transition alone does not discharge lifetime or
+joint boundary obligations. The closer checks those obligations against the
+retained outcome, receipts and body effects before producing an opaque exit
+completion. Boundary refusals retain the original execution error. Contract
+registration consumes exit completions across entry cases without preparing
+resource/effect paths again. The independent execution-only API still checks
+its supplied execution because it has no completed proof obligations.
 
 A function with proof-local clauses, such as a postcondition referring to
 `at(region(0).entry, ...)`, has no reusable modular proposition contract.

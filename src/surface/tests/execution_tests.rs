@@ -17,8 +17,10 @@ fn generic_result_type_fixture() -> (&'static str, &'static str) {
             ensures result == p;
         } by {
             step_until(function.exit);
-            unfold(select(p, result));
-            normalize();
+            have select(p, result) == p by {
+                unfold(select(p, result));
+                normalize();
+            }
             solve();
         }
     "#;

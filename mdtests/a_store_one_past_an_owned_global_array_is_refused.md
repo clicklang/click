@@ -23,5 +23,5 @@ void set_upper(int32 j) {
 ```
 
 ```expect
-fail: write to storage outside the owned footprint: the 4-byte store to `(char *)&buf + j * 4`; own the written cells or declare them in a `mutable` clause
+fail: write to storage outside the owned footprint: the 4-byte store to `(char *)&buf + j * 4`; own the written cells
 ```

@@ -316,6 +316,24 @@ impl CheckedReturnPath {
 }
 
 impl crate::kernel::CCheckedFunctionExecution {
+    pub(crate) fn with_closed_exit_obligations(
+        mut self,
+        completions: Vec<crate::kernel::CClosedContractExit>,
+    ) -> Result<Self, &'static str> {
+        for completion in completions {
+            let index = completion.path_index();
+            let path = self
+                .paths()
+                .get(index)
+                .ok_or("contract closing selected an unknown path")?;
+            if !completion.matches_path(path) {
+                return Err("contract closing belongs to a different producer path");
+            }
+            self.closed_exit_obligations[index] = Some(completion);
+        }
+        Ok(self)
+    }
+
     pub(crate) fn with_checked_return_paths(
         mut self,
         paths: Vec<CheckedReturnPath>,
@@ -11248,6 +11266,7 @@ impl ExecutionProofCore {
             )?;
         let path_count = paths.len();
         Ok(crate::kernel::CCheckedFunctionExecution {
+            closed_exit_obligations: vec![None; path_count],
             proof_candidates: Some(candidates.clone()),
             state: candidates.state().clone(),
             function: checked_function.clone(),

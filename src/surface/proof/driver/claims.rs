@@ -4,6 +4,7 @@ use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use std::sync::Arc;
 
+#[cfg(test)]
 fn resource_receipts_jointly_available(
     available: &crate::kernel::ResourceContext,
     receipts: &crate::kernel::ResourceContext,
@@ -3324,6 +3325,8 @@ pub(super) fn finish_ordered_proof<'a>(
                 (!rejected).then_some(path_index)
             })
             .collect();
+        let closing_context = crate::kernel::CContractClosingContext::new(&completed_execution);
+        let mut closed_exit_obligations = Vec::new();
         let mut verified = Vec::new();
         let mut checked_resource_claims_by_path =
             vec![Vec::<CFunctionContractClaimKey>::new(); execution.paths().len()];
@@ -3632,7 +3635,9 @@ pub(super) fn finish_ordered_proof<'a>(
                             let target = claim_targets.get(&key).cloned();
                             (key, target)
                         });
-                        outcome_proof = Some(root.open_contract_claim_goals(contract_claims)?);
+                        outcome_proof = Some(
+                            root.open_contract_claim_goals(&closing_context, contract_claims)?,
+                        );
                     }
 
                     let mut closures = claims
@@ -4918,7 +4923,9 @@ pub(super) fn finish_ordered_proof<'a>(
                                 let applied = evolving.driver().apply_step(step)?;
                                 if matches!(
                                     tactic,
-                                    ProofTactic::FoldResource(_) | ProofTactic::UnfoldResource(_)
+                                    ProofTactic::FoldResource(_)
+                                        | ProofTactic::UnfoldResource(_)
+                                        | ProofTactic::ConstructResource(_)
                                 ) {
                                     has_return_resource_rewrite |=
                                         applied.execution().is_some_and(|execution| {
@@ -5008,97 +5015,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             .apply_outcome_contract_resources(pre_state, function)
                     {
                         outcome = transitioned.focused_outcome_snapshot()?;
-                        resource_transition_applied = true;
                         outcome_proof = Some(transitioned);
-                    }
-
-                    if matches!(outcome, CFunctionOutcome::Return { .. }) {
-                        let lifetime_assumptions = path_requirements.assumptions();
-                        let lifetime_obligation =
-                            required_outcome(&outcome_proof)?.allocation_lifetime_obligation()?;
-                        let receipts = claim_resource_receipts(&outcome_proof, claims)?;
-                        let deferred_resource_transition =
-                            claims.iter().enumerate().any(|(claim_index, claim)| {
-                                matches!(claim.clause().ensure(), Ensure::Resource(_))
-                                    && receipts[claim_index]
-                                        .is_some_and(|receipt| receipt.defers_resource_transition)
-                            });
-                        let has_returned_resource_claims =
-                            claims.iter().enumerate().any(|(claim_index, claim)| {
-                                matches!(claim.clause().ensure(), Ensure::Resource(_))
-                                    && receipts[claim_index].is_some_and(|receipt| {
-                                        receipt.contributes_returned_resources
-                                    })
-                            });
-                        let all_resource_claims_checked = has_returned_resource_claims
-                            && claims.iter().enumerate().all(|(claim_index, claim)| {
-                                !matches!(claim.clause().ensure(), Ensure::Resource(_))
-                                    || receipts[claim_index].is_some()
-                            });
-                        let mut checked_returned_resources =
-                            crate::kernel::ResourceContext::new_with_equalities(
-                                lifetime_assumptions,
-                            );
-                        if all_resource_claims_checked {
-                            for receipt in receipts
-                                .iter()
-                                .flatten()
-                                .filter(|receipt| receipt.contributes_returned_resources)
-                            {
-                                checked_returned_resources = checked_returned_resources
-                                    .unchecked_with_facts(
-                                        receipt.returned_resources.facts().iter().cloned(),
-                                    );
-                            }
-                        }
-                        if !deferred_resource_transition {
-                            match check_allocation_lifetime(
-                                &completed_execution,
-                                lifetime_obligation,
-                                path_index,
-                                lifetime_assumptions,
-                                all_resource_claims_checked.then_some(&checked_returned_resources),
-                                &outcome,
-                            )? {
-                                Ok(Some(obligation)) => {
-                                    return Err(ClickError::new(format!(
-                                        "`{proof_label}` path {path_index}: C operation could not be verified: {}{}",
-                                        describe_runtime_error(
-                                            &crate::kernel::CRuntimeError::LiveAllocationLeak {
-                                                allocation: Box::new(
-                                                    obligation.allocation().clone()
-                                                ),
-                                                resource: obligation
-                                                    .holder()
-                                                    .cloned()
-                                                    .map(Box::new),
-                                            },
-                                            ParameterBinding::new(
-                                                parsed_function.parameters(),
-                                                arguments
-                                            ),
-                                        ),
-                                        outcome_substrate
-                                            .describe_outcome_statement_site(path_index),
-                                    )));
-                                }
-                                Ok(None) => {}
-                                Err(error) => {
-                                    return Err(ClickError::new(format!(
-                                        "`{proof_label}` path {path_index}: C operation could not be verified: {}{}",
-                                        describe_runtime_error(
-                                            &error,
-                                            ParameterBinding::new(
-                                                parsed_function.parameters(),
-                                                arguments
-                                            ),
-                                        ),
-                                        outcome_substrate
-                                            .describe_outcome_statement_site(path_index),
-                                    )));
-                                }
-                            }
-                        }
                     }
 
                     if !require_explicit_closers
@@ -5258,12 +5175,6 @@ pub(super) fn finish_ordered_proof<'a>(
                     let has_resource_claims = claims
                         .iter()
                         .any(|claim| matches!(claim.clause().ensure(), Ensure::Resource(_)));
-                    let deferred_resource_transition =
-                        claims.iter().enumerate().any(|(claim_index, claim)| {
-                            matches!(claim.clause().ensure(), Ensure::Resource(_))
-                                && receipts[claim_index]
-                                    .is_some_and(|receipt| receipt.defers_resource_transition)
-                        });
                     let all_resource_claims_checked = has_resource_claims
                         && claims
                             .iter()
@@ -5287,25 +5198,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                 );
                         }
                     }
-                    // Resource closers carry the same checked claim
-                    // evidence, whether written as assumption or selected by
-                    // solve. Validate their jointly returned units rather than
-                    // relying on the presentation certificate's spelling.
-                    // Borrowed outputs participate too: one surviving unit
-                    // cannot discharge both a borrow and a produced unit.
-                    let mut checked_resource_receipts =
-                        crate::kernel::ResourceContext::new_with_equalities(&receipt_assumptions);
-                    if all_resource_claims_checked {
-                        for receipt in receipts.iter().flatten() {
-                            checked_resource_receipts = checked_resource_receipts
-                                .unchecked_with_facts(
-                                    receipt.returned_resources.facts().iter().cloned(),
-                                );
-                        }
-                    }
-                    let returned_resources_are_jointly_available = matches!(outcome, CFunctionOutcome::Return { ref state, .. } if {
-                        resource_receipts_jointly_available(state.resources(), &checked_resource_receipts, &receipt_assumptions)
-                    });
                     if all_resource_claims_checked {
                         checked_returned_resources_by_path[path_index] =
                             checked_returned_resources.clone();
@@ -5367,25 +5259,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                 )
                             })?,
                     };
-                    let Proposition::CFunctionVerifies {
-                        outcome: specification_outcome,
-                        ..
-                    } = implication_body(certified_path.theorem().proposition())
-                    else {
-                        return Err(ClickError::new(
-                            "return instance fold has no checked function outcome",
-                        ));
-                    };
-                    // Ownership receipts do not discharge the contract's lifecycle
-                    // obligations. Reuse them only after the kernel's checked exit
-                    // returned successfully; retain any boundary refusal for normal
-                    // certification. An explicitly applied checked transition already
-                    // carries that evidence, including after post-return folds.
-                    checked_resource_transitions_by_path[path_index] = !deferred_resource_transition
-                        && (resource_transition_applied
-                            || (matches!(specification_outcome, CFunctionOutcome::Return { .. })
-                                && all_resource_claims_checked
-                                && returned_resources_are_jointly_available));
                     let checked_specification = crate::instrumentation::measure_operation(
                         function_block.signature().name(),
                         &proof_label,
@@ -5394,6 +5267,16 @@ pub(super) fn finish_ordered_proof<'a>(
                     ).ok_or_else(|| ClickError::new(format!(
                         "execution proof for `{proof_label}` path {path_index} does not certify its exact function specification"
                     )))?;
+                    if let Some(root) = outcome_proof.take() {
+                        let (root, completion) = root.complete_contract_exit_obligations(
+                            &completed_execution,
+                            certified_path,
+                            &checked_specification,
+                        )?;
+                        checked_resource_transitions_by_path[path_index] = true;
+                        closed_exit_obligations.push(completion);
+                        outcome_proof = Some(root);
+                    }
                     let specification = checked_specification.specification();
                     let theorem = checked_specification.theorem();
                     // Every theorem of this path shares one copy of the loop
@@ -5582,6 +5465,8 @@ pub(super) fn finish_ordered_proof<'a>(
         let final_checked_execution = completed_execution
             .clone()
             .with_checked_return_paths(checked_return_paths)
+            .map_err(ClickError::new)?
+            .with_closed_exit_obligations(closed_exit_obligations)
             .map_err(ClickError::new)?;
         let completed_with_resource_claims =
             final_checked_execution.with_checked_resource_claims(checked_resource_claims_by_path);
@@ -6167,13 +6052,11 @@ mod evidence_tests {
         };
         let key = CFunctionContractClaimKey::Ensure(*index);
         let facts = ProofFacts::from_ordered(&path.assumptions().pure_facts());
-        let lifetime = crate::kernel::proof::AllocationLifetimeObligation::new(0);
         let checked = prove_ensure_resource(
             execution,
             key.clone(),
             "resource evidence",
             0,
-            &lifetime,
             crate::kernel::ExecutionFacts::new,
             &facts,
             resource,

@@ -3301,3 +3301,39 @@ fn contract_closing_keeps_snapshot_clauses_as_local_obligations() {
     );
     assert!(verify_c0_sources(&wrong, &inputs).is_err());
 }
+
+#[test]
+fn contract_closing_retains_resource_and_write_footprint_completions() {
+    let inputs = [(
+        "closing.c",
+        "int counter; int write(void) { counter = 9; return 0; }",
+    )];
+    let proof = r#"verifying "closing.c";
+        int32 write() { owns counter; ensures result == 0; }
+    "#;
+    let (verified, events) = crate::instrumentation::collect(|| verify_c0_sources(proof, &inputs));
+    let verified = verified.unwrap();
+    assert!(!events.iter().any(|event| matches!(event,
+        crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
+            if name == "storage write footprint check" || name == "implicit empty effect check" || name == "contract path preparation"
+    )));
+    let expanded = expand_checked_grouped_claim(proof, &verified, "write").unwrap();
+    without_implicit_solve(|| verify_c0_sources(&expanded, &inputs)).unwrap();
+
+    let missing_ownership = proof.replace("owns counter;", "");
+    let (result, events) =
+        crate::instrumentation::collect(|| verify_c0_sources(&missing_ownership, &inputs));
+    assert!(
+        result
+            .unwrap_err()
+            .message()
+            .contains("outside the mutable footprint")
+    );
+    assert!(
+        !events.iter().any(|event| matches!(
+            event,
+            crate::instrumentation::VerificationEvent::ContractClaimsFinished { .. }
+        )),
+        "an unproved footprint is refused before contract registration"
+    );
+}

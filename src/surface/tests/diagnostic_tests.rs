@@ -1592,10 +1592,6 @@ fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
     let before = CMemory::new().with_block(global.block.clone(), 4);
     let after = before.clone().store(alias.clone(), int32(1));
     let pre_state = CState::new().with_memory(before.clone());
-    let outcome = CFunctionOutcome::Return {
-        value: int32(0).into(),
-        state: Box::new(CState::new().with_memory(after.clone())),
-    };
     let aliases_global =
         Proposition::ConditionIs(ConditionTerm::pointer_equal(alias.clone(), global), true);
     let facts = [
@@ -1615,27 +1611,24 @@ fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
         }),
     ];
     for fact in &facts {
-        super::checking::prove_empty_write_footprint(
-            "aliased.implicit_effect",
-            0,
-            std::slice::from_ref(fact),
-            &PureFactList::default(),
-            ParameterBinding::default(),
+        let effects = crate::kernel::ExecutionFacts::from(vec![fact.clone()]);
+        crate::kernel::check_empty_contract_write_footprint(
             &pre_state,
-            &outcome,
+            &effects,
+            &PureFactContext::new(),
         )
         .expect("the symbolic spelling alone does not name preexisting storage");
-        let error = super::checking::prove_empty_write_footprint(
-            "aliased.implicit_effect",
-            0,
-            std::slice::from_ref(fact),
-            &PureFactList::from(vec![aliases_global.clone()]),
-            ParameterBinding::default(),
+        let error = crate::kernel::check_empty_contract_write_footprint(
             &pre_state,
-            &outcome,
+            &effects,
+            &PureFactContext::new().assume_proposition(aliases_global.clone()),
         )
         .expect_err("a fact-aliased write reaches the preexisting global");
-        assert!(error.message().contains("outside the mutable footprint"));
+        assert!(matches!(
+            error,
+            crate::kernel::CContractClosingRefusal::Write(_)
+                | crate::kernel::CContractClosingRefusal::Range(_)
+        ));
     }
 }
 
