@@ -66,7 +66,26 @@ fn collect_addresses<'a>(
     mode: FoldVariableRead,
     variables: &mut BTreeSet<Variable>,
 ) {
-    let mut summaries = std::collections::HashMap::new();
+    collect_addresses_with_summaries(addresses, mode, variables, &mut Default::default());
+}
+
+/// A read address is a child of the enclosing common term traversal. Share its
+/// memo so diamonds of nested reads do not revisit their common prefixes.
+pub(super) fn collect_address_variables_with_summaries(
+    address: &SharedPointerAddress,
+    mode: FoldVariableRead,
+    variables: &mut BTreeSet<Variable>,
+    summaries: &mut std::collections::HashMap<u64, crate::persistent::PersistentSet<Variable>>,
+) {
+    collect_addresses_with_summaries(std::iter::once(address), mode, variables, summaries);
+}
+
+fn collect_addresses_with_summaries<'a>(
+    addresses: impl IntoIterator<Item = &'a SharedPointerAddress>,
+    mode: FoldVariableRead,
+    variables: &mut BTreeSet<Variable>,
+    summaries: &mut std::collections::HashMap<u64, crate::persistent::PersistentSet<Variable>>,
+) {
     let mut native_seen = SeenTerms::default();
     visit_components(addresses, |component| match component {
         Component::Block(block) if mode == FoldVariableRead::ExpressionFree => {
@@ -94,7 +113,7 @@ fn collect_addresses<'a>(
             variables.insert(variable);
         }
         Component::Index(root) => {
-            variables.extend(common_variables(root, mode, &mut summaries).iter().copied());
+            variables.extend(common_variables(root, mode, summaries).iter().copied());
         }
         _ => {}
     });

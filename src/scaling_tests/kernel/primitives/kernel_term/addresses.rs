@@ -41,7 +41,8 @@ fn block_import_charges_selected_bytes_not_unrelated_literal_bytes() {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             SharedPointerBlock::import(&PointerBlock::Symbolic(Variable(999002)))
         });
-        assert_eq!(work, 9);
+        // Identifier atoms bypass the variable-sized payload interner.
+        assert_eq!(work, 1);
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             SharedPointerBlock::import(&PointerBlock::Concrete("x".repeat(size)))
         });

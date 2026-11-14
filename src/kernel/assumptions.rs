@@ -2052,18 +2052,27 @@ fn operand_fingerprint(root: MachineOperandView<'_>, policy: OperandFingerprintP
             (policy.without_frame(), vec![arg])
         } else {
             3u8.hash(&mut hash);
-            let leaf = value
-                .literal()
-                .map(std::borrow::Cow::Owned)
-                .unwrap_or_else(|| value.read_source().expect("retained machine leaf"));
-            match (policy, leaf.as_ref()) {
-                (OperandFingerprintPolicy::MemoryBlind, _) => {
-                    hash_memory_blind_bitvector(&leaf, &mut hash)
+            if let (OperandFingerprintPolicy::Snapshot(true), Some(kind)) =
+                (policy, value.read_kind())
+            {
+                // This selector observes only the kind. Exporting its address
+                // would add cold-cache work to an otherwise fixed root query.
+                kind.hash(&mut hash);
+            } else {
+                let leaf = value
+                    .literal()
+                    .map(std::borrow::Cow::Owned)
+                    .unwrap_or_else(|| value.read_source().expect("retained machine leaf"));
+                match (policy, leaf.as_ref()) {
+                    (OperandFingerprintPolicy::MemoryBlind, _) => {
+                        hash_memory_blind_bitvector(&leaf, &mut hash)
+                    }
+                    (
+                        OperandFingerprintPolicy::Snapshot(true),
+                        MachineTerm::MemoryLoad(_, _, kind),
+                    ) => kind.hash(&mut hash),
+                    (OperandFingerprintPolicy::Snapshot(_), _) => leaf.hash(&mut hash),
                 }
-                (OperandFingerprintPolicy::Snapshot(true), MachineTerm::MemoryLoad(_, _, kind)) => {
-                    kind.hash(&mut hash)
-                }
-                (OperandFingerprintPolicy::Snapshot(_), _) => leaf.hash(&mut hash),
             }
             let hash = hash.finish();
             values.insert(key(policy, value), hash);
