@@ -3100,6 +3100,7 @@ fn resource_composition_is_supported_by(
 /// instead of asking finalization to reconstruct it from Surface bookkeeping.
 #[derive(Clone)]
 pub(crate) struct CheckedFunctionEntry {
+    cases: Option<Arc<crate::kernel::PreparedContractEntryCases>>,
     caller_state: ExecutionState,
     function: Arc<ProgramFunction>,
     arguments: Vec<ProgramExpression>,
@@ -3133,7 +3134,14 @@ impl CheckedFunctionEntry {
                 "the checked function entry does not match the proof entry".into(),
             ));
         }
-        Self::construct(caller_state, function, arguments, entry_state, assumptions)
+        Self::construct(
+            caller_state,
+            function,
+            arguments,
+            entry_state,
+            assumptions,
+            None,
+        )
     }
 
     fn construct(
@@ -3142,6 +3150,7 @@ impl CheckedFunctionEntry {
         arguments: &[ProgramExpression],
         entry_state: ExecutionState,
         assumptions: PureFactContext,
+        cases: Option<Arc<crate::kernel::PreparedContractEntryCases>>,
     ) -> Result<Arc<Self>, RuntimeError> {
         let function = Arc::new(function.clone());
         let boundary_transfer = {
@@ -3164,6 +3173,7 @@ impl CheckedFunctionEntry {
             )
         };
         let entry = Self {
+            cases,
             caller_state: caller_state.clone(),
             function,
             arguments: arguments.to_vec(),
@@ -3224,6 +3234,7 @@ pub(crate) struct OpenedContractEntry {
     entry: Arc<CheckedFunctionEntry>,
     facts: ProofFacts,
     source_origins: Vec<Option<usize>>,
+    cases: Arc<crate::kernel::PreparedContractEntryCases>,
 }
 
 impl OpenedContractEntry {
@@ -3276,6 +3287,13 @@ impl OpenedContractEntry {
             propositions.push(byte_order);
             source_origins.push(None);
         }
+        let cases = Arc::new(
+            crate::kernel::prepare_function_contract_entry_cases(
+                contract,
+                environment.byte_order_fact(),
+            )
+            .map_err(RuntimeError::FunctionContract)?,
+        );
         let mut facts = ProofFacts::from_ordered(&propositions);
         facts.prepare_entry_resources(caller_state.resources());
         let entry_state =
@@ -3291,12 +3309,18 @@ impl OpenedContractEntry {
             arguments,
             entry_state,
             facts.assumptions().clone(),
+            Some(cases.clone()),
         )?;
         Ok(Self {
             entry,
             facts,
             source_origins,
+            cases,
         })
+    }
+
+    pub(crate) fn prepared_cases(&self) -> &Arc<crate::kernel::PreparedContractEntryCases> {
+        &self.cases
     }
 
     pub(crate) fn facts(&self) -> &ProofFacts {
@@ -11413,6 +11437,10 @@ impl ExecutionProofCore {
             )?;
         let path_count = paths.len();
         Ok(crate::kernel::CheckedFunctionExecution {
+            prepared_entry_cases: self
+                .function_entry
+                .as_ref()
+                .and_then(|entry| entry.cases.clone()),
             closed_exit_obligations: vec![None; path_count],
             proof_candidates: Some(candidates.clone()),
             state: candidates.state().clone(),

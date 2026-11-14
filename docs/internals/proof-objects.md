@@ -383,8 +383,14 @@ Function body proofs open their contract entry before running tactics.
 `OpenedContractEntry` selects the admitted source premises, preserves their
 source occurrence indices, adds the execution environment's byte order, and
 constructs the function-entry state and resource transfer. The body retains
-that entry and the same indexed fact context. A failed entry construction is
-an entry error, not permission to run under the unfiltered source facts.
+that entry and the same indexed fact context. Opening also constructs every
+undecided resource-guard alternative, with its assumptions and expanded entry
+state, before executing the body. The case producer consumes an entry bound
+to its caller, function and arguments, so separately supplied facts cannot be
+paired with another subject. Checked executions retain the resulting opaque
+case set. Conditional resource closing and registration consume those same
+alternatives; neither enumerates additional entry cases for an opened proof.
+Entry construction failures are reported before body tactics run.
 Surface retains the selected canonical caller context for registration rather
 than the earlier candidate context. Independent execution artifacts still use
 the conditional checked-entry API.
@@ -415,9 +421,12 @@ checked contradiction is retired explicitly, and an execution with no returning
 outcomes retires its frontier without creating an outcome obligation. The
 owning proof must have no open outcome branches before completion proceeds.
 The outcome producer returns a path-to-branch index, so later completion does
-not scan siblings to locate a case. Registration's separate resource-entry
-case reconstruction remains a legacy consumer to migrate; outcome ownership
-does not remove it yet.
+not scan siblings to locate a case. Registration selects the retained entry
+of a coherent proof, including frontier-loop proofs, and consumes its prepared
+case contexts. Artifact-premise admission and whole-contract claim/case coverage
+remain registration responsibilities to migrate. Independent conditional
+execution artifacts have no opened contract proof and retain their entry
+validation route.
 
 Closing goal state is fixed-size and shared proof forks retain independent
 updates. An explicit `assumption()` discharges the selected closing goal using

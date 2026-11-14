@@ -14754,6 +14754,7 @@ pub struct FunctionContractExecution {
 /// without covering the others.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedFunctionExecution {
+    pub(super) prepared_entry_cases: Option<Arc<super::PreparedContractEntryCases>>,
     pub(super) closed_exit_obligations: Vec<Option<super::ClosedContractExit>>,
     /// The immutable outcome publication this proof completed. Return-path
     /// completion uses this same input and preserves its checked path object.

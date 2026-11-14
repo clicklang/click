@@ -2908,64 +2908,31 @@ fn verify_program_in_context(
                 function_block.with_bound_frontier_loop_clauses(&verified.frontier_loop_clauses)
             },
         );
-        // Certification starts from the entry the proof was built from. A
-        // proof that bound frontier loop clauses is certified over the block
-        // carrying them, whose entry unfolds what those clauses name, so only
-        // that case builds an entry here.
-        let proof_entry = frontier_loop_artifacts
-            .is_none()
-            .then(|| {
+        // Select one coherent retained entry, preferring the proof that
+        // performed a checked resource exchange. Every entry alternative was
+        // constructed before this proof executed, including frontier-loop proofs.
+        let proof_entry = function_verified
+            .iter()
+            .filter(|verified| {
+                verified
+                    .checked_execution
+                    .has_checked_resource_transitions()
+            })
+            .find_map(|verified| verified.entry_context.clone())
+            .or_else(|| {
                 function_verified
                     .iter()
                     .find_map(|verified| verified.entry_context.clone())
             })
-            .flatten();
-        let (mut certification_state, certification_arguments, mut certification_facts) =
-            match proof_entry {
-                Some(entry) => (
-                    entry.state.clone(),
-                    entry.arguments.clone(),
-                    entry.pure_facts.clone(),
-                ),
-                None => {
-                    let InitialClaimContext {
-                        state,
-                        arguments,
-                        pure_facts,
-                        ..
-                    } = initial_claim_context_with_caller_owner(
-                        &certification_function_block,
-                        parsed_function,
-                        &resource_environment,
-                        spec_definitions,
-                        &format!("{} certification", function_block.contract_claim_label()),
-                        None,
-                    )
-                    .map_err(|error| error.at_declaration(function_block.signature.name()))?;
-                    (state, arguments, pure_facts)
-                }
-            };
-        // Stable-view proof artifacts carry the exact caller state that the
-        // checked function-entry boundary accepted. Reuse that state for
-        // certification so resource occurrence IDs and loan ledger roots are
-        // shared by proof and certification; rebuilding it independently
-        // would create an equivalent-looking but unauthorized authority.
-        // A proof with a jointly checked return exchange supplies one coherent
-        // entry/exit pair. Prefer its caller over a separate clause proof's
-        // entry, whose borrowed-memory representation may differ and prevent
-        // reuse of the checked post-return exchange.
-        if let Some(entry) = checked_executions
-            .iter()
-            .filter(|execution| execution.has_checked_resource_transitions())
-            .find_map(|execution| execution.caller_state())
-            .or_else(|| {
-                checked_executions
-                    .iter()
-                    .find_map(|execution| execution.caller_state())
-            })
-        {
-            certification_state = entry.clone();
-        }
+            .ok_or_else(|| {
+                ClickError::new(format!(
+                    "function proof for `{}` did not retain its contract entry cases",
+                    function_block.signature.name(),
+                ))
+            })?;
+        let certification_state = proof_entry.cases.caller_state().clone();
+        let certification_arguments = proof_entry.arguments.clone();
+        let mut certification_facts = proof_entry.pure_facts.clone();
         let mut certification_theorems = BTreeSet::new();
         // The checked C transition certificate does not retain pure
         // theorem-application bookkeeping. Select those authorities from the
@@ -3086,10 +3053,9 @@ fn verify_program_in_context(
                         // The entry state and arguments outlive the call: a
                         // refusal below names the unauthorized entry premise
                         // through them, in the names the user wrote.
-                        prove_program_function_contract_execution_paths_with_checked_artifacts_and_pure_theorems(
-                            certification_state.clone(),
+                        crate::kernel::prove_prepared_function_contract_execution_paths(
+                            &proof_entry.cases,
                             contract_function.clone(),
-                            certification_arguments.clone(),
                             certification_function_environment,
                             ExecutionSemantics::APPLY_VERIFIED_RULES,
                             contract_execution_mode,

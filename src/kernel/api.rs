@@ -5284,6 +5284,7 @@ pub fn prove_checked_program_function_execution_with_environment(
     };
     let path_count = execution.paths().len();
     CheckedFunctionExecution {
+        prepared_entry_cases: None,
         closed_exit_obligations: vec![None; path_count],
         proof_candidates: None,
         state,
@@ -6601,6 +6602,44 @@ pub fn prove_program_function_contract_execution_paths_with_checked_artifacts_an
     checked_artifacts: &[CheckedFunctionExecution],
     pure_theorems: &[VerifiedPureTheorem],
 ) -> FunctionContractExecution {
+    let entry =
+        match program_function_contract_entry(&state, &function, &arguments).and_then(|entry| {
+            prepare_function_contract_entry_cases(entry, environment.byte_order_fact())
+        }) {
+            Ok(entry) => entry,
+            Err(reason) => return FunctionContractExecution::failed(reason),
+        };
+    prove_prepared_function_contract_execution_paths(
+        &entry,
+        function,
+        environment,
+        execution_semantics,
+        mode,
+        checked_artifacts,
+        pure_theorems,
+    )
+}
+
+/// Admit checked executions against the entry cases retained by their proof.
+/// Entry construction and resource-guard enumeration have already completed.
+pub(crate) fn prove_prepared_function_contract_execution_paths(
+    entry: &PreparedContractEntryCases,
+    function: ProgramFunction,
+    environment: ExecutionEnvironment,
+    execution_semantics: ExecutionSemantics,
+    mode: FunctionContractExecutionMode,
+    checked_artifacts: &[CheckedFunctionExecution],
+    pure_theorems: &[VerifiedPureTheorem],
+) -> FunctionContractExecution {
+    if !entry.function.has_same_entry_and_source(&function)
+        || entry.byte_order != environment.byte_order_fact()
+    {
+        return FunctionContractExecution::failed(
+            "the prepared contract entry belongs to another function or target".into(),
+        );
+    }
+    let state = &entry.state;
+    let arguments = &entry.arguments;
     let environment = if environment.has_conditional_resource_effects()
         || function_has_conditional_resource_effect(&function)
     {
@@ -6618,8 +6657,8 @@ pub fn prove_program_function_contract_execution_paths_with_checked_artifacts_an
     let environment = match program_execution_environment_with_recursion_anchor(
         environment,
         &function,
-        &state,
-        &arguments,
+        state,
+        arguments,
     ) {
         Ok(environment) => environment,
         Err(reason) => return FunctionContractExecution::failed(reason),
@@ -6628,101 +6667,17 @@ pub fn prove_program_function_contract_execution_paths_with_checked_artifacts_an
         .iter()
         .map(|verified| verified.theorem.proposition().clone())
         .collect::<Vec<_>>();
-    let base_assumptions = match crate::instrumentation::measure_operation(
-        function.name(),
-        "contract certification",
-        "contract assumptions",
-        || {
-            program_function_contract_entry(&state, &function, &arguments)
-                .map(ContractEntry::into_assumptions)
-        },
-    ) {
-        Ok(assumptions) => assumptions,
-        Err(reason) => {
-            if crate::instrumentation::enabled() {
-                crate::instrumentation::emit(
-                    crate::instrumentation::VerificationEvent::Diagnostic(format!(
-                        "exact certification could not construct contract assumptions for {}: {reason}",
-                        function.name()
-                    )),
-                );
-            }
-            return FunctionContractExecution::failed(reason);
-        }
-    };
-    let base_assumptions = base_assumptions.assume_proposition(environment.byte_order_fact());
-    let Some(resource_condition_cases) = crate::instrumentation::measure_operation(
-        function.name(),
-        "contract certification",
-        "contract resource guard cases",
-        || {
-            contract_resource_condition_cases(
-                &state,
-                &function,
-                &arguments,
-                &base_assumptions.clone().assume_entry_clause_extents(),
-            )
-        },
-    ) else {
-        if crate::instrumentation::enabled() {
-            crate::instrumentation::emit(crate::instrumentation::VerificationEvent::Diagnostic(
-                format!(
-                    "exact certification could not enumerate resource guards for {}",
-                    function.name()
-                ),
-            ));
-        }
-        return FunctionContractExecution::failed(
-            "could not enumerate the undecided resource guards of the contract entry".to_string(),
-        );
-    };
     let mut cases = Vec::new();
     let mut reuse_diagnostic = None;
     let mut reuse_unauthorized_premise = None;
     let mut reuse_entry_resources = Vec::new();
     let mut reuse_context_facts = Vec::new();
-    for case_facts in resource_condition_cases {
-        // A resource-guard case assumes its guards beside the contract entry.
-        let assumptions = assumptions_with_propositions(&base_assumptions, &case_facts);
-        let Some(mut entry_state) = program_function_entry_state(&state, &function, &arguments)
-        else {
-            return FunctionContractExecution::failed(
-                "could not build the contract entry state from the call arguments".to_string(),
-            );
-        };
-        let has_recursive_resources = function
-            .composite_resource_definitions()
-            .iter()
-            .any(CompositeResourceDefinition::is_recursive);
-        // With recursive definitions the caller state already holds the
-        // proof-directed projections. Expanding it globally would erase child
-        // composites and expose unrelated recursive branches, so it is kept.
-        if !has_recursive_resources {
-            let Some(entry_resources) = crate::instrumentation::measure_operation(
-                function.name(),
-                "contract certification",
-                "contract entry resource expansion",
-                || {
-                    {
-                        super::functions::expand_all_composite_resource_facts_at_state(
-                            entry_state.resources(),
-                            function.composite_resource_definitions(),
-                            &entry_state,
-                            &assumptions,
-                        )
-                    }
-                },
-            ) else {
-                return FunctionContractExecution::failed(
-                    "could not expand the composite resources of the contract entry state"
-                        .to_string(),
-                );
-            };
-            entry_state = entry_state.with_resource_context(entry_resources);
-        }
+    for prepared in &entry.cases {
+        let assumptions = prepared.assumptions.clone();
+        let entry_state = &prepared.entry_state;
         let matches_execution_metadata_except_state = |checked: &CheckedFunctionExecution| {
             checked.function == function
-                && checked.arguments == arguments
+                && checked.arguments == *arguments
                 && checked.environment == environment
                 && checked.execution_semantics == execution_semantics
                 && checked.mode == mode
@@ -6731,7 +6686,7 @@ pub fn prove_program_function_contract_execution_paths_with_checked_artifacts_an
                 && !checked.execution.paths().is_empty()
                 && checked_loan_evidence_is_valid(checked, &function)
         };
-        let raw_entry_state = program_function_entry_state(&state, &function, &arguments);
+        let raw_entry_state = Some(&entry.raw_entry_state);
         let mut reuse_assumptions = assumptions.clone();
         // A claim proof opens entry composites and assumes the containment
         // and separation facts of their children. Derive those facts from the
@@ -6830,7 +6785,7 @@ pub fn prove_program_function_contract_execution_paths_with_checked_artifacts_an
                     super::functions::expand_all_composite_resource_facts_at_state(
                         &current,
                         function.composite_resource_definitions(),
-                        &entry_state,
+                        entry_state,
                         &reuse_assumptions,
                     )
                 {
@@ -6849,13 +6804,13 @@ pub fn prove_program_function_contract_execution_paths_with_checked_artifacts_an
                     || reuse_assumptions.states_required_goal(premise)
                     || matches!(premise, Proposition::MemoryLoadable { .. })
                         && (resources_certify_loadability(
-                            &entry_state,
+                            entry_state,
                             entry_state.resources(),
                             premise,
                             &reuse_assumptions,
                         ) || opened_entry_levels().iter().any(|resources| {
                             resources_certify_loadability(
-                                &entry_state,
+                                entry_state,
                                 resources,
                                 premise,
                                 &reuse_assumptions,
@@ -6889,7 +6844,7 @@ pub fn prove_program_function_contract_execution_paths_with_checked_artifacts_an
             || {
                 candidates
                     .iter()
-                    .filter(|checked| checked.state == state && authorized(checked))
+                    .filter(|checked| checked.state == *state && authorized(checked))
                     .map(|checked| ContractPathSet {
                         closed_exit_obligations: checked.closed_exit_obligations.clone(),
                         boundary_transfers: vec![
@@ -6922,7 +6877,7 @@ pub fn prove_program_function_contract_execution_paths_with_checked_artifacts_an
             || {
                 candidates
                     .iter()
-                    .filter(|checked| checked.state != state && authorized(checked))
+                    .filter(|checked| checked.state != *state && authorized(checked))
                     .filter_map(|checked| {
                         crate::instrumentation::measure_operation(
                             function.name(),
@@ -6931,7 +6886,7 @@ pub fn prove_program_function_contract_execution_paths_with_checked_artifacts_an
                             || {
                                 checked_execution_at_definitionally_equal_entry_state(
                                     checked,
-                                    &state,
+                                    state,
                                     &function,
                                     &assumptions,
                                 )
@@ -6975,7 +6930,7 @@ pub fn prove_program_function_contract_execution_paths_with_checked_artifacts_an
                 function.name()
             );
             for checked in &candidates {
-                if checked.state != state {
+                if checked.state != *state {
                     if cause == ArtifactReuseRejection::NoMatchingArtifact {
                         cause = ArtifactReuseRejection::EntryStateDelta;
                         detail = format!(
