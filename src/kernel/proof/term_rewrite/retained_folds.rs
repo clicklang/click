@@ -7,12 +7,21 @@ impl TermRewrite<'_> {
         &mut self,
         fold: &KernelFold,
     ) -> Result<KernelFold, RewriteRefusal> {
+        let result = self.retained_fold_in(fold);
+        self.refusal_observed.set(true);
+        result
+    }
+
+    pub(super) fn retained_fold_in(
+        &mut self,
+        fold: &KernelFold,
+    ) -> Result<KernelFold, RewriteRefusal> {
         let result = if fold.result_type() == &KernelType::Integer {
             self.retained_integer_fold(fold)
         } else {
             self.retained_machine_fold(fold)
         };
-        if let Some(refusal) = self.refusal() {
+        if let Some(refusal) = self.refusal_status() {
             return Err(refusal);
         }
         result.ok_or(RewriteRefusal::UnsupportedScope)
@@ -40,7 +49,7 @@ impl TermRewrite<'_> {
         };
         let rewritten =
             self.rewrite_integer_range_fold(&index, &initial, fold.accumulator, fold.item, &body);
-        if self.refusal().is_some() {
+        if self.refusal_status().is_some() {
             return None;
         }
         KernelFold::import_integer(&mut KernelTermImport::default(), &rewritten)

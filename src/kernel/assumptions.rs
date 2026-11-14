@@ -3046,6 +3046,19 @@ fn collect_integer_memory_loads_with_width(
     if !seen_integers.insert(term.id()) {
         return Ok(());
     }
+    if matches!(term.as_ref(), IntegerTerm::RangeFold { .. }) {
+        let root = KernelTermImport::default().integer(term);
+        let KernelTermNode::Fold(fold) = root.node() else {
+            unreachable!("migrated Integer fold");
+        };
+        return retained_folds::collect_fold_memory_loads(
+            fold,
+            current_memory,
+            loads,
+            width,
+            seen_integers,
+        );
+    }
     collect_integer_node_memory_loads(term.as_ref(), current_memory, loads, width, seen_integers)
 }
 

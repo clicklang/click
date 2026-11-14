@@ -257,6 +257,18 @@ expands and replays without implicit search. This supplies the spelling
 boundary; live common fold producer activation remains 6f and 6g. Validation:
 the full scaling and related Surface selection passes all 1,634 tests.
 
+6f activates Integer `KernelTermNode::Fold` roots and the existing Integer fold
+constructor produces through them. The evaluator's native Integer result
+carrier remains an explicit shallow reading whose operands retain common
+handles. Free-variable/capture collection, current-memory dependencies and
+scoped rewriting now consume the common fold children; nested summaries filter
+only body binders. Internal refusal inspection does not acknowledge a refusal
+on behalf of the external rewrite caller. Existing range evaluation, fold laws
+and scoped obligations are unchanged. Focused checks pass 25 tests, and the
+full scaling plus fold/variable/rewrite selection passes all 1,870 tests.
+Opaque endpoints reuse their existing numeric observation identity. The full
+non-nightly proof corpus passes with zero fact-stability differences.
+
 ## Chunk 5: execution value handoffs
 
 Retain already-supported machine-integer results through execution, one PR per
