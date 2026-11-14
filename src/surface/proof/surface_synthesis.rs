@@ -3270,7 +3270,9 @@ pub(super) fn raise_kernel_term(
                 }],
             }
         }
-        Node::PointerRead { value, .. } | Node::PointerValue(value) => {
+        Node::PointerRead { value, .. }
+        | Node::PointerArithmetic { value, .. }
+        | Node::PointerValue(value) => {
             if let Some(name) = pointer_names::shared_name(value) {
                 SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name))
             } else {

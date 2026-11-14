@@ -52,6 +52,43 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
             budget,
         );
     }
+    if let ProgramExpression::PointerOffsetBytes { pointer, bytes } = expression {
+        budget.consume_expression_step()?;
+        let mut paths = Vec::new();
+        for mut path in evaluate_expression_value_paths(state, pointer, assumptions, budget)? {
+            let ExpressionOutcome::Value(value) = &path.outcome else {
+                paths.push(path);
+                continue;
+            };
+            let Some(pointer) = value.pointer() else {
+                path.outcome = ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch);
+                paths.push(path);
+                continue;
+            };
+            let pointer = pointer.clone();
+            let operands = [
+                value.common_operand(),
+                KernelTerm::retained_native_machine_operand(
+                    MachineIntegerType::UInt64,
+                    &MachineTerm::uint64_constant(u64::from(*bytes)),
+                ),
+            ];
+            paths.extend(
+                super::operators::pointer_offset_by_bytes_paths(
+                    state,
+                    pointer,
+                    *bytes,
+                    path.facts,
+                    path.obligations,
+                    assumptions,
+                )
+                .into_iter()
+                .map(|path| retain_pointer_arithmetic_path(path, Op::Add, 1, &operands)),
+            );
+        }
+        budget.check_path_width(paths.len())?;
+        return Ok(paths);
+    }
     let narrow = if let ProgramExpression::Cast {
         expression,
         target_type,
@@ -140,7 +177,6 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
                             | ProgramExpression::AddressOf(_)
                             | ProgramExpression::CheckedObjectAddress(_)
                             | ProgramExpression::Subobject { .. }
-                            | ProgramExpression::PointerOffsetBytes { .. }
                             | ProgramExpression::Cast { .. }
                     ) {
                         path.map_value(ExecutionValue::retain_formed_pointer)
@@ -289,6 +325,28 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
                 });
                 continue;
             }
+            // Preserve the exact produced operands before native formation
+            // checking reads them. The result keeps that syntax independently
+            // of its native address normalization and compatibility cache.
+            let pointer_arithmetic = if matches!(op, Op::Add | Op::Subtract) {
+                let width = match (left_value.pointer(), right_value.pointer()) {
+                    (Some(pointer), None) => {
+                        super::operators::pointer_value_step_width(pointer, left_step_width)
+                    }
+                    (None, Some(pointer)) if op == Op::Add => {
+                        super::operators::pointer_value_step_width(pointer, right_step_width)
+                    }
+                    _ => None,
+                };
+                width.map(|width| {
+                    (
+                        width,
+                        [left_value.common_operand(), right_value.common_operand()],
+                    )
+                })
+            } else {
+                None
+            };
             // Full ProgramValue payloads cross this boundary, including pointer
             // provenance and qualifications. No numeric projection is used.
             let left_value = left_value.clone().into_native();
@@ -338,11 +396,34 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
                 ),
                 _ => unreachable!(),
             };
-            paths.extend(native.into_iter().map(ExecutionValuePath::from));
+            paths.extend(native.into_iter().map(|path| match &pointer_arithmetic {
+                Some((width, operands)) => {
+                    retain_pointer_arithmetic_path(path, op, *width, operands)
+                }
+                None => path.into(),
+            }));
         }
     }
     budget.check_path_width(paths.len())?;
     Ok(paths)
+}
+
+fn retain_pointer_arithmetic_path(
+    path: ExpressionPath,
+    operation: Op,
+    byte_width: u32,
+    operands: &[KernelTerm; 2],
+) -> ExecutionValuePath {
+    path.map_value(|value| match value {
+        ProgramValue::Pointer(pointer) => KernelTerm::shared_pointer_arithmetic(
+            operation,
+            byte_width,
+            operands.clone(),
+            SharedPointerValue::import_produced(&pointer),
+        )
+        .into(),
+        value => ExecutionValue::retain_native(value),
+    })
 }
 
 fn retained_comparison(
@@ -490,6 +571,97 @@ fn retained_binary(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn retained_pointer_arithmetic_preserves_operands_metadata_and_refusals() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = ProgramExpression::Value(ProgramValue::Pointer(
+            PointerValue::new(
+                Pointer::symbolic(Variable(1023000)),
+                ProgramType::Int32Pointer,
+            )
+            .with_pointee_constant(true)
+            .with_pointee_volatile(true),
+        ));
+        let index = ProgramExpression::Add(
+            Box::new(ProgramExpression::Value(ProgramValue::Int32(
+                MachineTerm::Variable(Variable(1023001)),
+            ))),
+            Box::new(ProgramExpression::Value(ProgramValue::Int32(
+                MachineTerm::constant(2),
+            ))),
+        );
+        let index_paths = evaluate(&index);
+        let ExpressionOutcome::Value(index_value) = &index_paths[0].outcome else {
+            panic!("index value");
+        };
+        let index_root = index_value.shared().unwrap();
+        let wide = ProgramExpression::Value(ProgramValue::UInt64(MachineTerm::Variable(Variable(
+            1023002,
+        ))));
+        let expressions = vec![
+            ProgramExpression::Add(Box::new(pointer.clone()), Box::new(index.clone())),
+            ProgramExpression::Add(Box::new(index), Box::new(pointer.clone())),
+            ProgramExpression::Subtract(Box::new(pointer.clone()), Box::new(wide.clone())),
+            ProgramExpression::Add(Box::new(pointer.clone()), Box::new(wide)),
+            ProgramExpression::PointerOffsetBytes {
+                pointer: Box::new(pointer),
+                bytes: 8,
+            },
+            ProgramExpression::Add(
+                Box::new(ProgramExpression::Value(ProgramValue::typed_pointer(
+                    Pointer::null(),
+                    ProgramType::Int32Pointer,
+                ))),
+                Box::new(ProgramExpression::Value(ProgramValue::Int32(
+                    MachineTerm::constant(1),
+                ))),
+            ),
+            ProgramExpression::Add(
+                Box::new(ProgramExpression::FunctionAddress("f".into())),
+                Box::new(ProgramExpression::Value(ProgramValue::Int32(
+                    MachineTerm::constant(1),
+                ))),
+            ),
+        ];
+        let state = ExecutionState::new();
+        let assumptions = PureFactContext::new();
+        for (position, expression) in expressions.into_iter().enumerate() {
+            let expected = super::super::expression::evaluate_native_expression_paths(
+                &state,
+                &expression,
+                &assumptions,
+                &mut ExecutionBudget::new(),
+            )
+            .unwrap();
+            let actual = evaluate(&expression);
+            assert_eq!(actual.len(), expected.len());
+            for (actual, expected) in actual.into_iter().zip(expected) {
+                if let ExpressionOutcome::Value(ProgramValue::Pointer(pointer)) = &expected.outcome
+                {
+                    let ExpressionOutcome::Value(value) = &actual.outcome else {
+                        panic!("pointer result");
+                    };
+                    let root = value.shared().expect("retained arithmetic");
+                    let KernelTermNode::PointerArithmetic {
+                        byte_width,
+                        operands,
+                        value,
+                        ..
+                    } = root.node()
+                    else {
+                        panic!("arithmetic root");
+                    };
+                    assert_eq!(*byte_width, if position == 4 { 1 } else { 4 });
+                    assert!(value.same_source_payload(&SharedPointerValue::import(pointer)));
+                    if position < 2 {
+                        assert_eq!(&operands[1 - position], index_root);
+                    }
+                }
+                assert_eq!(actual.into_native(), expected, "{expression:?}");
+            }
+        }
+    }
+
     #[test]
     fn formed_pointer_roots_match_native_values_qualifiers_and_obligations() {
         let _session = crate::kernel::VerificationSession::enter();

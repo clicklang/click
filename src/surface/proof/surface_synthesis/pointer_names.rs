@@ -94,6 +94,27 @@ mod tests {
                     ),
                     Some(expression.clone()),
                 );
+                let arithmetic_root = crate::kernel::KernelTerm::shared_pointer_arithmetic(
+                    crate::kernel::MachineBinaryOp::Add,
+                    1,
+                    [
+                        formed_root,
+                        crate::kernel::KernelTerm::retained_native_machine_operand(
+                            crate::kernel::MachineIntegerType::UInt64,
+                            &crate::kernel::MachineTerm::uint64_constant(0),
+                        ),
+                    ],
+                    retained.clone(),
+                );
+                assert_eq!(
+                    raise_kernel_term(
+                        &arithmetic_root,
+                        ParameterBinding::default(),
+                        &state,
+                        &BTreeMap::new()
+                    ),
+                    Some(expression.clone()),
+                );
                 if let Some(root) = read_root {
                     assert_eq!(
                         raise_kernel_term(
