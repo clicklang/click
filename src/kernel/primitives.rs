@@ -14818,6 +14818,8 @@ pub struct FunctionContractExecution {
 /// and retain their separate validation route.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedFunctionExecution {
+    /// Obligations retired directly by ordinary proof operations for this strategy.
+    pub(super) contract_completion: Option<Arc<super::ContractProofProgress>>,
     /// Issued by the opened entry's execution producer, never by an
     /// independent conditional execution or a caller-supplied premise list.
     pub(super) entry_authority: Option<super::proof::ContractEntryAuthority>,

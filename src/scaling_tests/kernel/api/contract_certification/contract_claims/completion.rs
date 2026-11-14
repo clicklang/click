@@ -57,3 +57,36 @@ fn whole_contract_retirement_is_indexed_and_preserves_candidate_forks() {
         }
     }
 }
+
+#[test]
+fn ordinary_completion_visits_selected_goals_without_scanning_siblings() {
+    for paths in [16_usize, 64, 256, 512] {
+        for unrelated_claims in [0, 256] {
+            let (owner, mut progress, goals) = fixture_with_claims(1, paths, unrelated_claims + 1);
+            let original = progress.clone();
+            let (((), work), indexed_work) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    for goal in goals {
+                        finish(&mut progress, goal).unwrap();
+                    }
+                })
+            });
+            assert_eq!(
+                progress.closed.len(),
+                2,
+                "only the selected claim and boundary closed"
+            );
+            assert_eq!(progress.remaining.len(), unrelated_claims);
+            assert!(original.closed.is_empty());
+            assert_eq!(owner.open.len(), unrelated_claims + 2);
+            assert!(
+                work <= 40 * paths,
+                "{paths} paths, {unrelated_claims} other claims: {work} work"
+            );
+            assert!(
+                indexed_work <= 128 * paths * ((paths + unrelated_claims + 1).ilog2() as usize + 1),
+                "{paths} paths, {unrelated_claims} other claims: {indexed_work} index visits"
+            );
+        }
+    }
+}

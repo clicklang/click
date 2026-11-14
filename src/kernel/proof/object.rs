@@ -587,6 +587,30 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         Ok(&outcome.data.core.identity)
     }
 
+    /// Bind an execution strategy's whole-contract progress to the exact
+    /// generative outcomes this ordinary proof owner just opened.
+    pub(crate) fn start_contract_completion(
+        &self,
+        owner: &crate::kernel::WholeContractProof,
+        execution: &crate::kernel::CheckedFunctionExecution,
+        branches: impl Iterator<Item = BranchId>,
+    ) -> Option<crate::kernel::ContractProofProgress> {
+        crate::kernel::ContractProofProgress::open(
+            owner,
+            execution,
+            branches.filter_map(|id| {
+                crate::instrumentation::record_deterministic_work(1);
+                let branch = self.state.open_branches.get(id)?;
+                match &branch.obligation {
+                    ProofObligation::FunctionOutcome(outcome) => {
+                        Some((outcome.path_index, outcome.data.core.identity.clone()))
+                    }
+                    _ => None,
+                }
+            }),
+        )
+    }
+
     /// Retire the outcome branch only after every source and closing goal is closed.
     #[cfg(test)]
     pub(crate) fn complete_function_outcome(&self) -> Result<Self, String> {
@@ -597,15 +621,51 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
     /// Return this case's completion to its owner without importing the case's
     /// local names, facts or presentation into its siblings. The only read is
     /// the selected branch and its generative outcome identity.
+    #[cfg(test)]
     pub(crate) fn complete_function_outcome_in(&self, owner: &Self) -> Result<Self, String> {
-        let identity = self.completed_outcome_identity()?;
-        self.close_owned_outcome(owner, identity)
+        self.complete_function_outcome_with_contract_in(owner, None)
     }
 
+    pub(crate) fn complete_function_outcome_with_contract_in(
+        &self,
+        owner: &Self,
+        progress: Option<&mut crate::kernel::ContractProofProgress>,
+    ) -> Result<Self, String> {
+        let identity = self.completed_outcome_identity()?;
+        let next = self.close_owned_outcome(owner, identity)?;
+        if let Some(progress) = progress {
+            let branch = self
+                .state
+                .open_branches
+                .get(self.focused_branch)
+                .expect("completed outcome is open");
+            let ProofObligation::FunctionOutcome(outcome) = &branch.obligation else {
+                unreachable!()
+            };
+            *progress = progress.finish_outcome(
+                outcome.path_index,
+                identity,
+                outcome.claims.as_ref(),
+                outcome.closing.as_ref(),
+            )?;
+        }
+        Ok(next)
+    }
+
+    #[cfg(test)]
     pub(crate) fn refute_function_outcome_in(
         &self,
         owner: &Self,
         fact: &Proposition,
+    ) -> Result<Self, String> {
+        self.refute_function_outcome_with_contract_in(owner, fact, None)
+    }
+
+    pub(crate) fn refute_function_outcome_with_contract_in(
+        &self,
+        owner: &Self,
+        fact: &Proposition,
+        progress: Option<&mut crate::kernel::ContractProofProgress>,
     ) -> Result<Self, String> {
         let branch = self
             .state
@@ -618,7 +678,16 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         if !branch.state.facts.contradicts(fact) {
             return Err("the retained case contradiction was not available".into());
         }
-        self.close_owned_outcome(owner, &outcome.data.core.identity)
+        let next = self.close_owned_outcome(owner, &outcome.data.core.identity)?;
+        if let Some(progress) = progress {
+            *progress = progress.finish_outcome(
+                outcome.path_index,
+                &outcome.data.core.identity,
+                None,
+                None,
+            )?;
+        }
+        Ok(next)
     }
 
     fn close_owned_outcome(

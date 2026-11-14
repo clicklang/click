@@ -399,12 +399,7 @@ pub(super) fn verify_execution_theorem(
         .clone()
         .ok_or_else(|| error("the one-call proof did not open a whole-contract owner"))?;
     let admitted = owner.admit_executions(&artifacts);
-    let propositions = verified
-        .iter()
-        .filter_map(|v| v.checked_proposition.clone())
-        .collect::<Vec<_>>();
     let completed = admitted
-        .consume_completions(&propositions)
         .complete()
         .map_err(|goal| error(&format!("the one-call proof still owes {goal:?}")))?;
     let rule = completed

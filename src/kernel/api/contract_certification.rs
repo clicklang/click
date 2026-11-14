@@ -3885,7 +3885,7 @@ mod entry_authority_tests {
     use super::*;
     use crate::kernel::proof::OpenedContractEntry;
 
-    fn checked_execution(
+    pub(super) fn checked_execution(
         unrelated: usize,
         extra_premise: Option<Proposition>,
     ) -> Result<(Arc<PreparedContractEntryCases>, CheckedFunctionExecution), &'static str> {

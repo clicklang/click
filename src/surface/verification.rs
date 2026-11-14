@@ -3138,14 +3138,7 @@ fn verify_program_in_context(
                     }
                 }
             }
-            let checked_propositions = function_verified
-                .iter()
-                .filter_map(|verified| verified.checked_proposition.clone())
-                .collect::<Vec<_>>();
-            let completed_contract = {
-                let _completion_timing = VerificationTimingPhase::new("contract completion");
-                admitted_contract.consume_completions(&checked_propositions)
-            };
+            let completed_contract = admitted_contract;
             if instrumentation::enabled() {
                 instrumentation::emit(VerificationEvent::ContractClaimsFinished {
                     function: function_block.signature.name().to_string(),
@@ -3167,6 +3160,10 @@ fn verify_program_in_context(
                             )
                         ),
                     };
+                    let checked_propositions = function_verified
+                        .iter()
+                        .filter_map(|verified| verified.checked_proposition.clone())
+                        .collect::<Vec<_>>();
                     let diagnostic_result = program_unverified_function_contract_claims_diagnostic(
                         &contract_function,
                         &contract_execution,

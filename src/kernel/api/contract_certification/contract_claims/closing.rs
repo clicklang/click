@@ -17,6 +17,7 @@ pub(crate) struct ContractClosingContext {
     resource_claims: Vec<FunctionContractClaim>,
     resource_keys: Arc<BTreeSet<FunctionContractClaimKey>>,
     complete_boundary: bool,
+    completion_keys: Arc<[FunctionContractClaimKey]>,
     effect_claims: Vec<FunctionContractClaim>,
     retained_entry: Option<Arc<PreparedContractEntryCases>>,
     entry: OnceLock<Result<RetainedClosingFootprint, String>>,
@@ -35,40 +36,42 @@ impl ContractClosingContext {
         resource_prefix: usize,
     ) -> Arc<Self> {
         crate::instrumentation::record_deterministic_work(execution.arguments.len() + 1);
-        let resource_claims = execution
-            .function
-            .contract_claims()
-            .iter()
-            .inspect(|_| {
-                crate::instrumentation::record_deterministic_work(1);
-            })
-            .filter(|claim| {
-                matches!(claim.target(), FunctionContractClaimTarget::EnsureResource(index) if *index < resource_prefix)
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        let resource_keys = Arc::new(
-            resource_claims
-                .iter()
-                .map(|claim| claim.key().clone())
-                .collect(),
-        );
+        let complete_boundary = resource_prefix >= execution.function.resource_ensures().len();
+        let mut resource_claims = Vec::new();
+        let mut resource_keys = BTreeSet::new();
+        let mut effect_claims = Vec::new();
+        let mut completion_keys = Vec::new();
+        // Build the selected closing obligations and their completion outputs
+        // together from the explicit contract declaration.
+        for claim in execution.function.contract_claims() {
+            crate::instrumentation::record_deterministic_work(1);
+            match claim.target() {
+                FunctionContractClaimTarget::EnsureResource(index) if *index < resource_prefix => {
+                    resource_claims.push(claim.clone());
+                    resource_keys.insert(claim.key().clone());
+                    completion_keys.push(claim.key().clone());
+                }
+                FunctionContractClaimTarget::Effect => {
+                    effect_claims.push(claim.clone());
+                    completion_keys.push(claim.key().clone());
+                }
+                FunctionContractClaimTarget::BodySafety if complete_boundary => {
+                    completion_keys.push(claim.key().clone());
+                }
+                _ => {}
+            }
+        }
         Arc::new(Self {
+            completion_keys: completion_keys.into(),
             function: execution.function.clone(),
             caller: execution.allocation_entry_state().clone(),
             arguments: execution.function_arguments().to_vec(),
             entry_assumptions: execution.assumptions.clone(),
             checked_entry: execution.boundary_transfer.clone(),
-            effect_claims: execution
-                .function
-                .contract_claims()
-                .iter()
-                .filter(|claim| matches!(claim.target(), FunctionContractClaimTarget::Effect))
-                .cloned()
-                .collect(),
+            effect_claims,
             resource_claims,
-            resource_keys,
-            complete_boundary: resource_prefix >= execution.function.resource_ensures().len(),
+            resource_keys: Arc::new(resource_keys),
+            complete_boundary,
             retained_entry: execution
                 .entry_authority
                 .as_ref()
@@ -231,6 +234,16 @@ pub(crate) enum ContractClosingRefusal {
 }
 
 impl ContractExitObligations {
+    pub(in crate::kernel) fn completed_claim_keys(
+        &self,
+    ) -> impl Iterator<Item = &FunctionContractClaimKey> {
+        self.context.completion_keys.iter()
+    }
+
+    pub(in crate::kernel) fn completes_whole_boundary(&self) -> bool {
+        self.context.complete_boundary
+    }
+
     #[cfg(test)]
     pub(in crate::kernel) fn fixture_close_goal(&self, kind: ContractClosingGoal) -> Self {
         Self {
