@@ -9038,7 +9038,8 @@ fn evaluate_spec_range_fold_paths_in(
         assumptions,
         budget,
     )? {
-        let CValue::Int32(start) = start_path.value.into_native() else {
+        let start = start_path.value;
+        if start.c_type() != CType::Int32 {
             continue;
         };
         let start_assumptions =
@@ -9049,7 +9050,8 @@ fn evaluate_spec_range_fold_paths_in(
             &start_assumptions,
             budget,
         )? {
-            let CValue::Int32(end) = end_path.value.into_native() else {
+            let end = end_path.value;
+            if end.c_type() != CType::Int32 {
                 continue;
             };
             let Some((bound_facts, bound_obligations)) =
@@ -9086,7 +9088,7 @@ fn evaluate_spec_range_fold_paths_in(
                     scope,
                     start.clone(),
                     end.clone(),
-                    initial_path.value.into_native(),
+                    initial_path.value,
                     accumulator,
                     item,
                     body,
@@ -9107,9 +9109,9 @@ fn evaluate_spec_range_fold_paths_in(
 
 fn evaluate_spec_range_fold_body_path_in(
     scope: SpecScope<'_>,
-    start: MachineTerm,
-    end: MachineTerm,
-    initial: CValue,
+    start: SpecValue,
+    end: SpecValue,
+    initial: SpecValue,
     accumulator: &str,
     item: &str,
     body: &SpecExpression,
@@ -9119,7 +9121,8 @@ fn evaluate_spec_range_fold_body_path_in(
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Option<SpecExpressionPath>> {
     let state = scope.state;
-    match (start.as_const(), end.as_const()) {
+    let constant = |value: &SpecValue| value.machine()?.1.literal()?.as_const();
+    match (constant(&start), constant(&end)) {
         (Some(start), Some(end)) => {
             let mut value = initial;
             let mut facts = facts;
@@ -9127,7 +9130,16 @@ fn evaluate_spec_range_fold_body_path_in(
             for index in concrete_spec_fold_range(start as i32, end as i32) {
                 let mut body_state = state.clone();
                 let body_values = scope.without_values([accumulator, item]);
-                body_state.locals.set(accumulator.to_string(), value);
+                let ty = value.c_type();
+                body_state.locals.set_retained_typed_with_all_qualifiers(
+                    accumulator.to_string(),
+                    value,
+                    ty,
+                    false,
+                    false,
+                    false,
+                    false,
+                );
                 body_state.locals.set(item.to_string(), int32(index as u32));
                 let body_assumptions =
                     assumptions_with_path_context(assumptions, &facts, &obligations);
@@ -9159,12 +9171,12 @@ fn evaluate_spec_range_fold_body_path_in(
                 else {
                     return Ok(None);
                 };
-                value = body_path.value.into_native();
+                value = body_path.value;
                 facts = next_facts;
                 obligations = next_obligations;
             }
             Ok(Some(SpecExpressionPath {
-                value: value.into(),
+                value,
                 facts,
                 obligations,
             }))
@@ -9215,12 +9227,12 @@ fn evaluate_spec_range_fold_body_path_in(
                 initial,
                 accumulator,
                 item,
-                body_path.value.into_native(),
+                body_path.value,
             ) else {
                 return Ok(None);
             };
             Ok(Some(SpecExpressionPath {
-                value: value.into(),
+                value,
                 facts,
                 obligations,
             }))
@@ -9254,27 +9266,35 @@ pub(super) fn spec_fold_bound_variable(name: &str, salt: u64) -> Variable {
 }
 
 pub(super) fn symbolic_spec_range_fold_value(
-    start: MachineTerm,
-    end: MachineTerm,
-    initial: CValue,
+    start: SpecValue,
+    end: SpecValue,
+    initial: SpecValue,
     accumulator: &str,
     item: &str,
-    body_value: CValue,
-) -> Option<CValue> {
-    let CValue::Int32(initial) = initial else {
-        return None;
+    body_value: SpecValue,
+) -> Option<SpecValue> {
+    let read = |value: &SpecValue| {
+        let (format, operand) = value.machine()?;
+        (format == MachineIntegerType::Int32)
+            .then(|| KernelTerm::retained_machine_operand(format, operand))
     };
-    let CValue::Int32(body) = body_value else {
-        return None;
-    };
-    Some(CValue::Int32(MachineTerm::range_fold(
-        start,
-        end,
-        initial,
-        spec_fold_bound_variable(accumulator, 0),
-        spec_fold_bound_variable(item, 1),
-        body,
-    )))
+    let start = read(&start)?;
+    let end = read(&end)?;
+    let initial = read(&initial)?;
+    let body = read(&body_value)?;
+    if crate::kernel::shared_machine_syntax_equal(&start, &end) {
+        return Some(SpecValue::Shared(initial));
+    }
+    Some(SpecValue::Shared(
+        KernelFold::new(
+            KernelFoldIndex::Int32,
+            spec_fold_bound_variable(accumulator, 0),
+            spec_fold_bound_variable(item, 1),
+            [start, end, initial, body],
+        )
+        .expect("int32 fold producer")
+        .into_term(),
+    ))
 }
 
 /// Turn a compound scalar guard into one existing condition without changing

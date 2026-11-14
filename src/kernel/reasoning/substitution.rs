@@ -1442,10 +1442,16 @@ fn walk_pure_function_argument<S: VariableSubstitution + ?Sized>(
             PureFunctionArgument::Integer(s.integer(value.as_ref()).into())
         }
         PureFunctionArgument::SharedMachine(value) => PureFunctionArgument::SharedMachine(
-            crate::kernel::memory_provenance::map_shared_pointer_index(
+            crate::kernel::memory_provenance::map_shared_pointer_index_with_fold(
                 value,
                 |leaf| Some(s.bitvector(leaf)),
                 crate::kernel::proof::equality_rewrite::rebuild_normalized_machine_node,
+                |_| true,
+                |root| {
+                    let result = s.expression_value(&ExecutionValue::Shared(root.clone()));
+                    let (format, view) = result.machine().ok_or(())?;
+                    Ok(Some(KernelTerm::retained_machine_operand(format, view)))
+                },
             )
             .unwrap_or_else(|| value.clone()),
         ),
@@ -2520,8 +2526,8 @@ fn collect_expression_value_bound_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     if let Some((_, view @ MachineOperandView::Shared(_))) = value.machine() {
-        visit_machine_operand_native_leaves(view, |leaf| {
-            collect_bitvector_bound_variables(leaf, variables)
+        visit_machine_operand_scoped_leaves(view, |leaf| {
+            collect_scoped_leaf_bound_variables(leaf, variables)
         });
     } else {
         collect_c_value_bound_variables(&value.native(), variables);
@@ -3202,6 +3208,28 @@ fn collect_resource_bound_variables(resource: &CResource, variables: &mut BTreeS
 /// `collect_bitvector_variables` intentionally removes those identities from
 /// its result because they are not free; freshness construction needs the
 /// bound identities as well so a logical or fold binder cannot reuse one.
+fn collect_scoped_leaf_bound_variables(
+    leaf: MachineOperandView<'_>,
+    variables: &mut BTreeSet<Variable>,
+) {
+    if let MachineOperandView::Shared(root) = leaf
+        && let KernelTermNode::Fold(fold) = root.node()
+    {
+        variables.insert(fold.accumulator);
+        variables.insert(fold.item);
+        for child in &fold.arguments {
+            visit_machine_operand_scoped_leaves(MachineOperandView::Shared(child), |leaf| {
+                collect_scoped_leaf_bound_variables(leaf, variables)
+            });
+        }
+    } else {
+        collect_bitvector_bound_variables(
+            &leaf.read_source().expect("native scoped leaf"),
+            variables,
+        );
+    }
+}
+
 fn collect_bitvector_bound_variables(term: &MachineTerm, variables: &mut BTreeSet<Variable>) {
     match term {
         bits32_constant!(_) | MachineTerm::Variable(_) => {}
@@ -3248,8 +3276,8 @@ fn collect_bitvector_bound_variables(term: &MachineTerm, variables: &mut BTreeSe
             for argument in arguments {
                 match argument {
                     PureFunctionArgument::SharedMachine(value) => {
-                        visit_machine_operand_native_leaves(value.operand_view(), |leaf| {
-                            collect_bitvector_bound_variables(leaf, variables);
+                        visit_machine_operand_scoped_leaves(value.operand_view(), |leaf| {
+                            collect_scoped_leaf_bound_variables(leaf, variables);
                         });
                     }
                     PureFunctionArgument::Value(value) => {
@@ -3345,8 +3373,8 @@ fn collect_algebraic_bound_variables(term: &AlgebraicTerm, variables: &mut BTree
             for argument in arguments {
                 match argument {
                     PureFunctionArgument::SharedMachine(value) => {
-                        visit_machine_operand_native_leaves(value.operand_view(), |leaf| {
-                            collect_bitvector_bound_variables(leaf, variables);
+                        visit_machine_operand_scoped_leaves(value.operand_view(), |leaf| {
+                            collect_scoped_leaf_bound_variables(leaf, variables);
                         });
                     }
                     PureFunctionArgument::Value(value) => {
@@ -3390,13 +3418,13 @@ fn collect_condition_bound_variables(
 
         ConditionTerm::AlgebraicEqual(left, right) => {
             left.for_each_machine_operand(|view| {
-                visit_machine_operand_native_leaves(view, |term| {
-                    collect_bitvector_bound_variables(term, variables)
+                visit_machine_operand_scoped_leaves(view, |term| {
+                    collect_scoped_leaf_bound_variables(term, variables)
                 })
             });
             right.for_each_machine_operand(|view| {
-                visit_machine_operand_native_leaves(view, |term| {
-                    collect_bitvector_bound_variables(term, variables)
+                visit_machine_operand_scoped_leaves(view, |term| {
+                    collect_scoped_leaf_bound_variables(term, variables)
                 })
             });
         }
@@ -3425,8 +3453,8 @@ fn collect_condition_bound_variables(
             for argument in application.arguments() {
                 match argument {
                     PureFunctionArgument::SharedMachine(value) => {
-                        visit_machine_operand_native_leaves(value.operand_view(), |leaf| {
-                            collect_bitvector_bound_variables(leaf, variables);
+                        visit_machine_operand_scoped_leaves(value.operand_view(), |leaf| {
+                            collect_scoped_leaf_bound_variables(leaf, variables);
                         });
                     }
                     PureFunctionArgument::Value(value) => {
@@ -3470,8 +3498,8 @@ fn collect_pointer_offset_bound_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     offset.for_each_scaled_operand(|value| {
-        visit_machine_operand_native_leaves(value.operand_view(), |leaf| {
-            collect_bitvector_bound_variables(leaf, variables)
+        visit_machine_operand_scoped_leaves(value.operand_view(), |leaf| {
+            collect_scoped_leaf_bound_variables(leaf, variables)
         })
     });
 }
@@ -5566,10 +5594,20 @@ fn substitute_bitvector_variable_in_pointer_offset_cow<'a>(
             }
         }
         PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-            let rewritten = crate::kernel::memory_provenance::map_shared_pointer_index(
+            let rewritten = crate::kernel::memory_provenance::map_shared_pointer_index_with_fold(
                 value,
                 |leaf| Some(substitute_bitvector_variable(leaf, from, to)),
                 crate::kernel::proof::equality_rewrite::rebuild_normalized_machine_node,
+                |_| true,
+                |root| {
+                    let source = MachineTerm::Variable(from);
+                    let mut rewrite =
+                        crate::kernel::proof::term_rewrite::TermRewrite::for_bits(&source, to);
+                    rewrite.enable_registered_load_resolution();
+                    let result = rewrite.shared_machine_operand(root);
+                    let refusal = rewrite.refusal();
+                    result.filter(|_| refusal.is_none()).map(Some).ok_or(())
+                },
             )
             .unwrap_or_else(|| value.clone());
             let unchanged =
@@ -5591,10 +5629,20 @@ fn substitute_bitvector_variable_in_pointer_offset_cow<'a>(
             byte_width,
             unsigned,
         } => {
-            let rewritten = crate::kernel::memory_provenance::map_shared_pointer_index(
+            let rewritten = crate::kernel::memory_provenance::map_shared_pointer_index_with_fold(
                 value,
                 |leaf| Some(substitute_bitvector_variable(leaf, from, to)),
                 crate::kernel::proof::equality_rewrite::rebuild_normalized_machine_node,
+                |_| true,
+                |root| {
+                    let source = MachineTerm::Variable(from);
+                    let mut rewrite =
+                        crate::kernel::proof::term_rewrite::TermRewrite::for_bits(&source, to);
+                    rewrite.enable_registered_load_resolution();
+                    let result = rewrite.shared_machine_operand(root);
+                    let refusal = rewrite.refusal();
+                    result.filter(|_| refusal.is_none()).map(Some).ok_or(())
+                },
             )
             .unwrap_or_else(|| value.clone());
             let unchanged =

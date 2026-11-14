@@ -112,6 +112,15 @@ fn shared_operand_leaf_pairs_with_policy(
                 continue;
             }
             let (a, b) = (V(left), V(right));
+            if a.fold().is_some() || b.fold().is_some() {
+                pairs.insert(
+                    key,
+                    machine_operand_syntax_cmp(a, b)
+                        .is_eq()
+                        .then(Pairs::default),
+                );
+                continue;
+            }
             if (a.variable().is_some() || a.read().is_some())
                 && (b.variable().is_some() || b.read().is_some())
             {
@@ -274,7 +283,22 @@ pub(crate) fn machine_operand_syntax_cmp(
     use std::cmp::Ordering;
     fn header(view: V<'_>) -> MachineTerm {
         let zero = || Box::new(MachineTerm::constant(0));
-        if let Some((format, op, _)) = view.binary() {
+        if view.conditional().is_some() {
+            MachineTerm::If {
+                condition: Box::new(ConditionTerm::Constant(false)),
+                then_term: zero(),
+                else_term: zero(),
+            }
+        } else if view.fold().is_some() {
+            MachineTerm::RangeFold {
+                start: zero(),
+                end: zero(),
+                initial: zero(),
+                accumulator: Variable(0),
+                item: Variable(0),
+                body: zero(),
+            }
+        } else if let Some((format, op, _)) = view.binary() {
             MachineTerm::Binary {
                 format,
                 op,
@@ -326,6 +350,24 @@ pub(crate) fn machine_operand_syntax_cmp(
             if a == b || !seen.insert((a.id(), b.id())) {
                 continue;
             }
+        }
+        if let (Some((ag, [at, ae])), Some((bg, [bt, be]))) = (a.conditional(), b.conditional()) {
+            let order = ag.cmp(&bg);
+            if !order.is_eq() {
+                return order;
+            }
+            pending.push(Task::Pair(ae, be));
+            pending.push(Task::Pair(at, bt));
+            continue;
+        }
+        if let (Some((aa, ai, ac)), Some((ba, bi, bc))) = (a.fold(), b.fold()) {
+            // Native field order: bounds, initial, binder identities, body.
+            pending.push(Task::Pair(ac[3], bc[3]));
+            pending.push(Task::Order(aa.cmp(&ba).then(ai.cmp(&bi))));
+            for i in (0..3).rev() {
+                pending.push(Task::Pair(ac[i], bc[i]));
+            }
+            continue;
         }
         if let (Some((ae, af, at, av)), Some((be, bf, bt, bv))) = (a.cast(), b.cast()) {
             let order = ae.cmp(&be);

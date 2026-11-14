@@ -33,7 +33,12 @@ pub(super) fn collect_fold_memory_loads(
         if !seen.insert((term.id(), width)) {
             continue;
         }
-        if let KernelType::C(ty) = term.ty()
+        // Keep nested machine folds in this query's worklist. Delegating each
+        // arithmetic parent separately would revisit a fold shared by the
+        // initial value and body, recursively doubling the same dependency work.
+        if !term.has_machine_folds()
+            && !matches!(term.node(), KernelTermNode::Fold(_))
+            && let KernelType::C(ty) = term.ty()
             && let Some(format) = MachineIntegerType::from_c_type(*ty)
             && let Some(value) = SharedMachineIntegerTerm::from_shared(format, term.clone())
         {
@@ -49,6 +54,10 @@ pub(super) fn collect_fold_memory_loads(
         match term.node() {
             KernelTermNode::Fold(fold) => {
                 let endpoint_width = match fold.index.ty() {
+                    KernelType::C(ty) => Some(ty.byte_width()),
+                    _ => width,
+                };
+                let width = match fold.result_type() {
                     KernelType::C(ty) => Some(ty.byte_width()),
                     _ => width,
                 };
@@ -119,6 +128,19 @@ pub(super) fn collect_fold_memory_loads(
                 operand,
             } => {
                 pending.push((operand, Some(destination.format().byte_width())));
+            }
+            KernelTermNode::MachineBinary {
+                format, arguments, ..
+            } => {
+                let width = if matches!(
+                    format,
+                    MachineIntegerType::Int32 | MachineIntegerType::UInt32
+                ) {
+                    width
+                } else {
+                    Some(8)
+                };
+                pending.extend(arguments.iter().rev().map(|child| (child, width)));
             }
             KernelTermNode::MachineCast {
                 encoding: MachineCastSpelling::Generic,

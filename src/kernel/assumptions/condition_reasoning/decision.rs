@@ -2509,8 +2509,8 @@ impl PureFactContext {
         }
     }
 
-    /// Apply the native selected guard/arm reduction before comparing retained
-    /// conditional results. Other roots keep their existing dispatch and work.
+    /// Apply the existing guard/arm and fold reductions before comparing
+    /// retained results. Unscoped roots keep their existing dispatch and work.
     fn decide_shared_conditional_comparison(&self, condition: &ConditionTerm) -> Option<bool> {
         use crate::kernel::machine_integer::comparison::{
             condition_for_operand_views, structural_comparison_view,
@@ -2520,8 +2520,10 @@ impl PureFactContext {
             .operands
             .each_ref()
             .map(|operand| operand.operand_view());
+        let contains_fold = |operand: MachineOperandView<'_>| matches!(operand, MachineOperandView::Shared(root) if root.has_machine_folds());
         if !operands.iter().any(|operand| {
-            matches!(operand, MachineOperandView::Shared(_)) && operand.conditional().is_some()
+            (matches!(operand, MachineOperandView::Shared(_)) && operand.conditional().is_some())
+                || contains_fold(*operand)
         }) {
             return None;
         }
@@ -2537,7 +2539,11 @@ impl PureFactContext {
                 crate::instrumentation::record_deterministic_work(1);
                 operand = arms[if value { 0 } else { 1 }];
             }
-            operand.retain(view.format)
+            if contains_fold(operand) {
+                self.simplify_machine_operand_under_assumptions(operand, view.format)
+            } else {
+                operand.retain(view.format)
+            }
         });
         if reduced == original {
             return None;

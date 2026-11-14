@@ -69,3 +69,39 @@ fn nested_integer_fold_producers_keep_common_children_in_linear_work() {
         assert!(work < 250 * size, "size={size}, work={work}");
     }
 }
+
+#[test]
+fn nested_machine_fold_producers_retain_children_without_native_exports() {
+    use crate::kernel::ExecutionValue;
+    for size in [8, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let zero = ExecutionValue::Native(CValue::Int32(MachineTerm::constant(0)));
+        let end = ExecutionValue::Native(CValue::Int32(MachineTerm::Variable(Variable(981001))));
+        let before = KernelTermExport::machine_export_count();
+        let (value, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut value =
+                ExecutionValue::Native(CValue::Int32(MachineTerm::Variable(Variable(981002))));
+            for _ in 0..size {
+                value = crate::kernel::spec::symbolic_spec_range_fold_value(
+                    zero.clone(),
+                    end.clone(),
+                    zero.clone(),
+                    "acc",
+                    "item",
+                    value,
+                )
+                .unwrap();
+            }
+            value
+        });
+        let mut node = value.shared().expect("retained machine producer");
+        let mut folds = 0;
+        while let KernelTermNode::Fold(fold) = node.node() {
+            folds += 1;
+            node = &fold.arguments[3];
+        }
+        assert_eq!(folds, size);
+        assert_eq!(KernelTermExport::machine_export_count(), before);
+        assert!(work < 250 * size, "size={size}, work={work}");
+    }
+}
