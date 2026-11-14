@@ -63,9 +63,14 @@ fn closing_evidence_work_tracks_paths_instead_of_ambient_facts() {
             costs.push(work);
             // A completed context can refute a retained candidate even when
             // its entry assumptions are consistent. No closing goal is owed.
-            let impossible = assumptions.clone().assume_proposition(
-                Proposition::ConditionIs(ConditionTerm::Constant(false), true),
+            let condition = ConditionTerm::equal(
+                MachineTerm::Variable(Variable(973_000)),
+                MachineTerm::constant(0),
             );
+            let impossible = assumptions
+                .clone()
+                .assume_condition(condition.clone(), true)
+                .assume_condition(condition, false);
             for path in &mut execution.cases[0][0].paths {
                 path.post_assumptions = Some(impossible.clone());
             }
