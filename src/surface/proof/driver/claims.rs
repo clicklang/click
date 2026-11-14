@@ -615,7 +615,21 @@ fn prove_claims_by_checked_tactics(
         })
         .collect::<Vec<_>>();
     let pure_facts = PureFactList::from_proof_facts(opened_entry.facts());
+    let completion =
+        if function.opaque_contract_supported() && !function.contract_claims().is_empty() {
+            Some(
+                crate::kernel::WholeContractProof::open(opened_entry.prepared_cases().clone())
+                    .map_err(|reason| {
+                        ClickError::new(format!(
+                            "could not open contract proof for `{proof_label}`: {reason}"
+                        ))
+                    })?,
+            )
+        } else {
+            None
+        };
     let entry_context = Arc::new(ProofEntryContext {
+        completion,
         cases: opened_entry.prepared_cases().clone(),
         state: state.clone(),
         arguments: arguments.clone(),

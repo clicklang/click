@@ -3031,7 +3031,7 @@ fn verify_program_in_context(
                 FunctionContractExecutionMode::VerifyLoops
             };
             let certification_started = std::time::Instant::now();
-            let contract_execution = {
+            let admitted_contract = {
                 let _certification_timing = VerificationTimingPhase::new("certification");
                 let certification_function_environment = frontier_loop_artifacts.map_or_else(
                     || verification_function_environment.clone(),
@@ -3053,18 +3053,28 @@ fn verify_program_in_context(
                         // The entry state and arguments outlive the call: a
                         // refusal below names the unauthorized entry premise
                         // through them, in the names the user wrote.
-                        crate::kernel::prove_prepared_function_contract_execution_paths(
-                            &proof_entry.cases,
-                            contract_function.clone(),
-                            certification_function_environment,
-                            ExecutionSemantics::APPLY_VERIFIED_RULES,
-                            contract_execution_mode,
-                            &checked_artifacts,
-                            &certification_pure_theorems,
+                        Ok::<_, ClickError>(
+                            proof_entry
+                                .completion
+                                .clone()
+                                .ok_or_else(|| {
+                                    ClickError::new(
+                                        "the function proof did not open a whole-contract owner",
+                                    )
+                                })?
+                                .admit_executions(
+                                    contract_function.clone(),
+                                    certification_function_environment,
+                                    ExecutionSemantics::APPLY_VERIFIED_RULES,
+                                    contract_execution_mode,
+                                    &checked_artifacts,
+                                    &certification_pure_theorems,
+                                ),
                         )
                     },
-                )
+                )?
             };
+            let contract_execution = admitted_contract.execution().clone();
             if instrumentation::enabled() {
                 instrumentation::emit(VerificationEvent::ContractExecutionFinished {
                     function: function_block.signature.name().to_string(),
@@ -3148,13 +3158,9 @@ fn verify_program_in_context(
                 .iter()
                 .filter_map(|verified| verified.checked_proposition.clone())
                 .collect::<Vec<_>>();
-            let certified_claims = {
-                let _certification_timing = VerificationTimingPhase::new("certification");
-                program_function_contract_claims_from_completions(
-                    &contract_function,
-                    &contract_execution,
-                    &checked_propositions,
-                )
+            let completed_contract = {
+                let _completion_timing = VerificationTimingPhase::new("contract completion");
+                admitted_contract.consume_completions(&checked_propositions)
             };
             if instrumentation::enabled() {
                 instrumentation::emit(VerificationEvent::ContractClaimsFinished {
@@ -3162,94 +3168,69 @@ fn verify_program_in_context(
                     elapsed: claims_started.elapsed(),
                 });
             }
-            let Some(certified_claims) = certified_claims else {
-                let diagnostic_result = program_unverified_function_contract_claims_diagnostic(
-                    &contract_function,
-                    &contract_execution,
-                    &checked_propositions,
-                );
-                let detail = match &diagnostic_result {
-                    Ok(keys) if !keys.is_empty() => format!(
-                        "; unverified claims: {}",
-                        crate::surface::diagnostics::describe_unverified_contract_claims(
-                            &function_block,
-                            keys,
-                        )
-                    ),
-                    Ok(_) => String::new(),
-                    Err(failure) => format!("; {}", failure.reason),
-                };
-                let summary = format!(
-                    "could not certify contract for `{}`: exact symbolic execution did not establish every contract claim{}",
-                    function_block.signature.name(),
-                    detail,
-                );
-                if let Err(failure) = diagnostic_result
-                    && let Some(state) =
-                        proof_trace::CertificationTraceState::from_failure(&failure)
-                {
-                    let diagnostic = proof_diagnostics::ProofFailureDiagnostic {
-                        failing_path: None,
-                        checks: None,
-                        origin: proof_diagnostics::ProofDiagnosticOrigin {
-                            stage: "contract certification".to_string(),
-                            location: failure
-                                .reason
-                                .split_once(" is invalid:")
-                                .map_or("execution path".to_string(), |(path, _)| path.to_string()),
-                            source_tactic_path: None,
-                        },
-                        claim_label: function_block.contract_claim_label(),
-                        reason: summary.clone(),
-                        state: Some(Arc::new(state)),
-                    };
-                    return Err(ClickError::with_diagnostic(summary, diagnostic));
-                }
-                return Err(ClickError::new(summary));
-            };
-            let _ordered_claim_proofs = function_verified
-                .iter()
-                .map(|verified| {
-                    let key = if has_explicit_claims {
-                        match &verified.claim {
-                            VerifiedClaim::Ensure { index, .. } => {
-                                FunctionContractClaimKey::Ensure(*index)
-                            }
-                            VerifiedClaim::ExceptionalEnsure { index, .. } => {
-                                FunctionContractClaimKey::ExceptionalEnsure(*index)
-                            }
+            let completed_contract = match completed_contract.complete() {
+                Ok(completed) => completed,
+                Err(goal) => {
+                    let missing = match goal {
+                        crate::kernel::ContractCompletionGoal::Boundary { case } => {
+                            format!("closing obligations for entry case {case}")
                         }
-                    } else {
-                        FunctionContractClaimKey::BodySafety
+                        crate::kernel::ContractCompletionGoal::Claim { case, key } => format!(
+                            "{} in entry case {case}",
+                            crate::surface::diagnostics::describe_unverified_contract_claims(
+                                &function_block,
+                                &[key],
+                            )
+                        ),
                     };
-                    certified_claims
-                        .iter()
-                        .find(|proof| proof.key() == &key)
-                        .cloned()
-                        .ok_or_else(|| {
-                            ClickError::new(format!(
-                                "could not certify contract claim {}",
-                                crate::surface::diagnostics::describe_unverified_contract_claims(
-                                    &function_block,
-                                    std::slice::from_ref(&key),
-                                ),
-                            ))
-                        })
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            // Package every kernel-certified structural claim. Surface proof
-            // scripts mention ensures and explicit effects; a resource-backed
-            // mutable frame (for example `consumes p[1..2]`) is covered by
-            // the resource transition, while explicit mutable frames require
-            // an Effect claim.
-            if !contract_function.is_program_entry() {
-                let rule = program_verified_function_rule(contract_function, &certified_claims)
-                    .ok_or_else(|| {
-                        ClickError::new(format!(
-                            "could not package verified contract for `{}`",
-                            function_block.signature.name()
-                        ))
-                    })?;
+                    let diagnostic_result = program_unverified_function_contract_claims_diagnostic(
+                        &contract_function,
+                        &contract_execution,
+                        &checked_propositions,
+                    );
+                    let detail = match &diagnostic_result {
+                        Ok(keys) if !keys.is_empty() => format!(
+                            "; unverified claims: {}",
+                            crate::surface::diagnostics::describe_unverified_contract_claims(
+                                &function_block,
+                                keys,
+                            )
+                        ),
+                        Ok(_) => String::new(),
+                        Err(failure) => format!("; {}", failure.reason),
+                    };
+                    let summary = format!(
+                        "could not certify contract for `{}`: the whole-contract proof still owes {missing}{}",
+                        function_block.signature.name(),
+                        detail,
+                    );
+                    if let Err(failure) = diagnostic_result
+                        && let Some(state) =
+                            proof_trace::CertificationTraceState::from_failure(&failure)
+                    {
+                        let diagnostic = proof_diagnostics::ProofFailureDiagnostic {
+                            failing_path: None,
+                            checks: None,
+                            origin: proof_diagnostics::ProofDiagnosticOrigin {
+                                stage: "contract certification".to_string(),
+                                location: failure
+                                    .reason
+                                    .split_once(" is invalid:")
+                                    .map_or("execution path".to_string(), |(path, _)| {
+                                        path.to_string()
+                                    }),
+                                source_tactic_path: None,
+                            },
+                            claim_label: function_block.contract_claim_label(),
+                            reason: summary.clone(),
+                            state: Some(Arc::new(state)),
+                        };
+                        return Err(ClickError::with_diagnostic(summary, diagnostic));
+                    }
+                    return Err(ClickError::new(summary));
+                }
+            };
+            if let Some(rule) = completed_contract.into_rule() {
                 function_environment = function_environment.with_verified_function_rule(rule);
             }
         }
