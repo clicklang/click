@@ -190,11 +190,12 @@ defined in a `where` list after the report (see
 `goal:` shows the checked proposition after rewrites and `adds:` uses that same
 format for each admitted fact. The trace uses readable expressions only when
 they preserve checked identities; its typed memory operands include their read
-width, snapshot, and address, with shared labels and a construction legend.
+width, memory label (`snapshot#N`), and address, with shared labels and a
+construction legend.
 
 A failed `normalize() using { ... }` that checks a recorded 64-bit read prints
-`read-resolution check:` with the exact checked equality, selected producer
-snapshot, and the memory walk's stopping snapshot and reason. If it recovered a
+`read-resolution check:` with the exact checked equality, the selected
+producer's memory label, and the memory walk's stopping memory and reason. If it recovered a
 complete word, the report prints that word's comparison with the requested value
 and whether the current equality context established it. Otherwise it reports
 that no complete word was recovered and that comparison was not attempted.
@@ -208,9 +209,10 @@ fixed-state checks and loop-body execution; it does not replace the premise
 with an abbreviated dump of available facts and resources.
 
 A checked function-pointer load step prints the local it produces, the exact
-value label, and `at(snapshot, load_function_pointer(address))`. The address and
+value label, and `at(snapshot, load_function_pointer(address))`, where
+`snapshot` is the memory label of the read. The address and
 value share labels with subsequent facts and goals; the legend distinguishes
-concrete function addresses from symbolic function addresses. The read snapshot
+concrete function addresses from symbolic function addresses. The read's memory
 comes from the accepted statement evidence, including entry initialization and
 resource preparation, rather than from the later proof state.
 
@@ -224,26 +226,26 @@ load with no such input says `no checked read equalities admitted by this step`.
 This reports actual admissions, rather than guessing a missing equality, and
 reads the selected history delta without searching older facts.
 
-Call snapshot origins list the recorded caller-owned ranges retained
+Call memory origins list the recorded caller-owned ranges retained
 beside the write footprint and their placement premises. Each list shows up to
-128 entries and explicitly counts any omitted entries. A source spelling is not printed in place of a snapshot-dependent fact.
+128 entries and explicitly counts any omitted entries. A source spelling is not printed in place of a fact that depends on which memory it reads.
 Fresh model-field values also keep distinct value labels: a field hint such as
 `c.value` alone cannot distinguish its values before and after a call.
 A call refused because a named resource argument does not match prints its
 held and required resource facts with the shared typed resource formatter and
-one value/snapshot legend. Pointer arguments retain their checked types, distinct
-identities, and read snapshots, including unnamed components that have no C
+one value/memory legend. Pointer arguments retain their checked types, distinct
+identities, and read memory labels, including unnamed components that have no C
 spelling. The error identifies the rejected argument ordinal without guessing
 which premise was missing.
 Resource facts elsewhere use the proposition printer's source/typed display
 policy. Resource arguments use the same value printer as proposition operands,
-including model values and snapshot-qualified reads. A resource list shares one label table
+including model values and `at(...)`-qualified reads. A resource list shares one label table
 and construction legend across its entries. Source place helpers retain field,
 mutex-storage, and iterated-ownership spellings.
 A call refused at stable-view recovery prints each pending checked goal and
 its recorded obligation context. Required call clauses also identify the
 callee and source input clause when lowering retained that identity. These goals
-use the same proposition printer and shared snapshot legend as facts and
+use the same proposition printer and shared memory legend as facts and
 ordinary proof goals; they are pending obligations, not established facts.
 Return-fold certification refusals print the exact rejected path fact using
 that same format. Their traces retain the available checked prefix and label
@@ -256,7 +258,7 @@ requirement remains a proof obligation.
 A named-resource rewrite that introduces a fact outside its checked body reports
 `rejected fact:` followed by the exact checked proposition, then the facts
 allowed by that resource body. These facts use the shared proposition printer
-and the report's snapshot legend. Up to twelve allowed facts are displayed;
+and the report's memory legend. Up to twelve allowed facts are displayed;
 any further entries are explicitly counted. This comparison is diagnostic
 only and does not turn the rejected proposition into an assumption.
 An `assumption()` failure on an existential goal suggests the
@@ -264,7 +266,7 @@ An `assumption()` failure on an existential goal suggests the
 focused proof context and changes to exact resource representations, using
 Click spelling where it represents the checked fact. It follows only the
 branch relevant to the selected tactic and does not print whole memory
-snapshots. It retains the complete checked path and does not cap the total
+states. It retains the complete checked path and does not cap the total
 number of steps or output bytes. Individual fact, resource, and label previews
 remain bounded. Traces are collected and rendered in memory, so memory use
 grows with the recorded trace. Redirect a long trace when useful:
@@ -284,7 +286,7 @@ or `--allow-sorry`. A trace run does not record a full verification baseline.
 A completed `loop` appears as a checked step, with every visible fact it
 introduces to the continuation, including its exit disjunction. The loop's
 exported fact list is not shortened by the ordinary per-step fact preview
-limit; individual facts use the same bounded printer and snapshot legend.
+limit; individual facts use the same bounded printer and memory legend.
 `--trace-to` can select the completed loop itself.
 
 An unfinished loop `preserve` also retains its checked path for tracing. A plain

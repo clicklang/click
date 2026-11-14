@@ -657,6 +657,10 @@ fn collect_shallow_operand_variables(term: Operand<'_>, variables: &mut BTreeSet
         if !seen.insert(root.id()) {
             continue;
         }
+        if let Some((_, _, children)) = term.fold() {
+            pending.extend(children);
+            continue;
+        }
         if let Some(leaf) = root.machine_conversion_leaf() {
             collect_shallow_term_variables(leaf, variables);
             continue;

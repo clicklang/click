@@ -1929,9 +1929,9 @@ impl EqualityGraph {
                         }
                         N::MemoryLoad { address, .. } => pointers.push(address.clone()),
                         N::MachineLiteral(_) => {}
-                        // Native pointer discovery treats conditionals as
-                        // opaque; registering one does not inspect either arm.
-                        N::MachineIf { .. } => {}
+                        // Native pointer discovery treats conditionals and folds as
+                        // opaque; registering one does not inspect its children.
+                        N::MachineIf { .. } | N::Fold(_) => {}
                         N::IntegerToMachine { .. } | N::Legacy(_) | N::Call { .. } => pending.push(
                             Work::Machine(term.machine_conversion_leaf().expect("conversion leaf")),
                         ),

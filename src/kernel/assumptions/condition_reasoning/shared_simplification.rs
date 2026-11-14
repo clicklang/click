@@ -44,6 +44,23 @@ impl PureFactContext {
                 walk(facts, carrier.operand_view(), format, memo)
             } else {
                 match root.node() {
+                    KernelTermNode::Fold(fold) => {
+                        let arguments = fold.arguments.each_ref().map(|child| {
+                            node(&walk(
+                                facts,
+                                V::Shared(child),
+                                MachineIntegerType::Int32,
+                                memo,
+                            ))
+                        });
+                        let fold = crate::kernel::KernelFold {
+                            index: fold.index,
+                            accumulator: fold.accumulator,
+                            item: fold.item,
+                            arguments,
+                        };
+                        retain(fold.simplify_machine().unwrap_or_else(|| fold.into_term()))
+                    }
                     KernelTermNode::MachineIf { arguments } => {
                         let condition = crate::kernel::KernelTermExport::condition(&arguments[0])
                             .expect("conditional guard");

@@ -3087,7 +3087,7 @@ theorem uint32_from_le_bytes(p: uint32*) {
 ```
 
 Relates one readable unsigned 32-bit object to its four character representation
-bytes at the same program point. `little_endian()` is a built-in target fact;
+bytes at the same point. `little_endian()` is a built-in target fact;
 C proofs receive it only from a little-endian execution environment. Pure
 theorems must state it as a premise. The rule does not grant read permission,
 initialize memory, or reinterpret pointer representations. Its kernel
@@ -7071,7 +7071,7 @@ theorem viewable_restrict(A: Resource, B: Resource) {
 ```
 
 **Meaning:** A contained part of a viewable resource is viewable at the same
-snapshot. This applies to arbitrary resource descriptors, including named
+point. This applies to arbitrary resource descriptors, including named
 resources and separating conjunctions. For memory,
 `viewable(memory(p[a..b]))` is the same fact as `viewable(p[a..b])`.
 The axiom grants no ownership and discovers neither containment nor history

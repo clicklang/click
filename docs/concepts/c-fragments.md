@@ -67,5 +67,5 @@ ensures p[0] == old(p[0]);
 ```
 
 is easy to read as a C programmer, but internally Click must elaborate both
-memory reads into explicit memory snapshots. That translation is what lets the
+memory reads into loads at explicit version points. That translation is what lets the
 kernel reason about old and current memory without treating C state as ambient.

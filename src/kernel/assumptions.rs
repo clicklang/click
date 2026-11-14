@@ -2281,13 +2281,13 @@ fn collect_condition_memory_load_keys(
 
         ConditionTerm::AlgebraicEqual(left, right) => {
             left.for_each_machine_operand(|view| {
-                visit_machine_operand_native_leaves(view, |term| {
-                    collect_bitvector_memory_load_keys(term, keys)
+                visit_machine_operand_scoped_leaves(view, |term| {
+                    collect_scoped_leaf_memory_load_keys(term, keys)
                 })
             });
             right.for_each_machine_operand(|view| {
-                visit_machine_operand_native_leaves(view, |term| {
-                    collect_bitvector_memory_load_keys(term, keys)
+                visit_machine_operand_scoped_leaves(view, |term| {
+                    collect_scoped_leaf_memory_load_keys(term, keys)
                 })
             });
         }
@@ -2336,10 +2336,27 @@ fn collect_pointer_offset_memory_load_keys(
     keys: &mut BTreeSet<(PointerBlock, u64)>,
 ) {
     offset.for_each_scaled_operand(|value| {
-        visit_machine_operand_native_leaves(value.operand_view(), |leaf| {
-            collect_bitvector_memory_load_keys(leaf, keys)
+        visit_machine_operand_scoped_leaves(value.operand_view(), |leaf| {
+            collect_scoped_leaf_memory_load_keys(leaf, keys)
         })
     });
+}
+
+fn collect_scoped_leaf_memory_load_keys(
+    leaf: MachineOperandView<'_>,
+    keys: &mut BTreeSet<(PointerBlock, u64)>,
+) {
+    if let MachineOperandView::Shared(root) = leaf
+        && let KernelTermNode::Fold(fold) = root.node()
+    {
+        for child in &fold.arguments {
+            visit_machine_operand_scoped_leaves(MachineOperandView::Shared(child), |leaf| {
+                collect_scoped_leaf_memory_load_keys(leaf, keys)
+            });
+        }
+    } else {
+        collect_bitvector_memory_load_keys(&leaf.read_source().expect("native scoped leaf"), keys);
+    }
 }
 
 fn collect_bitvector_memory_load_keys(
@@ -3104,6 +3121,16 @@ fn collect_shared_machine_memory_loads(
     for (_, leaf) in leaves.iter() {
         if crate::instrumentation::deadline_exceeded() {
             return Err(interrupted());
+        }
+        if let KernelTermNode::Fold(fold) = leaf.node() {
+            retained_folds::collect_fold_memory_loads(
+                fold,
+                current_memory,
+                loads,
+                width,
+                seen_integers,
+            )?;
+            continue;
         }
         // A conversion establishes its own destination width before visiting
         // the Integer payload, independently of surrounding arithmetic/casts.

@@ -83,6 +83,7 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 continue;
             }
             let children = match term.node() {
+                KernelTermNode::Fold(fold) => fold.arguments.to_vec(),
                 KernelTermNode::MachineBinary { arguments, .. }
                 | KernelTermNode::BoolCompare { arguments, .. }
                 | KernelTermNode::IntegerCompare { arguments, .. }
@@ -103,6 +104,14 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 continue;
             }
             let normalized = match term.node() {
+                KernelTermNode::Fold(fold) => KernelFold {
+                    index: fold.index,
+                    accumulator: fold.accumulator,
+                    item: fold.item,
+                    arguments: fold.arguments.each_ref().map(|child| get(child)),
+                }
+                .into_term()
+                .with_machine_observation_type(format),
                 KernelTermNode::Legacy(_) | KernelTermNode::Call { .. }
                     if machine_payload(&term).is_some() =>
                 {

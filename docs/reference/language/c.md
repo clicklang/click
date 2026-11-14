@@ -1414,7 +1414,7 @@ String literals are described below.
 Every function sees the linked object through its stable address. Contracts
 name the scalar value directly, and name its one-cell memory footprint with
 `owns counter`.
-`old(counter)` refers to the value in the function-entry memory snapshot.
+`old(counter)` refers to the value at the function's entry point.
 Qualified names follow the same rule for scalar and pointer slots:
 `unit::slot` reads current memory, while `old(unit::slot)` reads entry memory.
 A store changes the current qualified value without changing its entry value.
@@ -2100,7 +2100,7 @@ unless the named preconditions prove that guard. A closed refinement theorem
 can handle guarded post-call memory by explicitly splitting until every
 concrete owned guard is decided, and can compare stateful user predicates by
 explicitly unfolding their definitions. Stateful algebraic,
-resource-relation, explicit-memory-snapshot, and general non-memory resource
+resource-relation, `at(...)` memory, and general non-memory resource
 refinement remain future work.
 
 Named contracts may use ordinary pure `requires` and `ensures`, resource

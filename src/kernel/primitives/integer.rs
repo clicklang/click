@@ -751,7 +751,7 @@ impl SharedMachineIntegerTerm {
         };
         if let Some(term) = KernelTermImport::default().machine_arithmetic(ty, value) {
             let shared =
-                if term.has_machine_conditionals() && term.has_opaque_observation_boundary() {
+                if term.has_opaque_observation_boundary() && term.has_machine_control_terms() {
                     Self::observe_shared(ty, term)
                 } else {
                     Self::from_shared(ty, term)

@@ -12,10 +12,11 @@ pub(super) fn transport_framed_index(
     after: &CMemory,
     assumptions: Option<(&PureFactContext, bool)>,
 ) -> Option<SharedMachineIntegerTerm> {
-    map_index(
+    map_index_with_descent(
         value,
         |leaf| transport_framed_atomic_bitvector(leaf, after, assumptions),
         crate::kernel::proof::equality_rewrite::rebuild_transported_machine_node,
+        |_| true,
     )
 }
 
@@ -45,7 +46,9 @@ pub(in crate::kernel) fn map_index(
     map_leaf: impl Fn(&MachineTerm) -> Option<MachineTerm>,
     rebuild: impl Fn(&KernelTerm, &[KernelTerm]) -> Option<KernelTerm>,
 ) -> Option<SharedMachineIntegerTerm> {
-    map_index_with_descent(value, map_leaf, rebuild, |_| true)
+    map_index_with_descent(value, map_leaf, rebuild, |root| {
+        !matches!(root.node(), KernelTermNode::Fold(_))
+    })
 }
 
 pub(in crate::kernel) fn map_index_with_descent(
@@ -53,6 +56,16 @@ pub(in crate::kernel) fn map_index_with_descent(
     map_leaf: impl Fn(&MachineTerm) -> Option<MachineTerm>,
     rebuild: impl Fn(&KernelTerm, &[KernelTerm]) -> Option<KernelTerm>,
     descend: impl Fn(&KernelTerm) -> bool,
+) -> Option<SharedMachineIntegerTerm> {
+    map_index_with_fold(value, map_leaf, rebuild, descend, |_| Ok(None))
+}
+
+pub(in crate::kernel) fn map_index_with_fold(
+    value: &SharedMachineIntegerTerm,
+    map_leaf: impl Fn(&MachineTerm) -> Option<MachineTerm>,
+    rebuild: impl Fn(&KernelTerm, &[KernelTerm]) -> Option<KernelTerm>,
+    descend: impl Fn(&KernelTerm) -> bool,
+    map_fold: impl Fn(&KernelTerm) -> Result<Option<KernelTerm>, ()>,
 ) -> Option<SharedMachineIntegerTerm> {
     let Some(root) = value.shared_operand() else {
         return Some(SharedMachineIntegerTerm::index(
@@ -71,7 +84,14 @@ pub(in crate::kernel) fn map_index_with_descent(
         if results.contains_key(&node.id()) {
             continue;
         }
+        if matches!(node.node(), KernelTermNode::Fold(_))
+            && let Some(mapped) = map_fold(node).ok()?
+        {
+            results.insert(node.id(), mapped);
+            continue;
+        }
         let children: Vec<_> = match node.node() {
+            KernelTermNode::Fold(fold) => fold.arguments.iter().collect(),
             KernelTermNode::MachineIf { arguments } => arguments[1..].iter().collect(),
             KernelTermNode::MachineBinary { arguments, .. } => arguments.iter().collect(),
             KernelTermNode::MachineUnary { operand, .. }

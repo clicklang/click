@@ -48,7 +48,7 @@ trusted axiom, implemented in `src/kernel/separation_laws.rs`: separate parents
 and explicit containment premises imply separate parts. Its `Resource`
 parameters describe resources without granting ownership.
 `separation::viewable_restrict` likewise transfers pure viewability from a
-parent to an explicitly contained part, at the same snapshot. `integer::uint32_from_le_bytes`
+parent to an explicitly contained part, at the same point. `integer::uint32_from_le_bytes`
 is backed by `src/kernel/byte_representation_laws.rs`; it relates a defined
 unsigned word to its four representation bytes under an explicit
 `little_endian()` premise and a readable-word premise. The selected execution

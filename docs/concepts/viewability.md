@@ -6,11 +6,11 @@ function argument, or under a quantifier without silently adding a validity
 condition. In particular, `p[k] == p[k]` is true without granting any right to
 read `p[k]` in C.
 
-Use `defined(p[k])` to claim that the typed read is valid at that snapshot.
+Use `defined(p[k])` to claim that the typed read is valid at that point.
 This checks bounds, lifetime, and initialization. A value equality does not
 prove validity: even `p[k] == 7` cannot initialize fresh heap memory. An
 explicit validity claim under an existential belongs to that same witness.
-`at(mark, defined(p[k]))` concerns the marked snapshot and does not by itself
+`at(mark, defined(p[k]))` concerns the marked point and does not by itself
 establish validity after a free or a memory change.
 
 C execution still checks every actual read, including call arguments. For
@@ -69,8 +69,8 @@ four-byte access. For `uint8 p[]`, each element is a one-byte access.
 An exact available pointer equality can rewrite the address of a viewability
 goal: `rewrite(cursor == bytes);` turns `viewable(cursor[0..4])` into the
 same range over `bytes`. This also works when byte pointers are represented
-as offsets in the same address block. The rewrite preserves the memory
-snapshot and byte extent; the resulting range still needs a readable view.
+as offsets in the same address block. The rewrite preserves the point the
+range is read at and its byte extent; the resulting range still needs a readable view.
 
 ## What a range fact means
 

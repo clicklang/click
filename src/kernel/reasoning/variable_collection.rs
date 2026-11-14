@@ -48,6 +48,10 @@ fn visit_machine_operand_carrier_leaves_selected(
     if operand.literal().is_some() {
         return;
     }
+    if matches!(root.node(), KernelTermNode::Fold(_)) {
+        visit(operand);
+        return;
+    }
     if let Some(leaf) = root.machine_conversion_leaf() {
         visit(MachineOperandView::Legacy(leaf));
         return;
@@ -59,9 +63,13 @@ fn visit_machine_operand_carrier_leaves_selected(
             if checked_collection_checkpoint() {
                 return;
             }
-            visit(MachineOperandView::Legacy(
-                leaf.machine_conversion_leaf().expect("conversion leaf"),
-            ));
+            if matches!(leaf.node(), KernelTermNode::Fold(_)) {
+                visit(MachineOperandView::Shared(leaf));
+            } else {
+                visit(MachineOperandView::Legacy(
+                    leaf.machine_conversion_leaf().expect("conversion leaf"),
+                ));
+            }
         }
     }
     if let Some(reads) = shared_machine_read_leaves(root, || !checked_collection_checkpoint()) {
@@ -92,17 +100,11 @@ fn visit_machine_operand_carrier_leaves_selected(
 /// Existing native leaf collectors can inspect a selected read descriptor or
 /// opaque leaf without expanding the surrounding shared arithmetic DAG.
 /// Each collector retains its own registry, snapshot and binder rules.
-pub(in crate::kernel) fn visit_machine_operand_native_leaves(
+pub(in crate::kernel) fn visit_machine_operand_scoped_leaves(
     operand: MachineOperandView<'_>,
-    mut visit: impl FnMut(&MachineTerm),
+    visit: impl FnMut(MachineOperandView<'_>),
 ) {
-    visit_machine_operand_carrier_leaves_selected(operand, false, |leaf| match leaf {
-        MachineOperandView::Legacy(term) => visit(term),
-        MachineOperandView::Shared(_) => {
-            let read = leaf.read_source().expect("shared carrier leaf is a read");
-            visit(&read);
-        }
-    });
+    visit_machine_operand_carrier_leaves_selected(operand, false, visit);
 }
 
 /// The machine-variable collector's existing carrier rules on a retained
@@ -133,6 +135,16 @@ fn collect_operand_bitvector_variables(
     operand: MachineOperandView<'_>,
     variables: &mut BTreeSet<Variable>,
 ) {
+    if let MachineOperandView::Shared(root) = operand
+        && let KernelTermNode::Fold(fold) = root.node()
+    {
+        retained_folds::collect_fold_variables(
+            fold,
+            retained_folds::FoldVariableRead::ExpressionFree,
+            variables,
+        );
+        return;
+    }
     if let Some((memory, pointer, _)) = operand.read() {
         collect_shared_memory_bitvector_variables(memory, variables);
         collect_pointer_bitvector_variables(pointer, variables);
@@ -149,6 +161,16 @@ fn collect_operand_integer_variables_seen(
     variables: &mut BTreeSet<Variable>,
     seen: &mut SeenTerms,
 ) {
+    if let MachineOperandView::Shared(root) = operand
+        && let KernelTermNode::Fold(fold) = root.node()
+    {
+        retained_folds::collect_fold_variables(
+            fold,
+            retained_folds::FoldVariableRead::IntegerFree,
+            variables,
+        );
+        return;
+    }
     if let Some((_, pointer, _)) = operand.read() {
         collect_pointer_integer_variables(pointer, variables, seen);
     } else if let MachineOperandView::Legacy(term) = operand {
@@ -164,6 +186,21 @@ fn collect_operand_binder_variables_seen(
     bitvector_variables: &mut BTreeSet<Variable>,
     seen: &mut SeenTerms,
 ) {
+    if let MachineOperandView::Shared(root) = operand
+        && let KernelTermNode::Fold(fold) = root.node()
+    {
+        retained_folds::collect_fold_variables(
+            fold,
+            retained_folds::FoldVariableRead::IntegerBinders,
+            integer_variables,
+        );
+        retained_folds::collect_fold_variables(
+            fold,
+            retained_folds::FoldVariableRead::MachineBinders,
+            bitvector_variables,
+        );
+        return;
+    }
     // The existing binder collector treats read addresses as binder-free.
     if operand.read().is_some() {
         return;
@@ -2897,10 +2934,18 @@ fn collect_integer_variables_seen(
                     shared_machine_conversion_leaves(root, || !checked_collection_checkpoint())
                 {
                     for (_, leaf) in leaves.iter() {
-                        collect_bitvector_variables(
-                            leaf.machine_conversion_leaf().expect("conversion leaf"),
-                            variables,
-                        );
+                        if let KernelTermNode::Fold(fold) = leaf.node() {
+                            retained_folds::collect_fold_variables(
+                                fold,
+                                retained_folds::FoldVariableRead::ExpressionFree,
+                                variables,
+                            );
+                        } else {
+                            collect_bitvector_variables(
+                                leaf.machine_conversion_leaf().expect("conversion leaf"),
+                                variables,
+                            );
+                        }
                     }
                 }
                 if let Some(reads) =
@@ -3672,11 +3717,19 @@ fn collect_integer_bitvector_capture_variables(
                     shared_machine_conversion_leaves(root, || !checked_collection_checkpoint())
                 {
                     for (_, leaf) in leaves.iter() {
-                        collect_bitvector_capture_variables_seen(
-                            leaf.machine_conversion_leaf().expect("conversion leaf"),
-                            variables,
-                            integer_seen,
-                        );
+                        if let KernelTermNode::Fold(fold) = leaf.node() {
+                            retained_folds::collect_fold_variables(
+                                fold,
+                                retained_folds::FoldVariableRead::MachineCapture,
+                                variables,
+                            );
+                        } else {
+                            collect_bitvector_capture_variables_seen(
+                                leaf.machine_conversion_leaf().expect("conversion leaf"),
+                                variables,
+                                integer_seen,
+                            );
+                        }
                     }
                 }
                 if let Some(reads) =
@@ -3915,6 +3968,9 @@ fn collect_machine_scope_summary(
     if let Some(leaf) = root.machine_conversion_leaf() {
         return collect_bitvector_scope_summary(leaf, summaries);
     }
+    if let KernelTermNode::Fold(fold) = root.node() {
+        return collect_fold_scope_summary(fold, summaries);
+    }
     let mut summary = IntegerScopeSummary::default();
     if let Some(leaves) =
         shared_machine_conversion_leaves(root, || !checked_collection_checkpoint())
@@ -3923,10 +3979,14 @@ fn collect_machine_scope_summary(
             if checked_collection_checkpoint() {
                 return IntegerScopeSummary::default();
             }
-            summary.merge(collect_bitvector_scope_summary(
-                leaf.machine_conversion_leaf().expect("conversion leaf"),
-                summaries,
-            ));
+            summary.merge(if let KernelTermNode::Fold(fold) = leaf.node() {
+                collect_fold_scope_summary(fold, summaries)
+            } else {
+                collect_bitvector_scope_summary(
+                    leaf.machine_conversion_leaf().expect("conversion leaf"),
+                    summaries,
+                )
+            });
         }
     }
     if let Some(reads) = shared_machine_read_leaves(root, || !checked_collection_checkpoint()) {
@@ -3957,6 +4017,21 @@ fn collect_machine_scope_summary(
         }
     }
     summary
+}
+
+fn collect_fold_scope_summary(
+    fold: &KernelFold,
+    summaries: &mut std::collections::HashMap<u64, IntegerScopeSummary>,
+) -> IntegerScopeSummary {
+    let mut result = IntegerScopeSummary::default();
+    for child in &fold.arguments {
+        let value = SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, child.clone())
+            .expect("machine fold operand");
+        result.merge(collect_machine_scope_summary(&value, summaries));
+    }
+    result.reserve(fold.accumulator);
+    result.reserve(fold.item);
+    result
 }
 
 fn collect_integer_scope_summary(

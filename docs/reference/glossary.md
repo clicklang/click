@@ -22,14 +22,16 @@ checked successors. Expansion can serialize selected provenance as an explicit
 proof, sometimes called a **certificate**. Some kernel rules also produce typed
 **kernel derivations** as standalone proof authority.
 
-For execution, a **program point** is a static location in the C function, and
-a **visit** is one path's arrival there. An **execution frontier** combines one
-current program point with its symbolic state and pending continuations. A
-**proof branch** is one independently evolving open proof and can own one such
+For execution, a **point** is a node in the code's region tree, such as
+`function.entry` or `region(2).exit`; it is only an identity and holds no data.
+A proof path reaches each point at most once, so `at(x, e)` means `e` when the
+path was at point `x`. A memory read is lowered to a load at its **version
+point**. A **location** is a position in the C source text. An **execution
+frontier** combines the current point with its symbolic state and pending
+continuations. A **proof branch** is one independently evolving open proof and can own one such
 frontier. A **C branch** has syntactic **arms** that may lead to distinct
 **execution paths**; an explicit frontier-local branch proof can join its
-continuing arms at a shared **continuation**. A **snapshot** is immutable
-symbolic state retained from a selected visit; a successful returning
+continuing arms at a shared **continuation**. A successful returning
 **outcome** contains its final state, while a **result** is only its returned
 value.
 
@@ -152,7 +154,7 @@ explicit `branch` control tactic proves and joins every feasible arm.
 ### C fragment
 
 C syntax embedded in a Click contract or tactic to identify an expression,
-  statement, or program point. A fragment is resolved against the verified C
+  statement, or point. A fragment is resolved against the verified C
   function; it isn't executed as a separate program.
 
 ### C0
@@ -173,12 +175,6 @@ See [Canonicalization](../internals/canonicalization.md).
 Conversion of a term to its canonical form. Canonicalization removes only
 representation differences that need no proof; it never consumes an ambient
 equality fact.
-
-### Cell version
-
-The most recent memory-derivation node that might have written one cell. Loads
-from snapshots connected without a possible write share the same cell version and
-therefore the same load variable.
 
 ### Certificate
 
@@ -354,7 +350,7 @@ not a synonym for the whole collection.
 ### Execution frontier
 
 The boundary between C already executed and C still pending on one path. It
-contains one current program point, the symbolic state there, and the
+contains one current point, the symbolic state there, and the
 continuation stack. A proof with several open paths can contain several
 path-local frontiers.
 
@@ -385,7 +381,7 @@ A proposition established and available in the current proof state. Facts
 
 ### Fact transport
 
-A checked transition that relates an exact source fact at one snapshot to a
+A checked transition that relates an exact source fact at one point to a
 target fact at another. Direct statement transport uses a bounded frame check;
 the `transport` tactic can select additional explicit evidence.
 
@@ -450,7 +446,7 @@ in a partial run.
 
 Proof-only state that doesn't exist in the executable C program. Click calls
 this *spec state* in public documentation and currently represents it through
-immutable spec terms, proof-local witnesses, snapshots, and logical resources
+immutable spec terms, proof-local witnesses, `at(...)` reads, and logical resources
 rather than arbitrary mutable ghost variables. Some internal implementation
 names still use the conventional word *ghost*. See [Spec
 state](../concepts/spec-state.md).
@@ -579,7 +575,8 @@ resource according to the callee's contract.
 ### Load term
 
 A Kernel Click term `load(memory, pointer)` denoting the value read from one
-memory snapshot. Canonicalization resolves a known cell immediately or replaces
+kernel memory value; Surface Click spells it as a read at its [version
+point](#version-point). Canonicalization resolves a known cell immediately or replaces
 the remaining load term with its load variable.
 
 ### Load variable
@@ -589,6 +586,12 @@ load. The loaded cell and its derivation version identify the variable, so reads
 connected by steps proved not to write that cell use the same variable. A
 defining fact equates it to the load it represents. Load variables differ
 from other kernel variables only by a reserved id range, not by type.
+
+### Location
+
+A position in the C source text, such as a file and line. Diagnostics use
+locations to talk about the source itself; a proof refers to a
+[point](#point) instead.
 
 ### Lowering
 
@@ -606,7 +609,7 @@ program or its proof. See [magic variables](magic-variables.md).
 ### Materialization
 
 Making an implicit value or fact explicit for one consumer. Memory
-materialization resolves a load from a snapshot's recorded cell; resource
+materialization resolves a load from a cell recorded at its version point; resource
 materialization derives one requested proposition from compact resource
 authority. It is not another name for fact transport.
 
@@ -642,12 +645,12 @@ use symbolic offsets until facts prove how they relate.
 
 A storage location selected by a pointer together with the byte width and
 value type of an access. A cell belongs to one memory block and can be tracked
-across snapshots that do not write it.
+across steps that do not write it.
 
 ### Memory derivation DAG
 
-The per-verification directed acyclic graph connecting interned memory
-snapshots to the operations that produced them, such as stores, declarations,
+The per-verification directed acyclic graph connecting interned kernel memory
+values to the operations that produced them, such as stores, declarations,
 and call havoc. It supports bounded reasoning about whether a cell changed.
 See [Memory derivation DAG](../internals/memory-dag.md).
 
@@ -664,15 +667,6 @@ facts, not contract clauses.
 A contiguous half-open region of a memory block. Surface ranges use element
 indices such as `p[start..end]`; lowering converts them to byte offsets in a
 kernel `CMemoryRange`.
-
-### Memory snapshot
-
-An immutable `CMemory` value representing memory in one symbolic state. A
-program-point snapshot contains a complete symbolic `CState`, whose memory
-component is structurally shared but is not itself necessarily an interned
-handle. When memory is embedded in a load term or the memory derivation DAG,
-Click uses an interned `SharedCMemory` handle. Both are semantic values rather
-than source expressions.
 
 ### Modus ponens
 
@@ -710,8 +704,8 @@ removes the projection.
 
 ### `old`
 
-A snapshot form that evaluates its subject in function-entry state rather
-  than current state.
+`old(e)` is `at(function.entry, e)`: `e` when the path was at the function's
+  entry point, rather than at the current point.
 
 ### Opaque
 
@@ -763,6 +757,24 @@ viewed fact permits reads and keeps the covered memory unchanged and allocated
 while the borrow is active; an owned fact permits reads and writes. Permission
 is the meaning of those memory resources, not a separate proof-state store.
 
+### Point
+
+A node in the code's region tree: `function.entry`, the parameter point,
+`function.exit`, `region(N).entry` and `.exit`, statement entry and exit,
+labels, and `mark` names. Every point has a written name, even one with no
+token range such as `function.exit`. A point is only an identity; it holds no
+data. What is known about memory at a point is facts about reads there, not a
+memory object a proof can name.
+
+On a proof path, `at(x, e)` means `e` when the path was at point `x`. This is
+unambiguous because a proof path reaches each point at most once: a loop is
+checked once against its invariant, as one abstract iteration, and where the C
+branches, paths either split, each arm continuing on its own path, or rejoin.
+`step_until(x)` steps until the path reaches point `x`, a point named by C
+syntax rather than a mark. An execution frontier
+also carries state and continuations; a point does not. Contrast with a
+[location](#location).
+
 ### Population
 
 The members of one [authorized resource](#authorized-resource) family at given
@@ -794,13 +806,6 @@ A proposition required before a theorem or reasoning rule can establish its
 Attribution of verifier work and elapsed time to proof sites. See
   [Profiling](../concepts/profiling.md).
 
-### Program point
-
-A static selectable location in C, such as function entry, statement entry or
-exit, and function exit. `at(...)` and `step_until` can name program points;
-an execution frontier also carries state and continuations. `mark` instead
-creates a proof-local name for a snapshot and does not create a C location.
-
 ### Proof
 
 Evidence that every goal generated by a claim is valid under its assumptions.
@@ -820,7 +825,7 @@ clause is the [implicit tail](#implicit-tail) alone.
 
 ### Proof context
 
-The facts, resources, local bindings, selected snapshots, and structural data
+The facts, resources, local bindings, recorded points, and structural data
 available to a proof operation. An *assumption context* or *fact context* is a
 narrower internal index over the proposition facts in that context. The Rust
 type currently named `ProofContext` is narrower still: it is a language-layer
@@ -829,9 +834,10 @@ logical context.
 
 ### Proof mark
 
-A proof-local name bound by `mark` to the current snapshot. Later `at(...)`
-expressions can select it. A proof mark is neither a C program point nor a
-location in Click source.
+A proof-local name that `mark` gives to the point the path is at now. Later
+`at(name, ...)` expressions read at that point. Unlike a point named by C
+syntax, a proof mark is not a `step_until` target, and it is not a
+[location](#location) in C or Click source.
 
 ### Proof object
 
@@ -983,7 +989,7 @@ first. See [Smart and simple tactics](../concepts/smart-and-simple-tactics.md#el
 ### Selector
 
 Surface syntax that identifies a fact, requirement, resource, goal, proof
-site, or program point for an operation. Checking resolves a selector against
+site, or point for an operation. Checking resolves a selector against
 the current state and rejects it when the selected item is absent or ambiguous.
 
 ### Separation
@@ -1020,24 +1026,6 @@ simple tactic written with an elided argument that a search fills, and a
 loop back edge's `solve()` closure of its bundle are smart sites too.
 Search is untrusted and can succeed only with a completed checked state. See [Smart and simple
 tactics](../concepts/smart-and-simple-tactics.md).
-
-### Snapshot
-
-Immutable symbolic state retained from a selected visit, used by `old`, `at`,
-marks, and memory comparisons. A state snapshot is logically a complete
-symbolic `CState`, but its implementation is a small collection of persistent,
-shared roots rather than a deep copy. A load term carries only the state's
-interned memory snapshot.
-
-A snapshot is a semantic value, not Surface Click syntax and not inherently a
-kernel term. Kernel terms can nevertheless contain `CState` or `CMemory`
-values, and a memory-load term embeds an interned memory snapshot.
-
-### Snapshot selector
-
-Surface syntax that names a recorded snapshot for `at(...)`. A selector is
-either a C program point such as `region(2).entry` or a proof-local mark.
-The selector identifies the snapshot; it is not itself the recorded state.
 
 ### Sort
 
@@ -1098,7 +1086,7 @@ callee's contract
 ### Symbolic memory
 
 An immutable memory state whose cells can contain concrete values, symbolic
-values, or unresolved loads. Symbolic execution produces new memory snapshots
+values, or unresolved loads. Symbolic execution produces new memory states
 connected by the memory derivation DAG.
 
 ### Symbolic state
@@ -1194,12 +1182,21 @@ such as an overflow, memory-safety, or contract condition. Click must prove it
 from available evidence; it cannot continue by treating the condition as a
 path assumption.
 
-### Visit
+### Version point
 
-One execution path's arrival at a static program point. A loop can visit one
-program point repeatedly, and different paths can reach the same point with
-different state. Click currently exposes selected unique or abstract visits as
-recorded snapshots rather than providing general visit-index syntax.
+The [point](#point) a memory read is lowered to. A read of `*p` lowers to a
+load at its version point, spelled `at(V, *p)`. Choosing it does not depend on
+facts ([fact-stable
+lowering](../internals/spellability.md#lowering-is-fact-stable)); facts relate
+reads at different version points as ordinary equalities. Reads of one cell
+connected without a possible write share a version point and therefore lower
+to one term.
+
+Every version point is meant to be a nameable point. Currently some are not:
+a report prints a read of entry memory as `old(...)`, a read at a recorded
+point as `at(point, ...)`, and a read of any other memory as `at(<state A>,
+...)` with a `where` list naming the program event that produced it (see
+[proof-failure triage](../concepts/proof-failure-triage.md)).
 
 ### View
 
@@ -1222,5 +1219,6 @@ A concrete term supplied to prove an existential proposition. The `witness`
 
 ### `at`
 
-A proposition or expression form interpreted at a snapshot selected by a
-program point or proof mark rather than at the current state.
+`at(x, e)` is `e` when the proof path was at point `x`, such as
+`region(2).entry` or a proof mark, rather than at the current point. A path reaches each point at
+most once, so the form has one meaning.
