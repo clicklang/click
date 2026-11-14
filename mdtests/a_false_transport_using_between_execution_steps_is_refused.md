@@ -28,16 +28,10 @@ void mark_one(int32 a[], int32 n, int32 i, int32 m) {
     mark entry;
     step();
     have at(entry, a[m]) == at(entry, a[m]) by normalize();
-    transport(
-        at(entry, a[m]) == at(entry, a[m]),
-        at(entry, a[m]) == 5
-    ) using {
-        at(entry, a[m]) == at(entry, a[m]);
-        m != i;
-    };
+    have at(entry, a[m]) == 5 by { solve(); }
 }
 ```
 
 ```expect
-fail: `transport using` found no frame evidence carrying its source fact to the target's state
+fail: `solve` failed
 ```

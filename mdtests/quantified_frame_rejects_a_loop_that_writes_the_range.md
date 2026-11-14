@@ -34,15 +34,10 @@ void wipe(int32 a[], int32 n) {
             step();
         }
     }
-    transport(
-        forall (k: int32) { 0 <= k and k < n implies old(a[k]) == old(a[k]) },
-        forall (k: int32) { 0 <= k and k < n implies a[k] == old(a[k]) }
-    ) using {
-        forall (k: int32) { 0 <= k and k < n implies old(a[k]) == old(a[k]) };
-    };
+    have forall (k: int32) { 0 <= k and k < n implies a[k] == old(a[k]) } by { solve(); }
 }
 ```
 
 ```expect
-fail: quantified frame: a leaf was not carried
+fail: `solve` failed
 ```

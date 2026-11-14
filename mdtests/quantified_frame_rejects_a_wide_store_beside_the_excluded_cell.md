@@ -27,15 +27,10 @@ void clear_pair(int32 *a, int32 n, int32 j) {
     step();
     step();
     step();
-    transport(
-        forall (k: int32) { 0 <= k and k < n and k != j implies old(a[k]) == old(a[k]) },
-        forall (k: int32) { 0 <= k and k < n and k != j implies a[k] == old(a[k]) }
-    ) using {
-        forall (k: int32) { 0 <= k and k < n and k != j implies old(a[k]) == old(a[k]) };
-    };
+    have forall (k: int32) { 0 <= k and k < n and k != j implies a[k] == old(a[k]) } by { solve(); }
 }
 ```
 
 ```expect
-fail: quantified frame: a leaf was not carried
+fail: `solve` failed
 ```

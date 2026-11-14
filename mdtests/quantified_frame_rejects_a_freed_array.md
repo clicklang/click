@@ -24,15 +24,10 @@ void dispose(int32 *data, int32 n) {
 } by {
     unfold(cell(data, n));
     step();
-    transport(
-        forall (k: int32) { 0 <= k and k < n implies old(data[k]) == old(data[k]) },
-        forall (k: int32) { 0 <= k and k < n implies data[k] == old(data[k]) }
-    ) using {
-        forall (k: int32) { 0 <= k and k < n implies old(data[k]) == old(data[k]) };
-    };
+    have forall (k: int32) { 0 <= k and k < n implies data[k] == old(data[k]) } by { solve(); }
 }
 ```
 
 ```expect
-fail: quantified frame: a leaf was not carried
+fail: `solve` failed
 ```

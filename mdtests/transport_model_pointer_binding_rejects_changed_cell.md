@@ -37,10 +37,7 @@ int32 update(int32* p) {
                 preserve by {
                     unfold(state);
                     step();
-                    transport(at(region(0).entry, p[0]) == 7, alias[0] == 7) using {
-                        at(region(0).entry, p[0]) == 7;
-                        p == alias;
-                    };
+                    have alias[0] == 7 by { solve(); }
                     let state = fold(first(p), {model: View::At(alias)});
                     step();
                 }
@@ -53,5 +50,5 @@ int32 update(int32* p) {
 }
 ```
 ```expect
-fail: `transport using` found no frame evidence
+fail: `solve` failed
 ```

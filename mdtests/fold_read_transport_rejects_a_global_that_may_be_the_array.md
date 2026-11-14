@@ -31,17 +31,12 @@ void mark_global(int32 v[], int32 n) {
     have zeros(at(entry, v), 0, n) == zeros(at(entry, v), 0, n) by normalize();
     step();
     have zeros(at(entry, v), 0, n) == zeros(v, 0, n) by {
-        transport(
-            zeros(at(entry, v), 0, n) == zeros(at(entry, v), 0, n),
-            zeros(at(entry, v), 0, n) == zeros(v, 0, n)
-        ) using {
-            zeros(at(entry, v), 0, n) == zeros(at(entry, v), 0, n);
-        };
+        solve();
         assumption();
     }
 }
 ```
 
 ```expect
-fail: fold read frame: a `store` step between the two `zeros` snapshots was not shown to miss the cells the fold reads
+fail: `solve` failed
 ```

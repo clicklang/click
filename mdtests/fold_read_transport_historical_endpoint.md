@@ -93,7 +93,20 @@ void mark_at(int32 *v, int32 *m, int32 n) {
         have m[0] != k by { solve(); }
         apply(click::separation::elements(v, m[0], k)) using { m[0] != k; };
     }
-    step();
+    have contains(memory(v[0..n]), memory(v[m[0]])) by {
+        apply(click::separation::contains_element(v, 0, n, m[0])) using { 0 <= m[0]; m[0] < n; };
+    }
+    have contains(memory(m[0..1]), memory(m[0..1])) by {
+        apply(click::separation::contains_refl(memory(m[0..1])));
+    }
+    have separate(memory(v[m[0]]), memory(m[0..1])) by {
+        apply(click::separation::restrict(memory(v[0..n]), memory(m[0..1]), memory(v[m[0]]), memory(m[0..1]))) using {
+            separate(memory(v[0..n]), memory(m[0..1]));
+            contains(memory(v[0..n]), memory(v[m[0]]));
+            contains(memory(m[0..1]), memory(m[0..1]));
+        };
+    }
+    step() by { assumption(); }
     have zeros(at(entry, v), 0, end) == zeros(v, 0, end) by {
         have forall (k: int32) { 0 <= k and k < end implies v[k] == at(entry, v[k]) } by {
             intro(); intro();

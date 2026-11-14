@@ -23,11 +23,12 @@ uint8 first(const uint8* p, uint64 n, uint64 k) {
     have to_integer(k + 3u64) <= to_integer(k + 4u64);
     have to_integer(k + 4u64) <= to_integer(n);
     have viewable(p[k + 3u64..k + 4u64]) by {
-        transport(viewable(p[0..n]), viewable(p[k + 3u64..k + 4u64])) using {
-            viewable(p[0..n]);
-            0 <= to_integer(k + 3u64);
-            to_integer(k + 3u64) <= to_integer(k + 4u64);
-        };
+        have contains(memory(p[0u64..n]), memory(p[k + 3u64..k + 4u64])) by {
+            apply(click::separation::subrange(p, 0u64, n, k + 3u64, k + 4u64)) using {
+                0 <= to_integer(k + 3u64);
+                to_integer(k + 3u64) <= to_integer(k + 4u64);
+            };
+        }
     }
     step_until(function.exit);
     solve();
@@ -35,5 +36,5 @@ uint8 first(const uint8* p, uint64 n, uint64 k) {
 ```
 
 ```expect
-fail: `transport using`
+fail: required exact fact for theorem
 ```

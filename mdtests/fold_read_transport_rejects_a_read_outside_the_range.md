@@ -28,17 +28,12 @@ void set_end(int32 *v, int32 i, int32 n) {
     have peek(at(entry, v), 0, i) == peek(at(entry, v), 0, i) by normalize();
     step();
     have peek(at(entry, v), 0, i) == peek(v, 0, i) by {
-        transport(
-            peek(at(entry, v), 0, i) == peek(at(entry, v), 0, i),
-            peek(at(entry, v), 0, i) == peek(v, 0, i)
-        ) using {
-            peek(at(entry, v), 0, i) == peek(at(entry, v), 0, i);
-        };
+        solve();
         assumption();
     }
 }
 ```
 
 ```expect
-fail: fold read frame: `peek` has no checked read summary: the fold body reads the array at an index other than the fold's own binder
+fail: `solve` failed
 ```

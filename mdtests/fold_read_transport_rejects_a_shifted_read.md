@@ -27,17 +27,12 @@ void set_end(int32 *v, int32 i, int32 n) {
     have ahead(at(entry, v), 0, i) == ahead(at(entry, v), 0, i) by normalize();
     step();
     have ahead(at(entry, v), 0, i) == ahead(v, 0, i) by {
-        transport(
-            ahead(at(entry, v), 0, i) == ahead(at(entry, v), 0, i),
-            ahead(at(entry, v), 0, i) == ahead(v, 0, i)
-        ) using {
-            ahead(at(entry, v), 0, i) == ahead(at(entry, v), 0, i);
-        };
+        solve();
         assumption();
     }
 }
 ```
 
 ```expect
-fail: fold read frame: `ahead` has no checked read summary: the fold body reads the array at an index other than the fold's own binder
+fail: `solve` failed
 ```

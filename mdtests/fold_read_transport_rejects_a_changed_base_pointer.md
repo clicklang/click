@@ -28,17 +28,12 @@ void mark_other(int32 *a, int32 *b, int32 *c, int32 n) {
     have zeros(at(entry, a), 0, n) == zeros(at(entry, a), 0, n) by normalize();
     step();
     have zeros(at(entry, a), 0, n) == zeros(b, 0, n) by {
-        transport(
-            zeros(at(entry, a), 0, n) == zeros(at(entry, a), 0, n),
-            zeros(at(entry, a), 0, n) == zeros(b, 0, n)
-        ) using {
-            zeros(at(entry, a), 0, n) == zeros(at(entry, a), 0, n);
-        };
+        solve();
         assumption();
     }
 }
 ```
 
 ```expect
-fail: fold read frame: the two `zeros` applications differ in an endpoint, a scalar argument or the array pointer
+fail: `solve` failed
 ```

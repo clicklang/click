@@ -27,17 +27,12 @@ void set_end(int32 *v, int32 i, int32 n) {
     have zeros(at(entry, v), 0, i) == zeros(at(entry, v), 0, i) by normalize();
     step();
     have zeros(at(entry, v), 0, i) == zeros(v, 0, i + 1) by {
-        transport(
-            zeros(at(entry, v), 0, i) == zeros(at(entry, v), 0, i),
-            zeros(at(entry, v), 0, i) == zeros(v, 0, i + 1)
-        ) using {
-            zeros(at(entry, v), 0, i) == zeros(at(entry, v), 0, i);
-        };
+        solve();
         assumption();
     }
 }
 ```
 
 ```expect
-fail: fold read frame: the two `zeros` applications differ in an endpoint, a scalar argument or the array pointer
+fail: `solve` failed
 ```

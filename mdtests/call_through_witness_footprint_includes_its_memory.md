@@ -229,10 +229,7 @@ int32 caller(struct node* p, struct node* q) {
     step(overwrite, { h: h });
     let { tag: t2, side: s2 } = unfold(h);
     have next->value == at(before, next->value) by {
-        transport(
-            at(before, next->value) == at(before, next->value),
-            next->value == at(before, next->value)
-        ) using { };
+        solve();
     }
     have next->value == 0 by solve();
     let { next: saved_next } = unfold(hop(p));
@@ -253,5 +250,5 @@ int32 caller(struct node* p, struct node* q) {
 ```
 
 ```expect
-fail: `transport using` found no frame evidence
+fail: `solve` failed
 ```

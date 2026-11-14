@@ -99,10 +99,7 @@ void probe(struct node* g, struct node* n) {
                         step(set_word, { w: v });
 
                     have n->word == at(before_call, n->word) by {
-                        transport(at(before_call, n->word) == at(before_call, n->word),
-                                  n->word == at(before_call, n->word)) using {
-                            n == old(n);
-                        };
+                        solve();
                     }
 
                     step(); step();
@@ -116,5 +113,5 @@ void probe(struct node* g, struct node* n) {
 ```
 
 ```expect
-fail: `transport using` found no frame evidence carrying its source fact to the target's state
+fail: `solve` failed
 ```

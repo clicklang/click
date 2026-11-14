@@ -1,4 +1,4 @@
-# A descriptor field is unchanged by a separated pointee store
+# A changed descriptor field is not preserved
 ```c filename=probe.c
 struct Descriptor { int32 length; int32 *data; };
 void write_first(struct Descriptor *owner) {
@@ -12,12 +12,10 @@ void write_first(struct Descriptor *owner) {
     ensures owner->length == old(owner->length);
 } by {
     step();
-    transport(old(owner->length) == old(owner->length),
-              owner->length == old(owner->length)) using {
-    };
+    have owner->length == old(owner->length) by { solve(); }
     step_until(function.exit);
 }
 ```
 ```expect
-fail: `transport using` found no frame evidence
+fail: `solve` failed
 ```

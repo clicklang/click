@@ -51,8 +51,7 @@ void rotate_child_link(struct rb_node* gparent, struct rb_node* tmp) {
             mark before_store;
             step();
             have parent->__rb_parent_color == at(before_store, parent->__rb_parent_color) by {
-                transport(at(before_store, parent->__rb_parent_color) == at(before_store, parent->__rb_parent_color),
-                          parent->__rb_parent_color == at(before_store, parent->__rb_parent_color)) using { };
+                solve();
             }
             let c = fold(node_at(gparent->rb_left), { v: 0 });
             let s = fold(left_child(gparent), { v: 0 }, { child: c });
@@ -63,5 +62,5 @@ void rotate_child_link(struct rb_node* gparent, struct rb_node* tmp) {
 ```
 
 ```expect
-fail: `transport using` found no frame evidence carrying its source fact to the target's state
+fail: `solve` failed
 ```
