@@ -236,6 +236,12 @@ ignored by logical pointer equality. Exact producer handles do not coalesce
 those payloads. Persistent evidence is retained without premise traversal;
 no live producer or access decision changes in this preparation slice.
 
+7d prepares shared pointer dependency, capture, binder and scope readers. They
+visit distinct offset nodes and common numeric children without exporting
+addresses or indices. Existing mode-specific treatment of coordinates, loaded
+pointer definitions, call arguments and metadata is unchanged; native block
+and machine-scope readers are shared with the prepared path.
+
 ## Chunk 6: folds, binders and algebraic matches
 
 Delivered one PR per subchunk, in sequence, preparing scoped consumers and Surface

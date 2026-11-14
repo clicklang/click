@@ -3119,3 +3119,94 @@ fn named_pointer_cell_requires_its_complete_read_and_provenance() {
     let later = crate::kernel::cell_run_value(ProgramType::Int32Pointer, next);
     assert!(!super::cell_value_is_exactly_load(&later, &name));
 }
+
+#[test]
+fn opened_contract_entry_selects_premises_before_body_execution() {
+    use crate::kernel::proof::PropositionSource;
+    let state = ExecutionState::new();
+    let function = crate::kernel::program_function(
+        crate::kernel::ProgramType::Int32,
+        "entry_owner",
+        vec![],
+        crate::kernel::program_return(crate::kernel::program_expression::int32_literal(0)),
+    )
+    .with_contract(
+        vec![SpecProposition::Predicate {
+            name: "entry_requirement".into(),
+            arguments: vec![],
+            resource_state_dependent: false,
+        }],
+        vec![],
+        vec![],
+        vec![],
+        true,
+    );
+    let environment = crate::kernel::ExecutionEnvironment::new();
+    let foreign = Proposition::Predicate {
+        name: "not_a_requirement".into(),
+        arguments: vec![],
+    };
+    let contract = crate::kernel::program_function_contract_entry(&state, &function, &[]).unwrap();
+    let requirement = contract
+        .facts()
+        .iter()
+        .find(|fact| {
+            matches!(
+                fact.origin(),
+                crate::kernel::ContractEntryFactOrigin::Requirement(0)
+            )
+        })
+        .expect("the declared requirement is an entry fact")
+        .proposition()
+        .clone();
+    let opened = OpenedContractEntry::open(
+        &state,
+        &function,
+        &[],
+        &vec![foreign.clone(), requirement.clone(), requirement.clone()],
+        &environment,
+    )
+    .unwrap();
+    assert!(opened.facts().contains(&requirement));
+    let admitted = opened.facts().propositions().zip(opened.source_origins());
+    assert_eq!(
+        admitted
+            .filter(|(fact, _)| **fact == requirement)
+            .map(|(_, origin)| *origin)
+            .collect::<Vec<_>>(),
+        vec![Some(1)]
+    );
+    assert!(!opened.facts().contains(&foreign));
+    assert!(opened.facts().contains(&environment.byte_order_fact()));
+    assert_eq!(
+        opened.facts().propositions().count(),
+        opened.source_origins().len()
+    );
+    let entry = opened.entry.clone();
+    let facts = opened.facts.clone();
+    let core = opened.into_execution_core();
+    assert!(Arc::ptr_eq(core.function_entry.as_ref().unwrap(), &entry));
+    assert_eq!(&*core.state, &state);
+    assert!(
+        core.entry_facts_at_entry()
+            .unwrap()
+            .contains(&environment.byte_order_fact())
+    );
+    assert_eq!(
+        facts.assumptions(),
+        core.function_entry.as_ref().unwrap().assumptions()
+    );
+    assert!(
+        OpenedContractEntry::open(
+            &state,
+            &function,
+            &[crate::kernel::program_expression::variable(
+                "not_a_bound_argument"
+            )],
+            &Vec::<Proposition>::new(),
+            &environment,
+        )
+        .is_err(),
+        "invalid argument binding fails before a body proof exists"
+    );
+}

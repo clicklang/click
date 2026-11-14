@@ -225,3 +225,75 @@ fn ordinary_closing_steps_ignore_unrelated_facts_and_closed_source_claims() {
         }
     }
 }
+
+#[test]
+fn owned_outcome_completion_is_indexed_and_does_not_copy_sibling_facts() {
+    use crate::kernel::proof::{PersistentOrderedSet, ProofBranch, ProofBranchState, ProofFacts};
+    let execution = closing_execution();
+    let context = crate::kernel::ContractClosingContext::new(&execution);
+    for count in [16_usize, 64, 256] {
+        for fact_count in [0, 1024] {
+            let facts = ProofFacts::from_ordered(
+                &(0..fact_count)
+                    .map(|index| crate::kernel::Proposition::Predicate {
+                        name: format!("unrelated_{index}"),
+                        arguments: vec![],
+                    })
+                    .collect::<Vec<_>>(),
+            );
+            let goals = (0..count)
+                .map(|path_index| {
+                    let core = outcome();
+                    let mut closing = context.open(0, &core);
+                    for kind in ContractClosingGoal::ORDER {
+                        closing = closing.fixture_close_goal(kind);
+                    }
+                    let mut goal = FunctionOutcomeObligation::new(
+                        path_index,
+                        Arc::new(OutcomeProofState::new(core, ())),
+                    );
+                    goal.claims = Some(OutcomeClaimGoals::open([], false));
+                    goal.closing = Some(closing);
+                    ProofBranch::new(
+                        ProofObligation::FunctionOutcome(goal),
+                        ProofBranchState {
+                            facts: facts.clone(),
+                            unfolded_predicates: PersistentOrderedSet::default(),
+                            execution: None,
+                        },
+                    )
+                })
+                .collect();
+            let seed = outcome_root(FunctionOutcomeObligation::new(
+                0,
+                Arc::new(OutcomeProofState::new(outcome(), ())),
+            ));
+            let (owner, ids) = seed
+                .replace_focused_with_checked_branches(goals)
+                .unwrap_or_else(|_| panic!("open frontier"));
+            let ((completed, work), indexed_work) =
+                crate::persistent::measure_persistent_work(|| {
+                    crate::instrumentation::measure_deterministic_work(|| {
+                        let mut completed = owner.clone();
+                        for id in &ids {
+                            let selected = completed
+                                .focus_open_branch(*id)
+                                .unwrap_or_else(|_| panic!("open case"));
+                            completed = selected.complete_function_outcome_in(&completed).unwrap();
+                        }
+                        completed
+                    })
+                });
+            assert!(completed.is_complete());
+            assert!(!owner.is_complete());
+            assert!(
+                work <= 16 * count,
+                "{count} outcomes, {fact_count} facts: {work}"
+            );
+            assert!(
+                indexed_work <= 32 * count * (count.ilog2() as usize + 1),
+                "{count} outcomes, {fact_count} facts: {indexed_work} index visits"
+            );
+        }
+    }
+}
