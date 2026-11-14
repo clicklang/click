@@ -3680,7 +3680,7 @@ fn failed_final_assumption_preserves_its_checked_trace_context() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_20")]
-fn successful_transport_trace_keeps_checked_operands_without_added_facts() {
+fn known_transport_trace_retains_its_written_source_occurrence() {
     for suffix in ["", " using { at(saved, p[0] == 7); }"] {
         let source = format!(
             r#"verifying "f.c";
@@ -3699,8 +3699,10 @@ fn successful_transport_trace_keeps_checked_operands_without_added_facts() {
             .expect("identity transport should verify");
             let trace = accepted_proof_trace(&|_, _| None, &|_, _, _| None, &|_, _, _| false, None)
                 .expect("accepted transport retains its trace");
-            assert!(trace.contains("checked transport source:"), "{trace}");
-            assert!(trace.contains("checked transport target:"), "{trace}");
+            // The target is already known: its retained proof is an ordinary
+            // lookup, not a legacy transport node with two checked operands.
+            assert!(trace.contains("tactic 2: transport"), "{trace}");
+            assert!(!trace.contains("checked transport target:"), "{trace}");
             let focused = accepted_proof_trace(
                 &|_, path| {
                     let line = path.first()? + 1;
@@ -3711,7 +3713,8 @@ fn successful_transport_trace_keeps_checked_operands_without_added_facts() {
                 Some(&SourcePosition::new(3, 1)),
             )
             .expect("the written transport source occurrence remains traceable");
-            assert!(focused.contains("checked transport target:"), "{focused}");
+            assert!(focused.contains("tactic@3: transport"), "{focused}");
+            assert!(!focused.contains("checked transport target:"), "{focused}");
         });
     }
 }
@@ -4082,7 +4085,7 @@ fn budget_stopped_transport_retains_its_checked_loop_prefix() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_22")]
-fn budget_stopped_explicit_transport_retains_its_checked_prefix_and_goal() {
+fn budget_stopped_known_transport_retains_its_checked_prefix_and_completed_fact() {
     use crate::instrumentation::{TacticWorkLimits, collect_tactic_work, with_tactic_work_limits};
     let source = r#"verifying "f.c";
         void f(int32 **p, int32 **q) {
@@ -4151,7 +4154,10 @@ fn budget_stopped_explicit_transport_retains_its_checked_prefix_and_goal() {
                     .split("failed check:")
                     .nth(1)
                     .expect("failure context");
-                assert!(failed.contains("checked transport target:"), "{trace}");
+                // Exhaustion happens after the ordinary proof completed.
+                // Its fact survives in the failure context; no legacy
+                // transport node is needed to retain that checked prefix.
+                assert!(failed.contains("value#1 = value#1 is true"), "{trace}");
                 assert!(trace.contains("pointer read at snapshot#"), "{trace}");
             }
         });
@@ -4556,7 +4562,7 @@ test_batches! {
         failed_final_assumption_preserves_its_checked_trace_context,
     ],
     diagnostic_batch_20: [
-        successful_transport_trace_keeps_checked_operands_without_added_facts,
+        known_transport_trace_retains_its_written_source_occurrence,
         a_trace_marks_searched_steps_and_their_chosen_arguments,
         rejected_transport_prints_checked_reads_and_retains_prefix,
         failed_normalize_using_retains_actual_wide_read_resolution,
@@ -4568,7 +4574,7 @@ test_batches! {
         budget_stopped_transport_retains_its_checked_loop_prefix,
     ],
     diagnostic_batch_22: [
-        budget_stopped_explicit_transport_retains_its_checked_prefix_and_goal,
+        budget_stopped_known_transport_retains_its_checked_prefix_and_completed_fact,
         callback_refinement_hint_with_produced_resource_is_a_checked_proof,
         failed_branch_interface_retains_its_arm_and_written_requirement,
         a_uint32_equality_above_int32_max_prints_in_its_own_type,
