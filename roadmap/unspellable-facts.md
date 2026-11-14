@@ -246,6 +246,17 @@ producers or change fold reduction laws. Fold child keys remain boxed so this
 variant does not enlarge ordinary scalar keys. The full scaling, related fact
 matching/arithmetic, rewrite and registration selection passes 1,676 tests.
 
+6e adds the existing `.fold(...)` Surface spelling for retained Integer and
+machine fold payloads. Body binders use separate Integer/C namespaces;
+bounds and initial values stay outside their scope. A single name-freshening
+pass avoids capture and processes nested folds iteratively. Integer-index
+bounds use existing typed `let` bindings to retain their carrier through
+lowering. Round trips compare exact alpha identity, not printed binder IDs.
+Concrete machine-fold normalization is unchanged: a rewrite-to-concrete proof
+expands and replays without implicit search. This supplies the spelling
+boundary; live common fold producer activation remains 6f and 6g. Validation:
+the full scaling and related Surface selection passes all 1,634 tests.
+
 ## Chunk 5: execution value handoffs
 
 Retain already-supported machine-integer results through execution, one PR per

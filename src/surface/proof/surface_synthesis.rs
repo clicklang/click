@@ -12,6 +12,8 @@ use crate::kernel::{
 #[cfg(test)]
 mod tests;
 
+mod folds;
+
 use crate::kernel::c_local_source_name as surface_local_name;
 
 const SURFACE_SYNTHESIS_WORK_LIMIT: usize = 16_384;
@@ -3038,7 +3040,7 @@ fn synthesize_surface_integer(
 
 /// The shared term-to-surface boundary. Arithmetic and calls have common
 /// children; the legacy leaf dispatch is temporary and never projects away
-/// part of a value. Scoped binders retain their old refusal until migrated.
+/// part of a value. Fold bodies retain their typed lexical scope.
 pub(super) fn raise_kernel_term(
     term: &crate::kernel::KernelTerm,
     parameter_binding: ParameterBinding<'_>,
@@ -3070,9 +3072,8 @@ pub(super) fn raise_kernel_term(
         }
         Node::IntegerLiteral(value) => SurfaceTerm::IntegerLiteral(value.to_string()),
         Node::Variable(variable) if term.ty() == &KernelType::Integer => {
-            match bound_variables
-                .get(variable)
-                .cloned()
+            match folds::binder_name(true, *variable)
+                .or_else(|| bound_variables.get(variable).cloned())
                 .or_else(|| proof_binder_name(*variable))
                 // A name the loop phase gives a variable it binds, such as
                 // the head's pass count `iterations`.
@@ -3228,7 +3229,13 @@ pub(super) fn raise_kernel_term(
             }
         }
         Node::Legacy(legacy) => match legacy.value() {
-            crate::kernel::PureFunctionArgument::Integer(_) => return None,
+            crate::kernel::PureFunctionArgument::Integer(value) => {
+                let fold = crate::kernel::KernelFold::import_integer(
+                    &mut crate::kernel::KernelTermImport::default(),
+                    value,
+                )?;
+                folds::raise_fold(&fold, parameter_binding, state, bound_variables)?
+            }
             value => {
                 synthesize_legacy_call_argument(value, parameter_binding, state, bound_variables)?
             }
@@ -4044,7 +4051,8 @@ fn synthesize_surface_bitvector(
         return None;
     }
     if let MachineTerm::Variable(variable) = term
-        && let Some(name) = bound_variables.get(variable)
+        && let Some(name) =
+            folds::binder_name(false, *variable).or_else(|| bound_variables.get(variable).cloned())
     {
         return Some(ContractExpression::CFragment(CExpression::Variable(
             name.clone(),
@@ -4668,7 +4676,9 @@ fn synthesize_surface_bitvector(
                 bound_variables,
             )?),
         }),
-        MachineTerm::RangeFold { .. } => None,
+        MachineTerm::RangeFold { .. } => {
+            folds::raise_machine_fold(term, parameter_binding, state, bound_variables)
+        }
         MachineTerm::PureFunctionApplication {
             name,
             arguments: values,

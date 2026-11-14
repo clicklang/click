@@ -431,3 +431,86 @@ fn common_arithmetic_names_ignore_unrelated_locals_without_exports() {
         assert!(work <= 32, "{size} unrelated locals: {work} work");
     }
 }
+
+#[test]
+fn nested_fold_binder_freshening_scales_with_selected_surface() {
+    for unrelated in [0, 128, 512] {
+        let _ambient = (0..unrelated)
+            .map(|n| {
+                (
+                    format!("ambient_{n}"),
+                    SurfaceTerm::IntegerLiteral("0".into()),
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        for size in [8, 32, 128] {
+            let mut expression = SurfaceTerm::Binding("__click_binder_0".into());
+            let mut markers = Vec::new();
+            for n in 0..size {
+                let accumulator = format!("\0acc{n}");
+                let item = format!("\0item{n}");
+                markers.extend([accumulator.clone(), item.clone()]);
+                expression = SurfaceTerm::RangeFold {
+                    start: Box::new(SurfaceTerm::IntegerLiteral("0".into())),
+                    end: Box::new(SurfaceTerm::Binding("n".into())),
+                    initial: Box::new(SurfaceTerm::Binding(accumulator.clone())),
+                    accumulator,
+                    item,
+                    body: Box::new(expression),
+                };
+            }
+            let (renamed, work) = crate::instrumentation::measure_deterministic_work(|| {
+                crate::surface::lowering::name_synthesized_fold_binders(&expression, &markers)
+                    .unwrap()
+            });
+            assert_eq!(work, 4 * size + 1, "size={size}, unrelated={unrelated}");
+            let text = diagnostics::describe_contract_expression(&renamed);
+            assert!(!text.contains('\0'));
+            assert!(text.contains("__click_binder_0"));
+        }
+    }
+}
+
+#[test]
+fn nested_fold_surface_raising_scales_without_ambient_local_scan() {
+    let mut baseline = BTreeMap::new();
+    for unrelated in [0, 64, 256] {
+        for size in [3, 9, 27] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let n = MachineTerm::Variable(Variable(720000));
+            let mut state = CState::new().with_local("n", CValue::Int32(n.clone()));
+            for i in 0..unrelated {
+                state = state.with_local(
+                    format!("unused_{i}"),
+                    CValue::Int32(MachineTerm::Variable(Variable(730000 + i))),
+                );
+            }
+            let mut term = MachineTerm::Variable(Variable(720001));
+            for _ in 0..size {
+                term = MachineTerm::RangeFold {
+                    start: Box::new(MachineTerm::constant(0)),
+                    end: Box::new(n.clone()),
+                    initial: Box::new(MachineTerm::constant(0)),
+                    accumulator: Variable(720001),
+                    item: Variable(720002),
+                    body: Box::new(term),
+                };
+            }
+            let (surface, work) = crate::instrumentation::measure_deterministic_work(|| {
+                synthesize_surface_bitvector(
+                    &term,
+                    ParameterBinding::default(),
+                    &state,
+                    &BTreeMap::new(),
+                )
+            });
+            assert!(surface.is_some(), "size={size}");
+            if unrelated == 0 {
+                baseline.insert(size, work);
+            } else {
+                assert_eq!(work, baseline[&size], "size={size}, unrelated={unrelated}");
+            }
+            assert!(work <= 100 * size + 100, "size={size}: {work}");
+        }
+    }
+}
