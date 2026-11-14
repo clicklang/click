@@ -175,7 +175,10 @@ impl KernelTerm {
         if self.ty() == &KernelType::C(format.c_type()) {
             return self.clone();
         }
-        if !matches!(self.node(), KernelTermNode::MachineIf { .. }) {
+        if !matches!(
+            self.node(),
+            KernelTermNode::MachineIf { .. } | KernelTermNode::Match(_)
+        ) {
             return Self::intern(KernelType::C(format.c_type()), self.node().clone());
         }
         // A conditional's arms have its observation type, unlike an arithmetic
@@ -210,6 +213,18 @@ impl KernelTerm {
                             cache[&(arguments[2].id(), format)].clone(),
                         ],
                     )
+                } else if let KernelTermNode::Match(matched) = term.node() {
+                    if !finish {
+                        pending.push((term, true));
+                        pending.extend(matched.arguments[1..].iter().map(|arm| (arm, false)));
+                        continue;
+                    }
+                    let mut matched = matched.clone();
+                    matched.result_type = KernelType::C(format.c_type());
+                    for body in &mut matched.arguments[1..] {
+                        *body = cache[&(body.id(), format)].clone();
+                    }
+                    matched.into_term()
                 } else {
                     Self::intern(KernelType::C(format.c_type()), term.node().clone())
                 };
@@ -456,6 +471,9 @@ impl KernelTermImport {
             return self.scalar_read(result, term);
         }
         let node = match term {
+            Old::AlgebraicMatch { .. } => {
+                return Some(KernelMatch::import_machine(self, result, term)?.into_term());
+            }
             Old::RangeFold { .. } => {
                 return Some(
                     KernelFold::import_machine(self, term)?
@@ -599,6 +617,11 @@ impl KernelTermImport {
             return read;
         }
         let node = match term {
+            Old::AlgebraicMatch { .. } => {
+                return KernelMatch::import_machine(self, result, term)
+                    .expect("machine match")
+                    .into_term();
+            }
             Old::RangeFold { .. } => {
                 return KernelFold::import_machine(self, term)
                     .expect("machine fold")
@@ -706,6 +729,7 @@ impl KernelTermExport {
         crate::instrumentation::record_deterministic_work(1);
         Ok(match term.node() {
             Node::Fold(fold) => fold.export_machine()?,
+            Node::Match(matched) => matched.export_machine(&mut KernelTermExport::default())?,
             Node::Call { name, arguments } if matches!(term.ty(), KernelType::C(ty) if MachineIntegerType::from_c_type(*ty).is_some()) =>
             {
                 let mut export = Self::default();

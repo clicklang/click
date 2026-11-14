@@ -37,7 +37,7 @@ impl TermRewrite<'_> {
         }
     }
 
-    fn reduce_retained_match_in(&mut self, matched: &KernelMatch) -> Option<KernelTerm> {
+    pub(super) fn reduce_retained_match_in(&mut self, matched: &KernelMatch) -> Option<KernelTerm> {
         let PureFunctionArgument::Algebraic(scrutinee) = self
             .fold_integer_bridge
             .argument(&matched.arguments[0])
@@ -82,6 +82,26 @@ impl TermRewrite<'_> {
             self.changed = true;
         }
         value
+    }
+
+    pub(super) fn rewrite_retained_match_value_in(
+        &mut self,
+        matched: &KernelMatch,
+    ) -> Option<KernelTerm> {
+        let matched = match self.retained_match_in(matched) {
+            Ok(matched) => matched,
+            Err(_) => {
+                if self.refusal_status().is_none() {
+                    self.unsupported_integer_scope = true;
+                }
+                return None;
+            }
+        };
+        let reduced = self.reduce_retained_match_in(&matched);
+        if self.refusal_status().is_some() {
+            return None;
+        }
+        Some(reduced.unwrap_or_else(|| matched.into_term()))
     }
 
     fn reserve_retained_match_variables(&mut self, matched: &KernelMatch) -> Option<()> {

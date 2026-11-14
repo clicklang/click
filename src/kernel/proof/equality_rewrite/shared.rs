@@ -495,7 +495,10 @@ fn canonical(root: &KernelTerm) -> Option<(HashMap<u64, KernelTerm>, HashMap<u64
             pending.extend(nodes.into_iter().map(|child| (child, false)));
             continue;
         }
-        let has_load = if matches!(term.node(), KernelTermNode::Fold(_)) {
+        let has_load = if matches!(
+            term.node(),
+            KernelTermNode::Fold(_) | KernelTermNode::Match(_)
+        ) {
             true
         } else if nodes.is_empty() {
             leaf(term).is_some_and(|value| crate::kernel::eval::term_mentions_a_memory_load(&value))
@@ -513,7 +516,7 @@ fn canonical(root: &KernelTerm) -> Option<(HashMap<u64, KernelTerm>, HashMap<u64
             };
         loads.insert(term.id(), has_load);
         let value = match term.node() {
-            KernelTermNode::Fold(_) => term.clone(),
+            KernelTermNode::Fold(_) | KernelTermNode::Match(_) => term.clone(),
             KernelTermNode::MachineIf { arguments } => {
                 let guard = MachineTerm::BoolCast {
                     to: T::UInt8,
@@ -635,10 +638,12 @@ pub(super) fn rewrite(
             })?
             .iter()
             .any(|(_, node)| {
-                matches!(node.node(), KernelTermNode::Fold(_))
-                    || node
-                        .machine_conversion_leaf()
-                        .is_some_and(crate::kernel::eval::term_mentions_a_memory_load)
+                matches!(
+                    node.node(),
+                    KernelTermNode::Fold(_) | KernelTermNode::Match(_)
+                ) || node
+                    .machine_conversion_leaf()
+                    .is_some_and(crate::kernel::eval::term_mentions_a_memory_load)
             })
         } else {
             false
@@ -735,6 +740,17 @@ pub(super) fn rewrite(
             continue;
         }
         let value = match term.node() {
+            KernelTermNode::Match(matched) => {
+                let mut rewrite = super::super::term_rewrite::TermRewrite::for_bits(from, to);
+                match rewrite.retained_match(matched) {
+                    Ok(matched) => match rewrite.reduce_retained_match(&matched) {
+                        Ok(Some(value)) => value,
+                        Ok(None) => matched.into_term(),
+                        Err(_) => term.clone(),
+                    },
+                    Err(_) => term.clone(),
+                }
+            }
             KernelTermNode::Fold(fold) => {
                 let mut rewrite = super::super::term_rewrite::TermRewrite::for_bits(from, to);
                 match rewrite.retained_fold(fold) {
@@ -827,7 +843,8 @@ fn static_syntax(root: &KernelTerm) -> Option<bool> {
                 | KernelTermNode::IntegerToMachine { .. }
                 | KernelTermNode::MemoryLoad { .. }
                 | KernelTermNode::Legacy(_)
-                | KernelTermNode::Fold(_) => false,
+                | KernelTermNode::Fold(_)
+                | KernelTermNode::Match(_) => false,
                 _ => nodes.iter().all(|node| cache[&node.id()]),
             };
             cache.insert(term.id(), value);

@@ -2,10 +2,25 @@
 //! Compatibility reads are explicit; a shared value owns only its common root.
 use super::prelude::*;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq)]
 pub enum ExecutionValue {
     Native(CValue),
     Shared(KernelTerm),
+}
+
+impl PartialEq for ExecutionValue {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Native(a), Self::Native(b)) => a == b,
+            (Self::Shared(a), Self::Shared(b)) => {
+                a == b
+                    || (a.ty() == b.ty()
+                        && (a.has_machine_matches() || b.has_machine_matches())
+                        && crate::kernel::shared_machine_syntax_equal(a, b))
+            }
+            _ => false,
+        }
+    }
 }
 
 impl From<CValue> for ExecutionValue {

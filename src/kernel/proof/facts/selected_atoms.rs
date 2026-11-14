@@ -40,7 +40,8 @@ fn syntax_atoms(root: &KernelTerm) -> Option<PersistentSet<BitvectorEqualityAtom
                 KernelTermNode::IntegerToMachine { .. }
                 | KernelTermNode::Legacy(_)
                 | KernelTermNode::Call { .. }
-                | KernelTermNode::Fold(_) => PersistentSet::default(),
+                | KernelTermNode::Fold(_)
+                | KernelTermNode::Match(_) => PersistentSet::default(),
                 KernelTermNode::MachineUnary { operand, .. }
                 | KernelTermNode::MachineCast { operand, .. } => {
                     if !finish {
@@ -92,20 +93,21 @@ pub(super) fn collect(
     machine: &SharedMachineIntegerTerm,
     atoms: &mut BTreeSet<BitvectorEqualityAtomKey>,
 ) {
-    collect_in(machine, atoms, &mut BTreeSet::new(), false);
+    collect_in(machine, atoms, &mut BTreeSet::new(), false, false);
 }
 
 fn collect_in(
     machine: &SharedMachineIntegerTerm,
     atoms: &mut BTreeSet<BitvectorEqualityAtomKey>,
-    seen: &mut BTreeSet<u64>,
+    seen: &mut BTreeSet<(u64, bool)>,
     inside_fold: bool,
+    native_match_body: bool,
 ) {
     let Some(root) = machine.shared_operand() else {
         collect_bitvector_atoms(machine.value(), atoms);
         return;
     };
-    if !seen.insert(root.id()) {
+    if !seen.insert((root.id(), native_match_body)) {
         return;
     }
     let Some(written) = syntax_atoms(root) else {
@@ -124,10 +126,21 @@ fn collect_in(
         !crate::instrumentation::deadline_exceeded_with_work(1)
     }) {
         for (_, leaf) in leaves.iter() {
+            if native_match_body && let KernelTermNode::MachineIf { arguments } = leaf.node() {
+                let guard = crate::kernel::KernelTermExport::condition(&arguments[0])
+                    .expect("retained match/fold guard");
+                collect_condition_bitvector_atoms(&guard, atoms);
+            }
             if let KernelTermNode::Fold(fold) = leaf.node() {
                 for child in &fold.arguments {
                     let child = MachineOperandView::Shared(child).retain(MachineIntegerType::Int32);
-                    collect_in(&child, atoms, seen, true);
+                    collect_in(&child, atoms, seen, true, native_match_body);
+                }
+            }
+            if let KernelTermNode::Match(matched) = leaf.node() {
+                for child in &matched.arguments[1..] {
+                    let child = MachineOperandView::Shared(child).retain(machine.ty());
+                    collect_in(&child, atoms, seen, true, true);
                 }
             }
             if let Some(native) = leaf.machine_conversion_leaf() {
@@ -162,6 +175,37 @@ fn collect_in(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_match_atom_selection_keeps_native_conditional_guards() {
+        let _session = VerificationSession::enter();
+        let native = MachineTerm::AlgebraicMatch {
+            scrutinee: Box::new(crate::kernel::KernelMatch::test_scrutinee(vec![])),
+            arms: vec![crate::kernel::AlgebraicBitvectorMatchArm {
+                variant: "Arm".into(),
+                bindings: vec![],
+                binding_names: Default::default(),
+                body: MachineTerm::If {
+                    condition: Box::new(ConditionTerm::equal(
+                        MachineTerm::Variable(Variable(1005397)),
+                        MachineTerm::Variable(Variable(1005398)),
+                    )),
+                    then_term: Box::new(MachineTerm::constant(1)),
+                    else_term: Box::new(MachineTerm::constant(0)),
+                },
+            }],
+        };
+        let mut expected = BTreeSet::new();
+        collect_bitvector_atoms(&native, &mut expected);
+        let root =
+            crate::kernel::KernelTermImport::default().machine(MachineIntegerType::Int32, &native);
+        let common =
+            SharedMachineIntegerTerm::observe_shared(MachineIntegerType::Int32, root).unwrap();
+        let mut actual = BTreeSet::new();
+        collect(&common, &mut actual);
+        assert_eq!(actual, expected);
+        assert!(actual.contains(&BitvectorEqualityAtomKey::Variable(Variable(1005397))));
+    }
 
     #[test]
     fn shared_fold_atom_selection_keeps_call_bodies_opaque() {

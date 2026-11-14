@@ -50,7 +50,10 @@ fn visit_machine_operand_carrier_leaves_selected(
     if operand.literal().is_some() {
         return;
     }
-    if matches!(root.node(), KernelTermNode::Fold(_)) {
+    if matches!(
+        root.node(),
+        KernelTermNode::Fold(_) | KernelTermNode::Match(_)
+    ) {
         visit(operand);
         return;
     }
@@ -65,7 +68,10 @@ fn visit_machine_operand_carrier_leaves_selected(
             if checked_collection_checkpoint() {
                 return;
             }
-            if matches!(leaf.node(), KernelTermNode::Fold(_)) {
+            if matches!(
+                leaf.node(),
+                KernelTermNode::Fold(_) | KernelTermNode::Match(_)
+            ) {
                 visit(MachineOperandView::Shared(leaf));
             } else {
                 visit(MachineOperandView::Legacy(
@@ -138,6 +144,16 @@ fn collect_operand_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     if let MachineOperandView::Shared(root) = operand
+        && let KernelTermNode::Match(fold) = root.node()
+    {
+        retained_matches::collect_match_variables(
+            fold,
+            retained_folds::FoldVariableRead::ExpressionFree,
+            variables,
+        );
+        return;
+    }
+    if let MachineOperandView::Shared(root) = operand
         && let KernelTermNode::Fold(fold) = root.node()
     {
         retained_folds::collect_fold_variables(
@@ -164,6 +180,16 @@ fn collect_operand_integer_variables_seen(
     seen: &mut SeenTerms,
 ) {
     if let MachineOperandView::Shared(root) = operand
+        && let KernelTermNode::Match(fold) = root.node()
+    {
+        retained_matches::collect_match_variables(
+            fold,
+            retained_folds::FoldVariableRead::IntegerFree,
+            variables,
+        );
+        return;
+    }
+    if let MachineOperandView::Shared(root) = operand
         && let KernelTermNode::Fold(fold) = root.node()
     {
         retained_folds::collect_fold_variables(
@@ -188,6 +214,21 @@ fn collect_operand_binder_variables_seen(
     bitvector_variables: &mut BTreeSet<Variable>,
     seen: &mut SeenTerms,
 ) {
+    if let MachineOperandView::Shared(root) = operand
+        && let KernelTermNode::Match(fold) = root.node()
+    {
+        retained_matches::collect_match_variables(
+            fold,
+            retained_folds::FoldVariableRead::IntegerBinders,
+            integer_variables,
+        );
+        retained_matches::collect_match_variables(
+            fold,
+            retained_folds::FoldVariableRead::MachineBinders,
+            bitvector_variables,
+        );
+        return;
+    }
     if let MachineOperandView::Shared(root) = operand
         && let KernelTermNode::Fold(fold) = root.node()
     {
@@ -2936,7 +2977,13 @@ fn collect_integer_variables_seen(
                     shared_machine_conversion_leaves(root, || !checked_collection_checkpoint())
                 {
                     for (_, leaf) in leaves.iter() {
-                        if let KernelTermNode::Fold(fold) = leaf.node() {
+                        if let KernelTermNode::Match(fold) = leaf.node() {
+                            retained_matches::collect_match_variables(
+                                fold,
+                                retained_folds::FoldVariableRead::ExpressionFree,
+                                variables,
+                            );
+                        } else if let KernelTermNode::Fold(fold) = leaf.node() {
                             retained_folds::collect_fold_variables(
                                 fold,
                                 retained_folds::FoldVariableRead::ExpressionFree,
@@ -3719,7 +3766,13 @@ fn collect_integer_bitvector_capture_variables(
                     shared_machine_conversion_leaves(root, || !checked_collection_checkpoint())
                 {
                     for (_, leaf) in leaves.iter() {
-                        if let KernelTermNode::Fold(fold) = leaf.node() {
+                        if let KernelTermNode::Match(fold) = leaf.node() {
+                            retained_matches::collect_match_variables(
+                                fold,
+                                retained_folds::FoldVariableRead::MachineCapture,
+                                variables,
+                            );
+                        } else if let KernelTermNode::Fold(fold) = leaf.node() {
                             retained_folds::collect_fold_variables(
                                 fold,
                                 retained_folds::FoldVariableRead::MachineCapture,

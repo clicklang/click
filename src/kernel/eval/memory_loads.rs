@@ -4212,8 +4212,10 @@ pub(in crate::kernel) fn operand_mentions_a_memory_load(
         return true;
     };
     leaves.iter().any(|(_, leaf)| {
-        matches!(leaf.node(), KernelTermNode::Fold(_))
-            || term_mentions_a_memory_load(leaf.machine_conversion_leaf().expect("conversion leaf"))
+        matches!(
+            leaf.node(),
+            KernelTermNode::Fold(_) | KernelTermNode::Match(_)
+        ) || term_mentions_a_memory_load(leaf.machine_conversion_leaf().expect("conversion leaf"))
     })
 }
 

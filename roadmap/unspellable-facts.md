@@ -325,7 +325,8 @@ than exporting native expression trees. All 1,957 tests in the full scaling and
 related match, rewrite and fact-key selection pass, including five new checks.
 
 
-6k prepares common match spelling through the existing Surface `match` form.
+6k ([PR #2746](https://github.com/clicklang/click/pull/2746), merged)
+prepares common match spelling through the existing Surface `match` form.
 Ordered arms retain typed C, Integer and algebraic scopes, including nested
 folds; written binder names are preferred and conflicting names are freshened.
 Common machine bodies raise directly. Private binder markers are finalized
@@ -334,6 +335,28 @@ avoid the reproduced stack overflow on a 128-node match body. This changes
 neither language syntax nor evaluator reduction policy. All 2,100 tests in the
 full scaling and related Surface, match, fold and substitution selection pass,
 including six print/parse/lower round trips and typed-field scope checks.
+
+6l switches numeric match production to live common roots and arm bodies.
+Integer path results retain a shallow native reading; machine path results
+retain their `KernelTerm` directly. Scoped consumers preserve capture,
+constructor evidence, memory dependencies and typed observation identity.
+Ordinary memory transport and fact simplification leave matches opaque,
+while explicit substitution visits their scoped bodies. Bool, floating-point
+and generic results retain explicit compatibility paths. Algebraic result
+production remains 6m; whole-slice closure remains 6n.
+The full scaling suite and related match, fold, rewrite, Surface, observation,
+memory, condition-decision and variable-reader tests pass: 2,350 total.
+Existing Rust signed-match proofs also pass after preserving synthesized
+Integer aliases during certificate
+observation; the alias is not observed again as a machine value.
+The existing false-list refusal keeps its 100,000-unit budget: unchanged
+retained word comparisons no longer repeat the same order-fact query. Shared
+and native match readers also preserve scrutinee/guard selection, cold-import
+observation identity and the existing word-arithmetic dispatch policy.
+The full 5,286-fixture Markdown corpus passes with zero fact-stability changes.
+Numeric match imports use the same retained-operand boundary as folds: opaque
+arm expressions, including boolean casts, remain valid arithmetic leaves.
+This fixes the Rust option and example-project storage assertion found by CI.
 
 ## Chunk 5: execution value handoffs
 

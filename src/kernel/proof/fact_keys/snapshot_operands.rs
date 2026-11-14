@@ -237,7 +237,10 @@ pub(super) fn operand(view: crate::kernel::MachineOperandView<'_>) -> SnapshotBl
                 Box::new(snapshot_blind_pointer_key(address)),
                 kind,
             ))
-        } else if matches!(root.node(), crate::kernel::KernelTermNode::Fold(_)) {
+        } else if matches!(
+            root.node(),
+            crate::kernel::KernelTermNode::Fold(_) | crate::kernel::KernelTermNode::Match(_)
+        ) {
             intern(Node::ExactOperand(
                 crate::kernel::SharedMachineIntegerTerm::observe_shared(
                     MachineIntegerType::Int32,

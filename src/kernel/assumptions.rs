@@ -3065,6 +3065,19 @@ fn collect_integer_memory_loads_with_width(
     if !seen_integers.insert(term.id()) {
         return Ok(());
     }
+    if matches!(term.as_ref(), IntegerTerm::AlgebraicMatch { .. }) {
+        let root = KernelTermImport::default().integer(term);
+        let KernelTermNode::Match(matched) = root.node() else {
+            unreachable!("Integer match")
+        };
+        return retained_matches::collect_match_memory_loads(
+            matched,
+            current_memory,
+            loads,
+            width,
+            seen_integers,
+        );
+    }
     if matches!(term.as_ref(), IntegerTerm::RangeFold { .. }) {
         let root = KernelTermImport::default().integer(term);
         let KernelTermNode::Fold(fold) = root.node() else {
@@ -3123,6 +3136,16 @@ fn collect_shared_machine_memory_loads(
     for (_, leaf) in leaves.iter() {
         if crate::instrumentation::deadline_exceeded() {
             return Err(interrupted());
+        }
+        if let KernelTermNode::Match(matched) = leaf.node() {
+            retained_matches::collect_match_memory_loads(
+                matched,
+                current_memory,
+                loads,
+                width,
+                seen_integers,
+            )?;
+            continue;
         }
         if let KernelTermNode::Fold(fold) = leaf.node() {
             retained_folds::collect_fold_memory_loads(

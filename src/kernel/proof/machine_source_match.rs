@@ -11,6 +11,7 @@ use std::hash::{Hash, Hasher};
 enum Shape {
     Atom(KernelTerm),
     Fold(Variable, Variable, [usize; 4]),
+    Match(AlgebraicTerm, Vec<(String, Vec<AlgebraicValue>, usize)>),
     If(ConditionTerm, [usize; 2]),
     Native(MachineTerm),
     Application(SharedPureApplication),
@@ -84,6 +85,7 @@ impl<'a> MachineSourceMatcher<'a> {
                 continue;
             }
             let children: Vec<_> = match term.node() {
+                KernelTermNode::Match(matched) => matched.arguments[1..].iter().collect(),
                 KernelTermNode::Fold(fold) => fold.arguments.iter().collect(),
                 KernelTermNode::MachineIf { arguments } => arguments[1..].iter().collect(),
                 KernelTermNode::MachineBinary { arguments, .. } => arguments.iter().collect(),
@@ -97,6 +99,27 @@ impl<'a> MachineSourceMatcher<'a> {
                 continue;
             }
             let shape = match term.node() {
+                KernelTermNode::Match(matched) => {
+                    let mut export = KernelTermExport::default();
+                    let PureFunctionArgument::Algebraic(scrutinee) =
+                        export.argument(&matched.arguments[0]).ok()?
+                    else {
+                        return None;
+                    };
+                    let arms = matched
+                        .arms
+                        .iter()
+                        .zip(&matched.arguments[1..])
+                        .map(|(arm, body)| {
+                            Some((
+                                arm.variant.clone(),
+                                arm.export_bindings(&mut export).ok()?,
+                                self.nodes[&body.id()],
+                            ))
+                        })
+                        .collect::<Option<Vec<_>>>()?;
+                    Shape::Match(scrutinee, arms)
+                }
                 KernelTermNode::Fold(fold) => Shape::Fold(
                     fold.accumulator,
                     fold.item,

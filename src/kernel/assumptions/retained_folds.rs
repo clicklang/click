@@ -46,7 +46,11 @@ pub(super) fn collect_common_memory_loads(
         // arithmetic parent separately would revisit a fold shared by the
         // initial value and body, recursively doubling the same dependency work.
         if !term.has_machine_folds()
-            && !matches!(term.node(), KernelTermNode::Fold(_))
+            && !term.has_machine_matches()
+            && !matches!(
+                term.node(),
+                KernelTermNode::Fold(_) | KernelTermNode::Match(_)
+            )
             && let KernelType::C(ty) = term.ty()
             && let Some(format) = MachineIntegerType::from_c_type(*ty)
             && let Some(value) = SharedMachineIntegerTerm::from_shared(format, term.clone())
@@ -61,6 +65,19 @@ pub(super) fn collect_common_memory_loads(
             continue;
         }
         match term.node() {
+            KernelTermNode::Match(matched) => {
+                for (arm, body) in matched.arms.iter().zip(&matched.arguments[1..]).rev() {
+                    pending.push((body, width));
+                    for binding in arm.bindings.iter().rev() {
+                        let width = match binding.ty() {
+                            KernelType::C(ty) => Some(ty.byte_width()),
+                            _ => None,
+                        };
+                        pending.push((binding, width));
+                    }
+                }
+                pending.push((&matched.arguments[0], None));
+            }
             KernelTermNode::Fold(fold) => {
                 let endpoint_width = match fold.index.ty() {
                     KernelType::C(ty) => Some(ty.byte_width()),

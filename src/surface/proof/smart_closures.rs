@@ -491,6 +491,16 @@ pub(super) fn observed_native_surface_comparison(
     // by that arithmetic; only an observation makes it Integer arithmetic.
     fn written_integer(operand: &ContractExpression) -> bool {
         match operand {
+            // Synthesis retains mathematical sort with this lexical alias.
+            // Observing it again would place an Integer inside a machine cast.
+            ContractExpression::Let {
+                name,
+                click_type: Some(ClickType::Integer),
+                body,
+                ..
+            } if matches!(body.as_ref(), ContractExpression::Binding(value) if value == name) => {
+                true
+            }
             ContractExpression::IntegerLiteral(_) => true,
             ContractExpression::Negate(inner)
             | ContractExpression::Old(inner)
@@ -4993,6 +5003,40 @@ fn selected_premise_contains_goal(premise: &Proposition, goal: &Proposition) -> 
 #[cfg(test)]
 mod synthesized_literal_tests {
     use super::*;
+
+    #[test]
+    fn native_comparison_observation_preserves_synthesized_integer_alias() {
+        let kernel = Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: Box::new(MachineTerm::Variable(Variable(991984))),
+                right: Box::new(MachineTerm::constant(10)),
+            },
+            true,
+        );
+        let value = crate::surface::proof::surface_synthesis::integer_typed_expression(
+            ContractExpression::Call {
+                name: "to_integer".into(),
+                arguments: vec![ContractExpression::Binding("x".into())],
+            },
+        );
+        let written = ClickProposition::Comparison {
+            left: ContractExpression::At {
+                selector: SnapshotSelector::ProgramPoint(ProgramPointRef {
+                    region: CodeRegionRef::Function,
+                    kind: ProgramPointKind::Entry,
+                }),
+                expression: Box::new(value),
+            },
+            operator: ComparisonOperator::LessEqual,
+            right: ContractExpression::IntegerLiteral("10".into()),
+        };
+        assert_eq!(
+            observed_native_surface_comparison(&kernel, &written),
+            written
+        );
+    }
 
     #[test]
     fn requirement_matching_does_not_select_an_unrelated_trivial_goal() {

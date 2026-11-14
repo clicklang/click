@@ -6348,7 +6348,9 @@ fn collect_operand_memories(
             if !seen.insert(root.id()) {
                 continue;
             }
-            if let Some((_, _, children)) = operand.fold() {
+            if let crate::kernel::KernelTermNode::Match(matched) = root.node() {
+                pending.extend(matched.arguments[1..].iter().rev().map(V::Shared));
+            } else if let Some((_, _, children)) = operand.fold() {
                 pending.extend(children.into_iter().rev());
             } else if let Some(leaf) = root.machine_conversion_leaf() {
                 collect_bitvector_memories(leaf, memories);

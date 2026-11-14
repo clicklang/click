@@ -6694,15 +6694,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 })
             )
         );
-        let retained_conditional_equality = match kernel {
+        let retained_branch_equality = match kernel {
             Proposition::ConditionIs(
                 ConditionTerm::IntegerEqual(left, right)
                 | ConditionTerm::IntegerNotEqual(left, right),
                 _,
             ) => [left, right].iter().any(|term| match term.as_ref() {
-                crate::kernel::IntegerTerm::Machine(value) => value
-                    .shared_operand()
-                    .is_some_and(crate::kernel::KernelTerm::has_machine_conditionals),
+                crate::kernel::IntegerTerm::Machine(value) => {
+                    value.shared_operand().is_some_and(|term| {
+                        term.has_machine_conditionals() || term.has_machine_matches()
+                    })
+                }
                 _ => false,
             }),
             _ => false,
@@ -6818,7 +6820,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 // This candidate spells one already-selected premise. Admit
                 // its native/shared equality reading at the same explicit
                 // boundary used when the generated certificate cites it.
-                || (retained_conditional_equality
+                || (retained_branch_equality
                     && crate::kernel::proof::fact_reasoning::listed_equality_fact_is_available(
                         kernel, std::slice::from_ref(&lowered),
                     ))

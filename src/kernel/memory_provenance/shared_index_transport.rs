@@ -84,10 +84,18 @@ pub(in crate::kernel) fn map_index_with_fold(
         if results.contains_key(&node.id()) {
             continue;
         }
-        if matches!(node.node(), KernelTermNode::Fold(_))
-            && let Some(mapped) = map_fold(node).ok()?
+        if matches!(
+            node.node(),
+            KernelTermNode::Fold(_) | KernelTermNode::Match(_)
+        ) && let Some(mapped) = map_fold(node).ok()?
         {
             results.insert(node.id(), mapped);
+            continue;
+        }
+        // Native matches are opaque to memory transport; explicit scoped
+        // substitutions above may still rewrite them.
+        if matches!(node.node(), KernelTermNode::Match(_)) {
+            results.insert(node.id(), node.clone());
             continue;
         }
         let children: Vec<_> = match node.node() {

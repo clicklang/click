@@ -3200,6 +3200,16 @@ fn collect_proposition_algebraic_terms(
             for value in [left.as_ref(), right.as_ref()] {
                 if let crate::kernel::IntegerTerm::AlgebraicMatch { scrutinee, .. } = value {
                     collect_algebraic_term_roots(scrutinee, terms);
+                } else if let crate::kernel::IntegerTerm::Machine(machine) = value
+                    && matches!(
+                        machine.ty(),
+                        MachineIntegerType::Int32 | MachineIntegerType::UInt32
+                    )
+                    && let Some(scrutinee) = machine.operand_view().match_scrutinee()
+                {
+                    // Shared word comparisons use Integer observations. Keep
+                    // the native equality's existing scrutinee selection.
+                    collect_algebraic_term_roots(&scrutinee, terms);
                 }
             }
         }
@@ -5394,5 +5404,51 @@ mod shared_memory_reservation_tests {
     use super::*;
     mod scaling_tests {
         include!("../../scaling_tests/kernel/proof/facts/shared_memory_reservation_tests.rs");
+    }
+}
+
+#[cfg(test)]
+mod retained_match_root_tests {
+    use super::*;
+    #[test]
+    fn shared_match_equalities_select_the_native_algebraic_scrutinee() {
+        let _session = VerificationSession::enter();
+        let native = MachineTerm::AlgebraicMatch {
+            scrutinee: Box::new(crate::kernel::KernelMatch::test_scrutinee(vec![])),
+            arms: vec![crate::kernel::AlgebraicBitvectorMatchArm {
+                variant: "Arm".into(),
+                bindings: vec![],
+                binding_names: Default::default(),
+                body: MachineTerm::constant(0),
+            }],
+        };
+        let machine = SharedMachineIntegerTerm::intern(MachineIntegerType::Int32, native.clone());
+        let written = Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(native),
+                right: Box::new(MachineTerm::constant(1)),
+            },
+            true,
+        );
+        let common = Proposition::ConditionIs(
+            ConditionTerm::IntegerEqual(
+                crate::kernel::IntegerTerm::Machine(machine).into(),
+                crate::kernel::IntegerTerm::constant_i64(1).into(),
+            ),
+            true,
+        );
+        let mut expected = BTreeSet::new();
+        collect_proposition_algebraic_terms(&written, &mut expected);
+        let exports = crate::kernel::KernelTermExport::machine_export_count();
+        let mut actual = BTreeSet::new();
+        collect_proposition_algebraic_terms(&common, &mut actual);
+        assert!(!actual.is_empty());
+        assert_eq!(actual, expected);
+        assert_eq!(
+            crate::kernel::KernelTermExport::machine_export_count(),
+            exports
+        );
     }
 }
