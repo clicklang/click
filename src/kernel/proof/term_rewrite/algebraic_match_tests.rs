@@ -258,8 +258,8 @@ fn retained_algebraic_match_transport_preserves_capture_and_arm_order() {
     let mut new = TermRewrite::for_typed_variables(&c, &integer, &algebraic);
     let actual = new.retained_match(&common).unwrap();
     assert_eq!(
-        actual
-            .export_algebraic(&mut KernelTermExport::default())
+        KernelTermExport::default()
+            .algebraic(&actual.into_term())
             .unwrap(),
         expected
     );

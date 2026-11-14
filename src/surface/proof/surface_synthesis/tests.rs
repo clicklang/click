@@ -4306,7 +4306,9 @@ fn common_match_surface_preserves_written_binders_and_relowers_nested_results() 
     let state = CState::new()
         .with_local("payload", CValue::Parameter(Box::new(scrutinee)))
         .with_local("n", CValue::Int32(MachineTerm::Variable(Variable(991951))));
-    let declarations = "spec enum MatchScope { Arm(int32) }";
+    let declarations = "spec enum MatchScope { Arm(int32) }
+        function wrapped(x: int32) -> int32 { x }
+        function keep(x: MatchScope) -> MatchScope { x }";
     for requirement in [
         "(match payload { MatchScope::Arm(item) => item }) == 0",
         "(match payload { MatchScope::Arm(item) => to_integer(item) }) == to_integer(0)",
@@ -4314,6 +4316,10 @@ fn common_match_surface_preserves_written_binders_and_relowers_nested_results() 
         "(match payload { MatchScope::Arm(item) => MatchScope::Arm(item) }) == payload",
         "(match payload { MatchScope::Arm(item) => (0..n).fold(item, |acc, index| { acc }) }) == 0",
         "(0..n).fold(0, |acc, index| { match payload { MatchScope::Arm(item) => acc } }) == 0",
+        "(match payload { MatchScope::Arm(item) => wrapped((0..n).fold(item, |acc, index| { wrapped(acc) })) }) == 0",
+        "(0..n).fold(0, |acc, index| { wrapped(match payload { MatchScope::Arm(item) => acc ^ item }) }) == 0",
+        "(match (match payload { MatchScope::Arm(item) => MatchScope::Arm(item ^ 1) }) { MatchScope::Arm(item) => MatchScope::Arm(item ^ 2) }) == payload",
+        "keep(match payload { MatchScope::Arm(item) => MatchScope::Arm(wrapped(item)) }) == payload",
     ] {
         let source = format!(
             "{declarations} theorem probe(payload: MatchScope, n: int32) {{ requires {requirement}; ensures true; }}"
