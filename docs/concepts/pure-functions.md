@@ -80,7 +80,7 @@ Use functions for reusable computed values. Use predicates for reusable facts.
 When a pure Click function takes `p: int32[]` or `p: uint8[]`, the parameter is a
 specification-level array ref. It contains:
 
-- a memory snapshot,
+- the memory its reads are taken in,
 - a pointer,
 - and an element type.
 
@@ -110,7 +110,7 @@ function read_counter(x: int32) -> int32 {
 ```
 
 An application is a term over its argument values, and the only memory it
-carries is the snapshot inside an array-ref argument. A body that read
+carries is the memory inside an array-ref argument. A body that read
 `counter` directly would make `read_counter(0)` one term before and after a
 store to `counter`, so a `requires` fact about it would prove a false
 `ensures`. Pass the value in instead; the application then says which value it

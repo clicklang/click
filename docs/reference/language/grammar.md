@@ -66,7 +66,7 @@ documentation inventory keep the following accepted words synchronized.
 | `forall`, `exists` | Universal and existential quantifiers; `exists (x: T, y: U) { P }` binds multiple variables. |
 | `all`, `any`, `fold` | Range proposition and expression methods. |
 | `defined`, `viewable`, `same_object`, `separate`, `aligned`, `little_endian` | Definedness, readable-memory, pointer-provenance, resource-separation, pointer-alignment, and target-byte-order propositions. |
-| `old`, `at`, `c`, `rust` | Snapshot selection and program-binding forms: `c(name)` names a C binding where a Click name has the same spelling, and `rust(name)` a Rust one. |
+| `old`, `at`, `c`, `rust` | Point-reading and program-binding forms: `c(name)` names a C binding where a Click name has the same spelling, and `rust(name)` a Rust one. |
 | `sizeof`, `byte_offset`, `address` | Supported scalar, pointer, and struct-layout sizes, byte-granularity pointer-offset expressions, and the LP64 integer representation of an object pointer. |
 | `load_int32`, `load_uint8`, `load_uint16`, `load_uint32`, `load_int64`, `load_uint64`, `load_int32_pointer`, `load_uint8_pointer`, `load_uint16_pointer`, `load_int32_pointer_pointer`, `load_uint8_pointer_pointer`, `load_uint16_pointer_pointer` | Typed memory-load expressions used by checked expansion when no higher-level source spelling is available. |
 | `by`, `using` | Proof introduction and exact-premise syntax. |
@@ -82,11 +82,11 @@ documentation inventory keep the following accepted words synchronized.
 | `close_invariants` | Retired loop tactic, still reserved. The parser rejects it with `` `close_invariants` is retired ``; a loop's back edge now closes each bundle member with `solve()`, helped by `have` facts proved before it. |
 | `split`, `left`, `right` | Retired tactic spellings. Unless a user-defined tactic has the name, the parser rejects each with a diagnostic that names `assumption()`. |
 | `transport_certificate`, `preserve`, `transitive` | Explicit transport certificate: import facts with `premise`, preserve a read over a cited transition, compose equalities, and select `conclusion`. |
-| `changes_only` | Transition proposition naming recorded before/after snapshots and the resources allowed to change. |
+| `changes_only` | Transition proposition naming recorded before/after points and the resources allowed to change. |
 | `arithmetic_certificate` | Starts the typed arithmetic-certificate envelope. The canonical mathematical family is `arithmetic_certificate { ... }`; checked machine families are `arithmetic_certificate signed_int32 { ... }` and `arithmetic_certificate rules { ... }`. Its step words are listed under [Arithmetic-certificate words](#arithmetic-certificate-words). |
-| `rewrite`, `transport`, `instantiate`, `solve`, `induct` | Equality, snapshot, quantifier, closing, and induction tactics. |
+| `rewrite`, `transport`, `instantiate`, `solve`, `induct` | Equality, transport, quantifier, closing, and induction tactics. |
 | `as`, `else`, `ensuring`, `then` | Names and branches inside structural proof forms. `as` also introduces the target contract's proof instances on an `executes` conclusion. |
-| `function`, `loop`, `region`, `statement`, `call`, `test`, `assignment`, `read`, `read_event`, `back_edge`, `entry`, `exit` | Program-region and program-point selectors. Each names a region. `region(N)` is the `N`th atomic region, one `step()` crosses; `statement(i)` is a statement as written, and a chain continues it with `.statement(j)` and ends it with `.region(j)`, `.call(f, j)`, `.test()`, `.assignment(x, j)` or `.read(j)`. Unchained `assignment(local, N)` and `read(N)`, and `back_edge()` or `loop(i).back_edge()`, are execution targets only. The suffix `.read_event(i).result` selects a completed volatile observation within an atomic region; it is not a program point or execution target. |
+| `function`, `loop`, `region`, `statement`, `call`, `test`, `assignment`, `read`, `read_event`, `back_edge`, `entry`, `exit` | Program-region and point selectors. Each names a region. `region(N)` is the `N`th atomic region, one `step()` crosses; `statement(i)` is a statement as written, and a chain continues it with `.statement(j)` and ends it with `.region(j)`, `.call(f, j)`, `.test()`, `.assignment(x, j)` or `.read(j)`. Unchained `assignment(local, N)` and `read(N)`, and `back_edge()` or `loop(i).back_edge()`, are execution targets only. The suffix `.read_event(i).result` selects a completed volatile observation within an atomic region; it is not a point or execution target. |
 
 See [Tactics](../tactics/index.md) for tactic syntax and classification, and
 [Core tactics](../tactics/index.md#core-tactics) for the ones a hand-written
@@ -518,7 +518,7 @@ Concatenation is associative and `[]` is its left and right identity. Sequence
 equality compares elements rather than concatenation-tree shape, preserving
 order and multiplicity.
 
-`old(...)` and proof snapshots evaluate every element in the selected state,
+`old(...)` and `at(...)` evaluate every element at the selected point,
 so a contract can relate current array cells to their exact entry order:
 
 <!-- verified-example: mdtests/c_named_contract_sequence_refinement.md -->

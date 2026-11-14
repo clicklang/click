@@ -8,10 +8,10 @@ At a proof site, the state can contain:
 
 - goals that remain to be closed;
 - pure facts and assumptions;
-- the symbolic execution path at the current frontier, one program point at a
+- the symbolic execution path at the current frontier, one point at a
   time;
 - path conditions and generated definedness obligations;
-- memory snapshots and resource facts, including derived views;
+- facts about memory reads at points, and resource facts, including derived views;
 - named marks and structural context for branches or loops.
 
 A tactic requests a state transition. A simple tactic requests one checked
@@ -51,7 +51,7 @@ about the current state. The rule is fixed and cheap:
   ownership (two owned resources are disjoint, including memory owned through
   a resource's footprint). The check does not search.
 - A fact about a cell the context cannot prove untouched is not lost, but it
-  remains a fact about the pre-step snapshot. Relating it to the current state afterwards takes
+  remains a fact about the pre-step point. Relating it to the current state afterwards takes
   an explicit `transport`, which may do more reasoning because that operation
   names the relationship to establish.
 - Comparing two terms never does frame reasoning. Two load variables for

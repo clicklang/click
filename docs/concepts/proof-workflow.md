@@ -82,7 +82,7 @@ whose arms each reach their own end, such as `match` or `outcomes`, ends in
 those arms, and each arm has its own tail. The tail's execution and closing are
 charged to the smart budget at the site after the script's last tactic.
 
-A proof is at one program point at a time. Once a script reaches function exit
+A proof is at one point at a time. Once a script reaches function exit
 on its path, with `step_until(function.exit)` or inside one arm of a proof
 `if`, the tactics that follow act on that path. Its open goals are the
 contract's claims in contract order, resource claims included. `fold`,
@@ -201,7 +201,7 @@ expansion output.
   with the proposition added to the pure facts and once with its negation
   added. Each arm has its own proof script and its own path. Tactics written
   after the `if` run once, where the arms rejoin, so both arms must end at
-  the same program point in the same state;
+  the same point in the same state;
   `if P ensuring { ... } then { ... } else { ... }` states what they agree on
   when they do not. An arm that
   reaches function exit ends there instead, and the tactics after the `if`
@@ -299,15 +299,15 @@ statement IDs globally in source preorder: a compound statement receives its
 ID before the statements nested in its arms or body. A sequence itself does
 not receive an ID. Structural assertion and loop checks inserted by Click are
 not source statements and do not consume IDs. Structural traversal, tactic
-execution, snapshots, and expansion all use this same layout. Every
+execution, `at(...)` points, and expansion all use this same layout. Every
 continuing arm must establish every `ensuring` assertion. Exact common facts
 and resources remain available automatically; facts about changed state that
 the continuation needs must be listed explicitly. Deterministic consequences
 of listed resources, such as memory viewability and the read authority an owner
 supports, remain available.
 
-Arm-only snapshots are not exported. The function-entry state used by
-`old(...)` and the common-frontier snapshot remain available. Changed
+Points reached only inside one arm are not exported. The function entry used
+by `old(...)` and the common-frontier point remain available. Changed
 pointer-valued locals become fresh symbolic pointers at the join. The
 interface must export the facts and resources needed to use them, such as
 `views selected[0..len]`; symbolic pointers do not imply non-aliasing with
@@ -338,7 +338,7 @@ A successful implicit tail retains surface-expressible transition provenance
 when the current tactic language can express the argument. Expansion can
 render that provenance as an explicit proof.
 
-An execution proof tracks an execution frontier: the current program point,
+An execution proof tracks an execution frontier: the current point,
 symbolic state, and enclosing continuation stack. Proof scripts can start at
 function entry, advance by one statement with `step();`, unpack a C `if` at the
 current frontier with `branch`, replace scoped paths with an explicit abstract
@@ -466,7 +466,7 @@ not execute an unreachable arm or move backward. A frontend may evaluate a
 right-hand side in earlier helper statements: selecting the final local store
 does not move the frontier before those helpers. Use `loop(N)` to stop before
 a loop's header/body work and `mark` to name a reached state. Assignment
-selectors currently serve `step_until`, not `at(...)` snapshot expressions.
+selectors currently serve `step_until`, not `at(...)` expressions.
 
 `step_until(read(N))` stops before the zero-based Nth statement containing
 an explicit scalar memory load, in executable preorder. A statement counts
@@ -477,10 +477,10 @@ conditional expression need not read on every path. Taking an address such as
 `&**pp` does count. Implicit aggregate copies and reads inside callees do not
 count. The selector grants no access permission: `step()` checks the actual
 operation using the current resources. Like assignment selectors, read
-selectors serve execution targets rather than snapshot expressions.
+selectors serve execution targets rather than `at(...)` expressions.
 
 `region(N)` selects the Nth source statement code region in structural
-order for execution targets and snapshots:
+order for execution targets and `at(...)` points:
 
 <!-- verified-example: mdtests/frontier_have_execute_until_and_mark.md -->
 ```click
@@ -494,18 +494,14 @@ have at(region(4).entry, y) >= 0 by {
 }
 ```
 
-`loop as name { ... }` creates entry and exit snapshot names for the loop at
+`loop as name { ... }` names the entry and exit points of the loop at
 the current frontier; the name is not a selector and never moves the frontier.
 
 A code region is a static source construct with extent, such as a function,
-loop, statement, or block. A program point is a proof-relevant boundary or
-position in the program, often associated with a code region, such as
-`loop_name.entry`. A visit is one runtime arrival at a program point. Visits
-are useful semantic language, but they are not currently Click syntax.
-
-Snapshot expressions use snapshot selectors. A selector can be a C program
-point or a proof-local mark; the selected snapshot is the immutable state
-recorded there:
+loop, statement, or block. A point is a node in the code's region tree, such as `loop_name.entry`, or a
+proof-local mark; it is only an identity and holds no data. A proof path
+reaches each point at most once, so `at(x, e)` means `e` when the path was at
+`x`:
 
 ```text
 at(function.entry, x)
@@ -526,27 +522,27 @@ step();
 have p[0] == at(before_write, p[0]) + 1 by solve();
 ```
 
-The mark names the current state only. It does not advance or rewind the
+The mark names the point the path is at now. It does not advance or rewind the
 frontier and cannot be passed to `step_until`.
 
 `loop_name.entry` is available in invariants on that loop and in its explicit
 `preserve` proof. Once the loop tactic succeeds, `loop_name.exit` is available
 to the enclosing proof.
 
-Statement entry and exit snapshots are currently recorded by deterministic
+Statement entry and exit points are currently recorded by deterministic
 proof execution. `step()`, `step_until(...)`, and the implicit tail
 record each deterministic boundary they cross. An `at(...)` expression reads
 memory, reassigned parameters, and declared scalar, pointer, or array locals
-from the selected state. `at(selector, proposition)` instead snapshots the
-complete proposition; use this form for state-relative facts such as
-`viewable(...)`, where snapshotting only the segment expression would leave the
-memory component at the current state. Branch entries can have a unique
-snapshot. An explicit loop `preserve` proof binds
+at the selected point. `at(point, proposition)` instead reads the complete
+proposition there; use this form for state-relative facts such as
+`viewable(...)`, where wrapping only the segment expression would leave the
+memory component at the current point. A branch entry can be a recorded point. An explicit loop `preserve` proof binds
 `at(loop_name.entry, ...)` to its fresh arbitrary iteration state. Executing a
 verified loop records its unique abstract exit as `at(loop_name.exit, ...)`.
-Historical iteration visits still require a future selection model.
+Earlier concrete iterations have no point of their own: a path checks a loop
+once, as one abstract iteration.
 
-`invariant` declarations generate obligations at loop program points. The
+`invariant` declarations generate obligations at loop points. The
 loop-level `initialize` proof establishes the complete invariant set before the
 first iteration. The `preserve` proof assumes that set and the loop condition,
 executes one body iteration, and reestablishes the set:
@@ -573,7 +569,7 @@ resource operations, proof-level `if`, and branch execution.
 
 An explicit initialization proof is an ordinary pure proof at the actual loop
 entry. It can use `apply`, nested `have`, proof-level `if`, `unfold`, and `solve`,
-but it cannot execute C or transform resources. A named loop's entry snapshot
+but it cannot execute C or transform resources. A named loop's entry point
 is bound while this proof runs. The facts it proves are checked against the
 kernel invariant instances before rule construction.
 

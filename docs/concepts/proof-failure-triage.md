@@ -52,9 +52,10 @@ preserves the float value, such as `d >= -2147483648` and
 
 A read names the memory it reads. A read of the state being reported is the
 bare place (`a[m]`), a read of the function's entry memory is `old(a[m])`, and
-a read at a recorded mark or program point is `at(point, a[m])`. A read of any
-other memory is `at(<state A>, a[m])`, and a `where` list after the report says
-which program event produced each such state, for example
+a read at a recorded mark or other point is `at(point, a[m])`. A read whose
+version point is not currently a recorded, nameable point is `at(<state A>,
+a[m])`, and a `where` list after the report says which program event produced
+each such state, for example
 `<state A> is the memory after the store to a[i]`. Two reads of one place in
 two memories therefore never print alike. Different states do not by
 themselves establish unequal values: the proof may establish that their reads
@@ -75,7 +76,7 @@ value `i` had when the iteration began is `at(region(N).entry, i)`, where
 
 Rust reports use source-visible locals, slice parameters, and slice lengths
 such as `bytes.len()`. Compiler-generated `__rust_` temporaries do not supply
-names; a recorded snapshot can name a copied value through its original local.
+names; a recorded point can name a copied value through its original local.
 
 Where no source name exists, the report uses a placeholder instead of a kernel
 identity: `<unnamed A>` for a value no local, parameter, read, model field or
@@ -94,7 +95,7 @@ proposition never captures. A binder Click introduced itself has no written
 name and always prints that way.
 
 Missing assumption sides and bare-instantiation guards in step refusals and
-search-candidate details use the goal's source and recorded-snapshot names. They are retained
+search-candidate details use the goal's source and recorded-point names. They are retained
 as propositions and named when the report is rendered.
 
 A `--trace-proof` run adds the checked steps on the failing path and the facts
@@ -137,7 +138,7 @@ When adding or repairing a diagnostic, lead with the C operation or contract
 clause being checked and `Requires` followed by the exact Click proposition or
 resource clause that is not yet established. Use the user's source expressions
 and retain the access mode (`owns` versus `views`), arguments, named resource
-occurrence, and relevant snapshot. An English explanation supplements this
+occurrence, and relevant point. An English explanation supplements this
 requirement; it must not replace it.
 
 For example, print `Requires owns counter->value` and `Available: owns
@@ -211,10 +212,10 @@ miss" comes from an elided form, such as `apply(theorem(args))` or a bare
 `transport(P, Q)`, whose lookup found no fact for its argument: state the
 named fact with `have` first, or write the `using` form.
 
-When `solve()` needs to reconstruct a premise at an execution snapshot, its
-automatic fallback probes at most 256 statement-entry snapshots nearest the
+When `solve()` needs to reconstruct a premise at an earlier point, its
+automatic fallback probes at most 256 statement-entry points nearest the
 current anchor. A missing spelling therefore cannot trigger a scan of the
-whole execution history. Name a relevant older snapshot with `at(...)`, or
+whole execution history. Name a relevant older point with `at(...)`, or
 provide a small `using { ... }` list, when this bounded search misses. Each
 candidate still has to lower to the exact retained kernel fact.
 The automatic atomic fallback also declines components with more than 64
@@ -273,8 +274,8 @@ memory with no source name is labeled `<state A>`, `<state B>`, and so on, and
 in a trace `snapshot#1`, `snapshot#2`, numbered by first appearance within one
 report: equal memory shares one label and memory that differs gets another, so
 "same memory" and "different memory" are visible as such. The structural
-comparison stops after the first 32 distinct snapshots. Expanded
-trace facts retain further snapshot identities with constant-time lookup;
+comparison stops after the first 32 distinct memories. Expanded
+trace facts retain further memory identities with constant-time lookup;
 repeated uses of a retained version share a label. Beyond that comparison
 budget, separately constructed equal memories may receive different labels.
 The legend states this distinction, and the report still has fixed output and
@@ -283,7 +284,7 @@ certificates. Search
 context covers bounded recent representatives from loop, induction,
 refinement, and common postcondition searches; it is not a complete theorem
 reasoning trace. This keeps failures useful for triage without dumping
-persistent proof history or repeated raw memory snapshots.
+persistent proof history or repeated raw memory states.
 
 A refused resource fold reports the instantiated body fact it could not
 establish on the standard `goal:` line, and its summary quotes that fact as
@@ -291,9 +292,9 @@ the declaration writes it, after its ordinal in the declaration. If
 evaluation of the fact needs an unproved prerequisite, the `goal:` line
 is that specific prerequisite instead. Ordinary errors use source spelling
 where available. `--trace-proof` also prints the exact checked proposition with typed reads
-and the report's shared snapshot labels. This is the rejected requirement,
+and the report's shared memory labels. This is the rejected requirement,
 not a guessed comparison with a nearby premise. Reading it alongside accepted
-trace facts can reveal a difference in values or snapshots without instrumenting
+trace facts can reveal a difference in values or memory labels without instrumenting
 the verifier.
 
 A failing proof step names where it was written:

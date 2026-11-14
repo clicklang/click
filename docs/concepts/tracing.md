@@ -21,7 +21,7 @@ Click reports four kinds of error. Only a proof error enters this procedure.
 | `proof error` | A checked operation could not establish something. | Follow the procedure below. |
 
 A proof error names its **goal**: the proposition that had to be true at a
-program point and was not proved there. A goal can come from an `ensures`
+point and was not proved there. A goal can come from an `ensures`
 clause, a written `have`, a call's precondition, a definedness requirement such
 as the absence of signed overflow, or a memory access. The report prints it on
 a `goal:` line. Whatever its source, a goal is proved the same way: by the implicit tail when
@@ -196,7 +196,7 @@ premises; it does not by itself certify that checking is fast.
 
 ## The procedure
 
-1. **Record the goal.** Write down the failing goal `G`, the program point
+1. **Record the goal.** Write down the failing goal `G`, the point
    where it is required, and the premises available there. If the report has
    no `goal:` line, or you cannot read it, stop at `unclear-trace`.
 2. **Decide whether `G` is true.** Check it against the contract, the branch
@@ -204,7 +204,7 @@ premises; it does not by itself certify that checking is fast.
    admits, stop at `false-goal`.
 3. **Write the argument.** State why `G` follows from the premises as a chain
    of intermediate facts: the premises imply `A`, `A` implies `B`, and `B`
-   implies `G`. Write each link as a `have` at the program point, so the proof
+   implies `G`. Write each link as a `have` at that point, so the proof
    checks it. If you cannot state the argument, stop at `unclear-goal`. If you
    cannot write one of the intermediate facts in Click, stop at
    `inexpressible-fact`.
@@ -367,7 +367,7 @@ An explicitly requested `--trace-proof` keeps its typed diagnostic notation:
 readable Click expressions are used there only when they preserve the checked
 operands, and otherwise a memory operand prints as
 `read<Bits64>(snapshot#1, pointer=value#1)`, in an added fact just as in a goal.
-The width, snapshot, and address remain visible even when the source wrote only
+The width, memory label, and address remain visible even when the source wrote only
 `parent->__rb_parent_color`.
 
 In the failed-check section, memory ranges whose identical printed footprints
@@ -378,25 +378,25 @@ opaque bounds. Comparison happens only when rendering this trace, over at most
 Equal ranges keep one label, and unambiguous footprints gain no annotation.
 This describes a representation mismatch, not additional proof evidence.
 
-Within a trace, goals, requirements, and traced facts share names and snapshot
+Within a trace, goals, requirements, and traced facts share names and memory
 labels. A `transport` refusal that finds no frame evidence prints its own
 legend first, and the trace continues its numbering, so a label in the refusal
-and in the `failed check` goal means the same value or snapshot. A field of a named pointer prints as that name
+and in the `failed check` goal means the same value or memory. A field of a named pointer prints as that name
 plus its byte offset (`g + 16 bytes`). A bounded legend defines
-generated addresses and snapshots, including immutable proof names, pointer-read
+generated addresses and memory labels, including immutable proof names, pointer-read
 constructions, pure pointer calls with their typed arguments, byte offsets,
 and memory constructions with their inputs. Pure-call arguments retain model
-identities and read snapshots; nested pointer arguments have their own legend
+identities and read memory labels; nested pointer arguments have their own legend
 definitions. These constructions explain labels and add no proof evidence. An
-initial empty memory is an explicit root. Other snapshots describe a recorded
+initial empty memory is an explicit root. Other memory labels describe a recorded
 transition or an internal transformation, such as projecting a source memory
 for a particular pointer read, substituting a variable, or joining branch
-memories. Read projections name their source snapshot and pointer. Seeded cells
+memories. Read projections name their source memory and pointer. Seeded cells
 name their source and stride; call and loop effects show their write footprints
-when those are specified. Recorded marks and program points appear in these
-definitions when they match the snapshot.
+when those are specified. Recorded marks and other points appear in these
+definitions when the labeled memory is the one recorded there.
 
-A memory-history explanation identifies a blocking store, its snapshot, and the
+A memory-history explanation identifies a blocking store, its memory label, and the
 checked read range and write width. Its result is retained at failure time, so
 formatting does not repeat the check under a different verification context.
 This diagnostic walks recorded memory history
@@ -405,13 +405,13 @@ separation in that walk does not mean the proof has no separating evidence.
 Subsequent transitions mentioned by the explanation are memory transitions, not
 necessarily C statements.
 
-Construction records travel with snapshots across threads and are excluded from
-memory equality and proof evidence. A missing record on a noninitial snapshot is
+Construction records travel with labeled memories across threads and are excluded from
+memory equality and proof evidence. A missing record on a noninitial memory is
 reported as an internal recording defect, not a normal unknown origin. New memory
-constructors must retain their operation and inputs; snapshots changed without
+constructors must retain their operation and inputs; memories changed without
 updating their record must not inherit an old explanation. Referenced labels are
 expanded within the report budget, with display omissions explicit. Source marks
-and program points are used only for matching snapshots, never guessed from nearby
+and other points are used only for memory recorded at them, never guessed from nearby
 statements. These definitions describe constructions, not additional checked
 equalities or a complete execution history.
 
@@ -436,7 +436,7 @@ pointer bounds. A projected pointer-read description also identifies the
 selected cell.
 
 Internal notation is not promised to be valid Click proof input. Read types,
-read snapshots, arithmetic widths, and signedness remain visible. Resource
+read memory labels, arithmetic widths, and signedness remain visible. Resource
 compositions list up to eight entries with ownership quantities or view access;
 omitted entries and support details are explicit. A write event records an
 access, not an equality about the current memory contents.
@@ -452,7 +452,7 @@ this from the step's own memory delta (the cells the two memories differ on,
 at most four pairs listed); the store itself records nothing. A step whose
 read followed memory history and stopped without reaching the value says
 `read history stopped after crossing N recorded transitions (a read follows
-at most one)`, with the walk's address, start and stop snapshots and reason:
+at most one)`, with the walk's address, start and stop memories and reason:
 a read follows one recorded transition, so a value an older store left needs
 an explicit transport or a fact stated before the intervening statement. At
 most four such walks are listed per step.
@@ -498,7 +498,7 @@ Written `solve` failures retain a bounded sample of the read-value queries and
 cell walks actually performed during that attempt. Ordinary errors summarize
 up to two observations of each kind and eight available premises; traces show
 up to sixteen observations of each kind, with shared
-snapshot and address labels, access widths, stopping reasons and query modes.
+memory and address labels, access widths, stopping reasons and query modes.
 These records include speculative search queries and are not additional proof
 facts or a claim that one observed stop explains the entire search failure.
 A check with no instrumented memory query says so in its trace. The capture
@@ -518,6 +518,6 @@ supplied and required values and the argument position. Up to four explicit
 equalities sharing the supplied value may be shown as potentially relevant
 evidence. That selection is diagnostic guidance, not a claim about the cause
 of failure or a prescription for the missing proof. The comparison uses the
-same value and snapshot labels as the preceding trace facts.
+same value and memory labels as the preceding trace facts.
 These details are diagnostic only and do not add equalities or change proof
 checking.

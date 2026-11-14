@@ -428,7 +428,7 @@ sequence:
   showing that an opaque caller cannot use an implementation write omitted
   from the callee contract.
 - `mdtests/opaque_call_old_entry_state.md`: a callee's `old(...)` postcondition
-  is instantiated at the call-entry memory snapshot.
+  is instantiated at the call's entry point.
 - `mdtests/modular_pointer_postcondition.md`: a pointer-valued postcondition
   becomes an explicit caller pure fact after a verified modular call.
 - `mdtests/opaque_resource_proposition_contract.md`: `separate(...)`,

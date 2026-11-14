@@ -197,7 +197,7 @@ steps that need proof work and needs no final closer.
 A call retains an input proposition for the continuation only when the
 incoming checked facts independently prove it. Call-local assumptions of
 pending prerequisites cannot supply that evidence. The retained proposition
-keeps the pre-call read snapshots and model values, so it cannot describe a
+keeps the pre-call version points of its reads and its model values, so it cannot describe a
 cell's new value after a write. This also retains definedness of a checked
 resource-count sum; see
 `mdtests/solve_defined_count_after_a_zero_summand.md` and the rejected stale-read

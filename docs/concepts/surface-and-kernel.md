@@ -35,7 +35,7 @@ Kernel Click is pure and explicit. It may still mention C semantic data, but
 only as values:
 
 ```text
-load(memory_snapshot, pointer + k)
+load(memory, pointer + k)
 RangeFold(start, end, initial, ...)
 ForAll(var, body)
 ```
@@ -66,7 +66,7 @@ A C pointer says where:
 Pointer { block, offset }
 ```
 
-A Click array ref says where and in which memory snapshot:
+A Click array ref says where and in which kernel memory value:
 
 ```text
 ClickArrayRef { memory, pointer, element_type }
@@ -75,7 +75,7 @@ ClickArrayRef { memory, pointer, element_type }
 It is a pure specification value. It is not a C runtime object, it is not
 stored in C memory, and C code cannot mutate it. If C code writes through a
 pointer, that produces a new `CMemory` value. Existing array refs still refer to
-the memory snapshot they were built from.
+the memory value they were built from.
 
 The `element_type` is currently `int32` or `uint8`. It decides both pointer
 scaling and the type of value produced by indexing the array ref.
@@ -223,4 +223,4 @@ of domain names like `permutation` while still making memory state explicit
 enough for `old(p)` to work as an array argument.
 
 All predicate calls use expanded array-ref arguments. Each array-ref parameter
-contributes its memory snapshot and pointer as separate kernel terms.
+contributes its memory value and pointer as separate kernel terms.

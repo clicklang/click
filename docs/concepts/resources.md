@@ -216,7 +216,7 @@ the state at that call's entry.
 Public postconditions remain usable when a call result is assigned to a C
 local and that local is passed to later verified calls. Click can compose the
 result equality with those later calls' postconditions, including across
-explicit program-point snapshots. Expansion spells the chain with source C
+explicit `at(...)` points. Expansion spells the chain with source C
 locals and fields; symbolic call identities, havoc markers, and other
 execution-only facts remain kernel details rather than Surface Click premises.
 
@@ -331,9 +331,9 @@ equality.
 
 Opaque summaries support comparison, logical, quantified, predicate-call,
 `separate(...)`, `contains(...)`, and `viewable(...)` propositions, including
-`old(...)` and `at(function.entry, ...)`. A contract containing a snapshot of
-an internal statement or loop program point can still be verified directly, but that
-snapshot is not visible at an opaque call site. Calling such a function reports
+`old(...)` and `at(function.entry, ...)`. A contract containing an `at(...)` of
+an internal statement or loop point can still be verified directly, but that
+point is not visible at an opaque call site. Calling such a function reports
 that its contract cannot be exposed opaquely rather than reporting a dependency
 ordering error.
 
@@ -688,8 +688,8 @@ authorized resource slot(pool: int32*, p: int32*) {
 ```
 
 Folding must establish the fact at the current memory state. Opening exposes
-it, and closing must restore it after any C writes; an old snapshot of the
-fact cannot justify closing after an invalidating write. Consuming the exact
+it, and closing must restore it after any C writes; the fact at an earlier point
+cannot justify closing after an invalidating write. Consuming the exact
 member exposes its memory and invariant together. A helper may open and close
 the member without holding population authority, preserving membership.
 
@@ -886,7 +886,7 @@ A clause without a coefficient transfers one unit: consuming one
 user-declared resource may use `owns amount of object_ref(object)`,
 `consumes amount of ...`, or `produces amount of ...` to transfer a runtime
 `int32` quantity algebraically. The coefficient must be proved nonnegative at
-the contract snapshot, and zero grants no authority. It grants no body facts
+the contract's point, and zero grants no authority. It grants no body facts
 either: a composite's body facts describe each instance a quantity counts, so
 they are available only where the quantity is known to be positive
 ([`owning_zero_of_a_composite_grants_no_body_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/owning_zero_of_a_composite_grants_no_body_fact.md)).
@@ -1226,7 +1226,7 @@ tactic never straddles two states
 argument selects function entry even in a fold with explicit fields: after
 `p = q`, `fold(saved_at(old(p)), { model: old(saved.model) })` keeps the
 entry-indexed instance, while `fold(saved_at(p), ...)` selects the current
-pointer. The argument and field initializer retain their own snapshot selectors
+pointer. The argument and field initializer retain their own `old(...)` or `at(...)` points
 (`mdtests/fielded_resource_fold_keeps_entry_arguments.md`); a current-pointer
 model cannot establish the old instance's body
 (`mdtests/fielded_resource_fold_rejects_current_model_for_entry_argument.md`).
@@ -1434,7 +1434,7 @@ has the same repair: say what you want kept.
   callee may set the model however it likes, so after the call `c.rank` is a
   value the caller knows nothing about. Only the callee's own postcondition
   relates it to the entry model: `ensures c.rank == old(c.rank)`.
-- **A loop that owns the instance.** A loop head is an arbitrary visit, so the
+- **A loop that owns the instance.** A loop head is an arbitrary iteration, so the
   model a binder carries there is whatever the invariants state about it, never
   the model it held at loop entry. `invariant c.rank == old(c.rank);` is what
   carries a field through.
@@ -1563,19 +1563,19 @@ fold proves nothing on its own -- so the term the arm lowers to and the term the
 proof established have to be the same term.
 
 They are, and that needs one rule. A pure function's pointer parameter is
-lowered as an array reference, a memory snapshot with a pointer and an element
+lowered as an array reference, a memory with a pointer and an element
 type, so that a function such as the standard library's `count(p, lo, hi, x)`
 can index it. When the function's body -- and, transitively, the body of every
 function it calls -- reads no C memory, its result is a function of its argument
-*values* and the snapshot in that triple is dead weight. Such a function's
-pointer arguments are therefore anchored to one canonical snapshot instead of
+*values* and the memory in that triple is dead weight. Such a function's
+pointer arguments are therefore anchored to one canonical memory instead of
 the ambient one. Without that, the same proposition would be two different terms
 on either side of any C write, and a fact proved before the C runs would not
 discharge the identical body fact demanded by the `fold` after it. The
 classification is syntactic and conservative: a field place, an index, a
-qualified global, a snapshot selector such as `old(...)`, a resource field or
+qualified global, a point-reading form such as `old(...)`, a resource field or
 count, a predicate call, or a call to an undeclared function all make a function
-memory-dependent, and those keep the ambient snapshot they have always had. The
+memory-dependent, and those keep the ambient memory they have always had. The
 regressions are `mdtests/fold_pointer_argument_body_fact.md` with its negative
 `mdtests/fold_pointer_argument_body_fact_rejects_other_owner.md`, and
 `mdtests/rb_first_last.md` for the parent/child consistency this makes
