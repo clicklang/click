@@ -160,8 +160,28 @@ fn common_variables(
                     continue;
                 }
                 let mut result = Variables::default();
-                for child in term.children() {
-                    result = union(&result, &summaries[&child.id()]);
+                if let KernelTermNode::Fold(fold) = term.node() {
+                    for child in &fold.arguments[..3] {
+                        result = union(&result, &summaries[&child.id()]);
+                    }
+                    let mut body = summaries[&fold.arguments[3].id()].clone();
+                    for (variable, ty) in [
+                        (fold.accumulator, fold.result_type().clone()),
+                        (fold.item, fold.index.ty()),
+                    ] {
+                        if mode.binder_sort(&ty) {
+                            body = if mode.binders() {
+                                body.with_value(variable)
+                            } else {
+                                body.without_value(&variable)
+                            };
+                        }
+                    }
+                    result = union(&result, &body);
+                } else {
+                    for child in term.children() {
+                        result = union(&result, &summaries[&child.id()]);
+                    }
                 }
                 summaries.insert(term.id(), result);
                 continue;
@@ -516,4 +536,22 @@ mod tests {
 #[cfg(test)]
 mod scaling_tests {
     include!("../../../scaling_tests/kernel/reasoning/variable_collection/retained_folds.rs");
+}
+
+/// The native result carrier is a shallow compatibility reading; select its
+/// common fold once before walking the scoped children.
+pub(super) fn collect_native_fold_variables(
+    term: &IntegerTerm,
+    mode: FoldVariableRead,
+    variables: &mut BTreeSet<Variable>,
+) -> bool {
+    if !matches!(term, IntegerTerm::RangeFold { .. }) {
+        return false;
+    }
+    let root = crate::kernel::KernelTermImport::default().integer(&term.clone().into());
+    let KernelTermNode::Fold(fold) = root.node() else {
+        unreachable!("migrated Integer fold");
+    };
+    collect_fold_variables(fold, mode, variables);
+    true
 }

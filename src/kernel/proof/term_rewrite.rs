@@ -1807,6 +1807,11 @@ impl<'a> TermRewrite<'a> {
     /// that can reach a refusing scope must ask before using the result.
     pub(crate) fn refusal(&self) -> Option<RewriteRefusal> {
         self.refusal_observed.set(true);
+        self.refusal_status()
+    }
+
+    // Internal traversal must not acknowledge a refusal on the caller's behalf.
+    fn refusal_status(&self) -> Option<RewriteRefusal> {
         if self.integer_work_exhausted {
             Some(RewriteRefusal::WorkExhausted)
         } else if self.unsupported_integer_scope {
@@ -4109,13 +4114,18 @@ impl<'a> TermRewrite<'a> {
                 self.integer_shared(left).into(),
                 self.integer_shared(right).into(),
             ),
-            IntegerTerm::RangeFold {
-                index,
-                initial,
-                accumulator,
-                item,
-                body,
-            } => self.rewrite_integer_range_fold(index, initial, *accumulator, *item, body),
+            IntegerTerm::RangeFold { .. } => {
+                let root = KernelTermImport::default().integer(shared);
+                let KernelTermNode::Fold(fold) = root.node() else {
+                    unreachable!("migrated Integer fold");
+                };
+                match self.retained_fold_in(fold) {
+                    Ok(fold) => fold
+                        .integer_compatibility(&mut self.fold_integer_bridge)
+                        .expect("rewritten Integer fold"),
+                    Err(_) => IntegerTerm::constant_i64(0),
+                }
+            }
             IntegerTerm::AlgebraicMatch { scrutinee, arms } => {
                 self.rewrite_integer_match(scrutinee, arms)
             }

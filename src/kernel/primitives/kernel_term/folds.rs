@@ -1,4 +1,4 @@
-//! Typed fold payloads, prepared before activating common fold roots.
+//! Typed fold payloads with common expression children.
 //! Bounds and initial value are outside the two binders; only the body is in
 //! their scope. Construction reads no facts and performs no fold reduction.
 use super::*;
@@ -23,7 +23,7 @@ impl KernelFoldIndex {
 /// A shallow payload: expression children are common handles, not native
 /// expression trees. Exact binder identities remain distinct from alpha keys.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub(crate) struct KernelFold {
+pub struct KernelFold {
     pub(crate) index: KernelFoldIndex,
     pub(crate) accumulator: Variable,
     pub(crate) item: Variable,
@@ -59,6 +59,10 @@ impl KernelFold {
         })
     }
 
+    pub(crate) fn into_term(self) -> KernelTerm {
+        KernelTerm::intern(self.result_type().clone(), KernelTermNode::Fold(self))
+    }
+
     pub(crate) fn result_type(&self) -> &KernelType {
         self.arguments[2].ty()
     }
@@ -70,9 +74,12 @@ impl KernelFold {
     ) -> KernelTerm {
         match endpoint.machine_operand().shared_operand() {
             Some(root) => root.with_machine_observation_type(format),
-            None => KernelTerm::retained_machine_operand(
+            // A range endpoint already owns a numeric observation identity.
+            // Reimporting an opaque call must not mint a new producer identity.
+            None => KernelTerm::machine_observation_leaf(
                 format,
-                endpoint.machine_operand().operand_view(),
+                endpoint.value().clone(),
+                endpoint.machine_operand().clone(),
             ),
         }
     }
@@ -329,4 +336,87 @@ mod tests {
 #[cfg(test)]
 mod scaling_tests {
     include!("../../../scaling_tests/kernel/primitives/kernel_term/folds.rs");
+}
+
+#[cfg(test)]
+mod producer_tests {
+    use super::*;
+
+    #[test]
+    fn integer_fold_producer_retains_common_children_and_scoped_identity() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let acc = Variable(970001);
+        let item = Variable(970002);
+        let free = Variable(970003);
+        let body = IntegerTerm::Add(
+            IntegerTerm::Variable(acc).into(),
+            IntegerTerm::Variable(free).into(),
+        );
+        let body_shared: SharedIntegerTerm = body.clone().into();
+        let body_root = KernelTermImport::default().integer(&body_shared);
+        let value = IntegerTerm::range_fold(
+            IntegerRangeFoldIndex::Integer {
+                start: IntegerTerm::constant_i64(0).into(),
+                end: IntegerTerm::Variable(Variable(970004)).into(),
+            },
+            IntegerTerm::Variable(acc),
+            acc,
+            item,
+            body,
+        );
+        let root = KernelTermImport::default().integer(&value.clone().into());
+        let KernelTermNode::Fold(fold) = root.node() else {
+            panic!("Integer fold kept as legacy payload")
+        };
+        assert_eq!(fold.arguments[3], body_root);
+        assert_eq!(
+            KernelTermExport::default().integer(&root).unwrap().as_ref(),
+            &value
+        );
+        let mut variables = std::collections::BTreeSet::new();
+        crate::kernel::reasoning::collect_integer_free_variables(&value, &mut variables);
+        assert!(
+            variables.contains(&acc),
+            "initial value is outside body binders"
+        );
+        assert!(variables.contains(&free));
+        assert!(!variables.contains(&item));
+    }
+    #[test]
+    fn opaque_integer_fold_endpoints_keep_their_existing_observation_identity() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let call = MachineTerm::PureFunctionApplication {
+            name: "opaque_fold_bound".into(),
+            arguments: vec![MachineTerm::Variable(Variable(990001))],
+        };
+        let endpoint = SharedIntegerRangeEndpoint::intern(call.clone());
+        assert!(endpoint.machine_operand().shared_operand().is_none());
+        let produce = |end| {
+            IntegerTerm::range_fold(
+                IntegerRangeFoldIndex::UInt64 {
+                    start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
+                    end,
+                },
+                IntegerTerm::constant_i64(0),
+                Variable(990002),
+                Variable(990003),
+                IntegerTerm::Variable(Variable(990002)),
+            )
+        };
+        let first = produce(endpoint);
+        let second = produce(SharedIntegerRangeEndpoint::intern(call));
+        let first_root = KernelTermImport::default().integer(&first.into());
+        let second_root = KernelTermImport::default().integer(&second.into());
+        assert_eq!(first_root, second_root);
+        let changed = produce(SharedIntegerRangeEndpoint::intern(
+            MachineTerm::PureFunctionApplication {
+                name: "opaque_fold_bound".into(),
+                arguments: vec![MachineTerm::Variable(Variable(990004))],
+            },
+        ));
+        assert_ne!(
+            first_root,
+            KernelTermImport::default().integer(&changed.into())
+        );
+    }
 }
