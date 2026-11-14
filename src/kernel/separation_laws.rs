@@ -225,15 +225,17 @@ pub(crate) fn prove_separation_rebase(
             .into(),
     );
     let ordered = ConditionTerm::machine_compare(format, CompareRelation::LessEqual, lo, hi);
-    Theorem::new([nonnegative, ordered].into_iter().rev().fold(
-        conclusion,
-        |body, condition| {
-            Proposition::Implies(
-                Box::new(Proposition::ConditionIs(condition, true)),
-                Box::new(body),
-            )
-        },
-    ))
+    Theorem::new(
+        [nonnegative, ordered]
+            .into_iter()
+            .rev()
+            .fold(conclusion, |body, condition| {
+                Proposition::Implies(
+                    Box::new(Proposition::ConditionIs(condition, true)),
+                    Box::new(body),
+                )
+            }),
+    )
 }
 
 /// An explicitly bounded index denotes one complete element of its interval.

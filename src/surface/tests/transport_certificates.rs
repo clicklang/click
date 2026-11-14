@@ -1681,5 +1681,9 @@ fn memory_observation_does_not_establish_initialization() {
         error.report()
     );
     let error = verify_c_sources(source, &sources).unwrap_err();
-    assert!(error.message().contains("assumption"), "{}", error.report());
+    assert!(
+        error.report().contains("goal: defined(p[1])"),
+        "{}",
+        error.report()
+    );
 }

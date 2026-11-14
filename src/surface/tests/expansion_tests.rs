@@ -8635,11 +8635,18 @@ fn restricted_solve_certifies_unchanged_prefix_after_indexed_store() {
         expanded.contains("transport(old(owner->data[k])"),
         "{expanded}"
     );
+    assert!(expanded.contains("observe("), "{expanded}");
+    assert!(
+        !expanded.contains("transport(at(function.entry, viewable"),
+        "{expanded}"
+    );
     assert!(expanded.contains("k < old(owner->len)"), "{expanded}");
     assert!(!expanded.contains("solve();"), "{expanded}");
     assert!(!expanded.contains("solve();"), "{expanded}");
-    verify_c_sources(&expanded, &[("vector_push.c", c_source)])
-        .expect("unchanged-prefix certificate should check");
+    without_implicit_solve_for_claim("vector_push.contract", || {
+        verify_c_sources(&expanded, &[("vector_push.c", c_source)]).map_err(|error| error.report())
+    })
+    .expect("vector expansion should replay without implicit solve");
     let includes_store = expanded.replacen(
         "k < old(owner->len) implies",
         "k <= old(owner->len) implies",
