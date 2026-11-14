@@ -620,6 +620,7 @@ pub(in crate::surface::proof) fn statement_contains_call(statement: &ProgramStat
         | ProgramStatement::DeclareAggregate { .. }
         | ProgramStatement::Assign { .. }
         | ProgramStatement::Assert { .. }
+        | ProgramStatement::StepValue { .. }
         | ProgramStatement::LoopTest { .. }
         | ProgramStatement::Throw(_)
         | ProgramStatement::Return(_)

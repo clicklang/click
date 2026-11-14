@@ -1028,6 +1028,17 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             condition: s.program_expression(condition),
             label: label.clone(),
         },
+        ProgramStatement::StepValue {
+            step,
+            expression,
+            value_type,
+            pointee_constant,
+        } => ProgramStatement::StepValue {
+            step: *step,
+            expression: s.program_expression(expression),
+            value_type: *value_type,
+            pointee_constant: *pointee_constant,
+        },
         ProgramStatement::LoopTest { condition } => ProgramStatement::LoopTest {
             condition: s.program_expression(condition),
         },
@@ -2641,7 +2652,7 @@ fn collect_program_expression_bound_variables(
         ProgramExpression::Cast { expression, .. } => {
             collect_program_expression_bound_variables(expression, variables);
         }
-        ProgramExpression::Conditional {
+        ProgramExpression::Ternary {
             condition,
             then_branch,
             else_branch,
@@ -2716,7 +2727,10 @@ pub(in crate::kernel) fn collect_execution_statement_bound_variables(
         }
         | ProgramStatement::LoopTest {
             condition: expression,
-        } => collect_program_expression_bound_variables(expression, variables),
+        }
+        | ProgramStatement::StepValue { expression, .. } => {
+            collect_program_expression_bound_variables(expression, variables)
+        }
         ProgramStatement::CallAssign { arguments, .. }
         | ProgramStatement::Call { arguments, .. }
         | ProgramStatement::CallResult { arguments, .. } => {
@@ -4726,11 +4740,11 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_program_expression(
             pointee_constant: *pointee_constant,
             explicit_qualification: *explicit_qualification,
         },
-        ProgramExpression::Conditional {
+        ProgramExpression::Ternary {
             condition,
             then_branch,
             else_branch,
-        } => ProgramExpression::Conditional {
+        } => ProgramExpression::Ternary {
             condition: Box::new(substitute_bitvector_variable_in_program_expression(
                 condition, from, to,
             )),
@@ -6547,11 +6561,11 @@ fn substitute_pointer_variable_in_program_expression(
             pointee_constant: *pointee_constant,
             explicit_qualification: *explicit_qualification,
         },
-        ProgramExpression::Conditional {
+        ProgramExpression::Ternary {
             condition,
             then_branch,
             else_branch,
-        } => ProgramExpression::Conditional {
+        } => ProgramExpression::Ternary {
             condition: Box::new(substitute_pointer_variable_in_program_expression(
                 condition, from, to,
             )),

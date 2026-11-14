@@ -4274,6 +4274,7 @@ fn c_statement_calls_recording(
             | syntax::C0Statement::AggregateCopy { .. }
             | syntax::C0Statement::Update { .. }
             | syntax::C0Statement::Assert { .. }
+            | syntax::C0Statement::StepValue { .. }
             | syntax::C0Statement::LoopTest { .. } => {}
         }
     }
@@ -4340,7 +4341,7 @@ fn c_statement_calls_recording(
                 collect_function_addresses(target, names);
                 collect_function_addresses(value, names);
             }
-            syntax::C0Expression::Conditional {
+            syntax::C0Expression::Ternary {
                 condition,
                 then_branch,
                 else_branch,
@@ -4587,7 +4588,11 @@ fn c_statement_calls_recording(
                 calls.push(dependencies);
             }
             syntax::C0Statement::Assert { condition, .. }
-            | syntax::C0Statement::LoopTest { condition, .. } => {
+            | syntax::C0Statement::LoopTest { condition, .. }
+            | syntax::C0Statement::StepValue {
+                expression: condition,
+                ..
+            } => {
                 let mut dependencies = BTreeSet::new();
                 collect_function_addresses(condition, &mut dependencies);
                 calls.push(dependencies);

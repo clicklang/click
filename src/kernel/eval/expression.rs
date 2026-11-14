@@ -1620,7 +1620,7 @@ pub(super) fn evaluate_native_expression_paths(
             assumptions,
             budget,
         )?,
-        ProgramExpression::Conditional {
+        ProgramExpression::Ternary {
             condition,
             then_branch,
             else_branch,

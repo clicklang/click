@@ -2329,7 +2329,7 @@ fn is_null_pointer_constant(expression: &C0Expression) -> bool {
     }
 }
 
-fn conditional_expression_type(
+fn ternary_expression_type(
     then_type: Option<InterfaceType>,
     else_type: Option<InterfaceType>,
     then_branch: &C0Expression,
@@ -2632,6 +2632,21 @@ pub enum C0Statement {
         condition: C0Expression,
         then_branch: Box<C0Statement>,
         else_branch: Box<C0Statement>,
+        /// The operator inside an expression this `if` decides, when it is
+        /// one (`&&`, `||` or the ternary operator), rather than an `if` of
+        /// the source.
+        operator: Option<C0Operator>,
+        /// Where the source statement was written; see [`C0Site`].
+        site: C0Site,
+    },
+    /// The value an operator that decides between its operands takes on
+    /// this path, at the end of the arm that computed it: the result of step
+    /// `step`.
+    StepValue {
+        step: u32,
+        expression: C0Expression,
+        interface_type: Option<InterfaceType>,
+        pointee_constant: bool,
         /// Where the source statement was written; see [`C0Site`].
         site: C0Site,
     },
@@ -2708,6 +2723,14 @@ fn struct_byte_stride(index: C0Expression, width: u32) -> C0Expression {
 pub struct C0ClassedType {
     pub interface_type: InterfaceType,
     pub class: crate::kernel::effective_type::CAccessClass,
+}
+
+/// The operator an operator `if` decides, and the step whose result is the
+/// operator's value.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct C0Operator {
+    pub kind: crate::kernel::OperatorKind,
+    pub step: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2789,7 +2812,7 @@ pub enum C0Expression {
         /// cast inserted by the parser keeps the source view instead.
         explicit_qualification: bool,
     },
-    Conditional {
+    Ternary {
         condition: Box<C0Expression>,
         then_branch: Box<C0Expression>,
         else_branch: Box<C0Expression>,
@@ -3892,6 +3915,7 @@ impl C0Statement {
     pub fn site(&self) -> Option<&C0Site> {
         match self {
             Self::Declare { site, .. }
+            | Self::StepValue { site, .. }
             | Self::DeclareStructValue { site, .. }
             | Self::Assign { site, .. }
             | Self::CallAssign { site, .. }
@@ -3924,6 +3948,7 @@ impl C0Statement {
     fn site_mut(&mut self) -> Option<&mut C0Site> {
         match self {
             Self::Declare { site, .. }
+            | Self::StepValue { site, .. }
             | Self::DeclareStructValue { site, .. }
             | Self::Assign { site, .. }
             | Self::CallAssign { site, .. }
@@ -4009,6 +4034,18 @@ impl C0Statement {
         targets: &BTreeMap<String, (crate::kernel::ControlTargetId, usize)>,
     ) -> crate::kernel::ProgramStatement {
         match self {
+            Self::StepValue {
+                step,
+                expression,
+                interface_type,
+                pointee_constant,
+                ..
+            } => crate::kernel::ProgramStatement::StepValue {
+                step: *step,
+                expression: expression.to_kernel_expression(),
+                value_type: interface_type.map(|interface_type| interface_type.to_kernel_type()),
+                pointee_constant: *pointee_constant,
+            },
             Self::Skip => crate::kernel::program_skip(),
             Self::Break => crate::kernel::program_break(),
             Self::Continue => crate::kernel::program_continue(),
@@ -4322,7 +4359,7 @@ impl C0Expression {
                 // in C source or in a specification.
                 crate::kernel::program_expression::c_source_integer_conversion(lowered)
             }
-            Self::Conditional {
+            Self::Ternary {
                 condition,
                 then_branch,
                 else_branch,
@@ -4937,6 +4974,7 @@ fn validate_function_returns(
         | C0Statement::AggregateCopy { .. }
         | C0Statement::Update { .. }
         | C0Statement::Assert { .. }
+        | C0Statement::StepValue { .. }
         | C0Statement::LoopTest { .. } => Ok(()),
     }
 }
@@ -5408,6 +5446,7 @@ fn statement_contains_control_transfer(statement: &C0Statement) -> bool {
         | C0Statement::HeapAllocate { .. }
         | C0Statement::HeapFree { .. }
         | C0Statement::Assert { .. }
+        | C0Statement::StepValue { .. }
         | C0Statement::Store { .. }
         | C0Statement::SequentialStore { .. }
         | C0Statement::AggregateCopy { .. }
@@ -5957,7 +5996,7 @@ fn evaluate_static_integer_expression(
                 right,
             )?))
         }
-        C0Expression::Conditional {
+        C0Expression::Ternary {
             condition,
             then_branch,
             else_branch,
@@ -6733,7 +6772,7 @@ fn contains_aggregate_value(expression: &C0Expression) -> bool {
         C0Expression::SequentialWrite { target, value, .. } => {
             contains_aggregate_value(target) || contains_aggregate_value(value)
         }
-        C0Expression::Conditional {
+        C0Expression::Ternary {
             condition,
             then_branch,
             else_branch,
@@ -8023,7 +8062,7 @@ impl Parser {
                 *pointee_constant
                     || (!*explicit_qualification && self.expression_pointee_is_constant(expression))
             }
-            C0Expression::Conditional {
+            C0Expression::Ternary {
                 then_branch,
                 else_branch,
                 ..
@@ -11128,6 +11167,7 @@ impl Parser {
                                 then_branch: Box::new(then_branch),
                                 else_branch: Box::new(C0Statement::Skip),
                                 site: C0Site::NONE,
+                                operator: None,
                             },
                             lowerable,
                         ));
@@ -11144,6 +11184,7 @@ impl Parser {
                             then_branch,
                             else_branch: Box::new(else_branch),
                             site: C0Site::NONE,
+                            operator: None,
                         },
                         lowerable,
                     ));
@@ -11546,6 +11587,7 @@ impl Parser {
                         then_branch,
                         else_branch,
                         site: C0Site::NONE,
+                        operator: None,
                     })
                 }
                 Some("while") => {
@@ -13452,7 +13494,7 @@ impl Parser {
             } => Some(struct_name.clone()),
             C0Expression::Field { .. } => None,
             C0Expression::Load(pointer, _) => self.struct_pointer_name(pointer),
-            C0Expression::Conditional {
+            C0Expression::Ternary {
                 then_branch,
                 else_branch,
                 ..
@@ -13558,7 +13600,7 @@ impl Parser {
             | C0Expression::Not(expression)
             | C0Expression::BitwiseNot(expression)
             | C0Expression::Load(expression, _) => self.expression_contains_aggregate(expression),
-            C0Expression::Conditional {
+            C0Expression::Ternary {
                 condition,
                 then_branch,
                 else_branch,
@@ -13707,7 +13749,12 @@ impl Parser {
                     }
                 }
                 C0Statement::IndirectCall { .. } => return true,
-                C0Statement::Assert { condition, .. } | C0Statement::LoopTest { condition, .. } => {
+                C0Statement::Assert { condition, .. }
+                | C0Statement::LoopTest { condition, .. }
+                | C0Statement::StepValue {
+                    expression: condition,
+                    ..
+                } => {
                     if self.expression_contains_lowerable_expression(condition) {
                         return true;
                     }
@@ -13849,7 +13896,7 @@ impl Parser {
                 | C0Expression::Field { pointer, .. }
                 | C0Expression::UnionField { pointer, .. } => expressions.push(pointer),
                 C0Expression::CheckedArrayIndex { .. } => return true,
-                C0Expression::Conditional {
+                C0Expression::Ternary {
                     condition,
                     then_branch,
                     else_branch,
@@ -13911,7 +13958,7 @@ impl Parser {
                 | C0Expression::UnionAddress { pointer, .. }
                 | C0Expression::Field { pointer, .. }
                 | C0Expression::UnionField { pointer, .. } => expressions.push(pointer),
-                C0Expression::Conditional {
+                C0Expression::Ternary {
                     condition,
                     then_branch,
                     else_branch,
@@ -14034,7 +14081,7 @@ impl Parser {
             | C0Expression::CheckedArrayIndex {
                 index: expression, ..
             } => self.expression_reads_potentially_changed_value(expression),
-            C0Expression::Conditional {
+            C0Expression::Ternary {
                 condition,
                 then_branch,
                 else_branch,
@@ -14129,6 +14176,7 @@ impl Parser {
                 then_branch,
                 else_branch,
                 site,
+                operator,
             } => {
                 let (prefix, condition) = self.lower_expression_calls(condition)?;
                 let then_branch = self.lower_statement_calls(*then_branch)?;
@@ -14140,6 +14188,7 @@ impl Parser {
                         then_branch: Box::new(then_branch),
                         else_branch: Box::new(else_branch),
                         site,
+                        operator,
                     },
                 ))
             }
@@ -14345,6 +14394,25 @@ impl Parser {
                 Ok(prepend_statements(
                     prefix,
                     C0Statement::LoopTest { condition, site },
+                ))
+            }
+            C0Statement::StepValue {
+                step,
+                expression,
+                interface_type,
+                pointee_constant,
+                site,
+            } => {
+                let (prefix, expression) = self.lower_expression_calls(expression)?;
+                Ok(prepend_statements(
+                    prefix,
+                    C0Statement::StepValue {
+                        step,
+                        expression,
+                        interface_type,
+                        pointee_constant,
+                        site,
+                    },
                 ))
             }
             C0Statement::Assign {
@@ -15100,7 +15168,7 @@ impl Parser {
                     },
                 ))
             }
-            C0Expression::Conditional {
+            C0Expression::Ternary {
                 condition,
                 then_branch,
                 else_branch,
@@ -15139,74 +15207,65 @@ impl Parser {
                         then_branch: Box::new(then_statement),
                         else_branch: Box::new(else_statement),
                         site: C0Site::NONE,
+                        operator: None,
                     });
                     return Ok((prefix, C0Expression::Variable(target)));
                 }
                 if then_prefix.is_empty() && else_prefix.is_empty() {
                     return Ok((
                         prefix,
-                        C0Expression::Conditional {
+                        C0Expression::Ternary {
                             condition: Box::new(condition),
                             then_branch: Box::new(then_branch),
                             else_branch: Box::new(else_branch),
                         },
                     ));
                 }
-                let target = self.fresh_synthesized_call_name();
-                // The generated temporary owns the conditional's value, so it
-                // carries the conditional's own common result type. Branches
-                // whose types are both traceable and genuinely incompatible
-                // were rejected by parse-time validation; branches whose types
-                // are untraceable (a call to a function defined in another
-                // translation unit keeps the inherited scalar ABI slot.
-                let interface_type = conditional_expression_type(
+                // The ternary operator decides which operand runs: an `if` of
+                // its own, whose arms end in its value on their path, with
+                // the operator's common result type. Branches whose types are
+                // both traceable and genuinely incompatible were rejected by
+                // parse-time validation; branches whose types are untraceable
+                // (a call to a function defined in another translation unit)
+                // keep the inherited scalar ABI slot.
+                let interface_type = ternary_expression_type(
                     self.source_expression_type(&then_branch),
                     self.source_expression_type(&else_branch),
                     &then_branch,
                     &else_branch,
                 )
                 .unwrap_or(InterfaceType::Int32);
-                self.variable_types.insert(target.clone(), interface_type);
-                let then_statement = prepend_statements(
-                    then_prefix,
-                    C0Statement::Assign {
-                        name: target.clone(),
-                        expression: then_branch,
-                        site: C0Site::NONE,
-                        prior_result: None,
-                    },
-                );
-                let else_statement = prepend_statements(
-                    else_prefix,
-                    C0Statement::Assign {
-                        name: target.clone(),
-                        expression: else_branch,
-                        site: C0Site::NONE,
-                        prior_result: None,
-                    },
-                );
-                // A conditional branch may not execute, so the result needs a
-                // real stack binding before either arm assigns it, typed so
-                // neither branch's value is silently truncated.
-                prefix.push(C0Statement::Declare {
-                    interface_type,
-                    name: target.clone(),
-                    volatile: false,
-                    pointee_volatile: false,
-                    constant: false,
+                let step = self.next_call_result;
+                self.next_call_result = self.next_call_result.saturating_add(1);
+                let value = |expression| C0Statement::StepValue {
+                    step,
+                    expression,
+                    interface_type: Some(interface_type),
                     pointee_constant: false,
-                    initializer: None,
-                    zero_fill: None,
-                    declared_class: None,
                     site: C0Site::NONE,
-                });
+                };
                 prefix.push(C0Statement::If {
                     condition,
-                    then_branch: Box::new(then_statement),
-                    else_branch: Box::new(else_statement),
+                    then_branch: Box::new(prepend_statements(then_prefix, value(then_branch))),
+                    else_branch: Box::new(prepend_statements(else_prefix, value(else_branch))),
+                    operator: Some(C0Operator {
+                        kind: crate::kernel::OperatorKind::Ternary,
+                        step,
+                    }),
                     site: C0Site::NONE,
                 });
-                Ok((prefix, C0Expression::Variable(target)))
+                Ok((
+                    prefix,
+                    C0Expression::StepResult {
+                        step,
+                        origin: crate::kernel::StepOrigin::Operator(
+                            crate::kernel::OperatorKind::Ternary,
+                        ),
+                        interface_type: Some(interface_type),
+                        pointee_constant: false,
+                        struct_name: None,
+                    },
+                ))
             }
             C0Expression::StatementExpression {
                 body,
@@ -15614,57 +15673,51 @@ impl Parser {
             ));
         }
 
-        let target = self.fresh_synthesized_call_name();
-        self.variable_types
-            .insert(target.clone(), InterfaceType::Int32);
-        let normalized_right = C0Expression::Not(Box::new(C0Expression::Not(Box::new(right))));
-        let assign_right = C0Statement::Assign {
-            name: target.clone(),
-            expression: normalized_right,
-            site: C0Site::NONE,
-            prior_result: None,
-        };
-        let (then_branch, else_branch) = if is_and {
-            (
-                prepend_statements(right_prefix, assign_right),
-                C0Statement::Assign {
-                    name: target.clone(),
-                    expression: C0Expression::Int32Literal(0),
-                    site: C0Site::NONE,
-                    prior_result: None,
-                },
-            )
+        // The operator decides whether its right operand runs: an `if` of the
+        // operator's own, whose arms end in the operator's value on their path.
+        let kind = if is_and {
+            crate::kernel::OperatorKind::And
         } else {
-            (
-                C0Statement::Assign {
-                    name: target.clone(),
-                    expression: C0Expression::Int32Literal(1),
-                    site: C0Site::NONE,
-                    prior_result: None,
-                },
-                prepend_statements(right_prefix, assign_right),
-            )
+            crate::kernel::OperatorKind::Or
+        };
+        let step = self.next_call_result;
+        self.next_call_result = self.next_call_result.saturating_add(1);
+        let value = |expression| C0Statement::StepValue {
+            step,
+            expression,
+            interface_type: Some(InterfaceType::Int32),
+            pointee_constant: false,
+            site: C0Site::NONE,
+        };
+        let right_value = prepend_statements(
+            right_prefix,
+            value(C0Expression::Not(Box::new(C0Expression::Not(Box::new(
+                right,
+            ))))),
+        );
+        let (then_branch, else_branch) = if is_and {
+            (right_value, value(C0Expression::Int32Literal(0)))
+        } else {
+            (value(C0Expression::Int32Literal(1)), right_value)
         };
         let mut prefix = left_prefix;
-        prefix.push(C0Statement::Declare {
-            interface_type: InterfaceType::Int32,
-            name: target.clone(),
-            volatile: false,
-            pointee_volatile: false,
-            constant: false,
-            pointee_constant: false,
-            initializer: None,
-            zero_fill: None,
-            declared_class: None,
-            site: C0Site::NONE,
-        });
         prefix.push(C0Statement::If {
             condition: left,
             then_branch: Box::new(then_branch),
             else_branch: Box::new(else_branch),
+            operator: Some(C0Operator { kind, step }),
             site: C0Site::NONE,
         });
-        Ok((prefix, C0Expression::Variable(target)))
+        Ok((
+            prefix,
+            C0Expression::StepResult {
+                step,
+                origin: crate::kernel::StepOrigin::Operator(kind),
+                interface_type: Some(InterfaceType::Int32),
+                pointee_constant: false,
+                struct_name: None,
+            },
+        ))
     }
 
     fn parse_conditional(&mut self) -> Result<C0Expression, C0SyntaxError> {
@@ -15693,7 +15746,7 @@ impl Parser {
                 self.error_here("conditional aggregate branches must have the same struct type")
             );
         }
-        let common_type = conditional_expression_type(
+        let common_type = ternary_expression_type(
             self.source_expression_type(&then_branch),
             self.source_expression_type(&else_branch),
             &then_branch,
@@ -15726,7 +15779,7 @@ impl Parser {
         } else {
             else_branch
         };
-        Ok(C0Expression::Conditional {
+        Ok(C0Expression::Ternary {
             condition: Box::new(condition),
             then_branch: Box::new(then_branch),
             else_branch: Box::new(else_branch),
@@ -16165,7 +16218,7 @@ impl Parser {
                 .function_declarations
                 .get(name)
                 .map(function_pointer_signature_from_header),
-            C0Expression::Conditional {
+            C0Expression::Ternary {
                 then_branch,
                 else_branch,
                 ..
@@ -17451,7 +17504,7 @@ impl Parser {
             | C0Expression::CheckedArrayIndex { index: base, .. } => {
                 self.expression_pointee_is_float(base)
             }
-            C0Expression::Conditional {
+            C0Expression::Ternary {
                 then_branch,
                 else_branch,
                 ..
@@ -17614,7 +17667,7 @@ impl Parser {
             }
             // `parse_conditional` has already required the two branches to
             // agree, with a null pointer constant taking the other's type.
-            C0Expression::Conditional {
+            C0Expression::Ternary {
                 then_branch,
                 else_branch,
                 ..
@@ -17864,11 +17917,11 @@ impl Parser {
                 self.source_expression_type(left)?,
                 self.source_expression_type(right)?,
             ),
-            C0Expression::Conditional {
+            C0Expression::Ternary {
                 condition: _,
                 then_branch,
                 else_branch,
-            } => conditional_expression_type(
+            } => ternary_expression_type(
                 self.source_expression_type(then_branch),
                 self.source_expression_type(else_branch),
                 then_branch,
@@ -19839,6 +19892,7 @@ fn statement_continues_enclosing_loop(statement: &C0Statement) -> bool {
         | C0Statement::AggregateCopy { .. }
         | C0Statement::Update { .. }
         | C0Statement::Assert { .. }
+        | C0Statement::StepValue { .. }
         | C0Statement::LoopTest { .. } => false,
     }
 }
@@ -19881,6 +19935,7 @@ fn prepend_condition_check_before_loop_continues(
             then_branch,
             else_branch,
             site,
+            operator,
         } => C0Statement::If {
             condition: if_condition.clone(),
             then_branch: Box::new(prepend_condition_check_before_loop_continues(
@@ -19896,6 +19951,7 @@ fn prepend_condition_check_before_loop_continues(
                 loop_site,
             )?),
             site,
+            operator,
         },
         C0Statement::Switch {
             expression,
@@ -19943,6 +19999,7 @@ fn prepend_condition_check_before_loop_continues(
         | C0Statement::AggregateCopy { .. }
         | C0Statement::Update { .. }
         | C0Statement::Assert { .. }
+        | C0Statement::StepValue { .. }
         | C0Statement::LoopTest { .. }) => statement,
     })
 }
@@ -19991,7 +20048,7 @@ fn first_embedded_call_position(expression: &C0Expression) -> Option<SourcePosit
         | C0Expression::Field { pointer, .. }
         | C0Expression::UnionField { pointer, .. }
         | C0Expression::UnionAddress { pointer, .. } => first_embedded_call_position(pointer),
-        C0Expression::Conditional {
+        C0Expression::Ternary {
             condition,
             then_branch,
             else_branch,
@@ -20086,7 +20143,7 @@ fn first_assignment_position(expression: &C0Expression) -> Option<SourcePosition
         C0Expression::SequentialWrite { target, value, .. } => {
             first_assignment_position(target).or_else(|| first_assignment_position(value))
         }
-        C0Expression::Conditional {
+        C0Expression::Ternary {
             condition,
             then_branch,
             else_branch,
@@ -20162,7 +20219,7 @@ fn expression_reads_runtime_value(expression: &C0Expression) -> bool {
         | C0Expression::CheckedArrayIndex { index: value, .. } => {
             expression_reads_runtime_value(value)
         }
-        C0Expression::Conditional {
+        C0Expression::Ternary {
             condition,
             then_branch,
             else_branch,

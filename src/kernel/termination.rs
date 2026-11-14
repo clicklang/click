@@ -122,11 +122,11 @@ fn substitute_program_expression_variables(
             value: unary(value),
             variant: variant.clone(),
         },
-        Conditional {
+        Ternary {
             condition,
             then_branch,
             else_branch,
-        } => Conditional {
+        } => Ternary {
             condition: unary(condition),
             then_branch: unary(then_branch),
             else_branch: unary(else_branch),
@@ -1191,7 +1191,7 @@ fn expression_address_taken_locals(expression: &ProgramExpression, names: &mut B
                 inner(field);
             }
         }
-        Conditional {
+        Ternary {
             condition,
             then_branch,
             else_branch,
@@ -1275,7 +1275,7 @@ fn collect_program_expression_variables(
                 collect_program_expression_variables(field, names);
             }
         }
-        Conditional {
+        Ternary {
             condition,
             then_branch,
             else_branch,
@@ -1354,9 +1354,12 @@ fn collect_address_taken_locals(statement: &ProgramStatement, names: &mut BTreeS
         | ProgramStatement::CallResult { arguments, .. } => arguments.iter().for_each(escapes),
         ProgramStatement::HeapAllocate { bytes, .. } => escapes(bytes),
         ProgramStatement::HeapFree { pointer } => escapes(pointer),
-        ProgramStatement::Assert { condition, .. } | ProgramStatement::LoopTest { condition } => {
-            escapes(condition)
-        }
+        ProgramStatement::Assert { condition, .. }
+        | ProgramStatement::LoopTest { condition }
+        | ProgramStatement::StepValue {
+            expression: condition,
+            ..
+        } => escapes(condition),
         ProgramStatement::Store { pointer, value }
         | ProgramStatement::TypedStore { pointer, value, .. } => {
             escapes(pointer);
@@ -1730,6 +1733,7 @@ fn statement_calls_visiting(
         | ProgramStatement::HeapAllocate { .. }
         | ProgramStatement::HeapFree { .. }
         | ProgramStatement::Assert { .. }
+        | ProgramStatement::StepValue { .. }
         | ProgramStatement::LoopTest { .. }
         | ProgramStatement::Throw(_)
         | ProgramStatement::Return(_)
@@ -1796,6 +1800,7 @@ fn statement_declared_variables(statement: &ProgramStatement, names: &mut BTreeS
         | ProgramStatement::CallResult { .. }
         | ProgramStatement::HeapFree { .. }
         | ProgramStatement::Assert { .. }
+        | ProgramStatement::StepValue { .. }
         | ProgramStatement::LoopTest { .. }
         | ProgramStatement::Throw(_)
         | ProgramStatement::Return(_)
@@ -2274,7 +2279,7 @@ fn termination_measure_display(measure: &ProgramExpression) -> String {
             termination_measure_display(index)
         ),
         Cast { expression, .. } => termination_measure_display(expression),
-        Conditional { .. }
+        Ternary { .. }
         | FloatNegate(_)
         | FloatClassification { .. }
         | EnumConstruct { .. }
@@ -2790,7 +2795,7 @@ fn ranking_measure_term_unfolded(
             Err("termination measures may not read Rust enum values".into())
         }
         StepResult { .. } => Err("termination measures may not read a call's result".into()),
-        Conditional {
+        Ternary {
             condition,
             then_branch,
             else_branch,
@@ -3434,6 +3439,7 @@ fn collect_loops_in_order<'a>(
         | ProgramStatement::HeapAllocate { .. }
         | ProgramStatement::HeapFree { .. }
         | ProgramStatement::Assert { .. }
+        | ProgramStatement::StepValue { .. }
         | ProgramStatement::LoopTest { .. }
         | ProgramStatement::Throw(_)
         | ProgramStatement::Return(_)
@@ -3746,6 +3752,7 @@ fn collect_loops<'a>(statement: &'a ProgramStatement, loops: &mut Vec<&'a Progra
         | ProgramStatement::HeapAllocate { .. }
         | ProgramStatement::HeapFree { .. }
         | ProgramStatement::Assert { .. }
+        | ProgramStatement::StepValue { .. }
         | ProgramStatement::LoopTest { .. }
         | ProgramStatement::Throw(_)
         | ProgramStatement::Return(_)
@@ -4019,6 +4026,7 @@ fn check_loops(
         | ProgramStatement::HeapAllocate { .. }
         | ProgramStatement::HeapFree { .. }
         | ProgramStatement::Assert { .. }
+        | ProgramStatement::StepValue { .. }
         | ProgramStatement::LoopTest { .. }
         | ProgramStatement::Throw(_)
         | ProgramStatement::Return(_)
@@ -4198,7 +4206,7 @@ fn expression_function_addresses(expression: &ProgramExpression, taken: &mut BTr
                 expression_function_addresses(field, taken);
             }
         }
-        Conditional {
+        Ternary {
             condition,
             then_branch,
             else_branch,
@@ -4264,9 +4272,12 @@ fn statement_function_addresses(statement: &ProgramStatement, taken: &mut BTreeS
         }
         ProgramStatement::HeapAllocate { bytes, .. } => visit(bytes),
         ProgramStatement::HeapFree { pointer } => visit(pointer),
-        ProgramStatement::Assert { condition, .. } | ProgramStatement::LoopTest { condition } => {
-            visit(condition)
-        }
+        ProgramStatement::Assert { condition, .. }
+        | ProgramStatement::LoopTest { condition }
+        | ProgramStatement::StepValue {
+            expression: condition,
+            ..
+        } => visit(condition),
         ProgramStatement::Store { pointer, value }
         | ProgramStatement::TypedStore { pointer, value, .. } => {
             visit(pointer);
@@ -4647,6 +4658,7 @@ pub(super) fn statement_calls_function(statement: &ProgramStatement, callee: &st
         | ProgramStatement::HeapAllocate { .. }
         | ProgramStatement::HeapFree { .. }
         | ProgramStatement::Assert { .. }
+        | ProgramStatement::StepValue { .. }
         | ProgramStatement::LoopTest { .. }
         | ProgramStatement::Throw(_)
         | ProgramStatement::Return(_)
@@ -4736,6 +4748,7 @@ fn self_call_loop_indices(
         | ProgramStatement::HeapAllocate { .. }
         | ProgramStatement::HeapFree { .. }
         | ProgramStatement::Assert { .. }
+        | ProgramStatement::StepValue { .. }
         | ProgramStatement::LoopTest { .. }
         | ProgramStatement::Throw(_)
         | ProgramStatement::Return(_)

@@ -3601,7 +3601,7 @@ fn validate_pointer_cast_operands(
         ProgramExpression::EnumConstruct { fields, .. } => fields
             .iter()
             .try_for_each(|field| validate_pointer_cast_operands(field, variables, context)),
-        ProgramExpression::Conditional {
+        ProgramExpression::Ternary {
             condition,
             then_branch,
             else_branch,
@@ -3720,7 +3720,7 @@ pub(in crate::surface) fn infer_program_expression_type(
             | ProgramType::Float64Array(_)
             | ProgramType::PointerArray(_, _) => None,
         },
-        ProgramExpression::Conditional {
+        ProgramExpression::Ternary {
             condition,
             then_branch,
             else_branch,

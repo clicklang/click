@@ -80,7 +80,8 @@ pub(super) fn statement_expressions<'a>(
         }
         | ProgramStatement::Return(expression)
         | ProgramStatement::Throw(expression)
-        | ProgramStatement::Switch { expression, .. } => expressions.push((expression, false)),
+        | ProgramStatement::Switch { expression, .. }
+        | ProgramStatement::StepValue { expression, .. } => expressions.push((expression, false)),
         ProgramStatement::Assert { condition, .. }
         | ProgramStatement::LoopTest { condition }
         | ProgramStatement::If { condition, .. }
@@ -190,7 +191,7 @@ fn unconditional_operands<'a>(
             pointer: expression,
             ..
         } => operands.push(expression),
-        ProgramExpression::Conditional { condition, .. } => operands.push(condition),
+        ProgramExpression::Ternary { condition, .. } => operands.push(condition),
         ProgramExpression::EnumConstruct { fields, .. } => operands.extend(fields),
         ProgramExpression::And(left, _) | ProgramExpression::Or(left, _) => operands.push(left),
         ProgramExpression::AddressOf(place) | ProgramExpression::CheckedObjectAddress(place) => {

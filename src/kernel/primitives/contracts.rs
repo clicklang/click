@@ -3651,6 +3651,7 @@ fn statement_contains_internal_throw(statement: &ProgramStatement) -> bool {
         | ProgramStatement::HeapAllocate { .. }
         | ProgramStatement::HeapFree { .. }
         | ProgramStatement::Assert { .. }
+        | ProgramStatement::StepValue { .. }
         | ProgramStatement::LoopTest { .. }
         | ProgramStatement::Return(_)
         | ProgramStatement::Store { .. }

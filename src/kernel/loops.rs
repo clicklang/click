@@ -9072,6 +9072,7 @@ pub(super) fn statement_may_write_memory(
         }
         | ProgramStatement::DeclareAggregate { .. }
         | ProgramStatement::Assert { .. }
+        | ProgramStatement::StepValue { .. }
         | ProgramStatement::LoopTest { .. }
         | ProgramStatement::Throw(_)
         | ProgramStatement::Return(_) => false,
@@ -9145,6 +9146,7 @@ pub(super) fn collect_loop_modified_locals(
         }
         | ProgramStatement::DeclareAggregate { .. }
         | ProgramStatement::Assert { .. }
+        | ProgramStatement::StepValue { .. }
         | ProgramStatement::LoopTest { .. }
         | ProgramStatement::Throw(_)
         | ProgramStatement::Return(_)
@@ -9390,6 +9392,7 @@ fn for_each_statement_expression<'a>(
         | ProgramStatement::LoopTest {
             condition: expression,
         }
+        | ProgramStatement::StepValue { expression, .. }
         | ProgramStatement::Return(expression)
         | ProgramStatement::Throw(expression) => visit(expression),
         ProgramStatement::CallAssign { arguments, .. }
@@ -9485,9 +9488,12 @@ pub(crate) fn collect_address_taken_locals(
         ProgramStatement::HeapFree { pointer } => {
             collect_address_taken_in_expression(pointer, names);
         }
-        ProgramStatement::Assert { condition, .. } | ProgramStatement::LoopTest { condition } => {
-            collect_address_taken_in_expression(condition, names)
-        }
+        ProgramStatement::Assert { condition, .. }
+        | ProgramStatement::LoopTest { condition }
+        | ProgramStatement::StepValue {
+            expression: condition,
+            ..
+        } => collect_address_taken_in_expression(condition, names),
         ProgramStatement::Return(expression) | ProgramStatement::Throw(expression) => {
             collect_address_taken_in_expression(expression, names)
         }
@@ -9565,7 +9571,7 @@ pub(super) fn collect_address_taken_in_expression(
         ProgramExpression::Cast { expression, .. } => {
             collect_address_taken_in_expression(expression, names)
         }
-        ProgramExpression::Conditional {
+        ProgramExpression::Ternary {
             condition,
             then_branch,
             else_branch,
@@ -9616,7 +9622,7 @@ pub(super) fn collect_variable_names(expression: &ProgramExpression, names: &mut
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => {}
         ProgramExpression::Cast { expression, .. } => collect_variable_names(expression, names),
-        ProgramExpression::Conditional {
+        ProgramExpression::Ternary {
             condition,
             then_branch,
             else_branch,

@@ -2886,7 +2886,7 @@ pub(crate) fn collect_program_expression_variables(
                 collect_program_expression_variables(field, names);
             }
         }
-        ProgramExpression::Conditional {
+        ProgramExpression::Ternary {
             condition,
             then_branch,
             else_branch,
@@ -7227,6 +7227,10 @@ pub enum SourcePathStep {
     Read(usize),
     /// One completed volatile read within an atomic region; only `.result`.
     ReadEvent(usize),
+    /// The statement's `j`th `&&`, `||` or ternary operator whose operands
+    /// run as steps, in executable order: `and(j)`, `or(j)` or `ternary(j)`;
+    /// a chain's end. Its `.result` is the operator's value.
+    Operator(crate::kernel::OperatorKind, usize),
 }
 
 impl CodeRegionRef {

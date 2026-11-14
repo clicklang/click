@@ -458,7 +458,7 @@ fn collect_spec_program_expression_carriers(
         | ProgramExpression::Subobject { pointer, .. } => {
             collect_spec_program_expression_carriers(pointer, variables)
         }
-        ProgramExpression::Conditional {
+        ProgramExpression::Ternary {
             condition,
             then_branch,
             else_branch,
@@ -1765,11 +1765,11 @@ impl<'a> TermRewrite<'a> {
                 pointee_constant: *pointee_constant,
                 explicit_qualification: *explicit_qualification,
             },
-            ProgramExpression::Conditional {
+            ProgramExpression::Ternary {
                 condition,
                 then_branch,
                 else_branch,
-            } => ProgramExpression::Conditional {
+            } => ProgramExpression::Ternary {
                 condition: Box::new(self.rewrite_program_expression(condition)?),
                 then_branch: Box::new(self.rewrite_program_expression(then_branch)?),
                 else_branch: Box::new(self.rewrite_program_expression(else_branch)?),

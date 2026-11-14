@@ -189,6 +189,17 @@ impl ProgramStatement {
                 condition: condition.clone(),
                 label: label.clone(),
             },
+            Self::StepValue {
+                step,
+                expression,
+                value_type,
+                pointee_constant,
+            } => Self::StepValue {
+                step: *step,
+                expression: expression.clone(),
+                value_type: *value_type,
+                pointee_constant: *pointee_constant,
+            },
             Self::LoopTest { condition } => Self::LoopTest {
                 condition: condition.clone(),
             },

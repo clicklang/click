@@ -26,7 +26,7 @@ pub(in crate::surface) fn program_expression_uses_variable(
         ProgramExpression::EnumConstruct { fields, .. } => fields
             .iter()
             .any(|field| program_expression_uses_variable(field, variable)),
-        ProgramExpression::Conditional {
+        ProgramExpression::Ternary {
             condition,
             then_branch,
             else_branch,

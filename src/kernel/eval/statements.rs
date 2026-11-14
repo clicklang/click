@@ -3278,6 +3278,7 @@ fn collect_scope_declared_names(statement: &ProgramStatement, names: &mut Vec<St
         | ProgramStatement::HeapAllocate { .. }
         | ProgramStatement::HeapFree { .. }
         | ProgramStatement::Assert { .. }
+        | ProgramStatement::StepValue { .. }
         | ProgramStatement::LoopTest { .. }
         | ProgramStatement::Return(_)
         | ProgramStatement::Throw(_)
@@ -3655,6 +3656,7 @@ fn verification_operation_name(statement: &ProgramStatement) -> &'static str {
         ProgramStatement::HeapAllocate { .. } => "verification statement: heap allocate",
         ProgramStatement::HeapFree { .. } => "verification statement: heap free",
         ProgramStatement::Assert { .. } => "verification statement: assert",
+        ProgramStatement::StepValue { .. } => "verification statement: step value",
         ProgramStatement::Return(_) => "verification statement: return",
         ProgramStatement::Throw(_) => "verification statement: throw",
         ProgramStatement::TryCatchInt32 { .. } => "verification statement: int32 handler",
@@ -4325,6 +4327,54 @@ fn execute_execution_statement_leaf_paths(
         ProgramStatement::Assert { condition, label } => {
             execute_program_assert_paths(state, condition, label.as_deref(), assumptions, budget)?
         }
+        // The operator's value on this path is the step's result, with the
+        // operator's type as an assignment would give it.
+        ProgramStatement::StepValue {
+            step,
+            expression,
+            value_type,
+            pointee_constant,
+        } => {
+            let mut paths = Vec::new();
+            for mut path in evaluate_expression_value_paths(state, expression, assumptions, budget)?
+            {
+                let outcome = match path.outcome {
+                    ExpressionOutcome::Value(value) => {
+                        let value = value.into_native();
+                        let value = match value_type {
+                            Some(value_type) => {
+                                crate::kernel::functions::coerce_program_value_with_pointee_constant(
+                                    value,
+                                    *value_type,
+                                    *pointee_constant,
+                                    &mut path.obligations,
+                                    assumptions,
+                                )
+                            }
+                            None => Some(value),
+                        };
+                        match value {
+                            Some(value) => {
+                                let mut next = state.clone();
+                                next.set_step_result(*step, value);
+                                StatementOutcome::Normal(Box::new(next))
+                            }
+                            None => StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
+                        }
+                    }
+                    ExpressionOutcome::UndefinedBehavior(error) => {
+                        StatementOutcome::UndefinedBehavior(error)
+                    }
+                    ExpressionOutcome::RuntimeError(error) => StatementOutcome::RuntimeError(error),
+                };
+                paths.push(StatementExecutionPath::new(
+                    outcome,
+                    path.facts,
+                    path.obligations,
+                ));
+            }
+            paths
+        }
         ProgramStatement::Seq(_) => unreachable!("sequences dispatch before leaf execution"),
         ProgramStatement::Return(ProgramExpression::Value(ProgramValue::Void)) => {
             let outcome = if let Some(refusal) = return_authority_refusal(state) {
@@ -4628,24 +4678,16 @@ fn execute_execution_statement_leaf_paths(
             judgment,
         )?,
     };
-    // A statement's call steps come just before it, and the results they
-    // made end with the statement that reads them: none is left at a loop
-    // head or a join.
+    // A statement's steps come just before it, and each result ends with
+    // the statement that reads it: none is left at a loop head or a join.
     let mut paths = paths;
-    if state.step_results.is_some()
-        && !matches!(
-            statement,
-            ProgramStatement::CallResult { .. }
-                | ProgramStatement::Assign {
-                    prior_result: Some(_),
-                    ..
+    if state.step_results.is_some() {
+        let read = step_results_read(statement);
+        if !read.is_empty() {
+            for path in &mut paths {
+                if let Some(state) = execution_statement_outcome_state_mut(&mut path.outcome) {
+                    state.end_step_results(&read);
                 }
-        )
-        && statement_reads_step_result(statement)
-    {
-        for path in &mut paths {
-            if let Some(state) = execution_statement_outcome_state_mut(&mut path.outcome) {
-                state.step_results = None;
             }
         }
     }
@@ -4658,19 +4700,23 @@ pub(in crate::kernel) fn without_read_step_results(
     mut state: ExecutionState,
     condition: &ProgramExpression,
 ) -> ExecutionState {
-    if state.step_results.is_some() && condition.reads_step_result() {
-        state.step_results = None;
+    if state.step_results.is_some() {
+        let mut read = Vec::new();
+        condition.collect_step_results_read(&mut read);
+        state.end_step_results(&read);
     }
     state
 }
 
-/// Whether `statement` itself reads a call's result.
-fn statement_reads_step_result(statement: &ProgramStatement) -> bool {
+/// The steps whose results `statement` itself reads.
+fn step_results_read(statement: &ProgramStatement) -> Vec<u32> {
     let mut expressions = Vec::new();
     super::undefined_site::statement_expressions(statement, &mut expressions);
-    expressions
-        .into_iter()
-        .any(|(expression, _)| expression.reads_step_result())
+    let mut read = Vec::new();
+    for (expression, _) in expressions {
+        expression.collect_step_results_read(&mut read);
+    }
+    read
 }
 
 /// The state an outcome continues in, when it has one.

@@ -3650,7 +3650,7 @@ pub enum ProgramExpression {
         /// unset and keeps the source pointer's qualification.
         explicit_qualification: bool,
     },
-    Conditional {
+    Ternary {
         condition: Box<ProgramExpression>,
         then_branch: Box<ProgramExpression>,
         else_branch: Box<ProgramExpression>,
@@ -5418,6 +5418,17 @@ pub enum ProgramStatement {
     Call {
         function_name: String,
         arguments: Vec<ProgramExpression>,
+    },
+    /// The value an operator that decides between its operands (`&&`, `||`,
+    /// the ternary operator) takes on this path, at the end of the arm that
+    /// computed it: the result of step `step`, which the rest of the
+    /// statement reads. It has `value_type` when one is given, as an
+    /// assignment to a local of that type would give it.
+    StepValue {
+        step: u32,
+        expression: ProgramExpression,
+        value_type: Option<ProgramType>,
+        pointee_constant: bool,
     },
     /// Allocate a runtime-sized heap block and assign either null or its fresh
     /// base pointer to `target`.
@@ -10184,27 +10195,49 @@ pub enum StepOrigin {
     /// It is this local's value before an assignment step replaced it, the
     /// value of a postfix `x++` or `x--`.
     Prior(String),
+    /// An operator that decides between its operands took it.
+    Operator(OperatorKind),
+}
+
+/// An operator that decides which of its operands run.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum OperatorKind {
+    /// `&&`
+    And,
+    /// `||`
+    Or,
+    /// The ternary operator, `c ? a : b`.
+    Ternary,
 }
 
 impl ProgramExpression {
     /// Whether evaluating this expression reads a step's result.
     pub(crate) fn reads_step_result(&self) -> bool {
+        let mut steps = Vec::new();
+        self.collect_step_results_read(&mut steps);
+        !steps.is_empty()
+    }
+
+    /// The steps whose results evaluating this expression reads.
+    pub(crate) fn collect_step_results_read(&self, steps: &mut Vec<u32>) {
         match self {
-            ProgramExpression::StepResult { .. } => true,
+            ProgramExpression::StepResult { step, .. } => steps.push(*step),
             ProgramExpression::Value(_)
             | ProgramExpression::Variable(_)
-            | ProgramExpression::FunctionAddress(_) => false,
+            | ProgramExpression::FunctionAddress(_) => {}
             ProgramExpression::EnumConstruct { fields, .. } => {
-                fields.iter().any(ProgramExpression::reads_step_result)
+                for field in fields {
+                    field.collect_step_results_read(steps);
+                }
             }
-            ProgramExpression::Conditional {
+            ProgramExpression::Ternary {
                 condition,
                 then_branch,
                 else_branch,
             } => {
-                condition.reads_step_result()
-                    || then_branch.reads_step_result()
-                    || else_branch.reads_step_result()
+                condition.collect_step_results_read(steps);
+                then_branch.collect_step_results_read(steps);
+                else_branch.collect_step_results_read(steps);
             }
             ProgramExpression::Cast { expression, .. }
             | ProgramExpression::FloatNegate(expression)
@@ -10231,9 +10264,10 @@ impl ProgramExpression {
             | ProgramExpression::TypedLoad {
                 pointer: expression,
                 ..
-            } => expression.reads_step_result(),
+            } => expression.collect_step_results_read(steps),
             crate::kernel::binary_c_expression!(left, right) => {
-                left.reads_step_result() || right.reads_step_result()
+                left.collect_step_results_read(steps);
+                right.collect_step_results_read(steps);
             }
         }
     }
@@ -10251,6 +10285,21 @@ impl ExecutionState {
     /// step has run.
     pub(crate) fn step_result(&self, call: u32) -> Option<&ProgramValue> {
         self.step_results.as_ref()?.get(&call)
+    }
+
+    /// Ends the results of `steps`: their reader has read them.
+    pub(super) fn end_step_results(&mut self, steps: &[u32]) {
+        let Some(results) = &self.step_results else {
+            return;
+        };
+        if !steps.iter().any(|step| results.contains_key(step)) {
+            return;
+        }
+        let mut results = (**results).clone();
+        for step in steps {
+            results.remove(step);
+        }
+        self.step_results = (!results.is_empty()).then(|| Arc::new(results));
     }
 }
 

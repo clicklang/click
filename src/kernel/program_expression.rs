@@ -140,7 +140,7 @@ pub fn conditional(
     then_branch: ProgramExpression,
     else_branch: ProgramExpression,
 ) -> ProgramExpression {
-    ProgramExpression::Conditional {
+    ProgramExpression::Ternary {
         condition: Box::new(condition),
         then_branch: Box::new(then_branch),
         else_branch: Box::new(else_branch),

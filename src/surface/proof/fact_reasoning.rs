@@ -428,7 +428,7 @@ fn collect_program_expression_variables(expression: &ProgramExpression, names: &
                 value: expression, ..
             } => pending.push(expression),
             ProgramExpression::EnumConstruct { fields, .. } => pending.extend(fields.iter().rev()),
-            ProgramExpression::Conditional {
+            ProgramExpression::Ternary {
                 condition,
                 then_branch,
                 else_branch,

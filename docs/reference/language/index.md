@@ -3915,6 +3915,7 @@ before it and counted from zero there:
 | `loop(i).test()` | the test of loop `i` whose condition calls a function, after those calls; refused for a pure condition, which is tested at the head |
 | `S.assignment(x, j)` | `S`'s `j`th atomic region of its own that assigns local `x` |
 | `S.read(j)` | `S`'s `j`th atomic region of its own with an explicit scalar memory load |
+| `S.and(j)`, `S.or(j)`, `S.ternary(j)` | `S`'s `j`th `&&`, `\|\|` or ternary operator whose operands make steps, where it decides which run; `.result` is its value on the path |
 
 A statement's `.entry` is before its first atomic region, its own or a
 child's. Its `.exit` is after its `if` or loop region when it is one, after its
@@ -3933,7 +3934,8 @@ have at(statement(1).region(1).entry, y) == x + 1 by solve();
 There `y = f(f(y));` is `statement(1)`, and its outer call is both its second
 call of `f` and its second atomic region.
 
-`.region(j)`, `.call(f, j)`, `.test()`, `.assignment(x, j)` and `.read(j)` end a chain
+`.region(j)`, `.call(f, j)`, `.test()`, `.assignment(x, j)`, `.read(j)`,
+`.and(j)`, `.or(j)` and `.ternary(j)` end a chain
 and count only `S`'s own atomic regions, not those of statements nested in
 it: an `if`'s own region is its test
 (`mdtests/a_chained_region_ends_in_an_assignment_or_read.md`,
