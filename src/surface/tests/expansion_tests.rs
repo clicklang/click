@@ -22292,7 +22292,7 @@ fn instantiated_bound_to_result_expands_without_transport() {
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(expanded.contains("instantiate("), "{expanded}");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
-    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     let false_claim = source.replace("p[i] < result", "p[i] + 1 < result");
-    assert!(verify_c0_sources(&false_claim, &sources).is_err());
+    assert!(verify_c_sources(&false_claim, &sources).is_err());
 }
