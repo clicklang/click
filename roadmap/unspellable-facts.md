@@ -322,6 +322,14 @@ facts and refusals through an explicit compatibility boundary. Result
 construction and handoffs preserve operand DAGs without exporting them;
 Surface spelling and dependency readers retain their prior payload policies.
 
+7o retains numeric pointer address observations with their exact object-class
+annotations. Explicit numeric projection of a complete pointer-to-integer value
+produces a common observation; its provenance record remains execution metadata.
+Numeric observation identity still ignores annotations, while complete-value
+transport preserves them. Pointer differences keep the existing same-object/stride
+checker and common numeric result admission. Native index admission is unchanged;
+Surface observations use the existing pointer cast spelling.
+
 ## Chunk 6: folds, binders and algebraic matches
 
 Delivered one PR per subchunk, in sequence, preparing scoped consumers and Surface
