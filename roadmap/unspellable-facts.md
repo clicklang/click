@@ -183,6 +183,37 @@ that syntax comparison with arithmetic observation equality.
 call-result sequence, not the wider KernelTerm/SurfaceTerm migration or the
 other result families.
 
+## Chunk 6: folds, binders and algebraic matches
+
+Deliver one PR per subchunk, in sequence. Prepare scoped consumers and Surface
+support before activating new evaluator roots. Preserve existing proof/refusal
+behavior, range ordering, binder identity, capture avoidance, scoped obligations
+and constructor reduction rules. No new search, indexes or larger budgets.
+
+| Subchunk | Boundary | Completion criterion |
+| --- | --- | --- |
+| 6a | Common fold payloads | Typed shared children retain range kinds, bounds, initial value, body and exact binder IDs; explicit native conversion is lossless. |
+| 6b | Fold scope and dependency readers | Common children support free-variable, capture, binder and memory-dependency collection with correct nested scope. |
+| 6c | Fold substitution and transport | Instantiation, rewriting and snapshot transport retain roots and avoid capture. |
+| 6d | Fold checking and identity | Existing equality, alpha keys, fact matching and fold rules retain their proofs and refusals. |
+| 6e | Fold Surface boundary | Common fold roots raise/lower through existing syntax and certificate paths with exact identity. |
+| 6f | Integer fold producers | Actual Integer fold evaluation retains common roots and scoped obligations, including empty ranges. |
+| 6g | Machine fold producers | Supported machine folds retain common operands through evaluation and nested arithmetic handoffs. |
+| 6h | Common match payloads | Typed scrutinees, ordered arms, bound-field types and bodies; required constructor fields retain common children. |
+| 6i | Match scope and transport | Capture-safe dependencies, substitution, rewriting and snapshot handling. |
+| 6j | Match checking and reduction | Existing checked constructor selection and equality retain evidence requirements; unknown scrutinees remain symbolic. |
+| 6k | Match Surface boundary | Exact raising/lowering and certificate paths preserve arm structure and binding names. |
+| 6l | Numeric match producers | Integer and machine result producers retain common arms and roots. |
+| 6m | Algebraic match producers | Algebraic result matches retain common structure; other producers have named compatibility boundaries. |
+| 6n | Closure | Remove superseded adapters and validate nested folds/matches/calls, fact stability, exact round trips and scaling. |
+
+6a prepares the typed `KernelFold` payload without registering a live
+`KernelTermNode` variant or switching evaluator production. This deliberately
+keeps new roots unavailable until their scoped readers and Surface support are
+ready. Integer results preserve Int32, UInt64 and Integer range kinds; the
+existing symbolic machine fold retains its Int32 range and result profile.
+This is preparation, not closure of the fold boundary.
+
 ## Chunk 5: execution value handoffs
 
 Retain already-supported machine-integer results through execution, one PR per
