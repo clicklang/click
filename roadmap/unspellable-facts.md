@@ -279,6 +279,14 @@ The local-index reader walks shared children without exporting them and keeps
 its existing guard, opaque-call and load-refusal policies. Existing source-name
 selection and lowering remain unchanged; offsets gain no standalone syntax.
 
+7j retains complete shared pointer payloads in proof-local source bindings and
+raises those bindings through the common-term boundary. Source matching is
+separate from logical pointer equality: qualifiers, opaque extents, historical
+reads and retained evidence must agree. Matching compares shared children and
+persistent evidence identity without exporting numeric trees or walking premises.
+Other native source/snapshot readers remain at the producer compatibility
+boundary until their carriers switch; this adds no spelling search or syntax.
+
 ## Chunk 6: folds, binders and algebraic matches
 
 Delivered one PR per subchunk, in sequence, preparing scoped consumers and Surface

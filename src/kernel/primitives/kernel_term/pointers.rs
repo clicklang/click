@@ -59,6 +59,51 @@ impl SharedPointerValue {
     pub(crate) fn node(&self) -> &KernelPointerValue {
         &self.0
     }
+    /// Whether an existing source binding retains this complete payload.
+    /// This is deliberately separate from pointer equality: no address aliases,
+    /// ignored qualifiers, or equivalent-but-different evidence select a name.
+    /// Children use their retained identities and premises are never re-walked.
+    pub(crate) fn same_source_payload(&self, other: &Self) -> bool {
+        crate::instrumentation::record_deterministic_work(1);
+        if self == other {
+            return true;
+        }
+        let (a, b) = (self.node(), other.node());
+        if a.address != b.address
+            || a.designation != b.designation
+            || a.opaque_extent != b.opaque_extent
+            || a.program_type != b.program_type
+        {
+            return false;
+        }
+        let (a, b) = match (&a.qualifiers, &b.qualifiers) {
+            (None, None) => return true,
+            (Some(a), Some(b)) => (a, b),
+            _ => return false,
+        };
+        let extent_matches = match (&a.extent, &b.extent) {
+            (None, None) => true,
+            (Some(a), Some(b)) => a.start == b.start && a.width == b.width,
+            _ => false,
+        };
+        let evidence_matches = match (&a.object_type_evidence, &b.object_type_evidence) {
+            (None, None) => true,
+            (Some(a), Some(b)) => {
+                a.class == b.class
+                    && a.checked == b.checked
+                    && a.premise_fingerprint == b.premise_fingerprint
+                    && a.premises.ptr_eq(&b.premises)
+            }
+            _ => false,
+        };
+        a.volatile == b.volatile
+            && a.constant == b.constant
+            && a.extent_known == b.extent_known
+            && a.object_class == b.object_class
+            && a.local_reference == b.local_reference
+            && extent_matches
+            && evidence_matches
+    }
     /// Same address roles as PointerValue::pointers. Widths remain separate
     /// numeric payloads; each reader retains its existing metadata policy.
     pub(crate) fn addresses(&self) -> impl Iterator<Item = &SharedPointerAddress> {
@@ -211,6 +256,34 @@ mod tests {
         assert!(left.node().opaque_extent.is_some());
         assert!(right.node().opaque_extent.is_none());
     }
+    #[test]
+    fn source_payload_names_do_not_inherit_logical_equality_omissions() {
+        let source = complete_source();
+        let retained = SharedPointerValue::import(&source);
+        assert!(retained.same_source_payload(&SharedPointerValue::import(&source)));
+        let mut variants = vec![source.clone().with_pointee_constant(false)];
+        let mut changed = source.clone();
+        changed.opaque_extent = None;
+        variants.push(changed);
+        let mut changed = source.clone();
+        Arc::make_mut(changed.qualifiers.as_mut().unwrap()).object_class = None;
+        variants.push(changed);
+        let mut changed = source.clone();
+        Arc::make_mut(changed.qualifiers.as_mut().unwrap())
+            .object_type_evidence
+            .as_mut()
+            .unwrap()
+            .checked = true;
+        variants.push(changed);
+        for different in variants {
+            assert_eq!(
+                source, different,
+                "these distinctions are not logical pointer identity"
+            );
+            assert!(!retained.same_source_payload(&SharedPointerValue::import(&different)));
+        }
+    }
+
     #[test]
     fn absent_and_present_default_qualifiers_round_trip_exactly() {
         let mut source = complete_source();

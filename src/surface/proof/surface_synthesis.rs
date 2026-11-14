@@ -15,6 +15,7 @@ mod tests;
 mod folds;
 mod matches;
 mod pointer_indices;
+mod pointer_names;
 
 use crate::kernel::program_local_source_name as surface_local_name;
 
@@ -1191,7 +1192,7 @@ fn proof_binder_name(variable: Variable) -> Option<String> {
 }
 
 thread_local! {
-    static PROOF_LOCAL_VALUE_NAMES: std::cell::RefCell<Vec<(ProgramValue, String)>> =
+    static PROOF_LOCAL_VALUE_NAMES: std::cell::RefCell<Vec<pointer_names::NamedValue>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
@@ -1201,13 +1202,17 @@ pub(in crate::surface) fn with_proof_local_value_names<R>(
     names: Vec<(ProgramValue, String)>,
     operation: impl FnOnce() -> R,
 ) -> R {
-    struct Restore(Vec<(ProgramValue, String)>);
+    struct Restore(Vec<pointer_names::NamedValue>);
     impl Drop for Restore {
         fn drop(&mut self) {
             let previous = std::mem::take(&mut self.0);
             PROOF_LOCAL_VALUE_NAMES.with(|names| *names.borrow_mut() = previous);
         }
     }
+    let names = names
+        .into_iter()
+        .map(pointer_names::NamedValue::new)
+        .collect();
     let _restore = Restore(PROOF_LOCAL_VALUE_NAMES.with(|current| current.replace(names)));
     operation()
 }
@@ -1245,13 +1250,7 @@ pub(in crate::surface) fn synthesize_surface_value(
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> Option<ContractExpression> {
-    if let Some(name) = PROOF_LOCAL_VALUE_NAMES.with(|names| {
-        names
-            .borrow()
-            .iter()
-            .find(|(named, _)| named == value)
-            .map(|(_, name)| name.clone())
-    }) {
+    if let Some(name) = pointer_names::native_name(value) {
         return Some(ContractExpression::ProgramExpression(
             ProgramExpression::Variable(name),
         ));
@@ -4845,6 +4844,11 @@ fn synthesize_legacy_call_argument(
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<SurfaceTerm> {
     Some(match value {
+        crate::kernel::PureFunctionArgument::Value(value @ ProgramValue::Pointer(_)) => {
+            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(pointer_names::native_name(
+                value,
+            )?))
+        }
         crate::kernel::PureFunctionArgument::Value(ProgramValue::Bool(word)) => {
             synthesize_surface_bool(
                 &ConditionTerm::truth_of_bool_word(word),
