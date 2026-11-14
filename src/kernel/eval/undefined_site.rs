@@ -62,7 +62,7 @@ pub(crate) fn locate_undefined_behavior_in_condition(
 
 /// The expressions `statement` evaluates itself, each with whether its value
 /// is tested for truth. Nested statement bodies are not stepped with it.
-fn statement_expressions<'a>(
+pub(super) fn statement_expressions<'a>(
     statement: &'a CStatement,
     expressions: &mut Vec<(&'a CExpression, bool)>,
 ) {
@@ -85,7 +85,9 @@ fn statement_expressions<'a>(
         | CStatement::LoopTest { condition }
         | CStatement::If { condition, .. }
         | CStatement::While { condition, .. } => expressions.push((condition, true)),
-        CStatement::CallAssign { arguments, .. } | CStatement::Call { arguments, .. } => {
+        CStatement::CallAssign { arguments, .. }
+        | CStatement::Call { arguments, .. }
+        | CStatement::CallResult { arguments, .. } => {
             expressions.extend(arguments.iter().map(|argument| (argument, false)));
         }
         CStatement::Store { pointer, value } | CStatement::TypedStore { pointer, value, .. } => {
@@ -156,7 +158,10 @@ fn has_undefined_behavior(
 /// The operands of `expression` that are evaluated whenever it is.
 fn unconditional_operands<'a>(expression: &'a CExpression, operands: &mut Vec<&'a CExpression>) {
     match expression {
-        CExpression::Value(_) | CExpression::Variable(_) | CExpression::FunctionAddress(_) => {}
+        CExpression::Value(_)
+        | CExpression::Variable(_)
+        | CExpression::FunctionAddress(_)
+        | CExpression::CallResult { .. } => {}
         CExpression::Cast { expression, .. }
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }

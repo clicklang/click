@@ -791,7 +791,8 @@ impl<'a> Proof<'a> {
                 .ok()?;
                 let callee = match statement {
                     CStatement::CallAssign { function_name, .. }
-                    | CStatement::Call { function_name, .. } => function_name,
+                    | CStatement::Call { function_name, .. }
+                    | CStatement::CallResult { function_name, .. } => function_name,
                     _ => return None,
                 };
                 format!("step({callee}(...))")

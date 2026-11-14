@@ -1108,7 +1108,7 @@ pub(super) fn describe_multiple_statement_successors_guidance(
         || !one_throws
         || !matches!(
             statement,
-            CStatement::Call { .. } | CStatement::CallAssign { .. }
+            CStatement::Call { .. } | CStatement::CallAssign { .. } | CStatement::CallResult { .. }
         )
     {
         return String::new();
@@ -1378,7 +1378,7 @@ pub(super) fn describe_stated_fact_over_locals(fact: &Proposition, state: &CStat
 /// The naming tables of `state`'s locals: the kernel variables a step or a
 /// loop head minted for them read as the locals' names.
 pub(super) fn local_naming_tables(state: &CState) -> (Vec<syntax::C0Parameter>, Vec<CExpression>) {
-    let values = state
+    let mut values = state
         .locals()
         .object_values()
         .filter(|(name, _)| !name.starts_with("__rust_"))
@@ -1389,8 +1389,33 @@ pub(super) fn local_naming_tables(state: &CState) -> (Vec<syntax::C0Parameter>, 
                 value.clone().into_native(),
             )
         })
-        .collect();
+        .collect::<BTreeMap<_, _>>();
+    // The results of the running statement's call steps, each spelled by
+    // its call: `statement(0).call(f, 0).result`.
+    if let Some(results) = &state.call_results {
+        values.extend(
+            results.iter().filter_map(|(call, value)| {
+                Some((call_step_result_spelling(*call)?, value.clone()))
+            }),
+        );
+    }
     value_naming_tables(&values)
+}
+
+/// The call step numbered `call`, as the statements as written name it.
+pub(in crate::surface) fn call_step_region(call: u32) -> Option<CodeRegionRef> {
+    let layout = spelling_layout()?;
+    let region = layout.call_region(call)?;
+    let steps = layout.source_path_spelling(region, ProgramPointKind::Exit)?;
+    Some(CodeRegionRef::Path(steps))
+}
+
+/// `<call>.result` for the result of the call step numbered `call`.
+pub(in crate::surface) fn call_step_result_spelling(call: u32) -> Option<String> {
+    Some(format!(
+        "{}.result",
+        describe_code_region_ref(&call_step_region(call)?)
+    ))
 }
 
 /// `<region>.result` for a call's result temporary, which no source name
@@ -5811,6 +5836,9 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
         }
         CExpression::Variable(name) => rust_variable_spelling(name).unwrap_or_else(|| name.clone()),
         CExpression::FunctionAddress(name) => format!("&{name}"),
+        CExpression::CallResult { function_name, .. } => {
+            format!("{}(…)", describe_called_function(function_name))
+        }
         CExpression::Cast {
             expression,
             target_type,
@@ -6570,6 +6598,11 @@ pub(super) fn describe_c_statement_head(statement: &CStatement) -> String {
         CStatement::Call {
             function_name,
             arguments,
+        }
+        | CStatement::CallResult {
+            function_name,
+            arguments,
+            ..
         } => format!(
             "{}({});",
             describe_called_function(function_name),

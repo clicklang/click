@@ -154,6 +154,19 @@ impl CStatement {
                 function_name: function_name.clone(),
                 arguments: arguments.clone(),
             },
+            Self::CallResult {
+                call,
+                function_name,
+                arguments,
+                result_type,
+                result_pointee_constant,
+            } => Self::CallResult {
+                call: *call,
+                function_name: function_name.clone(),
+                arguments: arguments.clone(),
+                result_type: *result_type,
+                result_pointee_constant: *result_pointee_constant,
+            },
             Self::HeapAllocate {
                 target,
                 bytes,

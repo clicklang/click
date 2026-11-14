@@ -1550,6 +1550,21 @@ pub(super) fn evaluate_native_expression_paths(
         CExpression::Variable(_) => {
             read_c_lvalue_expression_paths(state, expression, assumptions, budget)?
         }
+        // The term this statement's own call step returned.
+        CExpression::CallResult { call, .. } => vec![CExpressionPath {
+            outcome: match state
+                .call_results
+                .as_ref()
+                .and_then(|results| results.get(call))
+            {
+                Some(value) => CExpressionOutcome::Value(value.clone()),
+                None => CExpressionOutcome::RuntimeError(CRuntimeError::UnboundVariable(format!(
+                    "the result of call {call}, read before the call ran"
+                ))),
+            },
+            facts: Vec::new().into(),
+            obligations: Vec::new(),
+        }],
         CExpression::FunctionAddress(name) => vec![CExpressionPath {
             outcome: CExpressionOutcome::Value(CValue::typed_pointer(
                 Pointer::function(name.clone()),
@@ -3800,6 +3815,8 @@ pub(in crate::kernel) fn c_expression_pointee_type(
             Some(CLocalBinding::AggregateObject { .. }) => Some(CType::UInt8),
             None => None,
         },
+        // A call's result has the callee's declared type.
+        CExpression::CallResult { call, .. } => state.call_result(*call)?.c_type().pointee_type(),
         CExpression::Cast { target_type, .. } => target_type.pointee_type(),
         CExpression::AddressOf(target) | CExpression::CheckedObjectAddress(target) => {
             c_expression_lvalue_type(state, target)

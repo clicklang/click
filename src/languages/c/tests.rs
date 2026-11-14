@@ -5171,6 +5171,7 @@ fn c0_syntax_models_missing_else_and_empty_statements_as_skip() {
             | syntax::C0Statement::DeclareStructValue { .. }
             | syntax::C0Statement::Assign { .. }
             | syntax::C0Statement::Call { .. }
+            | syntax::C0Statement::CallResult { .. }
             | syntax::C0Statement::CallAssign { .. }
             | syntax::C0Statement::IndirectCall { .. }
             | syntax::C0Statement::HeapAllocate { .. }
@@ -10122,15 +10123,16 @@ fn c0_field_source_ids_survive_expression_rebuilds() {
     .expect("call argument field access should parse");
     fn call_argument(statement: &syntax::C0Statement) -> Option<&syntax::C0Expression> {
         match statement {
-            syntax::C0Statement::CallAssign { arguments, .. } => arguments.first(),
+            syntax::C0Statement::CallAssign { arguments, .. }
+            | syntax::C0Statement::CallResult { arguments, .. } => arguments.first(),
             syntax::C0Statement::Seq(first, second) => {
                 call_argument(first).or_else(|| call_argument(second))
             }
             _ => None,
         }
     }
-    let argument = call_argument(functions[0].body())
-        .expect("the call should be lowered to a call assignment");
+    let argument =
+        call_argument(functions[0].body()).expect("the call should be lowered to a call step");
     let id = argument
         .field_source_id()
         .expect("rebuilt call argument should retain source identity");
@@ -10882,13 +10884,10 @@ fn c0_syntax_lowers_calls_in_expression_position() {
     )
     .expect("calls should be accepted wherever an unconditional expression is expected");
     let debug = format!("{:?}", function.body());
+    assert!(debug.contains("CallResult {"), "calls lower to call steps");
     assert!(
-        debug.contains("CallAssign"),
-        "calls lower to call statements"
-    );
-    assert!(
-        debug.contains("__click_call_result0"),
-        "lowering uses a kernel-local temporary"
+        !debug.contains("__click_call_result"),
+        "the rest of the expression reads the call's result, not a temporary local"
     );
     assert!(
         !debug.contains("Call {"),
@@ -10926,8 +10925,8 @@ fn c0_syntax_accepts_a_call_to_a_function_from_another_source() {
     )
     .expect("a call to a function defined in another source stays a call");
     assert!(
-        format!("{:?}", function.body()).contains("CallAssign"),
-        "the cross-translation-unit call lowers to a call statement"
+        format!("{:?}", function.body()).contains("CallResult {"),
+        "the cross-translation-unit call lowers to a call step"
     );
 }
 
@@ -10943,7 +10942,10 @@ fn c0_syntax_lowers_calls_in_conditional_expression_branches() {
     .expect("calls in conditional branches should be lowered lazily");
     let debug = format!("{:?}", function.body());
     assert!(debug.contains("If {"), "conditional branches become a C if");
-    assert!(debug.contains("CallAssign"), "the selected call is checked");
+    assert!(
+        debug.contains("CallResult {"),
+        "the selected call is checked"
+    );
     assert!(
         !debug.contains("Conditional {"),
         "the lowered body does not evaluate conditional call branches eagerly"
@@ -10994,7 +10996,7 @@ fn c0_syntax_lowers_calls_in_short_circuit_right_operands() {
             "{operator} becomes a checked branch"
         );
         assert!(
-            debug.contains("CallAssign"),
+            debug.contains("CallResult {"),
             "{operator} checks the selected call"
         );
         assert!(
@@ -11054,7 +11056,7 @@ fn c0_syntax_lowers_calls_in_reevaluated_loop_conditions() {
     .expect("calls in loop conditions should be reevaluated in the loop body");
     let debug = format!("{:?}", function.body());
     assert!(
-        debug.matches("CallAssign").count() >= 3,
+        debug.matches("CallResult {").count() >= 3,
         "each loop iteration has a checked condition call"
     );
     assert!(

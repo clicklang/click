@@ -2074,6 +2074,9 @@ pub(crate) fn c_expression_has_bool_type(state: &CState, expression: &CExpressio
         CExpression::Value(value) => value.c_type() == CType::Bool,
         // A variant test is a claim on the enum value, never a number.
         CExpression::EnumIs { .. } => true,
+        CExpression::CallResult { call, .. } => state
+            .call_result(*call)
+            .is_some_and(|value| value.c_type() == CType::Bool),
         expression => super::eval::c_expression_lvalue_type(state, expression) == Some(CType::Bool),
     }
 }

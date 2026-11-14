@@ -2775,7 +2775,10 @@ fn collect_resource_fact_reads_from_c_expression(
     reads: &mut Vec<ResourceFactRead>,
 ) {
     match expression {
-        CExpression::Value(_) | CExpression::Variable(_) | CExpression::FunctionAddress(_) => {}
+        CExpression::Value(_)
+        | CExpression::Variable(_)
+        | CExpression::FunctionAddress(_)
+        | CExpression::CallResult { .. } => {}
         CExpression::Cast { expression, .. } => {
             collect_resource_fact_reads_from_c_expression(expression, reads);
         }

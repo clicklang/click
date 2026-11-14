@@ -859,6 +859,14 @@ fn walk_c_state<S: VariableSubstitution + ?Sized>(state: &CState, s: &S) -> CSta
         .map(|(pointer, name)| (s.local_slot(pointer), name.clone()))
         .collect();
     CState {
+        call_results: state.call_results.as_ref().map(|results| {
+            std::sync::Arc::new(
+                results
+                    .iter()
+                    .map(|(call, value)| (*call, s.c_value(value)))
+                    .collect(),
+            )
+        }),
         locals: CLocalEnvironment::from_parts(bindings, slots),
         aggregate_destination: state.aggregate_destination.as_ref().map(|destination| {
             std::sync::Arc::new(CAggregateDestination {
@@ -965,6 +973,22 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(statement: &CStatement, s:
                 .iter()
                 .map(|argument| s.c_expression(argument))
                 .collect(),
+        },
+        CStatement::CallResult {
+            call,
+            function_name,
+            arguments,
+            result_type,
+            result_pointee_constant,
+        } => CStatement::CallResult {
+            call: *call,
+            function_name: function_name.clone(),
+            arguments: arguments
+                .iter()
+                .map(|argument| s.c_expression(argument))
+                .collect(),
+            result_type: *result_type,
+            result_pointee_constant: *result_pointee_constant,
         },
         CStatement::HeapAllocate {
             target,
@@ -2580,7 +2604,9 @@ fn collect_c_expression_bound_variables(
 ) {
     match expression {
         CExpression::Value(value) => collect_c_value_bound_variables(value, variables),
-        CExpression::Variable(_) | CExpression::FunctionAddress(_) => {}
+        CExpression::Variable(_)
+        | CExpression::FunctionAddress(_)
+        | CExpression::CallResult { .. } => {}
         CExpression::Cast { expression, .. } => {
             collect_c_expression_bound_variables(expression, variables);
         }
@@ -2658,7 +2684,9 @@ pub(in crate::kernel) fn collect_c_statement_bound_variables(
         | CStatement::LoopTest {
             condition: expression,
         } => collect_c_expression_bound_variables(expression, variables),
-        CStatement::CallAssign { arguments, .. } | CStatement::Call { arguments, .. } => {
+        CStatement::CallAssign { arguments, .. }
+        | CStatement::Call { arguments, .. }
+        | CStatement::CallResult { arguments, .. } => {
             for argument in arguments {
                 collect_c_expression_bound_variables(argument, variables);
             }
@@ -4642,6 +4670,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression(
         }
         CExpression::Variable(name) => CExpression::Variable(name.clone()),
         CExpression::FunctionAddress(name) => CExpression::FunctionAddress(name.clone()),
+        CExpression::CallResult { .. } => expression.clone(),
         CExpression::Cast {
             expression,
             target_type,
@@ -6431,7 +6460,9 @@ fn substitute_pointer_variable_in_c_expression(
         CExpression::Value(value) => {
             CExpression::Value(substitute_pointer_variable_in_c_value(value, from, to))
         }
-        CExpression::Variable(_) | CExpression::FunctionAddress(_) => expression.clone(),
+        CExpression::Variable(_)
+        | CExpression::FunctionAddress(_)
+        | CExpression::CallResult { .. } => expression.clone(),
         CExpression::Cast {
             expression,
             target_type,

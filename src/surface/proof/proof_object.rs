@@ -1565,6 +1565,31 @@ pub(in crate::surface::proof) fn register_recorded_snapshot_names(
             labels.integer_source_name(*variable, name);
         }
     }
+    // Each recorded call's result, `statement(0).call(f, 0).result`.
+    for (spelling, value) in snapshots.call_result_bindings() {
+        register_call_result_name(labels, spelling, value);
+    }
+}
+
+/// A call's result is spelled by its call, `<call>.result`.
+fn register_call_result_name(
+    labels: &mut crate::surface::proof_diagnostics::render::SnapshotLabels,
+    spelling: String,
+    value: &CValue,
+) {
+    match value.numeric_value() {
+        crate::kernel::arithmetic_c_value!(MachineTerm::Variable(variable)) => {
+            labels.fallback_source_name(*variable, spelling, value.c_type());
+        }
+        crate::kernel::arithmetic_c_value!(read @ MachineTerm::MemoryLoad(..)) => {
+            labels.fallback_read_name(read, spelling);
+        }
+        CValue::Pointer(pointer) => {
+            labels.fallback_pointer_name(pointer.pointer(), spelling.clone());
+            labels.fallback_value_name(spelling, value.clone());
+        }
+        _ => {}
+    }
 }
 
 /// The most recent recorded snapshots an `at(...)` can cite, oldest first,
@@ -1620,19 +1645,7 @@ fn register_snapshot_names(
             // A call's result temporary is spelled by its call,
             // `<region>.result`, at any point that holds it.
             if let Some(spelling) = crate::surface::diagnostics::call_result_spelling(name) {
-                match value.numeric_value() {
-                    crate::kernel::arithmetic_c_value!(MachineTerm::Variable(variable)) => {
-                        labels.fallback_source_name(*variable, spelling, value.c_type());
-                    }
-                    crate::kernel::arithmetic_c_value!(read @ MachineTerm::MemoryLoad(..)) => {
-                        labels.fallback_read_name(read, spelling);
-                    }
-                    CValue::Pointer(pointer) => {
-                        labels.fallback_pointer_name(pointer.pointer(), spelling.clone());
-                        labels.fallback_value_name(spelling, value.clone());
-                    }
-                    _ => {}
-                }
+                register_call_result_name(labels, spelling, value);
                 continue;
             }
             // A pointer's offset variable is not the pointer; a scalar

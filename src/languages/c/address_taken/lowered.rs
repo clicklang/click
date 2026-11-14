@@ -70,7 +70,9 @@ pub(super) fn summarize(function: &CFunction, summary: &mut AddressTakenSummary)
                     statements.extend(cases.iter().map(|case| case.body.as_ref()));
                 }
             }
-            CStatement::Call { arguments, .. } | CStatement::CallAssign { arguments, .. } => {
+            CStatement::Call { arguments, .. }
+            | CStatement::CallResult { arguments, .. }
+            | CStatement::CallAssign { arguments, .. } => {
                 expressions.extend(arguments.iter().map(|argument| (argument, false)));
             }
             CStatement::HeapAllocate { bytes, .. } => expressions.push((bytes, false)),
@@ -136,7 +138,7 @@ pub(super) fn summarize(function: &CFunction, summary: &mut AddressTakenSummary)
                     summary.taken.insert(name.clone());
                 }
             }
-            CExpression::FunctionAddress(_) => {}
+            CExpression::FunctionAddress(_) | CExpression::CallResult { .. } => {}
             CExpression::AddressOf(value) | CExpression::CheckedObjectAddress(value) => {
                 expressions.push((value, true));
             }

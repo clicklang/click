@@ -232,7 +232,7 @@ impl Names {
         use CExpression::*;
         match expression {
             Variable(name) => self.reference(name),
-            Value(_) | FunctionAddress(_) => {}
+            Value(_) | FunctionAddress(_) | CallResult { .. } => {}
             Cast { expression, .. }
             | FloatClassification { expression, .. }
             | PointerOffsetBytes {

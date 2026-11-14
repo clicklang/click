@@ -852,7 +852,9 @@ pub(in crate::kernel) fn collect_c_expression_bitvector_variables(
 ) {
     match expression {
         CExpression::Value(value) => collect_c_value_bitvector_variables(value, variables),
-        CExpression::Variable(_) | CExpression::FunctionAddress(_) => {}
+        CExpression::Variable(_)
+        | CExpression::FunctionAddress(_)
+        | CExpression::CallResult { .. } => {}
         CExpression::Cast { expression, .. } => {
             collect_c_expression_bitvector_variables(expression, variables)
         }
@@ -941,7 +943,7 @@ pub(in crate::kernel) fn collect_c_statement_bitvector_variables(
                 collect_c_expression_bitvector_variables(argument, variables);
             }
         }
-        CStatement::Call { arguments, .. } => {
+        CStatement::Call { arguments, .. } | CStatement::CallResult { arguments, .. } => {
             for argument in arguments {
                 collect_c_expression_bitvector_variables(argument, variables);
             }
@@ -1361,7 +1363,9 @@ fn collect_c_expression_bound_identities(
         CExpression::Value(value) => {
             collect_c_value_bound_identities(value, variables, integer_seen);
         }
-        CExpression::Variable(_) | CExpression::FunctionAddress(_) => {}
+        CExpression::Variable(_)
+        | CExpression::FunctionAddress(_)
+        | CExpression::CallResult { .. } => {}
         CExpression::Cast { expression, .. }
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }

@@ -5630,7 +5630,7 @@ impl CheckedCallOutcomeSplit {
     ) -> Result<Self, CheckedCallOutcomeSplitError> {
         if !matches!(
             statement,
-            CStatement::Call { .. } | CStatement::CallAssign { .. }
+            CStatement::Call { .. } | CStatement::CallAssign { .. } | CStatement::CallResult { .. }
         ) || !matches!(normal, CStatementOutcome::Normal(_))
             || !matches!(exceptional, CStatementOutcome::Throw { .. })
         {
@@ -9319,7 +9319,9 @@ impl ExecutionProofCore {
                 &decided_assumptions,
             );
         }
-        Ok((*reached, source_after))
+        // The condition's call results end with it.
+        let reached = crate::kernel::eval::without_read_call_results(*reached, decided);
+        Ok((reached, source_after))
     }
 
     /// The part of the evidence judgment shared by statement and condition

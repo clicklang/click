@@ -3245,6 +3245,7 @@ fn collect_scope_declared_names(statement: &CStatement, names: &mut Vec<String>)
         | CStatement::Assign { .. }
         | CStatement::CallAssign { .. }
         | CStatement::Call { .. }
+        | CStatement::CallResult { .. }
         | CStatement::HeapAllocate { .. }
         | CStatement::HeapFree { .. }
         | CStatement::Assert { .. }
@@ -3618,7 +3619,7 @@ fn verification_operation_name(statement: &CStatement) -> &'static str {
         }
         CStatement::Assign { .. } => "verification statement: assign",
         CStatement::CallAssign { .. } => "verification statement: call assign",
-        CStatement::Call { .. } => "verification statement: call",
+        CStatement::Call { .. } | CStatement::CallResult { .. } => "verification statement: call",
         CStatement::HeapAllocate { .. } => "verification statement: heap allocate",
         CStatement::HeapFree { .. } => "verification statement: heap free",
         CStatement::Assert { .. } => "verification statement: assert",
@@ -3774,6 +3775,7 @@ fn execute_c_statement_leaf_paths(
             statement,
             CStatement::Call { .. }
                 | CStatement::CallAssign { .. }
+                | CStatement::CallResult { .. }
                 | CStatement::While { .. }
                 | CStatement::ForStep { .. }
                 | CStatement::CopyAggregate { .. }
@@ -4165,12 +4167,66 @@ fn execute_c_statement_leaf_paths(
             arguments,
         } => execute_c_call_paths(
             state,
+            None,
             function_name,
             arguments,
             assumptions,
             execution_context,
             budget,
         )?,
+        // A call inside the expression of the statement that follows: the
+        // term it returned is that statement's `CallResult { call }`.
+        CStatement::CallResult {
+            call,
+            function_name,
+            arguments,
+            result_type,
+            result_pointee_constant,
+        } => {
+            let mut paths = execute_c_call_paths(
+                state,
+                Some(*call),
+                function_name,
+                arguments,
+                assumptions,
+                execution_context,
+                budget,
+            )?;
+            for path in &mut paths {
+                let Some(value) = path
+                    .call_result
+                    .as_ref()
+                    .map(|value| value.native().into_owned())
+                else {
+                    continue;
+                };
+                // The result has the callee's declared type, as it would
+                // assigned to a local of that type.
+                let value = match result_type {
+                    Some(c_type) => {
+                        match crate::kernel::functions::coerce_c_value_with_pointee_constant(
+                            value,
+                            *c_type,
+                            *result_pointee_constant,
+                            &mut path.obligations,
+                            assumptions,
+                        ) {
+                            Some(value) => value,
+                            None => {
+                                path.outcome =
+                                    CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch);
+                                continue;
+                            }
+                        }
+                    }
+                    None => value,
+                };
+                if let CStatementOutcome::Normal(state) = &mut path.outcome {
+                    state.set_call_result(*call, value);
+                }
+            }
+            paths
+        }
         CStatement::HeapAllocate {
             target,
             bytes,
@@ -4395,6 +4451,8 @@ fn execute_c_statement_leaf_paths(
                             } else {
                                 branch_state
                             };
+                            // The condition's call results end with it.
+                            let branch_state = without_read_call_results(branch_state, condition);
                             // The arm is a scope: what it declares stops
                             // existing however control leaves it.
                             let declared = scope_declared_names(branch);
@@ -4486,8 +4544,55 @@ fn execute_c_statement_leaf_paths(
             judgment,
         )?,
     };
+    // A statement's call steps come just before it, and the results they
+    // made end with the statement that reads them: none is left at a loop
+    // head or a join.
+    let mut paths = paths;
+    if state.call_results.is_some()
+        && !matches!(statement, CStatement::CallResult { .. })
+        && statement_reads_call_result(statement)
+    {
+        for path in &mut paths {
+            if let Some(state) = c_statement_outcome_state_mut(&mut path.outcome) {
+                state.call_results = None;
+            }
+        }
+    }
     budget.check_path_width(paths.len())?;
     Ok(paths)
+}
+
+/// `state` past a condition that read its call results, which end with it.
+pub(in crate::kernel) fn without_read_call_results(
+    mut state: CState,
+    condition: &CExpression,
+) -> CState {
+    if state.call_results.is_some() && condition.reads_call_result() {
+        state.call_results = None;
+    }
+    state
+}
+
+/// Whether `statement` itself reads a call's result.
+fn statement_reads_call_result(statement: &CStatement) -> bool {
+    let mut expressions = Vec::new();
+    super::undefined_site::statement_expressions(statement, &mut expressions);
+    expressions
+        .into_iter()
+        .any(|(expression, _)| expression.reads_call_result())
+}
+
+/// The state an outcome continues in, when it has one.
+fn c_statement_outcome_state_mut(outcome: &mut CStatementOutcome) -> Option<&mut CState> {
+    match outcome {
+        CStatementOutcome::Normal(state)
+        | CStatementOutcome::Break(state)
+        | CStatementOutcome::Continue(state)
+        | CStatementOutcome::Jump { state, .. }
+        | CStatementOutcome::Return { state, .. }
+        | CStatementOutcome::Throw { state, .. } => Some(state),
+        _ => None,
+    }
 }
 
 fn execute_c_switch_paths(

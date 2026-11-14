@@ -1840,7 +1840,7 @@ pub(super) fn prepare_call_outcome_split(
     }
     if !matches!(
         statement,
-        CStatement::Call { .. } | CStatement::CallAssign { .. }
+        CStatement::Call { .. } | CStatement::CallAssign { .. } | CStatement::CallResult { .. }
     ) {
         return Ok(None);
     }
@@ -2400,6 +2400,11 @@ fn execute_step_from_frontier_position_selecting_path(
                 function_name,
                 arguments,
                 ..
+            }
+            | CStatement::CallResult {
+                function_name,
+                arguments,
+                ..
             } => Some((function_name.as_str(), arguments.len())),
             _ => None,
         };
@@ -2493,6 +2498,7 @@ fn execute_step_from_frontier_position_selecting_path(
             step_statement,
             CStatement::Call { .. }
                 | CStatement::CallAssign { .. }
+                | CStatement::CallResult { .. }
                 | CStatement::TryCatchInt32 { .. }
         )
         && matches!(
@@ -2510,7 +2516,9 @@ fn execute_step_from_frontier_position_selecting_path(
             matches!(
                 (&step_statement, &transition.outcome),
                 (
-                    CStatement::Call { .. } | CStatement::CallAssign { .. },
+                    CStatement::Call { .. }
+                        | CStatement::CallAssign { .. }
+                        | CStatement::CallResult { .. },
                     CStatementOutcome::Throw { .. }
                 ) | (
                     CStatement::TryCatchInt32 { .. },
@@ -2541,7 +2549,9 @@ fn execute_step_from_frontier_position_selecting_path(
                 matches!(
                     (&step_statement, &transition.outcome),
                     (
-                        CStatement::Call { .. } | CStatement::CallAssign { .. },
+                        CStatement::Call { .. }
+                            | CStatement::CallAssign { .. }
+                            | CStatement::CallResult { .. },
                         CStatementOutcome::Return { .. } | CStatementOutcome::Throw { .. }
                     ) | (
                         CStatement::TryCatchInt32 { .. },
@@ -2563,7 +2573,9 @@ fn execute_step_from_frontier_position_selecting_path(
             } = &step_statement
                 && matches!(
                     try_body.as_ref(),
-                    CStatement::Call { .. } | CStatement::CallAssign { .. }
+                    CStatement::Call { .. }
+                        | CStatement::CallAssign { .. }
+                        | CStatement::CallResult { .. }
                 )
                 && matches!(handler.as_ref(), CStatement::Return(_))
             {
@@ -2584,7 +2596,9 @@ fn execute_step_from_frontier_position_selecting_path(
                 });
             } else if matches!(
                 step_statement,
-                CStatement::Call { .. } | CStatement::CallAssign { .. }
+                CStatement::Call { .. }
+                    | CStatement::CallAssign { .. }
+                    | CStatement::CallResult { .. }
             ) {
                 // A direct call's continuing normal edge is its returned
                 // outcome and its terminal throw is the threw outcome, in the
@@ -2821,7 +2835,7 @@ fn execute_step_from_frontier_position_selecting_path(
     if selected_path_fact.is_none()
         && matches!(
             step_statement,
-            CStatement::Call { .. } | CStatement::CallAssign { .. }
+            CStatement::Call { .. } | CStatement::CallAssign { .. } | CStatement::CallResult { .. }
         )
         && matches!(
             execution.core.frontier.region,
@@ -4238,6 +4252,11 @@ fn describe_call_bindings(statement: &CStatement, environment: &CExecutionEnviro
             function_name,
             arguments,
             ..
+        }
+        | CStatement::CallResult {
+            function_name,
+            arguments,
+            ..
         } => (function_name.as_str(), arguments.as_slice()),
         _ => return String::new(),
     };
@@ -4319,6 +4338,11 @@ pub(super) fn describe_statement_head(statement: &CStatement) -> String {
         CStatement::Call {
             function_name,
             arguments,
+        }
+        | CStatement::CallResult {
+            function_name,
+            arguments,
+            ..
         } => format!(
             "{}({})",
             crate::surface::diagnostics::describe_called_function(function_name),

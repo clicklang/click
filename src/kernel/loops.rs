@@ -194,7 +194,7 @@ pub(super) fn execute_c_call_assign_paths(
     {
         return execute_modeled_pthread_create_paths(
             state,
-            Some(target),
+            ModeledCreateStatus::Local(target),
             arguments,
             assumptions,
             execution_context.environment,
@@ -553,6 +553,7 @@ pub(super) fn execute_c_call_assign_paths(
 
 pub(super) fn execute_c_call_paths(
     state: &CState,
+    result_call: Option<u32>,
     function_name: &str,
     arguments: &[CExpression],
     assumptions: &PureFactContext,
@@ -594,7 +595,10 @@ pub(super) fn execute_c_call_paths(
     {
         return execute_modeled_pthread_create_paths(
             state,
-            None,
+            match result_call {
+                Some(call) => ModeledCreateStatus::CallResult(call),
+                None => ModeledCreateStatus::Discarded,
+            },
             arguments,
             assumptions,
             execution_context.environment,
@@ -1314,9 +1318,20 @@ fn modeled_pthread_indeterminate_handle(
     Ok(state)
 }
 
+/// Where a modeled `pthread_create` call's status goes.
+#[derive(Clone, Copy)]
+enum ModeledCreateStatus<'a> {
+    /// Assigned to this local.
+    Local(&'a str),
+    /// Read by its statement as this call's result.
+    CallResult(u32),
+    /// Not used.
+    Discarded,
+}
+
 fn execute_modeled_pthread_create_paths(
     state: &CState,
-    target: Option<&str>,
+    status_destination: ModeledCreateStatus<'_>,
     arguments: &[CExpression],
     assumptions: &PureFactContext,
     environment: &CExecutionEnvironment,
@@ -1328,7 +1343,7 @@ fn execute_modeled_pthread_create_paths(
     if state.pending_thread_create.is_some()
         || environment.selected_call_contract.is_some()
         || arguments.len() != 4
-        || target.is_none()
+        || matches!(status_destination, ModeledCreateStatus::Discarded)
     {
         return Ok(vec![CStatementExecutionPath::new(
             refusal(
@@ -1460,24 +1475,35 @@ fn execute_modeled_pthread_create_paths(
                                     MachineTerm::Variable(budget.allocate_kernel_variable()?);
                                 let result = CValue::Int32(status.clone());
                                 call_result = Some(result.clone());
-                                let target = target.expect("checked assigned call");
-                                if assign_call_result(
-                                    &mut success,
-                                    target,
-                                    result.clone(),
-                                    &mut path.obligations,
-                                    &current,
-                                )
-                                .is_err()
-                                    || assign_call_result(
-                                        &mut failure,
-                                        target,
-                                        result,
-                                        &mut path.obligations,
-                                        &current,
-                                    )
-                                    .is_err()
-                                {
+                                let unwritable = match status_destination {
+                                    ModeledCreateStatus::Local(target) => {
+                                        assign_call_result(
+                                            &mut success,
+                                            target,
+                                            result.clone(),
+                                            &mut path.obligations,
+                                            &current,
+                                        )
+                                        .is_err()
+                                            || assign_call_result(
+                                                &mut failure,
+                                                target,
+                                                result,
+                                                &mut path.obligations,
+                                                &current,
+                                            )
+                                            .is_err()
+                                    }
+                                    ModeledCreateStatus::CallResult(call) => {
+                                        success.set_call_result(call, result.clone());
+                                        failure.set_call_result(call, result);
+                                        false
+                                    }
+                                    ModeledCreateStatus::Discarded => {
+                                        unreachable!("checked used status")
+                                    }
+                                };
+                                if unwritable {
                                     refusal("modeled-pthread create status target is not writable")
                                 } else {
                                     let mut neutral = failure.clone();
@@ -4369,6 +4395,7 @@ fn loop_exit_state_difference(
         next_local_frame,
         next_local_lifetime,
         enclosing_frame_holds_locals,
+        call_results,
         locals,
         memory: _,
         resources: _,
@@ -4468,6 +4495,7 @@ fn loop_exit_state_difference(
         "enclosing frame holds automatic objects",
         values
     );
+    component!(call_results, "call results");
     Some(differences.join(", "))
 }
 
@@ -9023,6 +9051,7 @@ pub(super) fn statement_may_write_memory(state: &CState, statement: &CStatement)
         CStatement::Assign { name, .. } => state.locals.is_global_object(name),
         CStatement::CallAssign { .. }
         | CStatement::Call { .. }
+        | CStatement::CallResult { .. }
         | CStatement::HeapAllocate { .. }
         | CStatement::HeapFree { .. }
         | CStatement::EndAutomaticLifetimes { .. }
@@ -9100,7 +9129,7 @@ pub(super) fn collect_loop_modified_locals(statement: &CStatement, names: &mut B
         CStatement::CallAssign { target, .. } => {
             names.insert(target.clone());
         }
-        CStatement::Call { .. } => {}
+        CStatement::Call { .. } | CStatement::CallResult { .. } => {}
         CStatement::HeapAllocate { target, .. } => {
             names.insert(target.clone());
         }
@@ -9321,9 +9350,9 @@ fn for_each_statement_expression<'a>(
         }
         | CStatement::Return(expression)
         | CStatement::Throw(expression) => visit(expression),
-        CStatement::CallAssign { arguments, .. } | CStatement::Call { arguments, .. } => {
-            arguments.iter().for_each(&mut *visit)
-        }
+        CStatement::CallAssign { arguments, .. }
+        | CStatement::Call { arguments, .. }
+        | CStatement::CallResult { arguments, .. } => arguments.iter().for_each(&mut *visit),
         CStatement::Store { pointer, value } | CStatement::TypedStore { pointer, value, .. } => {
             visit(pointer);
             visit(value);
@@ -9400,7 +9429,7 @@ pub(crate) fn collect_address_taken_locals(statement: &CStatement, names: &mut B
                 collect_address_taken_in_expression(argument, names);
             }
         }
-        CStatement::Call { arguments, .. } => {
+        CStatement::Call { arguments, .. } | CStatement::CallResult { arguments, .. } => {
             for argument in arguments {
                 collect_address_taken_in_expression(argument, names);
             }
@@ -9482,7 +9511,10 @@ pub(super) fn collect_address_taken_in_expression(
         CExpression::AddressOf(target) | CExpression::CheckedObjectAddress(target) => {
             collect_variable_names(target, names)
         }
-        CExpression::Value(_) | CExpression::Variable(_) | CExpression::FunctionAddress(_) => {}
+        CExpression::Value(_)
+        | CExpression::Variable(_)
+        | CExpression::FunctionAddress(_)
+        | CExpression::CallResult { .. } => {}
         CExpression::Cast { expression, .. } => {
             collect_address_taken_in_expression(expression, names)
         }
@@ -9533,7 +9565,9 @@ pub(super) fn collect_variable_names(expression: &CExpression, names: &mut BTree
         CExpression::Variable(name) => {
             names.insert(name.clone());
         }
-        CExpression::Value(_) | CExpression::FunctionAddress(_) => {}
+        CExpression::Value(_)
+        | CExpression::FunctionAddress(_)
+        | CExpression::CallResult { .. } => {}
         CExpression::Cast { expression, .. } => collect_variable_names(expression, names),
         CExpression::Conditional {
             condition,

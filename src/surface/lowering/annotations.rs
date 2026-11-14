@@ -1478,6 +1478,7 @@ pub(in crate::surface) fn kernel_loop_by_index<'a>(
         | CStatement::Assign { .. }
         | CStatement::CallAssign { .. }
         | CStatement::Call { .. }
+        | CStatement::CallResult { .. }
         | CStatement::HeapAllocate { .. }
         | CStatement::HeapFree { .. }
         | CStatement::Throw(_)

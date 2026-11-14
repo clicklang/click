@@ -423,7 +423,9 @@ fn collect_spec_c_expression_carriers(expression: &CExpression, variables: &mut 
     }
     match expression {
         CExpression::Value(value) => collect_c_value_carriers(value, variables),
-        CExpression::Variable(_) | CExpression::FunctionAddress(_) => {}
+        CExpression::Variable(_)
+        | CExpression::FunctionAddress(_)
+        | CExpression::CallResult { .. } => {}
         CExpression::Cast { expression, .. }
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
@@ -1734,6 +1736,7 @@ impl<'a> TermRewrite<'a> {
             CExpression::Value(value) => CExpression::Value(self.value(value)),
             CExpression::Variable(name) => CExpression::Variable(name.clone()),
             CExpression::FunctionAddress(name) => CExpression::FunctionAddress(name.clone()),
+            CExpression::CallResult { .. } => expression.clone(),
             CExpression::Cast {
                 expression,
                 target_type,

@@ -1950,7 +1950,9 @@ fn c_expression_steps_for_mode(expression: &CExpression, lvalue: bool) -> usize 
             continue;
         }
         match expression {
-            CExpression::Value(_) | CExpression::FunctionAddress(_) => {}
+            CExpression::Value(_)
+            | CExpression::FunctionAddress(_)
+            | CExpression::CallResult { .. } => {}
             CExpression::Cast { expression, .. } => pending.push((expression, false)),
             CExpression::Conditional {
                 condition,
@@ -2027,7 +2029,9 @@ fn c_statement_source_cost(statement: &CStatement) -> CSourceCost {
                 cost.add_expression(1); // assignment target lvalue
                 cost.add_expression(c_expression_source_steps(expression));
             }
-            CStatement::CallAssign { arguments, .. } | CStatement::Call { arguments, .. } => {
+            CStatement::CallAssign { arguments, .. }
+            | CStatement::Call { arguments, .. }
+            | CStatement::CallResult { arguments, .. } => {
                 for argument in arguments {
                     cost.add_expression(c_expression_source_steps(argument));
                 }
