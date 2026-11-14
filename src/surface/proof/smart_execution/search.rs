@@ -422,6 +422,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Result<Proof<'a>, Option<ClickError>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("fact_transport_candidate_search");
+        if let Some(proof) = Self::try_history_indexed_preservation(search_input, source, target)? {
+            return Ok(Ok(proof));
+        }
         let apply = |premises: Vec<ClickProposition>| {
             search_input.driver().apply_step(ProofStep::TransportUsing {
                 source: source.clone(),

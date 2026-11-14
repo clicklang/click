@@ -315,6 +315,7 @@ mod scaling_tests {
 // Discovery methods are deliberately not methods of Proof.
 
 // Source spelling adapters for the kernel ProofSearch interface.
+mod history_preservation;
 mod search;
 
 #[path = "driver/theorems.rs"]

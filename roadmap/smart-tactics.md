@@ -177,21 +177,6 @@ in PR #2735); corpus counts were taken at `61b85bca0`. No verifier behavior
 was changed for this audit. Successful `click expand --claim` probes below
 also passed the CLI's replay with the implicit closer disabled.
 
-### Confirmed generated output
-
-There is **one remaining reproduced output shape**, in the vector example:
-
-| ID | Reproducer | Surviving generated operation | Work to isolate next |
-| --- | --- | --- | --- |
-| T5 | Same vector example and full contract | Under the quantified prefix goal: `transport(old(owner->data[k]) == old(owner->data[k]), owner->data[k] == old(owner->data[k])) using { ... }` | Select explicit preservation for an indexed read through the recorded owner pointer. Its only printed extra premise is an anchored `index <= owner->cap`; the legacy checker still supplies the historical reasoning. |
-
-The vector nightly test passed, and its full contract was separately expanded
-with the current CLI. To reproduce its test:
-
-```console
-cargo nextest run --lib --features fast-gate --run-ignored only -E 'test(restricted_solve_certifies_unchanged_prefix_after_indexed_store)'
-```
-
 ### Written syntax is a separate migration
 
 [`normalize_using_transported_int32_loads.md`](../mdtests/normalize_using_transported_int32_loads.md)
