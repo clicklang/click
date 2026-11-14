@@ -486,7 +486,7 @@ pub(in crate::surface) fn evaluate_fixed_state_expression_through_kernel(
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: &std::collections::BTreeSet<String>,
-) -> Result<CValue, String> {
+) -> Result<ProgramValue, String> {
     evaluate_fixed_state_expression_through_kernel_with_algebraic_values(
         expression,
         assumptions,
@@ -507,7 +507,7 @@ pub(in crate::surface) fn evaluate_fixed_state_expression_through_kernel_with_al
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: &std::collections::BTreeSet<String>,
-) -> Result<CValue, String> {
+) -> Result<ProgramValue, String> {
     evaluate_fixed_state_expression_through_kernel_with_algebraic_and_integer_values(
         expression,
         assumptions,
@@ -530,7 +530,7 @@ pub(in crate::surface) fn evaluate_fixed_state_expression_through_kernel_with_al
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: &std::collections::BTreeSet<String>,
-) -> Result<CValue, String> {
+) -> Result<ProgramValue, String> {
     capture_fixed_state_native_expression_with_guards(
         expression,
         assumptions,
@@ -556,7 +556,7 @@ pub(in crate::surface) fn capture_fixed_state_native_expression_with_guards(
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: &std::collections::BTreeSet<String>,
-) -> Result<(CValue, Vec<Proposition>), String> {
+) -> Result<(ProgramValue, Vec<Proposition>), String> {
     let mut click_function_calls = BTreeSet::new();
     crate::surface::validation::collect_click_function_calls(expression, &mut click_function_calls);
     let symbolic_load_assumptions =
@@ -754,8 +754,8 @@ pub(in crate::surface::proof) fn capture_fixed_state_algebraic_value(
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
-    pre_state: &CState,
-    state: &CState,
+    pre_state: &ExecutionState,
+    state: &ExecutionState,
     snapshots: &RecordedSnapshots,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<crate::kernel::AlgebraicTerm, String> {
@@ -795,8 +795,8 @@ pub(in crate::surface::proof) fn capture_resource_field_initializer(
     ty: &crate::kernel::ResourceFieldType,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
-    pre_state: &CState,
-    state: &CState,
+    pre_state: &ExecutionState,
+    state: &ExecutionState,
     snapshots: &RecordedSnapshots,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<
@@ -896,12 +896,12 @@ pub(in crate::surface::proof) fn capture_resource_field_initializer(
 /// which case the load stays the symbolic term kernel execution spells it
 /// as, and certification discharges its loadability from the path's facts.
 pub(in crate::surface) fn evaluate_c_fragment_through_kernel(
-    expression: &CExpression,
+    expression: &ProgramExpression,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
-    state: &CState,
-    result: Option<&CValue>,
-) -> Result<CValue, String> {
+    state: &ExecutionState,
+    result: Option<&ProgramValue>,
+) -> Result<ProgramValue, String> {
     evaluate_c_fragment_with_binding_policy(
         expression,
         assumptions,
@@ -916,12 +916,12 @@ pub(in crate::surface) fn evaluate_c_fragment_through_kernel(
 /// Resource clauses use stable logical arguments even after the C parameter
 /// changes; static addresses and memory still belong to the exact frontier.
 pub(in crate::surface) fn evaluate_resource_fragment_through_kernel(
-    expression: &CExpression,
+    expression: &ProgramExpression,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
-    state: &CState,
-    result: Option<&CValue>,
-) -> Result<CValue, String> {
+    state: &ExecutionState,
+    result: Option<&ProgramValue>,
+) -> Result<ProgramValue, String> {
     evaluate_c_fragment_with_binding_policy(
         expression,
         assumptions,
@@ -935,19 +935,19 @@ pub(in crate::surface) fn evaluate_resource_fragment_through_kernel(
 
 pub(in crate::surface) fn evaluate_resource_argument_through_kernel(
     original: &ContractExpression,
-    lowered: &CExpression,
+    lowered: &ProgramExpression,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
-    state: &CState,
-    result: Option<&CValue>,
-) -> Result<CValue, String> {
+    state: &ExecutionState,
+    result: Option<&ProgramValue>,
+) -> Result<ProgramValue, String> {
     // Most resource fragments already carry their resolved C spelling.
     // Retain the source expression only where its `c(result)` distinction
     // matters, and keep the typed null supplied by parameter lowering.
     let original = if result.is_none()
         || !crate::surface::lowering::contract_expression_referenced_names(original)
             .contains("result")
-        || matches!(lowered, CExpression::Value(CValue::Pointer(pointer)) if pointer.is_null())
+        || matches!(lowered, ProgramExpression::Value(ProgramValue::Pointer(pointer)) if pointer.is_null())
     {
         None
     } else {
@@ -966,14 +966,14 @@ pub(in crate::surface) fn evaluate_resource_argument_through_kernel(
 
 #[allow(clippy::too_many_arguments)]
 fn evaluate_c_fragment_with_binding_policy(
-    expression: &CExpression,
+    expression: &ProgramExpression,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
-    state: &CState,
-    result: Option<&CValue>,
+    state: &ExecutionState,
+    result: Option<&ProgramValue>,
     logical_arguments: bool,
     original: Option<&ContractExpression>,
-) -> Result<CValue, String> {
+) -> Result<ProgramValue, String> {
     let fragment = ContractExpression::CFragment(expression.clone());
     let elaborated = original.unwrap_or(&fragment);
     // Bind only the names the fragment reads: a contract evaluates one
@@ -1056,12 +1056,12 @@ pub(in crate::surface) fn evaluate_fixed_state_array_ref_through_kernel(
     contract_environment: ContractEnvironment<'_>,
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
-) -> Result<(ClickArrayRef, crate::kernel::CPointerValue), String> {
+) -> Result<(ClickArrayRef, crate::kernel::PointerValue), String> {
     if let ContractExpression::Binding(name)
-    | ContractExpression::CFragment(CExpression::Variable(name))
+    | ContractExpression::CFragment(ProgramExpression::Variable(name))
     | ContractExpression::CBinding(name) = expression
         && let Some(array_ref) = contract_environment.array_refs.get(name)
-        && let Some(CValue::Pointer(value)) = contract_environment.values.get(name)
+        && let Some(ProgramValue::Pointer(value)) = contract_environment.values.get(name)
     {
         return Ok((array_ref.clone(), value.clone()));
     }
@@ -1073,7 +1073,7 @@ pub(in crate::surface) fn evaluate_fixed_state_array_ref_through_kernel(
         spec_definitions,
         &std::collections::BTreeSet::new(),
     )?;
-    let CValue::Pointer(pointer) = value else {
+    let ProgramValue::Pointer(pointer) = value else {
         return Err(format!(
             "array reference expression did not evaluate to a pointer: `{}`",
             crate::surface::diagnostics::describe_c_value(&value, ParameterBinding::default())
@@ -1132,14 +1132,14 @@ fn refuse_impossible_loads(
 /// parameter and proof-local values where the state does not bind the name,
 /// and `result` bound on the current state.
 pub(in crate::surface::proof) struct FixedStateLowering {
-    pub(in crate::surface::proof) entry_state: CState,
-    pub(in crate::surface::proof) lowering_state: CState,
-    pub(in crate::surface::proof) element_types: BTreeMap<String, CType>,
-    pub(in crate::surface::proof) entry_values: BTreeMap<String, CValue>,
-    pub(in crate::surface::proof) current_values: BTreeMap<String, CValue>,
+    pub(in crate::surface::proof) entry_state: ExecutionState,
+    pub(in crate::surface::proof) lowering_state: ExecutionState,
+    pub(in crate::surface::proof) element_types: BTreeMap<String, ProgramType>,
+    pub(in crate::surface::proof) entry_values: BTreeMap<String, ProgramValue>,
+    pub(in crate::surface::proof) current_values: BTreeMap<String, ProgramValue>,
 }
 
-fn has_live_aggregate_binding(state: &CState, name: &str) -> bool {
+fn has_live_aggregate_binding(state: &ExecutionState, name: &str) -> bool {
     state
         .locals()
         .aggregate_object_pointer(name)
@@ -1153,9 +1153,9 @@ impl FixedStateLowering {
     fn for_expression(
         expression: &ContractExpression,
         contract_environment: ContractEnvironment<'_>,
-        pre_state: &CState,
-        state: &CState,
-        result: Option<&CValue>,
+        pre_state: &ExecutionState,
+        state: &ExecutionState,
+        result: Option<&ProgramValue>,
     ) -> Self {
         Self::for_names(
             crate::surface::lowering::contract_expression_referenced_names(expression),
@@ -1172,9 +1172,9 @@ impl FixedStateLowering {
     fn for_expression_values(
         expression: &ContractExpression,
         contract_environment: ContractEnvironment<'_>,
-        pre_state: &CState,
-        state: &CState,
-        result: Option<&CValue>,
+        pre_state: &ExecutionState,
+        state: &ExecutionState,
+        result: Option<&ProgramValue>,
     ) -> Self {
         Self::for_names(
             crate::surface::lowering::contract_expression_referenced_names(expression),
@@ -1189,9 +1189,9 @@ impl FixedStateLowering {
     fn for_proposition(
         proposition: &ClickProposition,
         contract_environment: ContractEnvironment<'_>,
-        pre_state: &CState,
-        state: &CState,
-        result: Option<&CValue>,
+        pre_state: &ExecutionState,
+        state: &ExecutionState,
+        result: Option<&ProgramValue>,
     ) -> Self {
         let mut names = BTreeSet::new();
         crate::surface::lowering::collect_click_proposition_referenced_names(
@@ -1208,9 +1208,9 @@ impl FixedStateLowering {
     fn for_names(
         names: BTreeSet<String>,
         contract_environment: ContractEnvironment<'_>,
-        pre_state: &CState,
-        state: &CState,
-        result: Option<&CValue>,
+        pre_state: &ExecutionState,
+        state: &ExecutionState,
+        result: Option<&ProgramValue>,
         preserve_place_bindings: bool,
     ) -> Self {
         let mut entry_state = pre_state.clone();
@@ -1280,11 +1280,11 @@ impl FixedStateLowering {
 
     pub(in crate::surface::proof) fn new(
         contract_environment: ContractEnvironment<'_>,
-        pre_state: &CState,
-        state: &CState,
-        result: Option<&CValue>,
+        pre_state: &ExecutionState,
+        state: &ExecutionState,
+        result: Option<&ProgramValue>,
     ) -> Self {
-        let bound = |state: &CState| {
+        let bound = |state: &ExecutionState| {
             let mut bound = state.clone();
             for (name, value) in contract_environment.values {
                 if bound.locals().get(name).is_none()
@@ -1431,8 +1431,8 @@ pub(in crate::surface::proof) fn finish_ordered_proof_units<'a>(
     resource_environment: &ResourceEnvironment,
     theorem_environment: &TheoremEnvironment,
     function_environment: &CExecutionEnvironment,
-    function: &CFunction,
-    arguments: &[CExpression],
+    function: &ProgramFunction,
+    arguments: &[ProgramExpression],
     tactics: &[ProofTactic],
 ) -> Result<Vec<VerifiedCTheorem>, ClickError> {
     // Every theorem the contexts issue shares these two copies. A theorem is

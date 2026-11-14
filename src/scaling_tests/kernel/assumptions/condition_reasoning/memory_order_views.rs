@@ -4,7 +4,7 @@ fn memory_order_queries_scale_across_growing_prefixes_and_fact_contexts() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::C(CType::Int32), Variable(993211));
+        let mut root = KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(993211));
         let target =
             IntegerTerm::from_machine(format, MachineTerm::Variable(Variable(993212))).unwrap();
         let mut facts = PureFactContext::new();
@@ -130,7 +130,7 @@ fn aligned_shared_sums_check_selected_read_authority_in_linear_work() {
         let before = CMemory::new().with_block("framed-sums", 1024);
         let after = before.clone().store_with_context(
             base.offset_by_elements(write_index, 4),
-            CValue::Int32(MachineTerm::constant(9)),
+            ProgramValue::Int32(MachineTerm::constant(9)),
             &context,
         );
         let before = crate::kernel::intern_c_memory(before);
@@ -141,7 +141,7 @@ fn aligned_shared_sums_check_selected_read_authority_in_linear_work() {
         let (mut left, mut right) = (zero.clone(), zero);
         for pointer in pointers {
             crate::kernel::eval::declare_load_access_width(&pointer, 4);
-            let read = |memory: &SharedCMemory| {
+            let read = |memory: &SharedMemory| {
                 let name = crate::kernel::eval::load_variable_for_exact_cell(
                     memory,
                     &pointer,

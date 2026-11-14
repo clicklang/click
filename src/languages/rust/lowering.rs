@@ -24,12 +24,12 @@ use std::collections::{BTreeMap, BTreeSet};
 // Rust reference lowering changes the access type without introducing C's
 // authored character/void cast escape. Preserve the complete pointer domain.
 fn reference_view(
-    expression: CExpression,
-    target_type: CType,
+    expression: ProgramExpression,
+    target_type: ProgramType,
     pointee_volatile: bool,
     pointee_constant: bool,
-) -> CExpression {
-    CExpression::Cast {
+) -> ProgramExpression {
+    ProgramExpression::Cast {
         expression: Box::new(expression),
         target_type,
         integer_mode: CIntegerCastMode::PointerCoercion,
@@ -281,7 +281,7 @@ fn slice_iter_type(element: &Type) -> Result<crate::kernel::TypeParameterName, S
 fn chunks_exact_type() -> crate::kernel::TypeParameterName {
     crate::kernel::TypeParameterName::of(&crate::surface::primitive_instance_type(
         "ChunksExact",
-        &[AlgebraicValueType::C(CType::UInt8)],
+        &[AlgebraicValueType::C(ProgramType::UInt8)],
     ))
 }
 /// A function-pointer type's signature, as a sidecar's `fn(i32) -> i32`
@@ -317,40 +317,40 @@ fn record_field_type(t: &Type) -> Result<C0Type, String> {
     let element = scalar_type(element)?.to_kernel_type();
     let length = arrays::array_length(element, *length)?;
     Ok(match element {
-        CType::Int32 => C0Type::Int32Array(length),
-        CType::UInt8 => C0Type::UInt8Array(length),
-        CType::UInt32 => C0Type::UInt32Array(length),
+        ProgramType::Int32 => C0Type::Int32Array(length),
+        ProgramType::UInt8 => C0Type::UInt8Array(length),
+        ProgramType::UInt32 => C0Type::UInt32Array(length),
         _ => unreachable!(),
     })
 }
-fn array_field_parts(t: CType) -> Option<(CType, u32)> {
+fn array_field_parts(t: ProgramType) -> Option<(ProgramType, u32)> {
     match t {
-        CType::Int32Array(n) => Some((CType::Int32, n)),
-        CType::UInt8Array(n) => Some((CType::UInt8, n)),
-        CType::UInt32Array(n) => Some((CType::UInt32, n)),
+        ProgramType::Int32Array(n) => Some((ProgramType::Int32, n)),
+        ProgramType::UInt8Array(n) => Some((ProgramType::UInt8, n)),
+        ProgramType::UInt32Array(n) => Some((ProgramType::UInt32, n)),
         _ => None,
     }
 }
 // Rust integer `as` uses the same explicit modulo policy as C++20.
 /// The Rust integer type a slice or array element of C type `element` is.
-fn indexed_element_type(element: CType) -> Option<Type> {
+fn indexed_element_type(element: ProgramType) -> Option<Type> {
     Some(match element {
-        CType::UInt8 => Type::U8,
-        CType::UInt16 => Type::U16,
-        CType::UInt32 => Type::U32,
-        CType::UInt64 => Type::U64,
-        CType::Int8 => Type::I8,
-        CType::Int16 => Type::I16,
-        CType::Int32 => Type::I32,
-        CType::Int64 => Type::I64,
+        ProgramType::UInt8 => Type::U8,
+        ProgramType::UInt16 => Type::U16,
+        ProgramType::UInt32 => Type::U32,
+        ProgramType::UInt64 => Type::U64,
+        ProgramType::Int8 => Type::I8,
+        ProgramType::Int16 => Type::I16,
+        ProgramType::Int32 => Type::I32,
+        ProgramType::Int64 => Type::I64,
         _ => return None,
     })
 }
 /// A branch's or loop's condition: a `bool` value written as a condition is
 /// the comparison it tests, which the branch splits on (Stage 5, D5).
-fn branch_condition(condition: CExpression) -> CExpression {
+fn branch_condition(condition: ProgramExpression) -> ProgramExpression {
     match condition {
-        CExpression::Cast {
+        ProgramExpression::Cast {
             expression,
             integer_mode: CIntegerCastMode::BoolValue,
             ..
@@ -359,7 +359,7 @@ fn branch_condition(condition: CExpression) -> CExpression {
     }
 }
 
-fn rust_scalar_cast(value: CExpression, target: CType) -> CExpression {
+fn rust_scalar_cast(value: ProgramExpression, target: ProgramType) -> ProgramExpression {
     if crate::kernel::MachineIntegerType::from_c_type(target).is_some() {
         c_integer_cast_modulo(value, target)
     } else if target.is_pointer() {
@@ -371,17 +371,21 @@ fn rust_scalar_cast(value: CExpression, target: CType) -> CExpression {
 /// Rust `!value` on an integer of type `target`: at 8 or 16 bits the native
 /// complement of that type (decision G4), otherwise the complement of the
 /// value's word converted modularly to `target`.
-fn rust_bitwise_not(value: CExpression, target: CType) -> CExpression {
+fn rust_bitwise_not(value: ProgramExpression, target: ProgramType) -> ProgramExpression {
     if matches!(
         target,
-        CType::Int8 | CType::UInt8 | CType::Int16 | CType::UInt16
+        ProgramType::Int8 | ProgramType::UInt8 | ProgramType::Int16 | ProgramType::UInt16
     ) {
         c_narrow_arithmetic(c_bitwise_not(value), target)
     } else {
         rust_scalar_cast(c_bitwise_not(value), target)
     }
 }
-fn integer_from(value: CExpression, source: &Type, target: &Type) -> Result<CExpression, String> {
+fn integer_from(
+    value: ProgramExpression,
+    source: &Type,
+    target: &Type,
+) -> Result<ProgramExpression, String> {
     if !source.converts_losslessly_to(target) {
         return Err("integer From requires a supported lossless conversion".into());
     }
@@ -494,7 +498,7 @@ fn lower_function(
     export: &RustExport,
     identity: Option<&str>,
     f: &Function,
-    fields: &BTreeMap<(&str, &str), (u32, CType)>,
+    fields: &BTreeMap<(&str, &str), (u32, ProgramType)>,
     layouts: &BTreeMap<String, C0StructLayout>,
     records: &BTreeMap<&str, &Record>,
     functions: &BTreeMap<&str, &Function>,
@@ -587,11 +591,11 @@ fn lower_function(
                 None,
             ));
             kernel_parameters.push(
-                c_parameter(&p.name, CType::UInt8Pointer)
+                c_parameter(&p.name, ProgramType::UInt8Pointer)
                     .with_pointee_constant(!mutable)
                     .with_slice_length_parameter(1),
             );
-            kernel_parameters.push(c_parameter(length, CType::UInt64));
+            kernel_parameters.push(c_parameter(length, ProgramType::UInt64));
             continue;
         }
         if let Type::ScalarSlice { element, mutable } = &p.value_type {
@@ -627,7 +631,7 @@ fn lower_function(
                     .with_pointee_constant(!mutable)
                     .with_slice_length_parameter(1),
             );
-            kernel_parameters.push(c_parameter(length, CType::UInt64));
+            kernel_parameters.push(c_parameter(length, ProgramType::UInt64));
             continue;
         }
         if let Type::Reference { mutable, .. } = &p.value_type {
@@ -791,7 +795,7 @@ fn lower_function(
     Ok(lowered)
 }
 struct Context<'a> {
-    shared_array_iterators: BTreeMap<String, CType>,
+    shared_array_iterators: BTreeMap<String, ProgramType>,
     /// The slice iterators that are values of the library's `SliceIter`,
     /// with their element types.
     library_slice_iterators: BTreeMap<String, Type>,
@@ -807,8 +811,8 @@ struct Context<'a> {
     ranges: BTreeMap<String, (Type, bool)>,
     /// The enumerated slice iterators and their `Option` locals.
     enumerated: BTreeSet<String>,
-    shared_array_options: BTreeMap<String, CType>,
-    shared_scalar_slices: BTreeMap<String, (String, CType)>,
+    shared_array_options: BTreeMap<String, ProgramType>,
+    shared_scalar_slices: BTreeMap<String, (String, ProgramType)>,
     mir_chunk_iterators: BTreeSet<String>,
     chunk_options: BTreeSet<String>,
     local_arrays: BTreeSet<String>,
@@ -819,13 +823,13 @@ struct Context<'a> {
     /// of their value. Such a value otherwise lives in its local's binding;
     /// these live in their object's memory, so a write through the borrow
     /// is the value later reads see.
-    memory_values: BTreeMap<String, CType>,
+    memory_values: BTreeMap<String, ProgramType>,
     slices: BTreeMap<String, (String, bool)>,
-    arrays: BTreeMap<String, (u64, CType, bool)>,
+    arrays: BTreeMap<String, (u64, ProgramType, bool)>,
     references: BTreeMap<String, bool>,
     source: &'a str,
     function: &'a str,
-    fields: &'a BTreeMap<(&'a str, &'a str), (u32, CType)>,
+    fields: &'a BTreeMap<(&'a str, &'a str), (u32, ProgramType)>,
     next_load: u32,
     import_identity: Option<std::sync::Arc<str>>,
     mir_point: Option<super::borrow_frontiers::MirPoint>,
@@ -867,26 +871,26 @@ impl Context<'_> {
     fn source_store(
         &self,
         target: &E,
-        pointer: CExpression,
-        value: CExpression,
-        value_type: CType,
-    ) -> CStatement {
+        pointer: ProgramExpression,
+        value: ProgramExpression,
+        value_type: ProgramType,
+    ) -> ProgramStatement {
         let mut statement = c_typed_store(pointer, value, value_type);
-        if let CStatement::TypedStore { source, .. } = &mut statement
+        if let ProgramStatement::TypedStore { source, .. } = &mut statement
             && let Some(id) = self.reference_source(target, ReferenceAccessKind::Write)
         {
             *source = CStatementStoreSource::new(id);
         }
         statement
     }
-    fn body(&mut self, body: &[S]) -> Result<CStatement, String> {
+    fn body(&mut self, body: &[S]) -> Result<ProgramStatement, String> {
         let mut result = c_skip();
         for s in body {
             result = c_seq(result, self.statement(s)?);
         }
         Ok(result)
     }
-    fn statement(&mut self, s: &S) -> Result<CStatement, String> {
+    fn statement(&mut self, s: &S) -> Result<ProgramStatement, String> {
         match s {
             S::SliceSplit {
                 slice,
@@ -922,18 +926,23 @@ impl Context<'_> {
                     return Ok(c_seq(
                         c_declare_with_all_qualifiers(
                             &place.name,
-                            CType::UInt8Pointer,
+                            ProgramType::UInt8Pointer,
                             false,
                             false,
                             false,
                             !mutable,
                         ),
                         c_seq(
-                            c_declare(&length, CType::UInt64),
+                            c_declare(&length, ProgramType::UInt64),
                             c_seq(
                                 c_assign(
                                     &place.name,
-                                    reference_view(pointer, CType::UInt8Pointer, false, !mutable),
+                                    reference_view(
+                                        pointer,
+                                        ProgramType::UInt8Pointer,
+                                        false,
+                                        !mutable,
+                                    ),
                                 ),
                                 c_assign(length, length_value),
                             ),
@@ -1117,7 +1126,7 @@ impl Context<'_> {
         midpoint: &E,
         left: &super::schema::Place,
         right: &super::schema::Place,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         self.slice_split_slots(slice, midpoint, left, right, true)
     }
     fn slice_split_slots(
@@ -1127,7 +1136,7 @@ impl Context<'_> {
         left: &super::schema::Place,
         right: &super::schema::Place,
         declare: bool,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         if left.name == right.name {
             return Err("split_at results require distinct slice slots".into());
         }
@@ -1189,13 +1198,13 @@ impl Context<'_> {
                     c_seq(
                         c_declare_with_all_qualifiers(
                             &place.name,
-                            CType::UInt8Pointer,
+                            ProgramType::UInt8Pointer,
                             false,
                             false,
                             false,
                             true,
                         ),
-                        c_declare(&length_name, CType::UInt64),
+                        c_declare(&length_name, ProgramType::UInt64),
                     ),
                 );
                 length_name
@@ -1211,7 +1220,7 @@ impl Context<'_> {
                 c_seq(
                     c_assign(
                         &place.name,
-                        reference_view(pointer, CType::UInt8Pointer, false, true),
+                        reference_view(pointer, ProgramType::UInt8Pointer, false, true),
                     ),
                     c_assign(length_name, length),
                 ),
@@ -1229,7 +1238,7 @@ impl Context<'_> {
         binding: &super::schema::Place,
         by_reference: bool,
         body: &[S],
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         let (pointer, length) = self.slice_parts(slice)?;
         let cursor = format!("{iterator}_cursor");
         let remaining = format!("{iterator}_remaining");
@@ -1270,7 +1279,7 @@ impl Context<'_> {
                 .ok_or("Rust load identity exhausted")?;
             c_typed_load_with_source(
                 c_variable(&item),
-                CType::UInt8,
+                ProgramType::UInt8,
                 Some(LoadSourceId {
                     owner: LoadSourceOwnerId {
                         source_unit: self.source.into(),
@@ -1283,7 +1292,14 @@ impl Context<'_> {
         };
         // The remaining count is the slice's length, a `usize`.
         let next = c_seq(
-            c_declare_with_all_qualifiers(&item, CType::UInt8Pointer, false, false, false, true),
+            c_declare_with_all_qualifiers(
+                &item,
+                ProgramType::UInt8Pointer,
+                false,
+                false,
+                false,
+                true,
+            ),
             c_seq(
                 c_assign(&item, c_variable(&cursor)),
                 c_seq(
@@ -1300,11 +1316,18 @@ impl Context<'_> {
         );
         let source_body = self.body(body)?;
         Ok(c_seq(
-            c_declare_with_all_qualifiers(&cursor, CType::UInt8Pointer, false, false, false, true),
+            c_declare_with_all_qualifiers(
+                &cursor,
+                ProgramType::UInt8Pointer,
+                false,
+                false,
+                false,
+                true,
+            ),
             c_seq(
                 c_assign(&cursor, pointer),
                 c_seq(
-                    c_declare(&remaining, CType::UInt64),
+                    c_declare(&remaining, ProgramType::UInt64),
                     c_seq(
                         c_assign(&remaining, length),
                         c_while(
@@ -1317,7 +1340,7 @@ impl Context<'_> {
             ),
         ))
     }
-    fn assign(&mut self, name: &str, e: &E) -> Result<CStatement, String> {
+    fn assign(&mut self, name: &str, e: &E) -> Result<ProgramStatement, String> {
         if !self.locals.contains(name) {
             return Err(format!("unknown Rust local `{name}`"));
         }
@@ -1354,7 +1377,7 @@ impl Context<'_> {
                 c_seq(
                     c_assign(
                         name,
-                        reference_view(pointer, CType::UInt8Pointer, false, constant),
+                        reference_view(pointer, ProgramType::UInt8Pointer, false, constant),
                     ),
                     c_assign(length, length_value),
                 ),
@@ -1366,9 +1389,9 @@ impl Context<'_> {
                 return Err("fixed array assignment disagrees with destination".into());
             }
             let pointer_type = match element {
-                CType::Int32 => CType::Int32Pointer,
-                CType::UInt8 => CType::UInt8Pointer,
-                CType::UInt32 => CType::UInt32Pointer,
+                ProgramType::Int32 => ProgramType::Int32Pointer,
+                ProgramType::UInt8 => ProgramType::UInt8Pointer,
+                ProgramType::UInt32 => ProgramType::UInt32Pointer,
                 _ => return Err("unsupported fixed array element".into()),
             };
             return Ok(c_assign(
@@ -1405,7 +1428,7 @@ impl Context<'_> {
                     )
                     && let E::Deref { reference, .. } = place.as_ref()
                     && let E::Local { name: parent } = reference.as_ref()
-                    && let CStatement::Assign { source, .. } = &mut assignment
+                    && let ProgramStatement::Assign { source, .. } = &mut assignment
                 {
                     *source = CStatementAssignSource::new(ReferenceBorrowSourceId {
                         import_identity: import_identity.clone(),
@@ -1424,7 +1447,7 @@ impl Context<'_> {
         &mut self,
         function: &str,
         args: &[E],
-    ) -> Result<(CStatement, Vec<CExpression>), String> {
+    ) -> Result<(ProgramStatement, Vec<ProgramExpression>), String> {
         let types = self
             .functions
             .get(function)
@@ -1441,7 +1464,7 @@ impl Context<'_> {
         &mut self,
         types: Vec<Type>,
         args: &[E],
-    ) -> Result<(CStatement, Vec<CExpression>), String> {
+    ) -> Result<(ProgramStatement, Vec<ProgramExpression>), String> {
         if types.len() != args.len() {
             return Err("Rust call argument count disagrees with callee".into());
         }
@@ -1512,9 +1535,9 @@ impl Context<'_> {
     }
     fn capture_operand(
         &mut self,
-        value: CExpression,
+        value: ProgramExpression,
         value_type: &Type,
-    ) -> Result<(CStatement, String), String> {
+    ) -> Result<(ProgramStatement, String), String> {
         let name = self.fresh_temporary()?;
         let c_type = scalar_type(value_type)?.to_kernel_type();
         let constant = matches!(value_type, Type::Reference { mutable: false, .. });
@@ -1535,7 +1558,7 @@ impl Context<'_> {
     // Capture each operand once, in source order. Guards reference those
     // small names rather than duplicating arbitrarily large expression trees.
     // The generated asserts are checked execution obligations, not assumptions.
-    fn prepared_expr(&mut self, e: &E) -> Result<(CStatement, CExpression), String> {
+    fn prepared_expr(&mut self, e: &E) -> Result<(ProgramStatement, ProgramExpression), String> {
         match e {
             E::EnumerateOptionIndex { option } => self.enumerate_option_index(option),
             // The `Some` payload of a library iterator's `Option<&T>`: the
@@ -1545,7 +1568,7 @@ impl Context<'_> {
             {
                 Ok((
                     c_skip(),
-                    CExpression::EnumField {
+                    ProgramExpression::EnumField {
                         value: Box::new(c_variable(option)),
                         variant: "Some".into(),
                         index: 0,
@@ -1641,7 +1664,7 @@ impl Context<'_> {
                     };
                     let update = c_seq(
                         right_prefix,
-                        c_assign(&left_name, c_cast(right_value, CType::Bool)),
+                        c_assign(&left_name, c_cast(right_value, ProgramType::Bool)),
                     );
                     return Ok((
                         c_seq(prefix, c_if(condition, update, c_skip())),
@@ -1664,9 +1687,10 @@ impl Context<'_> {
                             c_equal(r.clone(), c_uint64_literal(0)),
                             c_less_equal(l, c_divide(max, r)),
                         )),
-                        "shl" | "shr" => {
-                            Some(c_less_than(c_cast(r, CType::UInt64), c_uint64_literal(64)))
-                        }
+                        "shl" | "shr" => Some(c_less_than(
+                            c_cast(r, ProgramType::UInt64),
+                            c_uint64_literal(64),
+                        )),
                         _ => None,
                     };
                     if let Some(obligation) = obligation {
@@ -1686,9 +1710,12 @@ impl Context<'_> {
                         .ok_or("Rust signed shift operand has no width")?;
                     let count = c_variable(&right_name);
                     let obligation = if right_type.integer_bits() == Some(64) {
-                        c_less_than(c_cast(count, CType::UInt64), c_uint64_literal(width.into()))
+                        c_less_than(
+                            c_cast(count, ProgramType::UInt64),
+                            c_uint64_literal(width.into()),
+                        )
                     } else {
-                        c_less_than(c_cast(count, CType::UInt32), c_uint32_literal(width))
+                        c_less_than(c_cast(count, ProgramType::UInt32), c_uint32_literal(width))
                     };
                     prefix = c_seq(
                         prefix,
@@ -1700,13 +1727,13 @@ impl Context<'_> {
                 if matches!(left_type, Type::I8 | Type::I16)
                     && matches!(operator.as_str(), "add" | "sub" | "mul")
                 {
-                    let l = c_cast(c_variable(&left_name), CType::Int32);
-                    let r = c_cast(c_variable(&right_name), CType::Int32);
+                    let l = c_cast(c_variable(&left_name), ProgramType::Int32);
+                    let r = c_cast(c_variable(&right_name), ProgramType::Int32);
                     let (minimum, maximum) = match left_type {
                         Type::I8 => (i8::MIN as i64, i8::MAX as i64),
                         _ => (i16::MIN as i64, i16::MAX as i64),
                     };
-                    let wide = |value: CExpression| c_cast(value, CType::Int64);
+                    let wide = |value: ProgramExpression| c_cast(value, ProgramType::Int64);
                     let value = match operator.as_str() {
                         "add" => c_add(wide(l), wide(r)),
                         "sub" => c_subtract(wide(l), wide(r)),
@@ -1732,8 +1759,8 @@ impl Context<'_> {
                         Type::I8 => i8::MIN as i32,
                         _ => i16::MIN as i32,
                     };
-                    let l = c_cast(c_variable(&left_name), CType::Int32);
-                    let r = c_cast(c_variable(&right_name), CType::Int32);
+                    let l = c_cast(c_variable(&left_name), ProgramType::Int32);
+                    let r = c_cast(c_variable(&right_name), ProgramType::Int32);
                     prefix = c_seq(
                         prefix,
                         c_labeled_assert(
@@ -1746,8 +1773,8 @@ impl Context<'_> {
                     );
                 }
                 if matches!(left_type, Type::U8 | Type::U16 | Type::U32) {
-                    let l = c_cast(c_variable(&left_name), CType::UInt32);
-                    let r = c_cast(c_variable(&right_name), CType::UInt32);
+                    let l = c_cast(c_variable(&left_name), ProgramType::UInt32);
+                    let r = c_cast(c_variable(&right_name), ProgramType::UInt32);
                     let width = match left_type {
                         Type::U8 => 8,
                         Type::U16 => 16,
@@ -1770,7 +1797,7 @@ impl Context<'_> {
                         )),
                         "shl" | "shr" => Some(if right_type.integer_bits() == Some(64) {
                             c_less_than(
-                                c_cast(c_variable(&right_name), CType::UInt64),
+                                c_cast(c_variable(&right_name), ProgramType::UInt64),
                                 c_uint64_literal(width),
                             )
                         } else {
@@ -1819,7 +1846,7 @@ impl Context<'_> {
             _ => Ok((c_skip(), self.expr(e)?)),
         }
     }
-    fn slice_parts(&mut self, e: &E) -> Result<(CExpression, CExpression), String> {
+    fn slice_parts(&mut self, e: &E) -> Result<(ProgramExpression, ProgramExpression), String> {
         if let E::ChunkOptionSlice { option } = e {
             if !self.chunk_options.contains(option) {
                 return Err("unknown chunk Option".into());
@@ -1853,7 +1880,7 @@ impl Context<'_> {
         }
         if let E::ArrayToSlice { array, mutable } = e {
             let (pointer, length, element) = self.indexed_parts(array)?;
-            if element != CType::UInt8 {
+            if element != ProgramType::UInt8 {
                 return Err("array coercion requires u8 elements".into());
             }
             let constant = self.array_source_is_constant(array)?;
@@ -1898,7 +1925,10 @@ impl Context<'_> {
             _ => Err("array coercion requires a fixed array place".into()),
         }
     }
-    fn indexed_parts(&mut self, e: &E) -> Result<(CExpression, CExpression, CType), String> {
+    fn indexed_parts(
+        &mut self,
+        e: &E,
+    ) -> Result<(ProgramExpression, ProgramExpression, ProgramType), String> {
         match e {
             E::Borrow { place, value_type } => {
                 if matches!(value_type, Type::Reference { mutable: true, .. })
@@ -1932,9 +1962,9 @@ impl Context<'_> {
                     array_field_parts(ty).ok_or("indexed Rust field is not a scalar array")?;
                 let constant = self.array_source_is_constant(e)?;
                 let pointer_type = match element {
-                    CType::Int32 => CType::Int32Pointer,
-                    CType::UInt8 => CType::UInt8Pointer,
-                    CType::UInt32 => CType::UInt32Pointer,
+                    ProgramType::Int32 => ProgramType::Int32Pointer,
+                    ProgramType::UInt8 => ProgramType::UInt8Pointer,
+                    ProgramType::UInt32 => ProgramType::UInt32Pointer,
                     _ => unreachable!(),
                 };
                 let pointer = self.address(e)?;
@@ -1946,16 +1976,16 @@ impl Context<'_> {
             }
             _ => {
                 let (pointer, length) = self.slice_parts(e)?;
-                Ok((pointer, length, CType::UInt8))
+                Ok((pointer, length, ProgramType::UInt8))
             }
         }
     }
-    fn array_pointer(&self, name: &str) -> Result<CExpression, String> {
+    fn array_pointer(&self, name: &str) -> Result<ProgramExpression, String> {
         let (_, element, constant) = self.arrays.get(name).ok_or("unknown fixed array")?;
         let pointer_type = match element {
-            CType::UInt8 => CType::UInt8Pointer,
-            CType::UInt32 => CType::UInt32Pointer,
-            CType::Int32 => CType::Int32Pointer,
+            ProgramType::UInt8 => ProgramType::UInt8Pointer,
+            ProgramType::UInt32 => ProgramType::UInt32Pointer,
+            ProgramType::Int32 => ProgramType::Int32Pointer,
             _ => return Err("unsupported fixed array element".into()),
         };
         Ok(reference_view(
@@ -1965,7 +1995,7 @@ impl Context<'_> {
             *constant,
         ))
     }
-    fn prepared_address(&mut self, e: &E) -> Result<(CStatement, CExpression), String> {
+    fn prepared_address(&mut self, e: &E) -> Result<(ProgramStatement, ProgramExpression), String> {
         if let E::Index { slice, index } = e {
             let (pointer, length, _) = self.indexed_parts(slice)?;
             let (checks, value) = self.prepared_expr(index)?;
@@ -1996,7 +2026,7 @@ impl Context<'_> {
         }
         Ok((c_skip(), self.address(e)?))
     }
-    fn address(&mut self, e: &E) -> Result<CExpression, String> {
+    fn address(&mut self, e: &E) -> Result<ProgramExpression, String> {
         match e {
             E::Local { name } if self.local_arrays.contains(name) => self.array_pointer(name),
             E::Deref { reference, .. } => self.expr(reference),
@@ -2017,26 +2047,26 @@ impl Context<'_> {
                 Ok(c_pointer_offset_bytes(pointer, offset))
             }
             E::Local { name } if self.owned_locals.contains(name) => {
-                Ok(c_cast(c_variable(name), CType::Int32Pointer))
+                Ok(c_cast(c_variable(name), ProgramType::Int32Pointer))
             }
             E::Local { name } if self.addressable_locals.contains(name) => {
-                Ok(CExpression::AddressOf(Box::new(c_variable(name))))
+                Ok(ProgramExpression::AddressOf(Box::new(c_variable(name))))
             }
             E::Local { name } if self.memory_values.contains_key(name) => {
-                let CType::Parameter(value_type) = self.memory_values[name] else {
+                let ProgramType::Parameter(value_type) = self.memory_values[name] else {
                     return Err(
                         "a memory-backed Rust local holds an enum or type-parameter value".into(),
                     );
                 };
                 Ok(c_cast(
                     c_variable(name),
-                    CType::ParameterPointer(value_type),
+                    ProgramType::ParameterPointer(value_type),
                 ))
             }
             _ => Err("only reference-backed Rust places can be borrowed or stored".into()),
         }
     }
-    fn place_type(&mut self, e: &E) -> Result<CType, String> {
+    fn place_type(&mut self, e: &E) -> Result<ProgramType, String> {
         match e {
             E::Index { slice, .. } => Ok(self.indexed_parts(slice)?.2),
             E::Field { record, field, .. } => self
@@ -2049,18 +2079,18 @@ impl Context<'_> {
         }
     }
     /// `e` as a branch's or loop's condition ([`branch_condition`]).
-    fn condition(&mut self, e: &E) -> Result<CExpression, String> {
+    fn condition(&mut self, e: &E) -> Result<ProgramExpression, String> {
         self.expr(e).map(branch_condition)
     }
 
-    fn expr(&mut self, e: &E) -> Result<CExpression, String> {
+    fn expr(&mut self, e: &E) -> Result<ProgramExpression, String> {
         match e {
             E::SharedArrayHasNext { iterator } => self.shared_array_has_next(iterator),
             E::RangeHasNext { iterator } => self.range_has_next(iterator),
             E::SharedArrayOptionTag { option }
                 if self.library_slice_options.contains_key(option) =>
             {
-                Ok(CExpression::EnumIs {
+                Ok(ProgramExpression::EnumIs {
                     value: Box::new(c_variable(option)),
                     variant: "Some".into(),
                 })
@@ -2083,7 +2113,7 @@ impl Context<'_> {
                     return Err("unknown chunk Option".into());
                 }
                 if library_iterators() {
-                    return Ok(CExpression::EnumIs {
+                    return Ok(ProgramExpression::EnumIs {
                         value: Box::new(c_variable(option)),
                         variant: "Some".into(),
                     });
@@ -2124,7 +2154,7 @@ impl Context<'_> {
                         })
                     })
                     .collect::<Result<_, String>>()?;
-                Ok(CExpression::EnumConstruct {
+                Ok(ProgramExpression::EnumConstruct {
                     enum_type,
                     variant: variant.clone(),
                     fields,
@@ -2135,7 +2165,7 @@ impl Context<'_> {
                 variant,
                 index,
                 ..
-            } => Ok(CExpression::EnumField {
+            } => Ok(ProgramExpression::EnumField {
                 value: Box::new(self.expr(base)?),
                 variant: variant.clone(),
                 index: *index,
@@ -2150,7 +2180,7 @@ impl Context<'_> {
                     c_int32_literal(
                         u16::try_from(*value).map_err(|_| "Rust u16 literal out of range")? as u32,
                     ),
-                    CType::UInt16,
+                    ProgramType::UInt16,
                 )),
                 Type::U32 => Ok(c_uint32_literal(
                     u32::try_from(*value).map_err(|_| "Rust u32 literal out of range")?,
@@ -2164,14 +2194,14 @@ impl Context<'_> {
                         i8::try_from(*value).map_err(|_| "Rust i8 literal out of range")? as i32
                             as u32,
                     ),
-                    CType::Int8,
+                    ProgramType::Int8,
                 )),
                 Type::I16 => Ok(c_cast(
                     c_int32_literal(
                         i16::try_from(*value).map_err(|_| "Rust i16 literal out of range")? as i32
                             as u32,
                     ),
-                    CType::Int16,
+                    ProgramType::Int16,
                 )),
                 Type::I32 => Ok(c_int32_literal(
                     i32::try_from(*value).map_err(|_| "Rust i32 literal out of range")? as u32,
@@ -2180,7 +2210,7 @@ impl Context<'_> {
                 _ => Err("signed literal needs a signed Rust type".into()),
             },
             E::Boolean { value } => Ok(c_int32_literal(u32::from(*value))),
-            E::NoneBox => Ok(c_cast(c_int32_literal(0), CType::Int32Pointer)),
+            E::NoneBox => Ok(c_cast(c_int32_literal(0), ProgramType::Int32Pointer)),
             E::IntegerFrom {
                 value,
                 source_type,
@@ -2300,9 +2330,9 @@ impl Context<'_> {
                     l = c_cast(
                         l,
                         if operator == "rem" {
-                            CType::Int32
+                            ProgramType::Int32
                         } else {
-                            CType::UInt32
+                            ProgramType::UInt32
                         },
                     );
                 } else if left_type.is_signed_integer() && operator == "shl" {
@@ -2313,13 +2343,13 @@ impl Context<'_> {
                     l = c_cast(
                         l,
                         if left_type.integer_bits() == Some(64) {
-                            CType::UInt64
+                            ProgramType::UInt64
                         } else {
-                            CType::UInt32
+                            ProgramType::UInt32
                         },
                     );
                 } else if matches!(left_type, Type::I8 | Type::I16) {
-                    l = c_cast(l, CType::Int32);
+                    l = c_cast(l, ProgramType::Int32);
                 }
                 let result = match operator.as_str() {
                     "add" => c_add(l, r),
@@ -2364,7 +2394,7 @@ impl Context<'_> {
                     let computed = if matches!(left_type, Type::U8 | Type::U16) {
                         result
                     } else {
-                        c_cast(result, CType::Int32)
+                        c_cast(result, ProgramType::Int32)
                     };
                     Ok(c_cast(computed, scalar_type(left_type)?.to_kernel_type()))
                 } else {

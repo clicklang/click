@@ -26,14 +26,16 @@ fn wide_resource_body_loadability_preserves_native_extent() {
     let _session = crate::kernel::VerificationSession::enter();
     let base = Pointer::symbolic(Variable(984_010));
     let segment = CMemorySegment::new(
-        CExpression::Value(CValue::pointer(base.clone())),
+        ProgramExpression::Value(ProgramValue::pointer(base.clone())),
         c_uint64_literal(0),
         c_uint64_literal(1 << 33),
     )
     .with_element_width(1);
-    let schema =
-        ResourceFieldSchema::new(vec![("length".into(), ResourceFieldType::C(CType::UInt64))])
-            .unwrap();
+    let schema = ResourceFieldSchema::new(vec![(
+        "length".into(),
+        ResourceFieldType::C(ProgramType::UInt64),
+    )])
+    .unwrap();
     let definition = CCompositeResourceDefinition::new(
         "wide",
         vec![],
@@ -48,14 +50,14 @@ fn wide_resource_body_loadability_preserves_native_extent() {
         "wide".into(),
         vec![].into(),
         schema,
-        vec![AlgebraicValue::C(CValue::UInt64(
+        vec![AlgebraicValue::C(ProgramValue::UInt64(
             MachineTerm::uint64_constant(1 << 33),
         ))]
         .into(),
     )
     .unwrap();
     let held = CResourceFact::own(CResource::Instance(instance.clone()));
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(held.clone()));
     let facts = PureFactContext::new();
     let definitions = [definition.clone()];

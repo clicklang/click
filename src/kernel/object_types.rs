@@ -20,12 +20,12 @@ pub(super) fn nominal_class(class: &effective_type::CAccessClass) -> bool {
 /// is indexed like other admitted pointer evidence; opaque application nodes
 /// supply no evidence. The class is visible in the ordinary fact printer.
 pub(super) fn checked_call_type_fact(
-    value: &CValue,
+    value: &ProgramValue,
     class: &effective_type::CAccessClass,
 ) -> Proposition {
     Proposition::Predicate {
         name: format!("object_type[{class}]"),
-        arguments: vec![Term::CValue(value.clone())],
+        arguments: vec![Term::ProgramValue(value.clone())],
     }
 }
 
@@ -193,9 +193,9 @@ pub(super) fn execution_pointer_result(
 
 pub(super) fn check_requirements(
     name: &str,
-    parameters: &[CParameter],
+    parameters: &[ProgramParameter],
     requirements: &ObjectTypeRequirements,
-    values: &mut [CValue],
+    values: &mut [ProgramValue],
     memory: &CMemory,
     assumptions: &PureFactContext,
 ) -> Option<CRuntimeError> {
@@ -213,7 +213,7 @@ pub(super) fn check_requirements(
 pub(super) fn check_value_requirements(
     name: &str,
     interface: &CFunctionContractInterface,
-    values: &mut [CValue],
+    values: &mut [ProgramValue],
     memory: &CMemory,
     assumptions: &PureFactContext,
 ) -> Option<CRuntimeError> {
@@ -230,9 +230,9 @@ pub(super) fn check_value_requirements(
 
 fn check_requirement_slice(
     name: &str,
-    parameters: &[CParameter],
+    parameters: &[ProgramParameter],
     requirements: &ObjectTypeRequirements,
-    values: &mut [CValue],
+    values: &mut [ProgramValue],
     memory: &CMemory,
     assumptions: &PureFactContext,
     offset: usize,
@@ -275,12 +275,13 @@ mod tests {
         };
         let memory = CMemory::new().with_classed_block(object.block.clone(), Some(class()), 8);
         let make = |designation| {
-            let CValue::Pointer(pointer) =
-                CValue::typed_pointer(Pointer::symbolic(Variable(900_010)), CType::Int32Pointer)
-            else {
+            let ProgramValue::Pointer(pointer) = ProgramValue::typed_pointer(
+                Pointer::symbolic(Variable(900_010)),
+                ProgramType::Int32Pointer,
+            ) else {
                 unreachable!()
             };
-            CValue::Pointer(pointer.with_designation(Arc::new(designation)))
+            ProgramValue::Pointer(pointer.with_designation(Arc::new(designation)))
         };
         let original = make(object.clone());
         let mut refined = original.clone();
@@ -290,7 +291,8 @@ mod tests {
             &memory,
             &PureFactContext::new(),
         ));
-        let (CValue::Pointer(before), CValue::Pointer(after)) = (&original, &refined) else {
+        let (ProgramValue::Pointer(before), ProgramValue::Pointer(after)) = (&original, &refined)
+        else {
             unreachable!()
         };
         assert!(after.supports_object_class(&class()));
@@ -326,32 +328,34 @@ mod tests {
 
     #[test]
     fn unrequired_formal_origins_survive_pointer_words_without_becoming_type_evidence() {
-        let value =
-            CValue::typed_pointer(Pointer::symbolic(Variable(900_001)), CType::Int32Pointer)
-                .with_contract_pointer_object_class(Some(class()), None, 0, 42);
-        let CValue::Pointer(pointer) = value else {
+        let value = ProgramValue::typed_pointer(
+            Pointer::symbolic(Variable(900_001)),
+            ProgramType::Int32Pointer,
+        )
+        .with_contract_pointer_object_class(Some(class()), None, 0, 42);
+        let ProgramValue::Pointer(pointer) = value else {
             unreachable!()
         };
         assert!(!pointer.supports_object_class(&class()));
         let context = PureFactContext::new();
         let word = super::super::eval::cast_c_value_to_type(
-            CValue::Pointer(pointer.clone()),
-            CType::UInt64,
+            ProgramValue::Pointer(pointer.clone()),
+            ProgramType::UInt64,
             super::super::eval::IntegerConversion::Modular,
             &mut Vec::new(),
             &context,
         )
         .unwrap();
-        assert!(matches!(word, CValue::PointerInteger(_)));
+        assert!(matches!(word, ProgramValue::PointerInteger(_)));
         let decoded = super::super::eval::cast_c_value_to_type(
             word,
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
             super::super::eval::IntegerConversion::Modular,
             &mut Vec::new(),
             &context,
         )
         .unwrap();
-        let CValue::Pointer(decoded) = decoded else {
+        let ProgramValue::Pointer(decoded) = decoded else {
             unreachable!()
         };
         assert!(!decoded.supports_object_class(&class()));
@@ -363,10 +367,12 @@ mod tests {
     #[test]
     fn numeric_address_annotations_cannot_manufacture_nominal_type_evidence() {
         let _session = crate::kernel::VerificationSession::enter();
-        let original =
-            CValue::typed_pointer(Pointer::symbolic(Variable(900_002)), CType::Int32Pointer)
-                .with_pointer_object_class(Some(class()));
-        let CValue::Pointer(source) = &original else {
+        let original = ProgramValue::typed_pointer(
+            Pointer::symbolic(Variable(900_002)),
+            ProgramType::Int32Pointer,
+        )
+        .with_pointer_object_class(Some(class()));
+        let ProgramValue::Pointer(source) = &original else {
             unreachable!()
         };
         let bits =
@@ -375,16 +381,16 @@ mod tests {
             &bits,
             &PureFactContext::new(),
             &mut Vec::new(),
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
         )
         .unwrap()
         .unwrap();
         assert_eq!(decoded.object_class(), Some(class()));
         assert!(!decoded.supports_object_class(&class()));
-        let mut decoded = CValue::Pointer(decoded);
+        let mut decoded = ProgramValue::Pointer(decoded);
         let facts = PureFactContext::new().assume_proposition(Proposition::Predicate {
             name: "checked_source".into(),
-            arguments: vec![Term::CValue(original.clone())],
+            arguments: vec![Term::ProgramValue(original.clone())],
         });
         assert!(refine_object_pointer_argument(
             &mut decoded,
@@ -394,7 +400,7 @@ mod tests {
         ));
         let word = super::super::eval::cast_c_value_to_type(
             original,
-            CType::UInt64,
+            ProgramType::UInt64,
             super::super::eval::IntegerConversion::Modular,
             &mut Vec::new(),
             &PureFactContext::new(),
@@ -402,14 +408,14 @@ mod tests {
         .unwrap();
         let decoded = super::super::eval::cast_c_value_to_type(
             word,
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
             super::super::eval::IntegerConversion::Modular,
             &mut Vec::new(),
             &PureFactContext::new(),
         )
         .unwrap();
         assert!(
-            matches!(decoded, CValue::Pointer(pointer) if pointer.supports_object_class(&class()))
+            matches!(decoded, ProgramValue::Pointer(pointer) if pointer.supports_object_class(&class()))
         );
     }
 
@@ -418,9 +424,9 @@ mod tests {
         let values: Vec<_> = (0..2)
             .map(|index| {
                 PureFunctionArgument::Value(
-                    CValue::typed_pointer(
+                    ProgramValue::typed_pointer(
                         Pointer::symbolic(Variable(900_002 + index as u64)),
-                        CType::Int32Pointer,
+                        ProgramType::Int32Pointer,
                     )
                     .with_contract_pointer_object_class(
                         Some(class()),

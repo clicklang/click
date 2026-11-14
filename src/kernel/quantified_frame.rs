@@ -384,7 +384,7 @@ mod wide_condition_tests {
         let before = CMemory::new().with_block("wide-equality-frame", 16);
         let after = before.clone().store(
             pointer.offset_by_bytes(8),
-            CValue::UInt64(MachineTerm::uint64_constant(3)),
+            ProgramValue::UInt64(MachineTerm::uint64_constant(3)),
         );
         let load = |memory: &CMemory, kind| {
             MachineTerm::MemoryLoad(
@@ -418,7 +418,7 @@ mod wide_condition_tests {
         )));
         let partial = before.clone().store(
             pointer.offset_by_bytes(4),
-            CValue::Int32(MachineTerm::constant(0)),
+            ProgramValue::Int32(MachineTerm::constant(0)),
         );
         assert!(!carried(&condition(
             load(&partial, LoadKind::Bits64),

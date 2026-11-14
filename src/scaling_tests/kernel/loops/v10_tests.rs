@@ -10,7 +10,7 @@ fn loop_view_partition_uses_alias_graph_without_scanning_ambient_ranges() {
     let _session = crate::kernel::VerificationSession::enter();
     let source = Pointer::symbolic(Variable(916_100));
     let alias = Pointer::symbolic(Variable(916_101));
-    let source_value = CPointerValue::new(source.clone(), CType::UInt8Pointer);
+    let source_value = PointerValue::new(source.clone(), ProgramType::UInt8Pointer);
     // Respelling a copied pointer retains its origin; address equality alone
     // cannot turn an independently originated pointer into this owner.
     let cursor = source_value.clone().with_address(alias.clone());
@@ -52,8 +52,8 @@ fn loop_view_partition_uses_alias_graph_without_scanning_ambient_ranges() {
             ));
         }
         resources.synchronize_memory_equalities(&assumptions);
-        let state = CState::new()
-            .with_local("cursor", CValue::Pointer(cursor.clone()))
+        let state = ExecutionState::new()
+            .with_local("cursor", ProgramValue::Pointer(cursor.clone()))
             .with_resource_context(resources);
         let (partition, work) = crate::instrumentation::measure_deterministic_work(|| {
             loop_declared_and_withheld_resources(
@@ -89,7 +89,7 @@ fn loop_view_partition_uses_alias_graph_without_scanning_ambient_ranges() {
         );
         let independently_originated = state.with_local(
             "cursor",
-            CValue::typed_pointer(alias.clone(), CType::UInt8Pointer),
+            ProgramValue::typed_pointer(alias.clone(), ProgramType::UInt8Pointer),
         );
         assert!(
             loop_declared_and_withheld_resources(

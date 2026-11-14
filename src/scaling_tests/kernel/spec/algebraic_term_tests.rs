@@ -60,7 +60,7 @@ fn algebraic_integer_match_scales_with_nested_depth() {
         let exports = KernelTermExport::algebraic_export_count();
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
             evaluate_spec_algebraic_at_state_in(
-                &CState::new(),
+                &ExecutionState::new(),
                 &expression,
                 None,
                 &PureFactContext::new(),
@@ -142,7 +142,7 @@ fn signed_match_definedness_does_not_scan_constructor_facts() {
             let expression = signed_value_or_match(Variable(1_000 + size - 1));
             let (paths, measured) = crate::instrumentation::measure_deterministic_work(|| {
                 evaluate_spec_expression_paths_with_loop_entry_in(
-                    &CState::new(),
+                    &ExecutionState::new(),
                     &expression,
                     None,
                     &context,

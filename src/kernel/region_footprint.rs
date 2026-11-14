@@ -51,8 +51,8 @@ impl std::hash::Hash for RegionFootprint {
 impl RegionFootprint {
     pub(crate) fn transition(
         source: String,
-        before: &CState,
-        after: &CState,
+        before: &ExecutionState,
+        after: &ExecutionState,
         effects: &(impl ExecutionFactSource + ?Sized),
     ) -> Arc<Self> {
         let mut members = imbl::Vector::new();
@@ -196,8 +196,8 @@ impl RegionFootprint {
 
     pub(crate) fn sequence(
         source: String,
-        before: &CState,
-        after: &CState,
+        before: &ExecutionState,
+        after: &ExecutionState,
         members: imbl::Vector<CResource>,
         complete: bool,
     ) -> Arc<Self> {

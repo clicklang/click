@@ -74,10 +74,10 @@ pub(super) fn kind(proposition: &Proposition) -> String {
                 Term::Integer(_) => "integer",
                 Term::Algebraic(_) => "algebraic",
                 Term::Sequence(_) => "sequence",
-                Term::CValue(_) => "c-value",
+                Term::ProgramValue(_) => "c-value",
                 Term::PointerOffset(_) => "pointer-offset",
                 Term::CMemory(_) => "memory",
-                Term::CState(_) => "state",
+                Term::ExecutionState(_) => "state",
                 _ => "outcome",
             }
         ),

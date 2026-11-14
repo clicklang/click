@@ -231,7 +231,7 @@ mod tests {
     use super::*;
 
     fn variable(n: u64) -> KernelTerm {
-        KernelTerm::variable(KernelType::C(CType::Int32), Variable(n))
+        KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(n))
     }
     fn product(a: KernelTerm, b: KernelTerm) -> KernelTerm {
         KernelTerm::machine_binary_shared(

@@ -86,17 +86,19 @@ fn charon_scalar_slice_length_checks_declaration_and_instantiated_element() {
 
 #[test]
 fn charon_scalar_array_length_metadata_has_bounded_shape_and_proof_work() {
-    use crate::kernel::CStatement;
-    fn nodes(statement: &CStatement) -> usize {
+    use crate::kernel::ProgramStatement;
+    fn nodes(statement: &ProgramStatement) -> usize {
         match statement {
-            CStatement::Seq(sequence) => {
+            ProgramStatement::Seq(sequence) => {
                 sequence.len() - 1
                     + sequence
                         .iter()
                         .map(|statement| nodes(statement))
                         .sum::<usize>()
             }
-            CStatement::DeclareAggregate { .. } => panic!("length must not materialize elements"),
+            ProgramStatement::DeclareAggregate { .. } => {
+                panic!("length must not materialize elements")
+            }
             _ => 1,
         }
     }

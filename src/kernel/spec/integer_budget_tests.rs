@@ -27,7 +27,7 @@ fn deferred_integer_multiply_precharges_product_work_without_active_tactic() {
 
     let result = crate::instrumentation::with_tactic_work_limits(limits, || {
         evaluate_spec_integer_expression_paths_in(
-            SpecScope::unbound(&CState::default(), None),
+            SpecScope::unbound(&ExecutionState::default(), None),
             &expression,
             &PureFactContext::new(),
             &mut SpecEvaluation::logical(&mut ExecutionBudget::default()),
@@ -43,12 +43,12 @@ fn from_machine_requires_c_overflow_path_fact() {
     let right = Variable(32);
     let left_bits = MachineTerm::Variable(left);
     let right_bits = MachineTerm::Variable(right);
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_local("left", int32(left_bits.clone()))
         .with_local("right", int32(right_bits.clone()));
-    let expression = SpecIntegerExpression::FromMachine(Box::new(SpecExpression::CExpression(
-        c_add(c_variable("left"), c_variable("right")),
-    )));
+    let expression = SpecIntegerExpression::FromMachine(Box::new(
+        SpecExpression::ProgramExpression(c_add(c_variable("left"), c_variable("right"))),
+    ));
 
     let paths = evaluate_spec_integer_expression_paths_in(
         SpecScope::unbound(&state, None),
@@ -98,7 +98,7 @@ fn integer_existential_scopes_definedness_with_its_witness() {
     let witness = Variable(703);
     let left_bits = MachineTerm::Variable(left);
     let right_bits = MachineTerm::Variable(right);
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_local("left", int32(left_bits.clone()))
         .with_local("right", int32(right_bits.clone()));
     let body = SpecProposition::ExistsInteger {
@@ -107,7 +107,7 @@ fn integer_existential_scopes_definedness_with_its_witness() {
         body: Box::new(SpecProposition::IntegerComparison {
             left: SpecIntegerExpression::Term(IntegerTerm::var(witness)),
             operator: IntegerComparisonOperator::Equal,
-            right: SpecIntegerExpression::FromMachine(Box::new(SpecExpression::CExpression(
+            right: SpecIntegerExpression::FromMachine(Box::new(SpecExpression::ProgramExpression(
                 c_add(c_variable("left"), c_variable("right")),
             ))),
         }),
@@ -171,14 +171,14 @@ fn integer_existential_scopes_definedness_with_its_witness() {
 #[test]
 fn from_machine_keeps_signed_and_unsigned_values_distinct() {
     let signed = SpecIntegerExpression::FromMachine(Box::new(SpecExpression::Value(
-        CValue::Int32(MachineTerm::constant(u32::MAX)),
+        ProgramValue::Int32(MachineTerm::constant(u32::MAX)),
     )));
     let unsigned = SpecIntegerExpression::FromMachine(Box::new(SpecExpression::Value(
-        CValue::UInt32(MachineTerm::constant(u32::MAX)),
+        ProgramValue::UInt32(MachineTerm::constant(u32::MAX)),
     )));
     let evaluate = |expression| {
         evaluate_spec_integer_expression_paths_in(
-            SpecScope::unbound(&CState::default(), None),
+            SpecScope::unbound(&ExecutionState::default(), None),
             &expression,
             &PureFactContext::new(),
             &mut SpecEvaluation::logical(&mut ExecutionBudget::default()),
@@ -225,10 +225,10 @@ fn bitvector_substitution_reaches_machine_integer_proposition() {
     );
 
     let expression = SpecIntegerExpression::FromMachine(Box::new(SpecExpression::Value(
-        CValue::Int32(MachineTerm::constant(7)),
+        ProgramValue::Int32(MachineTerm::constant(7)),
     )));
     let paths = evaluate_spec_integer_expression_paths_in(
-        SpecScope::unbound(&CState::default(), None),
+        SpecScope::unbound(&ExecutionState::default(), None),
         &expression,
         &PureFactContext::new(),
         &mut SpecEvaluation::logical(&mut ExecutionBudget::default()),
@@ -552,15 +552,14 @@ fn defined_memory_load_retains_typed_validity_after_dropping_registry_metadata()
     };
     let proposition = SpecProposition::Defined(SpecExpression::MemoryLoad {
         memory: SpecMemory::Fixed(CMemory::new()),
-        pointer: Box::new(SpecExpression::Value(CValue::Pointer(CPointerValue::new(
-            pointer,
-            CType::Int32Pointer,
-        )))),
-        value_type: CType::Int32,
+        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
+            PointerValue::new(pointer, ProgramType::Int32Pointer),
+        ))),
+        value_type: ProgramType::Int32,
     });
 
     let paths = lower_spec_proposition_at_state_with_loop_entry_in(
-        &CState::default(),
+        &ExecutionState::default(),
         &proposition,
         None,
         &PureFactContext::new(),
@@ -571,7 +570,7 @@ fn defined_memory_load_retains_typed_validity_after_dropping_registry_metadata()
     assert!(matches!(
         &paths[0].proposition,
         Proposition::CMemoryReadDefined {
-            value_type: CType::Int32,
+            value_type: ProgramType::Int32,
             ..
         }
     ));
@@ -614,7 +613,7 @@ fn integer_existential_branch_filters_exact_load_definitions_only() {
     let (registered_memory, registered_pointer) =
         crate::kernel::eval::registered_load_for_variable(&load)
             .expect("the exact load must have a registry descriptor");
-    let defining = |memory: SharedCMemory, pointer: Pointer, variable: Variable| {
+    let defining = |memory: SharedMemory, pointer: Pointer, variable: Variable| {
         Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -730,20 +729,19 @@ fn empty_integer_fold_preserves_shape_without_live_load_obligation() {
     };
     let body = SpecIntegerExpression::FromMachine(Box::new(SpecExpression::MemoryLoad {
         memory: SpecMemory::Fixed(CMemory::new()),
-        pointer: Box::new(SpecExpression::Value(CValue::Pointer(CPointerValue::new(
-            missing_pointer.clone(),
-            CType::Int32Pointer,
-        )))),
-        value_type: CType::Int32,
+        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
+            PointerValue::new(missing_pointer.clone(), ProgramType::Int32Pointer),
+        ))),
+        value_type: ProgramType::Int32,
     }));
     let expression = SpecIntegerExpression::RangeFold {
         index: SpecIntegerRangeFoldIndex::Int32 {
-            start: Box::new(SpecExpression::Value(CValue::Int32(MachineTerm::constant(
-                4,
-            )))),
-            end: Box::new(SpecExpression::Value(CValue::Int32(MachineTerm::constant(
-                4,
-            )))),
+            start: Box::new(SpecExpression::Value(ProgramValue::Int32(
+                MachineTerm::constant(4),
+            ))),
+            end: Box::new(SpecExpression::Value(ProgramValue::Int32(
+                MachineTerm::constant(4),
+            ))),
         },
         initial: Box::new(SpecIntegerExpression::Term(IntegerTerm::constant_i64(19))),
         accumulator: Variable(71_101),
@@ -751,7 +749,7 @@ fn empty_integer_fold_preserves_shape_without_live_load_obligation() {
         body: Box::new(body),
     };
     let paths = evaluate_spec_integer_expression_paths_in(
-        SpecScope::unbound(&CState::default(), None),
+        SpecScope::unbound(&ExecutionState::default(), None),
         &expression,
         &PureFactContext::new(),
         &mut SpecEvaluation::logical(&mut ExecutionBudget::default()),
@@ -779,31 +777,33 @@ fn empty_integer_fold_preserves_shape_without_live_load_obligation() {
 fn nonempty_integer_fold_is_logical_but_checked_reads_remain_scoped() {
     let item = Variable(71_103);
     let pointer = SpecExpression::PointerOffset {
-        pointer: Box::new(SpecExpression::Value(CValue::Pointer(CPointerValue::new(
-            Pointer {
-                block: PointerBlock::Symbolic(Variable(71_104)),
-                offset: PointerOffsetTerm::Constant(0),
-            },
-            CType::Int32Pointer,
-        )))),
-        elements: Box::new(SpecExpression::Value(CValue::Int32(MachineTerm::Variable(
-            item,
-        )))),
+        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
+            PointerValue::new(
+                Pointer {
+                    block: PointerBlock::Symbolic(Variable(71_104)),
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                ProgramType::Int32Pointer,
+            ),
+        ))),
+        elements: Box::new(SpecExpression::Value(ProgramValue::Int32(
+            MachineTerm::Variable(item),
+        ))),
         byte_width: 4,
     };
     let body = SpecIntegerExpression::FromMachine(Box::new(SpecExpression::MemoryLoad {
         memory: SpecMemory::Fixed(CMemory::new()),
         pointer: Box::new(pointer),
-        value_type: CType::Int32,
+        value_type: ProgramType::Int32,
     }));
     let expression = SpecIntegerExpression::RangeFold {
         index: SpecIntegerRangeFoldIndex::Int32 {
-            start: Box::new(SpecExpression::Value(CValue::Int32(MachineTerm::constant(
-                0,
-            )))),
-            end: Box::new(SpecExpression::Value(CValue::Int32(MachineTerm::constant(
-                4,
-            )))),
+            start: Box::new(SpecExpression::Value(ProgramValue::Int32(
+                MachineTerm::constant(0),
+            ))),
+            end: Box::new(SpecExpression::Value(ProgramValue::Int32(
+                MachineTerm::constant(4),
+            ))),
         },
         initial: Box::new(SpecIntegerExpression::Term(IntegerTerm::constant_i64(0))),
         accumulator: Variable(71_105),
@@ -811,7 +811,7 @@ fn nonempty_integer_fold_is_logical_but_checked_reads_remain_scoped() {
         body: Box::new(body),
     };
     let paths = evaluate_spec_integer_expression_paths_in(
-        SpecScope::unbound(&CState::default(), None),
+        SpecScope::unbound(&ExecutionState::default(), None),
         &expression,
         &PureFactContext::new(),
         &mut SpecEvaluation::logical(&mut ExecutionBudget::default()),
@@ -820,7 +820,7 @@ fn nonempty_integer_fold_is_logical_but_checked_reads_remain_scoped() {
     assert_eq!(paths.len(), 1);
     assert!(paths[0].obligations.is_empty());
     let checked = evaluate_spec_integer_expression_paths_in(
-        SpecScope::unbound(&CState::default(), None),
+        SpecScope::unbound(&ExecutionState::default(), None),
         &expression,
         &PureFactContext::new(),
         &mut SpecEvaluation::checked(&mut ExecutionBudget::default()),
@@ -850,7 +850,7 @@ fn integer_to_machine_converts_exact_boundaries_without_wrapping() {
         (
             MachineIntegerType::Int32,
             BigInt::from(i32::MIN),
-            CValue::Int32(MachineTerm::constant(i32::MIN as u32)),
+            ProgramValue::Int32(MachineTerm::constant(i32::MIN as u32)),
         ),
         (
             MachineIntegerType::UInt8,
@@ -865,17 +865,17 @@ fn integer_to_machine_converts_exact_boundaries_without_wrapping() {
         (
             MachineIntegerType::UInt32,
             BigInt::from(u32::MAX),
-            CValue::UInt32(MachineTerm::uint32_constant(u32::MAX)),
+            ProgramValue::UInt32(MachineTerm::uint32_constant(u32::MAX)),
         ),
         (
             MachineIntegerType::Int64,
             BigInt::from(i64::MIN),
-            CValue::Int64(MachineTerm::int64_constant(i64::MIN)),
+            ProgramValue::Int64(MachineTerm::int64_constant(i64::MIN)),
         ),
         (
             MachineIntegerType::UInt64,
             BigInt::from(u64::MAX),
-            CValue::UInt64(MachineTerm::uint64_constant(u64::MAX)),
+            ProgramValue::UInt64(MachineTerm::uint64_constant(u64::MAX)),
         ),
     ];
     for (destination, integer, expected) in cases {
@@ -884,7 +884,7 @@ fn integer_to_machine_converts_exact_boundaries_without_wrapping() {
             destination,
         };
         let paths = evaluate_spec_expression_paths_with_loop_entry_in(
-            &CState::default(),
+            &ExecutionState::default(),
             &expression,
             None,
             &PureFactContext::new(),
@@ -915,7 +915,7 @@ fn integer_to_machine_rejects_out_of_range_constants() {
             destination,
         };
         let result = evaluate_spec_expression_paths_with_loop_entry_in(
-            &CState::default(),
+            &ExecutionState::default(),
             &expression,
             None,
             &PureFactContext::new(),
@@ -977,7 +977,7 @@ fn integer_to_machine_symbolic_values_keep_carrier_and_range_obligations() {
             destination,
         };
         let paths = evaluate_spec_expression_paths_with_loop_entry_in(
-            &CState::default(),
+            &ExecutionState::default(),
             &expression,
             None,
             &PureFactContext::new(),
@@ -988,13 +988,13 @@ fn integer_to_machine_symbolic_values_keep_carrier_and_range_obligations() {
         assert!(paths[0].facts.is_empty());
         assert!(matches!(
             &paths[0].value.clone().into_native(),
-            CValue::Int8(MachineTerm::IntegerToMachine { destination: d, .. }) | CValue::Int16(MachineTerm::IntegerToMachine { destination: d, .. })
-                | CValue::Int32(MachineTerm::IntegerToMachine { destination: d, .. })
-                | CValue::UInt8(MachineTerm::IntegerToMachine { destination: d, .. })
-                | CValue::UInt16(MachineTerm::IntegerToMachine { destination: d, .. })
-                | CValue::UInt32(MachineTerm::IntegerToMachine { destination: d, .. })
-                | CValue::Int64(MachineTerm::IntegerToMachine { destination: d, .. })
-                | CValue::UInt64(MachineTerm::IntegerToMachine { destination: d, .. })
+            ProgramValue::Int8(MachineTerm::IntegerToMachine { destination: d, .. }) | ProgramValue::Int16(MachineTerm::IntegerToMachine { destination: d, .. })
+                | ProgramValue::Int32(MachineTerm::IntegerToMachine { destination: d, .. })
+                | ProgramValue::UInt8(MachineTerm::IntegerToMachine { destination: d, .. })
+                | ProgramValue::UInt16(MachineTerm::IntegerToMachine { destination: d, .. })
+                | ProgramValue::UInt32(MachineTerm::IntegerToMachine { destination: d, .. })
+                | ProgramValue::Int64(MachineTerm::IntegerToMachine { destination: d, .. })
+                | ProgramValue::UInt64(MachineTerm::IntegerToMachine { destination: d, .. })
                 if *d == destination
         ));
         assert_eq!(paths[0].obligations.len(), 2);
@@ -1024,12 +1024,12 @@ fn integer_to_machine_symbolic_values_keep_carrier_and_range_obligations() {
 
     let left = Variable(991);
     let right = Variable(992);
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_local("left", int32(MachineTerm::Variable(left)))
         .with_local("right", int32(MachineTerm::Variable(right)));
     let expression = SpecExpression::IntegerToMachine {
         value: Box::new(SpecIntegerExpression::FromMachine(Box::new(
-            SpecExpression::CExpression(c_add(c_variable("left"), c_variable("right"))),
+            SpecExpression::ProgramExpression(c_add(c_variable("left"), c_variable("right"))),
         ))),
         destination: MachineIntegerType::Int32,
     };

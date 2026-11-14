@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel::{CType, c_function};
+use crate::kernel::{ProgramType, c_function};
 
 #[test]
 fn exact_composition_observation_accepts_retained_views_but_not_foreign_ownership() {
@@ -52,8 +52,8 @@ fn exact_composition_observation_accepts_retained_views_but_not_foreign_ownershi
     ));
 }
 
-fn source_state() -> (CState, CResourceFact) {
-    let mut state = CState::new()
+fn source_state() -> (ExecutionState, CResourceFact) {
+    let mut state = ExecutionState::new()
         .with_local("anchor", crate::kernel::int32(0))
         .with_population_creation_tracking();
     let pointer = state.locals.slot("anchor").unwrap().clone();
@@ -61,7 +61,7 @@ fn source_state() -> (CState, CResourceFact) {
     state.record_population_storage_creation(pointer.block.clone());
     let description = crate::kernel::ResourceDescription::new(
         "reference".into(),
-        vec![CValue::pointer(pointer).into()].into(),
+        vec![ProgramValue::pointer(pointer).into()].into(),
         crate::kernel::ResourceFieldSchema::new(vec![]).unwrap(),
     );
     (
@@ -219,10 +219,10 @@ fn checked_member_events_conserve_one_occurrence_and_reject_forged_deltas() {
         arguments: description.arguments().to_vec().into(),
     });
     let function = c_function(
-        CType::Void,
+        ProgramType::Void,
         "value",
         vec![],
-        CStatement::Return(CExpression::Value(CValue::Void)),
+        ProgramStatement::Return(ProgramExpression::Value(ProgramValue::Void)),
     )
     .with_composite_resource_definitions(vec![CCompositeResourceDefinition::new(
         "reference",
@@ -321,19 +321,19 @@ fn member_exchange_requires_both_external_body_ownership_and_checked_extent() {
     });
     let definition = CCompositeResourceDefinition::new(
         "reference",
-        vec![crate::kernel::c_parameter("p", CType::Int32Pointer)],
+        vec![crate::kernel::c_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![CResourceSpec::owned_memory(
             crate::kernel::CMemorySegment::new(
-                CExpression::Value(CValue::pointer(external.clone())),
+                ProgramExpression::Value(ProgramValue::pointer(external.clone())),
                 crate::kernel::c_int32_literal(0),
                 crate::kernel::c_int32_literal(1),
             ),
         )],
         vec![],
     );
-    let function = c_function(CType::Void, "member", vec![], CStatement::Skip)
+    let function = c_function(ProgramType::Void, "member", vec![], ProgramStatement::Skip)
         .with_composite_resource_definitions(vec![definition.clone()]);
     let (empty, _) = state
         .checked_population_authority_exchange(&authority, true, &PureFactContext::new())
@@ -422,7 +422,7 @@ fn checked_member_exchange_transfers_exact_contained_resource() {
                     crate::kernel::CResourceAccessMode::Own,
                     "payload".into(),
                     vec![crate::kernel::c_int32_literal(7)],
-                    vec![CType::Int32],
+                    vec![ProgramType::Int32],
                 ),
             )
         } else {
@@ -435,23 +435,23 @@ fn checked_member_exchange_transfers_exact_contained_resource() {
                     crate::kernel::CResourceAccessMode::Own,
                     "payload".into(),
                     vec![crate::kernel::c_variable("p")],
-                    vec![CType::Int32Pointer],
+                    vec![ProgramType::Int32Pointer],
                 ),
             )
         };
         let definition = CCompositeResourceDefinition::new(
             "reference",
-            vec![crate::kernel::c_parameter("p", CType::Int32Pointer)],
+            vec![crate::kernel::c_parameter("p", ProgramType::Int32Pointer)],
             None,
             false,
             vec![child_spec],
             vec![],
         );
         let function = c_function(
-            CType::Void,
+            ProgramType::Void,
             "member",
             vec![],
-            CStatement::Return(CExpression::Value(CValue::Void)),
+            ProgramStatement::Return(ProgramExpression::Value(ProgramValue::Void)),
         )
         .with_composite_resource_definitions(vec![definition.clone()]);
         let (empty, _) = state
@@ -549,7 +549,7 @@ fn member_body_facts_require_checked_birth_and_reject_forged_consumption_facts()
     let definition = |right| {
         CCompositeResourceDefinition::new(
             "reference",
-            vec![crate::kernel::c_parameter("p", CType::Int32Pointer)],
+            vec![crate::kernel::c_parameter("p", ProgramType::Int32Pointer)],
             None,
             false,
             vec![],
@@ -567,10 +567,10 @@ fn member_body_facts_require_checked_birth_and_reject_forged_consumption_facts()
     );
     let definition = definition(1);
     let function = c_function(
-        CType::Void,
+        ProgramType::Void,
         "member",
         vec![],
-        CStatement::Return(CExpression::Value(CValue::Void)),
+        ProgramStatement::Return(ProgramExpression::Value(ProgramValue::Void)),
     )
     .with_composite_resource_definitions(vec![definition.clone()]);
     let (one, birth) = state
@@ -630,7 +630,8 @@ fn checked_member_events_exchange_private_memory_and_reject_duplicate_birth() {
         name: description.family().to_owned(),
         arguments: description.arguments().to_vec().into(),
     });
-    let [crate::kernel::AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments()
+    let [crate::kernel::AlgebraicValue::C(ProgramValue::Pointer(pointer))] =
+        description.arguments()
     else {
         unreachable!()
     };
@@ -641,7 +642,7 @@ fn checked_member_events_exchange_private_memory_and_reject_duplicate_birth() {
     ));
     let definition = CCompositeResourceDefinition::new(
         "reference",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![CResourceSpec::owned_memory(CMemorySegment::new(
@@ -653,10 +654,10 @@ fn checked_member_events_exchange_private_memory_and_reject_duplicate_birth() {
     )
     .with_authorized(true);
     let function = c_function(
-        CType::Void,
+        ProgramType::Void,
         "value",
         vec![],
-        CStatement::Return(CExpression::Value(CValue::Void)),
+        ProgramStatement::Return(ProgramExpression::Value(ProgramValue::Void)),
     )
     .with_composite_resource_definitions(vec![definition]);
     let definition = function
@@ -806,10 +807,10 @@ fn generic_resource_observations_cannot_check_under_authority_history() {
     let selected = CResourceFact::own_composite("reference".into(), Vec::new());
     let facts = ProofFacts::default();
     let function = c_function(
-        CType::Void,
+        ProgramType::Void,
         "value",
         vec![],
-        CStatement::Return(CExpression::Value(CValue::Void)),
+        ProgramStatement::Return(ProgramExpression::Value(ProgramValue::Void)),
     )
     .with_composite_resource_definitions(vec![CCompositeResourceDefinition::new(
         "reference",

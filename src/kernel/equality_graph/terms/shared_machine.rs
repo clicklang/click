@@ -510,15 +510,15 @@ mod tests {
     #[test]
     fn common_call_registration_matches_native_classes() {
         use crate::kernel::{
-            CValue, KernelTermExport, PureFunctionArgument, SharedPureApplication,
+            KernelTermExport, ProgramValue, PureFunctionArgument, SharedPureApplication,
         };
         let _session = crate::kernel::VerificationSession::enter();
         for format in crate::kernel::machine_integer::FORMATS {
             let application = SharedPureApplication::intern(
                 "registered_call".into(),
-                vec![PureFunctionArgument::Value(CValue::Int32(T::Variable(
-                    Variable(995850),
-                )))],
+                vec![PureFunctionArgument::Value(ProgramValue::Int32(
+                    T::Variable(Variable(995850)),
+                ))],
             );
             let root = KernelTermImport::default().machine_call(format, &application);
             let native = T::ClickFunctionApplication {

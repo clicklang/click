@@ -16,9 +16,9 @@ fn local_pointer_types_index_once_with_linear_work() {
                 crate::kernel::c_declare(
                     format!("local_{index}"),
                     if index % 2 == 0 {
-                        CType::UInt8Pointer
+                        ProgramType::UInt8Pointer
                     } else {
-                        CType::UInt64Pointer
+                        ProgramType::UInt64Pointer
                     },
                 ),
             );
@@ -33,9 +33,9 @@ fn local_pointer_types_index_once_with_linear_work() {
             assert_eq!(
                 types[&format!("local_{index}")],
                 if index % 2 == 0 {
-                    CType::UInt8
+                    ProgramType::UInt8
                 } else {
-                    CType::UInt64
+                    ProgramType::UInt64
                 }
             );
         }

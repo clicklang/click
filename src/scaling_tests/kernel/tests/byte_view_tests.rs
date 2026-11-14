@@ -9,11 +9,12 @@ fn byte_assembly_masks_symbolic_bytes_and_ignores_unrelated_memory() {
     use crate::kernel::eval::assemble_declared_uint32_after_byte_store as assemble;
     let mut samples = Vec::new();
     for size in [0, 64, 128, 512] {
-        let mut memory = CMemory::new().with_declared_scalar_block(word(0).block, 4, CType::UInt32);
+        let mut memory =
+            CMemory::new().with_declared_scalar_block(word(0).block, 4, ProgramType::UInt32);
         for byte in 0..3 {
             memory = memory.store(
                 word(byte),
-                CValue::UInt8(MachineTerm::Variable(Variable(8000 + byte as u64))),
+                ProgramValue::UInt8(MachineTerm::Variable(Variable(8000 + byte as u64))),
             );
         }
         for index in 0..size {
@@ -22,10 +23,10 @@ fn byte_assembly_masks_symbolic_bytes_and_ignores_unrelated_memory() {
                     block: format!("global:other{index}").into(),
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                CValue::UInt32(index.into()),
+                ProgramValue::UInt32(index.into()),
             );
         }
-        let incoming = CValue::UInt8(MachineTerm::Variable(Variable(8003)));
+        let incoming = ProgramValue::UInt8(MachineTerm::Variable(Variable(8003)));
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             assemble(&memory, &word(3), &incoming, Some(ByteOrder::Little))
         });
@@ -44,7 +45,7 @@ fn byte_assembly_masks_symbolic_bytes_and_ignores_unrelated_memory() {
                 ),
             );
         }
-        assert_eq!(result, Some((word(0), CValue::UInt32(expected))));
+        assert_eq!(result, Some((word(0), ProgramValue::UInt32(expected))));
         samples.push(work);
     }
     assert!(
@@ -59,7 +60,7 @@ fn containing_cell_lookup_work_is_independent_of_unrelated_cells() {
     for unrelated in [8_u32, 32, 128, 512] {
         let mut memory = CMemory::new().store(
             word(0),
-            CValue::UInt64(MachineTerm::uint64_constant(0x0102_0304_0506_0708)),
+            ProgramValue::UInt64(MachineTerm::uint64_constant(0x0102_0304_0506_0708)),
         );
         for index in 0..unrelated {
             memory = memory.store(
@@ -67,10 +68,13 @@ fn containing_cell_lookup_work_is_independent_of_unrelated_cells() {
                     block: PointerBlock::from(format!("global:unrelated{index}").as_str()),
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                CValue::UInt32(index.into()),
+                ProgramValue::UInt32(index.into()),
             );
             // Cells after the access in the same block are outside the range.
-            memory = memory.store(word(8 + 4 * i64::from(index)), CValue::UInt32(index.into()));
+            memory = memory.store(
+                word(8 + 4 * i64::from(index)),
+                ProgramValue::UInt32(index.into()),
+            );
         }
         let (cell, work) = crate::instrumentation::measure_deterministic_work(|| {
             containing_integer_cell(&memory, &word(6), Some(ByteOrder::Little))

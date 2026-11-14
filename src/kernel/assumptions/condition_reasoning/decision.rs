@@ -3459,8 +3459,8 @@ mod shared_singleton_bound_evidence_tests {
             format,
             MachineBinaryOp::Multiply,
             [
-                KernelTerm::variable(KernelType::C(CType::Int32), Variable(994001)),
-                KernelTerm::variable(KernelType::C(CType::Int32), Variable(994002)),
+                KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(994001)),
+                KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(994002)),
             ],
         );
         let observation = SharedMachineIntegerTerm::from_shared(format, root).unwrap();
@@ -3704,7 +3704,7 @@ mod shared_offset_evidence_tests {
         let old = read(memory.clone());
         let new = read(memory.store(
             pointer.clone(),
-            crate::kernel::CValue::Int32(MachineTerm::constant(7)),
+            crate::kernel::ProgramValue::Int32(MachineTerm::constant(7)),
         ));
         let value = MachineTerm::Variable(Variable(1008130));
         let (left, right, changed) = (offset(&old, 4), offset(&value, 4), offset(&new, 4));

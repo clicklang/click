@@ -127,7 +127,7 @@ fn exact_index_normalization_rewrites_shared_read_dags_without_exports() {
         let stored = MachineTerm::Variable(Variable(1018970));
         let memory = CMemory::new()
             .with_block("exact-scaling", 4)
-            .store(pointer.clone(), CValue::Int32(stored.clone()));
+            .store(pointer.clone(), ProgramValue::Int32(stored.clone()));
         let load = MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(memory),
             pointer.into(),

@@ -13,13 +13,13 @@ fn store_equation_work(unrelated: usize, stores: usize) -> usize {
     for index in 0..unrelated as u64 {
         memory = memory.store(
             cell(989_900_000 + index),
-            CValue::Int32(MachineTerm::Variable(Variable(989_800_000 + index))),
+            ProgramValue::Int32(MachineTerm::Variable(Variable(989_800_000 + index))),
         );
     }
     let mut facts = Vec::new();
     for index in 0..stores as u64 {
         let before = memory.clone();
-        let value = CValue::Int32(MachineTerm::Variable(Variable(989_700_000 + index)));
+        let value = ProgramValue::Int32(MachineTerm::Variable(Variable(989_700_000 + index)));
         memory = memory.store(cell(989_600_000 + index), value.clone());
         facts.push(ExecutionPureFact::certified_store(
             before,

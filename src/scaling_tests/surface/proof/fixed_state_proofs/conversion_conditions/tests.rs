@@ -1,7 +1,7 @@
 #[test]
 fn loadability_explanation_ignores_unrelated_objects() {
     let (values, state) = indexed_pointer_site();
-    let expression = CExpression::Variable("index".into());
+    let expression = ProgramExpression::Variable("index".into());
     let site = StatedSite::new(StatedForm::CFragment(&expression), &state, &values);
     let missing = Proposition::CMemoryLoadable {
         memory: state.memory().clone(),
@@ -59,7 +59,7 @@ fn scoped_obligation_probing_scales_with_requirements_not_ambient_facts() {
     fn work(requirements: u64, ambient: u64, related: bool) -> usize {
         let _session = crate::kernel::VerificationSession::enter();
         let (values, state) = indexed_pointer_site();
-        let expression = CExpression::Variable("index".into());
+        let expression = ProgramExpression::Variable("index".into());
         let site = StatedSite::new(StatedForm::CFragment(&expression), &state, &values);
         let mut context = PureFactContext::new();
         for i in 0..ambient {

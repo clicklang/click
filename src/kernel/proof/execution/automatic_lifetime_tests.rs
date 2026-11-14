@@ -6,7 +6,7 @@ fn automatic_lifetime_event_rejects_active_local_loan_and_forged_retirement() {
     use crate::kernel::loans::{LoanLedger, plan_stable_view_transfer};
     use crate::kernel::prelude::CCheckedResourceFact;
     use crate::kernel::{CResourceSnapshot, CResourceTransferRole};
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_local("selected", int32(5))
         .with_memory(CMemory::new().with_block("local:selected", 4));
     let pointer = state.locals().slot("selected").unwrap().clone();
@@ -55,7 +55,7 @@ fn automatic_lifetime_event_rejects_active_local_loan_and_forged_retirement() {
 
 #[test]
 fn automatic_lifetime_event_rejects_forged_mutex_storage_retirement() {
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_local("holder", int32(0))
         .with_memory(CMemory::new().with_block("local:holder", 48));
     let address = state.locals().slot("holder").unwrap().offset_by_bytes(8);
@@ -95,7 +95,7 @@ fn automatic_lifetime_event_rejects_forged_mutex_storage_retirement() {
 
 #[test]
 fn automatic_lifetime_end_records_the_retired_storage_footprint() {
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_local("selected", int32(5))
         .with_memory(CMemory::new().with_block("local:selected", 4));
     let slot = state.locals().slot("selected").unwrap().clone();

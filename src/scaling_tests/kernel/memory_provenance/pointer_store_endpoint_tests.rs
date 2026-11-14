@@ -38,13 +38,13 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
             );
             memory = memory.store(
                 written.offset_by_bytes(32 + index as u32 * 8),
-                CValue::UInt64(MachineTerm::uint64_constant(index)),
+                ProgramValue::UInt64(MachineTerm::uint64_constant(index)),
             );
         }
         let stored = Pointer::symbolic(Variable(180_000 + count));
         memory = memory.store(
             written.clone(),
-            CValue::typed_pointer(stored.clone(), CType::Int32Pointer),
+            ProgramValue::typed_pointer(stored.clone(), ProgramType::Int32Pointer),
         );
         let cell = endpoint(memory.clone());
         let (value, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -52,7 +52,7 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
         });
         assert_eq!(
             value,
-            Some(CPointerValue::new(stored.clone(), CType::Int32Pointer))
+            Some(PointerValue::new(stored.clone(), ProgramType::Int32Pointer))
         );
         samples.push(work);
         for (kind, bytes) in [
@@ -97,20 +97,23 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
         );
         let overwritten = endpoint(memory.clone().store(
             written.clone(),
-            CValue::typed_pointer(Pointer::null(), CType::Int32Pointer),
+            ProgramValue::typed_pointer(Pointer::null(), ProgramType::Int32Pointer),
         ));
         assert_eq!(
             pointer_value_at_stopping_store(&overwritten, &address, LoadKind::Int32, 8, &context),
-            Some(CPointerValue::new(Pointer::null(), CType::Int32Pointer))
+            Some(PointerValue::new(
+                Pointer::null(),
+                ProgramType::Int32Pointer
+            ))
         );
         assert_ne!(
             pointer_value_at_stopping_store(&overwritten, &address, LoadKind::Int32, 8, &context),
-            Some(CPointerValue::new(stored, CType::Int32Pointer))
+            Some(PointerValue::new(stored, ProgramType::Int32Pointer))
         );
         for offset in [0, 4, 32] {
             let changed = endpoint(memory.clone().store(
                 written.offset_by_bytes(offset),
-                CValue::Int32(MachineTerm::constant(1)),
+                ProgramValue::Int32(MachineTerm::constant(1)),
             ));
             assert!(
                 pointer_value_at_stopping_store(&changed, &address, LoadKind::Int32, 8, &context)

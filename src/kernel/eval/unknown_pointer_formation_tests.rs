@@ -1,10 +1,10 @@
 use super::*;
 
-fn pointer(id: u64) -> CPointerValue {
-    CPointerValue::new(Pointer::symbolic(Variable(id)), CType::Int32Pointer)
+fn pointer(id: u64) -> PointerValue {
+    PointerValue::new(Pointer::symbolic(Variable(id)), ProgramType::Int32Pointer)
 }
 
-fn view(value: &CPointerValue, start: u32, end: u32) -> CResourceFact {
+fn view(value: &PointerValue, start: u32, end: u32) -> CResourceFact {
     CResourceFact::view_memory(CMemoryRange::from_pointer_value(
         value,
         start.into(),
@@ -14,7 +14,7 @@ fn view(value: &CPointerValue, start: u32, end: u32) -> CResourceFact {
 }
 
 fn permits(
-    value: &CPointerValue,
+    value: &PointerValue,
     bytes: u32,
     facts: &PureFactContext,
     resources: &ResourceContext,
@@ -28,7 +28,7 @@ fn permits(
 }
 
 fn permits_at(
-    value: &CPointerValue,
+    value: &PointerValue,
     position: &Pointer,
     facts: &PureFactContext,
     resources: &ResourceContext,
@@ -152,15 +152,18 @@ fn allocation_bounds_require_positive_ownership_and_grant_no_read_permission() {
 fn slice_entry_bounds_allow_formation_without_read_authority() {
     let _session = crate::kernel::VerificationSession::enter();
     let p = pointer(930_450);
-    let state = CState::new()
-        .with_local("data", CValue::Pointer(p.clone()))
-        .with_local("length", CValue::UInt64(MachineTerm::uint64_constant(2)));
+    let state = ExecutionState::new()
+        .with_local("data", ProgramValue::Pointer(p.clone()))
+        .with_local(
+            "length",
+            ProgramValue::UInt64(MachineTerm::uint64_constant(2)),
+        );
     let function = c_function(
-        CType::Void,
+        ProgramType::Void,
         "slice_metadata",
         vec![
-            c_parameter("p", CType::Int32Pointer).with_slice_length_parameter(1),
-            c_parameter("n", CType::UInt64),
+            c_parameter("p", ProgramType::Int32Pointer).with_slice_length_parameter(1),
+            c_parameter("n", ProgramType::UInt64),
         ],
         c_skip(),
     );
@@ -168,9 +171,9 @@ fn slice_entry_bounds_allow_formation_without_read_authority() {
         &state,
         &function,
         &[
-            CExpression::Value(CValue::Pointer(p.clone())),
-            CExpression::Value(
-                CValue::UInt64(MachineTerm::uint64_constant(2))
+            ProgramExpression::Value(ProgramValue::Pointer(p.clone())),
+            ProgramExpression::Value(
+                ProgramValue::UInt64(MachineTerm::uint64_constant(2))
                     .complete_word(Pointer::symbolic(Variable(930_451))),
             ),
         ],
@@ -193,17 +196,17 @@ fn fixed_array_reference_bounds_allow_formation_without_read_authority() {
     let _session = crate::kernel::VerificationSession::enter();
     for bytes in [0, 4, 16] {
         let p = pointer(930_460 + u64::from(bytes));
-        let state = CState::new().with_local("data", CValue::Pointer(p.clone()));
+        let state = ExecutionState::new().with_local("data", ProgramValue::Pointer(p.clone()));
         let function = c_function(
-            CType::Void,
+            ProgramType::Void,
             "array_metadata",
-            vec![c_parameter("p", CType::Int32Pointer).with_fixed_reference_extent(bytes)],
+            vec![c_parameter("p", ProgramType::Int32Pointer).with_fixed_reference_extent(bytes)],
             c_skip(),
         );
         let entry = crate::kernel::c_function_contract_entry(
             &state,
             &function,
-            &[CExpression::Value(CValue::Pointer(p.clone()))],
+            &[ProgramExpression::Value(ProgramValue::Pointer(p.clone()))],
         )
         .unwrap();
         let context = entry
@@ -277,18 +280,18 @@ fn native_coverage_keeps_high_bits_and_interior_bytes() {
 }
 
 fn split_formation_fixture() -> (
-    CPointerValue,
+    PointerValue,
     Pointer,
     PureFactContext,
     ResourceContext,
     CResourceFact,
 ) {
-    let p = CPointerValue::new(
+    let p = PointerValue::new(
         Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(930_999)), 4),
         },
-        CType::Int32Pointer,
+        ProgramType::Int32Pointer,
     );
     let from = MachineTerm::Variable(Variable(930_601));
     let to = MachineTerm::Variable(Variable(930_602));
@@ -387,8 +390,8 @@ fn null_pointer_zero_offsets_use_scalar_evidence_and_preserve_refusals() {
         ];
         for (facts, expected_zero) in cases {
             let result = pointer_offset_by_elements_paths(
-                &CState::new(),
-                CPointerValue::new(Pointer::null(), CType::Int32Pointer),
+                &ExecutionState::new(),
+                PointerValue::new(Pointer::null(), ProgramType::Int32Pointer),
                 offset.clone(),
                 4,
                 unsigned,
@@ -402,7 +405,7 @@ fn null_pointer_zero_offsets_use_scalar_evidence_and_preserve_refusals() {
                 // The facts permit the formation; the result keeps its
                 // written offset rather than being respelled as null.
                 assert!(matches!(&result[0].outcome,
-                    CExpressionOutcome::Value(CValue::Pointer(value))
+                    CExpressionOutcome::Value(ProgramValue::Pointer(value))
                         if value.pointer().is_in_null_block()
                             && value.pointer() != &Pointer::null()));
             } else {
@@ -427,8 +430,8 @@ fn a_registered_zero_index_permits_null_pointer_formation() {
         true,
     );
     let result = pointer_offset_by_elements_paths(
-        &CState::new(),
-        CPointerValue::new(Pointer::null(), CType::Int32Pointer),
+        &ExecutionState::new(),
+        PointerValue::new(Pointer::null(), ProgramType::Int32Pointer),
         MachineTerm::MemoryLoad(memory, Box::new(address), LoadKind::Int32),
         4,
         false,
@@ -438,6 +441,6 @@ fn a_registered_zero_index_permits_null_pointer_formation() {
         &facts,
     );
     assert!(matches!(result.as_slice(), [CExpressionPath {
-        outcome: CExpressionOutcome::Value(CValue::Pointer(value)), ..
+        outcome: CExpressionOutcome::Value(ProgramValue::Pointer(value)), ..
     }] if value.pointer().is_in_null_block()));
 }

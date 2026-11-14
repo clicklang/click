@@ -11,14 +11,14 @@ pub(crate) struct ScalarReferenceScopeKey {
 #[derive(Debug)]
 pub(crate) struct ScalarReferenceScopePlan {
     key: ScalarReferenceScopeKey,
-    locals: Vec<(String, CType)>,
+    locals: Vec<(String, ProgramType)>,
 }
 impl ScalarReferenceScopePlan {
     pub(crate) fn new(
         family: Arc<ScalarReferencePlanFamily>,
         block: usize,
         join: usize,
-        locals: Vec<(String, CType)>,
+        locals: Vec<(String, ProgramType)>,
     ) -> Arc<Self> {
         use sha2::{Digest, Sha256};
         let mut hash = Sha256::new();
@@ -40,8 +40,8 @@ impl ScalarReferenceScopePlan {
             locals,
         })
     }
-    pub(crate) fn operation(self: &Arc<Self>, closing: bool) -> CStatement {
-        CStatement::ScalarReferenceScope(CScalarReferenceScope {
+    pub(crate) fn operation(self: &Arc<Self>, closing: bool) -> ProgramStatement {
+        ProgramStatement::ScalarReferenceScope(CScalarReferenceScope {
             plan: self.clone(),
             closing,
         })
@@ -62,10 +62,13 @@ pub struct CScalarReferenceScope {
     closing: bool,
 }
 impl CScalarReferenceScope {
-    pub(crate) fn cleared_locals(&self) -> &[(String, CType)] {
+    pub(crate) fn cleared_locals(&self) -> &[(String, ProgramType)] {
         if self.closing { &self.plan.locals } else { &[] }
     }
-    pub(in crate::kernel) fn execute(&self, state: &CState) -> Result<CState, loans::LoanRefusal> {
+    pub(in crate::kernel) fn execute(
+        &self,
+        state: &ExecutionState,
+    ) -> Result<ExecutionState, loans::LoanRefusal> {
         let mut state = state.clone();
         if !self.closing {
             match (state.loan_ledger(), state.loan_participant()) {

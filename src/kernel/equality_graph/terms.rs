@@ -47,9 +47,9 @@ pub(super) enum CellRead {
 #[derive(Clone)]
 pub(super) struct PendingCellRead {
     pub(super) read: u64,
-    pub(super) memory: crate::kernel::SharedCMemory,
+    pub(super) memory: crate::kernel::SharedMemory,
     // The memory a load variable was read in, at its naming snapshot.
-    pub(super) origin: Option<crate::kernel::SharedCMemory>,
+    pub(super) origin: Option<crate::kernel::SharedMemory>,
     pub(super) pointer: Pointer,
     pub(super) kind: CellRead,
     pub(super) only: Option<Arc<[(PointerBlock, AffineOffset)]>>,
@@ -62,8 +62,8 @@ pub(super) struct PendingCellRead {
 /// does not equate distinct snapshots.
 fn load_origin(
     term: &crate::kernel::MachineTerm,
-    named: &crate::kernel::SharedCMemory,
-) -> Option<crate::kernel::SharedCMemory> {
+    named: &crate::kernel::SharedMemory,
+) -> Option<crate::kernel::SharedMemory> {
     crate::kernel::eval::scalar_read_observation(crate::kernel::MachineOperandView::Legacy(term))
         .and_then(|read| read.origin)
         .filter(|origin| origin.read_identity() == named.read_identity())
@@ -98,7 +98,7 @@ pub(super) fn take_pointer_fact_merge_visits() -> usize {
 pub(in crate::kernel::equality_graph) enum PointerFactKey {
     AddressSeparation,
     Predicate(u64),
-    PredicateShape(String, usize, usize, crate::kernel::CType),
+    PredicateShape(String, usize, usize, crate::kernel::ProgramType),
     FunctionContracts,
     ObjectType(crate::kernel::effective_type::CAccessClass),
 }
@@ -276,7 +276,7 @@ pub(super) fn uint64_binary(
 /// A scalar variable without this typed producer metadata stays opaque.
 pub(super) fn int32_read(
     term: &crate::kernel::MachineTerm,
-) -> Option<(crate::kernel::SharedCMemory, Pointer)> {
+) -> Option<(crate::kernel::SharedMemory, Pointer)> {
     let read = crate::kernel::eval::scalar_read_observation(
         crate::kernel::MachineOperandView::Legacy(term),
     )?;
@@ -285,7 +285,7 @@ pub(super) fn int32_read(
 
 pub(super) fn uint64_read(
     term: &crate::kernel::MachineTerm,
-) -> Option<(crate::kernel::SharedCMemory, Pointer)> {
+) -> Option<(crate::kernel::SharedMemory, Pointer)> {
     use crate::kernel::{LoadKind, MachineTerm as T};
     match term {
         T::MemoryLoad(memory, pointer, LoadKind::Bits64) => {
@@ -317,9 +317,9 @@ pub(super) enum IntegerOperation {
 enum Node {
     Apply(u64, u64),
     TypeName(bool, String, usize),
-    TypeC(crate::kernel::CType),
+    TypeC(crate::kernel::ProgramType),
     TypeObjectPointer(
-        crate::kernel::CType,
+        crate::kernel::ProgramType,
         crate::kernel::effective_type::CAccessClass,
     ),
     TypeInteger,
@@ -716,8 +716,8 @@ pub(super) struct TermClasses {
     // One zero-offset pointer read or pure-call value per class. Congruence emits only
     // newly identified pairs for the legacy affine/index projection.
     pointer_value_witnesses: PersistentMap<u64, PointerBlock>,
-    pointer_values: PersistentMap<u64, crate::kernel::CPointerValue>,
-    extent_values: PersistentMap<u64, crate::kernel::CPointerValue>,
+    pointer_values: PersistentMap<u64, crate::kernel::PointerValue>,
+    extent_values: PersistentMap<u64, crate::kernel::PointerValue>,
     read_domains: crate::kernel::pointer_designations::ValueClasses<Pointer>,
     read_designation_nodes: PersistentMap<Pointer, u64>,
     read_extent_nodes: PersistentMap<Pointer, u64>,
@@ -730,23 +730,23 @@ pub(super) struct TermClasses {
     // this worklist iterative handles loads used as indices of further loads.
     pending_loads: Vec<(
         u64,
-        crate::kernel::SharedCMemory,
+        crate::kernel::SharedMemory,
         crate::kernel::Pointer,
-        Option<crate::kernel::SharedCMemory>,
+        Option<crate::kernel::SharedMemory>,
     )>,
     // Signed byte reads still to be related to their unsigned read (R-mem).
-    pending_signed_byte_reads: Vec<(u64, crate::kernel::SharedCMemory, crate::kernel::Pointer)>,
+    pending_signed_byte_reads: Vec<(u64, crate::kernel::SharedMemory, crate::kernel::Pointer)>,
     // `uint32` reads still to be related to their cell's `int32` read by σ
     // (R-mem at 32 bits).
-    pending_unsigned_word_reads: Vec<(u64, crate::kernel::SharedCMemory, crate::kernel::Pointer)>,
+    pending_unsigned_word_reads: Vec<(u64, crate::kernel::SharedMemory, crate::kernel::Pointer)>,
     // 8- and 16-bit reads whose load application is still to be registered
     // (`enqueue_narrow_load`).
     pending_narrow_loads: Vec<(
         u64,
-        crate::kernel::SharedCMemory,
+        crate::kernel::SharedMemory,
         crate::kernel::Pointer,
         crate::kernel::LoadKind,
-        Option<crate::kernel::SharedCMemory>,
+        Option<crate::kernel::SharedMemory>,
     )>,
     // Reads whose stored cell under another spelling of their address is
     // still to be looked up; drained with the other registration work.
@@ -980,7 +980,7 @@ impl TermClasses {
         kind: crate::kernel::LoadKind,
         value: u64,
         block: PointerBlock,
-        cell: Option<(crate::kernel::SharedCMemory, Pointer)>,
+        cell: Option<(crate::kernel::SharedMemory, Pointer)>,
     ) {
         let address = self.read_address(address);
         let read = self.intern_node(Node::PointerRead(snapshot, address, kind));
@@ -2145,7 +2145,7 @@ impl TermClasses {
             let stored = std::iter::once(memory)
                 .chain(origin)
                 .find_map(|memory| memory.known_value(&cell));
-            use crate::kernel::CValue as V;
+            use crate::kernel::ProgramValue as V;
             found = match (stored, kind) {
                 (Some(V::Int64(value) | V::UInt64(value)), CellRead::UInt64)
                 | (Some(V::Int32(value)), CellRead::Int32) => Some(Ok(value)),
@@ -2167,7 +2167,10 @@ impl TermClasses {
                     CellRead::Narrow(crate::kernel::CarrierWidth::Bits16),
                 ) => Some(Ok(value)),
                 (Some(V::Pointer(value)), CellRead::FunctionPointer)
-                    if matches!(value.c_type(), crate::kernel::CType::FunctionPointer(_)) =>
+                    if matches!(
+                        value.c_type(),
+                        crate::kernel::ProgramType::FunctionPointer(_)
+                    ) =>
                 {
                     Some(Err(value.pointer().clone()))
                 }
@@ -3745,9 +3748,9 @@ mod tests {
         let address = Pointer::symbolic(Variable(12));
         let after = crate::kernel::intern_c_memory(before.memory().clone().store(
             address.clone(),
-            crate::kernel::CValue::Int32(MachineTerm::constant(9)),
+            crate::kernel::ProgramValue::Int32(MachineTerm::constant(9)),
         ));
-        let load = |memory: &crate::kernel::SharedCMemory| {
+        let load = |memory: &crate::kernel::SharedMemory| {
             MachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
                 memory,
                 &address,
@@ -3794,12 +3797,12 @@ mod tests {
 
     #[test]
     fn complete_pointer_identity_tracks_symbolic_extent_widths() {
-        use crate::kernel::{CPointerValue, CType, SubobjectExtent};
+        use crate::kernel::{PointerValue, ProgramType, SubobjectExtent};
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Pointer::symbolic(Variable(942_001));
         let width = MachineTerm::Variable(Variable(942_002));
         let bounded = |width| {
-            CPointerValue::new(pointer.clone(), CType::Int32Pointer).with_extent(Some(
+            PointerValue::new(pointer.clone(), ProgramType::Int32Pointer).with_extent(Some(
                 SubobjectExtent {
                     start: pointer.clone(),
                     width,

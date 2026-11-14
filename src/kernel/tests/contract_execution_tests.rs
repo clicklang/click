@@ -11,9 +11,9 @@ use std::sync::Arc;
 fn completed_candidate_forks_share_source_state_and_all_path_storage() {
     for (path_count, fact_count) in [(4, 4), (64, 4), (1024, 4), (4, 64), (4, 1024)] {
         let function = c_function(
-            CType::Int32,
+            ProgramType::Int32,
             "candidate_storage",
-            vec![c_parameter("x", CType::Int32)],
+            vec![c_parameter("x", ProgramType::Int32)],
             c_return(c_int32_literal(0)),
         );
         let paths = (0..path_count)
@@ -32,7 +32,7 @@ fn completed_candidate_forks_share_source_state_and_all_path_storage() {
                 (
                     CFunctionOutcome::Return {
                         value: int32(0).into(),
-                        state: Box::new(CState::new()),
+                        state: Box::new(ExecutionState::new()),
                     },
                     facts,
                     Vec::new(),
@@ -40,7 +40,7 @@ fn completed_candidate_forks_share_source_state_and_all_path_storage() {
             })
             .collect();
         let original = c_function_execution_candidates_from_outcomes(
-            CState::new(),
+            ExecutionState::new(),
             function,
             vec![c_int32_literal(0)],
             paths,
@@ -59,7 +59,7 @@ fn completed_candidate_forks_share_source_state_and_all_path_storage() {
         assert_eq!(fork.paths().len(), path_count);
         assert_eq!(fork.paths()[0].facts().len(), fact_count as usize);
         let different = c_function_execution_candidates_from_outcomes(
-            CState::new(),
+            ExecutionState::new(),
             fork.function().clone(),
             vec![c_int32_literal(0)],
             Vec::new(),
@@ -77,7 +77,7 @@ fn completed_candidate_forks_share_source_state_and_all_path_storage() {
 fn terminal_candidate_publications_retain_records_and_payloads() {
     for (path_count, payload_size) in [(8, 8), (32, 8), (128, 8), (8, 128), (8, 1024)] {
         let function = c_function(
-            CType::Int32,
+            ProgramType::Int32,
             "retained_candidates",
             vec![],
             c_return(c_int32_literal(0)),
@@ -91,7 +91,7 @@ fn terminal_candidate_publications_retain_records_and_payloads() {
         );
         let obligations = vec![ProofObligation::new(proposition.clone()); payload_size];
         let original = c_function_execution_candidates_from_outcomes(
-            CState::new(),
+            ExecutionState::new(),
             function,
             vec![],
             (0..path_count)
@@ -99,7 +99,7 @@ fn terminal_candidate_publications_retain_records_and_payloads() {
                     (
                         CFunctionOutcome::Return {
                             value: int32(index as u32).into(),
-                            state: Box::new(CState::new()),
+                            state: Box::new(ExecutionState::new()),
                         },
                         vec![ExecutionPureFact::new(proposition.clone()); payload_size],
                         obligations.clone(),
@@ -119,7 +119,7 @@ fn terminal_candidate_publications_retain_records_and_payloads() {
                 })
                 .collect();
             let publication = c_function_execution_candidates_from_retained_paths(
-                CState::new(),
+                ExecutionState::new(),
                 original.function().clone(),
                 vec![],
                 retained,
@@ -148,7 +148,7 @@ fn terminal_candidate_publications_retain_records_and_payloads() {
 
 #[test]
 fn extending_a_candidate_retains_payload_and_classifies_only_new_facts() {
-    let state = CState::new();
+    let state = ExecutionState::new();
     let public = ExecutionPureFact::certified(Proposition::ConditionIs(
         ConditionTerm::equal(
             MachineTerm::Variable(Variable(971_000)),
@@ -164,7 +164,7 @@ fn extending_a_candidate_retains_payload_and_classifies_only_new_facts() {
     let original = c_function_execution_candidates_from_outcomes_with_loan_evidence(
         state.clone(),
         c_function(
-            CType::Int32,
+            ProgramType::Int32,
             "extended_candidate",
             vec![],
             c_return(c_int32_literal(0)),
@@ -265,17 +265,17 @@ fn early_return_paths_share_guard_fact_storage() {
             );
         }
         let function = c_function(
-            CType::Int32,
+            ProgramType::Int32,
             "shared_guards",
-            vec![c_parameter("x", CType::Int32)],
+            vec![c_parameter("x", ProgramType::Int32)],
             body,
         );
         let execution = prove_symbolic_c_function_execution_paths(
-            CState::new(),
+            ExecutionState::new(),
             function,
-            vec![CExpression::Value(int32(MachineTerm::Variable(Variable(
-                960_000,
-            ))))],
+            vec![ProgramExpression::Value(int32(MachineTerm::Variable(
+                Variable(960_000),
+            )))],
             PureFactContext::new(),
         );
         assert!(
@@ -320,8 +320,8 @@ fn early_return_paths_share_guard_fact_storage() {
     }
 }
 
-fn borrowed_input_view_function(name: &str) -> CFunction {
-    c_function(CType::Void, name, vec![], c_return(c_void_value())).with_resource_summary(
+fn borrowed_input_view_function(name: &str) -> ProgramFunction {
+    c_function(ProgramType::Void, name, vec![], c_return(c_void_value())).with_resource_summary(
         vec![CResourceSpec::token(
             CResourceAccessMode::View,
             "borrowed_input".into(),
@@ -337,7 +337,7 @@ fn borrowed_contract_input_roots_only_the_exact_principal_view() {
     let viewed = CResourceFact::view_token("borrowed_input".into(), vec![]);
     let resources = ResourceContext::new().unchecked_with_fact(viewed.clone());
     let occurrence = resources.occurrences_for_fact(&viewed)[0];
-    let state = CState::new().with_resource_context(resources);
+    let state = ExecutionState::new().with_resource_context(resources);
     let rooted = c_state_with_borrowed_contract_inputs(
         state,
         &borrowed_input_view_function("read_borrowed_input"),
@@ -365,7 +365,7 @@ fn borrowed_contract_input_roots_only_the_exact_principal_view() {
 fn borrowed_contract_input_roots_are_shared_across_proof_units_of_one_function() {
     let viewed = CResourceFact::view_token("borrowed_input".into(), vec![]);
     let resources = ResourceContext::new().unchecked_with_fact(viewed.clone());
-    let state = CState::new().with_resource_context(resources);
+    let state = ExecutionState::new().with_resource_context(resources);
     let function = borrowed_input_view_function("shared_root_reader");
     let first = c_state_with_borrowed_contract_inputs(
         state.clone(),
@@ -390,7 +390,7 @@ fn borrowed_contract_input_roots_are_shared_across_proof_units_of_one_function()
         CResourceFact::own_token("extra".into(), vec![]),
     ]);
     let changed = c_state_with_borrowed_contract_inputs(
-        CState::new().with_resource_context(other_resources),
+        ExecutionState::new().with_resource_context(other_resources),
         &function,
         &[],
         &PureFactContext::new(),
@@ -418,15 +418,15 @@ fn borrowed_contract_input_refuses_an_owned_clause_inside_a_viewed_range() {
         MachineTerm::constant(1),
         MachineTerm::constant(2),
     ));
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_memory(CMemory::new().with_block(pointer.block.clone(), 8))
         .with_resource_context(
             ResourceContext::new().unchecked_with_facts([viewed.clone(), owned.clone()]),
         );
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "overlapping_reader",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         c_return(c_load(c_variable("p"))),
     )
     .with_resource_summary(
@@ -447,7 +447,7 @@ fn borrowed_contract_input_refuses_an_owned_clause_inside_a_viewed_range() {
     let refusal = c_state_with_borrowed_contract_inputs(
         state,
         &function,
-        &[CExpression::Value(CValue::pointer(pointer))],
+        &[ProgramExpression::Value(ProgramValue::pointer(pointer))],
         &PureFactContext::new(),
     )
     .expect_err("an owned clause inside the viewed range is refused at entry");
@@ -468,7 +468,7 @@ fn borrowed_contract_input_rejects_derived_or_ambiguous_views() {
     );
     let function = borrowed_input_view_function("reject_derived_input");
     let refusal = c_state_with_borrowed_contract_inputs(
-        CState::new().with_resource_context(derived),
+        ExecutionState::new().with_resource_context(derived),
         &function,
         &[],
         &PureFactContext::new(),
@@ -478,7 +478,7 @@ fn borrowed_contract_input_rejects_derived_or_ambiguous_views() {
 
     let duplicate = ResourceContext::new().unchecked_with_facts([viewed.clone(), viewed]);
     let refusal = c_state_with_borrowed_contract_inputs(
-        CState::new().with_resource_context(duplicate),
+        ExecutionState::new().with_resource_context(duplicate),
         &function,
         &[],
         &PureFactContext::new(),
@@ -526,7 +526,7 @@ fn owner_authorized_aggregate_copy_into_a_lent_range_is_refused() {
             hold: None,
         },
     );
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_resource_context(resources)
         .with_loan_ledger(Some(ledger))
         .with_loan_participant(Some(participant))
@@ -535,16 +535,16 @@ fn owner_authorized_aggregate_copy_into_a_lent_range_is_refused() {
         8,
         4,
         vec![
-            CAggregateField::new("a", 0, CType::Int32),
-            CAggregateField::new("b", 4, CType::Int32),
+            CAggregateField::new("a", 0, ProgramType::Int32),
+            CAggregateField::new("b", 4, ProgramType::Int32),
         ],
     );
     let function = c_function(
-        CType::Void,
+        ProgramType::Void,
         "copy_struct_over_lent_field",
         vec![
-            c_parameter("s", CType::Int32Pointer),
-            c_parameter("t", CType::Int32Pointer),
+            c_parameter("s", ProgramType::Int32Pointer),
+            c_parameter("t", ProgramType::Int32Pointer),
         ],
         c_copy_aggregate(c_variable("s"), c_variable("t"), layout),
     );
@@ -608,15 +608,15 @@ fn owner_authorized_write_into_a_lent_range_is_refused() {
             hold: None,
         },
     );
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_resource_context(resources)
         .with_loan_ledger(Some(ledger))
         .with_loan_participant(Some(participant))
         .with_loan_view_bindings(bindings);
     let function = c_function(
-        CType::Void,
+        ProgramType::Void,
         "write_owned_lent_cell",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         c_store(c_variable("p"), c_int32_literal(9)),
     );
     let pointer_for_assertions = pointer.clone();
@@ -689,16 +689,16 @@ fn owner_authorized_same_value_store_into_a_lent_range_is_refused() {
     let populated = CMemory::new()
         .with_block(pointer.block.clone(), 8)
         .store(pointer.clone(), int32(9));
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_memory(populated.clone())
         .with_resource_context(resources)
         .with_loan_ledger(Some(ledger))
         .with_loan_participant(Some(participant))
         .with_loan_view_bindings(bindings);
     let function = c_function(
-        CType::Void,
+        ProgramType::Void,
         "store_the_same_value_into_a_lent_cell",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         c_store(c_variable("p"), c_int32_literal(9)),
     );
     let pointer_for_assertions = pointer.clone();
@@ -734,17 +734,22 @@ fn owner_authorized_same_value_store_into_a_lent_range_is_refused() {
 
 #[test]
 fn certified_program_entry_claims_do_not_authorize_ordinary_calls() {
-    let function = c_function(CType::Int32, "main", vec![], c_return(c_int32_literal(0)))
-        .with_program_entry()
-        .with_contract(
-            vec![],
-            vec![],
-            vec![],
-            vec![CFunctionContractClaim::body_safety()],
-            true,
-        );
+    let function = c_function(
+        ProgramType::Int32,
+        "main",
+        vec![],
+        c_return(c_int32_literal(0)),
+    )
+    .with_program_entry()
+    .with_contract(
+        vec![],
+        vec![],
+        vec![],
+        vec![CFunctionContractClaim::body_safety()],
+        true,
+    );
     let execution = certify_contract_with_kernel_artifacts(
-        CState::new(),
+        ExecutionState::new(),
         function.clone(),
         vec![],
         vec![],
@@ -763,17 +768,17 @@ fn local_declaration_allocates_stack_object_for_address_of() {
         block: "local:x".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let state = CState::new();
+    let state = ExecutionState::new();
     let statement = c_seq(
-        c_declare("x", CType::Int32),
+        c_declare("x", ProgramType::Int32),
         c_seq(
             c_assign("x", c_int32_literal(5)),
             c_return(c_load(c_addr_of("x"))),
         ),
     );
-    let final_state = CState::new().with_local("x", int32(5)).with_memory(
+    let final_state = ExecutionState::new().with_local("x", int32(5)).with_memory(
         CMemory::new()
-            .with_declared_scalar_block("local:x".into(), 4, CType::Int32)
+            .with_declared_scalar_block("local:x".into(), 4, ProgramType::Int32)
             .store(local_pointer, int32(5)),
     );
     let final_state =
@@ -788,14 +793,16 @@ fn local_declaration_allocates_stack_object_for_address_of() {
     let mut final_state = final_state;
     final_state.locals.set_uninitialized_with_all_qualifiers(
         "x",
-        CType::Int32,
+        ProgramType::Int32,
         CMemory::local_pointer("x"),
         false,
         false,
         false,
         false,
     );
-    final_state.locals.set_typed("x", int32(5), CType::Int32);
+    final_state
+        .locals
+        .set_typed("x", int32(5), ProgramType::Int32);
     let theorem =
         prove_symbolic_c_execution(state.clone(), statement.clone(), PureFactContext::new())
             .expect("local declaration/address-of should execute");
@@ -816,16 +823,17 @@ fn local_declaration_allocates_stack_object_for_address_of() {
 #[test]
 fn addressable_parameter_gets_a_fresh_callee_stack_slot() {
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "addressable_parameter",
-        vec![c_parameter("n", CType::Int32)],
+        vec![c_parameter("n", ProgramType::Int32)],
         c_seq(
-            c_declare("p", CType::Int32Pointer),
+            c_declare("p", ProgramType::Int32Pointer),
             c_seq(c_assign("p", c_addr_of("n")), c_return(c_variable("n"))),
         ),
     );
-    let caller_state = c_function_entry_state(&CState::new(), &function, &[c_int32_literal(3)])
-        .expect("parameter entry state");
+    let caller_state =
+        c_function_entry_state(&ExecutionState::new(), &function, &[c_int32_literal(3)])
+            .expect("parameter entry state");
     let caller_slot = caller_state
         .locals()
         .slot("n")
@@ -859,7 +867,7 @@ fn addressable_parameter_gets_a_fresh_callee_stack_slot() {
 fn symbolic_execution_stops_without_needed_overflow_fact() {
     let left = Variable(20);
     let right = Variable(21);
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_local("left", int32(MachineTerm::Variable(left)))
         .with_local("right", int32(MachineTerm::Variable(right)));
     let statement = c_return(c_add(c_variable("left"), c_variable("right")));
@@ -932,7 +940,7 @@ fn symbolic_execution_reports_overflow_facts() {
     let right = Variable(27);
     let left_bits = MachineTerm::Variable(left);
     let right_bits = MachineTerm::Variable(right);
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_local("left", int32(left_bits.clone()))
         .with_local("right", int32(right_bits.clone()));
     let statement = c_return(c_add(c_variable("left"), c_variable("right")));
@@ -1004,7 +1012,7 @@ fn symbolic_execution_uses_no_overflow_fact() {
     let right = Variable(23);
     let left_bits = MachineTerm::Variable(left);
     let right_bits = MachineTerm::Variable(right);
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_local("left", int32(left_bits.clone()))
         .with_local("right", int32(right_bits.clone()));
     let statement = c_return(c_add(c_variable("left"), c_variable("right")));
@@ -1041,7 +1049,7 @@ fn symbolic_add_uses_exact_intervals_to_rule_out_overflow() {
     let right = Variable(25);
     let left_bits = MachineTerm::Variable(left);
     let right_bits = MachineTerm::Variable(right);
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_local("left", int32(left_bits.clone()))
         .with_local("right", int32(right_bits.clone()));
     let statement = c_return(c_add(c_variable("left"), c_variable("right")));
@@ -1087,7 +1095,7 @@ fn symbolic_add_uses_exact_intervals_to_rule_out_overflow() {
 fn symbolic_increment_uses_int_max_bound_to_rule_out_overflow() {
     let x = Variable(65);
     let x_bits = MachineTerm::Variable(x);
-    let state = CState::new().with_local("x", int32(x_bits.clone()));
+    let state = ExecutionState::new().with_local("x", int32(x_bits.clone()));
     let statement = c_return(c_add(c_variable("x"), c_int32_literal(1)));
     let x_lt_int_max =
         ConditionTerm::signed_less_than(x_bits.clone(), MachineTerm::constant(i32::MAX as u32));
@@ -1266,15 +1274,15 @@ fn pointer_store_through_local_address_updates_named_lvalue() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let statement = c_seq(
-        c_declare("x", CType::Int32),
+        c_declare("x", ProgramType::Int32),
         c_seq(
             c_store(c_addr_of("x"), c_int32_literal(5)),
             c_return(c_variable("x")),
         ),
     );
-    let final_state = CState::new().with_local("x", int32(5)).with_memory(
+    let final_state = ExecutionState::new().with_local("x", int32(5)).with_memory(
         CMemory::new()
-            .with_declared_scalar_block("local:x".into(), 4, CType::Int32)
+            .with_declared_scalar_block("local:x".into(), 4, ProgramType::Int32)
             .store(local_pointer, int32(5)),
     );
     let final_state =
@@ -1289,22 +1297,27 @@ fn pointer_store_through_local_address_updates_named_lvalue() {
     let mut final_state = final_state;
     final_state.locals.set_uninitialized_with_all_qualifiers(
         "x",
-        CType::Int32,
+        ProgramType::Int32,
         CMemory::local_pointer("x"),
         false,
         false,
         false,
         false,
     );
-    final_state.locals.set_typed("x", int32(5), CType::Int32);
-    let theorem =
-        prove_symbolic_c_execution(CState::new(), statement.clone(), PureFactContext::new())
-            .expect("pointer store through local address should execute");
+    final_state
+        .locals
+        .set_typed("x", int32(5), ProgramType::Int32);
+    let theorem = prove_symbolic_c_execution(
+        ExecutionState::new(),
+        statement.clone(),
+        PureFactContext::new(),
+    )
+    .expect("pointer store through local address should execute");
 
     assert_eq!(
         theorem.proposition(),
         &Proposition::CStatementExecutes {
-            state: Box::new(CState::new()),
+            state: Box::new(ExecutionState::new()),
             statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
                 value: int32(5).into(),
@@ -1394,12 +1407,12 @@ fn contract_certification_checks_every_spec_lowering_path() {
     let memory = CMemory::new()
         .with_block(base.block.clone(), 8)
         .store(base, int32(0));
-    let state = CState::new().with_memory(memory);
-    let q = SpecExpression::CExpression(c_variable("q"));
+    let state = ExecutionState::new().with_memory(memory);
+    let q = SpecExpression::ProgramExpression(c_variable("q"));
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "contract_path_probe",
-        vec![c_parameter("q", CType::Int32Pointer)],
+        vec![c_parameter("q", ProgramType::Int32Pointer)],
         c_return(c_int32_literal(0)),
     )
     .with_contract(
@@ -1414,7 +1427,7 @@ fn contract_certification_checks_every_spec_lowering_path() {
             left: SpecExpression::MemoryLoad {
                 memory: SpecMemory::Current,
                 pointer: Box::new(q),
-                value_type: CType::Int32,
+                value_type: ProgramType::Int32,
             },
             operator: CComparisonOperator::Equal,
             right: SpecExpression::Value(int32(0)),
@@ -1464,24 +1477,24 @@ fn function_execution_theorem_retains_non_assumable_verification_conditions() {
 #[test]
 fn symbolic_path_can_only_certify_its_exact_function_specification() {
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "exact_path",
         Vec::new(),
         c_return(c_int32_literal(0)),
     );
     let execution = prove_symbolic_c_function_execution_paths(
-        CState::new(),
+        ExecutionState::new(),
         function.clone(),
         Vec::new(),
         PureFactContext::new(),
     );
     let false_specification = c_function_specification(
-        CState::new(),
+        ExecutionState::new(),
         Vec::new(),
         Vec::new(),
         CFunctionOutcome::Return {
             value: int32(1).into(),
-            state: Box::new(CState::new()),
+            state: Box::new(ExecutionState::new()),
         },
     );
 
@@ -1498,17 +1511,17 @@ fn symbolic_path_can_only_certify_its_exact_function_specification() {
 #[test]
 fn verified_function_rule_applies_contract_without_executing_body() {
     let helper = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "opaque_helper",
-        vec![c_parameter("x", CType::Int32)],
+        vec![c_parameter("x", ProgramType::Int32)],
         c_return(c_int32_literal(99)),
     )
     .with_contract(
         Vec::new(),
         vec![SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
+            left: SpecExpression::ProgramExpression(c_variable(C_CONTRACT_RESULT_NAME)),
             operator: CComparisonOperator::Equal,
-            right: SpecExpression::CExpression(c_variable("x")),
+            right: SpecExpression::ProgramExpression(c_variable("x")),
         }],
         Vec::new(),
         vec![CFunctionContractClaim::ensure_proposition(0, 0)],
@@ -1528,7 +1541,7 @@ fn verified_function_rule_applies_contract_without_executing_body() {
         c_return(c_variable("result")),
     );
     let execution = prove_symbolic_c_execution_paths_with_environment(
-        CState::new().with_population_creation_tracking(),
+        ExecutionState::new().with_population_creation_tracking(),
         statement.clone(),
         PureFactContext::new(),
         environment.clone(),
@@ -1560,7 +1573,7 @@ fn verified_function_rule_applies_contract_without_executing_body() {
         "verified-call ensures should be marked as kernel-certified facts"
     );
     let assumptions = assumptions_with_propositions(&PureFactContext::new(), &propositions);
-    let CValue::Int32(result) = value.clone().into_native() else {
+    let ProgramValue::Int32(result) = value.clone().into_native() else {
         panic!("opaque helper should return int32")
     };
     assert!(crate::kernel::search::ProofSearch::proves(
@@ -1577,7 +1590,7 @@ fn verified_function_rule_applies_contract_without_executing_body() {
     ));
 
     let body_execution = prove_symbolic_c_execution_paths_with_environment(
-        CState::new().with_population_creation_tracking(),
+        ExecutionState::new().with_population_creation_tracking(),
         statement,
         PureFactContext::new(),
         environment,
@@ -1599,19 +1612,19 @@ fn verified_function_rule_applies_contract_without_executing_body() {
 #[test]
 fn verified_function_rule_coerces_null_constants_in_contract_views() {
     let p_is_null = SpecProposition::Comparison {
-        left: SpecExpression::CExpression(c_variable("p")),
+        left: SpecExpression::ProgramExpression(c_variable("p")),
         operator: CComparisonOperator::Equal,
-        right: SpecExpression::CExpression(c_int32_literal(0)),
+        right: SpecExpression::ProgramExpression(c_int32_literal(0)),
     };
     let returns_one = SpecProposition::Comparison {
-        left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
+        left: SpecExpression::ProgramExpression(c_variable(C_CONTRACT_RESULT_NAME)),
         operator: CComparisonOperator::Equal,
-        right: SpecExpression::CExpression(c_int32_literal(1)),
+        right: SpecExpression::ProgramExpression(c_int32_literal(1)),
     };
     let helper = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "pointer_is_null",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         c_return(c_int32_literal(1)),
     )
     .with_contract(
@@ -1631,7 +1644,7 @@ fn verified_function_rule_coerces_null_constants_in_contract_views() {
             applied_tactics: Default::default(),
         });
     let execution = prove_symbolic_c_execution_paths_with_environment(
-        CState::new().with_population_creation_tracking(),
+        ExecutionState::new().with_population_creation_tracking(),
         c_call_assign("result", "pointer_is_null", vec![c_int32_literal(0)]),
         PureFactContext::new(),
         environment,
@@ -1665,24 +1678,24 @@ fn verified_function_rule_does_not_publish_one_spec_alias_path() {
         block: stored.block.clone(),
         offset: PointerOffsetTerm::Variable(Variable(900_002)),
     };
-    let q = SpecExpression::CExpression(c_variable("q"));
+    let q = SpecExpression::ProgramExpression(c_variable("q"));
     let reflexive_load = SpecProposition::Comparison {
         left: SpecExpression::MemoryLoad {
             memory: SpecMemory::Current,
             pointer: Box::new(q.clone()),
-            value_type: CType::Int32,
+            value_type: ProgramType::Int32,
         },
         operator: CComparisonOperator::Equal,
         right: SpecExpression::MemoryLoad {
             memory: SpecMemory::Current,
             pointer: Box::new(q),
-            value_type: CType::Int32,
+            value_type: ProgramType::Int32,
         },
     };
     let helper = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "opaque_alias_probe",
-        vec![c_parameter("q", CType::Int32Pointer)],
+        vec![c_parameter("q", ProgramType::Int32Pointer)],
         c_return(c_int32_literal(0)),
     )
     .with_contract(
@@ -1705,7 +1718,7 @@ fn verified_function_rule_does_not_publish_one_spec_alias_path() {
             applied_tactics: Default::default(),
         });
     let execution = prove_symbolic_c_execution_paths_with_environment(
-        CState::new()
+        ExecutionState::new()
             .with_population_creation_tracking()
             .with_memory(CMemory::new().with_block("heap", 8).store(stored, int32(0))),
         c_call_assign(
@@ -1739,17 +1752,17 @@ fn opaque_pointer_result_can_alias_its_argument() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let helper = c_function(
-        CType::Int32Pointer,
+        ProgramType::Int32Pointer,
         "opaque_identity_pointer",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         c_return(c_variable("p")),
     )
     .with_contract(
         Vec::new(),
         vec![SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
+            left: SpecExpression::ProgramExpression(c_variable(C_CONTRACT_RESULT_NAME)),
             operator: CComparisonOperator::Equal,
-            right: SpecExpression::CExpression(c_variable("p")),
+            right: SpecExpression::ProgramExpression(c_variable("p")),
         }],
         Vec::new(),
         vec![CFunctionContractClaim::ensure_proposition(0, 0)],
@@ -1765,7 +1778,7 @@ fn opaque_pointer_result_can_alias_its_argument() {
             applied_tactics: Default::default(),
         });
     let execution = prove_symbolic_c_execution_paths_with_environment(
-        CState::new().with_population_creation_tracking(),
+        ExecutionState::new().with_population_creation_tracking(),
         c_call_assign(
             "result",
             "opaque_identity_pointer",
@@ -1788,7 +1801,7 @@ fn opaque_pointer_result_can_alias_its_argument() {
         panic!("opaque pointer call should return normally")
     };
     let local_native_output_1801 = state.locals().get_native("result");
-    let Some(CValue::Pointer(result)) = local_native_output_1801.as_deref() else {
+    let Some(ProgramValue::Pointer(result)) = local_native_output_1801.as_deref() else {
         panic!("call result should be a pointer")
     };
 
@@ -1814,17 +1827,17 @@ fn opaque_pointer_result_can_alias_its_argument() {
 #[test]
 fn verified_immutable_calls_allocate_distinct_results() {
     let helper = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "opaque_identity",
-        vec![c_parameter("x", CType::Int32)],
+        vec![c_parameter("x", ProgramType::Int32)],
         c_return(c_variable("x")),
     )
     .with_contract(
         Vec::new(),
         vec![SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
+            left: SpecExpression::ProgramExpression(c_variable(C_CONTRACT_RESULT_NAME)),
             operator: CComparisonOperator::Equal,
-            right: SpecExpression::CExpression(c_variable("x")),
+            right: SpecExpression::ProgramExpression(c_variable("x")),
         }],
         Vec::new(),
         vec![CFunctionContractClaim::ensure_proposition(0, 0)],
@@ -1847,7 +1860,7 @@ fn verified_immutable_calls_allocate_distinct_results() {
         ),
     );
     let execution = prove_symbolic_c_execution_paths_with_environment(
-        CState::new().with_population_creation_tracking(),
+        ExecutionState::new().with_population_creation_tracking(),
         statement,
         PureFactContext::new(),
         environment,
@@ -1877,17 +1890,17 @@ fn verified_immutable_calls_allocate_distinct_results() {
 #[test]
 fn separate_statement_verification_calls_preserve_fresh_identity_progress() {
     let helper = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "opaque_identity",
-        vec![c_parameter("x", CType::Int32)],
+        vec![c_parameter("x", ProgramType::Int32)],
         c_return(c_variable("x")),
     )
     .with_contract(
         Vec::new(),
         vec![SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
+            left: SpecExpression::ProgramExpression(c_variable(C_CONTRACT_RESULT_NAME)),
             operator: CComparisonOperator::Equal,
-            right: SpecExpression::CExpression(c_variable("x")),
+            right: SpecExpression::ProgramExpression(c_variable("x")),
         }],
         Vec::new(),
         vec![CFunctionContractClaim::ensure_proposition(0, 0)],
@@ -1906,7 +1919,7 @@ fn separate_statement_verification_calls_preserve_fresh_identity_progress() {
 
     let (first_execution, _) =
         prove_symbolic_c_statement_verification_paths_with_environment_and_loop_rule_using_budget(
-            CState::new().with_population_creation_tracking(),
+            ExecutionState::new().with_population_creation_tracking(),
             c_call_assign("first", "opaque_identity", vec![c_int32_literal(5)]),
             PureFactContext::new(),
             environment.clone(),
@@ -1961,7 +1974,7 @@ fn separate_statement_verification_calls_preserve_fresh_identity_progress() {
 #[test]
 fn verified_function_rule_requires_every_contract_claim_certificate() {
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "two_claims",
         Vec::new(),
         c_return(c_int32_literal(0)),
@@ -1988,7 +2001,7 @@ fn verified_function_rule_requires_every_contract_claim_certificate() {
         true,
     );
     let execution = certify_contract_with_kernel_artifacts(
-        CState::new(),
+        ExecutionState::new(),
         function.clone(),
         Vec::new(),
         Vec::new(),
@@ -1998,13 +2011,13 @@ fn verified_function_rule_requires_every_contract_claim_certificate() {
     );
 
     let impostor = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "two_claims",
         Vec::new(),
         c_return(c_int32_literal(1)),
     );
     let impostor_execution = certify_contract_with_kernel_artifacts(
-        CState::new(),
+        ExecutionState::new(),
         impostor,
         Vec::new(),
         Vec::new(),
@@ -2043,7 +2056,7 @@ fn verified_function_rule_requires_every_contract_claim_certificate() {
 #[test]
 fn verified_function_rule_rejects_unclaimed_contract_obligations() {
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "unclaimed_ensure",
         Vec::new(),
         c_return(c_int32_literal(1)),
@@ -2051,7 +2064,7 @@ fn verified_function_rule_rejects_unclaimed_contract_obligations() {
     .with_contract(
         Vec::new(),
         vec![SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
+            left: SpecExpression::ProgramExpression(c_variable(C_CONTRACT_RESULT_NAME)),
             operator: CComparisonOperator::Equal,
             right: SpecExpression::Value(int32(0)),
         }],
@@ -2060,7 +2073,7 @@ fn verified_function_rule_rejects_unclaimed_contract_obligations() {
         true,
     );
     let execution = certify_contract_with_kernel_artifacts(
-        CState::new(),
+        ExecutionState::new(),
         function.clone(),
         Vec::new(),
         Vec::new(),
@@ -2091,15 +2104,15 @@ fn declared_exceptional_path_certifies_its_payload_postcondition() {
         right: SpecExpression::Value(int32(1)),
     };
     let exceptional_payload = SpecProposition::Comparison {
-        left: SpecExpression::CExpression(c_variable(C_EXCEPTIONAL_RESULT_NAME)),
+        left: SpecExpression::ProgramExpression(c_variable(C_EXCEPTIONAL_RESULT_NAME)),
         operator: CComparisonOperator::Equal,
         right: SpecExpression::Value(int32(7)),
     };
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "certified_throw",
         Vec::new(),
-        CStatement::Throw(c_int32_literal(7)),
+        ProgramStatement::Throw(c_int32_literal(7)),
     )
     .with_int32_exceptional_outcome()
     .with_exceptional_ensures(vec![exceptional_payload])
@@ -2115,7 +2128,7 @@ fn declared_exceptional_path_certifies_its_payload_postcondition() {
         true,
     );
     let execution = certify_contract_with_kernel_artifacts(
-        CState::new(),
+        ExecutionState::new(),
         function.clone(),
         Vec::new(),
         Vec::new(),
@@ -2126,12 +2139,12 @@ fn declared_exceptional_path_certifies_its_payload_postcondition() {
 
     let throw_outcome = CFunctionOutcome::Throw {
         value: int32(7).into(),
-        state: Box::new(CState::new()),
+        state: Box::new(ExecutionState::new()),
     };
     let goals = c_function_exceptional_ensure_goals(
         &function,
         0,
-        &CState::new(),
+        &ExecutionState::new(),
         &[],
         &throw_outcome,
         &PureFactContext::new(),
@@ -2161,23 +2174,23 @@ fn declared_exceptional_path_certifies_its_payload_postcondition() {
 #[test]
 fn verified_exceptional_rule_produces_isolated_outcome_paths() {
     let normal_ensure = SpecProposition::Comparison {
-        left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
+        left: SpecExpression::ProgramExpression(c_variable(C_CONTRACT_RESULT_NAME)),
         operator: CComparisonOperator::Equal,
         right: SpecExpression::Value(int32(5)),
     };
     let exceptional_ensure = SpecProposition::Comparison {
-        left: SpecExpression::CExpression(c_variable(C_EXCEPTIONAL_RESULT_NAME)),
+        left: SpecExpression::ProgramExpression(c_variable(C_EXCEPTIONAL_RESULT_NAME)),
         operator: CComparisonOperator::Equal,
         right: SpecExpression::Value(int32(7)),
     };
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "modular_maybe_throw",
-        vec![c_parameter("flag", CType::Int32)],
+        vec![c_parameter("flag", ProgramType::Int32)],
         c_if(
             c_equal(c_variable("flag"), c_int32_literal(0)),
             c_return(c_int32_literal(5)),
-            CStatement::Throw(c_int32_literal(7)),
+            ProgramStatement::Throw(c_int32_literal(7)),
         ),
     )
     .with_int32_exceptional_outcome()
@@ -2194,11 +2207,11 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
         true,
     );
     let execution = certify_contract_with_kernel_artifacts(
-        CState::new().with_population_creation_tracking(),
+        ExecutionState::new().with_population_creation_tracking(),
         function.clone(),
-        vec![CExpression::Value(CValue::Int32(MachineTerm::Variable(
-            Variable(700_001),
-        )))],
+        vec![ProgramExpression::Value(ProgramValue::Int32(
+            MachineTerm::Variable(Variable(700_001)),
+        ))],
         Vec::new(),
         CExecutionEnvironment::new(),
         CExecutionSemantics::EXECUTE_BODIES,
@@ -2216,7 +2229,7 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
         "modular_maybe_throw",
         vec![c_int32_literal(0)],
     );
-    let call_state = CState::new()
+    let call_state = ExecutionState::new()
         .with_population_creation_tracking()
         .with_local("after", int32(0));
     let call_root = crate::kernel::proof::ProofFacts::from_ordered(&[]);
@@ -2331,7 +2344,7 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                     state.locals().get_native("after").as_deref(),
                     Some(&int32(1))
                 );
-                let CValue::Int32(value) = value.clone().into_native() else {
+                let ProgramValue::Int32(value) = value.clone().into_native() else {
                     panic!("normal result should be int32")
                 };
                 assert!(crate::kernel::search::ProofSearch::proves(
@@ -2369,7 +2382,7 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                     Some(&int32(0))
                 );
                 assert!(state.locals().get("call_result").is_none());
-                let CValue::Int32(value) = value.clone().into_native() else {
+                let ProgramValue::Int32(value) = value.clone().into_native() else {
                     panic!("exceptional payload should be int32")
                 };
                 assert!(crate::kernel::search::ProofSearch::proves(
@@ -2406,21 +2419,21 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
 #[test]
 fn verified_exceptional_call_enters_int32_handler_with_only_exceptional_claims() {
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "throwing_helper",
         Vec::new(),
-        CStatement::Throw(c_int32_literal(7)),
+        ProgramStatement::Throw(c_int32_literal(7)),
     )
     .with_int32_exceptional_outcome()
     .with_exceptional_ensures(vec![SpecProposition::Comparison {
-        left: SpecExpression::CExpression(c_variable(C_EXCEPTIONAL_RESULT_NAME)),
+        left: SpecExpression::ProgramExpression(c_variable(C_EXCEPTIONAL_RESULT_NAME)),
         operator: CComparisonOperator::Equal,
         right: SpecExpression::Value(int32(7)),
     }])
     .with_contract(
         Vec::new(),
         vec![SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
+            left: SpecExpression::ProgramExpression(c_variable(C_CONTRACT_RESULT_NAME)),
             operator: CComparisonOperator::Equal,
             right: SpecExpression::Value(int32(99)),
         }],
@@ -2433,7 +2446,7 @@ fn verified_exceptional_call_enters_int32_handler_with_only_exceptional_claims()
         true,
     );
     let execution = certify_contract_with_kernel_artifacts(
-        CState::new().with_population_creation_tracking(),
+        ExecutionState::new().with_population_creation_tracking(),
         function.clone(),
         Vec::new(),
         Vec::new(),
@@ -2454,7 +2467,7 @@ fn verified_exceptional_call_enters_int32_handler_with_only_exceptional_claims()
         c_return(c_variable("caught")),
     );
     let paths = prove_symbolic_c_execution_paths_with_environment(
-        CState::new().with_population_creation_tracking(),
+        ExecutionState::new().with_population_creation_tracking(),
         statement,
         PureFactContext::new(),
         CExecutionEnvironment::new()
@@ -2484,7 +2497,7 @@ fn verified_exceptional_call_enters_int32_handler_with_only_exceptional_claims()
         }
         saw_caught = true;
         assert_eq!(state.locals().get("caught"), Some(value));
-        let CValue::Int32(value) = value.clone().into_native() else {
+        let ProgramValue::Int32(value) = value.clone().into_native() else {
             panic!("caught payload should be int32");
         };
         let assumptions = assumptions_with_propositions(
@@ -2526,7 +2539,7 @@ fn verified_exceptional_call_enters_int32_handler_with_only_exceptional_claims()
 #[test]
 fn declared_exceptional_channel_does_not_vanish_without_an_exceptional_ensure() {
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "unconstrained_exceptional_channel",
         Vec::new(),
         c_return(c_int32_literal(0)),
@@ -2540,7 +2553,7 @@ fn declared_exceptional_channel_does_not_vanish_without_an_exceptional_ensure() 
         true,
     );
     let certification = certify_contract_with_kernel_artifacts(
-        CState::new().with_population_creation_tracking(),
+        ExecutionState::new().with_population_creation_tracking(),
         function.clone(),
         Vec::new(),
         Vec::new(),
@@ -2553,7 +2566,7 @@ fn declared_exceptional_channel_does_not_vanish_without_an_exceptional_ensure() 
     let rule = c_verified_function_rule(function.clone(), &proofs)
         .expect("the body-certified direct rule should form");
     let modular = prove_symbolic_c_execution_paths_with_environment(
-        CState::new().with_population_creation_tracking(),
+        ExecutionState::new().with_population_creation_tracking(),
         c_call("unconstrained_exceptional_channel", Vec::new()),
         PureFactContext::new(),
         CExecutionEnvironment::new()
@@ -2581,10 +2594,10 @@ fn declared_exceptional_channel_does_not_vanish_without_an_exceptional_ensure() 
 #[test]
 fn exceptional_direct_rule_boundary_excludes_mutable_effects() {
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "effectful_throw",
-        vec![c_parameter("p", CType::Int32Pointer)],
-        CStatement::Throw(c_int32_literal(7)),
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        ProgramStatement::Throw(c_int32_literal(7)),
     )
     .with_int32_exceptional_outcome()
     .with_contract(
@@ -2611,7 +2624,7 @@ fn exceptional_postconditions_apply_only_to_throw_outcomes() {
         right: SpecExpression::Value(int32(1)),
     };
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "ordinary_return_with_exceptional_family",
         Vec::new(),
         c_return(c_int32_literal(4)),
@@ -2626,7 +2639,7 @@ fn exceptional_postconditions_apply_only_to_throw_outcomes() {
         true,
     );
     let execution = certify_contract_with_kernel_artifacts(
-        CState::new(),
+        ExecutionState::new(),
         function.clone(),
         Vec::new(),
         Vec::new(),
@@ -2645,15 +2658,15 @@ fn exceptional_postconditions_apply_only_to_throw_outcomes() {
 #[test]
 fn false_or_missing_exceptional_postconditions_do_not_certify() {
     let wrong_payload = SpecProposition::Comparison {
-        left: SpecExpression::CExpression(c_variable(C_EXCEPTIONAL_RESULT_NAME)),
+        left: SpecExpression::ProgramExpression(c_variable(C_EXCEPTIONAL_RESULT_NAME)),
         operator: CComparisonOperator::Equal,
         right: SpecExpression::Value(int32(8)),
     };
     let with_false_claim = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "wrong_exceptional_payload",
         Vec::new(),
-        CStatement::Throw(c_int32_literal(7)),
+        ProgramStatement::Throw(c_int32_literal(7)),
     )
     .with_int32_exceptional_outcome()
     .with_exceptional_ensures(vec![wrong_payload.clone()])
@@ -2665,7 +2678,7 @@ fn false_or_missing_exceptional_postconditions_do_not_certify() {
         true,
     );
     let false_execution = certify_contract_with_kernel_artifacts(
-        CState::new(),
+        ExecutionState::new(),
         with_false_claim.clone(),
         Vec::new(),
         Vec::new(),
@@ -2680,10 +2693,10 @@ fn false_or_missing_exceptional_postconditions_do_not_certify() {
     );
 
     let without_claim = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "missing_exceptional_claim",
         Vec::new(),
-        CStatement::Throw(c_int32_literal(7)),
+        ProgramStatement::Throw(c_int32_literal(7)),
     )
     .with_int32_exceptional_outcome()
     .with_exceptional_ensures(vec![wrong_payload])
@@ -2695,7 +2708,7 @@ fn false_or_missing_exceptional_postconditions_do_not_certify() {
         true,
     );
     let missing_execution = certify_contract_with_kernel_artifacts(
-        CState::new(),
+        ExecutionState::new(),
         without_claim.clone(),
         Vec::new(),
         Vec::new(),
@@ -2720,10 +2733,10 @@ fn false_or_missing_exceptional_postconditions_do_not_certify() {
 #[test]
 fn exceptional_direct_rule_boundary_excludes_resource_transitions() {
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "resourceful_throw",
         Vec::new(),
-        CStatement::Throw(c_int32_literal(7)),
+        ProgramStatement::Throw(c_int32_literal(7)),
     )
     .with_int32_exceptional_outcome()
     .with_resource_summary(
@@ -2753,7 +2766,7 @@ fn exceptional_postconditions_observe_the_throw_state() {
         block: "exceptional-output".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let p = SpecExpression::CExpression(c_variable("p"));
+    let p = SpecExpression::ProgramExpression(c_variable("p"));
     let loadable = SpecProposition::MemoryLoadable {
         memory: SpecMemory::Current,
         base: p.clone(),
@@ -2765,16 +2778,16 @@ fn exceptional_postconditions_observe_the_throw_state() {
         left: SpecExpression::MemoryLoad {
             memory: SpecMemory::Current,
             pointer: Box::new(p),
-            value_type: CType::Int32,
+            value_type: ProgramType::Int32,
         },
         operator: CComparisonOperator::Equal,
         right: SpecExpression::Value(int32(10)),
     };
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "wrong_exceptional_state",
-        vec![c_parameter("p", CType::Int32Pointer)],
-        CStatement::Throw(c_int32_literal(7)),
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        ProgramStatement::Throw(c_int32_literal(7)),
     )
     .with_int32_exceptional_outcome()
     .with_exceptional_ensures(vec![claims_ten])
@@ -2786,7 +2799,7 @@ fn exceptional_postconditions_observe_the_throw_state() {
         true,
     );
     let execution = certify_contract_with_kernel_artifacts(
-        CState::new().with_memory(
+        ExecutionState::new().with_memory(
             CMemory::new()
                 .with_block(pointer.block.clone(), 4)
                 .store(pointer.clone(), int32(9)),
@@ -2811,17 +2824,17 @@ fn contract_certification_does_not_accept_injected_opaque_predicate_facts() {
     let predicate = SpecProposition::Predicate {
         resource_state_dependent: true,
         name: "positive".to_string(),
-        arguments: vec![SpecPredicateArgument::Value(SpecExpression::CExpression(
-            c_variable(C_CONTRACT_RESULT_NAME),
-        ))],
+        arguments: vec![SpecPredicateArgument::Value(
+            SpecExpression::ProgramExpression(c_variable(C_CONTRACT_RESULT_NAME)),
+        )],
     };
     let positive_body = SpecProposition::Comparison {
-        left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
+        left: SpecExpression::ProgramExpression(c_variable(C_CONTRACT_RESULT_NAME)),
         operator: CComparisonOperator::GreaterEqual,
         right: SpecExpression::Value(int32(1)),
     };
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "injected_predicate",
         Vec::new(),
         c_return(c_int32_literal(0)),
@@ -2844,7 +2857,7 @@ fn contract_certification_does_not_accept_injected_opaque_predicate_facts() {
         }),
     };
     let execution = certify_contract_with_kernel_artifacts(
-        CState::new(),
+        ExecutionState::new(),
         function.clone(),
         Vec::new(),
         vec![injected],
@@ -2872,11 +2885,11 @@ fn contract_effect_claim_rejects_an_undecidable_guard() {
     };
     let flag = Variable(991_002);
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "undecidable_guarded_effect",
         vec![
-            c_parameter("p", CType::Int32Pointer),
-            c_parameter("flag", CType::Int32),
+            c_parameter("p", ProgramType::Int32Pointer),
+            c_parameter("flag", ProgramType::Int32),
         ],
         c_seq(
             c_store(
@@ -2892,7 +2905,7 @@ fn contract_effect_claim_rejects_an_undecidable_guard() {
         vec![
             CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1))
                 .with_guard(SpecProposition::Comparison {
-                    left: SpecExpression::CExpression(c_variable("flag")),
+                    left: SpecExpression::ProgramExpression(c_variable("flag")),
                     operator: CComparisonOperator::NotEqual,
                     right: SpecExpression::Value(int32(0)),
                 }),
@@ -2901,11 +2914,11 @@ fn contract_effect_claim_rejects_an_undecidable_guard() {
         true,
     );
     let execution = certify_contract_with_kernel_artifacts(
-        CState::new().with_memory(CMemory::new().with_block(base.block.clone(), 4)),
+        ExecutionState::new().with_memory(CMemory::new().with_block(base.block.clone(), 4)),
         function.clone(),
         vec![
             c_pointer_value(base),
-            CExpression::Value(CValue::Int32(MachineTerm::Variable(flag))),
+            ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Variable(flag))),
         ],
         Vec::new(),
         CExecutionEnvironment::new(),
@@ -2935,9 +2948,9 @@ fn contract_effect_claim_rejects_interior_entry_live_heap_pointer_as_fresh() {
         offset: PointerOffsetTerm::Constant(8),
     };
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "interior_entry_live_effect",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         c_seq(
             c_store(
                 c_pointer_offset_bytes(c_variable("p"), 8),
@@ -2965,7 +2978,7 @@ fn contract_effect_claim_rejects_interior_entry_live_heap_pointer_as_fresh() {
         vec![CFunctionContractClaim::effect(0)],
         true,
     );
-    let caller_state = CState::new()
+    let caller_state = ExecutionState::new()
         .with_memory(
             CMemory::new()
                 .with_heap_allocation_claim(allocation_base.clone(), HeapExtent::int32(16))
@@ -2995,7 +3008,7 @@ fn contract_effect_claim_rejects_interior_entry_live_heap_pointer_as_fresh() {
 #[test]
 fn contract_certification_reuses_a_matching_kernel_checked_execution() {
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "checked_once",
         Vec::new(),
         c_return(c_int32_literal(0)),
@@ -3011,7 +3024,7 @@ fn contract_certification_reuses_a_matching_kernel_checked_execution() {
         vec![CFunctionContractClaim::ensure_proposition(0, 0)],
         true,
     );
-    let state = CState::new();
+    let state = ExecutionState::new();
     let environment = CExecutionEnvironment::new();
     let semantics = CExecutionSemantics::EXECUTE_BODIES;
     let mode = CFunctionContractExecutionMode::VerifyLoops;
@@ -3055,7 +3068,7 @@ fn contract_certification_reuses_a_matching_kernel_checked_execution() {
         true,
     );
     let unchecked_boundary = prove_checked_c_function_execution_with_environment(
-        CState::new(),
+        ExecutionState::new(),
         function.clone(),
         Vec::new(),
         extra_assumption,
@@ -3068,7 +3081,7 @@ fn contract_certification_reuses_a_matching_kernel_checked_execution() {
         1
     );
     let fallback = prove_c_function_contract_execution_paths_with_checked_artifacts(
-        CState::new(),
+        ExecutionState::new(),
         function.clone(),
         Vec::new(),
         CExecutionEnvironment::new(),
@@ -3099,9 +3112,9 @@ fn checked_view_certificate_initializes_a_pristine_loan_authority() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "checked_initial_view",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         c_return(c_load(c_variable("p"))),
     )
     .with_resource_summary(
@@ -3113,7 +3126,7 @@ fn checked_view_certificate_initializes_a_pristine_loan_authority() {
         Vec::new(),
     )
     .with_contract(Vec::new(), Vec::new(), Vec::new(), Vec::new(), true);
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_memory(
             CMemory::new()
                 .with_block(base.block.clone(), 4)
@@ -3149,9 +3162,9 @@ fn contract_certification_refuses_split_entry_artifacts() {
     let input = MachineTerm::Variable(Variable(919_100));
     let branch = ConditionTerm::signed_less_than(input.clone(), MachineTerm::constant(0));
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "checked_partition",
-        vec![c_parameter("x", CType::Int32)],
+        vec![c_parameter("x", ProgramType::Int32)],
         c_if(
             c_less_than(c_variable("x"), c_int32_literal(0)),
             c_return(c_int32_literal(1)),
@@ -3161,7 +3174,7 @@ fn contract_certification_refuses_split_entry_artifacts() {
     .with_contract(
         Vec::new(),
         vec![SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
+            left: SpecExpression::ProgramExpression(c_variable(C_CONTRACT_RESULT_NAME)),
             operator: CComparisonOperator::NotEqual,
             right: SpecExpression::Value(int32(0)),
         }],
@@ -3169,8 +3182,8 @@ fn contract_certification_refuses_split_entry_artifacts() {
         vec![CFunctionContractClaim::ensure_proposition(0, 0)],
         true,
     );
-    let state = CState::new();
-    let arguments = vec![CExpression::Value(int32(input))];
+    let state = ExecutionState::new();
+    let arguments = vec![ProgramExpression::Value(int32(input))];
     let environment = CExecutionEnvironment::new();
     let semantics = CExecutionSemantics::EXECUTE_BODIES;
     let mode = CFunctionContractExecutionMode::VerifyLoops;
@@ -3255,7 +3268,7 @@ fn contract_certification_reuses_definitionally_equal_entry_resources() {
     ));
 
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "checked_resource_entry",
         Vec::new(),
         c_return(c_int32_literal(0)),
@@ -3263,7 +3276,7 @@ fn contract_certification_reuses_definitionally_equal_entry_resources() {
     .with_contract(
         Vec::new(),
         vec![SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
+            left: SpecExpression::ProgramExpression(c_variable(C_CONTRACT_RESULT_NAME)),
             operator: CComparisonOperator::Equal,
             right: SpecExpression::Value(int32(0)),
         }],
@@ -3271,8 +3284,8 @@ fn contract_certification_reuses_definitionally_equal_entry_resources() {
         vec![CFunctionContractClaim::ensure_proposition(0, 0)],
         true,
     );
-    let proof_state = CState::new().with_resource_context(proof_resources.clone());
-    let contract_state = CState::new().with_resource_context(contract_resources.clone());
+    let proof_state = ExecutionState::new().with_resource_context(proof_resources.clone());
+    let contract_state = ExecutionState::new().with_resource_context(contract_resources.clone());
     let environment = CExecutionEnvironment::new();
     let semantics = CExecutionSemantics::EXECUTE_BODIES;
     let mode = CFunctionContractExecutionMode::VerifyLoops;
@@ -3318,7 +3331,7 @@ fn contract_certification_reuses_definitionally_equal_entry_resources() {
         ),
     ]);
     let recursive_checked = prove_checked_c_function_execution_with_environment(
-        CState::new().with_resource_context(proof_resources),
+        ExecutionState::new().with_resource_context(proof_resources),
         recursive_function.clone(),
         Vec::new(),
         PureFactContext::new(),
@@ -3331,7 +3344,7 @@ fn contract_certification_reuses_definitionally_equal_entry_resources() {
         1
     );
     let recursive_execution = prove_c_function_contract_execution_paths_with_checked_artifacts(
-        CState::new().with_resource_context(contract_resources),
+        ExecutionState::new().with_resource_context(contract_resources),
         recursive_function.clone(),
         Vec::new(),
         CExecutionEnvironment::new(),
@@ -3360,9 +3373,14 @@ fn contract_certification_reuses_definitionally_equal_entry_resources() {
 #[test]
 fn contract_claim_rejects_same_source_function_with_a_different_contract() {
     let body = c_return(c_int32_literal(0));
-    let uncontracted = c_function(CType::Int32, "contract_identity", Vec::new(), body.clone());
+    let uncontracted = c_function(
+        ProgramType::Int32,
+        "contract_identity",
+        Vec::new(),
+        body.clone(),
+    );
     let execution = certify_contract_with_kernel_artifacts(
-        CState::new(),
+        ExecutionState::new(),
         uncontracted,
         Vec::new(),
         Vec::new(),
@@ -3370,17 +3388,18 @@ fn contract_claim_rejects_same_source_function_with_a_different_contract() {
         CExecutionSemantics::EXECUTE_BODIES,
         CFunctionContractExecutionMode::VerifyLoops,
     );
-    let stronger = c_function(CType::Int32, "contract_identity", Vec::new(), body).with_contract(
-        Vec::new(),
-        vec![SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
-            operator: CComparisonOperator::Equal,
-            right: SpecExpression::Value(int32(1)),
-        }],
-        Vec::new(),
-        vec![CFunctionContractClaim::ensure_proposition(0, 0)],
-        true,
-    );
+    let stronger = c_function(ProgramType::Int32, "contract_identity", Vec::new(), body)
+        .with_contract(
+            Vec::new(),
+            vec![SpecProposition::Comparison {
+                left: SpecExpression::ProgramExpression(c_variable(C_CONTRACT_RESULT_NAME)),
+                operator: CComparisonOperator::Equal,
+                right: SpecExpression::Value(int32(1)),
+            }],
+            Vec::new(),
+            vec![CFunctionContractClaim::ensure_proposition(0, 0)],
+            true,
+        );
 
     assert!(
         c_verified_function_contract_claim(
@@ -3395,7 +3414,7 @@ fn contract_claim_rejects_same_source_function_with_a_different_contract() {
 #[test]
 fn body_safety_claim_rejects_an_unproved_execution_condition() {
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "unsafe_body",
         Vec::new(),
         c_return(c_int32_literal(0)),
@@ -3407,7 +3426,7 @@ fn body_safety_claim_rejects_an_unproved_execution_condition() {
         vec![CFunctionContractClaim::body_safety()],
         true,
     );
-    let state = CState::new();
+    let state = ExecutionState::new();
     let obligation = ProofObligation::verification_condition(Proposition::ConditionIs(
         ConditionTerm::Constant(false),
         true,
@@ -3480,7 +3499,7 @@ fn body_safety_claim_rejects_an_unproved_execution_condition() {
 #[test]
 fn contract_claims_are_judged_over_each_path_set_of_a_case() {
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "alternatives",
         Vec::new(),
         c_return(c_int32_literal(0)),
@@ -3492,7 +3511,7 @@ fn contract_claims_are_judged_over_each_path_set_of_a_case() {
         vec![CFunctionContractClaim::body_safety()],
         true,
     );
-    let state = CState::new();
+    let state = ExecutionState::new();
     let proposition = Proposition::CFunctionExecutes {
         state: Box::new(state.clone()),
         function: Box::new(function.clone()),
@@ -3595,7 +3614,7 @@ fn contract_claims_are_judged_over_each_path_set_of_a_case() {
 #[test]
 fn body_safety_claim_uses_path_facts_for_verification_conditions() {
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "guarded_body",
         Vec::new(),
         c_return(c_int32_literal(0)),
@@ -3607,7 +3626,7 @@ fn body_safety_claim_uses_path_facts_for_verification_conditions() {
         vec![CFunctionContractClaim::body_safety()],
         true,
     );
-    let state = CState::new();
+    let state = ExecutionState::new();
     let guard = Proposition::ConditionIs(
         ConditionTerm::signed_less_than(
             MachineTerm::Variable(Variable(91_000)),
@@ -3738,7 +3757,7 @@ fn bool_cast_range_is_rule_c1_of_the_cast() {
             true,
         )
     };
-    let facts = c_bool_cast_range_facts(&CValue::of_bool(flag.clone()))
+    let facts = c_bool_cast_range_facts(&ProgramValue::of_bool(flag.clone()))
         .expect("a `Bool` binder's cast has a range");
     assert_eq!(
         facts.last(),
@@ -3752,7 +3771,7 @@ fn bool_cast_range_is_rule_c1_of_the_cast() {
     );
     assert_eq!(c_bool_cast_range_facts(&bool_value(5)), None);
     assert_eq!(
-        c_bool_cast_range_facts(&CValue::Bool(MachineTerm::Variable(Variable(2)))),
+        c_bool_cast_range_facts(&ProgramValue::Bool(MachineTerm::Variable(Variable(2)))),
         None
     );
     assert_eq!(
@@ -3764,7 +3783,7 @@ fn bool_cast_range_is_rule_c1_of_the_cast() {
 #[test]
 fn contract_claim_rejects_caller_supplied_false_entry_fact() {
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "false_postcondition",
         Vec::new(),
         c_return(c_int32_literal(0)),
@@ -3772,7 +3791,7 @@ fn contract_claim_rejects_caller_supplied_false_entry_fact() {
     .with_contract(
         Vec::new(),
         vec![SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
+            left: SpecExpression::ProgramExpression(c_variable(C_CONTRACT_RESULT_NAME)),
             operator: CComparisonOperator::Equal,
             right: SpecExpression::Value(int32(1)),
         }],
@@ -3781,7 +3800,7 @@ fn contract_claim_rejects_caller_supplied_false_entry_fact() {
         true,
     );
     let execution = certify_contract_with_kernel_artifacts(
-        CState::new(),
+        ExecutionState::new(),
         function.clone(),
         Vec::new(),
         vec![Proposition::ConditionIs(
@@ -3848,21 +3867,21 @@ fn early_return_inputs(
     outcome: CStatementOutcome,
 ) -> (
     CFunctionExecutionCandidates,
-    CFunction,
+    ProgramFunction,
     crate::kernel::proof::ExecutionEvidence,
 ) {
     let branch = c_if(
         c_less_than(c_int32_literal(0), c_int32_literal(1)),
         c_return(c_int32_literal(0)),
-        CStatement::Skip,
+        ProgramStatement::Skip,
     );
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "early",
         Vec::new(),
         c_seq(branch.clone(), c_return(c_int32_literal(1))),
     );
-    let caller_state = CState::new();
+    let caller_state = ExecutionState::new();
     let entry_state = c_function_entry_state(&caller_state, &function, &[])
         .expect("a parameterless function binds its entry state");
     let (function_outcome, obligations) = c_function_outcome_from_statement_outcome(
@@ -3897,12 +3916,12 @@ fn early_return_inputs(
 /// refusal, is the error.
 fn complete_early_return(
     candidates: &CFunctionExecutionCandidates,
-    function: &CFunction,
+    function: &ProgramFunction,
     trace: crate::kernel::proof::ExecutionEvidence,
 ) -> Result<CCheckedFunctionExecution, &'static str> {
     use crate::kernel::proof::CheckedExecutionEvent;
     let mut core = crate::kernel::proof::ExecutionProofCore::at_entry(
-        CState::new(),
+        ExecutionState::new(),
         crate::kernel::proof::ExecutionFrontier::default(),
     );
     let events = trace.to_vec();
@@ -3945,8 +3964,13 @@ fn complete_early_return(
 #[test]
 fn completion_accepts_a_return_that_leaves_source_behind_it() {
     let entry_state = c_function_entry_state(
-        &CState::new(),
-        &c_function(CType::Int32, "early", Vec::new(), CStatement::Skip),
+        &ExecutionState::new(),
+        &c_function(
+            ProgramType::Int32,
+            "early",
+            Vec::new(),
+            ProgramStatement::Skip,
+        ),
         &[],
     )
     .expect("entry state");
@@ -3980,8 +4004,13 @@ fn completion_accepts_a_return_that_leaves_source_behind_it() {
 #[test]
 fn completion_refuses_a_trace_that_stops_before_the_path_ends() {
     let entry_state = c_function_entry_state(
-        &CState::new(),
-        &c_function(CType::Int32, "early", Vec::new(), CStatement::Skip),
+        &ExecutionState::new(),
+        &c_function(
+            ProgramType::Int32,
+            "early",
+            Vec::new(),
+            ProgramStatement::Skip,
+        ),
         &[],
     )
     .expect("entry state");
@@ -4022,16 +4051,16 @@ fn skip_inputs(
     events: Vec<crate::kernel::proof::CheckedExecutionEvent>,
 ) -> (
     CFunctionExecutionCandidates,
-    CFunction,
+    ProgramFunction,
     crate::kernel::proof::ExecutionEvidence,
 ) {
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "skipping",
         Vec::new(),
-        c_seq(CStatement::Skip, c_return(c_int32_literal(1))),
+        c_seq(ProgramStatement::Skip, c_return(c_int32_literal(1))),
     );
-    let caller_state = CState::new();
+    let caller_state = ExecutionState::new();
     let outcome = CStatementOutcome::Return {
         value: int32(1).into(),
         state: Box::new(caller_state.clone()),
@@ -4056,17 +4085,17 @@ fn skip_inputs(
     (candidates, function, trace)
 }
 
-fn skip_theorem(state: CState) -> crate::kernel::proof::CheckedExecutionEvent {
+fn skip_theorem(state: ExecutionState) -> crate::kernel::proof::CheckedExecutionEvent {
     crate::kernel::proof::CheckedExecutionEvent::Statement(Theorem::new(
         Proposition::CStatementVerifies {
             state: Box::new(state.clone()),
-            statement: Box::new(CStatement::Skip),
+            statement: Box::new(ProgramStatement::Skip),
             outcome: CStatementOutcome::Normal(Box::new(state)),
         },
     ))
 }
 
-fn return_one_theorem(state: CState) -> crate::kernel::proof::CheckedExecutionEvent {
+fn return_one_theorem(state: ExecutionState) -> crate::kernel::proof::CheckedExecutionEvent {
     crate::kernel::proof::CheckedExecutionEvent::Statement(Theorem::new(
         Proposition::CStatementVerifies {
             state: Box::new(state.clone()),
@@ -4081,7 +4110,7 @@ fn return_one_theorem(state: CState) -> crate::kernel::proof::CheckedExecutionEv
 
 #[test]
 fn recording_passes_over_skip_on_either_side() {
-    let entry = CState::new();
+    let entry = ExecutionState::new();
     // The driver stepped through the `Skip`: it consumes the source's `Skip`.
     let (candidates, function, trace) = skip_inputs(vec![
         skip_theorem(entry.clone()),
@@ -4104,7 +4133,7 @@ fn recording_passes_over_skip_on_either_side() {
         .expect("a second `Skip` theorem is a no-op");
     // A `Skip` theorem must still start from the reached state. (The first
     // event names the trace's entry state, so the mismatch is placed second.)
-    let elsewhere = CState::new().with_local("x", int32(1));
+    let elsewhere = ExecutionState::new().with_local("x", int32(1));
     let (candidates, function, trace) = skip_inputs(vec![
         skip_theorem(entry.clone()),
         skip_theorem(elsewhere),
@@ -4121,8 +4150,13 @@ fn completion_accepts_a_case_arm_recorded_after_the_return() {
     // A post-execution case split records its arm after the path's
     // returning statement. Both arms must be present across the traces.
     let entry_state = c_function_entry_state(
-        &CState::new(),
-        &c_function(CType::Int32, "early", Vec::new(), CStatement::Skip),
+        &ExecutionState::new(),
+        &c_function(
+            ProgramType::Int32,
+            "early",
+            Vec::new(),
+            ProgramStatement::Skip,
+        ),
         &[],
     )
     .expect("entry state");
@@ -4147,7 +4181,7 @@ fn completion_accepts_a_case_arm_recorded_after_the_return() {
     )
     .expect("complementary case facts");
     let mut core = crate::kernel::proof::ExecutionProofCore::at_entry(
-        CState::new(),
+        ExecutionState::new(),
         crate::kernel::proof::ExecutionFrontier::default(),
     );
     let outcomes = trace
@@ -4222,12 +4256,12 @@ fn completion_accepts_a_case_arm_recorded_after_the_return() {
 #[test]
 fn contract_exit_rule_is_the_plain_outcome_without_resources() {
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "plain",
         Vec::new(),
         c_return(c_int32_literal(3)),
     );
-    let caller_state = CState::new();
+    let caller_state = ExecutionState::new();
     let entry_state = c_function_entry_state(&caller_state, &function, &[]).expect("entry");
     let returning = CStatementOutcome::Return {
         value: int32(3).into(),
@@ -4258,18 +4292,21 @@ fn contract_exit_rule_is_the_plain_outcome_without_resources() {
 #[test]
 fn recording_complete_sequence_requires_exact_remaining_source() {
     let body = c_seq(c_return(c_int32_literal(0)), c_return(c_int32_literal(1)));
-    let function = c_function(CType::Int32, "sequence", Vec::new(), body.clone());
-    let entry = c_function_entry_state(&CState::new(), &function, &[]).expect("entry");
+    let function = c_function(ProgramType::Int32, "sequence", Vec::new(), body.clone());
+    let entry = c_function_entry_state(&ExecutionState::new(), &function, &[]).expect("entry");
     for (statement, accepted) in [
         (body, true),
         (
             c_seq(c_return(c_int32_literal(0)), c_return(c_int32_literal(2))),
             false,
         ),
-        (c_seq(CStatement::Skip, c_return(c_int32_literal(1))), false),
+        (
+            c_seq(ProgramStatement::Skip, c_return(c_int32_literal(1))),
+            false,
+        ),
     ] {
         let mut core = crate::kernel::proof::ExecutionProofCore::at_entry(
-            CState::new(),
+            ExecutionState::new(),
             crate::kernel::proof::ExecutionFrontier::default(),
         );
         let evidence = Theorem::new(Proposition::CStatementVerifies {
@@ -4302,27 +4339,28 @@ fn recording_statement_evidence_checks_it_advances_the_frontier() {
     let branch = c_if(
         c_less_than(c_int32_literal(0), c_int32_literal(1)),
         c_return(c_int32_literal(0)),
-        CStatement::Skip,
+        ProgramStatement::Skip,
     );
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "early",
         Vec::new(),
         c_seq(branch.clone(), c_return(c_int32_literal(1))),
     );
-    let entry_state = c_function_entry_state(&CState::new(), &function, &[])
+    let entry_state = c_function_entry_state(&ExecutionState::new(), &function, &[])
         .expect("a parameterless function binds its entry state");
-    let verifies = |state: CState, statement: CStatement| Proposition::CStatementVerifies {
-        state: Box::new(state.clone()),
-        statement: Box::new(statement),
-        outcome: CStatementOutcome::Return {
-            value: int32(0).into(),
-            state: Box::new(state),
-        },
-    };
+    let verifies =
+        |state: ExecutionState, statement: ProgramStatement| Proposition::CStatementVerifies {
+            state: Box::new(state.clone()),
+            statement: Box::new(statement),
+            outcome: CStatementOutcome::Return {
+                value: int32(0).into(),
+                state: Box::new(state),
+            },
+        };
     let record = |theorem: Theorem, context: PureFactContext| {
         let mut core = crate::kernel::proof::ExecutionProofCore::at_entry(
-            CState::new(),
+            ExecutionState::new(),
             crate::kernel::proof::ExecutionFrontier::default(),
         );
         core.record_statement_transition(&function, &[], theorem, context, &[], &[])
@@ -4363,25 +4401,26 @@ fn recording_condition_evidence_checks_it_decides_the_frontier() {
     let branch = c_if(
         condition.clone(),
         c_return(c_int32_literal(0)),
-        CStatement::Skip,
+        ProgramStatement::Skip,
     );
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "early",
         Vec::new(),
         c_seq(branch, c_return(c_int32_literal(1))),
     );
-    let entry_state = c_function_entry_state(&CState::new(), &function, &[])
+    let entry_state = c_function_entry_state(&ExecutionState::new(), &function, &[])
         .expect("a parameterless function binds its entry state");
-    let evaluates =
-        |state: CState, condition: crate::kernel::CExpression| Proposition::CConditionEvaluates {
+    let evaluates = |state: ExecutionState, condition: crate::kernel::ProgramExpression| {
+        Proposition::CConditionEvaluates {
             state: Box::new(state),
             condition,
             outcome: crate::kernel::CConditionOutcome::Value(true),
-        };
+        }
+    };
     let record = |theorem: Theorem, context: PureFactContext, path_facts: &[Proposition]| {
         let mut core = crate::kernel::proof::ExecutionProofCore::at_entry(
-            CState::new(),
+            ExecutionState::new(),
             crate::kernel::proof::ExecutionFrontier::default(),
         );
         core.record_condition_transition(&function, &[], theorem, context, path_facts, &[])
@@ -4415,11 +4454,11 @@ fn recording_condition_evidence_checks_it_decides_the_frontier() {
     );
     // A statement that is not an `if` or `while` cannot be decided.
     let mut core = crate::kernel::proof::ExecutionProofCore::at_entry(
-        CState::new(),
+        ExecutionState::new(),
         crate::kernel::proof::ExecutionFrontier::default(),
     );
     let returning = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "returning",
         Vec::new(),
         c_return(c_int32_literal(0)),
@@ -4430,7 +4469,7 @@ fn recording_condition_evidence_checks_it_decides_the_frontier() {
             &[],
             Theorem::new(Proposition::CConditionEvaluates {
                 state: Box::new(
-                    c_function_entry_state(&CState::new(), &returning, &[]).expect("entry")
+                    c_function_entry_state(&ExecutionState::new(), &returning, &[]).expect("entry")
                 ),
                 condition: c_less_than(c_int32_literal(0), c_int32_literal(1)),
                 outcome: crate::kernel::CConditionOutcome::Value(true),
@@ -4451,7 +4490,7 @@ fn condition_evidence_cannot_decide_a_do_while_before_its_body() {
     // skip the body, so the proof object refuses it: at a `do`-`while`
     // head the next statement is the body's first.
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "runs_body",
         Vec::new(),
         c_seq(
@@ -4459,10 +4498,10 @@ fn condition_evidence_cannot_decide_a_do_while_before_its_body() {
             c_return(c_int32_literal(0)),
         ),
     );
-    let entry_state = c_function_entry_state(&CState::new(), &function, &[])
+    let entry_state = c_function_entry_state(&ExecutionState::new(), &function, &[])
         .expect("a parameterless function binds its entry state");
     let mut core = crate::kernel::proof::ExecutionProofCore::at_entry(
-        CState::new(),
+        ExecutionState::new(),
         crate::kernel::proof::ExecutionFrontier::default(),
     );
     assert_eq!(
@@ -4489,18 +4528,22 @@ fn recorded_evidence_reaches_the_theorem_outcome_not_the_driver_state() {
     // next theorem must start from the state the recorded evidence
     // reached, whatever the driver's own copy of the state says.
     let condition = c_less_than(c_int32_literal(0), c_int32_literal(1));
-    let branch = c_if(condition.clone(), CStatement::Skip, CStatement::Skip);
+    let branch = c_if(
+        condition.clone(),
+        ProgramStatement::Skip,
+        ProgramStatement::Skip,
+    );
     let tail = c_return(c_int32_literal(1));
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "early",
         Vec::new(),
         c_seq(branch, tail.clone()),
     );
-    let entry_state = c_function_entry_state(&CState::new(), &function, &[])
+    let entry_state = c_function_entry_state(&ExecutionState::new(), &function, &[])
         .expect("a parameterless function binds its entry state");
     let mut core = crate::kernel::proof::ExecutionProofCore::at_entry(
-        CState::new(),
+        ExecutionState::new(),
         crate::kernel::proof::ExecutionFrontier::default(),
     );
     core.record_condition_transition(
@@ -4523,7 +4566,7 @@ fn recorded_evidence_reaches_the_theorem_outcome_not_the_driver_state() {
     };
     let drifted = entry_state.clone().with_local("x", int32(1));
     core.state = drifted.clone().into();
-    let returning = |state: CState| {
+    let returning = |state: ExecutionState| {
         Theorem::new(Proposition::CStatementVerifies {
             state: Box::new(state.clone()),
             statement: Box::new(tail.clone()),
@@ -4578,18 +4621,18 @@ fn recorded_evidence_consumes_the_source_not_the_driver_frontier() {
     let branch = c_if(
         condition.clone(),
         c_return(c_int32_literal(0)),
-        CStatement::Skip,
+        ProgramStatement::Skip,
     );
     let tail = c_return(c_int32_literal(1));
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "early",
         Vec::new(),
         c_seq(branch, tail.clone()),
     );
-    let entry_state = c_function_entry_state(&CState::new(), &function, &[])
+    let entry_state = c_function_entry_state(&ExecutionState::new(), &function, &[])
         .expect("a parameterless function binds its entry state");
-    let returning = |statement: CStatement, value: u32| {
+    let returning = |statement: ProgramStatement, value: u32| {
         Theorem::new(Proposition::CStatementVerifies {
             state: Box::new(entry_state.clone()),
             statement: Box::new(statement),
@@ -4600,7 +4643,7 @@ fn recorded_evidence_consumes_the_source_not_the_driver_frontier() {
         })
     };
     let mut core = crate::kernel::proof::ExecutionProofCore::at_entry(
-        CState::new(),
+        ExecutionState::new(),
         crate::kernel::proof::ExecutionFrontier::default(),
     );
     // Selecting the empty else arm leaves the tail to consume.
@@ -4653,20 +4696,20 @@ fn recorded_evidence_consumes_the_source_not_the_driver_frontier() {
 #[test]
 fn void_fallthrough_completion_requires_consuming_the_entire_source() {
     for (return_type, pending_return) in [
-        (CType::Void, false),
-        (CType::Void, true),
-        (CType::Int32, false),
+        (ProgramType::Void, false),
+        (ProgramType::Void, true),
+        (ProgramType::Int32, false),
     ] {
         let body = if pending_return {
-            CStatement::seq(
-                std::sync::Arc::new(CStatement::Skip),
+            ProgramStatement::seq(
+                std::sync::Arc::new(ProgramStatement::Skip),
                 std::sync::Arc::new(c_return(c_void_value())),
             )
         } else {
-            CStatement::Skip
+            ProgramStatement::Skip
         };
         let function = c_function(return_type, "fallthrough", Vec::new(), body);
-        let caller = CState::new();
+        let caller = ExecutionState::new();
         let entry = c_function_entry_state(&caller, &function, &[]).expect("entry");
         let mut core = crate::kernel::proof::ExecutionProofCore::at_entry(
             caller.clone(),
@@ -4677,7 +4720,7 @@ fn void_fallthrough_completion_requires_consuming_the_entire_source() {
             &[],
             Theorem::new(Proposition::CStatementVerifies {
                 state: Box::new(entry.clone()),
-                statement: Box::new(CStatement::Skip),
+                statement: Box::new(ProgramStatement::Skip),
                 outcome: CStatementOutcome::Normal(Box::new(entry.clone())),
             }),
             PureFactContext::new(),
@@ -4689,7 +4732,7 @@ fn void_fallthrough_completion_requires_consuming_the_entire_source() {
             &caller,
             &function,
             CStatementOutcome::Return {
-                value: CValue::Void.into(),
+                value: ProgramValue::Void.into(),
                 state: Box::new(entry),
             },
             Vec::new(),
@@ -4711,7 +4754,7 @@ fn void_fallthrough_completion_requires_consuming_the_entire_source() {
         );
         assert_eq!(
             result.is_ok(),
-            return_type == CType::Void && !pending_return
+            return_type == ProgramType::Void && !pending_return
         );
     }
 }
@@ -4721,8 +4764,13 @@ fn a_completed_proof_object_yields_its_checked_execution() {
     // Completion composes the checked traces into one path per trace
     // concluding the candidate's outcome; an open trace yields nothing.
     let entry_state = c_function_entry_state(
-        &CState::new(),
-        &c_function(CType::Int32, "early", Vec::new(), CStatement::Skip),
+        &ExecutionState::new(),
+        &c_function(
+            ProgramType::Int32,
+            "early",
+            Vec::new(),
+            ProgramStatement::Skip,
+        ),
         &[],
     )
     .expect("entry state");
@@ -4736,7 +4784,7 @@ fn a_completed_proof_object_yields_its_checked_execution() {
         _ => unreachable!("the trace begins with its returning theorem"),
     };
     let mut core = crate::kernel::proof::ExecutionProofCore::at_entry(
-        CState::new(),
+        ExecutionState::new(),
         crate::kernel::proof::ExecutionFrontier::default(),
     );
     core.record_statement_transition(&function, &[], theorem, PureFactContext::new(), &[], &[])
@@ -4762,7 +4810,7 @@ fn a_completed_proof_object_yields_its_checked_execution() {
     ));
 
     let mut open = crate::kernel::proof::ExecutionProofCore::at_entry(
-        CState::new(),
+        ExecutionState::new(),
         crate::kernel::proof::ExecutionFrontier::default(),
     );
     open.record_statement_transition(
@@ -4770,7 +4818,7 @@ fn a_completed_proof_object_yields_its_checked_execution() {
         &[],
         Theorem::new(Proposition::CStatementVerifies {
             state: Box::new(entry_state.clone()),
-            statement: Box::new(CStatement::Skip),
+            statement: Box::new(ProgramStatement::Skip),
             outcome: CStatementOutcome::Normal(Box::new(entry_state)),
         }),
         PureFactContext::new(),
@@ -4895,21 +4943,21 @@ fn completion_key_folds_trivial_conditions_the_proof_lowering_folds() {
 fn call_requirement_obligations_carry_their_lowering_record() {
     let successor_is_positive = SpecProposition::Comparison {
         left: SpecExpression::Add(
-            Box::new(SpecExpression::CExpression(c_variable("n"))),
-            Box::new(SpecExpression::CExpression(c_int32_literal(1))),
+            Box::new(SpecExpression::ProgramExpression(c_variable("n"))),
+            Box::new(SpecExpression::ProgramExpression(c_int32_literal(1))),
         ),
         operator: CComparisonOperator::GreaterThan,
-        right: SpecExpression::CExpression(c_int32_literal(0)),
+        right: SpecExpression::ProgramExpression(c_int32_literal(0)),
     };
     let returns_one = SpecProposition::Comparison {
-        left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
+        left: SpecExpression::ProgramExpression(c_variable(C_CONTRACT_RESULT_NAME)),
         operator: CComparisonOperator::Equal,
-        right: SpecExpression::CExpression(c_int32_literal(1)),
+        right: SpecExpression::ProgramExpression(c_int32_literal(1)),
     };
     let helper = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "successor_is_positive",
-        vec![c_parameter("n", CType::Int32)],
+        vec![c_parameter("n", ProgramType::Int32)],
         c_return(c_int32_literal(1)),
     )
     .with_contract(
@@ -4928,7 +4976,7 @@ fn call_requirement_obligations_carry_their_lowering_record() {
             checked_callees: None,
             applied_tactics: Default::default(),
         });
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_population_creation_tracking()
         .with_local("n", int32(MachineTerm::Variable(Variable(31_000))));
     let execution = prove_symbolic_c_execution_paths_with_environment(
@@ -4971,19 +5019,19 @@ fn call_requirement_obligations_carry_their_lowering_record() {
 
 /// A self-recursive function that declares an expression `decreases` measure.
 /// Its body is irrelevant here: what is exercised is the call step.
-fn drain_with_expression_measure() -> CFunction {
+fn drain_with_expression_measure() -> ProgramFunction {
     c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "drain",
-        vec![c_parameter("n", CType::Int32)],
+        vec![c_parameter("n", ProgramType::Int32)],
         c_return(c_int32_literal(0)),
     )
     .with_contract(
         Vec::new(),
         vec![SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
+            left: SpecExpression::ProgramExpression(c_variable(C_CONTRACT_RESULT_NAME)),
             operator: CComparisonOperator::Equal,
-            right: SpecExpression::CExpression(c_int32_literal(0)),
+            right: SpecExpression::ProgramExpression(c_int32_literal(0)),
         }],
         Vec::new(),
         vec![CFunctionContractClaim::ensure_proposition(0, 0)],
@@ -4991,11 +5039,11 @@ fn drain_with_expression_measure() -> CFunction {
     )
     .with_recursion_measure(vec![CRankingComponent::Pure {
         source: "level(n)".to_string(),
-        expression: SpecExpression::CExpression(c_variable("n")),
+        expression: SpecExpression::ProgramExpression(c_variable("n")),
     }])
 }
 
-fn opaque_rule_environment(function: CFunction) -> CExecutionEnvironment {
+fn opaque_rule_environment(function: ProgramFunction) -> CExecutionEnvironment {
     CExecutionEnvironment::new()
         .with_function(function.clone())
         .with_verified_function_rule(CVerifiedFunctionRule {
@@ -5007,18 +5055,18 @@ fn opaque_rule_environment(function: CFunction) -> CExecutionEnvironment {
         })
 }
 
-fn symbolic_caller_state() -> CState {
-    CState::new()
+fn symbolic_caller_state() -> ExecutionState {
+    ExecutionState::new()
         .with_population_creation_tracking()
         .with_local("n", int32(MachineTerm::Variable(Variable(31_000))))
 }
 
 /// The entry `drain` is anchored at: its parameter bound to the same symbolic
 /// value the caller state holds, which is what makes M0 that value.
-fn symbolic_entry_arguments() -> Vec<CExpression> {
-    vec![CExpression::Value(int32(MachineTerm::Variable(Variable(
-        31_000,
-    ))))]
+fn symbolic_entry_arguments() -> Vec<ProgramExpression> {
+    vec![ProgramExpression::Value(int32(MachineTerm::Variable(
+        Variable(31_000),
+    )))]
 }
 
 /// The contexts of the ranking members a call step emitted, in order.
@@ -5034,7 +5082,7 @@ fn recursion_measure_contexts(path: &SymbolicCExecutionPath) -> Vec<String> {
 fn call_path(
     environment: CExecutionEnvironment,
     callee: &str,
-    argument: CExpression,
+    argument: ProgramExpression,
 ) -> SymbolicCExecution {
     prove_symbolic_c_execution_paths_with_environment(
         symbolic_caller_state(),
@@ -5099,17 +5147,17 @@ fn a_call_without_a_recursion_anchor_owes_no_ranking_member() {
 fn an_anchor_ranks_only_calls_to_the_function_it_names() {
     let drain = drain_with_expression_measure();
     let other = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "other",
-        vec![c_parameter("n", CType::Int32)],
+        vec![c_parameter("n", ProgramType::Int32)],
         c_return(c_int32_literal(0)),
     )
     .with_contract(
         Vec::new(),
         vec![SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
+            left: SpecExpression::ProgramExpression(c_variable(C_CONTRACT_RESULT_NAME)),
             operator: CComparisonOperator::Equal,
-            right: SpecExpression::CExpression(c_int32_literal(0)),
+            right: SpecExpression::ProgramExpression(c_int32_literal(0)),
         }],
         Vec::new(),
         vec![CFunctionContractClaim::ensure_proposition(0, 0)],
@@ -5144,9 +5192,9 @@ fn an_anchor_ranks_only_calls_to_the_function_it_names() {
 #[test]
 fn a_function_without_a_declared_measure_installs_no_anchor() {
     let plain = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "plain",
-        vec![c_parameter("n", CType::Int32)],
+        vec![c_parameter("n", ProgramType::Int32)],
         c_return(c_int32_literal(0)),
     );
     let environment = opaque_rule_environment(plain.clone());
@@ -5189,7 +5237,7 @@ fn a_called_frames_declaration_does_not_take_the_callers_block() {
         block: "local:x".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_memory(
             CMemory::new()
                 .with_block("local:x", 4)
@@ -5197,7 +5245,7 @@ fn a_called_frames_declaration_does_not_take_the_callers_block() {
         )
         .with_enclosing_frame_holds_locals(true);
     let statement = c_seq(
-        c_declare("x", CType::Int32),
+        c_declare("x", ProgramType::Int32),
         c_seq(
             c_assign("x", c_int32_literal(2)),
             c_return(c_int32_literal(0)),
@@ -5224,13 +5272,13 @@ fn a_called_frames_declaration_does_not_take_the_callers_block() {
 #[test]
 fn a_declaration_does_not_take_a_block_whose_lifetime_ended() {
     let retired = PointerBlock::from("local:x");
-    let state = CState::new().with_memory(
+    let state = ExecutionState::new().with_memory(
         CMemory::new()
             .with_block("local:x", 4)
             .without_local_block(&retired),
     );
     let statement = c_seq(
-        c_declare("x", CType::Int32),
+        c_declare("x", ProgramType::Int32),
         c_seq(
             c_assign("x", c_int32_literal(2)),
             c_return(c_int32_literal(0)),
@@ -5263,29 +5311,30 @@ fn a_declaration_does_not_take_a_block_whose_lifetime_ended() {
 #[test]
 fn an_if_arms_local_stops_existing_when_the_arm_is_left() {
     let arm = c_seq(
-        c_declare("x", CType::Int32),
+        c_declare("x", ProgramType::Int32),
         c_seq(
             c_assign("x", c_int32_literal(7)),
             c_assign("p", c_addr_of("x")),
         ),
     );
     let statement = c_seq(
-        c_declare("anchor", CType::Int32),
+        c_declare("anchor", ProgramType::Int32),
         c_seq(
             c_assign("anchor", c_int32_literal(0)),
             c_seq(
-                c_declare("p", CType::Int32Pointer),
+                c_declare("p", ProgramType::Int32Pointer),
                 c_seq(
                     c_assign("p", c_addr_of("anchor")),
                     c_seq(
-                        c_if(c_variable("c"), arm, CStatement::Skip),
+                        c_if(c_variable("c"), arm, ProgramStatement::Skip),
                         c_return(c_load(c_variable("p"))),
                     ),
                 ),
             ),
         ),
     );
-    let state = CState::new().with_local("c", CValue::Int32(MachineTerm::constant(1)));
+    let state =
+        ExecutionState::new().with_local("c", ProgramValue::Int32(MachineTerm::constant(1)));
     let theorem = prove_symbolic_c_execution(state, statement, PureFactContext::new())
         .expect("the taken arm is the only path");
     let Proposition::CStatementExecutes { outcome, .. } = theorem.proposition() else {
@@ -5306,7 +5355,7 @@ fn an_if_arms_local_stops_existing_when_the_arm_is_left() {
 #[test]
 fn a_loop_bodys_local_stops_existing_at_the_back_edge() {
     let body = c_seq(
-        c_declare("x", CType::Int32),
+        c_declare("x", ProgramType::Int32),
         c_seq(
             c_assign("x", c_int32_literal(9)),
             c_seq(
@@ -5316,15 +5365,15 @@ fn a_loop_bodys_local_stops_existing_at_the_back_edge() {
         ),
     );
     let statement = c_seq(
-        c_declare("anchor", CType::Int32),
+        c_declare("anchor", ProgramType::Int32),
         c_seq(
             c_assign("anchor", c_int32_literal(0)),
             c_seq(
-                c_declare("p", CType::Int32Pointer),
+                c_declare("p", ProgramType::Int32Pointer),
                 c_seq(
                     c_assign("p", c_addr_of("anchor")),
                     c_seq(
-                        c_declare("i", CType::Int32),
+                        c_declare("i", ProgramType::Int32),
                         c_seq(
                             c_assign("i", c_int32_literal(0)),
                             c_seq(
@@ -5341,8 +5390,9 @@ fn a_loop_bodys_local_stops_existing_at_the_back_edge() {
             ),
         ),
     );
-    let theorem = prove_symbolic_c_execution(CState::new(), statement, PureFactContext::new())
-        .expect("a concrete loop has one path");
+    let theorem =
+        prove_symbolic_c_execution(ExecutionState::new(), statement, PureFactContext::new())
+            .expect("a concrete loop has one path");
     let Proposition::CStatementExecutes { outcome, .. } = theorem.proposition() else {
         panic!("expected an execution: {:?}", theorem.proposition());
     };
@@ -5360,18 +5410,18 @@ fn a_loop_bodys_local_stops_existing_at_the_back_edge() {
 #[test]
 fn a_loop_bodys_local_stops_existing_on_break() {
     let body = c_seq(
-        c_declare("x", CType::Int32),
+        c_declare("x", ProgramType::Int32),
         c_seq(
             c_assign("x", c_int32_literal(2)),
             c_seq(c_assign("p", c_addr_of("x")), c_break()),
         ),
     );
     let statement = c_seq(
-        c_declare("anchor", CType::Int32),
+        c_declare("anchor", ProgramType::Int32),
         c_seq(
             c_assign("anchor", c_int32_literal(0)),
             c_seq(
-                c_declare("p", CType::Int32Pointer),
+                c_declare("p", ProgramType::Int32Pointer),
                 c_seq(
                     c_assign("p", c_addr_of("anchor")),
                     c_seq(
@@ -5382,8 +5432,9 @@ fn a_loop_bodys_local_stops_existing_on_break() {
             ),
         ),
     );
-    let theorem = prove_symbolic_c_execution(CState::new(), statement, PureFactContext::new())
-        .expect("the loop breaks on its first iteration");
+    let theorem =
+        prove_symbolic_c_execution(ExecutionState::new(), statement, PureFactContext::new())
+            .expect("the loop breaks on its first iteration");
     let Proposition::CStatementExecutes { outcome, .. } = theorem.proposition() else {
         panic!("expected an execution: {:?}", theorem.proposition());
     };
@@ -5401,18 +5452,18 @@ fn a_loop_bodys_local_stops_existing_on_break() {
 #[test]
 fn a_switch_bodys_local_stops_existing_when_the_switch_is_left() {
     let case = c_seq(
-        c_declare("x", CType::Int32),
+        c_declare("x", ProgramType::Int32),
         c_seq(
             c_assign("x", c_int32_literal(4)),
             c_seq(c_assign("p", c_addr_of("x")), c_break()),
         ),
     );
     let statement = c_seq(
-        c_declare("anchor", CType::Int32),
+        c_declare("anchor", ProgramType::Int32),
         c_seq(
             c_assign("anchor", c_int32_literal(0)),
             c_seq(
-                c_declare("p", CType::Int32Pointer),
+                c_declare("p", ProgramType::Int32Pointer),
                 c_seq(
                     c_assign("p", c_addr_of("anchor")),
                     c_seq(
@@ -5429,8 +5480,9 @@ fn a_switch_bodys_local_stops_existing_when_the_switch_is_left() {
             ),
         ),
     );
-    let theorem = prove_symbolic_c_execution(CState::new(), statement, PureFactContext::new())
-        .expect("a constant selector picks one case");
+    let theorem =
+        prove_symbolic_c_execution(ExecutionState::new(), statement, PureFactContext::new())
+            .expect("a constant selector picks one case");
     let Proposition::CStatementExecutes { outcome, .. } = theorem.proposition() else {
         panic!("expected an execution: {:?}", theorem.proposition());
     };
@@ -5448,26 +5500,27 @@ fn a_switch_bodys_local_stops_existing_when_the_switch_is_left() {
 #[test]
 fn an_outer_locals_address_survives_an_inner_scope() {
     let arm = c_seq(
-        c_declare("x", CType::Int32),
+        c_declare("x", ProgramType::Int32),
         c_assign("x", c_int32_literal(7)),
     );
     let statement = c_seq(
-        c_declare("outer", CType::Int32),
+        c_declare("outer", ProgramType::Int32),
         c_seq(
             c_assign("outer", c_int32_literal(5)),
             c_seq(
-                c_declare("p", CType::Int32Pointer),
+                c_declare("p", ProgramType::Int32Pointer),
                 c_seq(
                     c_assign("p", c_addr_of("outer")),
                     c_seq(
-                        c_if(c_variable("c"), arm, CStatement::Skip),
+                        c_if(c_variable("c"), arm, ProgramStatement::Skip),
                         c_return(c_load(c_variable("p"))),
                     ),
                 ),
             ),
         ),
     );
-    let state = CState::new().with_local("c", CValue::Int32(MachineTerm::constant(1)));
+    let state =
+        ExecutionState::new().with_local("c", ProgramValue::Int32(MachineTerm::constant(1)));
     let theorem = prove_symbolic_c_execution(state, statement, PureFactContext::new())
         .expect("the taken arm is the only path");
     let Proposition::CStatementExecutes { outcome, .. } = theorem.proposition() else {
@@ -5478,7 +5531,7 @@ fn an_outer_locals_address_survives_an_inner_scope() {
     };
     assert_eq!(
         value.native().as_ref(),
-        &CValue::Int32(MachineTerm::constant(5))
+        &ProgramValue::Int32(MachineTerm::constant(5))
     );
 }
 
@@ -5500,11 +5553,11 @@ fn path_exists_at_snapshot(
                     arguments: vec![
                         PureFunctionArgument::ArrayRef {
                             memory,
-                            pointer: CValue::pointer(Pointer {
+                            pointer: ProgramValue::pointer(Pointer {
                                 block: "graph".into(),
                                 offset: PointerOffsetTerm::Constant(0),
                             }),
-                            element_type: CType::Int32,
+                            element_type: ProgramType::Int32,
                         },
                         PureFunctionArgument::Algebraic(AlgebraicTerm {
                             algebraic_type: ty.clone(),
@@ -5710,16 +5763,16 @@ fn aggregate_copy_requires_write_authority_for_each_destination_field() {
         8,
         4,
         vec![
-            CAggregateField::new("a", 0, CType::Int32),
-            CAggregateField::new("b", 4, CType::Int32),
+            CAggregateField::new("a", 0, ProgramType::Int32),
+            CAggregateField::new("b", 4, ProgramType::Int32),
         ],
     );
     let function = c_function(
-        CType::Void,
+        ProgramType::Void,
         "copy_fields",
         vec![
-            c_parameter("target", CType::Int32Pointer),
-            c_parameter("source", CType::Int32Pointer),
+            c_parameter("target", ProgramType::Int32Pointer),
+            c_parameter("source", ProgramType::Int32Pointer),
         ],
         c_copy_aggregate(c_variable("target"), c_variable("source"), layout),
     );
@@ -5732,7 +5785,7 @@ fn aggregate_copy_requires_write_authority_for_each_destination_field() {
             resources.push(own_memory_fact(target.clone(), 1, 2));
         }
         let theorem = prove_symbolic_c_function_execution_with_environment(
-            CState::new()
+            ExecutionState::new()
                 .with_resource_context(ResourceContext::new().unchecked_with_facts(resources)),
             function.clone(),
             vec![
@@ -5773,30 +5826,30 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
         16,
         8,
         vec![
-            CAggregateField::new("self", 0, CType::Int32Pointer),
-            CAggregateField::new("value", 8, CType::Int32),
+            CAggregateField::new("self", 0, ProgramType::Int32Pointer),
+            CAggregateField::new("value", 8, ProgramType::Int32),
         ],
     );
     let result = c_variable(C_CONTRACT_RESULT_NAME);
     let field = c_cast(
         c_pointer_offset_bytes(result.clone(), 8),
-        CType::Int32Pointer,
+        ProgramType::Int32Pointer,
     );
     let storage = CMemorySegment::new(result.clone(), c_int32_literal(0), c_int32_literal(4));
     let owner = CResourceSpec::owned_memory(storage.clone());
     let equality = |left, right| SpecProposition::Comparison {
-        left: SpecExpression::CExpression(left),
+        left: SpecExpression::ProgramExpression(left),
         operator: CComparisonOperator::Equal,
-        right: SpecExpression::CExpression(right),
+        right: SpecExpression::ProgramExpression(right),
     };
     let function = c_function(
-        CType::VoidPointer,
+        ProgramType::VoidPointer,
         "constructed_node",
-        vec![c_parameter("input", CType::Int32)],
+        vec![c_parameter("input", ProgramType::Int32)],
         c_seq(
-            c_typed_store(result.clone(), field.clone(), CType::Int32Pointer),
+            c_typed_store(result.clone(), field.clone(), ProgramType::Int32Pointer),
             c_seq(
-                c_typed_store(field.clone(), c_variable("input"), CType::Int32),
+                c_typed_store(field.clone(), c_variable("input"), ProgramType::Int32),
                 c_return(result.clone()),
             ),
         ),
@@ -5806,8 +5859,11 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
     .with_contract(
         vec![],
         vec![
-            equality(c_typed_load(result, CType::Int32Pointer), field.clone()),
-            equality(c_typed_load(field, CType::Int32), c_variable("input")),
+            equality(
+                c_typed_load(result, ProgramType::Int32Pointer),
+                field.clone(),
+            ),
+            equality(c_typed_load(field, ProgramType::Int32), c_variable("input")),
         ],
         vec![storage],
         vec![
@@ -5821,7 +5877,7 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
     );
     let proof_destination = Pointer::symbolic(Variable(873_001));
     register_block_alignment(&proof_destination.block, 8);
-    let proof_state = CState::new()
+    let proof_state = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(CMemory::new().with_uninitialized_block(proof_destination.block.clone(), 16))
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
@@ -5835,9 +5891,9 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
     let execution = certify_contract_with_kernel_artifacts(
         proof_state.clone(),
         function.clone(),
-        vec![CExpression::Value(int32(MachineTerm::Variable(Variable(
-            873_002,
-        ))))],
+        vec![ProgramExpression::Value(int32(MachineTerm::Variable(
+            Variable(873_002),
+        )))],
         vec![],
         CExecutionEnvironment::new(),
         CExecutionSemantics::EXECUTE_BODIES,
@@ -5863,7 +5919,7 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
     let mut callee = "constructed_node";
     for name in ["forward_constructed_node", "outer_constructed_node"] {
         let forward = c_function(
-            CType::VoidPointer,
+            ProgramType::VoidPointer,
             name,
             function.parameters().to_vec(),
             c_seq(
@@ -5883,9 +5939,9 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
             function.contract_claims().to_vec(),
             true,
         );
-        let arguments = vec![CExpression::Value(int32(MachineTerm::Variable(Variable(
-            873_002,
-        ))))];
+        let arguments = vec![ProgramExpression::Value(int32(MachineTerm::Variable(
+            Variable(873_002),
+        )))];
         let artifact = prove_checked_c_function_execution_with_environment(
             proof_state.clone(),
             forward.clone(),
@@ -6031,14 +6087,14 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
         callee = name;
     }
     let paths = prove_symbolic_c_execution_paths_with_environment(
-        CState::new().with_population_creation_tracking(),
+        ExecutionState::new().with_population_creation_tracking(),
         c_seq(
             c_allocate_aggregate_destination("node", layout),
             c_seq(
                 c_call_assign("node", "outer_constructed_node", vec![c_int32_literal(37)]),
                 c_return(c_typed_load(
                     c_pointer_offset_bytes(c_variable("node"), 8),
-                    CType::Int32,
+                    ProgramType::Int32,
                 )),
             ),
         ),
@@ -6075,7 +6131,7 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
         .fold(PureFactContext::new(), |context, fact| {
             context.assume_proposition(fact.proposition().clone())
         });
-    let CValue::Int32(value) = value.clone().into_native() else {
+    let ProgramValue::Int32(value) = value.clone().into_native() else {
         panic!("constructed int32 field");
     };
     assert!(crate::kernel::search::ProofSearch::proves(
@@ -6084,7 +6140,7 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
     ));
     let loads = evaluate_c_expression_paths(
         state,
-        &c_typed_load(c_variable("node"), CType::Int32Pointer),
+        &c_typed_load(c_variable("node"), ProgramType::Int32Pointer),
         &assumptions,
         &mut ExecutionBudget::default(),
     )
@@ -6092,7 +6148,7 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
     let [load] = loads.as_slice() else {
         panic!("one self-pointer load");
     };
-    let CExpressionOutcome::Value(CValue::Pointer(self_pointer)) = &load.outcome else {
+    let CExpressionOutcome::Value(ProgramValue::Pointer(self_pointer)) = &load.outcome else {
         panic!("constructed self-pointer should be readable");
     };
     let assumptions = load.facts.iter().fold(assumptions, |context, fact| {
@@ -6116,28 +6172,28 @@ fn construction_parameter_summary_initializes_only_checked_fields() {
         16,
         8,
         vec![
-            CAggregateField::new("self", 0, CType::Int32Pointer),
-            CAggregateField::new("value", 8, CType::Int32),
+            CAggregateField::new("self", 0, ProgramType::Int32Pointer),
+            CAggregateField::new("value", 8, ProgramType::Int32),
         ],
     );
     let destination = c_variable("destination");
     let field = c_cast(
         c_pointer_offset_bytes(destination.clone(), 8),
-        CType::Int32Pointer,
+        ProgramType::Int32Pointer,
     );
     let storage = CMemorySegment::new(destination.clone(), c_int32_literal(0), c_int32_literal(4));
     let owner = CResourceSpec::owned_memory(storage.clone());
     let function = c_function(
-        CType::Void,
+        ProgramType::Void,
         "construct_parameter",
         vec![
-            c_parameter("destination", CType::Int32Pointer),
-            c_parameter("input", CType::Int32),
+            c_parameter("destination", ProgramType::Int32Pointer),
+            c_parameter("input", ProgramType::Int32),
         ],
         c_seq(
-            c_typed_store(destination, field.clone(), CType::Int32Pointer),
+            c_typed_store(destination, field.clone(), ProgramType::Int32Pointer),
             c_seq(
-                c_typed_store(field, c_variable("input"), CType::Int32),
+                c_typed_store(field, c_variable("input"), ProgramType::Int32),
                 c_return(c_void_value()),
             ),
         ),
@@ -6157,7 +6213,7 @@ fn construction_parameter_summary_initializes_only_checked_fields() {
     );
     let at = Pointer::symbolic(Variable(873_011));
     register_block_alignment(&at.block, 8);
-    let entry = CState::new()
+    let entry = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(CMemory::new().with_uninitialized_block(at.block.clone(), 16))
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
@@ -6168,7 +6224,7 @@ fn construction_parameter_summary_initializes_only_checked_fields() {
         function.clone(),
         vec![
             c_pointer_value(at.clone()),
-            CExpression::Value(int32(MachineTerm::Variable(Variable(873_012)))),
+            ProgramExpression::Value(int32(MachineTerm::Variable(Variable(873_012)))),
         ],
         vec![],
         CExecutionEnvironment::new(),
@@ -6198,14 +6254,14 @@ fn construction_parameter_summary_initializes_only_checked_fields() {
     let storage = CMemorySegment::new(result.clone(), c_int32_literal(0), c_int32_literal(4));
     let owner = CResourceSpec::owned_memory(storage.clone());
     let factory = c_function(
-        CType::VoidPointer,
+        ProgramType::VoidPointer,
         "parameter_factory",
-        vec![c_parameter("input", CType::Int32)],
+        vec![c_parameter("input", ProgramType::Int32)],
         c_seq(
             c_call(
                 "construct_parameter",
                 vec![
-                    c_cast(result.clone(), CType::Int32Pointer),
+                    c_cast(result.clone(), ProgramType::Int32Pointer),
                     c_variable("input"),
                 ],
             ),
@@ -6228,9 +6284,9 @@ fn construction_parameter_summary_initializes_only_checked_fields() {
     let execution = certify_contract_with_kernel_artifacts(
         entry.with_aggregate_return_destination(at, layout.clone()),
         factory.clone(),
-        vec![CExpression::Value(int32(MachineTerm::Variable(Variable(
-            873_012,
-        ))))],
+        vec![ProgramExpression::Value(int32(MachineTerm::Variable(
+            Variable(873_012),
+        )))],
         vec![],
         environment.clone(),
         CExecutionSemantics::APPLY_VERIFIED_RULES,
@@ -6243,14 +6299,14 @@ fn construction_parameter_summary_initializes_only_checked_fields() {
         .with_function(factory)
         .with_verified_function_rule(rule);
     let paths = prove_symbolic_c_execution_paths_with_environment(
-        CState::new().with_population_creation_tracking(),
+        ExecutionState::new().with_population_creation_tracking(),
         c_seq(
             c_allocate_aggregate_destination("node", layout),
             c_seq(
                 c_call_assign("node", "parameter_factory", vec![c_int32_literal(37)]),
                 c_return(c_typed_load(
                     c_pointer_offset_bytes(c_variable("node"), 8),
-                    CType::Int32,
+                    ProgramType::Int32,
                 )),
             ),
         ),
@@ -6295,13 +6351,17 @@ fn construction_parameter_summary_initializes_only_checked_fields() {
 #[test]
 fn subobject_constructor_summary_preserves_parent_extent_and_siblings() {
     let _session = crate::kernel::VerificationSession::enter();
-    let child = CAggregateLayout::new(8, 8, vec![CAggregateField::new("size", 0, CType::UInt64)]);
+    let child = CAggregateLayout::new(
+        8,
+        8,
+        vec![CAggregateField::new("size", 0, ProgramType::UInt64)],
+    );
     let parent = CAggregateLayout::new(
         16,
         8,
         vec![
-            CAggregateField::new("data", 0, CType::Int32Pointer),
-            CAggregateField::new("extent.size", 8, CType::UInt64),
+            CAggregateField::new("data", 0, ProgramType::Int32Pointer),
+            CAggregateField::new("extent.size", 8, ProgramType::UInt64),
         ],
     );
     let storage = CMemorySegment::new(
@@ -6311,17 +6371,17 @@ fn subobject_constructor_summary_preserves_parent_extent_and_siblings() {
     );
     let owner = CResourceSpec::owned_memory(storage.clone());
     let function = c_function(
-        CType::Void,
+        ProgramType::Void,
         "construct_extent",
         vec![
-            c_parameter("destination", CType::Int32Pointer),
-            c_parameter("input", CType::UInt64),
+            c_parameter("destination", ProgramType::Int32Pointer),
+            c_parameter("input", ProgramType::UInt64),
         ],
         c_seq(
             c_typed_store(
                 c_variable("destination"),
                 c_variable("input"),
-                CType::UInt64,
+                ProgramType::UInt64,
             ),
             c_return(c_void_value()),
         ),
@@ -6349,7 +6409,7 @@ fn subobject_constructor_summary_preserves_parent_extent_and_siblings() {
         bytes: 8u32.into(),
         wide: false,
     };
-    let entry = CState::new()
+    let entry = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(memory)
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
@@ -6360,7 +6420,7 @@ fn subobject_constructor_summary_preserves_parent_extent_and_siblings() {
         function.clone(),
         vec![
             c_pointer_value(at),
-            CExpression::Value(uint64(MachineTerm::Variable(Variable(873_022)))),
+            ProgramExpression::Value(uint64(MachineTerm::Variable(Variable(873_022)))),
         ],
         vec![live],
         CExecutionEnvironment::new(),
@@ -6376,7 +6436,7 @@ fn subobject_constructor_summary_preserves_parent_extent_and_siblings() {
         .with_verified_function_rule(rule);
     for offset in [8, 4, 16] {
         let paths = prove_symbolic_c_execution_paths_with_environment(
-            CState::new().with_population_creation_tracking(),
+            ExecutionState::new().with_population_creation_tracking(),
             c_seq(
                 c_allocate_aggregate_destination("parent", parent.clone()),
                 c_seq(
@@ -6385,14 +6445,14 @@ fn subobject_constructor_summary_preserves_parent_extent_and_siblings() {
                         vec![
                             c_cast(
                                 c_pointer_offset_bytes(c_variable("parent"), offset),
-                                CType::Int32Pointer,
+                                ProgramType::Int32Pointer,
                             ),
                             c_uint64_literal(37),
                         ],
                     ),
                     c_return(c_typed_load(
                         c_pointer_offset_bytes(c_variable("parent"), 8),
-                        CType::UInt64,
+                        ProgramType::UInt64,
                     )),
                 ),
             ),
@@ -6446,8 +6506,8 @@ fn subobject_constructor_summary_preserves_parent_extent_and_siblings() {
 fn automatic_scalar_ownership_is_exact_and_required_for_all_accesses() {
     let assumptions = PureFactContext::new();
     let paths = execute_c_statement_paths(
-        &CState::new(),
-        &c_declare("word", CType::UInt32),
+        &ExecutionState::new(),
+        &c_declare("word", ProgramType::UInt32),
         &assumptions,
         CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
         &mut ExecutionBudget::new(),
@@ -6479,7 +6539,7 @@ fn automatic_scalar_ownership_is_exact_and_required_for_all_accesses() {
     let empty = initialized.with_resource_context(ResourceContext::new());
     for expression in [
         c_variable("word"),
-        c_typed_load(c_addr_of("word"), CType::UInt32),
+        c_typed_load(c_addr_of("word"), ProgramType::UInt32),
     ] {
         let paths = evaluate_c_expression_paths(
             &empty,
@@ -6495,7 +6555,7 @@ fn automatic_scalar_ownership_is_exact_and_required_for_all_accesses() {
     }
     for statement in [
         c_assign("word", c_uint32_literal(9)),
-        c_typed_store(c_addr_of("word"), c_uint32_literal(9), CType::UInt32),
+        c_typed_store(c_addr_of("word"), c_uint32_literal(9), ProgramType::UInt32),
     ] {
         let paths = execute_c_statement_paths(
             &empty,
@@ -6536,7 +6596,7 @@ fn a_produced_composite_is_certified_only_when_the_exit_establishes_its_body_fac
     let cell = || c_index(c_variable("p"), c_int32_literal(0));
     let definition = CCompositeResourceDefinition::new(
         "zero_cell",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![CResourceSpec::owned_memory(CMemorySegment::new(
@@ -6545,16 +6605,16 @@ fn a_produced_composite_is_certified_only_when_the_exit_establishes_its_body_fac
             c_int32_literal(1),
         ))],
         vec![SpecProposition::Comparison {
-            left: SpecExpression::CExpression(cell()),
+            left: SpecExpression::ProgramExpression(cell()),
             operator: CComparisonOperator::Equal,
             right: SpecExpression::Value(int32(0)),
         }],
     );
     let certified = |stored: u32| {
         let function = c_function(
-            CType::Void,
+            ProgramType::Void,
             "produce_zero_cell",
-            vec![c_parameter("p", CType::Int32Pointer)],
+            vec![c_parameter("p", ProgramType::Int32Pointer)],
             c_seq(
                 c_store(c_variable("p"), c_int32_literal(stored)),
                 c_return(c_void_value()),
@@ -6570,7 +6630,7 @@ fn a_produced_composite_is_certified_only_when_the_exit_establishes_its_body_fac
                 CResourceAccessMode::Own,
                 "zero_cell".into(),
                 vec![c_variable("p")],
-                vec![CType::Int32Pointer],
+                vec![ProgramType::Int32Pointer],
             )],
         )
         .with_composite_resource_definitions(vec![definition.clone()])
@@ -6581,7 +6641,7 @@ fn a_produced_composite_is_certified_only_when_the_exit_establishes_its_body_fac
             vec![CFunctionContractClaim::ensure_resource(0, 0)],
             true,
         );
-        let state = CState::new()
+        let state = ExecutionState::new()
             .with_memory(
                 CMemory::new()
                     .with_block(pointer.block.clone(), 4)
@@ -6648,10 +6708,10 @@ fn a_produced_composite_is_certified_only_when_the_exit_establishes_its_body_fac
 #[test]
 fn cloned_functions_and_specifications_share_their_contracts() {
     let parameters = (0..8)
-        .map(|index| c_parameter(format!("p{index}"), CType::Int32Pointer))
+        .map(|index| c_parameter(format!("p{index}"), ProgramType::Int32Pointer))
         .collect::<Vec<_>>();
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "wide",
         parameters,
         c_return(c_int32_literal(0)),
@@ -6663,14 +6723,14 @@ fn cloned_functions_and_specifications_share_their_contracts() {
     ));
 
     let specification = c_function_specification(
-        CState::new(),
+        ExecutionState::new(),
         (0..8)
-            .map(|index| CExpression::Value(int32(index)))
+            .map(|index| ProgramExpression::Value(int32(index)))
             .collect(),
         vec![Proposition::ConditionIs(ConditionTerm::Constant(true), true); 8],
         CFunctionOutcome::Return {
             value: int32(0).into(),
-            state: Box::new(CState::new()),
+            state: Box::new(ExecutionState::new()),
         },
     );
     let copy = specification.clone();

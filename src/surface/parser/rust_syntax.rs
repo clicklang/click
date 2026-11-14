@@ -1104,11 +1104,11 @@ impl Parser {
             return Ok(None);
         };
         let vector = if reference {
-            ContractExpression::CFragment(CExpression::Load(Box::new(CExpression::Variable(
-                name.to_string(),
-            ))))
+            ContractExpression::CFragment(ProgramExpression::Load(Box::new(
+                ProgramExpression::Variable(name.to_string()),
+            )))
         } else {
-            ContractExpression::CFragment(CExpression::Variable(name.to_string()))
+            ContractExpression::CFragment(ProgramExpression::Variable(name.to_string()))
         };
         if self.peek() == Some(&Token::Dot)
             && self.peek_next() == Some(&Token::Ident("len".into()))
@@ -1684,27 +1684,27 @@ impl Parser {
             // current C expressions.
             let integer_target = matches!(
                 target_type,
-                CType::Int8
-                    | CType::Int16
-                    | CType::Int32
-                    | CType::UInt8
-                    | CType::UInt16
-                    | CType::UInt32
-                    | CType::Int64
-                    | CType::UInt64
-                    | CType::Int128
-                    | CType::UInt128
+                ProgramType::Int8
+                    | ProgramType::Int16
+                    | ProgramType::Int32
+                    | ProgramType::UInt8
+                    | ProgramType::UInt16
+                    | ProgramType::UInt32
+                    | ProgramType::Int64
+                    | ProgramType::UInt64
+                    | ProgramType::Int128
+                    | ProgramType::UInt128
             );
             let expression = match contract_expression_as_c_fragment(&operand) {
                 Some(expression) => expression,
-                None if integer_target => CExpression::Value(int32(0)),
+                None if integer_target => ProgramExpression::Value(int32(0)),
                 None => return Err(self.error("scalar cast expects a current C expression; put old(...) around the whole cast for an entry-state value")),
             };
             // Keep the same operand-bearing representation as a C-style
             // scalar cast, including its proof-expression identity.
             operand = ContractExpression::CUnary {
                 operand: Box::new(operand),
-                lowered: CExpression::Cast {
+                lowered: ProgramExpression::Cast {
                     expression: Box::new(expression),
                     target_type,
                     integer_mode: crate::kernel::CIntegerCastMode::CConversion,
@@ -1719,18 +1719,18 @@ impl Parser {
 }
 
 /// The integer type a bare Click cast target names, `x as uint32`.
-pub(super) fn click_integer_cast_type(name: &str) -> Option<CType> {
+pub(super) fn click_integer_cast_type(name: &str) -> Option<ProgramType> {
     Some(match name {
-        "int8" => CType::Int8,
-        "uint8" => CType::UInt8,
-        "int16" => CType::Int16,
-        "uint16" => CType::UInt16,
-        "int32" => CType::Int32,
-        "uint32" => CType::UInt32,
-        "int64" => CType::Int64,
-        "uint64" => CType::UInt64,
-        "int128" => CType::Int128,
-        "uint128" => CType::UInt128,
+        "int8" => ProgramType::Int8,
+        "uint8" => ProgramType::UInt8,
+        "int16" => ProgramType::Int16,
+        "uint16" => ProgramType::UInt16,
+        "int32" => ProgramType::Int32,
+        "uint32" => ProgramType::UInt32,
+        "int64" => ProgramType::Int64,
+        "uint64" => ProgramType::UInt64,
+        "int128" => ProgramType::Int128,
+        "uint128" => ProgramType::UInt128,
         _ => return None,
     })
 }

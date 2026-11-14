@@ -1,10 +1,10 @@
 use super::*;
 
-fn helper() -> CFunction {
+fn helper() -> ProgramFunction {
     c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "drain_to_zero",
-        vec![c_parameter("n", CType::Int32)],
+        vec![c_parameter("n", ProgramType::Int32)],
         c_seq(
             c_while(
                 c_greater_than(c_variable("n"), c_int32_literal(0)),
@@ -17,12 +17,12 @@ fn helper() -> CFunction {
     .with_inline_body()
 }
 
-fn call(value: CValue, budget: &mut ExecutionBudget) -> ExecutionResult<Vec<CFunctionPath>> {
+fn call(value: ProgramValue, budget: &mut ExecutionBudget) -> ExecutionResult<Vec<CFunctionPath>> {
     let function = helper();
     execute_c_function_call_paths(
-        &CState::new(),
+        &ExecutionState::new(),
         &function,
-        &[CExpression::Value(value)],
+        &[ProgramExpression::Value(value)],
         &PureFactContext::new(),
         CExecutionContext::new(
             &CExecutionEnvironment::new().with_function(function.clone()),
@@ -40,7 +40,7 @@ fn concrete_inline_loops_still_unroll_and_restore_the_call_context_on_error() {
         let paths = call(int32(count), &mut budget).unwrap();
         assert!(matches!(paths.as_slice(), [CFunctionPath {
                 outcome: CFunctionOutcome::Return { value, .. }, ..
-            }] if matches!(value.native().as_ref(), CValue::Int32(bits) if bits.as_const() == Some(0))));
+            }] if matches!(value.native().as_ref(), ProgramValue::Int32(bits) if bits.as_const() == Some(0))));
         assert!(budget.inline_call_name.is_none());
     }
     let mut budget = ExecutionBudget::new();

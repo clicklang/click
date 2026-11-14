@@ -44,16 +44,16 @@ fn focused_execute_handles_deep_branches_on_a_two_megabyte_stack() {
                     let environment = CExecutionEnvironment::new();
                     let arguments = (0..depth)
                         .map(|i| {
-                            CExpression::Value(CValue::Int32(MachineTerm::Variable(Variable(
-                                771_000 + i as u64,
-                            ))))
+                            ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Variable(
+                                Variable(771_000 + i as u64),
+                            )))
                         })
                         .collect::<Vec<_>>();
                     let root = Proof::for_execution_frontier(
                         "deep focused execution",
                         0,
                         ExecutionProofState::at_entry(
-                            CState::new(),
+                            ExecutionState::new(),
                             ExecutionFrontier::default(),
                             RecordedSnapshots::new(),
                             SurfacePropositionMap::default(),

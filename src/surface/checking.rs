@@ -99,7 +99,7 @@ fn produced_range_left_uninitialized(
     resource: &ResourceClause,
     expected: &[CResourceFact],
     parameter_binding: ParameterBinding<'_>,
-    post_state: &CState,
+    post_state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> Option<String> {
     let segments = match resource {
@@ -149,8 +149,8 @@ pub(super) fn prove_ensure_resource<'e>(
     resource: &ResourceClause,
     borrowed: bool,
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    entry_state: &CState,
+    pre_state: &ExecutionState,
+    entry_state: &ExecutionState,
     outcome: &CFunctionOutcome,
     guard_active: Option<bool>,
     guard_deferred: bool,
@@ -208,7 +208,7 @@ pub(super) fn prove_ensure_resource<'e>(
             post_state
         };
         let assumptions = assumptions_from_propositions(available_pure_facts);
-        let lower_at = |clause_state: &CState| {
+        let lower_at = |clause_state: &ExecutionState| {
             lower_resource_clause_facts_at_state_with_result_and_entry(
                 resource,
                 parameter_binding,
@@ -335,13 +335,13 @@ pub(super) fn evaluate_witness_tactic_value(
     path_index: usize,
     tactic_index: usize,
     contract_environment: ContractEnvironment<'_>,
-    pre_state: &CState,
-    post_state: &CState,
-    result: Option<&CValue>,
+    pre_state: &ExecutionState,
+    post_state: &ExecutionState,
+    result: Option<&ProgramValue>,
     assumptions: &PureFactContext,
     spec_definitions: SpecDefinitions<'_>,
     recorded_snapshots: &RecordedSnapshots,
-) -> Result<CValue, ClickError> {
+) -> Result<ProgramValue, ClickError> {
     let mut active_functions = BTreeSet::new();
     let value = evaluate_contract_expression_with_environment(
         contract_environment.values,
@@ -366,7 +366,7 @@ pub(super) fn evaluate_witness_tactic_value(
 
 pub(super) fn apply_witness_tactic(
     witness: &ProofWitness,
-    witness_value: CValue,
+    witness_value: ProgramValue,
     goal: Proposition,
     claim_label: &str,
     path_index: usize,
@@ -401,23 +401,23 @@ pub(super) fn apply_witness_tactic(
         && !expected.accepts(&witness_value)
     {
         let actual = match witness_value.numeric_value() {
-            CValue::PointerInteger(_) => unreachable!("numeric projection"),
-            CValue::Parameter(_) => witness_value.c_type(),
-            CValue::Void => CType::Void,
-            CValue::Bool(_) => CType::Bool,
-            CValue::Int8(_) => CType::Int8,
-            CValue::Int16(_) => CType::Int16,
-            CValue::Int32(_) => CType::Int32,
-            CValue::UInt8(_) => CType::UInt8,
-            CValue::UInt16(_) => CType::UInt16,
-            CValue::UInt32(_) => CType::UInt32,
-            CValue::Int64(_) => CType::Int64,
-            CValue::UInt64(_) => CType::UInt64,
-            CValue::Int128(_) => CType::Int128,
-            CValue::UInt128(_) => CType::UInt128,
-            CValue::Float32(_) => CType::Float32,
-            CValue::Float64(_) => CType::Float64,
-            CValue::Pointer(pointer) => pointer.c_type(),
+            ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
+            ProgramValue::Parameter(_) => witness_value.c_type(),
+            ProgramValue::Void => ProgramType::Void,
+            ProgramValue::Bool(_) => ProgramType::Bool,
+            ProgramValue::Int8(_) => ProgramType::Int8,
+            ProgramValue::Int16(_) => ProgramType::Int16,
+            ProgramValue::Int32(_) => ProgramType::Int32,
+            ProgramValue::UInt8(_) => ProgramType::UInt8,
+            ProgramValue::UInt16(_) => ProgramType::UInt16,
+            ProgramValue::UInt32(_) => ProgramType::UInt32,
+            ProgramValue::Int64(_) => ProgramType::Int64,
+            ProgramValue::UInt64(_) => ProgramType::UInt64,
+            ProgramValue::Int128(_) => ProgramType::Int128,
+            ProgramValue::UInt128(_) => ProgramType::UInt128,
+            ProgramValue::Float32(_) => ProgramType::Float32,
+            ProgramValue::Float64(_) => ProgramType::Float64,
+            ProgramValue::Pointer(pointer) => pointer.c_type(),
         };
         return Err(ClickError::new(format!(
             "`witness` failed for `{claim_label}` path {path_index}, tactic {tactic_index}: witness `{}` has the wrong type: expected {}, got {}",
@@ -445,8 +445,8 @@ pub(super) fn apply_witness_tactic(
         }
         (
             Sort::CPointer(expected) | Sort::CObjectPointer(expected, _),
-            CValue::Pointer(pointer),
-        ) if expected.accepts(&CValue::Pointer(pointer.clone())) => {
+            ProgramValue::Pointer(pointer),
+        ) if expected.accepts(&ProgramValue::Pointer(pointer.clone())) => {
             crate::kernel::substitute_pointer_value_in_proposition(&body, var, &pointer)
                 .map_err(ClickError::new)?
         }

@@ -95,7 +95,7 @@ fn held_composite_resource_clause(
     definition: &ResourceDefinition,
     arguments: &[AlgebraicValue],
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
 ) -> Option<ResourceClause> {
     if arguments.len() != definition.parameters().len() {
         return None;

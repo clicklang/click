@@ -18,7 +18,7 @@ fn retained_rewritten_loads_share_syntax_but_recheck_authority() {
                     ConditionTerm::equal(MachineTerm::Variable(variable), one.clone()),
                     true,
                 )]);
-                let mut left = KernelTerm::variable(KernelType::C(CType::Int32), variable);
+                let mut left = KernelTerm::variable(KernelType::C(ProgramType::Int32), variable);
                 let mut right = KernelTermImport::default().machine(format, &one);
                 let guard = |value: MachineTerm| {
                     KernelTermImport::default().condition(&ConditionTerm::Compare {

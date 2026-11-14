@@ -54,8 +54,8 @@ fn optional_exit_cache_reconciliation_does_not_walk_unrelated_store_history() {
             memory = memory.store(other.clone(), int32(index as u32));
         }
         let mut exits = [
-            CState::new().with_memory(memory.clone().store(pointer.clone(), int32(0))),
-            CState::new().with_memory(memory),
+            ExecutionState::new().with_memory(memory.clone().store(pointer.clone(), int32(0))),
+            ExecutionState::new().with_memory(memory),
         ];
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             retain_proven_loop_exit_cells(
@@ -91,12 +91,12 @@ fn exit_cache_reconciliation_reuses_the_joins_exit_contexts() {
     };
     let memory = CMemory::new().with_block("shared", 4);
     // Name the cell's load, as the exit's own read did.
-    let load = symbolic_storage_cell_value(&memory, &pointer, CType::Int32, true).unwrap();
+    let load = symbolic_storage_cell_value(&memory, &pointer, ProgramType::Int32, true).unwrap();
     let zero = int32(0);
     let exits = || {
         [
-            CState::new().with_memory(memory.clone().store(pointer.clone(), zero.clone())),
-            CState::new().with_memory(memory.clone()),
+            ExecutionState::new().with_memory(memory.clone().store(pointer.clone(), zero.clone())),
+            ExecutionState::new().with_memory(memory.clone()),
         ]
     };
     let mut rebuilt = Vec::new();

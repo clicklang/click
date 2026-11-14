@@ -95,11 +95,11 @@ fn integer_comparison_type(other: &ContractExpression) -> Option<&'static str> {
         inner = next;
     }
     match inner {
-        ContractExpression::CFragment(CExpression::Value(value)) => match value {
-            CValue::UInt32(_) => Some("uint32"),
-            CValue::Int64(_) => Some("int64"),
-            CValue::UInt64(_) => Some("uint64"),
-            CValue::Int32(term)
+        ContractExpression::CFragment(ProgramExpression::Value(value)) => match value {
+            ProgramValue::UInt32(_) => Some("uint32"),
+            ProgramValue::Int64(_) => Some("int64"),
+            ProgramValue::UInt64(_) => Some("uint64"),
+            ProgramValue::Int32(term)
                 if matches!(term, crate::kernel::bits32_constant!(_))
                     && !matches!(term, crate::kernel::bits32_constant!(0)) =>
             {
@@ -144,22 +144,22 @@ fn machine_arithmetic(
     {
         return None;
     }
-    fn c_arithmetic(expression: &CExpression) -> bool {
+    fn c_arithmetic(expression: &ProgramExpression) -> bool {
         matches!(
             expression,
-            CExpression::Add(..)
-                | CExpression::Subtract(..)
-                | CExpression::Multiply(..)
-                | CExpression::Divide(..)
-                | CExpression::Remainder(..)
-                | CExpression::ShiftLeft(..)
-                | CExpression::RustShiftLeft(..)
-                | CExpression::ShiftRight(..)
-                | CExpression::RustShiftRight(..)
-                | CExpression::BitwiseAnd(..)
-                | CExpression::BitwiseOr(..)
-                | CExpression::BitwiseXor(..)
-                | CExpression::BitwiseNot(..)
+            ProgramExpression::Add(..)
+                | ProgramExpression::Subtract(..)
+                | ProgramExpression::Multiply(..)
+                | ProgramExpression::Divide(..)
+                | ProgramExpression::Remainder(..)
+                | ProgramExpression::ShiftLeft(..)
+                | ProgramExpression::RustShiftLeft(..)
+                | ProgramExpression::ShiftRight(..)
+                | ProgramExpression::RustShiftRight(..)
+                | ProgramExpression::BitwiseAnd(..)
+                | ProgramExpression::BitwiseOr(..)
+                | ProgramExpression::BitwiseXor(..)
+                | ProgramExpression::BitwiseNot(..)
         )
     }
     // The operation's operands, read under the same snapshot.
@@ -190,7 +190,7 @@ fn machine_arithmetic(
                 contract_pending.push(operand)
             }
             ContractExpression::IntegerLiteral(_) => return None,
-            ContractExpression::CFragment(CExpression::Value(value)) if !top => {
+            ContractExpression::CFragment(ProgramExpression::Value(value)) if !top => {
                 machine = true;
                 c_types.push(value.clone());
             }
@@ -213,23 +213,23 @@ fn machine_arithmetic(
     }
     while let Some(expression) = c_pending.pop() {
         match expression {
-            CExpression::Value(value) => c_types.push(value.clone()),
-            CExpression::Add(left, right)
-            | CExpression::Subtract(left, right)
-            | CExpression::Multiply(left, right)
-            | CExpression::Divide(left, right)
-            | CExpression::Remainder(left, right)
-            | CExpression::ShiftLeft(left, right)
-            | CExpression::RustShiftLeft(left, right)
-            | CExpression::ShiftRight(left, right)
-            | CExpression::RustShiftRight(left, right)
-            | CExpression::BitwiseAnd(left, right)
-            | CExpression::BitwiseOr(left, right)
-            | CExpression::BitwiseXor(left, right) => {
+            ProgramExpression::Value(value) => c_types.push(value.clone()),
+            ProgramExpression::Add(left, right)
+            | ProgramExpression::Subtract(left, right)
+            | ProgramExpression::Multiply(left, right)
+            | ProgramExpression::Divide(left, right)
+            | ProgramExpression::Remainder(left, right)
+            | ProgramExpression::ShiftLeft(left, right)
+            | ProgramExpression::RustShiftLeft(left, right)
+            | ProgramExpression::ShiftRight(left, right)
+            | ProgramExpression::RustShiftRight(left, right)
+            | ProgramExpression::BitwiseAnd(left, right)
+            | ProgramExpression::BitwiseOr(left, right)
+            | ProgramExpression::BitwiseXor(left, right) => {
                 c_pending.push(left);
                 c_pending.push(right);
             }
-            CExpression::BitwiseNot(operand) => c_pending.push(operand),
+            ProgramExpression::BitwiseNot(operand) => c_pending.push(operand),
             _ => {}
         }
     }
@@ -241,10 +241,10 @@ fn machine_arithmetic(
     let mut machine_type = "int32";
     for value in c_types {
         machine_type = match value {
-            CValue::Int32(_) => continue,
-            CValue::UInt32(_) => "uint32",
-            CValue::Int64(_) => "int64",
-            CValue::UInt64(_) => "uint64",
+            ProgramValue::Int32(_) => continue,
+            ProgramValue::UInt32(_) => "uint32",
+            ProgramValue::Int64(_) => "int64",
+            ProgramValue::UInt64(_) => "uint64",
             _ => return None,
         };
     }
@@ -2377,11 +2377,11 @@ mod tests {
             proposition.clone()
         }
         let word = |value: u64| {
-            ContractExpression::CFragment(CExpression::Value(CValue::UInt64(
+            ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::UInt64(
                 crate::kernel::MachineTerm::uint64_constant(value),
             )))
         };
-        let n = || ContractExpression::CFragment(CExpression::Variable("n".into()));
+        let n = || ContractExpression::CFragment(ProgramExpression::Variable("n".into()));
         for (arithmetic, spelled, bare) in [
             (
                 ContractExpression::Subtract(Box::new(n()), Box::new(word(1))),
@@ -2421,7 +2421,7 @@ mod tests {
     }
 
     fn certificate_variable(name: &str) -> ContractExpression {
-        ContractExpression::CFragment(CExpression::Variable(name.into()))
+        ContractExpression::CFragment(ProgramExpression::Variable(name.into()))
     }
 
     fn certificate_literal(value: &str) -> ContractExpression {
@@ -2624,9 +2624,10 @@ mod tests {
 
     #[test]
     fn a_read_through_a_checked_object_address_spells_the_original_place() {
-        let address =
-            CExpression::CheckedObjectAddress(Box::new(CExpression::Variable("value".into())));
-        let zero = CExpression::Value(CValue::Int32(MachineTerm::constant(0)));
+        let address = ProgramExpression::CheckedObjectAddress(Box::new(
+            ProgramExpression::Variable("value".into()),
+        ));
+        let zero = ProgramExpression::Value(ProgramValue::Int32(MachineTerm::constant(0)));
         // Call substitution retains a Surface index; lowered C expressions
         // can also carry the read. Both must print the original lvalue.
         for read in [
@@ -2634,14 +2635,17 @@ mod tests {
                 Box::new(ContractExpression::CFragment(address.clone())),
                 Box::new(ContractExpression::CFragment(zero.clone())),
             ),
-            ContractExpression::CFragment(CExpression::Index(Box::new(address), Box::new(zero))),
+            ContractExpression::CFragment(ProgramExpression::Index(
+                Box::new(address),
+                Box::new(zero),
+            )),
         ] {
             let proposition = ClickProposition::Comparison {
                 left: read,
                 operator: ComparisonOperator::LessEqual,
-                right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                    MachineTerm::constant(10),
-                ))),
+                right: ContractExpression::CFragment(ProgramExpression::Value(
+                    ProgramValue::Int32(MachineTerm::constant(10)),
+                )),
             };
             let source = source_click_proposition(&proposition);
             assert_eq!(source, "value <= 10");
@@ -2662,16 +2666,16 @@ mod tests {
         let read = ContractExpression::Index(
             Box::new(ContractExpression::Field {
                 pointee_struct: None,
-                base: Box::new(ContractExpression::CFragment(CExpression::Variable(
+                base: Box::new(ContractExpression::CFragment(ProgramExpression::Variable(
                     "p".into(),
                 ))),
                 field: "items".into(),
-                lowered: CExpression::TypedLoad {
-                    pointer: Box::new(CExpression::PointerOffsetBytes {
-                        pointer: Box::new(CExpression::Variable("p".into())),
+                lowered: ProgramExpression::TypedLoad {
+                    pointer: Box::new(ProgramExpression::PointerOffsetBytes {
+                        pointer: Box::new(ProgramExpression::Variable("p".into())),
                         bytes: 4,
                     }),
-                    value_type: CType::UInt32Array(3),
+                    value_type: ProgramType::UInt32Array(3),
                     volatile: false,
                     pointee_constant: false,
                     access_class: None,
@@ -2679,12 +2683,12 @@ mod tests {
                 },
                 offset_bytes: 4,
             }),
-            Box::new(ContractExpression::CFragment(CExpression::Variable(
+            Box::new(ContractExpression::CFragment(ProgramExpression::Variable(
                 "index".into(),
             ))),
         );
         let goal = ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::Variable("result".into())),
+            left: ContractExpression::CFragment(ProgramExpression::Variable("result".into())),
             operator: ComparisonOperator::Equal,
             right: read,
         };
@@ -2715,9 +2719,9 @@ mod tests {
     #[test]
     fn marked_conjunction_uses_parseable_click_connectives() {
         let equality = |name: &str| ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::Variable(name.to_string())),
+            left: ContractExpression::CFragment(ProgramExpression::Variable(name.to_string())),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::CFragment(CExpression::Variable(name.to_string())),
+            right: ContractExpression::CFragment(ProgramExpression::Variable(name.to_string())),
         };
         let proposition = ClickProposition::At {
             selector: SnapshotSelector::Mark("checkpoint".to_string()),

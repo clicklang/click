@@ -56,11 +56,11 @@ mod projection_path_tests {
 
     fn surface_leaf() -> ClickProposition {
         ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
+            left: ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::Int32(
                 MachineTerm::constant(0),
             ))),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
+            right: ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::Int32(
                 MachineTerm::constant(0),
             ))),
         }
@@ -868,7 +868,7 @@ impl<'a> Proof<'a> {
         // The checker receives exactly the named premises, not the ambient
         // context. Its work is therefore independent of unrelated facts, and
         // it cannot silently search for an omitted theorem requirement.
-        let state = CState::new().with_memory(context.theorem_context.memory.clone());
+        let state = ExecutionState::new().with_memory(context.theorem_context.memory.clone());
         let recorded_snapshots = RecordedSnapshots::new();
         let mut integer_values = context.theorem_context.integer_values.clone();
         for name in application
@@ -1247,7 +1247,7 @@ impl<'a> Proof<'a> {
             crate::kernel::integer_c_value!(value) => {
                 substitute_int32_variable_in_proposition(&body, var, value.clone())
             }
-            CValue::Pointer(pointer) => {
+            ProgramValue::Pointer(pointer) => {
                 crate::kernel::substitute_pointer_value_in_proposition(&body, var, pointer)
                     .map_err(|error| self.step_error(&error))?
             }
@@ -1256,7 +1256,7 @@ impl<'a> Proof<'a> {
         let mut locals = self.state().locals().clone();
         locals.values = locals.values.with_inserted(
             choice.name.clone(),
-            ContractExpression::CFragment(CExpression::Value(chosen.clone())),
+            ContractExpression::CFragment(ProgramExpression::Value(chosen.clone())),
         );
         locals.next_choice_variable = chosen_variable.0.saturating_add(1);
         let added_facts = if self.facts().contains_top_level(&chosen_fact) {
@@ -1371,7 +1371,7 @@ impl<'a> Proof<'a> {
                 sort if sort.machine_integer_type().is_some() => {
                     locals.values = locals.values.with_inserted(
                         name.clone(),
-                        ContractExpression::CFragment(CExpression::Value(
+                        ContractExpression::CFragment(ProgramExpression::Value(
                             sort.machine_integer_type()
                                 .unwrap()
                                 .symbolic_value(variable),
@@ -1381,7 +1381,7 @@ impl<'a> Proof<'a> {
                 sort if sort.pointer_type().is_some() => {
                     locals.values = locals.values.with_inserted(
                         name.clone(),
-                        ContractExpression::CFragment(CExpression::Value(
+                        ContractExpression::CFragment(ProgramExpression::Value(
                             sort.symbolic_pointer_value(variable)
                                 .expect("pointer choice sort"),
                         )),
@@ -1518,7 +1518,7 @@ impl<'a> Proof<'a> {
                         &surface,
                         &BTreeMap::from([(
                             name.clone(),
-                            ContractExpression::CFragment(CExpression::Value(chosen.clone())),
+                            ContractExpression::CFragment(ProgramExpression::Value(chosen.clone())),
                         )]),
                     )
                     .map_err(|message| self.step_error(message))?;
@@ -1660,7 +1660,7 @@ impl<'a> Proof<'a> {
         source_selection: Option<&CallerRequirementSelection>,
         chosen_variable: Variable,
         choice: &ProofChoice,
-        chosen: &CValue,
+        chosen: &ProgramValue,
     ) -> Result<Option<ChosenProjection>, ClickError> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Ok(None);
@@ -1693,7 +1693,7 @@ impl<'a> Proof<'a> {
             (Proposition::Exists { var, body, .. }, crate::kernel::integer_c_value!(value)) => {
                 substitute_int32_variable_in_proposition(body, *var, value.clone())
             }
-            (Proposition::Exists { var, body, .. }, CValue::Pointer(pointer)) => {
+            (Proposition::Exists { var, body, .. }, ProgramValue::Pointer(pointer)) => {
                 crate::kernel::substitute_pointer_value_in_proposition(body, *var, pointer)
                     .map_err(|error| self.step_error(&error))?
             }
@@ -1743,7 +1743,7 @@ impl<'a> Proof<'a> {
                         &surface,
                         &BTreeMap::from([(
                             choice.name.clone(),
-                            ContractExpression::CFragment(CExpression::Value(chosen.clone())),
+                            ContractExpression::CFragment(ProgramExpression::Value(chosen.clone())),
                         )]),
                     )
                     .map_err(|message| {
@@ -2283,7 +2283,7 @@ impl<'a> Proof<'a> {
                     .map(|value| (name.clone(), value))
             })
             .collect();
-        let state = CState::new().with_memory(context.theorem_context.memory.clone());
+        let state = ExecutionState::new().with_memory(context.theorem_context.memory.clone());
         let value = evaluate_fixed_state_expression_through_kernel_with_algebraic_values(
             checked_witness.value(),
             self.facts().assumptions(),
@@ -2480,7 +2480,7 @@ impl<'a> Proof<'a> {
                     .map(|value| (name.clone(), value.clone()))
             })
             .collect();
-        let state = CState::new().with_memory(context.theorem_context.memory.clone());
+        let state = ExecutionState::new().with_memory(context.theorem_context.memory.clone());
         let algebraic_values = names
             .iter()
             .filter_map(|name| {
@@ -2571,7 +2571,7 @@ impl<'a> Proof<'a> {
                     .map(|value| (name.clone(), value.clone()))
             })
             .collect();
-        let state = CState::new().with_memory(context.theorem_context.memory.clone());
+        let state = ExecutionState::new().with_memory(context.theorem_context.memory.clone());
         let states = crate::surface::proof::fixed_state_proofs::FixedStateLowering::new(
             ContractEnvironment::new(&values, &arrays),
             &state,
@@ -2661,7 +2661,7 @@ impl<'a> Proof<'a> {
                         .map(|value| (name.clone(), value))
                 })
                 .collect();
-            let state = CState::new().with_memory(context.theorem_context.memory.clone());
+            let state = ExecutionState::new().with_memory(context.theorem_context.memory.clone());
             evaluate_fixed_state_expression_through_kernel_with_algebraic_values(
                 &argument,
                 self.facts().assumptions(),
@@ -2735,11 +2735,13 @@ impl<'a> Proof<'a> {
         })?;
         let uint64 = Sort::CMachineInteger(crate::kernel::MachineIntegerType::UInt64);
         match (binder, value) {
-            (Sort::CInt32, CValue::Int32(argument)) => Ok(InstanceArgument::Machine(argument)),
-            (binder, CValue::UInt64(argument)) if *binder == uint64 => {
+            (Sort::CInt32, ProgramValue::Int32(argument)) => {
                 Ok(InstanceArgument::Machine(argument))
             }
-            (Sort::CPointer(_) | Sort::CObjectPointer(_, _), CValue::Pointer(pointer)) => {
+            (binder, ProgramValue::UInt64(argument)) if *binder == uint64 => {
+                Ok(InstanceArgument::Machine(argument))
+            }
+            (Sort::CPointer(_) | Sort::CObjectPointer(_, _), ProgramValue::Pointer(pointer)) => {
                 Ok(InstanceArgument::Pointer(pointer))
             }
             (binder, _) if *binder == uint64 => {
@@ -2836,16 +2838,16 @@ impl<'a> Proof<'a> {
         // lowering below is optional, and only C values have a fragment form.
         let surface_argument = match &argument {
             InstanceArgument::Machine(value) => {
-                Some(ContractExpression::CFragment(CExpression::Value(
+                Some(ContractExpression::CFragment(ProgramExpression::Value(
                     if binder == Sort::CMachineInteger(crate::kernel::MachineIntegerType::UInt64) {
-                        CValue::UInt64(value.clone())
+                        ProgramValue::UInt64(value.clone())
                     } else {
-                        CValue::Int32(value.clone())
+                        ProgramValue::Int32(value.clone())
                     },
                 )))
             }
             InstanceArgument::Pointer(pointer) => Some(ContractExpression::CFragment(
-                CExpression::Value(CValue::Pointer(pointer.clone())),
+                ProgramExpression::Value(ProgramValue::Pointer(pointer.clone())),
             )),
             InstanceArgument::Integer(_) => None,
         };
@@ -2970,7 +2972,7 @@ impl<'a> Proof<'a> {
     /// [`Self::diagnostic_naming_tables`], deferred to rendering when the
     /// proof's parameter binding shares its lists.
     pub(in crate::surface::proof) fn diagnostic_naming(&self) -> super::DiagnosticNaming {
-        let deferred = |state: &CState, binding: ParameterBinding<'_>| {
+        let deferred = |state: &ExecutionState, binding: ParameterBinding<'_>| {
             binding.naming.map(|naming| {
                 super::DiagnosticNaming::LocalsThenParameters(state.clone(), naming.clone())
             })
@@ -2992,13 +2994,13 @@ impl<'a> Proof<'a> {
 
     pub(in crate::surface::proof) fn diagnostic_naming_tables(
         &self,
-    ) -> (Vec<syntax::C0Parameter>, Vec<CExpression>) {
+    ) -> (Vec<syntax::C0Parameter>, Vec<ProgramExpression>) {
         // The state's locals first, then the entry parameters: a local names
         // the value it holds here, and a parameter the value it was entered
         // with, and either may be what a lowered term reads.
-        let with_locals = |state: &CState,
+        let with_locals = |state: &ExecutionState,
                            parameters: &[syntax::C0Parameter],
-                           arguments: &[CExpression]| {
+                           arguments: &[ProgramExpression]| {
             let (mut names, mut values) = crate::surface::diagnostics::local_naming_tables(state);
             names.extend(parameters.iter().cloned());
             values.extend(arguments.iter().cloned());
@@ -3122,7 +3124,7 @@ impl<'a> Proof<'a> {
         surface_equality: &ClickProposition,
         // Naming can scan unrelated locals. Construct these tables only
         // on refusal, preserving the selected fixed state's diagnostic names.
-        naming_tables: impl FnOnce() -> (Vec<syntax::C0Parameter>, Vec<CExpression>),
+        naming_tables: impl FnOnce() -> (Vec<syntax::C0Parameter>, Vec<ProgramExpression>),
     ) -> Result<CheckedFocusedTransition, ClickError> {
         // Name both sides: a rewrite that finds nothing to replace is
         // almost always an equality whose left side lowered to a different
@@ -3341,17 +3343,17 @@ impl<'a> Proof<'a> {
         let surface = self.substitute_fixed_state_locals_in_proposition(surface)?;
         let chosen_body = match checked_source {
             Proposition::Exists { var, body, .. } => match binding {
-                ContractExpression::CFragment(CExpression::Value(CValue::Int32(_))) => {
+                ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::Int32(_))) => {
                     substitute_int32_variable_in_proposition(
                         &body,
                         var,
                         MachineTerm::Variable(projection.chosen_variable),
                     )
                 }
-                ContractExpression::CFragment(CExpression::Value(CValue::Pointer(pointer))) => {
-                    crate::kernel::substitute_pointer_value_in_proposition(&body, var, pointer)
-                        .map_err(|error| self.step_error(&error))?
-                }
+                ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::Pointer(
+                    pointer,
+                ))) => crate::kernel::substitute_pointer_value_in_proposition(&body, var, pointer)
+                    .map_err(|error| self.step_error(&error))?,
                 _ => return Ok(None),
             },
             _ => return Ok(None),
@@ -4336,10 +4338,10 @@ fn loadable_surface_range_endpoints(
 /// for `variable`: a machine integer of any width, or a pointer offset.
 fn binding_names_chosen_variable(binding: &ContractExpression, variable: Variable) -> bool {
     match binding {
-        ContractExpression::CFragment(CExpression::Value(CValue::Pointer(pointer))) => {
+        ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::Pointer(pointer))) => {
             pointer.pointer().offset == PointerOffsetTerm::Variable(variable)
         }
-        ContractExpression::CFragment(CExpression::Value(value)) => {
+        ContractExpression::CFragment(ProgramExpression::Value(value)) => {
             crate::kernel::MachineIntegerType::from_c_type(value.c_type())
                 .is_some_and(|integer| *value == integer.symbolic_value(variable))
         }

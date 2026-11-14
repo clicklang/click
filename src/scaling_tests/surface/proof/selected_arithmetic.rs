@@ -10,7 +10,7 @@ fn failed_integer_bridge_does_not_construct_unused_facts() {
     let mut samples = Vec::new();
     for size in [4, 16, 64] {
         let value = MachineTerm::Variable(Variable(910_001));
-        let written = ContractExpression::CFragment(CExpression::Variable("x".into()));
+        let written = ContractExpression::CFragment(ProgramExpression::Variable("x".into()));
         let mut facts = Vec::new();
         let mut surfaces = SurfacePropositionMap::default();
         for index in 0..size {
@@ -25,7 +25,7 @@ fn failed_integer_bridge_does_not_construct_unused_facts() {
             );
             let surface = relate(
                 written.clone(),
-                ContractExpression::CFragment(CExpression::Value(int32(100 + index))),
+                ContractExpression::CFragment(ProgramExpression::Value(int32(100 + index))),
                 Relation::Less,
             );
             surfaces.record_lowering(&surface, &fact).unwrap();
@@ -36,7 +36,7 @@ fn failed_integer_bridge_does_not_construct_unused_facts() {
             declaration_bindings: BTreeMap::new(),
             integer_values: crate::persistent::PersistentMap::default(),
             memory: CMemory::new(),
-            values: BTreeMap::from([("x".into(), CValue::Int32(value))]),
+            values: BTreeMap::from([("x".into(), ProgramValue::Int32(value))]),
             array_refs: BTreeMap::new(),
             requires: facts.clone(),
             surface_requirements: surfaces,
@@ -131,7 +131,7 @@ fn disequality_refutation_work_ignores_unrelated_facts() {
             MachineTerm::Variable(Variable(911_003)),
         );
         let written =
-            |name: &str| ContractExpression::CFragment(CExpression::Variable(name.into()));
+            |name: &str| ContractExpression::CFragment(ProgramExpression::Variable(name.into()));
         let mut surfaces = SurfacePropositionMap::default();
         let order = Proposition::ConditionIs(
             ConditionTerm::Compare {
@@ -160,7 +160,7 @@ fn disequality_refutation_work_ignores_unrelated_facts() {
             );
             let surface = relate(
                 written("y"),
-                ContractExpression::CFragment(CExpression::Value(int32(100 + index))),
+                ContractExpression::CFragment(ProgramExpression::Value(int32(100 + index))),
                 Relation::Less,
             );
             surfaces.record_lowering(&surface, &fact).unwrap();
@@ -172,9 +172,9 @@ fn disequality_refutation_work_ignores_unrelated_facts() {
             integer_values: crate::persistent::PersistentMap::default(),
             memory: CMemory::new(),
             values: BTreeMap::from([
-                ("k".into(), CValue::Int32(k)),
-                ("j".into(), CValue::Int32(j)),
-                ("y".into(), CValue::Int32(y)),
+                ("k".into(), ProgramValue::Int32(k)),
+                ("j".into(), ProgramValue::Int32(j)),
+                ("y".into(), ProgramValue::Int32(y)),
             ]),
             array_refs: BTreeMap::new(),
             requires: facts.clone(),
@@ -271,7 +271,7 @@ fn retained_machine_rewrite_admission_reads_only_comparison_roots() {
 fn rewrite_history_keys_share_call_carriers_and_keep_snapshot_authority() {
     use super::search::RewriteGoalKey;
     use crate::kernel::{
-        CPointerValue, KernelTermImport, PureFunctionArgument, SharedMachineIntegerTerm,
+        KernelTermImport, PointerValue, PureFunctionArgument, SharedMachineIntegerTerm,
         SharedPureApplication,
     };
     let mut samples = Vec::new();
@@ -281,17 +281,17 @@ fn rewrite_history_keys_share_call_carriers_and_keep_snapshot_authority() {
         let before = CMemory::new();
         let after = before
             .clone()
-            .store(pointer.clone(), CValue::Int32(7u32.into()));
+            .store(pointer.clone(), ProgramValue::Int32(7u32.into()));
         let goal = |memory, format| {
             let application = SharedPureApplication::intern(
                 "read_length".into(),
                 vec![PureFunctionArgument::ArrayRef {
                     memory,
-                    pointer: CValue::Pointer(CPointerValue::new(
+                    pointer: ProgramValue::Pointer(PointerValue::new(
                         pointer.clone(),
-                        CType::Int32Pointer,
+                        ProgramType::Int32Pointer,
                     )),
-                    element_type: CType::Int32,
+                    element_type: ProgramType::Int32,
                 }],
             );
             let mut root = KernelTermImport::default().machine_call(format, &application);

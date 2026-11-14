@@ -9,9 +9,9 @@ use std::sync::{Arc, OnceLock};
 
 /// Shared declaration input of the closing goals, prepared once per proof.
 pub(crate) struct CContractClosingContext {
-    function: CFunction,
-    caller: CState,
-    arguments: Vec<CExpression>,
+    function: ProgramFunction,
+    caller: ExecutionState,
+    arguments: Vec<ProgramExpression>,
     entry_assumptions: PureFactContext,
     checked_entry: Option<Arc<crate::kernel::functions::CheckedBoundaryResourceTransfer>>,
     resource_claims: Vec<CFunctionContractClaim>,
@@ -22,7 +22,7 @@ pub(crate) struct CContractClosingContext {
 }
 
 struct ClosingEntry {
-    state: CState,
+    state: ExecutionState,
     resources: Option<Arc<[CCheckedResourceFact]>>,
     projection: CFunctionMemoryEffectProjection,
 }
@@ -252,7 +252,7 @@ impl CContractExitObligations {
     /// any retained boundary refusal the resource producer does not cover.
     pub(crate) fn apply_resource_transition(
         &self,
-        caller: &CState,
+        caller: &ExecutionState,
         outcome: CFunctionOutcome,
         assumptions: &PureFactContext,
     ) -> Result<(Self, CFunctionOutcome), String> {
@@ -673,7 +673,7 @@ impl CContractExitObligations {
 /// The empty footprint is a resource/effect goal over the body's retained
 /// effects. Proof-local facts cannot introduce additional program writes.
 pub(crate) fn check_empty_footprint(
-    caller: &CState,
+    caller: &ExecutionState,
     effects: &ExecutionFacts,
     assumptions: &PureFactContext,
 ) -> Result<(), CContractClosingRefusal> {
@@ -706,7 +706,11 @@ pub(crate) fn check_empty_footprint(
     Ok(())
 }
 
-fn preexisting_write(pointer: &Pointer, caller: &CState, assumptions: &PureFactContext) -> bool {
+fn preexisting_write(
+    pointer: &Pointer,
+    caller: &ExecutionState,
+    assumptions: &PureFactContext,
+) -> bool {
     if pointer.block.is_local_block() || pointer.block.is_havoc_block() {
         return false;
     }

@@ -2,7 +2,7 @@
 use super::*;
 use crate::kernel::MachineCastSpelling as E;
 
-pub(in crate::kernel::spec) fn cast(value: &SpecValue, target: CType) -> Option<KernelTerm> {
+pub(in crate::kernel::spec) fn cast(value: &SpecValue, target: ProgramType) -> Option<KernelTerm> {
     cast_signedness(value, target)
         .or_else(|| cast_widening(value, target))
         .or_else(|| cast_narrowing(value, target))
@@ -12,7 +12,7 @@ pub(in crate::kernel::spec) fn cast(value: &SpecValue, target: CType) -> Option<
 /// Narrowing retains the existing modular truncation and low-word rules.
 pub(in crate::kernel::spec) fn cast_narrowing(
     value: &SpecValue,
-    target: CType,
+    target: ProgramType,
 ) -> Option<KernelTerm> {
     let SpecValue::Shared(root) = value else {
         return None;
@@ -32,7 +32,7 @@ pub(in crate::kernel::spec) fn cast_narrowing(
 /// operands outside the retained machine fragment keep their existing path.
 pub(in crate::kernel::spec) fn cast_widening(
     value: &SpecValue,
-    target: CType,
+    target: ProgramType,
 ) -> Option<KernelTerm> {
     let SpecValue::Shared(root) = value else {
         return None;
@@ -52,7 +52,7 @@ pub(in crate::kernel::spec) fn cast_widening(
 /// conversions and native inputs keep their existing compatibility boundary.
 pub(in crate::kernel::spec) fn cast_signedness(
     value: &SpecValue,
-    target: CType,
+    target: ProgramType,
 ) -> Option<KernelTerm> {
     let SpecValue::Shared(root) = value else {
         return None;
@@ -123,7 +123,7 @@ fn cast_root(
 
 /// The bounded 128-bit profile uses the same modular generic cast as the
 /// language conversion table, admitting only its existing typed operands.
-fn cast_wide(value: &SpecValue, target: CType) -> Option<KernelTerm> {
+fn cast_wide(value: &SpecValue, target: ProgramType) -> Option<KernelTerm> {
     let SpecValue::Shared(root) = value else {
         return None;
     };

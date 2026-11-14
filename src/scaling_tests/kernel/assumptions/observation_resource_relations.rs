@@ -9,7 +9,7 @@ fn resource_relation_comparison_keys_visit_only_selected_arguments() {
             name: "selected".into(),
             arguments: (0..size)
                 .map(|i| {
-                    AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(Variable(
+                    AlgebraicValue::C(ProgramValue::Int32(MachineTerm::Variable(Variable(
                         3_219_400 + i as u64,
                     ))))
                 })
@@ -43,7 +43,7 @@ fn resource_relation_comparison_lookup_ignores_unrelated_facts() {
             LoadKind::Int32,
             4,
         );
-        let pointer = CPointerValue::new(address.clone(), CType::Int32Pointer);
+        let pointer = PointerValue::new(address.clone(), ProgramType::Int32Pointer);
         let source = relation(MachineTerm::Variable(name), pointer.clone(), false);
         let goal = relation(
             MachineTerm::MemoryLoad(memory, Box::new(address), LoadKind::Int32),

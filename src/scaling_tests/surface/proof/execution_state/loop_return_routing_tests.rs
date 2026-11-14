@@ -71,11 +71,11 @@ fn surface_suffix_append_borrows_steps_on_a_small_stack() {
                     let mut suffix = certificate(vec![ProofStep::Normalize]);
                     for index in 0..depth {
                         let condition = ClickProposition::Comparison {
-                            left: ContractExpression::CFragment(CExpression::Variable(format!(
-                                "b{index}"
-                            ))),
+                            left: ContractExpression::CFragment(ProgramExpression::Variable(
+                                format!("b{index}"),
+                            )),
                             operator: ComparisonOperator::Equal,
-                            right: ContractExpression::CFragment(CExpression::Value(
+                            right: ContractExpression::CFragment(ProgramExpression::Value(
                                 crate::kernel::int32(1),
                             )),
                         };

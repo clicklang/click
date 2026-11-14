@@ -42,18 +42,20 @@ impl CStatementAssignSource {
     }
     pub(super) fn completed(
         &self,
-        before: &CState,
-        after: &CState,
+        before: &ExecutionState,
+        after: &ExecutionState,
         assigned: &str,
     ) -> Option<ExecutionPureFact> {
         let source = self.0.as_ref()?;
         if assigned != source.child.as_ref() {
             return None;
         }
-        let CValue::Pointer(parent) = before.locals.get(&source.parent)?.native_payload()? else {
+        let ProgramValue::Pointer(parent) = before.locals.get(&source.parent)?.native_payload()?
+        else {
             return None;
         };
-        let CValue::Pointer(child) = after.locals.get(&source.child)?.native_payload()? else {
+        let ProgramValue::Pointer(child) = after.locals.get(&source.child)?.native_payload()?
+        else {
             return None;
         };
         if parent.pointer() != child.pointer() || parent.c_type() != child.c_type() {
@@ -181,7 +183,7 @@ enum ReferenceObservation {
         source: Arc<ReferenceAccessSourceId>,
         pointer: Pointer,
         snapshot: CMemorySnapshotIdentity,
-        value_type: CType,
+        value_type: ProgramType,
     },
     Borrow(ReferenceBorrowObservation),
 }
@@ -190,7 +192,7 @@ impl ReferenceObservationSource {
         source: Arc<ReferenceAccessSourceId>,
         pointer: Pointer,
         memory: &CMemory,
-        value_type: CType,
+        value_type: ProgramType,
     ) -> Self {
         Self(Some(Arc::new(ReferenceObservation::Read {
             source,
@@ -330,13 +332,14 @@ mod tests {
             block: "birth".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let before = CState::new().with_local(
+        let before = ExecutionState::new().with_local(
             "parent",
-            CValue::typed_pointer(pointer.clone(), CType::Int32Pointer),
+            ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer),
         );
-        let after = before
-            .clone()
-            .with_local("child", CValue::typed_pointer(pointer, CType::Int32Pointer));
+        let after = before.clone().with_local(
+            "child",
+            ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer),
+        );
         CStatementAssignSource::new(ReferenceBorrowSourceId {
             import_identity: "locked".into(),
             function: "borrow".into(),
@@ -378,9 +381,9 @@ mod tests {
             block: "birth".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let before = CState::new().with_local(
+        let before = ExecutionState::new().with_local(
             "parent",
-            CValue::typed_pointer(pointer.clone(), CType::Int32Pointer),
+            ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer),
         );
         let source = CStatementAssignSource::new(ReferenceBorrowSourceId {
             import_identity: "locked".into(),
@@ -392,7 +395,7 @@ mod tests {
         });
         let different_pointer = before.clone().with_local(
             "child",
-            CValue::typed_pointer(pointer.offset_by_bytes(4), CType::Int32Pointer),
+            ProgramValue::typed_pointer(pointer.offset_by_bytes(4), ProgramType::Int32Pointer),
         );
         assert!(
             source
@@ -401,18 +404,23 @@ mod tests {
         );
         let different_type = before.clone().with_local(
             "child",
-            CValue::typed_pointer(pointer.clone(), CType::UInt8Pointer),
+            ProgramValue::typed_pointer(pointer.clone(), ProgramType::UInt8Pointer),
         );
         assert!(
             source
                 .completed(&before, &different_type, "child")
                 .is_none()
         );
-        let after = before
-            .clone()
-            .with_local("child", CValue::typed_pointer(pointer, CType::Int32Pointer));
+        let after = before.clone().with_local(
+            "child",
+            ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer),
+        );
         assert!(source.completed(&before, &after, "other").is_none());
-        assert!(source.completed(&CState::new(), &after, "child").is_none());
+        assert!(
+            source
+                .completed(&ExecutionState::new(), &after, "child")
+                .is_none()
+        );
     }
     fn read_fact() -> ExecutionPureFact {
         let pointer = Pointer {
@@ -434,12 +442,12 @@ mod tests {
         let mut fact = ExecutionPureFact::certified(Proposition::CMemoryReadDefined {
             memory: memory.clone(),
             pointer: pointer.clone(),
-            value_type: CType::Int32,
+            value_type: ProgramType::Int32,
         });
         fact.public = false;
         fact.logical_read_equation = true;
         fact.reference_observation =
-            ReferenceObservationSource::new(source, pointer, &memory, CType::Int32);
+            ReferenceObservationSource::new(source, pointer, &memory, ProgramType::Int32);
         fact
     }
     #[test]

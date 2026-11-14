@@ -10,12 +10,15 @@ fn an_opaque_candidate_does_not_walk_its_unusable_memory_frame() {
         };
         let base = CMemory::new();
         let raw = Pointer::symbolic(Variable(995_080));
-        let previous = CPointerValue::new(
+        let previous = PointerValue::new(
             Pointer::loaded_value(&intern_c_memory_ref(&base), &field),
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
         )
         .with_address(raw.clone());
-        let alias = CPointerValue::new(Pointer::symbolic(Variable(995_081)), CType::Int32Pointer);
+        let alias = PointerValue::new(
+            Pointer::symbolic(Variable(995_081)),
+            ProgramType::Int32Pointer,
+        );
         assert!(!alias.extent_is_known());
         let context = PureFactContext::new()
             .assume_condition(ConditionTerm::pointer_value_equal(previous, alias), true);
@@ -23,12 +26,12 @@ fn an_opaque_candidate_does_not_walk_its_unusable_memory_frame() {
         for index in 0..size {
             memory = memory.store(
                 field.clone().offset_by_bytes((8 + index * 8) as u32),
-                CValue::UInt64(MachineTerm::uint64_constant(index)),
+                ProgramValue::UInt64(MachineTerm::uint64_constant(index)),
             );
         }
-        let current = CPointerValue::new(
+        let current = PointerValue::new(
             Pointer::loaded_value(&intern_c_memory_ref(&memory), &field),
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
         )
         .with_address(raw);
         let (value, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -49,7 +52,7 @@ fn provenance_misses_do_not_enumerate_direct_alias_stars() {
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = |id| Pointer::symbolic(Variable(963_000 + id));
-        let value = |id| CPointerValue::new(pointer(id), CType::Int32Pointer);
+        let value = |id| PointerValue::new(pointer(id), ProgramType::Int32Pointer);
         let mut facts = PureFactContext::new();
         for index in 1..=size {
             facts = facts.assume_condition(
@@ -81,16 +84,19 @@ fn framed_pointer_refusals_do_not_scan_same_address_sources() {
         let _session = crate::kernel::VerificationSession::enter();
         let field = Pointer::symbolic(Variable(964_000));
         let raw = Pointer::symbolic(Variable(964_001));
-        let alias = CPointerValue::new(Pointer::symbolic(Variable(964_002)), CType::Int32Pointer);
+        let alias = PointerValue::new(
+            Pointer::symbolic(Variable(964_002)),
+            ProgramType::Int32Pointer,
+        );
         let mut facts = PureFactContext::new();
         for index in 0..size {
             let memory = CMemory::new().store(
                 field.offset_by_bytes(8),
-                CValue::UInt64(MachineTerm::uint64_constant(index)),
+                ProgramValue::UInt64(MachineTerm::uint64_constant(index)),
             );
-            let source = CPointerValue::new(
+            let source = PointerValue::new(
                 Pointer::loaded_value(&intern_c_memory_ref(&memory), &field),
-                CType::Int32Pointer,
+                ProgramType::Int32Pointer,
             )
             .with_address(raw.clone());
             facts = facts.assume_condition(
@@ -98,9 +104,9 @@ fn framed_pointer_refusals_do_not_scan_same_address_sources() {
                 true,
             );
         }
-        let current = CPointerValue::new(
+        let current = PointerValue::new(
             Pointer::loaded_value(&intern_c_memory_ref(&CMemory::new()), &field),
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
         )
         .with_address(raw);
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {

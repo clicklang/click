@@ -38,7 +38,7 @@ same(resource, left: &ProgramPoint, right: &ProgramPoint) -> Sameness
 explain(resource, here, there) -> Explanation
 explain_last_same(resource, here) -> Explanation
 last_same_point(resource, at) -> Option<ProgramPoint>        // the naming path
-cell_value_on_path(at, pointer, bytes, facts) -> Option<CValue> // a C read, on one path
+cell_value_on_path(at, pointer, bytes, facts) -> Option<ProgramValue> // a C read, on one path
 ```
 
 `Sameness` is `Same`, `Changed { at, by }` or `Unknown { at, why }`. `Stop`
@@ -632,7 +632,7 @@ that answers a load term from a cell reads the stored word whichever
 signedness stored it, while a typed read of the other signedness returns
 the sign cast σ of it (rule K5,
 [mathematical integers](mathematical-integers.md#the-32-bit-sign-cast)).
-Eight-byte reads are one kind, `Bits64`, and let the `CValue` wrapper choose
+Eight-byte reads are one kind, `Bits64`, and let the `ProgramValue` wrapper choose
 signed or unsigned. A pointer read is an `Int32` read, because Click names a
 pointer value by the four-byte word at its address, as a materialized
 pointer field's cells hold it.
@@ -648,7 +648,7 @@ are related by construction: `s[i] == -1` names the same unknown as
 registry refuses to name one (`load_variable_for_term`), so a producer that
 bypassed `memory_read` gets no name and no fact rather than a second, unrelated
 value of the byte. A cell stored with the other signedness is read the same
-way (`CType::read_cell`, `LoadKind::read_cell`): C11 6.5p7 lets any character
+way (`ProgramType::read_cell`, `LoadKind::read_cell`): C11 6.5p7 lets any character
 type read an object's bytes, and the reinterpretation is the same modular
 conversion.
 
@@ -818,9 +818,9 @@ that one function, so the kernel and the certification side cannot drift.
 
 The object read under **its own name** is a different question and not this
 filter's: a scalar local's program-visible value is in the `CLocalEnvironment`
-binding, which these callers either compare exactly as part of `CState`
+binding, which these callers either compare exactly as part of `ExecutionState`
 equality or do not ask about, and a caller that needs the slot cell compares
-`CState::local_cell_values` beside the memory, as
+`ExecutionState::local_cell_values` beside the memory, as
 `function_entry_representation_states_match` does.
 
 No witness was found for the shortcut in either place, and that is a report
@@ -1444,8 +1444,8 @@ permitted stores or a transition that drops the fact:
 
 - The statement evaluator is the C store path, and it calls the planner. The
   memory transition it then makes is marked as checked
-  (`CState::set_memory_with_checked_stores`).
-- Every other memory transition goes through `CState::set_memory`, whose
+  (`ExecutionState::set_memory_with_checked_stores`).
+- Every other memory transition goes through `ExecutionState::set_memory`, whose
   `invalidate_iterated_facts` walks the derivation steps between the two
   snapshots, visiting only the facts filed under each written block. An
   unchecked store keeps a fact only when it provably misses the guard block

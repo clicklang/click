@@ -863,7 +863,7 @@ fn parses_and_classifies_simple_and_smart_tactics() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_07")]
 fn canonical_tactic_printer_round_trips_nested_surface_certificate() {
     let nonnegative = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Variable("x".to_string())),
+        left: ContractExpression::CFragment(ProgramExpression::Variable("x".to_string())),
         operator: ComparisonOperator::GreaterEqual,
         right: ContractExpression::IntegerLiteral("0".into()),
     };
@@ -903,12 +903,12 @@ fn canonical_tactic_printer_round_trips_nested_surface_certificate() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_07")]
 fn canonical_tactic_printer_round_trips_cases_certificate() {
     let nonnegative = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Variable("x".to_string())),
+        left: ContractExpression::CFragment(ProgramExpression::Variable("x".to_string())),
         operator: ComparisonOperator::GreaterEqual,
         right: ContractExpression::IntegerLiteral("0".into()),
     };
     let negative = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Variable("x".to_string())),
+        left: ContractExpression::CFragment(ProgramExpression::Variable("x".to_string())),
         operator: ComparisonOperator::LessThan,
         right: ContractExpression::IntegerLiteral("0".into()),
     };

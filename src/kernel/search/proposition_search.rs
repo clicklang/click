@@ -1901,7 +1901,7 @@ mod condition_premise_tests {
                 block: "cell".into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::Int32(term(70)),
+            ProgramValue::Int32(term(70)),
         );
         let load =
             MachineTerm::MemoryLoad(intern_c_memory(memory), Box::new(pointer), LoadKind::Int32);

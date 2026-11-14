@@ -8,8 +8,8 @@
 //! kernel boundary.
 
 use super::super::{
-    CComparisonOperator, CFloatClassification, CFloatCondition, CPointerValue, ConditionTerm,
-    MachineTerm, Pointer, PointerBlock, PointerOffsetTerm, Proposition, SignedDefinedWidth,
+    CComparisonOperator, CFloatClassification, CFloatCondition, ConditionTerm, MachineTerm,
+    Pointer, PointerBlock, PointerOffsetTerm, PointerValue, Proposition, SignedDefinedWidth,
 };
 #[cfg(test)]
 use crate::kernel::binary_node;
@@ -2104,7 +2104,7 @@ fn pointer_translation(
     goal: &Proposition,
 ) -> bool {
     if let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) = goal {
-        let same_domain = |a: &CPointerValue, b: &CPointerValue| {
+        let same_domain = |a: &PointerValue, b: &PointerValue| {
             a.designation() == b.designation()
                 && a.extent() == b.extent()
                 && a.extent_is_known() == b.extent_is_known()

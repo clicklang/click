@@ -23,7 +23,7 @@ pub struct CIteratedGuard {
     /// Address of the guard cell at index 0.
     pub(in crate::kernel) base: Pointer,
     /// The C type of one guard cell (its loads are read at this type).
-    pub(in crate::kernel) cell_type: CType,
+    pub(in crate::kernel) cell_type: ProgramType,
     /// The byte width of one guard cell.
     pub(in crate::kernel) cell_width: u32,
     /// `true` for `g[k] == value`, `false` for `g[k] != value`.
@@ -284,7 +284,7 @@ impl CIteratedMemory {
 impl CIteratedGuard {
     pub(crate) fn new(
         base: Pointer,
-        cell_type: CType,
+        cell_type: ProgramType,
         cell_width: u32,
         holds_when_equal: bool,
         value: MachineTerm,
@@ -314,7 +314,7 @@ impl CIteratedGuard {
 impl CIteratedSpec {
     /// Every C expression the clause carries: the element base, the index
     /// bounds, the guard base, and the guard value.
-    pub(crate) fn expressions(&self) -> [&CExpression; 5] {
+    pub(crate) fn expressions(&self) -> [&ProgramExpression; 5] {
         [
             &self.element.base,
             &self.element.start,
@@ -327,7 +327,7 @@ impl CIteratedSpec {
     /// The same clause with every expression rewritten by `rewrite`.
     pub(crate) fn map_expressions(
         &self,
-        mut rewrite: impl FnMut(&CExpression) -> CExpression,
+        mut rewrite: impl FnMut(&ProgramExpression) -> ProgramExpression,
     ) -> Self {
         Self {
             owner: self.owner.clone(),
@@ -351,7 +351,7 @@ impl CIteratedSpec {
         }
     }
 
-    pub(crate) fn expressions_mut(&mut self) -> [&mut CExpression; 5] {
+    pub(crate) fn expressions_mut(&mut self) -> [&mut ProgramExpression; 5] {
         [
             &mut self.element.base,
             &mut self.element.start,

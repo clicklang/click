@@ -775,8 +775,8 @@ fn parses_expanded_typed_loads_and_old_loadability() {
     assert!(matches!(
         &premises[1],
         ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::TypedLoad {
-                value_type: CType::Int32Pointer,
+            left: ContractExpression::CFragment(ProgramExpression::TypedLoad {
+                value_type: ProgramType::Int32Pointer,
                 ..
             }),
             operator: ComparisonOperator::Equal,
@@ -909,9 +909,9 @@ fn parses_checked_signature_and_contract_clauses() {
                 segment: ContractSegment {
                     uninitialized: false,
                     state: ContractSegmentState::Current,
-                    base: CExpression::Variable("p".to_string()),
-                    start: CExpression::Value(int32(0)),
-                    end: CExpression::Value(int32(3)),
+                    base: ProgramExpression::Variable("p".to_string()),
+                    start: ProgramExpression::Value(int32(0)),
+                    end: ProgramExpression::Value(int32(3)),
                     surface: ContractSegmentSurface::Range {
                         base: current_var("p"),
                         start: current_int(0),
@@ -922,9 +922,9 @@ fn parses_checked_signature_and_contract_clauses() {
             Requirement::Resource(ResourceClause::OwnMemory(ContractSegment {
                 uninitialized: false,
                 state: ContractSegmentState::Current,
-                base: CExpression::Variable("p".to_string()),
-                start: CExpression::Value(int32(0)),
-                end: CExpression::Value(int32(3)),
+                base: ProgramExpression::Variable("p".to_string()),
+                start: ProgramExpression::Value(int32(0)),
+                end: ProgramExpression::Value(int32(3)),
                 surface: ContractSegmentSurface::Range {
                     base: current_var("p"),
                     start: current_int(0),
@@ -2509,11 +2509,11 @@ fn records_checked_surface_forms_for_lowered_propositions() {
     let surface = ClickProposition::And(Box::new(left.clone()), Box::new(right.clone()));
     let values = BTreeMap::from([(
         "x".to_string(),
-        CValue::Int32(MachineTerm::Variable(Variable(42))),
+        ProgramValue::Int32(MachineTerm::Variable(Variable(42))),
     )]);
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
-    let state = CState::new();
+    let state = ExecutionState::new();
     let kernel = crate::surface::proof::lower_fixed_state_proposition_through_kernel(
         &surface,
         &PureFactContext::new(),
@@ -2570,7 +2570,7 @@ fn surface_synthesis_qualifies_a_c_local_named_result() {
         },
         true,
     );
-    let state = CState::new().with_local("result", CValue::Int32(local));
+    let state = ExecutionState::new().with_local("result", ProgramValue::Int32(local));
 
     let surface = synthesize_surface_proposition(&proposition, ParameterBinding::default(), &state)
         .expect("the local comparison should have a surface form");
@@ -2599,8 +2599,8 @@ fn surface_synthesis_omits_a_predicates_hidden_resource_state_argument() {
     let proposition = Proposition::Predicate {
         name: "valid_pool".to_string(),
         arguments: vec![
-            Term::CState(Box::new(CState::new())),
-            Term::CValue(CValue::pointer(pool.clone())),
+            Term::ExecutionState(Box::new(ExecutionState::new())),
+            Term::ProgramValue(ProgramValue::pointer(pool.clone())),
         ],
     };
 
@@ -2608,16 +2608,16 @@ fn surface_synthesis_omits_a_predicates_hidden_resource_state_argument() {
         &proposition,
         ParameterBinding::new(
             function.parameters(),
-            &[CExpression::Value(CValue::pointer(pool))],
+            &[ProgramExpression::Value(ProgramValue::pointer(pool))],
         ),
-        &CState::new(),
+        &ExecutionState::new(),
     )
     .expect("the hidden state should not need a surface spelling");
     assert_eq!(
         surface,
         ClickProposition::PredicateCall {
             name: "valid_pool".to_string(),
-            arguments: vec![ContractExpression::CFragment(CExpression::Variable(
+            arguments: vec![ContractExpression::CFragment(ProgramExpression::Variable(
                 "pool".to_string(),
             ))],
         }
@@ -2638,19 +2638,24 @@ fn surface_synthesis_spells_reserved_predicates_by_their_click_names() {
             &Proposition::Predicate { name, arguments },
             ParameterBinding::new(
                 function.parameters(),
-                &[CExpression::Value(CValue::pointer(mutex.clone()))],
+                &[ProgramExpression::Value(ProgramValue::pointer(
+                    mutex.clone(),
+                ))],
             ),
-            &CState::new(),
+            &ExecutionState::new(),
         )
     };
-    let state = Term::CState(Box::new(CState::new()));
-    let m = vec![ContractExpression::CFragment(CExpression::Variable(
+    let state = Term::ExecutionState(Box::new(ExecutionState::new()));
+    let m = vec![ContractExpression::CFragment(ProgramExpression::Variable(
         "m".to_string(),
     ))];
     assert_eq!(
         synthesize(
             crate::kernel::MUTEX_HELD_PREDICATE_NAME.to_string(),
-            vec![state.clone(), Term::CValue(CValue::pointer(mutex.clone()))],
+            vec![
+                state.clone(),
+                Term::ProgramValue(ProgramValue::pointer(mutex.clone()))
+            ],
         ),
         Some(ClickProposition::PredicateCall {
             name: "held".to_string(),
@@ -2662,20 +2667,22 @@ fn surface_synthesis_spells_reserved_predicates_by_their_click_names() {
             crate::kernel::CFunctionContract::predicate_name_for("ordered"),
             vec![
                 state.clone(),
-                Term::CValue(CValue::pointer(Pointer::function("compare".to_string()))),
+                Term::ProgramValue(ProgramValue::pointer(Pointer::function(
+                    "compare".to_string()
+                ))),
             ],
         ),
         Some(ClickProposition::PredicateCall {
             name: "ordered".to_string(),
-            arguments: vec![ContractExpression::CFragment(CExpression::FunctionAddress(
-                "compare".to_string(),
-            ))],
+            arguments: vec![ContractExpression::CFragment(
+                ProgramExpression::FunctionAddress("compare".to_string(),)
+            )],
         })
     );
     assert_eq!(
         synthesize(
             format!("{}4", crate::kernel::SUBOBJECT_COVERS_PREDICATE_PREFIX),
-            vec![Term::CValue(CValue::pointer(mutex.clone()))],
+            vec![Term::ProgramValue(ProgramValue::pointer(mutex.clone()))],
         ),
         None,
         "bookkeeping has no Click spelling"
@@ -2719,9 +2726,11 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
         &proposition,
         ParameterBinding::new(
             function.parameters(),
-            &[CExpression::Value(CValue::pointer(owner.clone()))],
+            &[ProgramExpression::Value(ProgramValue::pointer(
+                owner.clone(),
+            ))],
         ),
-        &CState::new(),
+        &ExecutionState::new(),
     )
     .expect("known struct field load should have a surface spelling");
     let ClickProposition::Comparison { left, .. } = surface else {
@@ -2759,9 +2768,9 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
         &proposition,
         ParameterBinding::new(
             function.parameters(),
-            &[CExpression::Value(CValue::pointer(owner))],
+            &[ProgramExpression::Value(ProgramValue::pointer(owner))],
         ),
-        &CState::new(),
+        &ExecutionState::new(),
     )
     .expect("indexed pointer field load should have a surface spelling");
     let ClickProposition::Comparison { left, .. } = surface else {
@@ -3258,9 +3267,9 @@ fn parses_loadable_segment_syntax() {
             segment: ContractSegment {
                 uninitialized: false,
                 state: ContractSegmentState::Current,
-                base: CExpression::Variable("p".to_string()),
-                start: CExpression::Value(int32(0)),
-                end: CExpression::Variable("n".to_string()),
+                base: ProgramExpression::Variable("p".to_string()),
+                start: ProgramExpression::Value(int32(0)),
+                end: ProgramExpression::Variable("n".to_string()),
                 surface: ContractSegmentSurface::Range {
                     base: current_var("p"),
                     start: current_int(0),
@@ -3312,12 +3321,12 @@ fn parses_loadable_segment_proposition() {
                 segment: ContractSegment {
                     uninitialized: false,
                     state: ContractSegmentState::Current,
-                    base: CExpression::Add(
-                        Box::new(CExpression::Variable("p".to_string())),
-                        Box::new(CExpression::Value(int32(1))),
+                    base: ProgramExpression::Add(
+                        Box::new(ProgramExpression::Variable("p".to_string())),
+                        Box::new(ProgramExpression::Value(int32(1))),
                     ),
-                    start: CExpression::Value(int32(0)),
-                    end: CExpression::Variable("n".to_string()),
+                    start: ProgramExpression::Value(int32(0)),
+                    end: ProgramExpression::Variable("n".to_string()),
                     surface: ContractSegmentSurface::Range {
                         base: ContractExpression::Add(
                             Box::new(current_var("p")),
@@ -3331,8 +3340,8 @@ fn parses_loadable_segment_proposition() {
             Requirement::Proposition(ClickProposition::PredicateCall {
                 name: "shifted_loadable".to_string(),
                 arguments: vec![
-                    ContractExpression::CFragment(CExpression::Variable("p".to_string())),
-                    ContractExpression::CFragment(CExpression::Variable("n".to_string())),
+                    ContractExpression::CFragment(ProgramExpression::Variable("p".to_string())),
+                    ContractExpression::CFragment(ProgramExpression::Variable("n".to_string())),
                 ],
             }),
         ]
@@ -3581,13 +3590,13 @@ fn parses_pilot_struct_pointer_signature_and_field_load() {
             segment: ContractSegment {
                 uninitialized: false,
                 state: ContractSegmentState::Current,
-                base: CExpression::Variable("obj".to_string()),
-                start: CExpression::Value(int32(0)),
-                end: CExpression::Value(int32(1)),
+                base: ProgramExpression::Variable("obj".to_string()),
+                start: ProgramExpression::Value(int32(0)),
+                end: ProgramExpression::Value(int32(1)),
                 surface: ContractSegmentSurface::Field {
                     value_bytes: None,
                     base: Some(Box::new(ContractExpression::CFragment(
-                        CExpression::Variable("obj".to_string())
+                        ProgramExpression::Variable("obj".to_string())
                     ))),
                     name: "ref_count".to_string(),
                     element_width: None,
@@ -3707,12 +3716,12 @@ fn nested_field_segments_keep_the_terminal_field_offset() {
     };
     {
         let segment = required;
-        assert_eq!(segment.start, CExpression::Value(int32(1)));
-        assert_eq!(segment.end, CExpression::Value(int32(2)));
+        assert_eq!(segment.start, ProgramExpression::Value(int32(1)));
+        assert_eq!(segment.end, ProgramExpression::Value(int32(2)));
         assert!(matches!(
             segment.base,
-            CExpression::TypedLoad {
-                value_type: CType::Int32Pointer,
+            ProgramExpression::TypedLoad {
+                value_type: ProgramType::Int32Pointer,
                 ..
             }
         ));
@@ -3764,8 +3773,8 @@ fn parses_struct_object_segments_without_exposing_layout_cells() {
         super::diagnostics::describe_contract_segment(segment),
         "*owner"
     );
-    assert_eq!(segment.start, CExpression::Value(int32(0)));
-    assert_eq!(segment.end, CExpression::Value(int32(4)));
+    assert_eq!(segment.start, ProgramExpression::Value(int32(0)));
+    assert_eq!(segment.end, ProgramExpression::Value(int32(4)));
     assert_eq!(
         segment.surface,
         ContractSegmentSurface::Object("vector".to_string())
@@ -3825,13 +3834,13 @@ fn parses_pilot_struct_field_owned_segment() {
         &ContractSegment {
             uninitialized: false,
             state: ContractSegmentState::Current,
-            base: CExpression::Variable("obj".to_string()),
-            start: CExpression::Value(int32(0)),
-            end: CExpression::Value(int32(1)),
+            base: ProgramExpression::Variable("obj".to_string()),
+            start: ProgramExpression::Value(int32(0)),
+            end: ProgramExpression::Value(int32(1)),
             surface: ContractSegmentSurface::Field {
                 value_bytes: None,
                 base: Some(Box::new(ContractExpression::CFragment(
-                    CExpression::Variable("obj".to_string())
+                    ProgramExpression::Variable("obj".to_string())
                 ))),
                 name: "ref_count".to_string(),
                 element_width: None,
@@ -4387,8 +4396,8 @@ fn resource_array_extent_excludes_struct_padding() {
     else {
         panic!("expected an array view");
     };
-    assert_eq!(segment.start, CExpression::Value(int32(0)));
-    assert_eq!(segment.end, CExpression::Value(int32(3)));
+    assert_eq!(segment.start, ProgramExpression::Value(int32(0)));
+    assert_eq!(segment.end, ProgramExpression::Value(int32(3)));
     assert_eq!(segment.field_element_width(), Some(1));
 }
 
@@ -5030,7 +5039,8 @@ fn a_missing_memory_fact_is_reported_as_a_place() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_30")]
 fn memory_ranges_use_fields_or_correctly_scaled_source_elements() {
     use crate::kernel::{
-        CMemoryRange, CPointerValue, CType, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm,
+        CMemoryRange, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm, PointerValue,
+        ProgramType,
     };
     let c_source = "struct cell { int32 a; int32 b; int32 c; }; struct outer { int32 head; struct cell inner; int32 tail; }; int32 read(struct outer* p) { return p->tail; }";
     let functions = syntax::parse_functions(c_source).unwrap();
@@ -5039,10 +5049,9 @@ fn memory_ranges_use_fields_or_correctly_scaled_source_elements() {
         block: PointerBlock::Concrete("range_base".into()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let arguments = [CExpression::Value(CValue::Pointer(CPointerValue::new(
-        base.clone(),
-        CType::Int32Pointer,
-    )))];
+    let arguments = [ProgramExpression::Value(ProgramValue::Pointer(
+        PointerValue::new(base.clone(), ProgramType::Int32Pointer),
+    ))];
     for (low, high, width, expected) in [
         (0, 2, 4, "{p->head, p->inner.a}"),
         (1, 3, 4, "{p->inner.a, p->inner.b}"),
@@ -5154,7 +5163,7 @@ fn a_struct_pointer_range_counts_structs() {
         segment.surface,
         ContractSegmentSurface::Range { .. }
     ));
-    assert_eq!(segment.end, CExpression::Value(int32(1)));
+    assert_eq!(segment.end, ProgramExpression::Value(int32(1)));
 }
 
 /// `*p` is the object behind a pointer, and a place written alone is its own
@@ -5873,27 +5882,27 @@ fn printed_machine_arithmetic_keeps_exact_transport_premises() {
     for (ty, one, operator, authored) in [
         (
             "int32",
-            CValue::Int32(MachineTerm::constant(1)),
+            ProgramValue::Int32(MachineTerm::constant(1)),
             "-",
             "to_integer(hi - 1) < to_integer(hi)",
         ),
         (
             "uint64",
-            CValue::UInt64(MachineTerm::uint64_constant(1)),
+            ProgramValue::UInt64(MachineTerm::uint64_constant(1)),
             "+",
             "to_integer(hi) < to_integer(hi + 1u64)",
         ),
     ] {
-        let variable = CExpression::Variable("hi".into());
+        let variable = ProgramExpression::Variable("hi".into());
         let arithmetic = if operator == "-" {
-            CExpression::Subtract(
+            ProgramExpression::Subtract(
                 Box::new(variable.clone()),
-                Box::new(CExpression::Value(one)),
+                Box::new(ProgramExpression::Value(one)),
             )
         } else {
-            CExpression::Add(
+            ProgramExpression::Add(
                 Box::new(variable.clone()),
-                Box::new(CExpression::Value(one)),
+                Box::new(ProgramExpression::Value(one)),
             )
         };
         let (left, right) = if operator == "-" {
@@ -5927,9 +5936,9 @@ fn synthesized_signed_difference_preserves_its_type_without_literals() {
     let lo = MachineTerm::Variable(Variable(984_601));
     let difference = MachineTerm::subtract_at(MachineIntegerType::Int32, hi.clone(), lo.clone());
     let original = Proposition::ConditionIs(less_equal(MachineTerm::constant(0), difference), true);
-    let state = CState::new()
-        .with_local("hi", CValue::Int32(hi.clone()))
-        .with_local("lo", CValue::Int32(lo.clone()));
+    let state = ExecutionState::new()
+        .with_local("hi", ProgramValue::Int32(hi.clone()))
+        .with_local("lo", ProgramValue::Int32(lo.clone()));
     let surface =
         synthesize_surface_proposition(&original, ParameterBinding::default(), &state).unwrap();
     let printed = printing::source_click_proposition(&surface);
@@ -5953,8 +5962,8 @@ fn synthesized_signed_difference_preserves_its_type_without_literals() {
     }
     let facts = crate::surface::verification::assumptions_from_propositions(&bounds);
     let values = BTreeMap::from([
-        ("hi".to_string(), CValue::Int32(hi)),
-        ("lo".to_string(), CValue::Int32(lo)),
+        ("hi".to_string(), ProgramValue::Int32(hi)),
+        ("lo".to_string(), ProgramValue::Int32(lo)),
     ]);
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
@@ -6196,15 +6205,17 @@ test_batches! {
 #[test]
 fn local_storage_and_resource_stars_have_round_tripping_spellings() {
     let declaration = crate::kernel::prove_c_statement_execution(
-        CState::new(),
-        crate::kernel::CStatement::Declare {
+        ExecutionState::new(),
+        crate::kernel::ProgramStatement::Declare {
             name: "i".into(),
-            c_type: CType::Int32,
+            c_type: ProgramType::Int32,
             volatile: false,
             pointee_volatile: false,
             constant: false,
             pointee_constant: false,
-            initializer: Some(CExpression::Value(CValue::Int32(MachineTerm::constant(7)))),
+            initializer: Some(ProgramExpression::Value(ProgramValue::Int32(
+                MachineTerm::constant(7),
+            ))),
             zero_fill: None,
             declared_class: None,
         },
@@ -6235,7 +6246,10 @@ fn local_storage_and_resource_stars_have_round_tripping_spellings() {
     let reparsed = file.theorem_definitions()[0].requires()[0]
         .theorem_proposition()
         .unwrap();
-    let values = BTreeMap::from([("i".to_string(), CValue::Int32(MachineTerm::constant(7)))]);
+    let values = BTreeMap::from([(
+        "i".to_string(),
+        ProgramValue::Int32(MachineTerm::constant(7)),
+    )]);
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
     let lowered = crate::surface::proof::lower_fixed_state_proposition_through_kernel(

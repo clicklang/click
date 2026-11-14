@@ -133,7 +133,7 @@ pub(crate) use memory_state::{
     withdraw_never_address_taken_locals,
 };
 pub(crate) use persistent_map::{SnapshotMap, SnapshotMapChange, SnapshotSet};
-pub use statement_sequence::CStatementSequence;
+pub use statement_sequence::ProgramStatementSequence;
 mod iterated;
 pub use iterated::{CIteratedGuard, CIteratedMemory};
 pub(in crate::kernel) mod canonical_fact_set;
@@ -447,23 +447,23 @@ pub enum Sort {
     Bitvector64,
     Integer,
     PointerOffset,
-    CType,
+    ProgramType,
     CInt32,
     CInt64,
     CMachineInteger(MachineIntegerType),
-    CPointer(CType),
-    CObjectPointer(CType, crate::kernel::effective_type::CAccessClass),
-    CValue,
-    Sequence(Option<CType>),
+    CPointer(ProgramType),
+    CObjectPointer(ProgramType, crate::kernel::effective_type::CAccessClass),
+    ProgramValue,
+    Sequence(Option<ProgramType>),
     Algebraic(AlgebraicType),
     CMemory,
-    CState,
+    ExecutionState,
     CStatementOutcome,
     CFunctionOutcome,
 }
 
 impl Sort {
-    pub(crate) fn pointer_type(&self) -> Option<CType> {
+    pub(crate) fn pointer_type(&self) -> Option<ProgramType> {
         match self {
             Self::CPointer(ty) | Self::CObjectPointer(ty, _) => Some(*ty),
             _ => None,
@@ -479,7 +479,7 @@ impl Sort {
         }
     }
 
-    pub(crate) fn symbolic_pointer_value(&self, variable: Variable) -> Option<CValue> {
+    pub(crate) fn symbolic_pointer_value(&self, variable: Variable) -> Option<ProgramValue> {
         let ty = self.pointer_type()?;
         if !ty.is_pointer() {
             return None;
@@ -523,7 +523,7 @@ impl Sort {
 /// σ (R-mem), and a typed read of a cell stored at the other signedness is
 /// the sign cast σ of the stored word (rule K5,
 /// `design/machine-integers.md`). Eight-byte reads are one kind (`Bits64`)
-/// and let the `CValue` wrapper choose the interpretation. Narrower reads
+/// and let the `ProgramValue` wrapper choose the interpretation. Narrower reads
 /// store the extended value, which signedness changes, so they keep it. Wide 128-bit reads also keep signedness: their
 /// checked constant payloads retain the exact machine format. This profile
 /// supports exact typed cells, not signed/unsigned memory reinterpretation.
@@ -553,33 +553,33 @@ pub enum LoadKind {
 impl LoadKind {
     /// The kind of a C read of `value_type`, for every scalar or pointer type
     /// a load can have. `_Bool` reads its byte unsigned and normalizes it.
-    pub fn of_type(value_type: CType) -> Option<Self> {
+    pub fn of_type(value_type: ProgramType) -> Option<Self> {
         Some(match value_type {
-            CType::Bool | CType::UInt8 => Self::UInt8,
-            CType::Int8 => Self::Int8,
-            CType::Int16 => Self::Int16,
-            CType::UInt16 => Self::UInt16,
-            CType::Int32 => Self::Int32,
-            CType::UInt32 => Self::UInt32,
-            CType::Int64 | CType::UInt64 => Self::Bits64,
-            CType::Int128 => Self::Int128,
-            CType::UInt128 => Self::UInt128,
-            CType::Float32 => Self::Float32,
-            CType::Float64 => Self::Float64,
-            CType::Void
-            | CType::Int8Array(_)
-            | CType::Int16Array(_)
-            | CType::Int32Array(_)
-            | CType::UInt8Array(_)
-            | CType::UInt16Array(_)
-            | CType::UInt32Array(_)
-            | CType::Int128Array(_)
-            | CType::Int64Array(_)
-            | CType::UInt128Array(_)
-            | CType::UInt64Array(_)
-            | CType::Float32Array(_)
-            | CType::Float64Array(_)
-            | CType::PointerArray(_, _) => return None,
+            ProgramType::Bool | ProgramType::UInt8 => Self::UInt8,
+            ProgramType::Int8 => Self::Int8,
+            ProgramType::Int16 => Self::Int16,
+            ProgramType::UInt16 => Self::UInt16,
+            ProgramType::Int32 => Self::Int32,
+            ProgramType::UInt32 => Self::UInt32,
+            ProgramType::Int64 | ProgramType::UInt64 => Self::Bits64,
+            ProgramType::Int128 => Self::Int128,
+            ProgramType::UInt128 => Self::UInt128,
+            ProgramType::Float32 => Self::Float32,
+            ProgramType::Float64 => Self::Float64,
+            ProgramType::Void
+            | ProgramType::Int8Array(_)
+            | ProgramType::Int16Array(_)
+            | ProgramType::Int32Array(_)
+            | ProgramType::UInt8Array(_)
+            | ProgramType::UInt16Array(_)
+            | ProgramType::UInt32Array(_)
+            | ProgramType::Int128Array(_)
+            | ProgramType::Int64Array(_)
+            | ProgramType::UInt128Array(_)
+            | ProgramType::UInt64Array(_)
+            | ProgramType::Float32Array(_)
+            | ProgramType::Float64Array(_)
+            | ProgramType::PointerArray(_, _) => return None,
             _ if value_type.is_pointer() => Self::Int32,
             _ => return None,
         })
@@ -587,22 +587,22 @@ impl LoadKind {
 
     /// The kind of read that returns exactly `value`, a cell's stored value:
     /// a read of any other kind at the cell's address does not.
-    pub fn of_value(value: &CValue) -> Option<Self> {
+    pub fn of_value(value: &ProgramValue) -> Option<Self> {
         Some(match value.numeric_value() {
-            CValue::PointerInteger(_) => unreachable!("numeric projection"),
-            CValue::Void | CValue::Parameter(_) => return None,
-            CValue::Bool(_) | CValue::UInt8(_) => Self::UInt8,
-            CValue::Int8(_) => Self::Int8,
-            CValue::Int16(_) => Self::Int16,
-            CValue::UInt16(_) => Self::UInt16,
-            CValue::Int32(_) => Self::Int32,
-            CValue::UInt32(_) => Self::UInt32,
-            CValue::Int64(_) | CValue::UInt64(_) => Self::Bits64,
-            CValue::Int128(_) => Self::Int128,
-            CValue::UInt128(_) => Self::UInt128,
-            CValue::Float32(_) => Self::Float32,
-            CValue::Float64(_) => Self::Float64,
-            CValue::Pointer(_) => Self::Int32,
+            ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
+            ProgramValue::Void | ProgramValue::Parameter(_) => return None,
+            ProgramValue::Bool(_) | ProgramValue::UInt8(_) => Self::UInt8,
+            ProgramValue::Int8(_) => Self::Int8,
+            ProgramValue::Int16(_) => Self::Int16,
+            ProgramValue::UInt16(_) => Self::UInt16,
+            ProgramValue::Int32(_) => Self::Int32,
+            ProgramValue::UInt32(_) => Self::UInt32,
+            ProgramValue::Int64(_) | ProgramValue::UInt64(_) => Self::Bits64,
+            ProgramValue::Int128(_) => Self::Int128,
+            ProgramValue::UInt128(_) => Self::UInt128,
+            ProgramValue::Float32(_) => Self::Float32,
+            ProgramValue::Float64(_) => Self::Float64,
+            ProgramValue::Pointer(_) => Self::Int32,
         })
     }
 
@@ -612,7 +612,7 @@ impl LoadKind {
     /// (R-mem, rule K5), which is another term; [`Self::read_cell`] builds
     /// it. This is the one test every route that answers a load term from a
     /// cell or a store with the stored term itself applies.
-    pub fn reads_value(self, value: &CValue) -> bool {
+    pub fn reads_value(self, value: &ProgramValue) -> bool {
         Self::of_value(value) == Some(self)
     }
 
@@ -627,21 +627,21 @@ impl LoadKind {
     /// The value a read of this kind returns from a cell holding `value`:
     /// the value itself when the read is of its kind, or, for a read of a
     /// cell of the same width and the other signedness, the same bits
-    /// reinterpreted ([`CType::read_cell`]): the modular conversion at one
+    /// reinterpreted ([`ProgramType::read_cell`]): the modular conversion at one
     /// or two bytes, and σ of the stored word at 32 bits (R-mem, rule K5).
     /// The 64-bit kind reads a cell of either signedness, whose typed
     /// carrier gives the reader its signedness.
-    pub(crate) fn read_cell(self, value: &CValue) -> Option<CValue> {
+    pub(crate) fn read_cell(self, value: &ProgramValue) -> Option<ProgramValue> {
         if self.reads_value(value) {
             return Some(value.clone());
         }
         match self {
-            Self::Int8 => CType::Int8.read_cell(value),
-            Self::UInt8 => CType::UInt8.read_cell(value),
-            Self::Int16 => CType::Int16.read_cell(value),
-            Self::UInt16 => CType::UInt16.read_cell(value),
-            Self::Int32 => CType::Int32.read_cell(value),
-            Self::UInt32 => CType::UInt32.read_cell(value),
+            Self::Int8 => ProgramType::Int8.read_cell(value),
+            Self::UInt8 => ProgramType::UInt8.read_cell(value),
+            Self::Int16 => ProgramType::Int16.read_cell(value),
+            Self::UInt16 => ProgramType::UInt16.read_cell(value),
+            Self::Int32 => ProgramType::Int32.read_cell(value),
+            Self::UInt32 => ProgramType::UInt32.read_cell(value),
             _ => None,
         }
     }
@@ -804,7 +804,7 @@ pub enum MachineTerm {
     /// The kind is part of the load's identity: two reads of one address
     /// that differ in width or, below four bytes, in signedness return
     /// different values, so they are different terms. See [`LoadKind`].
-    MemoryLoad(SharedCMemory, Box<Pointer>, LoadKind),
+    MemoryLoad(SharedMemory, Box<Pointer>, LoadKind),
     /// The physical LP64 address bits of an object pointer. This numeric
     /// observation carries no designation or selected extent. Complete C
     /// integer copies retain that information separately in PointerInteger.
@@ -852,7 +852,7 @@ pub enum MachineTerm {
     /// the `Bool` `value` at the format `to`, `value as to`. It is 1 when
     /// `value` holds and 0 otherwise, which lie in every format, so it owes
     /// nothing and its word is 1 or 0 at every width. A specification `Bool`
-    /// travels in a `CValue::Bool` as its cast to `uint8`, the byte a `bool`
+    /// travels in a `ProgramValue::Bool` as its cast to `uint8`, the byte a `bool`
     /// cell holds; its truth is `value`. Built by
     /// [`MachineTerm::bool_cast`], which folds a constant. It follows
     /// every other variant, so the derived order of the terms before it is
@@ -1260,7 +1260,7 @@ pub enum ConditionTerm {
     PointerOffsetEqual(Box<PointerOffsetTerm>, Box<PointerOffsetTerm>),
     PointerEqual(Box<Pointer>, Box<Pointer>),
     /// Specification pointer equality includes the designated object and extent.
-    PointerValueEqual(Box<CPointerValue>, Box<CPointerValue>),
+    PointerValueEqual(Box<PointerValue>, Box<PointerValue>),
     IntegerLessThan(SharedIntegerTerm, SharedIntegerTerm),
     IntegerLessEqual(SharedIntegerTerm, SharedIntegerTerm),
     IntegerGreaterThan(SharedIntegerTerm, SharedIntegerTerm),
@@ -1293,7 +1293,7 @@ pub enum ConditionTerm {
     /// `byte != 0` (the byte rule of Stage 5 bounds the byte to 0 or 1
     /// where a front end produces the read). Two reads of one cell in one
     /// snapshot are one value.
-    BoolLoad(SharedCMemory, Box<Pointer>),
+    BoolLoad(SharedMemory, Box<Pointer>),
 }
 
 /// A condition's identity: the condition itself, with a 32-bit equality's
@@ -1321,7 +1321,7 @@ enum ConditionIdentity<'a> {
     Float64(&'a CFloatCondition),
     PointerOffsetEqual(&'a PointerOffsetTerm, &'a PointerOffsetTerm),
     PointerEqual(&'a Pointer, &'a Pointer),
-    PointerValueEqual(&'a CPointerValue, &'a CPointerValue),
+    PointerValueEqual(&'a PointerValue, &'a PointerValue),
     IntegerLessThan(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
     IntegerLessEqual(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
     IntegerGreaterThan(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
@@ -1335,7 +1335,7 @@ enum ConditionIdentity<'a> {
         else_condition: &'a ConditionTerm,
     },
     BoolEqual(&'a ConditionTerm, &'a ConditionTerm),
-    BoolLoad(&'a SharedCMemory, &'a Pointer),
+    BoolLoad(&'a SharedMemory, &'a Pointer),
 }
 
 /// A comparison side as its fact identity reads it
@@ -2035,40 +2035,40 @@ macro_rules! binary_integer_term {
 }
 pub(crate) use binary_integer_term;
 
-/// Matches every binary operator [`CExpression`]: arithmetic, bitwise, comparison and logical,
+/// Matches every binary operator [`ProgramExpression`]: arithmetic, bitwise, comparison and logical,
 /// binding the operands to `$left` and `$right`.
 macro_rules! binary_c_operation {
     ($left:pat, $right:pat) => {
-        $crate::kernel::CExpression::Add($left, $right)
-            | $crate::kernel::CExpression::Subtract($left, $right)
-            | $crate::kernel::CExpression::Multiply($left, $right)
-            | $crate::kernel::CExpression::Divide($left, $right)
-            | $crate::kernel::CExpression::Remainder($left, $right)
-            | $crate::kernel::CExpression::BitwiseAnd($left, $right)
-            | $crate::kernel::CExpression::BitwiseOr($left, $right)
-            | $crate::kernel::CExpression::BitwiseXor($left, $right)
-            | $crate::kernel::CExpression::ShiftLeft($left, $right)
-            | $crate::kernel::CExpression::RustShiftLeft($left, $right)
-            | $crate::kernel::CExpression::ShiftRight($left, $right)
-            | $crate::kernel::CExpression::RustShiftRight($left, $right)
-            | $crate::kernel::CExpression::Equal($left, $right)
-            | $crate::kernel::CExpression::NotEqual($left, $right)
-            | $crate::kernel::CExpression::LessThan($left, $right)
-            | $crate::kernel::CExpression::LessEqual($left, $right)
-            | $crate::kernel::CExpression::GreaterThan($left, $right)
-            | $crate::kernel::CExpression::GreaterEqual($left, $right)
-            | $crate::kernel::CExpression::And($left, $right)
-            | $crate::kernel::CExpression::Or($left, $right)
+        $crate::kernel::ProgramExpression::Add($left, $right)
+            | $crate::kernel::ProgramExpression::Subtract($left, $right)
+            | $crate::kernel::ProgramExpression::Multiply($left, $right)
+            | $crate::kernel::ProgramExpression::Divide($left, $right)
+            | $crate::kernel::ProgramExpression::Remainder($left, $right)
+            | $crate::kernel::ProgramExpression::BitwiseAnd($left, $right)
+            | $crate::kernel::ProgramExpression::BitwiseOr($left, $right)
+            | $crate::kernel::ProgramExpression::BitwiseXor($left, $right)
+            | $crate::kernel::ProgramExpression::ShiftLeft($left, $right)
+            | $crate::kernel::ProgramExpression::RustShiftLeft($left, $right)
+            | $crate::kernel::ProgramExpression::ShiftRight($left, $right)
+            | $crate::kernel::ProgramExpression::RustShiftRight($left, $right)
+            | $crate::kernel::ProgramExpression::Equal($left, $right)
+            | $crate::kernel::ProgramExpression::NotEqual($left, $right)
+            | $crate::kernel::ProgramExpression::LessThan($left, $right)
+            | $crate::kernel::ProgramExpression::LessEqual($left, $right)
+            | $crate::kernel::ProgramExpression::GreaterThan($left, $right)
+            | $crate::kernel::ProgramExpression::GreaterEqual($left, $right)
+            | $crate::kernel::ProgramExpression::And($left, $right)
+            | $crate::kernel::ProgramExpression::Or($left, $right)
     };
 }
 pub(crate) use binary_c_operation;
 
-/// Matches every two-operand [`CExpression`]: the binary operators and indexing, binding the
+/// Matches every two-operand [`ProgramExpression`]: the binary operators and indexing, binding the
 /// operands to `$left` and `$right`.
 macro_rules! binary_c_expression {
     ($left:pat, $right:pat) => {
         $crate::kernel::binary_c_operation!($left, $right)
-            | $crate::kernel::CExpression::Index($left, $right)
+            | $crate::kernel::ProgramExpression::Index($left, $right)
     };
 }
 pub(crate) use binary_c_expression;
@@ -2106,80 +2106,80 @@ macro_rules! binary_spec_integer_expression {
 }
 pub(crate) use binary_spec_integer_expression;
 
-/// Matches every integer [`CValue`] that promotes to `int`, binding its operand to `$term`.
+/// Matches every integer [`ProgramValue`] that promotes to `int`, binding its operand to `$term`.
 macro_rules! int_promoted_c_value {
     ($term:pat) => {
-        $crate::kernel::CValue::Int8($term)
-            | $crate::kernel::CValue::Int16($term)
-            | $crate::kernel::CValue::Int32($term)
-            | $crate::kernel::CValue::UInt8($term)
-            | $crate::kernel::CValue::UInt16($term)
+        $crate::kernel::ProgramValue::Int8($term)
+            | $crate::kernel::ProgramValue::Int16($term)
+            | $crate::kernel::ProgramValue::Int32($term)
+            | $crate::kernel::ProgramValue::UInt8($term)
+            | $crate::kernel::ProgramValue::UInt16($term)
     };
 }
 pub(crate) use int_promoted_c_value;
 
-/// Matches every integer [`CValue`] of at most 32 bits, binding its operand to `$term`.
+/// Matches every integer [`ProgramValue`] of at most 32 bits, binding its operand to `$term`.
 macro_rules! integer32_c_value {
     ($term:pat) => {
-        $crate::kernel::CValue::Int8($term)
-            | $crate::kernel::CValue::Int16($term)
-            | $crate::kernel::CValue::Int32($term)
-            | $crate::kernel::CValue::UInt8($term)
-            | $crate::kernel::CValue::UInt16($term)
-            | $crate::kernel::CValue::UInt32($term)
+        $crate::kernel::ProgramValue::Int8($term)
+            | $crate::kernel::ProgramValue::Int16($term)
+            | $crate::kernel::ProgramValue::Int32($term)
+            | $crate::kernel::ProgramValue::UInt8($term)
+            | $crate::kernel::ProgramValue::UInt16($term)
+            | $crate::kernel::ProgramValue::UInt32($term)
     };
 }
 pub(crate) use integer32_c_value;
 
-/// Matches every integer [`CValue`] of at most 64 bits, binding its operand to `$term`.
+/// Matches every integer [`ProgramValue`] of at most 64 bits, binding its operand to `$term`.
 macro_rules! integer64_c_value {
     ($term:pat) => {
-        $crate::kernel::CValue::Int8($term)
-            | $crate::kernel::CValue::Int16($term)
-            | $crate::kernel::CValue::Int32($term)
-            | $crate::kernel::CValue::UInt8($term)
-            | $crate::kernel::CValue::UInt16($term)
-            | $crate::kernel::CValue::UInt32($term)
-            | $crate::kernel::CValue::Int64($term)
-            | $crate::kernel::CValue::UInt64($term)
+        $crate::kernel::ProgramValue::Int8($term)
+            | $crate::kernel::ProgramValue::Int16($term)
+            | $crate::kernel::ProgramValue::Int32($term)
+            | $crate::kernel::ProgramValue::UInt8($term)
+            | $crate::kernel::ProgramValue::UInt16($term)
+            | $crate::kernel::ProgramValue::UInt32($term)
+            | $crate::kernel::ProgramValue::Int64($term)
+            | $crate::kernel::ProgramValue::UInt64($term)
     };
 }
 pub(crate) use integer64_c_value;
 
-/// Matches every integer [`CValue`], binding its operand to `$term`.
+/// Matches every integer [`ProgramValue`], binding its operand to `$term`.
 macro_rules! integer_c_value {
     ($term:pat) => {
-        $crate::kernel::CValue::Int8($term)
-            | $crate::kernel::CValue::Int16($term)
-            | $crate::kernel::CValue::Int32($term)
-            | $crate::kernel::CValue::UInt8($term)
-            | $crate::kernel::CValue::UInt16($term)
-            | $crate::kernel::CValue::UInt32($term)
-            | $crate::kernel::CValue::Int64($term)
-            | $crate::kernel::CValue::UInt64($term)
-            | $crate::kernel::CValue::Int128($term)
-            | $crate::kernel::CValue::UInt128($term)
+        $crate::kernel::ProgramValue::Int8($term)
+            | $crate::kernel::ProgramValue::Int16($term)
+            | $crate::kernel::ProgramValue::Int32($term)
+            | $crate::kernel::ProgramValue::UInt8($term)
+            | $crate::kernel::ProgramValue::UInt16($term)
+            | $crate::kernel::ProgramValue::UInt32($term)
+            | $crate::kernel::ProgramValue::Int64($term)
+            | $crate::kernel::ProgramValue::UInt64($term)
+            | $crate::kernel::ProgramValue::Int128($term)
+            | $crate::kernel::ProgramValue::UInt128($term)
     };
 }
 pub(crate) use integer_c_value;
 
-/// Matches every arithmetic [`CValue`]: `_Bool`, the integers and the floating types, binding its
+/// Matches every arithmetic [`ProgramValue`]: `_Bool`, the integers and the floating types, binding its
 /// operand to `$term`.
 macro_rules! arithmetic_c_value {
     ($term:pat) => {
-        $crate::kernel::CValue::Bool($term)
-            | $crate::kernel::CValue::Int8($term)
-            | $crate::kernel::CValue::Int16($term)
-            | $crate::kernel::CValue::Int32($term)
-            | $crate::kernel::CValue::UInt8($term)
-            | $crate::kernel::CValue::UInt16($term)
-            | $crate::kernel::CValue::UInt32($term)
-            | $crate::kernel::CValue::Int64($term)
-            | $crate::kernel::CValue::UInt64($term)
-            | $crate::kernel::CValue::Int128($term)
-            | $crate::kernel::CValue::UInt128($term)
-            | $crate::kernel::CValue::Float32($term)
-            | $crate::kernel::CValue::Float64($term)
+        $crate::kernel::ProgramValue::Bool($term)
+            | $crate::kernel::ProgramValue::Int8($term)
+            | $crate::kernel::ProgramValue::Int16($term)
+            | $crate::kernel::ProgramValue::Int32($term)
+            | $crate::kernel::ProgramValue::UInt8($term)
+            | $crate::kernel::ProgramValue::UInt16($term)
+            | $crate::kernel::ProgramValue::UInt32($term)
+            | $crate::kernel::ProgramValue::Int64($term)
+            | $crate::kernel::ProgramValue::UInt64($term)
+            | $crate::kernel::ProgramValue::Int128($term)
+            | $crate::kernel::ProgramValue::UInt128($term)
+            | $crate::kernel::ProgramValue::Float32($term)
+            | $crate::kernel::ProgramValue::Float64($term)
     };
 }
 pub(crate) use arithmetic_c_value;
@@ -2300,7 +2300,7 @@ pub struct PointerLoadId(pub(crate) u64);
 )]
 pub(crate) struct LoadedPointerView {
     pub(crate) identity: PointerLoadId,
-    pub(crate) defining_memory: SharedCMemory,
+    pub(crate) defining_memory: SharedMemory,
     pub(crate) defining_address: Pointer,
     pub(crate) displacement: PointerOffsetTerm,
 }
@@ -2337,7 +2337,7 @@ pub(super) struct ObjectTypePremise {
 /// values that differ only in it designate the same object. A fact about a
 /// pointer therefore matches the pointer however its type is qualified.
 #[derive(Clone, Debug)]
-pub struct CPointerValue {
+pub struct PointerValue {
     pointer: Pointer,
     /// The object designated when this value entered. Address aliases never
     /// replace this component; only value transport or substitution maps it.
@@ -2345,12 +2345,12 @@ pub struct CPointerValue {
     /// The opaque containing extent retained through narrowing. A byte/void
     /// view clears it, so that wider view cannot authorize the original input.
     opaque_extent: Option<Arc<Pointer>>,
-    c_type: CType,
-    qualifiers: Option<Arc<CPointerQualifiers>>,
+    c_type: ProgramType,
+    qualifiers: Option<Arc<PointerQualifiers>>,
 }
 
 #[derive(Clone, Debug, Default)]
-struct CPointerQualifiers {
+struct PointerQualifiers {
     volatile: bool,
     constant: bool,
     extent: Option<SubobjectExtent>,
@@ -2379,7 +2379,7 @@ struct CPointerQualifiers {
 /// an opaque domain whose bounds come from coverage evidence.
 ///
 /// The term-valued width also supports the legacy symbolic-extent prototype.
-/// Production unseen pointers use `CPointerValue::opaque_extent` instead
+/// Production unseen pointers use `PointerValue::opaque_extent` instead
 /// (`design/pointer-subobject-extents.md`, Phase C).
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct SubobjectExtent {
@@ -2391,9 +2391,9 @@ impl SubobjectExtent {
     /// The fact that this opaque extent covers `range`.
     pub(crate) fn coverage_fact(&self, range: &CMemoryRange) -> Proposition {
         let pointer = |pointer: Pointer| {
-            Term::CValue(CValue::Pointer(CPointerValue::new(
+            Term::ProgramValue(ProgramValue::Pointer(PointerValue::new(
                 pointer,
-                CType::VoidPointer,
+                ProgramType::VoidPointer,
             )))
         };
         let width = range.element_width();
@@ -2403,8 +2403,8 @@ impl SubobjectExtent {
                 arguments: vec![
                     pointer(self.start.clone()),
                     pointer(range.base().clone()),
-                    Term::CValue(CValue::UInt64(start.clone())),
-                    Term::CValue(CValue::UInt64(end.clone())),
+                    Term::ProgramValue(ProgramValue::UInt64(start.clone())),
+                    Term::ProgramValue(ProgramValue::UInt64(end.clone())),
                 ],
             };
         }
@@ -2434,8 +2434,8 @@ impl SubobjectExtent {
             .ok()?;
         let [
             _,
-            Term::CValue(CValue::Pointer(from)),
-            Term::CValue(CValue::Pointer(to)),
+            Term::ProgramValue(ProgramValue::Pointer(from)),
+            Term::ProgramValue(ProgramValue::Pointer(to)),
         ] = arguments.as_slice()
         else {
             return None;
@@ -2458,9 +2458,9 @@ impl SubobjectExtent {
             .filter(|width| *width > 0)?;
         let [
             _,
-            Term::CValue(CValue::Pointer(base)),
-            Term::CValue(CValue::UInt64(start)),
-            Term::CValue(CValue::UInt64(end)),
+            Term::ProgramValue(ProgramValue::Pointer(base)),
+            Term::ProgramValue(ProgramValue::UInt64(start)),
+            Term::ProgramValue(ProgramValue::UInt64(end)),
         ] = arguments.as_slice()
         else {
             return None;
@@ -2487,14 +2487,14 @@ impl SubobjectExtent {
     }
 }
 
-impl CPointerValue {
-    pub(crate) fn new(pointer: Pointer, c_type: CType) -> Self {
+impl PointerValue {
+    pub(crate) fn new(pointer: Pointer, c_type: ProgramType) -> Self {
         assert!(
             c_type.is_pointer(),
             "C pointer values require a pointer type"
         );
         let is_function =
-            matches!(c_type, CType::FunctionPointer(_)) || pointer.block.is_function();
+            matches!(c_type, ProgramType::FunctionPointer(_)) || pointer.block.is_function();
         let known_root = is_function
             || matches!(
                 pointer.block,
@@ -2511,7 +2511,7 @@ impl CPointerValue {
             pointer,
             c_type,
             qualifiers: known_root.then(|| {
-                Arc::new(CPointerQualifiers {
+                Arc::new(PointerQualifiers {
                     extent_known: true,
                     ..Default::default()
                 })
@@ -2523,12 +2523,12 @@ impl CPointerValue {
     /// numeric address. Both bounds and origin cover all eight bytes.
     pub(in crate::kernel) fn from_read(
         pointer: Pointer,
-        c_type: CType,
-        memory: &SharedCMemory,
+        c_type: ProgramType,
+        memory: &SharedMemory,
         cell: &Pointer,
     ) -> Self {
         let mut value = Self::new(pointer, c_type);
-        if matches!(c_type, CType::FunctionPointer(_)) || value.pointer.block.is_function() {
+        if matches!(c_type, ProgramType::FunctionPointer(_)) || value.pointer.block.is_function() {
             return value;
         }
         value.qualifiers = None;
@@ -2598,7 +2598,7 @@ impl CPointerValue {
         self.pointer
     }
 
-    pub(crate) fn c_type(&self) -> CType {
+    pub(crate) fn c_type(&self) -> ProgramType {
         self.c_type
     }
 
@@ -2629,7 +2629,7 @@ impl CPointerValue {
         self.qualifiers.as_ref().is_some_and(|q| q.constant)
     }
 
-    pub(crate) fn with_type(self, c_type: CType) -> Self {
+    pub(crate) fn with_type(self, c_type: ProgramType) -> Self {
         Self {
             pointer: self.pointer,
             designation: self.designation,
@@ -2833,7 +2833,7 @@ impl CPointerValue {
     }
 }
 
-impl CPointerValue {
+impl PointerValue {
     /// Everything that is the value's identity: the address, the type it is
     /// viewed through, whether the pointee is volatile, and the subobject it
     /// designates, plus its opaque local-reference custody. A lease key is a
@@ -2846,7 +2846,7 @@ impl CPointerValue {
     ) -> (
         &Pointer,
         &Pointer,
-        &CType,
+        &ProgramType,
         bool,
         bool,
         Option<&Pointer>,
@@ -2870,33 +2870,33 @@ impl CPointerValue {
     }
 }
 
-impl PartialEq for CPointerValue {
+impl PartialEq for PointerValue {
     fn eq(&self, other: &Self) -> bool {
         self.identity() == other.identity()
     }
 }
 
-impl Eq for CPointerValue {}
+impl Eq for PointerValue {}
 
-impl std::hash::Hash for CPointerValue {
+impl std::hash::Hash for PointerValue {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.identity().hash(state);
     }
 }
 
-impl PartialOrd for CPointerValue {
+impl PartialOrd for PointerValue {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for CPointerValue {
+impl Ord for PointerValue {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.identity().cmp(&other.identity())
     }
 }
 
-impl std::ops::Deref for CPointerValue {
+impl std::ops::Deref for PointerValue {
     type Target = Pointer;
 
     fn deref(&self) -> &Self::Target {
@@ -3292,18 +3292,18 @@ pub(in crate::kernel) enum PointerIntegerKind {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct PointerIntegerValue {
-    pub(in crate::kernel) numeric: Box<CValue>,
-    pub(in crate::kernel) pointer: Box<CPointerValue>,
+    pub(in crate::kernel) numeric: Box<ProgramValue>,
+    pub(in crate::kernel) pointer: Box<PointerValue>,
     pub(in crate::kernel) kind: PointerIntegerKind,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum CValue {
+pub enum ProgramValue {
     PointerInteger(PointerIntegerValue),
     Void,
     /// C `_Bool` values are represented by a 32-bit term whose value is
     /// always normalized to zero or one.  The storage width remains the
-    /// ABI-defined one byte width exposed by `CType::Bool`.
+    /// ABI-defined one byte width exposed by `ProgramType::Bool`.
     Bool(MachineTerm),
     Int8(MachineTerm),
     Int16(MachineTerm),
@@ -3319,14 +3319,14 @@ pub enum CValue {
     Float32(MachineTerm),
     /// IEEE-754 binary64 payload represented in the shared checked term arena.
     Float64(MachineTerm),
-    Pointer(CPointerValue),
+    Pointer(PointerValue),
     /// A value of an abstract type parameter: the spec value of that rigid
     /// type it is.
     Parameter(Box<AlgebraicTerm>),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum CType {
+pub enum ProgramType {
     /// A value of the abstract type parameter with this interned name.
     Parameter(TypeParameterName),
     /// A pointer to a value of the abstract type parameter with this name,
@@ -3393,11 +3393,11 @@ pub enum CType {
     /// Fixed array of object-pointer cells. The element kind remains typed;
     /// an incomplete struct tag is tracked by the C frontend, not erased to
     /// integer storage.
-    PointerArray(CPointerArrayElement, u32),
+    PointerArray(PointerArrayElement, u32),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum CPointerArrayElement {
+pub enum PointerArrayElement {
     Void,
     /// Plain `char` under a target where it is unsigned. Kept apart from
     /// `UInt8` only so the C frontend recovers `char *` from the element;
@@ -3426,45 +3426,45 @@ pub enum CPointerArrayElement {
     Float64,
 }
 
-impl CPointerArrayElement {
-    pub fn from_pointer_type(c_type: CType) -> Option<Self> {
+impl PointerArrayElement {
+    pub fn from_pointer_type(c_type: ProgramType) -> Option<Self> {
         Some(match c_type {
-            CType::VoidPointer => Self::Void,
-            CType::Int8Pointer => Self::Int8,
-            CType::Int16Pointer => Self::Int16,
-            CType::Int32Pointer => Self::Int32,
-            CType::UInt8Pointer => Self::UInt8,
-            CType::UInt16Pointer => Self::UInt16,
-            CType::UInt32Pointer => Self::UInt32,
-            CType::Int64Pointer => Self::Int64,
-            CType::Int128Pointer => Self::Int128,
-            CType::UInt64Pointer => Self::UInt64,
-            CType::UInt128Pointer => Self::UInt128,
-            CType::Float32Pointer => Self::Float32,
-            CType::Float64Pointer => Self::Float64,
+            ProgramType::VoidPointer => Self::Void,
+            ProgramType::Int8Pointer => Self::Int8,
+            ProgramType::Int16Pointer => Self::Int16,
+            ProgramType::Int32Pointer => Self::Int32,
+            ProgramType::UInt8Pointer => Self::UInt8,
+            ProgramType::UInt16Pointer => Self::UInt16,
+            ProgramType::UInt32Pointer => Self::UInt32,
+            ProgramType::Int64Pointer => Self::Int64,
+            ProgramType::Int128Pointer => Self::Int128,
+            ProgramType::UInt64Pointer => Self::UInt64,
+            ProgramType::UInt128Pointer => Self::UInt128,
+            ProgramType::Float32Pointer => Self::Float32,
+            ProgramType::Float64Pointer => Self::Float64,
             _ => return None,
         })
     }
 
-    pub fn pointer_type(self) -> CType {
+    pub fn pointer_type(self) -> ProgramType {
         match self {
-            Self::Void => CType::VoidPointer,
-            Self::UnsignedPlainChar => CType::UInt8Pointer,
-            Self::SignedPlainChar => CType::Int8Pointer,
-            Self::UnsignedPlainCharPointer => CType::UInt8PointerPointer,
-            Self::SignedPlainCharPointer => CType::Int8PointerPointer,
-            Self::Int8 => CType::Int8Pointer,
-            Self::Int16 => CType::Int16Pointer,
-            Self::Int32 => CType::Int32Pointer,
-            Self::UInt8 => CType::UInt8Pointer,
-            Self::UInt16 => CType::UInt16Pointer,
-            Self::UInt32 => CType::UInt32Pointer,
-            Self::Int64 => CType::Int64Pointer,
-            Self::Int128 => CType::Int128Pointer,
-            Self::UInt64 => CType::UInt64Pointer,
-            Self::UInt128 => CType::UInt128Pointer,
-            Self::Float32 => CType::Float32Pointer,
-            Self::Float64 => CType::Float64Pointer,
+            Self::Void => ProgramType::VoidPointer,
+            Self::UnsignedPlainChar => ProgramType::UInt8Pointer,
+            Self::SignedPlainChar => ProgramType::Int8Pointer,
+            Self::UnsignedPlainCharPointer => ProgramType::UInt8PointerPointer,
+            Self::SignedPlainCharPointer => ProgramType::Int8PointerPointer,
+            Self::Int8 => ProgramType::Int8Pointer,
+            Self::Int16 => ProgramType::Int16Pointer,
+            Self::Int32 => ProgramType::Int32Pointer,
+            Self::UInt8 => ProgramType::UInt8Pointer,
+            Self::UInt16 => ProgramType::UInt16Pointer,
+            Self::UInt32 => ProgramType::UInt32Pointer,
+            Self::Int64 => ProgramType::Int64Pointer,
+            Self::Int128 => ProgramType::Int128Pointer,
+            Self::UInt64 => ProgramType::UInt64Pointer,
+            Self::UInt128 => ProgramType::UInt128Pointer,
+            Self::Float32 => ProgramType::Float32Pointer,
+            Self::Float64 => ProgramType::Float64Pointer,
         }
     }
 
@@ -3539,16 +3539,16 @@ impl CExceptionalSignature {
         self == Self::None
     }
 
-    pub(crate) fn permits(self, value: &CValue) -> bool {
-        matches!((self, value), (Self::Int32, CValue::Int32(_)))
+    pub(crate) fn permits(self, value: &ProgramValue) -> bool {
+        matches!((self, value), (Self::Int32, ProgramValue::Int32(_)))
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct CLValue {
+pub struct LValue {
     pub(super) local_reference: Option<super::loans::LocalScalarReference>,
-    pub(super) storage: CLValueStorage,
-    pub(super) value_type: CType,
+    pub(super) storage: LValueStorage,
+    pub(super) value_type: ProgramType,
     pub(super) volatile: bool,
     pub(super) pointee_volatile: bool,
     pub(super) constant: bool,
@@ -3568,7 +3568,7 @@ pub struct CLValue {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub(super) enum CLValueStorage {
+pub(super) enum LValueStorage {
     Local { name: String },
     Memory { pointer: Pointer },
 }
@@ -3613,13 +3613,13 @@ pub enum CIntegerCastMode {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum CExpression {
-    Value(CValue),
+pub enum ProgramExpression {
+    Value(ProgramValue),
     Variable(String),
     FunctionAddress(String),
     Cast {
-        expression: Box<CExpression>,
-        target_type: CType,
+        expression: Box<ProgramExpression>,
+        target_type: ProgramType,
         integer_mode: CIntegerCastMode,
         /// The struct tag of a pointer cast target, as the source spelled it.
         /// Evaluation ignores it: a struct pointer is a kernel `Int32Pointer`
@@ -3643,22 +3643,22 @@ pub enum CExpression {
         explicit_qualification: bool,
     },
     Conditional {
-        condition: Box<CExpression>,
-        then_branch: Box<CExpression>,
-        else_branch: Box<CExpression>,
+        condition: Box<ProgramExpression>,
+        then_branch: Box<ProgramExpression>,
+        else_branch: Box<ProgramExpression>,
     },
-    FloatNegate(Box<CExpression>),
+    FloatNegate(Box<ProgramExpression>),
     FloatClassification {
-        expression: Box<CExpression>,
+        expression: Box<ProgramExpression>,
         classification: CFloatClassification,
     },
-    AddressOf(Box<CExpression>),
+    AddressOf(Box<ProgramExpression>),
     /// Form an address only after checking that the complete lvalue denotes
     /// live storage. Unlike C's &* cancellation, this excludes one-past and
     /// expired addresses. It performs no load and grants no access authority.
-    CheckedObjectAddress(Box<CExpression>),
+    CheckedObjectAddress(Box<ProgramExpression>),
     PointerOffsetBytes {
-        pointer: Box<CExpression>,
+        pointer: Box<ProgramExpression>,
         bytes: u32,
     },
     /// The pointer narrowed to the `width`-byte subobject that starts at its
@@ -3666,36 +3666,36 @@ pub enum CExpression {
     /// (`design/pointer-subobject-extents.md`). It performs no load, grants
     /// no access authority and does not move the address.
     Subobject {
-        pointer: Box<CExpression>,
+        pointer: Box<ProgramExpression>,
         width: u32,
     },
-    LessThan(Box<CExpression>, Box<CExpression>),
-    LessEqual(Box<CExpression>, Box<CExpression>),
-    GreaterThan(Box<CExpression>, Box<CExpression>),
-    GreaterEqual(Box<CExpression>, Box<CExpression>),
-    Equal(Box<CExpression>, Box<CExpression>),
-    NotEqual(Box<CExpression>, Box<CExpression>),
-    Not(Box<CExpression>),
-    And(Box<CExpression>, Box<CExpression>),
-    Or(Box<CExpression>, Box<CExpression>),
-    Add(Box<CExpression>, Box<CExpression>),
-    Subtract(Box<CExpression>, Box<CExpression>),
-    Multiply(Box<CExpression>, Box<CExpression>),
-    Divide(Box<CExpression>, Box<CExpression>),
-    Remainder(Box<CExpression>, Box<CExpression>),
-    ShiftLeft(Box<CExpression>, Box<CExpression>),
+    LessThan(Box<ProgramExpression>, Box<ProgramExpression>),
+    LessEqual(Box<ProgramExpression>, Box<ProgramExpression>),
+    GreaterThan(Box<ProgramExpression>, Box<ProgramExpression>),
+    GreaterEqual(Box<ProgramExpression>, Box<ProgramExpression>),
+    Equal(Box<ProgramExpression>, Box<ProgramExpression>),
+    NotEqual(Box<ProgramExpression>, Box<ProgramExpression>),
+    Not(Box<ProgramExpression>),
+    And(Box<ProgramExpression>, Box<ProgramExpression>),
+    Or(Box<ProgramExpression>, Box<ProgramExpression>),
+    Add(Box<ProgramExpression>, Box<ProgramExpression>),
+    Subtract(Box<ProgramExpression>, Box<ProgramExpression>),
+    Multiply(Box<ProgramExpression>, Box<ProgramExpression>),
+    Divide(Box<ProgramExpression>, Box<ProgramExpression>),
+    Remainder(Box<ProgramExpression>, Box<ProgramExpression>),
+    ShiftLeft(Box<ProgramExpression>, Box<ProgramExpression>),
     /// Rust-width shifts retained in resource argument expressions.
-    RustShiftLeft(Box<CExpression>, Box<CExpression>),
-    RustShiftRight(Box<CExpression>, Box<CExpression>),
-    ShiftRight(Box<CExpression>, Box<CExpression>),
-    BitwiseAnd(Box<CExpression>, Box<CExpression>),
-    BitwiseOr(Box<CExpression>, Box<CExpression>),
-    BitwiseXor(Box<CExpression>, Box<CExpression>),
-    BitwiseNot(Box<CExpression>),
-    Load(Box<CExpression>),
+    RustShiftLeft(Box<ProgramExpression>, Box<ProgramExpression>),
+    RustShiftRight(Box<ProgramExpression>, Box<ProgramExpression>),
+    ShiftRight(Box<ProgramExpression>, Box<ProgramExpression>),
+    BitwiseAnd(Box<ProgramExpression>, Box<ProgramExpression>),
+    BitwiseOr(Box<ProgramExpression>, Box<ProgramExpression>),
+    BitwiseXor(Box<ProgramExpression>, Box<ProgramExpression>),
+    BitwiseNot(Box<ProgramExpression>),
+    Load(Box<ProgramExpression>),
     TypedLoad {
-        pointer: Box<CExpression>,
-        value_type: CType,
+        pointer: Box<ProgramExpression>,
+        value_type: ProgramType,
         /// A sequential kernel access primitive forces one observable access
         /// even when the source lvalue itself was not declared volatile.
         volatile: bool,
@@ -3708,23 +3708,23 @@ pub enum CExpression {
         /// traits intentionally ignore the value.
         source: CExpressionLoadSource,
     },
-    Index(Box<CExpression>, Box<CExpression>),
+    Index(Box<ProgramExpression>, Box<ProgramExpression>),
     /// A Rust enum value built from its variant's fields, in declaration
-    /// order: `Shape::Circle(r)`. Its type is `CType::Parameter(enum_type)`.
+    /// order: `Shape::Circle(r)`. Its type is `ProgramType::Parameter(enum_type)`.
     EnumConstruct {
         enum_type: TypeParameterName,
         variant: String,
-        fields: Vec<CExpression>,
+        fields: Vec<ProgramExpression>,
     },
     /// Field `index` of an enum value of variant `variant`, which a `match`
     /// arm has established: `(s as Shape::Circle).0`.
     EnumField {
-        value: Box<CExpression>,
+        value: Box<ProgramExpression>,
         variant: String,
         index: usize,
     },
     /// The result of call `call` of this statement, which the statement's
-    /// own `CStatement::CallResult` step made: the term the call returned.
+    /// own `ProgramStatement::CallResult` step made: the term the call returned.
     CallResult {
         call: u32,
         function_name: String,
@@ -3732,7 +3732,7 @@ pub enum CExpression {
     /// Whether an enum value is of variant `variant`, as a `bool`: the test
     /// a Rust `match` arm makes. An undecided test splits on the variant.
     EnumIs {
-        value: Box<CExpression>,
+        value: Box<ProgramExpression>,
         variant: String,
     },
 }
@@ -3943,7 +3943,7 @@ impl PureProjection {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum SpecExpression {
-    Value(CValue),
+    Value(ProgramValue),
     /// Convert a mathematical Integer expression back to a machine integer.
     /// The initial kernel stage accepts only exact constant values; symbolic
     /// range-checked conversion is added once its ordinary proof obligations
@@ -3954,13 +3954,13 @@ pub enum SpecExpression {
     },
     ResourceField {
         projection: ResourceFieldProjection,
-        c_type: CType,
+        c_type: ProgramType,
     },
     AlgebraicMatch {
         scrutinee: Box<SpecAlgebraicExpression>,
         arms: Vec<SpecAlgebraicMatchArm>,
     },
-    CExpression(CExpression),
+    ProgramExpression(ProgramExpression),
     CountedResourceCount {
         name: String,
         arguments: Vec<Option<SpecExpression>>,
@@ -3979,7 +3979,7 @@ pub enum SpecExpression {
     BitwiseOr(Box<SpecExpression>, Box<SpecExpression>),
     BitwiseXor(Box<SpecExpression>, Box<SpecExpression>),
     BitwiseNot(Box<SpecExpression>),
-    Cast(Box<SpecExpression>, CType),
+    Cast(Box<SpecExpression>, ProgramType),
     /// The operator at the root of the expression, one of `+ - * & | ^ ~`,
     /// at the 8- or 16-bit format its position expects (decision G2): over
     /// two operands of that format (an `int32` literal it holds takes the
@@ -3987,7 +3987,7 @@ pub enum SpecExpression {
     /// of another type the operator keeps its promoted reading.
     NarrowArithmetic(Box<SpecExpression>, MachineIntegerType),
     /// An implicit pointer conversion retains the complete designation.
-    PointerCoercion(Box<SpecExpression>, CType),
+    PointerCoercion(Box<SpecExpression>, ProgramType),
     If {
         condition: Box<SpecProposition>,
         then_branch: Box<SpecExpression>,
@@ -4009,7 +4009,7 @@ pub enum SpecExpression {
     PureFunctionApplication {
         name: String,
         arguments: Vec<SpecPureFunctionArgument>,
-        result_type: CType,
+        result_type: ProgramType,
         pointer_result: Option<Arc<PurePointerResult>>,
         /// The class of the object a pointer result designates, from the
         /// function's declared return type (`design/effective-types.md`).
@@ -4031,14 +4031,14 @@ pub enum SpecExpression {
     MemoryLoad {
         memory: SpecMemory,
         pointer: Box<SpecExpression>,
-        value_type: CType,
+        value_type: ProgramType,
     },
     /// A field of a by-value parameter, not a dereference of a C pointer.
     /// Its logical value remains available after the parameter storage ends.
     AggregateFieldValue {
         parameter: String,
         pointer: Box<SpecExpression>,
-        value_type: CType,
+        value_type: ProgramType,
     },
     /// `value`, defined only where `requirement` holds: its evaluation owes
     /// `requirement`, guarded as every evaluation obligation is, and adds no
@@ -4058,7 +4058,7 @@ impl SpecExpression {
     /// operator ([`Self::NarrowArithmetic`]). Every other expression, and
     /// every expression at another type, is unchanged. One visit per spine
     /// node.
-    pub fn at_machine_type(self, target: CType) -> Self {
+    pub fn at_machine_type(self, target: ProgramType) -> Self {
         let Some(format) = MachineIntegerType::from_c_type(target).filter(|format| {
             matches!(
                 format,
@@ -4118,7 +4118,7 @@ pub struct SpecAlgebraicExpression {
 /// This stays separate from [`SpecExpression`], whose scalar nodes carry C
 /// values and therefore have machine-width semantics. Surface lowering
 /// resolves names to kernel variables before constructing this form; there is
-/// no lookup in `CState.locals` and no C representation.
+/// no lookup in `ExecutionState.locals` and no C representation.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum SpecIntegerExpression {
     ResourceField(ResourceFieldProjection),
@@ -4206,8 +4206,8 @@ pub enum SpecAlgebraicExpressionNode {
         else_branch: Box<SpecAlgebraicExpression>,
     },
     /// The algebraic value a C value of this type holds: a Rust enum
-    /// parameter, local or result, `CValue::Parameter`.
-    CValue(Box<SpecExpression>),
+    /// parameter, local or result, `ProgramValue::Parameter`.
+    ProgramValue(Box<SpecExpression>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -4234,7 +4234,7 @@ pub enum SpecPureFunctionArgument {
     ArrayRef {
         memory: SpecMemory,
         pointer: SpecExpression,
-        element_type: CType,
+        element_type: ProgramType,
     },
 }
 
@@ -4312,10 +4312,10 @@ pub struct AlgebraicType {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum AlgebraicValueType {
     Parameter(String),
-    C(CType),
+    C(ProgramType),
     /// A pointer payload with a checked original object-class guarantee.
     /// Null is allowed; a destination cast alone does not establish the class.
-    ObjectPointer(CType, crate::kernel::effective_type::CAccessClass),
+    ObjectPointer(ProgramType, crate::kernel::effective_type::CAccessClass),
     Integer,
     Algebraic {
         name: String,
@@ -4331,18 +4331,18 @@ impl AlgebraicValueType {
         }
     }
 
-    pub(crate) fn accepts_c_value(&self, value: &CValue) -> bool {
+    pub(crate) fn accepts_c_value(&self, value: &ProgramValue) -> bool {
         match self {
             Self::C(ty) => *ty == value.c_type(),
             Self::ObjectPointer(ty, class) => {
-                matches!(value, CValue::Pointer(pointer) if pointer.c_type() == *ty
+                matches!(value, ProgramValue::Pointer(pointer) if pointer.c_type() == *ty
                     && pointer.supports_object_class(class))
             }
             _ => false,
         }
     }
 
-    pub(crate) fn symbolic_c_value(&self, variable: Variable) -> Option<CValue> {
+    pub(crate) fn symbolic_c_value(&self, variable: Variable) -> Option<ProgramValue> {
         let ty = match self {
             Self::C(ty) | Self::ObjectPointer(ty, _) => *ty,
             _ => return None,
@@ -4358,7 +4358,7 @@ impl AlgebraicValueType {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum ResourceFieldType {
     Integer,
-    C(CType),
+    C(ProgramType),
     Algebraic(AlgebraicType),
 }
 
@@ -4379,20 +4379,20 @@ impl ResourceFieldSchema {
             let valid = match ty {
                 ResourceFieldType::C(ty) => !matches!(
                     ty,
-                    CType::Void
-                        | CType::FunctionPointer(_)
-                        | CType::Int8Array(_)
-                        | CType::Int16Array(_)
-                        | CType::Int32Array(_)
-                        | CType::UInt8Array(_)
-                        | CType::UInt16Array(_)
-                        | CType::UInt32Array(_)
-                        | CType::Int128Array(_)
-                        | CType::Int64Array(_)
-                        | CType::UInt128Array(_)
-                        | CType::UInt64Array(_)
-                        | CType::Float32Array(_)
-                        | CType::Float64Array(_)
+                    ProgramType::Void
+                        | ProgramType::FunctionPointer(_)
+                        | ProgramType::Int8Array(_)
+                        | ProgramType::Int16Array(_)
+                        | ProgramType::Int32Array(_)
+                        | ProgramType::UInt8Array(_)
+                        | ProgramType::UInt16Array(_)
+                        | ProgramType::UInt32Array(_)
+                        | ProgramType::Int128Array(_)
+                        | ProgramType::Int64Array(_)
+                        | ProgramType::UInt128Array(_)
+                        | ProgramType::UInt64Array(_)
+                        | ProgramType::Float32Array(_)
+                        | ProgramType::Float64Array(_)
                 ),
                 ResourceFieldType::Integer => true,
                 ResourceFieldType::Algebraic(ty) => ty.has_consistent_root_schema(),
@@ -4549,7 +4549,7 @@ pub enum AlgebraicTermNode {
     /// `pointer`, a generic struct's field: the algebraic counterpart of a
     /// [`MachineTerm::MemoryLoad`].
     MemoryLoad {
-        memory: SharedCMemory,
+        memory: SharedMemory,
         pointer: Box<Pointer>,
     },
 }
@@ -4558,16 +4558,16 @@ impl AlgebraicTermNode {
     /// The scalar load term at the same memory and address as a
     /// [`AlgebraicTermNode::MemoryLoad`]: a walker reaches its memory and
     /// address as it reaches a scalar load's.
-    pub(crate) fn memory_load_carrier(memory: &SharedCMemory, pointer: &Pointer) -> MachineTerm {
+    pub(crate) fn memory_load_carrier(memory: &SharedMemory, pointer: &Pointer) -> MachineTerm {
         MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), LoadKind::Bits64)
     }
 
     /// The [`AlgebraicTermNode::MemoryLoad`] whose carrier a rewrite of
     /// [`Self::memory_load_carrier`] left: a scalar load at a memory and an
     /// address. `None` when the rewrite replaced the load.
-    pub(crate) fn memory_load_from_carrier(carrier: &CValue) -> Option<Self> {
+    pub(crate) fn memory_load_from_carrier(carrier: &ProgramValue) -> Option<Self> {
         match carrier {
-            CValue::UInt64(MachineTerm::MemoryLoad(memory, pointer, LoadKind::Bits64)) => {
+            ProgramValue::UInt64(MachineTerm::MemoryLoad(memory, pointer, LoadKind::Bits64)) => {
                 Some(Self::MemoryLoad {
                     memory: memory.clone(),
                     pointer: pointer.clone(),
@@ -4580,10 +4580,10 @@ impl AlgebraicTermNode {
     /// The value of abstract type `parameter` that `memory` holds at
     /// `pointer`.
     pub(crate) fn parameter_load(
-        memory: SharedCMemory,
+        memory: SharedMemory,
         pointer: Pointer,
         parameter: TypeParameterName,
-    ) -> CValue {
+    ) -> ProgramValue {
         // A value is named by the point its cell was last written, so a
         // read after unrelated stores is the read before them.
         let memory = crate::kernel::memory_provenance::canonical_value_load_memory(
@@ -4591,7 +4591,7 @@ impl AlgebraicTermNode {
             &pointer,
             ABSTRACT_VALUE_WIDTH,
         );
-        CValue::Parameter(Box::new(AlgebraicTerm {
+        ProgramValue::Parameter(Box::new(AlgebraicTerm {
             algebraic_type: parameter.algebraic_type(),
             node: Self::MemoryLoad {
                 memory,
@@ -4602,16 +4602,18 @@ impl AlgebraicTermNode {
 
     /// [`Self::memory_load_carrier`] as an algebraic field value.
     pub(crate) fn memory_load_carrier_value(
-        memory: &SharedCMemory,
+        memory: &SharedMemory,
         pointer: &Pointer,
     ) -> AlgebraicValue {
-        AlgebraicValue::C(CValue::UInt64(Self::memory_load_carrier(memory, pointer)))
+        AlgebraicValue::C(ProgramValue::UInt64(Self::memory_load_carrier(
+            memory, pointer,
+        )))
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum PureFunctionArgument {
-    Value(CValue),
+    Value(ProgramValue),
     /// A typed word argument whose expression remains in the common DAG.
     /// Its signedness is the argument's declared value sort, not an inferred
     /// mathematical observation. Readers borrow its operand view.
@@ -4620,8 +4622,8 @@ pub enum PureFunctionArgument {
     Algebraic(AlgebraicTerm),
     ArrayRef {
         memory: CMemory,
-        pointer: CValue,
-        element_type: CType,
+        pointer: ProgramValue,
+        element_type: ProgramType,
     },
 }
 
@@ -4653,7 +4655,7 @@ pub(crate) fn rewrite_condition_through_bits(
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum AlgebraicValue {
-    C(CValue),
+    C(ProgramValue),
     Integer(IntegerTerm),
     Algebraic(AlgebraicTerm),
 }
@@ -4682,7 +4684,7 @@ impl AlgebraicTerm {
     pub(crate) fn for_each_machine_operand(&self, mut visit: impl FnMut(MachineOperandView<'_>)) {
         enum Node<'a> {
             Algebraic(&'a AlgebraicTerm),
-            Value(&'a CValue),
+            Value(&'a ProgramValue),
             Offset(&'a PointerOffsetTerm),
         }
         let mut pending = vec![Node::Algebraic(self)];
@@ -4753,23 +4755,23 @@ impl AlgebraicTerm {
                     }
                 },
                 Node::Value(value) => match value.numeric_value() {
-                    CValue::PointerInteger(_) => unreachable!("numeric projection"),
-                    CValue::Parameter(term) => pending.push(Node::Algebraic(term)),
-                    CValue::Void => {}
-                    CValue::Bool(v) => visit(MachineOperandView::Legacy(v)),
-                    CValue::Pointer(v) => pending.push(Node::Offset(&v.pointer().offset)),
-                    CValue::Int8(v) => visit(MachineOperandView::Legacy(v)),
-                    CValue::Int16(v)
-                    | CValue::UInt16(v)
-                    | CValue::UInt8(v)
-                    | CValue::Int32(v)
-                    | CValue::UInt32(v)
-                    | CValue::Int64(v)
-                    | CValue::UInt64(v)
-                    | CValue::Int128(v)
-                    | CValue::UInt128(v)
-                    | CValue::Float32(v)
-                    | CValue::Float64(v) => visit(MachineOperandView::Legacy(v)),
+                    ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
+                    ProgramValue::Parameter(term) => pending.push(Node::Algebraic(term)),
+                    ProgramValue::Void => {}
+                    ProgramValue::Bool(v) => visit(MachineOperandView::Legacy(v)),
+                    ProgramValue::Pointer(v) => pending.push(Node::Offset(&v.pointer().offset)),
+                    ProgramValue::Int8(v) => visit(MachineOperandView::Legacy(v)),
+                    ProgramValue::Int16(v)
+                    | ProgramValue::UInt16(v)
+                    | ProgramValue::UInt8(v)
+                    | ProgramValue::Int32(v)
+                    | ProgramValue::UInt32(v)
+                    | ProgramValue::Int64(v)
+                    | ProgramValue::UInt64(v)
+                    | ProgramValue::Int128(v)
+                    | ProgramValue::UInt128(v)
+                    | ProgramValue::Float32(v)
+                    | ProgramValue::Float64(v) => visit(MachineOperandView::Legacy(v)),
                 },
                 Node::Offset(offset) => match offset {
                     PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => {}
@@ -4950,9 +4952,9 @@ impl AlgebraicType {
         &self,
         variant: &str,
         index: usize,
-        c_type: CType,
+        c_type: ProgramType,
         variable: Variable,
-    ) -> CValue {
+    ) -> ProgramValue {
         let value = crate::kernel::symbolic_call_result(c_type, variable);
         match c_type
             .is_pointer()
@@ -5013,14 +5015,14 @@ impl Ord for AlgebraicType {
     }
 }
 
-impl From<CValue> for AlgebraicValue {
-    fn from(value: CValue) -> Self {
+impl From<ProgramValue> for AlgebraicValue {
+    fn from(value: ProgramValue) -> Self {
         Self::C(value)
     }
 }
 
 impl AlgebraicValue {
-    pub fn as_c_value(&self) -> Option<&CValue> {
+    pub fn as_c_value(&self) -> Option<&ProgramValue> {
         match self {
             Self::C(value) => Some(value),
             Self::Integer(_) => None,
@@ -5100,7 +5102,7 @@ impl PureFunctionArgument {
                 pointer,
                 element_type,
                 ..
-            } => pointer.c_type().is_pointer() && *element_type != CType::Void,
+            } => pointer.c_type().is_pointer() && *element_type != ProgramType::Void,
         }
     }
 }
@@ -5184,7 +5186,7 @@ pub enum SpecProposition {
     ForAllPointer {
         name: String,
         variable: Variable,
-        c_type: CType,
+        c_type: ProgramType,
         body: Box<SpecProposition>,
     },
     ExistsInt32 {
@@ -5212,7 +5214,7 @@ pub enum SpecProposition {
     ExistsPointer {
         name: String,
         variable: Variable,
-        c_type: CType,
+        c_type: ProgramType,
         body: Box<SpecProposition>,
     },
     Predicate {
@@ -5246,13 +5248,13 @@ pub enum SpecProposition {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct SequenceTerm {
-    pub element_type: Option<CType>,
+    pub element_type: Option<ProgramType>,
     pub node: std::sync::Arc<SequenceTermNode>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum SequenceTermNode {
-    Literal(std::sync::Arc<[CValue]>),
+    Literal(std::sync::Arc<[ProgramValue]>),
     Concat(SequenceTerm, SequenceTerm),
 }
 
@@ -5285,7 +5287,7 @@ pub struct CSwitchCase {
     /// `None` is the default case; integer values are represented in the
     /// promoted int32 bit pattern used by C0.
     pub value: Option<u32>,
-    pub body: Box<CStatement>,
+    pub body: Box<ProgramStatement>,
 }
 
 /// Stable identity of one source control-flow target inside a function.
@@ -5296,7 +5298,7 @@ pub struct CControlTargetId(pub(crate) u32);
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub(crate) struct CControlTarget {
     pub(crate) statement_index: usize,
-    pub(crate) remaining: std::sync::Arc<CStatement>,
+    pub(crate) remaining: std::sync::Arc<ProgramStatement>,
 }
 
 /// Allocation and initialization policy for an automatic aggregate object.
@@ -5312,7 +5314,7 @@ pub enum CAggregateDeclarationKind {
 }
 
 #[derive(Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum CStatement {
+pub enum ProgramStatement {
     Skip,
     Break,
     Continue,
@@ -5325,16 +5327,16 @@ pub enum CStatement {
     /// `continue` this also transfers control to the loop head; on ordinary
     /// fallthrough it is the first statement of the update clause.
     ForStep {
-        step: Box<CStatement>,
+        step: Box<ProgramStatement>,
         exited_locals: Vec<String>,
         continue_after: bool,
     },
     Declare {
         /// A scalar construction initializer, evaluated after fresh allocation.
         /// This is the only declaration transition permitted to initialize const storage.
-        initializer: Option<CExpression>,
+        initializer: Option<ProgramExpression>,
         name: String,
-        c_type: CType,
+        c_type: ProgramType,
         volatile: bool,
         pointee_volatile: bool,
         constant: bool,
@@ -5349,7 +5351,7 @@ pub enum CStatement {
         declared_class: Option<crate::kernel::effective_type::CAccessClass>,
     },
     /// Declare an address-backed scalar-only aggregate. Aggregate values are
-    /// not runtime `CValue`s; their local binding exposes the block base so
+    /// not runtime `ProgramValue`s; their local binding exposes the block base so
     /// field lowering can continue to use typed memory accesses.
     DeclareAggregate {
         name: String,
@@ -5362,53 +5364,53 @@ pub enum CStatement {
     /// Copy an address-backed aggregate, preserving typed views for any
     /// overlapping union members in its layout.
     CopyAggregate {
-        target: CExpression,
-        source: CExpression,
+        target: ProgramExpression,
+        source: ProgramExpression,
         layout: CAggregateLayout,
     },
     /// Write a scalar-array region with one evaluated repeated value or a
     /// uniform initialized local source. `fresh` additionally requires complete
     /// fresh local storage. Authority is checked; count never expands into nodes.
     InitializeScalarArray {
-        target: CExpression,
-        source: CExpression,
-        element_type: CType,
+        target: ProgramExpression,
+        source: ProgramExpression,
+        element_type: ProgramType,
         count: u32,
         copy: bool,
         fresh: bool,
     },
     Assign {
         name: String,
-        expression: CExpression,
+        expression: ProgramExpression,
         source: super::source_access::CStatementAssignSource,
     },
     CallAssign {
         target: String,
         function_name: String,
-        arguments: Vec<CExpression>,
+        arguments: Vec<ProgramExpression>,
     },
     /// A call inside an expression of the statement that follows it: its
-    /// result is that statement's `CExpression::CallResult { call, .. }`,
+    /// result is that statement's `ProgramExpression::CallResult { call, .. }`,
     /// never a variable of the program.
     CallResult {
         call: u32,
         function_name: String,
-        arguments: Vec<CExpression>,
+        arguments: Vec<ProgramExpression>,
         /// The callee's declared result type, which the result takes as an
         /// assignment to a local of that type would; `None` keeps the
         /// contract's own.
-        result_type: Option<CType>,
+        result_type: Option<ProgramType>,
         result_pointee_constant: bool,
     },
     Call {
         function_name: String,
-        arguments: Vec<CExpression>,
+        arguments: Vec<ProgramExpression>,
     },
     /// Allocate a runtime-sized heap block and assign either null or its fresh
     /// base pointer to `target`.
     HeapAllocate {
         target: String,
-        bytes: CExpression,
+        bytes: ProgramExpression,
         zeroed: bool,
         /// A directly bound struct object: class, complete size, and alignment.
         object_type: Option<(crate::kernel::effective_type::CAccessClass, u32, u32)>,
@@ -5419,48 +5421,48 @@ pub enum CStatement {
     },
     /// End the heap allocation named by `pointer`. Null is a no-op.
     HeapFree {
-        pointer: CExpression,
+        pointer: ProgramExpression,
     },
     Assert {
-        condition: CExpression,
+        condition: ProgramExpression,
         label: Option<String>,
     },
     /// Statements run in order: a source block, or a statement region an
     /// execution frontier still has to run. Its statements are a persistent
     /// sequence shared by the frontiers that advance through it, and it
     /// stands for the pair tree `Seq(first, Seq(second, ...))` it replaced
-    /// (see [`CStatementSequence`]).
-    Seq(CStatementSequence),
-    Return(CExpression),
+    /// (see [`ProgramStatementSequence`]).
+    Seq(ProgramStatementSequence),
+    Return(ProgramExpression),
     /// Produce a checked exceptional outcome. The first internal slice carries
     /// one int32 payload; source-language handler matching lands separately.
-    Throw(CExpression),
+    Throw(ProgramExpression),
     /// Catch an int32 exceptional outcome from `try_body` and bind its payload
     /// for the handler. Other outcomes retain their original path and state.
     TryCatchInt32 {
-        try_body: Box<CStatement>,
+        try_body: Box<ProgramStatement>,
         binding: String,
-        handler: Box<CStatement>,
+        handler: Box<ProgramStatement>,
         /// This is an implementation cleanup edge inserted by a frontend,
         /// rather than a source-level handler. Its handler runs cleanup and
         /// rethrows the original payload.
         cleanup_unwind: bool,
     },
     Store {
-        pointer: CExpression,
-        value: CExpression,
+        pointer: ProgramExpression,
+        value: ProgramExpression,
     },
     /// Consume one live source lease at its checked ending frontier.
     EndScalarReference(super::CScalarReferenceEnd),
     ScalarReferenceScope(super::CScalarReferenceScope),
     TypedStore {
-        pointer: CExpression,
-        value: CExpression,
-        value_type: CType,
+        pointer: ProgramExpression,
+        value: ProgramExpression,
+        value_type: ProgramType,
         /// The class of the stored lvalue when `value_type` erases it; see
-        /// [`CExpression::TypedLoad::access_class`].
+        /// [`ProgramExpression::TypedLoad::access_class`].
         access_class: Option<crate::kernel::effective_type::CAccessClass>,
-        /// See [`CExpression::TypedLoad::volatile`].
+        /// See [`ProgramExpression::TypedLoad::volatile`].
         volatile: bool,
         /// The destination pointer cell's declared pointee qualification.
         pointee_constant: bool,
@@ -5470,24 +5472,24 @@ pub enum CStatement {
     /// Evaluate a compound-assignment or increment target as one lvalue,
     /// read it, apply the operator with the operand, and write the result back.
     Update {
-        target: CExpression,
+        target: ProgramExpression,
         operator: CUpdateOperator,
-        operand: CExpression,
+        operand: ProgramExpression,
     },
     If {
-        condition: CExpression,
-        then_branch: Box<CStatement>,
-        else_branch: Box<CStatement>,
+        condition: ProgramExpression,
+        then_branch: Box<ProgramStatement>,
+        else_branch: Box<ProgramStatement>,
     },
     /// A loop's own test, inside a pass, after the statements the loop runs
     /// between its entry and its test: true continues the pass, false leaves
     /// the loop. It is a position of the loop as written, `loop(i).test`, never
     /// a statement of the source program.
     LoopTest {
-        condition: CExpression,
+        condition: ProgramExpression,
     },
     While {
-        condition: CExpression,
+        condition: ProgramExpression,
         invariant: Vec<Proposition>,
         invariant_checks: Vec<CLoopInvariantCheck>,
         effect_checks: Vec<CLoopEffectCheck>,
@@ -5519,10 +5521,10 @@ pub enum CStatement {
         /// When present, a proof-only natural cycle has one checked forward
         /// `goto` that leaves the cycle at this target.
         natural_exit_target: Option<CControlTargetId>,
-        body: Box<CStatement>,
+        body: Box<ProgramStatement>,
     },
     Switch {
-        expression: CExpression,
+        expression: ProgramExpression,
         cases: Vec<CSwitchCase>,
     },
     /// End selected automatic objects at a frontend-recorded lifetime boundary,
@@ -5575,9 +5577,9 @@ pub enum CLoopEffectSpan {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CMemorySegment {
-    pub(super) base: CExpression,
-    pub(super) start: CExpression,
-    pub(super) end: CExpression,
+    pub(super) base: ProgramExpression,
+    pub(super) start: ProgramExpression,
+    pub(super) end: ProgramExpression,
     /// The ABI width of one logical range element. The compatibility
     /// constructor defaults to the historical int32 width; typed surface
     /// lowering preserves wider struct-array strides here.
@@ -5716,9 +5718,9 @@ pub enum RangeIndexKind {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct CParameter {
+pub struct ProgramParameter {
     pub(super) name: String,
-    pub(super) c_type: CType,
+    pub(super) c_type: ProgramType,
     pub(super) aggregate_layout: Option<CAggregateLayout>,
     pub(super) volatile: bool,
     pub(super) pointee_volatile: bool,
@@ -5743,8 +5745,8 @@ pub struct CParameter {
 pub struct CGlobal {
     pub(super) source_name: String,
     pub(super) kernel_name: String,
-    pub(super) c_type: CType,
-    pub(super) initial_value: CValue,
+    pub(super) c_type: ProgramType,
+    pub(super) initial_value: ProgramValue,
     pub(super) volatile: bool,
     pub(super) pointee_volatile: bool,
     pub(super) constant: bool,
@@ -5758,7 +5760,7 @@ pub struct CGlobal {
 pub struct CGlobalArray {
     pub(super) source_name: String,
     pub(super) kernel_name: String,
-    pub(super) element_type: CType,
+    pub(super) element_type: ProgramType,
     pub(super) length: u32,
     pub(super) initial_values: CArrayContents,
     pub(super) constant: bool,
@@ -5769,7 +5771,7 @@ pub struct CGlobalArray {
 
 /// A linked file-scope aggregate. The layout describes the typed leaf cells
 /// that occupy the stable global block; aggregate values themselves have no
-/// scalar `CValue` representation.
+/// scalar `ProgramValue` representation.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CGlobalAggregate {
     pub(super) source_name: String,
@@ -5802,8 +5804,8 @@ pub struct CGlobalAggregateArray {
 pub struct CStaticLocal {
     pub(super) source_name: String,
     pub(super) kernel_name: String,
-    pub(super) c_type: CType,
-    pub(super) initial_value: CValue,
+    pub(super) c_type: ProgramType,
+    pub(super) initial_value: ProgramValue,
     pub(super) volatile: bool,
     pub(super) pointee_volatile: bool,
     pub(super) constant: bool,
@@ -5814,7 +5816,7 @@ pub struct CStaticLocal {
 pub struct CStaticArray {
     pub(super) source_name: String,
     pub(super) kernel_name: String,
-    pub(super) element_type: CType,
+    pub(super) element_type: ProgramType,
     pub(super) length: u32,
     pub(super) initial_values: CArrayContents,
     pub(super) constant: bool,
@@ -5836,8 +5838,8 @@ pub struct CStaticArray {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CArrayContents {
     length: u32,
-    default: CValue,
-    elements: std::sync::Arc<[(u32, CValue)]>,
+    default: ProgramValue,
+    elements: std::sync::Arc<[(u32, ProgramValue)]>,
 }
 
 impl CArrayContents {
@@ -5846,8 +5848,8 @@ impl CArrayContents {
     /// a listed value equal to `default` is dropped.
     pub fn new(
         length: u32,
-        default: CValue,
-        elements: impl IntoIterator<Item = (u32, CValue)>,
+        default: ProgramValue,
+        elements: impl IntoIterator<Item = (u32, ProgramValue)>,
     ) -> Self {
         let elements = elements
             .into_iter()
@@ -5870,12 +5872,12 @@ impl CArrayContents {
     }
 
     /// The value of every element the list does not name.
-    pub fn default_value(&self) -> &CValue {
+    pub fn default_value(&self) -> &ProgramValue {
         &self.default
     }
 
     /// The elements holding something other than the default, ascending.
-    pub fn explicit_elements(&self) -> &[(u32, CValue)] {
+    pub fn explicit_elements(&self) -> &[(u32, ProgramValue)] {
         &self.elements
     }
 
@@ -5885,7 +5887,7 @@ impl CArrayContents {
     }
 
     /// The value element `index` holds.
-    pub fn value_at(&self, index: u32) -> &CValue {
+    pub fn value_at(&self, index: u32) -> &ProgramValue {
         match self
             .elements
             .binary_search_by_key(&index, |(element, _)| *element)
@@ -5897,7 +5899,7 @@ impl CArrayContents {
 
     /// Every distinct way an element is spelled: the default when some
     /// element holds it, then each listed value.
-    pub fn values(&self) -> impl Iterator<Item = &CValue> + '_ {
+    pub fn values(&self) -> impl Iterator<Item = &ProgramValue> + '_ {
         self.has_default_elements()
             .then_some(&self.default)
             .into_iter()
@@ -5906,17 +5908,17 @@ impl CArrayContents {
 
     /// Every element's value in index order, one per element.
     #[cfg(test)]
-    pub fn dense_values(&self) -> Vec<CValue> {
+    pub fn dense_values(&self) -> Vec<ProgramValue> {
         (0..self.length)
             .map(|index| self.value_at(index).clone())
             .collect()
     }
 }
 
-impl From<Vec<CValue>> for CArrayContents {
+impl From<Vec<ProgramValue>> for CArrayContents {
     /// One value per element, index order. The last value is the default,
     /// so a trailing stretch of equal values is not listed.
-    fn from(values: Vec<CValue>) -> Self {
+    fn from(values: Vec<ProgramValue>) -> Self {
         let length = u32::try_from(values.len()).expect("array contents length fits in u32");
         let default = values
             .last()
@@ -5943,7 +5945,7 @@ pub(crate) struct CConstantRun {
     pub(crate) offset: u32,
     pub(crate) stride: u32,
     pub(crate) count: u32,
-    pub(crate) value: CValue,
+    pub(crate) value: ProgramValue,
 }
 
 /// What an automatic array declared with an initializer holds before the
@@ -5972,9 +5974,9 @@ pub struct CZeroFill {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CZeroCell {
     pub(super) offset: u32,
-    pub(super) value_type: CType,
+    pub(super) value_type: ProgramType,
     pub(super) pointee_constant: bool,
-    pub(super) zero: CValue,
+    pub(super) zero: ProgramValue,
 }
 
 impl CZeroFill {
@@ -5988,7 +5990,12 @@ impl CZeroFill {
 }
 
 impl CZeroCell {
-    pub fn new(offset: u32, value_type: CType, pointee_constant: bool, zero: CValue) -> Self {
+    pub fn new(
+        offset: u32,
+        value_type: ProgramType,
+        pointee_constant: bool,
+        zero: ProgramValue,
+    ) -> Self {
         Self {
             offset,
             value_type,
@@ -6041,14 +6048,14 @@ pub struct CStringLiteral {
     /// The character type of the literal's elements: `UInt8` where plain
     /// `char` is unsigned and `Int8` where it is signed. Each byte is stored
     /// as a cell of this type, holding the byte's value under it.
-    pub(super) element_type: CType,
+    pub(super) element_type: ProgramType,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CAggregateField {
     pub(super) name: String,
     pub(super) offset_bytes: u32,
-    pub(super) c_type: CType,
+    pub(super) c_type: ProgramType,
     /// The source dimensions of an array field with more than one, outermost
     /// first. `c_type` holds such a field as one flat array; nothing reasons
     /// from the shape, which only lets a proof term about an element be
@@ -6060,11 +6067,11 @@ pub struct CAggregateField {
 pub struct CAggregateUnionField {
     pub(super) name: String,
     pub(super) offset_bytes: u32,
-    pub(super) c_type: CType,
+    pub(super) c_type: ProgramType,
 }
 
 impl CAggregateUnionField {
-    pub fn new(name: impl Into<String>, offset_bytes: u32, c_type: CType) -> Self {
+    pub fn new(name: impl Into<String>, offset_bytes: u32, c_type: ProgramType) -> Self {
         Self {
             name: name.into(),
             offset_bytes,
@@ -6080,7 +6087,7 @@ impl CAggregateUnionField {
         self.offset_bytes
     }
 
-    pub fn c_type(&self) -> CType {
+    pub fn c_type(&self) -> ProgramType {
         self.c_type
     }
 }
@@ -6126,7 +6133,7 @@ impl CAggregateUnion {
 }
 
 impl CAggregateField {
-    pub fn new(name: impl Into<String>, offset_bytes: u32, c_type: CType) -> Self {
+    pub fn new(name: impl Into<String>, offset_bytes: u32, c_type: ProgramType) -> Self {
         Self {
             name: name.into(),
             offset_bytes,
@@ -6153,7 +6160,7 @@ impl CAggregateField {
         self.offset_bytes
     }
 
-    pub fn c_type(&self) -> CType {
+    pub fn c_type(&self) -> ProgramType {
         self.c_type
     }
 }
@@ -6164,11 +6171,11 @@ impl CAggregateField {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CAggregateInitializer {
     pub(super) offset_bytes: u32,
-    pub(super) value: CValue,
+    pub(super) value: ProgramValue,
 }
 
 impl CAggregateInitializer {
-    pub fn new(offset_bytes: u32, value: CValue) -> Self {
+    pub fn new(offset_bytes: u32, value: ProgramValue) -> Self {
         Self {
             offset_bytes,
             value,
@@ -6179,7 +6186,7 @@ impl CAggregateInitializer {
         self.offset_bytes
     }
 
-    pub fn value(&self) -> &CValue {
+    pub fn value(&self) -> &ProgramValue {
         &self.value
     }
 }
@@ -6193,7 +6200,7 @@ pub struct CAggregateLayout {
     /// The one value the object holds, for a local that keeps a value of a
     /// type with no fields in memory: a borrowed Rust enum local. The
     /// local's name reads that value.
-    pub(super) value_type: Option<CType>,
+    pub(super) value_type: Option<ProgramType>,
 }
 
 impl CAggregateLayout {
@@ -6211,7 +6218,7 @@ impl CAggregateLayout {
     /// The layout of an object that holds one value of `value_type`, a type
     /// with no fields such as a Rust enum's: its size and alignment are the
     /// value's width.
-    pub fn holding_value(value_type: CType) -> Self {
+    pub fn holding_value(value_type: ProgramType) -> Self {
         let width = value_type.byte_width();
         Self {
             value_type: Some(value_type),
@@ -6220,7 +6227,7 @@ impl CAggregateLayout {
     }
 
     /// The type of the one value the object holds, when it holds one.
-    pub fn value_type(&self) -> Option<CType> {
+    pub fn value_type(&self) -> Option<ProgramType> {
         self.value_type
     }
 
@@ -6260,7 +6267,7 @@ impl CAggregateLayout {
 /// The body-independent interface shared by every way Click can apply a
 /// function contract.
 ///
-/// A [`CFunction`] keeps the implementation body and storage alongside this
+/// A [`ProgramFunction`] keeps the implementation body and storage alongside this
 /// value, but all typed call parameters/result metadata, proof binders,
 /// logical clauses, normalized resource terms, effect information, and source
 /// provenance live here.  Keeping this carrier separate from the body is
@@ -6270,7 +6277,7 @@ impl CAggregateLayout {
 pub struct CFunctionContractInterface {
     pub(crate) object_type_requirements: ObjectTypeRequirements,
     pub(crate) return_object_type_guarantee: Option<crate::kernel::effective_type::CAccessClass>,
-    pub(crate) return_type: CType,
+    pub(crate) return_type: ProgramType,
     pub(crate) return_pointee_constant: bool,
     /// The class of the object a returned pointer designates, from the
     /// declared return type (`design/effective-types.md`).
@@ -6279,7 +6286,7 @@ pub struct CFunctionContractInterface {
     pub(crate) aggregate_return_mode: CAggregateReturnMode,
     pub(crate) construction_parameter: Option<(usize, CAggregateLayout)>,
     pub(crate) exceptional_signature: CExceptionalSignature,
-    pub(crate) parameters: Vec<CParameter>,
+    pub(crate) parameters: Vec<ProgramParameter>,
     /// Explicit resource-instance binders introduced by a named contract.
     /// These are part of the application interface, not a body assumption.
     pub(crate) proof_parameters: std::sync::Arc<[CResourceSpec]>,
@@ -6287,7 +6294,7 @@ pub struct CFunctionContractInterface {
     /// attaching the contract to a function value fixes them; a call binds
     /// them beside the call's arguments. They are not part of the function
     /// type the contract applies to.
-    pub(crate) value_parameters: Vec<CParameter>,
+    pub(crate) value_parameters: Vec<ProgramParameter>,
     pub(crate) resource_requires: Vec<CResourceSpec>,
     pub(crate) resource_ensures: Vec<CResourceSpec>,
     pub(crate) resource_constructors: Vec<CResourceSpec>,
@@ -6349,7 +6356,7 @@ pub struct CFunctionContractInterface {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct CFunction {
+pub struct ProgramFunction {
     pub(super) program_entry: bool,
     pub(super) name: String,
     /// Header-provided `static inline` or `static __always_inline` functions
@@ -6357,8 +6364,8 @@ pub struct CFunction {
     /// Click contract. Calls to them execute that body at the call site
     /// instead of requiring an opaque verified-function rule.
     pub(super) inline_body: bool,
-    pub(super) body: CStatement,
-    pub(super) source_body: CStatement,
+    pub(super) body: ProgramStatement,
+    pub(super) source_body: ProgramStatement,
     pub(super) control_targets: std::sync::Arc<BTreeMap<CControlTargetId, CControlTarget>>,
     /// Shared: every claim and theorem a proof issues carries the function,
     /// and the contract spans every parameter.
@@ -6398,7 +6405,7 @@ impl Ord for AddressTakenLocals {
     }
 }
 
-impl CFunction {
+impl ProgramFunction {
     /// The locals whose address the body takes.
     pub(crate) fn address_taken_locals(&self) -> &BTreeSet<String> {
         self.address_taken_locals.0.get_or_init(|| {
@@ -6460,12 +6467,12 @@ pub struct CCompositeResourceDefinition {
     pub(super) instance_schema: Option<ResourceFieldSchema>,
     pub(super) matched: Option<CResourceMatchBody>,
     pub(super) name: String,
-    pub(super) parameters: Vec<CParameter>,
+    pub(super) parameters: Vec<ProgramParameter>,
     /// Existential witnesses bound inside the body (`let next: T where P`).
     /// Each is bound like a parameter when the body is instantiated: to the
     /// recorded origin of the word its `where` fact relates it to, or to a
     /// fresh symbolic pointer when no origin is recorded yet.
-    pub(super) witnesses: Vec<CParameter>,
+    pub(super) witnesses: Vec<ProgramParameter>,
     pub(super) condition: Option<SpecProposition>,
     pub(super) recursive: bool,
     /// A same-family child declared inside a matched arm rather than in the
@@ -6607,10 +6614,10 @@ pub(crate) const C_EXCEPTIONAL_RESULT_NAME: &str = "__click_exception";
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CFunctionSpecification {
-    pub(super) state: CState,
+    pub(super) state: ExecutionState,
     /// Shared: every theorem a proof issues carries the specification, and
     /// both lists span every parameter.
-    pub(super) arguments: Arc<[CExpression]>,
+    pub(super) arguments: Arc<[ProgramExpression]>,
     pub(super) requires: Arc<[Proposition]>,
     pub(super) outcome: CFunctionOutcome,
 }
@@ -6692,7 +6699,7 @@ impl std::fmt::Debug for VerifiedLoopRules {
 }
 
 impl VerifiedLoopRules {
-    fn statement_key(statement: &CStatement) -> u64 {
+    fn statement_key(statement: &ProgramStatement) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         statement.hash(&mut hasher);
         hasher.finish()
@@ -6720,7 +6727,7 @@ impl VerifiedLoopRules {
     /// is `statement` is among them.
     pub(super) fn for_statement(
         &self,
-        statement: &CStatement,
+        statement: &ProgramStatement,
     ) -> impl Iterator<Item = &CVerifiedLoopRule> {
         self.by_statement
             .get(&Self::statement_key(statement))
@@ -6777,8 +6784,8 @@ pub struct CExecutionEnvironment {
     /// gives, each with the parameter it names. A parameter the map leaves
     /// out is taken from the one held instance its clause selects.
     pub(crate) selected_call_value_arguments:
-        Option<std::sync::Arc<(String, Vec<(String, CValue)>)>>,
-    pub(super) functions: std::sync::Arc<BTreeMap<String, CFunction>>,
+        Option<std::sync::Arc<(String, Vec<(String, ProgramValue)>)>>,
+    pub(super) functions: std::sync::Arc<BTreeMap<String, ProgramFunction>>,
     pub(super) function_contracts: std::sync::Arc<BTreeMap<String, CFunctionContract>>,
     pub(super) external_function_rules: std::sync::Arc<BTreeMap<String, CExternalFunctionRule>>,
     pub(super) verified_function_rules: std::sync::Arc<BTreeMap<String, CVerifiedFunctionRule>>,
@@ -6946,7 +6953,7 @@ pub struct CVerifiedFunctionRule {
     /// Checked result origins, instantiated with the caller's actual types.
     pub(super) pointer_result: Option<Arc<PurePointerResult>>,
 
-    pub(super) function: CFunction,
+    pub(super) function: ProgramFunction,
     /// The loop semantics every claim of this rule was certified under, or
     /// `Verify` when any was, or when the rule is a recursion hypothesis
     /// that certified nothing. Written by the kernel from its own
@@ -6988,7 +6995,7 @@ pub struct CFunctionContract {
     pub(super) interface: CFunctionContractInterface,
     /// The values a fact fixed for the interface's value parameters, when
     /// this contract was found through one; empty for the declaration.
-    pub(super) value_arguments: Vec<CValue>,
+    pub(super) value_arguments: Vec<ProgramValue>,
 }
 
 impl PartialEq for CFunctionContract {
@@ -7047,7 +7054,7 @@ pub struct RepresentationCopyEffect {
 /// not evidence that Click checked a function body.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CExternalFunctionRule {
-    pub(super) function: CFunction,
+    pub(super) function: ProgramFunction,
     /// This assumption names a concrete, well-formed function whose proof is
     /// outside the current partial-verification selection. It never escapes
     /// that selection's environment.
@@ -7079,7 +7086,7 @@ impl CExternalFunctionRule {
 /// ordinary opaque calls never acquire a total-correctness assumption.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CVerifiedFunctionTerminationRule {
-    pub(super) function: CFunction,
+    pub(super) function: ProgramFunction,
 }
 
 /// An untrusted surface-language proposal for ranking the cycles in one C
@@ -7118,7 +7125,7 @@ pub enum CLoopTerminationMeasure {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CRankingComponent {
     /// Today's measure: a scalar int32 C expression over locals and reads.
-    CExpression(CExpression),
+    ProgramExpression(ProgramExpression),
     /// A pure int32 specification expression: C fragments, memory reads and
     /// pure function applications, evaluated by the spec evaluator at each of
     /// the two states the ranking obligation compares.
@@ -7150,7 +7157,9 @@ impl CRankingComponent {
     /// How the whole-function termination plan names this component.
     pub(super) fn key(&self) -> CRankingMeasureKey {
         match self {
-            Self::CExpression(expression) => CRankingMeasureKey::CExpression(expression.clone()),
+            Self::ProgramExpression(expression) => {
+                CRankingMeasureKey::ProgramExpression(expression.clone())
+            }
             Self::Pure { source, .. } | Self::PureInteger { source, .. } => {
                 CRankingMeasureKey::Pure(source.clone())
             }
@@ -7197,7 +7206,7 @@ pub enum CRankingMeasureValue {
 /// # Why the weaker match is not a soundness question
 ///
 /// `Pure` matches by declared spelling, which is weaker than the structural
-/// equality `CExpression` gets: two different lowered expressions declared
+/// equality `ProgramExpression` gets: two different lowered expressions declared
 /// with the same spelling compare equal here. That is deliberate, and it does
 /// not widen what can be proved, because this comparison is not the
 /// termination evidence.
@@ -7230,7 +7239,7 @@ pub enum CRankingMeasureValue {
 /// `docs/internals/kernel.md`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CRankingMeasureKey {
-    CExpression(CExpression),
+    ProgramExpression(ProgramExpression),
     Pure(String),
 }
 
@@ -7326,7 +7335,7 @@ impl CRecursionAnchor {
 
     /// Whether this anchor ranks `function` by `measure`.
     ///
-    /// The certified [`CFunction`] is what a judgment has in hand, and its
+    /// The certified [`ProgramFunction`] is what a judgment has in hand, and its
     /// interface is where the anchor's component was read from, so comparing
     /// both is what binds an anchor to one declared measure of one function.
     pub(super) fn ranks(&self, function: &str, interface: &CFunctionContractInterface) -> bool {
@@ -7362,7 +7371,7 @@ impl CVerifiedFunctionTerminationRule {
 pub struct CVerifiedFunctionContractClaim {
     pub(super) pointer_result: Option<Arc<PurePointerResult>>,
 
-    pub(super) function: CFunction,
+    pub(super) function: ProgramFunction,
     pub(super) key: CFunctionContractClaimKey,
     /// Exact load equalities consumed while checking this claim. Keeping the
     /// witnesses on the proof object makes contract finalization the owner of
@@ -7386,7 +7395,7 @@ pub struct CVerifiedFunctionContractClaim {
 pub(crate) struct CCheckedFunctionProposition {
     /// Exact checked execution path that produced this completion.
     pub(super) path_origin: Option<Theorem>,
-    pub(super) function: CFunction,
+    pub(super) function: ProgramFunction,
     pub(super) specification: CFunctionSpecification,
     pub(super) proposition: Proposition,
     /// The contract claim this proposition closed: the proof was opened
@@ -7403,8 +7412,8 @@ impl CVerifiedFunctionContractClaim {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CVerifiedLoopRule {
-    pub(super) symbolic_entry_state: CState,
-    pub(super) loop_statement: CStatement,
+    pub(super) symbolic_entry_state: ExecutionState,
+    pub(super) loop_statement: ProgramStatement,
     /// Source traversal index for the loop this rule certifies. The index is
     /// assigned by the proof driver after the kernel constructs the rule so
     /// termination checking can safely recover annotations from a nested
@@ -7558,8 +7567,8 @@ pub enum CRuntimeError {
     /// integer. `stored` is the cell's value when the snapshot knows it.
     LoadTypeMismatch {
         pointer: Pointer,
-        value_type: CType,
-        stored: Option<Box<CValue>>,
+        value_type: ProgramType,
+        stored: Option<Box<ProgramValue>>,
     },
     /// A pointer/integer cast outside the modeled LP64 conversions: the
     /// message names the rejected direction and what evidence it needed.
@@ -7707,7 +7716,7 @@ pub enum CRuntimeError {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CResourceBodyFactSource {
     pub spelling: String,
-    pub bindings: Vec<(String, CValue)>,
+    pub bindings: Vec<(String, ProgramValue)>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -7722,7 +7731,7 @@ pub enum ExecutionLimit {
     /// phase binds it.
     LoopIterationsUnbound,
     UnsupportedIntegerExistentialBody,
-    UnsupportedPureFunctionResult(CType),
+    UnsupportedPureFunctionResult(ProgramType),
     /// Stage 5 (`design/machine-integers.md`, decision D2): a `Bool`
     /// compared with an integer. `Bool` has no integer value.
     BoolComparedWithInteger,
@@ -7907,7 +7916,7 @@ impl CRuntimeError {
                 value_type, stored, ..
             } => {
                 let found = match stored.as_deref() {
-                    Some(CValue::Pointer(_)) => "found a pointer in the cell".to_string(),
+                    Some(ProgramValue::Pointer(_)) => "found a pointer in the cell".to_string(),
                     Some(stored) => {
                         format!("found a value of {} bytes in the cell", stored.byte_width())
                     }
@@ -7969,7 +7978,7 @@ pub struct ExecutionBudget {
     pub(super) dropped_fold_body: Option<DroppedFoldBody>,
     /// A comparison the requested operator could not build for its operands.
     /// Diagnostic only; it never changes which paths or terms are produced.
-    pub(super) dropped_comparison: Option<(CType, CComparisonOperator, CType)>,
+    pub(super) dropped_comparison: Option<(ProgramType, CComparisonOperator, ProgramType)>,
     /// Set when a stated resource relation was dropped because this context
     /// already proves one of its memory ranges is not a valid byte extent.
     /// Unlike [`Self::dropped_range_extent`] the endpoints here need not be
@@ -8022,7 +8031,7 @@ pub struct DroppedFoldBody {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum CExpressionOutcome<V = CValue> {
+pub enum CExpressionOutcome<V = ProgramValue> {
     Value(V),
     UndefinedBehavior(CUndefinedBehavior),
     RuntimeError(CRuntimeError),
@@ -8048,29 +8057,29 @@ pub enum CConditionOutcome {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub(super) enum CLValueOutcome {
-    LValue(CLValue),
+    LValue(LValue),
     UndefinedBehavior(CUndefinedBehavior),
     RuntimeError(CRuntimeError),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CStatementOutcome {
-    Normal(Box<CState>),
-    Break(Box<CState>),
-    Continue(Box<CState>),
+    Normal(Box<ExecutionState>),
+    Break(Box<ExecutionState>),
+    Continue(Box<ExecutionState>),
     /// A checked source edge awaiting resumption at its function-owned target.
     Jump {
         target: CControlTargetId,
-        state: Box<CState>,
+        state: Box<ExecutionState>,
     },
     Return {
         value: StoredExecutionValue,
-        state: Box<CState>,
+        state: Box<ExecutionState>,
     },
     /// An exceptional transfer that has not yet been handled in this function.
     Throw {
         value: StoredExecutionValue,
-        state: Box<CState>,
+        state: Box<ExecutionState>,
     },
     /// Internal to `CStatementVerifies`: the statement has no finite
     /// successor, but all of its finite prefixes have been checked.
@@ -8083,12 +8092,12 @@ pub enum CStatementOutcome {
 pub enum CFunctionOutcome {
     Return {
         value: StoredExecutionValue,
-        state: Box<CState>,
+        state: Box<ExecutionState>,
     },
     /// An exceptional outcome crossing this function boundary.
     Throw {
         value: StoredExecutionValue,
-        state: Box<CState>,
+        state: Box<ExecutionState>,
     },
     /// Internal to `CFunctionVerifies`: no return frontier exists, but the
     /// function's finite prefixes satisfy its safety proof.
@@ -8099,7 +8108,7 @@ pub enum CFunctionOutcome {
 
 impl CFunctionOutcome {
     /// Equality that identifies end states differing only in creation
-    /// ledgers that record nothing (`CState::equal_up_to_unused_creation_ledgers`).
+    /// ledgers that record nothing (`ExecutionState::equal_up_to_unused_creation_ledgers`).
     pub(crate) fn equal_up_to_unused_creation_ledgers(&self, other: &Self) -> bool {
         match (self, other) {
             (
@@ -8146,7 +8155,7 @@ pub(super) enum CLocalBinding {
         /// whose compatibility pseudo-slot happens to have the same name.
         storage_declared: bool,
         value: StoredExecutionValue,
-        c_type: CType,
+        c_type: ProgramType,
         slot: Pointer,
         volatile: bool,
         pointee_volatile: bool,
@@ -8154,7 +8163,7 @@ pub(super) enum CLocalBinding {
         pointee_constant: bool,
     },
     UninitializedObject {
-        c_type: CType,
+        c_type: ProgramType,
         slot: Pointer,
         volatile: bool,
         pointee_volatile: bool,
@@ -8162,7 +8171,7 @@ pub(super) enum CLocalBinding {
         pointee_constant: bool,
     },
     GlobalObject {
-        c_type: CType,
+        c_type: ProgramType,
         slot: Pointer,
         volatile: bool,
         pointee_volatile: bool,
@@ -8170,7 +8179,7 @@ pub(super) enum CLocalBinding {
         pointee_constant: bool,
     },
     ArrayObject {
-        element_type: CType,
+        element_type: ProgramType,
         length: u32,
         slot: Pointer,
         constant: bool,
@@ -8271,7 +8280,7 @@ pub struct CMemory {
     /// keyed by its address and type rather than placed in `cells`, because
     /// two members at one address must remain independently readable after a
     /// by-value aggregate copy.
-    pub(super) union_cells: std::sync::Arc<SnapshotMap<(Pointer, CType), CValue>>,
+    pub(super) union_cells: std::sync::Arc<SnapshotMap<(Pointer, ProgramType), ProgramValue>>,
     pub(super) forgotten: std::sync::Arc<CForgottenKnowledge>,
     pub(super) heap: std::sync::Arc<CHeapMemory>,
 }
@@ -8305,7 +8314,7 @@ pub(crate) enum CMemoryConstructionKind {
     Transform {
         operation: &'static str,
         sources: Vec<CMemory>,
-        arguments: Vec<CValue>,
+        arguments: Vec<ProgramValue>,
     },
 }
 
@@ -8338,7 +8347,7 @@ impl CMemory {
         &mut self,
         operation: &'static str,
         sources: Vec<CMemory>,
-        arguments: Vec<CValue>,
+        arguments: Vec<ProgramValue>,
     ) {
         crate::instrumentation::record_deterministic_work(1 + sources.len());
         if sources.len() == 1 && self.same_storage_roots(&sources[0]) {
@@ -8379,7 +8388,7 @@ impl CMemory {
     /// Overwriting an older mark keeps the whole history: `base` carries its
     /// own mark, and `base`'s content hash — which is what is stored here —
     /// already depends on it.
-    pub(in crate::kernel) fn mark_forgotten_from(&mut self, base: &SharedCMemory) {
+    pub(in crate::kernel) fn mark_forgotten_from(&mut self, base: &SharedMemory) {
         std::sync::Arc::make_mut(&mut self.forgotten).forgotten_from = Some(ForgottenFrom {
             content_hash: base.content_hash,
             arena_id: base.arena_id(),
@@ -8705,18 +8714,18 @@ impl HeapExtent {
     }
 
     /// The `allocation` token's byte-count argument: an `int32` or a `uint64`.
-    pub(crate) fn token_value(&self) -> CValue {
+    pub(crate) fn token_value(&self) -> ProgramValue {
         match self.kind {
-            HeapExtentKind::Int32 => CValue::Int32(self.bytes.clone()),
-            HeapExtentKind::UInt64 => CValue::UInt64(self.bytes.clone()),
+            HeapExtentKind::Int32 => ProgramValue::Int32(self.bytes.clone()),
+            HeapExtentKind::UInt64 => ProgramValue::UInt64(self.bytes.clone()),
         }
     }
 
     /// The extent an `allocation` token's byte-count argument states.
-    pub(crate) fn from_token_value(value: &CValue) -> Option<Self> {
+    pub(crate) fn from_token_value(value: &ProgramValue) -> Option<Self> {
         match value {
-            CValue::Int32(bytes) => Some(Self::int32(bytes.clone())),
-            CValue::UInt64(bytes) => Some(Self::new(bytes.clone(), HeapExtentKind::UInt64)),
+            ProgramValue::Int32(bytes) => Some(Self::int32(bytes.clone())),
+            ProgramValue::UInt64(bytes) => Some(Self::new(bytes.clone(), HeapExtentKind::UInt64)),
             _ => None,
         }
     }
@@ -8816,7 +8825,7 @@ pub(super) struct CPendingReallocation {
     /// zero value. A prefix equal to the new allocation size means the whole
     /// block is zeroed; a shorter prefix leaves the grown tail uninitialized.
     pub(super) zeroed_prefix: Option<MachineTerm>,
-    pub(super) copied_cells: Vec<(PointerOffsetTerm, CValue)>,
+    pub(super) copied_cells: Vec<(PointerOffsetTerm, ProgramValue)>,
     /// The runs of constant byte offsets of the old block that were
     /// initialized and lie in the new allocation, cut at its size: a
     /// successful resize preserves them whether or not a cached cell still
@@ -9007,13 +9016,13 @@ impl CHeapMemory {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct CBlock {
+pub struct MemoryBlock {
     pub(super) size: HeapExtent,
     pub(super) read_only: bool,
     /// A complete automatic scalar's declared type, independent of whether
     /// its representation has been initialized. Untyped blocks and arrays
     /// carry no scalar declaration.
-    pub(super) declared_scalar_type: Option<CType>,
+    pub(super) declared_scalar_type: Option<ProgramType>,
     /// The declared class of every element of the block's object, for a
     /// declared scalar or an array of one scalar type. An access through any
     /// pointer is checked against it (`design/effective-types.md`).
@@ -9029,14 +9038,14 @@ pub struct CBlock {
 /// deterministic as the structure, where arena-insertion order would be
 /// nondeterministic across checks.
 #[derive(Clone)]
-pub struct SharedCMemory {
+pub struct SharedMemory {
     arena: u32,
     id: u32,
     content_hash: u64,
     memory: std::sync::Arc<CMemory>,
 }
 
-impl SharedCMemory {
+impl SharedMemory {
     /// How this snapshot was produced, when the arena that named it is this
     /// thread's and an edge producer recorded one.
     ///
@@ -9129,7 +9138,7 @@ impl SharedCMemory {
     }
 }
 
-impl PartialEq for SharedCMemory {
+impl PartialEq for SharedMemory {
     fn eq(&self, other: &Self) -> bool {
         if self.arena == other.arena {
             return self.id == other.id;
@@ -9138,15 +9147,15 @@ impl PartialEq for SharedCMemory {
     }
 }
 
-impl Eq for SharedCMemory {}
+impl Eq for SharedMemory {}
 
-impl std::hash::Hash for SharedCMemory {
+impl std::hash::Hash for SharedMemory {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         state.write_u64(self.content_hash);
     }
 }
 
-impl Ord for SharedCMemory {
+impl Ord for SharedMemory {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         if self.arena == other.arena && self.id == other.id {
             return std::cmp::Ordering::Equal;
@@ -9157,13 +9166,13 @@ impl Ord for SharedCMemory {
     }
 }
 
-impl PartialOrd for SharedCMemory {
+impl PartialOrd for SharedMemory {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl std::fmt::Debug for SharedCMemory {
+impl std::fmt::Debug for SharedMemory {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.memory.fmt(formatter)
     }
@@ -9200,14 +9209,14 @@ pub(crate) struct CallRequirementSite {
     pub(crate) callee: String,
     /// Original indirect invocation, distinct from the selected concrete target.
     pub(crate) source_callee: Option<std::sync::Arc<str>>,
-    pub(crate) value_arguments: std::sync::Arc<[(String, CValue)]>,
+    pub(crate) value_arguments: std::sync::Arc<[(String, ProgramValue)]>,
     pub(crate) resource_arguments: std::sync::Arc<[(String, Variable, Variable)]>,
     pub(crate) interface: std::sync::Arc<str>,
     pub(crate) candidate_ordinal: usize,
-    pub(crate) source_arguments: std::sync::Arc<Vec<CExpression>>,
+    pub(crate) source_arguments: std::sync::Arc<Vec<ProgramExpression>>,
     /// Enclosing runtime invocation when this requirement belongs to its
     /// worker. `source_arguments` still names the worker's actual arguments.
-    pub(crate) source_invocation_arguments: Option<std::sync::Arc<Vec<CExpression>>>,
+    pub(crate) source_invocation_arguments: Option<std::sync::Arc<Vec<ProgramExpression>>>,
     pub(crate) source_snapshot: CMemorySnapshotIdentity,
 }
 
@@ -9216,7 +9225,7 @@ impl CallRequirementSite {
         callee: impl Into<String>,
         interface: &str,
         candidate_ordinal: usize,
-        source_arguments: &[CExpression],
+        source_arguments: &[ProgramExpression],
         source_memory: &CMemory,
     ) -> Self {
         #[cfg(test)]
@@ -9299,7 +9308,7 @@ impl std::ops::Deref for CallRequirementSource {
     }
 }
 
-impl std::ops::Deref for SharedCMemory {
+impl std::ops::Deref for SharedMemory {
     type Target = CMemory;
 
     fn deref(&self) -> &CMemory {
@@ -9307,19 +9316,19 @@ impl std::ops::Deref for SharedCMemory {
     }
 }
 
-impl AsRef<CMemory> for SharedCMemory {
+impl AsRef<CMemory> for SharedMemory {
     fn as_ref(&self) -> &CMemory {
         &self.memory
     }
 }
 
-impl From<CMemory> for SharedCMemory {
+impl From<CMemory> for SharedMemory {
     fn from(memory: CMemory) -> Self {
         intern_c_memory(memory)
     }
 }
 
-impl From<&CMemory> for SharedCMemory {
+impl From<&CMemory> for SharedMemory {
     fn from(memory: &CMemory) -> Self {
         intern_c_memory_ref(memory)
     }
@@ -9352,9 +9361,9 @@ pub enum CMemoryDerivation {
     /// snapshots, so an edge can be shared by paths with different
     /// assumptions.
     Store {
-        base: SharedCMemory,
+        base: SharedMemory,
         pointer: Pointer,
-        value: CValue,
+        value: ProgramValue,
     },
     /// `base` with one block declared; no cell changes, so every load reads
     /// exactly what it read in `base`. This fourth edge kind was added after
@@ -9364,12 +9373,12 @@ pub enum CMemoryDerivation {
     /// blocks directly rather than through [`CMemory::with_block`], so this
     /// edge can never alias a havoc hop.
     BlockDeclared {
-        base: SharedCMemory,
+        base: SharedMemory,
         block: PointerBlock,
     },
     /// `base` with one fresh, uninitialized heap block made live.
     HeapAllocated {
-        base: SharedCMemory,
+        base: SharedMemory,
         block: PointerBlock,
         bytes: MachineTerm,
     },
@@ -9377,24 +9386,24 @@ pub enum CMemoryDerivation {
     /// metadata changes no program-observable memory, so every existing load
     /// is preserved across this edge.
     HeapAllocationPending {
-        base: SharedCMemory,
+        base: SharedMemory,
         allocation_base: Pointer,
         bytes: MachineTerm,
     },
     /// `base` with a failed pending allocation removed. No storage was
     /// allocated or written; existing reads retain their validity and value.
-    HeapAllocationFailed { base: SharedCMemory },
+    HeapAllocationFailed { base: SharedMemory },
     /// `base` with only the allocation claims imported from contracts
     /// changed. Consuming an input claim and installing an output claim do
     /// not write bytes, allocate storage, or free storage, so every load is
     /// preserved across this edge.
-    ContractAllocationClaimsChanged { base: SharedCMemory },
+    ContractAllocationClaimsChanged { base: SharedMemory },
     /// `base` after an input allocation claim was consumed by a contract
     /// that does not decide continuity. The callee may have freed the object,
     /// so cached contents and status for that allocation cannot cross this
     /// edge even though no definite C `free` is asserted.
     ContractAllocationRetired {
-        base: SharedCMemory,
+        base: SharedMemory,
         allocation_base: Pointer,
         bytes: MachineTerm,
     },
@@ -9405,7 +9414,7 @@ pub enum CMemoryDerivation {
     /// memory, where retiring the whole `ExternalArgument` block would also
     /// deallocate unrelated objects.
     HeapFreed {
-        base: SharedCMemory,
+        base: SharedMemory,
         allocation_base: Pointer,
         bytes: MachineTerm,
     },
@@ -9413,7 +9422,7 @@ pub enum CMemoryDerivation {
     /// establishing those bytes have their own earlier edges; recording this
     /// metadata changes no stored value and must not disconnect that history.
     ObjectInitializationRecorded {
-        base: SharedCMemory,
+        base: SharedMemory,
         pointer: Pointer,
         bytes: u32,
     },
@@ -9427,16 +9436,16 @@ pub enum CMemoryDerivation {
     /// agree only under that branch's assumption. Havoc forgetting keeps its
     /// own never-crossed / guarded edge kinds, so this edge cannot launder a
     /// havoc (conventions.md's soundness trap).
-    CellsForgotten { base: SharedCMemory },
+    CellsForgotten { base: SharedMemory },
     /// Cache a value observed in `base`; no bytes or lifetime facts change.
-    CellObserved { base: SharedCMemory },
+    CellObserved { base: SharedMemory },
     /// `base` after a loop body that may write anything it can reach.
     ///
     /// `mutable_ranges` is present only when the loop's whole-effect summary
     /// supplied a checked footprint. `None` remains an unconditional barrier;
     /// `Some(empty)` is a checked no-write footprint.
     LoopHavoc {
-        base: SharedCMemory,
+        base: SharedMemory,
         variable: Variable,
         mutable_ranges: Option<Vec<CMemoryRange>>,
         /// Flat ownership withheld from the body by its checked resource
@@ -9447,7 +9456,7 @@ pub enum CMemoryDerivation {
     /// is named so the memory-DAG can preserve unrelated loads while stopping
     /// every load through an alias to this retired object.
     LocalLifetimeEnded {
-        base: SharedCMemory,
+        base: SharedMemory,
         block: PointerBlock,
     },
     /// A memory abstraction of all incoming branch states. A read crosses
@@ -9455,8 +9464,8 @@ pub enum CMemoryDerivation {
     /// on the complete access. The constructor retains all inputs in the
     /// snapshot identity; this edge carries no branch-local assumptions.
     BranchJoin {
-        base: SharedCMemory,
-        incoming: Vec<SharedCMemory>,
+        base: SharedMemory,
+        incoming: Vec<SharedMemory>,
     },
     /// `base` after a call that may write only within `mutable_ranges`.
     ///
@@ -9473,7 +9482,7 @@ pub enum CMemoryDerivation {
     /// partition at the call; the write-set marker spells these ranges, so
     /// the edge is shared only by paths that kept the same memory.
     CallHavoc {
-        base: SharedCMemory,
+        base: SharedMemory,
         variable: Variable,
         mutable_ranges: Vec<CMemoryRange>,
         kept_by_caller: Option<CallKeptRanges>,
@@ -9484,7 +9493,7 @@ pub enum CMemoryDerivation {
     /// constant range costs the same whatever its length; every consumer
     /// reads it as that sequence of stores (`Self::seeded_stores`).
     CellsSeeded {
-        base: SharedCMemory,
+        base: SharedMemory,
         run: std::sync::Arc<CellRun>,
     },
 }
@@ -9493,7 +9502,7 @@ impl CMemoryDerivation {
     /// The stores a `CellsSeeded` edge stands for, newest first: the order a
     /// walk from the produced snapshot meets them in. `None` for every other
     /// edge kind.
-    pub(crate) fn seeded_stores(&self) -> Option<Vec<(Pointer, CValue)>> {
+    pub(crate) fn seeded_stores(&self) -> Option<Vec<(Pointer, ProgramValue)>> {
         let Self::CellsSeeded { run, .. } = self else {
             return None;
         };
@@ -9529,7 +9538,7 @@ impl CMemoryDerivation {
     }
 
     /// The snapshot this one was derived from.
-    pub fn base(&self) -> &SharedCMemory {
+    pub fn base(&self) -> &SharedMemory {
         match self {
             Self::Store { base, .. }
             | Self::BlockDeclared { base, .. }
@@ -9696,7 +9705,7 @@ pub(super) fn c_memory_derivation_generation() -> u64 {
 /// base's canonical storage and shares every unchanged subtree with it, which
 /// is what lets [`record_c_memory_derivation`] compare a re-derived result
 /// against an earlier child of the same base along the changed paths only.
-pub(crate) fn intern_derivation_base(memory: &mut CMemory) -> SharedCMemory {
+pub(crate) fn intern_derivation_base(memory: &mut CMemory) -> SharedMemory {
     let base = intern_c_memory_ref(memory);
     if !memory.same_storage_roots(base.memory()) {
         *memory = base.memory().clone();
@@ -9746,7 +9755,7 @@ pub(crate) fn record_c_memory_derivation(result: &mut CMemory, derivation: CMemo
             if matches!(run.value_mode(), cell_store::RunValueMode::Load)
                 && (run.element_width() == run.value_width()
                     || (run.element_width() > run.value_width()
-                        && run.element_type() != CType::Bool))
+                        && run.element_type() != ProgramType::Bool))
                 && base.read_identity() == run.source().read_identity() =>
         {
             // Copying the same bytes already in the base is materialization,
@@ -9835,7 +9844,7 @@ pub(crate) fn record_c_memory_derivation(result: &mut CMemory, derivation: CMemo
 /// ([`intern_derivation_base`]) and so was every recorded child, so both share
 /// all of `base` that their updates did not touch and the comparison walks
 /// only the changed paths. The answer is exact either way.
-fn recorded_child_matching(result: &CMemory, base: &SharedCMemory) -> Option<CMemory> {
+fn recorded_child_matching(result: &CMemory, base: &SharedMemory) -> Option<CMemory> {
     let content_hash = c_memory_content_hash(result);
     C_MEMORY_ARENA.with(|arena| {
         let arena = arena.borrow();
@@ -9909,13 +9918,13 @@ fn record_c_memory_structural_lookup_work() {
 /// snapshots interned on the same thread share one allocation and identity;
 /// snapshots that cross threads still compare correctly through the content
 /// hash and structural fallback.
-pub fn intern_c_memory(memory: CMemory) -> SharedCMemory {
+pub fn intern_c_memory(memory: CMemory) -> SharedMemory {
     C_MEMORY_ARENA.with(|arena| {
         let mut arena = arena.borrow_mut();
         let (token, arena) = &mut *arena;
         let shallow_identity = CMemoryShallowIdentity::of(&memory);
         if let Some((id, content_hash)) = arena.shallow_identities.get(&shallow_identity).copied() {
-            return SharedCMemory {
+            return SharedMemory {
                 arena: *token,
                 id,
                 content_hash,
@@ -9933,7 +9942,7 @@ pub fn intern_c_memory(memory: CMemory) -> SharedCMemory {
                 .shallow_identities
                 .insert(shallow_identity, (id, content_hash));
             arena.shallow_pins.push(memory);
-            return SharedCMemory {
+            return SharedMemory {
                 arena: *token,
                 id,
                 content_hash,
@@ -9953,7 +9962,7 @@ pub fn intern_c_memory(memory: CMemory) -> SharedCMemory {
         arena
             .local_definedness_versions
             .push(LocalDefinednessVersions::fresh(id));
-        SharedCMemory {
+        SharedMemory {
             arena: *token,
             id,
             content_hash,
@@ -9967,7 +9976,7 @@ pub fn intern_c_memory(memory: CMemory) -> SharedCMemory {
 /// a snapshot a derivation produced carries its interned storage forward
 /// ([`record_c_memory_derivation`]), so a live state's memory is found here
 /// in O(1), and any other memory is left to the caller.
-pub(crate) fn interned_storage_of(memory: &CMemory) -> Option<SharedCMemory> {
+pub(crate) fn interned_storage_of(memory: &CMemory) -> Option<SharedMemory> {
     C_MEMORY_ARENA.with(|arena| {
         let arena = arena.borrow();
         let (token, arena) = &*arena;
@@ -9975,7 +9984,7 @@ pub(crate) fn interned_storage_of(memory: &CMemory) -> Option<SharedCMemory> {
             .shallow_identities
             .get(&CMemoryShallowIdentity::of(memory))
             .copied()?;
-        Some(SharedCMemory {
+        Some(SharedMemory {
             arena: *token,
             id,
             content_hash,
@@ -9987,7 +9996,7 @@ pub(crate) fn interned_storage_of(memory: &CMemory) -> Option<SharedCMemory> {
 /// Interns by reference: an already-interned snapshot is found without
 /// cloning it, so hot memoization lookups keyed by interned identity pay a
 /// hash and comparison but no allocation.
-pub fn intern_c_memory_ref(memory: &CMemory) -> SharedCMemory {
+pub fn intern_c_memory_ref(memory: &CMemory) -> SharedMemory {
     intern_c_memory_ref_with_read_identity(memory, None)
 }
 
@@ -9997,13 +10006,13 @@ pub fn intern_c_memory_ref(memory: &CMemory) -> SharedCMemory {
 fn intern_c_memory_ref_with_read_identity(
     memory: &CMemory,
     read_identity: Option<(u32, u32)>,
-) -> SharedCMemory {
+) -> SharedMemory {
     C_MEMORY_ARENA.with(|arena| {
         let mut arena = arena.borrow_mut();
         let (token, arena) = &mut *arena;
         let shallow_identity = CMemoryShallowIdentity::of(memory);
         if let Some((id, content_hash)) = arena.shallow_identities.get(&shallow_identity).copied() {
-            return SharedCMemory {
+            return SharedMemory {
                 arena: *token,
                 id,
                 content_hash,
@@ -10021,7 +10030,7 @@ fn intern_c_memory_ref_with_read_identity(
                 .shallow_identities
                 .insert(shallow_identity, (id, content_hash));
             arena.shallow_pins.push(memory.clone());
-            return SharedCMemory {
+            return SharedMemory {
                 arena: *token,
                 id,
                 content_hash,
@@ -10045,7 +10054,7 @@ fn intern_c_memory_ref_with_read_identity(
                 .filter(|(source_arena, source)| *source_arena == *token && *source < id)
                 .map_or(id, |(_, source)| source),
         );
-        SharedCMemory {
+        SharedMemory {
             arena: *token,
             id,
             content_hash,
@@ -10061,7 +10070,7 @@ pub(super) struct PopulationEffects {
     /// cannot supply resources to an execution or resource rewrite.
     pub(super) predicate_count_permissions: Option<PredicateCountPermissions>,
 
-    /// Creation provenance is shared out-of-line to keep CState's recursive
+    /// Creation provenance is shared out-of-line to keep ExecutionState's recursive
     /// checker stack footprint unchanged. Legacy states use None.
     pub(super) creation: Option<super::population_authority::c_creation::CreationEvents>,
 }
@@ -10082,7 +10091,7 @@ pub(super) struct CAggregateDestination {
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct CState {
+pub struct ExecutionState {
     pub(super) aggregate_destination: Option<Arc<CAggregateDestination>>,
     /// Lexical field values for scratch resource-body evaluation only.
     /// This is not ownership and is never populated by unfolding a resource.
@@ -10154,21 +10163,21 @@ pub struct CState {
     /// call step sets one, the rest of the statement reads it, and the
     /// statement's end drops what it read. `None` is the canonical state at
     /// every statement boundary.
-    pub(crate) call_results: Option<Arc<BTreeMap<u32, CValue>>>,
+    pub(crate) call_results: Option<Arc<BTreeMap<u32, ProgramValue>>>,
 }
 
-impl CExpression {
+impl ProgramExpression {
     /// Whether evaluating this expression reads a call's result.
     pub(crate) fn reads_call_result(&self) -> bool {
         match self {
-            CExpression::CallResult { .. } => true,
-            CExpression::Value(_) | CExpression::Variable(_) | CExpression::FunctionAddress(_) => {
-                false
+            ProgramExpression::CallResult { .. } => true,
+            ProgramExpression::Value(_)
+            | ProgramExpression::Variable(_)
+            | ProgramExpression::FunctionAddress(_) => false,
+            ProgramExpression::EnumConstruct { fields, .. } => {
+                fields.iter().any(ProgramExpression::reads_call_result)
             }
-            CExpression::EnumConstruct { fields, .. } => {
-                fields.iter().any(CExpression::reads_call_result)
-            }
-            CExpression::Conditional {
+            ProgramExpression::Conditional {
                 condition,
                 then_branch,
                 else_branch,
@@ -10177,29 +10186,29 @@ impl CExpression {
                     || then_branch.reads_call_result()
                     || else_branch.reads_call_result()
             }
-            CExpression::Cast { expression, .. }
-            | CExpression::FloatNegate(expression)
-            | CExpression::FloatClassification { expression, .. }
-            | CExpression::EnumField {
+            ProgramExpression::Cast { expression, .. }
+            | ProgramExpression::FloatNegate(expression)
+            | ProgramExpression::FloatClassification { expression, .. }
+            | ProgramExpression::EnumField {
                 value: expression, ..
             }
-            | CExpression::EnumIs {
+            | ProgramExpression::EnumIs {
                 value: expression, ..
             }
-            | CExpression::BitwiseNot(expression)
-            | CExpression::AddressOf(expression)
-            | CExpression::CheckedObjectAddress(expression)
-            | CExpression::Not(expression)
-            | CExpression::Load(expression)
-            | CExpression::PointerOffsetBytes {
+            | ProgramExpression::BitwiseNot(expression)
+            | ProgramExpression::AddressOf(expression)
+            | ProgramExpression::CheckedObjectAddress(expression)
+            | ProgramExpression::Not(expression)
+            | ProgramExpression::Load(expression)
+            | ProgramExpression::PointerOffsetBytes {
                 pointer: expression,
                 ..
             }
-            | CExpression::Subobject {
+            | ProgramExpression::Subobject {
                 pointer: expression,
                 ..
             }
-            | CExpression::TypedLoad {
+            | ProgramExpression::TypedLoad {
                 pointer: expression,
                 ..
             } => expression.reads_call_result(),
@@ -10210,9 +10219,9 @@ impl CExpression {
     }
 }
 
-impl CState {
+impl ExecutionState {
     /// Records the term call `call` of the running statement returned.
-    pub(super) fn set_call_result(&mut self, call: u32, value: CValue) {
+    pub(super) fn set_call_result(&mut self, call: u32, value: ProgramValue) {
         let mut results = self.call_results.as_deref().cloned().unwrap_or_default();
         results.insert(call, value);
         self.call_results = Some(Arc::new(results));
@@ -10220,7 +10229,7 @@ impl CState {
 
     /// The term call `call` of the running statement returned, once its call
     /// step has run.
-    pub(crate) fn call_result(&self, call: u32) -> Option<&CValue> {
+    pub(crate) fn call_result(&self, call: u32) -> Option<&ProgramValue> {
         self.call_results.as_ref()?.get(&call)
     }
 }
@@ -10229,7 +10238,7 @@ impl CState {
 pub(super) struct PredicateCountPermissions(pub(super) std::sync::Arc<ResourceContext>);
 
 // Permissions justify observing the count but do not change its value. The
-// enclosing CState compares the captured creation root independently.
+// enclosing ExecutionState compares the captured creation root independently.
 impl PartialEq for PredicateCountPermissions {
     fn eq(&self, _: &Self) -> bool {
         true
@@ -11125,7 +11134,7 @@ pub struct PublicationRight {
     pub(in crate::kernel) payload: super::ResourceDescription,
     /// A subscriber right an acquire load has read `observed` through, until
     /// a C branch decides whether that value is zero.
-    pub(in crate::kernel) observed: Option<CValue>,
+    pub(in crate::kernel) observed: Option<ProgramValue>,
 }
 
 impl PublicationRight {
@@ -11141,7 +11150,7 @@ impl PublicationRight {
             observed: None,
         }
     }
-    pub(crate) fn observed(&self) -> Option<&CValue> {
+    pub(crate) fn observed(&self) -> Option<&ProgramValue> {
         self.observed.as_ref()
     }
     pub(crate) fn side(&self) -> PublicationSide {
@@ -11586,36 +11595,36 @@ pub enum CResourceTerm {
         snapshot: CResourceSnapshot,
     },
     MutexGuard {
-        mutex: Box<CExpression>,
+        mutex: Box<ProgramExpression>,
         snapshot: CResourceSnapshot,
     },
     MutexLive {
-        mutex: Box<CExpression>,
+        mutex: Box<ProgramExpression>,
         snapshot: CResourceSnapshot,
     },
     MutexUse {
         protected: Option<Box<CResourceTypeSpec>>,
-        mutex: Box<CExpression>,
+        mutex: Box<ProgramExpression>,
         snapshot: CResourceSnapshot,
     },
     /// `publisher(flag, P)` or `subscriber(flag, P)`.
     Publication {
         side: PublicationSide,
         payload: Box<CResourceTypeSpec>,
-        flag: Box<CExpression>,
+        flag: Box<ProgramExpression>,
         snapshot: CResourceSnapshot,
     },
     Composite {
         name: String,
-        arguments: Vec<CExpression>,
+        arguments: Vec<ProgramExpression>,
         argument_snapshots: Vec<CResourceSnapshot>,
-        parameter_types: Vec<CType>,
+        parameter_types: Vec<ProgramType>,
     },
     Token {
         name: String,
-        arguments: Vec<CExpression>,
+        arguments: Vec<ProgramExpression>,
         argument_snapshots: Vec<CResourceSnapshot>,
-        parameter_types: Vec<CType>,
+        parameter_types: Vec<ProgramType>,
     },
     Instance {
         identity: Variable,
@@ -11651,11 +11660,11 @@ pub struct CIteratedSpec {
     pub(crate) stride: u32,
     pub(crate) start_offset: i32,
     pub(crate) end_offset: i32,
-    pub(crate) guard_base: CExpression,
-    pub(crate) guard_cell_type: CType,
+    pub(crate) guard_base: ProgramExpression,
+    pub(crate) guard_cell_type: ProgramType,
     pub(crate) guard_cell_width: u32,
     pub(crate) holds_when_equal: bool,
-    pub(crate) guard_value: CExpression,
+    pub(crate) guard_value: ProgramExpression,
 }
 
 /// Quantity is explicit in the normalized form.  `One` is the ordinary unit
@@ -11665,7 +11674,7 @@ pub struct CIteratedSpec {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CResourceQuantity {
     One,
-    Count(CExpression),
+    Count(ProgramExpression),
 }
 
 /// The transfer operation associated with a normalized specification.
@@ -11815,7 +11824,7 @@ impl CResourceTerm {
         }
     }
 
-    pub fn declared_arguments(&self) -> Option<&[CExpression]> {
+    pub fn declared_arguments(&self) -> Option<&[ProgramExpression]> {
         match self {
             Self::Composite { arguments, .. } | Self::Token { arguments, .. } => Some(arguments),
             _ => None,
@@ -11834,7 +11843,7 @@ impl CResourceTerm {
         }
     }
 
-    pub fn declared_parameter_types(&self) -> Option<&[CType]> {
+    pub fn declared_parameter_types(&self) -> Option<&[ProgramType]> {
         match self {
             Self::Composite {
                 parameter_types, ..
@@ -11914,8 +11923,8 @@ impl CResourceSpec {
         family: ResourceFamily,
         access: CResourceAccessMode,
         name: String,
-        arguments: Vec<CExpression>,
-        parameter_types: Vec<CType>,
+        arguments: Vec<ProgramExpression>,
+        parameter_types: Vec<ProgramType>,
         role: CResourceTransferRole,
         snapshot: CResourceSnapshot,
     ) -> Result<Self, CResourceSpecError> {
@@ -11935,9 +11944,9 @@ impl CResourceSpec {
         family: ResourceFamily,
         access: CResourceAccessMode,
         name: String,
-        arguments: Vec<CExpression>,
+        arguments: Vec<ProgramExpression>,
         mut argument_snapshots: Vec<CResourceSnapshot>,
-        parameter_types: Vec<CType>,
+        parameter_types: Vec<ProgramType>,
         role: CResourceTransferRole,
         snapshot: CResourceSnapshot,
     ) -> Result<Self, CResourceSpecError> {
@@ -12016,7 +12025,7 @@ impl CResourceSpec {
     }
 
     pub fn quantified(
-        quantity: CExpression,
+        quantity: ProgramExpression,
         resource: CResourceSpec,
         role: CResourceTransferRole,
         snapshot: CResourceSnapshot,
@@ -12065,7 +12074,7 @@ impl CResourceSpec {
     }
 
     pub fn quantified_with_quantity_snapshot(
-        quantity: CExpression,
+        quantity: ProgramExpression,
         resource: CResourceSpec,
         role: CResourceTransferRole,
         snapshot: CResourceSnapshot,
@@ -12185,9 +12194,9 @@ impl CResourceSpec {
     /// Current arguments remain state-dependent; source spellings remain intact.
     pub(crate) fn with_captured_entry_parameters(
         mut self,
-        entry_values: &BTreeMap<String, CValue>,
+        entry_values: &BTreeMap<String, ProgramValue>,
     ) -> Self {
-        fn capture(term: &mut CResourceTerm, entry_values: &BTreeMap<String, CValue>) {
+        fn capture(term: &mut CResourceTerm, entry_values: &BTreeMap<String, ProgramValue>) {
             match term {
                 CResourceTerm::Instance { resource, .. } => capture(resource, entry_values),
                 CResourceTerm::Composite {
@@ -12202,10 +12211,10 @@ impl CResourceSpec {
                 } => {
                     for (argument, snapshot) in arguments.iter_mut().zip(argument_snapshots) {
                         if *snapshot == CResourceSnapshot::Entry
-                            && let CExpression::Variable(name) = argument
+                            && let ProgramExpression::Variable(name) = argument
                             && let Some(value) = entry_values.get(name)
                         {
-                            *argument = CExpression::Value(value.clone());
+                            *argument = ProgramExpression::Value(value.clone());
                         }
                     }
                 }
@@ -12291,7 +12300,7 @@ impl CResourceSpec {
         term.declared_name()
     }
 
-    pub fn declared_arguments(&self) -> Option<&[CExpression]> {
+    pub fn declared_arguments(&self) -> Option<&[ProgramExpression]> {
         self.term.declared_arguments()
     }
 
@@ -12299,15 +12308,15 @@ impl CResourceSpec {
         self.term.declared_argument_snapshots()
     }
 
-    pub fn declared_parameter_types(&self) -> Option<&[CType]> {
+    pub fn declared_parameter_types(&self) -> Option<&[ProgramType]> {
         self.term.declared_parameter_types()
     }
 
     pub fn composite(
         access: CResourceAccessMode,
         name: String,
-        arguments: Vec<CExpression>,
-        parameter_types: Vec<CType>,
+        arguments: Vec<ProgramExpression>,
+        parameter_types: Vec<ProgramType>,
     ) -> Self {
         Self::declared(
             ResourceFamily::Composite,
@@ -12324,8 +12333,8 @@ impl CResourceSpec {
     pub fn token(
         access: CResourceAccessMode,
         name: String,
-        arguments: Vec<CExpression>,
-        parameter_types: Vec<CType>,
+        arguments: Vec<ProgramExpression>,
+        parameter_types: Vec<ProgramType>,
     ) -> Self {
         Self::declared(
             ResourceFamily::Token,
@@ -12439,9 +12448,9 @@ mod named_mutex_authority_spec_tests {
 
     #[test]
     fn raw_mutex_authority_bindings_are_typed_and_retained() {
-        let mutex = Box::new(CExpression::Value(CValue::pointer(Pointer::symbolic(
-            Variable(700),
-        ))));
+        let mutex = Box::new(ProgramExpression::Value(ProgramValue::pointer(
+            Pointer::symbolic(Variable(700)),
+        )));
         for term in [
             CResourceTerm::MutexLive {
                 mutex: mutex.clone(),
@@ -12503,9 +12512,9 @@ mod named_mutex_authority_spec_tests {
                 .with_mutex_authority_binding(Variable(1), "state".into())
                 .is_err()
         );
-        let mutex = Box::new(CExpression::Value(CValue::pointer(Pointer::symbolic(
-            Variable(701),
-        ))));
+        let mutex = Box::new(ProgramExpression::Value(ProgramValue::pointer(
+            Pointer::symbolic(Variable(701)),
+        )));
         let viewed = CResourceSpec::new(
             CResourceTerm::MutexGuard {
                 mutex: mutex.clone(),
@@ -12523,7 +12532,7 @@ mod named_mutex_authority_spec_tests {
                 snapshot: CResourceSnapshot::Current,
             },
             CResourceAccessMode::Own,
-            CResourceQuantity::Count(CExpression::Value(int32(2))),
+            CResourceQuantity::Count(ProgramExpression::Value(int32(2))),
             CResourceTransferRole::Borrow,
             CResourceSnapshot::Current,
         );
@@ -12577,7 +12586,7 @@ mod population_authority_spec_tests {
                 CResourceSpec::new(
                     term,
                     CResourceAccessMode::Own,
-                    CResourceQuantity::Count(CExpression::Value(int32(2))),
+                    CResourceQuantity::Count(ProgramExpression::Value(int32(2))),
                     CResourceTransferRole::Borrow,
                     CResourceSnapshot::Current,
                 )
@@ -12638,16 +12647,16 @@ pub enum Term {
     Bitvector32(MachineTerm),
     Integer(IntegerTerm),
     PointerOffset(PointerOffsetTerm),
-    CValue(CValue),
+    ProgramValue(ProgramValue),
     Sequence(SequenceTerm),
     Algebraic(AlgebraicTerm),
     CExpressionOutcome(CExpressionOutcome),
-    // Outcomes carry CState. Keep them out of Term's inline size so cloning
+    // Outcomes carry ExecutionState. Keep them out of Term's inline size so cloning
     // a deep pure proposition does not spend stack on unused C variants.
     CStatementOutcome(Box<CStatementOutcome>),
     CFunctionOutcome(Box<CFunctionOutcome>),
     CMemory(CMemory),
-    CState(Box<CState>),
+    ExecutionState(Box<ExecutionState>),
 }
 
 /// The source name of a universal's binder, carried for diagnostics only.
@@ -12755,51 +12764,51 @@ pub enum Proposition {
         arguments: Vec<Term>,
     },
     CExpressionEvaluates {
-        state: Box<CState>,
-        expression: CExpression,
+        state: Box<ExecutionState>,
+        expression: ProgramExpression,
         outcome: CExpressionOutcome,
     },
     CConditionEvaluates {
-        state: Box<CState>,
-        condition: CExpression,
+        state: Box<ExecutionState>,
+        condition: ProgramExpression,
         outcome: CConditionOutcome,
     },
     CStatementExecutes {
-        state: Box<CState>,
-        statement: Box<CStatement>,
+        state: Box<ExecutionState>,
+        statement: Box<ProgramStatement>,
         outcome: CStatementOutcome,
     },
     /// An abstract verification transition. Unlike `CStatementExecutes`, this
     /// does not assert that the represented outcome is concretely reachable.
     CStatementVerifies {
-        state: Box<CState>,
-        statement: Box<CStatement>,
+        state: Box<ExecutionState>,
+        statement: Box<ProgramStatement>,
         outcome: CStatementOutcome,
     },
     CFunctionExecutes {
-        state: Box<CState>,
-        function: Box<CFunction>,
-        arguments: Vec<CExpression>,
+        state: Box<ExecutionState>,
+        function: Box<ProgramFunction>,
+        arguments: Vec<ProgramExpression>,
         outcome: CFunctionOutcome,
     },
     /// A return branch admitted by modular verification. This is conditional
     /// on the function returning and is not a termination or reachability
     /// theorem.
     CFunctionVerifies {
-        state: Box<CState>,
-        function: Box<CFunction>,
-        arguments: Vec<CExpression>,
+        state: Box<ExecutionState>,
+        function: Box<ProgramFunction>,
+        arguments: Vec<ProgramExpression>,
         outcome: CFunctionOutcome,
     },
     CFunctionSatisfiesSpecification {
-        function: Box<CFunction>,
+        function: Box<ProgramFunction>,
         // Large C payloads stay out of every pure proposition clone frame.
         specification: Box<CFunctionSpecification>,
     },
     /// The specification describes one allowed return branch and makes no
     /// claim that the branch is reachable or that the function terminates.
     CFunctionPartiallySatisfiesSpecification {
-        function: Box<CFunction>,
+        function: Box<ProgramFunction>,
         specification: Box<CFunctionSpecification>,
     },
     CMemoryLoads {
@@ -12826,7 +12835,7 @@ pub enum Proposition {
     CMemoryReadDefined {
         memory: CMemory,
         pointer: Pointer,
-        value_type: CType,
+        value_type: ProgramType,
     },
     CResourceSeparate {
         left: Box<CResource>,
@@ -13540,12 +13549,12 @@ pub struct CFunctionContractRefinementContext {
     /// not needed to lower the symbolic relation.
     pub(super) function_interface: CFunctionContractInterface,
     pub(super) function_name: String,
-    pub(super) pointer: CPointerValue,
+    pub(super) pointer: PointerValue,
     pub(super) source_contract: Option<CFunctionContract>,
     /// The values a fact fixed for the implementation side's own value
     /// parameters, when that side is a named contract found through one.
-    pub(super) function_value_arguments: Vec<CValue>,
-    pub(super) argument_values: Vec<CValue>,
+    pub(super) function_value_arguments: Vec<ProgramValue>,
+    pub(super) argument_values: Vec<ProgramValue>,
     pub(super) result_variable: Variable,
     /// The mark the budget that invented `argument_values` reached,
     /// execution-relative: the refinement obligations continue from it
@@ -13556,8 +13565,8 @@ pub struct CFunctionContractRefinementContext {
 /// Kernel-generated sufficient logical obligations for one contract relation.
 /// The states and proposition cannot be supplied by the language layer.
 pub struct CFunctionContractRefinementObligations {
-    pub(super) entry: CState,
-    pub(super) post: CState,
+    pub(super) entry: ExecutionState,
+    pub(super) post: ExecutionState,
     pub(super) proposition: Proposition,
 }
 
@@ -14292,7 +14301,7 @@ pub struct PureFactContext {
     /// than every one the path stated.
     pub(super) composition_members: composition_member_index::CompositionMemberIndex,
     pub(super) memory_read_defined_facts: crate::persistent::PersistentMap<
-        (Pointer, CType),
+        (Pointer, ProgramType),
         crate::persistent::PersistentSet<Proposition>,
     >,
     pub(super) memory_loadable_facts: crate::persistent::PersistentMap<
@@ -14485,7 +14494,7 @@ pub struct ExecutionPureFact {
     /// state, since the producer's snapshot and pointer are the authority.
     pub(super) generated_load_binding: Option<Box<GeneratedLoadBinding>>,
     /// Checked callback-read evidence, independent of scalar-variable naming.
-    pub(super) checked_pointer_read: Option<Box<(Pointer, SharedCMemory, Pointer)>>,
+    pub(super) checked_pointer_read: Option<Box<(Pointer, SharedMemory, Pointer)>>,
     pub(super) generated_load_source_events: GeneratedLoadSourceEvents,
     pub(super) reference_observation: super::source_access::ReferenceObservationSource,
 }
@@ -14549,7 +14558,7 @@ pub(crate) enum GeneratedLoadBinding {
         typed_pointer_value: Option<Pointer>,
         /// The current cell read by a checked resource-index expression.
         /// Its cached value can retain an older defining load.
-        observed_pointer_read: Option<(SharedCMemory, Pointer)>,
+        observed_pointer_read: Option<(SharedMemory, Pointer)>,
     },
     Ambiguous {
         variable: Variable,
@@ -14630,7 +14639,7 @@ pub(super) struct CertifiedMemoryStore {
     pub(super) before: CMemory,
     pub(super) after: CMemory,
     pub(super) pointer: Pointer,
-    pub(super) value: CValue,
+    pub(super) value: ProgramValue,
     pub(super) authorized_range: Option<CMemoryRange>,
     pub(super) source: super::CStatementStoreSource,
 }
@@ -14673,7 +14682,7 @@ pub struct CContractPathSet {
     /// were rebased onto this contract's caller state. A claim the proof
     /// completed at that state certifies the rebased path: the rebase
     /// checked the two entry representations definitionally equal.
-    pub(super) completion_origin_state: Option<CState>,
+    pub(super) completion_origin_state: Option<ExecutionState>,
     /// Authenticated entry custody for each path, including partitioned proofs.
     pub(super) boundary_transfers:
         Vec<Option<Arc<super::functions::CheckedBoundaryResourceTransfer>>>,
@@ -14746,9 +14755,9 @@ pub struct CCheckedFunctionExecution {
     /// The immutable outcome publication this proof completed. Return-path
     /// completion uses this same input and preserves its checked path object.
     pub(super) proof_candidates: Option<CFunctionExecutionCandidates>,
-    pub(super) state: CState,
-    pub(super) function: CFunction,
-    pub(super) arguments: Vec<CExpression>,
+    pub(super) state: ExecutionState,
+    pub(super) function: ProgramFunction,
+    pub(super) arguments: Vec<ProgramExpression>,
     pub(super) assumptions: PureFactContext,
     pub(super) environment: CExecutionEnvironment,
     pub(super) execution_semantics: CExecutionSemantics,
@@ -14774,7 +14783,7 @@ pub struct CCheckedFunctionExecution {
     pub(super) checked_returned_resources: Vec<ResourceContext>,
     /// Original contract caller state when a kernel-checked proof entered C
     /// execution through a definitionally equal resource representation.
-    pub(super) entry_representation_origin: Option<CState>,
+    pub(super) entry_representation_origin: Option<ExecutionState>,
     /// The user-defined tactics this execution's proof applied.
     pub(super) applied_tactics: std::collections::BTreeSet<String>,
     /// Complete conservative call dependencies from kernel-checked execution.
@@ -14888,7 +14897,7 @@ impl CCheckedFunctionExecution {
         self.execution.paths()
     }
 
-    pub(crate) fn function(&self) -> &CFunction {
+    pub(crate) fn function(&self) -> &ProgramFunction {
         self.boundary_transfer
             .as_deref()
             .map_or(&self.function, |transfer| transfer.checked_function())
@@ -14900,7 +14909,7 @@ impl CCheckedFunctionExecution {
         self.boundary_transfer.as_ref()
     }
 
-    pub(crate) fn function_arguments(&self) -> &[CExpression] {
+    pub(crate) fn function_arguments(&self) -> &[ProgramExpression] {
         &self.arguments
     }
 
@@ -14918,13 +14927,13 @@ impl CCheckedFunctionExecution {
     /// proof recorded a checked function-entry boundary.  Surface
     /// certification reuses this identity instead of reconstructing a second
     /// resource occurrence/loan root.
-    pub(crate) fn caller_state(&self) -> Option<&CState> {
+    pub(crate) fn caller_state(&self) -> Option<&ExecutionState> {
         self.entry_representation_origin.as_ref()
     }
 
     /// Allocation return accounting reads borrowed inputs in the immutable
     /// checked entry snapshot, before C may mutate a pointer naming them.
-    pub(crate) fn allocation_entry_state(&self) -> &CState {
+    pub(crate) fn allocation_entry_state(&self) -> &ExecutionState {
         self.entry_representation_origin
             .as_ref()
             .unwrap_or(&self.state)
@@ -15100,9 +15109,9 @@ pub struct CFunctionExecutionCandidates {
 /// this collection, rather than copying every sibling path and the source body.
 #[derive(Debug)]
 pub(super) struct CFunctionExecutionCandidatesData {
-    pub(super) state: CState,
-    pub(super) function: Arc<CFunction>,
-    pub(super) arguments: Arc<Vec<CExpression>>,
+    pub(super) state: ExecutionState,
+    pub(super) function: Arc<ProgramFunction>,
+    pub(super) arguments: Arc<Vec<ProgramExpression>>,
     pub(super) paths: super::proof::PersistentVector<CFunctionExecutionCandidate>,
     pub(super) common_facts: Option<ExecutionFacts>,
 }
@@ -15151,7 +15160,7 @@ pub struct SymbolicCConditionEvaluationPath {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct CExpressionPath<V = CValue> {
+pub(super) struct CExpressionPath<V = ProgramValue> {
     pub(super) outcome: CExpressionOutcome<V>,
     pub(super) facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
@@ -15207,7 +15216,7 @@ impl CStatementExecutionPath {
         if matches!(self.outcome, CStatementOutcome::Normal(_)) {
             self.call_result = result
                 .map(Into::into)
-                .filter(|value| value.c_type() != CType::Void);
+                .filter(|value| value.c_type() != ProgramType::Void);
         }
         self
     }
@@ -15248,15 +15257,18 @@ pub(super) struct CFunctionPath {
 /// introduces these values, and its contract reads them; a proof spells a
 /// read of one as `R.parameter(name)...` at the call's region `R`.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CallParameters(pub(crate) std::sync::Arc<CState>);
+pub struct CallParameters(pub(crate) std::sync::Arc<ExecutionState>);
 
 impl CallParameters {
     /// The parameter binding of `interface`'s by-value aggregate parameters
     /// in `entry`, the state the call evaluates its contract in; `None` when
     /// it has none. The state keeps `entry`'s memory and binds exactly
     /// those parameters, so nothing else is named through it.
-    pub(super) fn of(entry: &CState, interface: &CFunctionContractInterface) -> Option<Self> {
-        let mut bound = CState::new().with_memory(entry.memory().clone());
+    pub(super) fn of(
+        entry: &ExecutionState,
+        interface: &CFunctionContractInterface,
+    ) -> Option<Self> {
+        let mut bound = ExecutionState::new().with_memory(entry.memory().clone());
         let mut any = false;
         for parameter in interface.parameters() {
             let Some(layout) = parameter.aggregate_layout() else {
@@ -15273,7 +15285,7 @@ impl CallParameters {
         any.then(|| Self(std::sync::Arc::new(bound)))
     }
 
-    pub(crate) fn state(&self) -> &CState {
+    pub(crate) fn state(&self) -> &ExecutionState {
         &self.0
     }
 }
@@ -15298,7 +15310,7 @@ impl CFunctionPath {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct CArgumentsPath {
-    pub(super) values: Vec<CValue>,
+    pub(super) values: Vec<ProgramValue>,
     pub(super) outcome: Option<CFunctionOutcome>,
     pub(super) facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
@@ -15480,7 +15492,7 @@ mod representation_size_tests {
     }
 }
 
-/// The algebraic type of a value a C local holds, interned so that `CType`
+/// The algebraic type of a value a C local holds, interned so that `ProgramType`
 /// stays `Copy`: an abstract type parameter, a rigid type known only by its
 /// name, or a Rust enum, a `spec enum` whose values the program constructs and
 /// matches. Types are few and live for the process, so each is leaked once.

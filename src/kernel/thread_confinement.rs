@@ -214,12 +214,14 @@ mod tests {
     #[test]
     fn guard_ingredient_confines_its_transitive_wrappers() {
         use crate::kernel::{
-            CExpression, CResourceQuantity, CResourceSnapshot, CResourceTerm,
-            CResourceTransferRole, CValue, Pointer,
+            CResourceQuantity, CResourceSnapshot, CResourceTerm, CResourceTransferRole, Pointer,
+            ProgramExpression, ProgramValue,
         };
         let guard = CResourceSpec::new(
             CResourceTerm::MutexGuard {
-                mutex: Box::new(CExpression::Value(CValue::pointer(Pointer::null()))),
+                mutex: Box::new(ProgramExpression::Value(ProgramValue::pointer(
+                    Pointer::null(),
+                ))),
                 snapshot: CResourceSnapshot::Current,
             },
             CResourceAccessMode::Own,

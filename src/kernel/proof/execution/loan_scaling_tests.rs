@@ -28,7 +28,7 @@ fn assert_near_linear(axis: &str, samples: &[(usize, usize)]) {
 /// contract. The successor's resource context is rebuilt from the
 /// declared clauses, so its occurrences are fresh and only the binding
 /// content can connect it to the arm.
-fn interface_join_states(count: usize) -> (CState, CState) {
+fn interface_join_states(count: usize) -> (ExecutionState, ExecutionState) {
     let support_fact = CResourceFact::own_token("shared_support".to_string(), Vec::new());
     let viewed = (0..count)
         .map(|index| CResourceFact::view_token(format!("child_{index}"), Vec::new()))
@@ -58,7 +58,7 @@ fn interface_join_states(count: usize) -> (CState, CState) {
         .zip(&bindings)
         .map(|(fact, binding)| (resources.occurrences_for_fact(fact)[0], binding.clone()))
         .collect::<Vec<_>>();
-    let arm = CState::new()
+    let arm = ExecutionState::new()
         .with_loan_ledger(Some(ledger))
         .with_loan_participant(Some(reader))
         .with_resource_context_and_loan_dependencies(resources, arm_dependencies);
@@ -74,7 +74,7 @@ fn interface_join_states(count: usize) -> (CState, CState) {
             )
         })
         .collect::<Vec<_>>();
-    let successor = CState::new()
+    let successor = ExecutionState::new()
         .with_resource_context_and_loan_dependencies(successor_resources, successor_dependencies);
     (arm, successor)
 }

@@ -10915,7 +10915,7 @@ fn execution_branch_arm_terminal_proof_if_stays_on_one_proof() {
                 if outer.then_tactics.iter().any(|tactic| matches!(
                     tactic,
                     ProofTactic::If(inner) if inner.condition == ClickProposition::Comparison {
-                        left: ContractExpression::CFragment(CExpression::Variable("x".to_string())),
+                        left: ContractExpression::CFragment(ProgramExpression::Variable("x".to_string())),
                         operator: ComparisonOperator::GreaterEqual,
                         right: ContractExpression::IntegerLiteral("0".into()),
                     }
@@ -15154,7 +15154,7 @@ fn qualified_static_struct_startup_and_expansion() {
         state
             .memory()
             .load(&CMemory::global_pointer("state#file-static:counter.c")),
-        CExpressionOutcome::Value(CValue::UInt64(MachineTerm::uint64_constant(7)))
+        CExpressionOutcome::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(7)))
     );
     let verified_for_expansion = verify_c0_sources(source, &sources).unwrap();
     for (_, expanded) in expand_checked_grouped_claims(

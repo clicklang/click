@@ -25,7 +25,7 @@ fn alias(a: &AlgebraicTerm, b: &AlgebraicTerm) -> Proposition {
 #[test]
 fn integer_count_facts_follow_early_and_late_model_aliases() {
     let _session = crate::kernel::VerificationSession::enter();
-    let ty = model_type("IntegerModel", AlgebraicValueType::C(CType::Int32));
+    let ty = model_type("IntegerModel", AlgebraicValueType::C(ProgramType::Int32));
     let a = variable(&ty, 920_101);
     let b = variable(&ty, 920_102);
     let same = alias(&a, &b);
@@ -120,13 +120,14 @@ fn integer_observations_keep_machine_types_and_read_snapshots() {
     let graph = EqualityGraph::default();
     assert!(!graph.are_integer_equal(&signed, &unsigned));
     let p = Pointer::symbolic(Variable(920_132));
-    let before =
-        intern_c_memory(CMemory::new().store(p.clone(), CValue::Int32(MachineTerm::constant(7))));
+    let before = intern_c_memory(
+        CMemory::new().store(p.clone(), ProgramValue::Int32(MachineTerm::constant(7))),
+    );
     let after = intern_c_memory(
         before
             .memory()
             .clone()
-            .store(p.clone(), CValue::Int32(MachineTerm::constant(9))),
+            .store(p.clone(), ProgramValue::Int32(MachineTerm::constant(9))),
     );
     let read = |memory| {
         I::from_machine(
@@ -311,7 +312,7 @@ fn cited_mathematical_guards_share_native_and_retained_call_observations() {
                 MachineTerm::uint64_constant(7),
             ))
         } else {
-            PureFunctionArgument::Value(CValue::UInt64(MachineTerm::uint64_constant(7)))
+            PureFunctionArgument::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(7)))
         }],
     };
     let difference = |shared| MachineTerm::Binary {
@@ -362,7 +363,7 @@ fn narrow_call_bounds_preserve_retained_argument_observation_identity() {
     let _session = crate::kernel::VerificationSession::enter();
     let length = |name: &str| MachineTerm::ClickFunctionApplication {
         name: name.into(),
-        arguments: vec![PureFunctionArgument::Value(CValue::UInt64(
+        arguments: vec![PureFunctionArgument::Value(ProgramValue::UInt64(
             MachineTerm::Variable(Variable(982811)),
         ))],
     };

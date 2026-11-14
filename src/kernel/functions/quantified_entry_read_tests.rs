@@ -5,7 +5,7 @@ fn fixture(
     unrelated: usize,
     quantities: usize,
 ) -> (
-    CState,
+    ExecutionState,
     Vec<CResourceSpec>,
     Vec<CCompositeResourceDefinition>,
 ) {
@@ -13,8 +13,8 @@ fn fixture(
         block: PointerBlock::Concrete("quantity-pool".into()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let state = CState::new()
-        .with_local("pool", CValue::pointer(pointer.clone()))
+    let state = ExecutionState::new()
+        .with_local("pool", ProgramValue::pointer(pointer.clone()))
         .with_memory(CMemory::new().with_block(pointer.block.clone(), 8).store(
             pointer.offset_by_int32_elements(MachineTerm::constant(1)),
             int32(4),
@@ -23,7 +23,7 @@ fn fixture(
         CResourceAccessMode::Own,
         "slot".into(),
         vec![c_variable("pool")],
-        vec![CType::Int32Pointer],
+        vec![ProgramType::Int32Pointer],
     );
     let authority = CResourceSpec::new(
         CResourceTerm::PopulationAuthority {
@@ -42,7 +42,7 @@ fn fixture(
     .unwrap();
     let control = CCompositeResourceDefinition::new(
         "zz_control",
-        vec![c_parameter("pool", CType::Int32Pointer)],
+        vec![c_parameter("pool", ProgramType::Int32Pointer)],
         None,
         false,
         vec![
@@ -80,7 +80,7 @@ fn fixture(
         CResourceAccessMode::Own,
         "zz_control".into(),
         vec![c_variable("pool")],
-        vec![CType::Int32Pointer],
+        vec![ProgramType::Int32Pointer],
     )];
     resources.extend(std::iter::repeat_n(quantity, quantities));
     (state, resources, definitions)
@@ -122,7 +122,7 @@ fn sample(unrelated: usize, quantities: usize) -> usize {
 fn composite_read_projection_requires_positive_ownership() {
     let (state, _, definitions) = fixture(0, 1);
     let pointer = match state.locals.get_native("pool").as_deref().unwrap() {
-        CValue::Pointer(value) => value.pointer().clone(),
+        ProgramValue::Pointer(value) => value.pointer().clone(),
         _ => unreachable!(),
     };
     let target = CResourceFact::view_memory(CMemoryRange::new(
@@ -134,7 +134,7 @@ fn composite_read_projection_requires_positive_ownership() {
         let supplied = CResourceFact::Own(
             CResource::Composite {
                 name: "zz_control".into(),
-                arguments: vec![CValue::pointer(pointer.clone()).into()].into(),
+                arguments: vec![ProgramValue::pointer(pointer.clone()).into()].into(),
             },
             Box::new(MachineTerm::constant(quantity)),
         );

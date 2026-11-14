@@ -2104,15 +2104,15 @@ fn loadable_candidate_selection_ignores_facts_about_other_objects() {
 fn read_defined_and_separation_selection_try_indexed_sources_first() {
     use crate::kernel::search::proposition_search::{candidate_visits, reset_candidate_visits};
     use crate::kernel::{
-        CMemory, CMemoryRange, CResource, CType, ConditionTerm, MachineTerm, Pointer,
-        PointerOffsetTerm, Proposition, PureFactContext, Variable,
+        CMemory, CMemoryRange, CResource, ConditionTerm, MachineTerm, Pointer, PointerOffsetTerm,
+        ProgramType, Proposition, PureFactContext, Variable,
     };
 
     let memory = CMemory::new().with_block("goal", 64);
     let read_defined = |pointer: Pointer| Proposition::CMemoryReadDefined {
         memory: memory.clone(),
         pointer,
-        value_type: CType::Int32,
+        value_type: ProgramType::Int32,
     };
     let at = |block: String, variable: u64| Pointer {
         block: block.as_str().into(),
@@ -2239,7 +2239,7 @@ fn scaling_assertion_rejects_a_quadratic_curve() {
 #[ignore = "nightly: 9s in the parallel gate"]
 fn recorded_snapshot_history_drops_without_recursing() {
     let build = |size: usize| {
-        let state = CState::new();
+        let state = ExecutionState::new();
         let mut snapshots = RecordedSnapshots::new();
         for index in 0..size {
             snapshots.insert(
@@ -2264,7 +2264,10 @@ fn recorded_snapshot_history_drops_without_recursing() {
             drop(build(200_000));
             let shared = build(100_000);
             let mut longer = shared.clone();
-            longer.insert(SnapshotSelector::Mark("tip".to_string()), CState::new());
+            longer.insert(
+                SnapshotSelector::Mark("tip".to_string()),
+                ExecutionState::new(),
+            );
             drop(longer);
             assert!(shared.contains_key(&SnapshotSelector::Mark("step-000000".to_string())));
             drop(shared);
@@ -2280,20 +2283,23 @@ fn recorded_snapshot_branch_merge_visits_only_fork_local_changes() {
     let common_selector = mark_selector("common".to_string());
     let left_only = mark_selector("left-only".to_string());
     let right_only = mark_selector("right-only".to_string());
-    let common_state = CState::new();
+    let common_state = ExecutionState::new();
     let mut samples = Vec::new();
 
     for size in [16_usize, 64, 256, 1024, 4096] {
         let mut ancestor = RecordedSnapshots::new();
         for index in 0..size {
-            ancestor.insert(mark_selector(format!("ambient-{index:05}")), CState::new());
+            ancestor.insert(
+                mark_selector(format!("ambient-{index:05}")),
+                ExecutionState::new(),
+            );
         }
         let mut left = ancestor.clone();
         let mut right = ancestor.clone();
         left.insert(common_selector.clone(), common_state.clone());
         right.insert(common_selector.clone(), common_state.clone());
-        left.insert(left_only.clone(), CState::new());
-        right.insert(right_only.clone(), CState::new());
+        left.insert(left_only.clone(), ExecutionState::new());
+        right.insert(right_only.clone(), ExecutionState::new());
 
         let before = recorded_snapshot_node_allocations();
         let merged = left
@@ -2311,7 +2317,7 @@ fn recorded_snapshot_branch_merge_visits_only_fork_local_changes() {
         assert!(merged.get(&right_only).is_none());
         assert_eq!(
             merged.get(&mark_selector(format!("ambient-{:05}", size / 2))),
-            Some(&CState::new())
+            Some(&ExecutionState::new())
         );
         assert_eq!(ancestor.iter().count(), size);
 
@@ -6104,7 +6110,7 @@ fn resource_reference_entry_setup_has_near_linear_work() {
                 crate::surface::lowering::resource_context_from_requirements(
                     file.function_blocks()[0].requires(),
                     ParameterBinding::default(),
-                    &crate::kernel::CState::new(),
+                    &crate::kernel::ExecutionState::new(),
                     &crate::kernel::PureFactContext::new(),
                 )
                 .unwrap()
@@ -6146,7 +6152,7 @@ fn entry_resource_clauses_do_not_rebuild_every_parameter() {
         let c_function = syntax::parse_function(&format!("void f({parameters}) {{ }}")).unwrap();
         let arguments = (0..count as u64)
             .map(|index| {
-                CExpression::Value(CValue::Int32(MachineTerm::Variable(Variable(
+                ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(
                     9_100_000 + index,
                 ))))
             })
@@ -6155,7 +6161,7 @@ fn entry_resource_clauses_do_not_rebuild_every_parameter() {
             crate::surface::lowering::resource_context_from_requirements(
                 function.requires(),
                 ParameterBinding::new(c_function.parameters(), &arguments),
-                &crate::kernel::CState::new(),
+                &crate::kernel::ExecutionState::new(),
                 &crate::kernel::PureFactContext::new(),
             )
             .unwrap()
@@ -6979,7 +6985,7 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
 #[test]
 fn atomic_load_dependencies_ignore_other_snapshot_cells() {
     use crate::kernel::{
-        CMemory, CValue, ConditionTerm, MachineTerm, Pointer, PointerOffsetTerm, Proposition,
+        CMemory, ConditionTerm, MachineTerm, Pointer, PointerOffsetTerm, ProgramValue, Proposition,
         PureFactContext, Variable,
     };
 
@@ -6999,7 +7005,8 @@ fn atomic_load_dependencies_ignore_other_snapshot_cells() {
     );
     let mut samples = Vec::new();
     for size in [8usize, 16, 32, 64] {
-        let mut memory = CMemory::new().store(index_cell.clone(), CValue::Int32(index.clone()));
+        let mut memory =
+            CMemory::new().store(index_cell.clone(), ProgramValue::Int32(index.clone()));
         let mut context = PureFactContext::new();
         for i in 0..size {
             let value = MachineTerm::Variable(Variable(491_000 + i as u64));
@@ -7008,7 +7015,7 @@ fn atomic_load_dependencies_ignore_other_snapshot_cells() {
                     block: format!("other-cell-{i}").as_str().into(),
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                CValue::Int32(value.clone()),
+                ProgramValue::Int32(value.clone()),
             );
             context = context.assume_proposition(Proposition::ConditionIs(
                 ConditionTerm::Compare {
@@ -7927,10 +7934,13 @@ fn nearest_statement_snapshots_are_lazy_ordered_and_logarithmic() {
     for size in [16usize, 64, 256, 1024, 4096] {
         let mut snapshots = RecordedSnapshots::new();
         for index in 0..size {
-            snapshots.insert(point(index, ProgramPointKind::Entry), CState::new());
-            snapshots.insert(point(index, ProgramPointKind::Exit), CState::new());
+            snapshots.insert(point(index, ProgramPointKind::Entry), ExecutionState::new());
+            snapshots.insert(point(index, ProgramPointKind::Exit), ExecutionState::new());
         }
-        snapshots.insert(SnapshotSelector::Mark("unrelated".into()), CState::new());
+        snapshots.insert(
+            SnapshotSelector::Mark("unrelated".into()),
+            ExecutionState::new(),
+        );
         let anchor = size / 2;
         let (nearest, work) = crate::instrumentation::measure_deterministic_work(|| {
             snapshots
@@ -7985,7 +7995,7 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
     let value = |index: usize| MachineTerm::Variable(Variable(700_000 + index as u64));
     let schema = crate::kernel::ResourceFieldSchema::new(vec![(
         "size".into(),
-        crate::kernel::ResourceFieldType::C(CType::Int32),
+        crate::kernel::ResourceFieldType::C(ProgramType::Int32),
     )])
     .unwrap();
     let block_pointer = |index: usize| crate::kernel::Pointer {
@@ -7994,22 +8004,25 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
     };
     for size in [16usize, 64, 256, 1024] {
         let mut snapshots = RecordedSnapshots::new();
-        let mut state = CState::new()
+        let mut state = ExecutionState::new()
             .with_memory(crate::kernel::CMemory::new().with_block("cells", 4 * size as u32));
         let mut insert_work = Vec::new();
         for index in 0..size {
             // Each point binds one new local, and from the second on also
             // gives local `x0` a new value: with `p` below, three changed
             // locals, one new instance and one stored cell per point.
-            state = state.with_local(format!("x{}", index + 1), CValue::Int32(value(2 * index)));
+            state = state.with_local(
+                format!("x{}", index + 1),
+                ProgramValue::Int32(value(2 * index)),
+            );
             if index > 0 {
-                state = state.with_local("x0", CValue::Int32(value(2 * index + 1)));
+                state = state.with_local("x0", ProgramValue::Int32(value(2 * index + 1)));
             }
             // And local `p` a pointer into a block of its own, and a new
             // resource instance with one field.
             state = state.with_local(
                 "p",
-                CValue::typed_pointer(block_pointer(index), CType::Int32Pointer),
+                ProgramValue::typed_pointer(block_pointer(index), ProgramType::Int32Pointer),
             );
             let resources =
                 state
@@ -8022,9 +8035,9 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
                                 "object".into(),
                                 vec![].into(),
                                 schema.clone(),
-                                vec![crate::kernel::AlgebraicValue::C(CValue::Int32(value(
-                                    4 * size + index,
-                                )))]
+                                vec![crate::kernel::AlgebraicValue::C(ProgramValue::Int32(
+                                    value(4 * size + index),
+                                ))]
                                 .into(),
                             )
                             .unwrap(),
@@ -8037,7 +8050,7 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
                     block: crate::kernel::PointerBlock::Concrete("cells".into()),
                     offset: crate::kernel::PointerOffsetTerm::Constant(4 * index as i64),
                 },
-                CValue::Int32(value(6 * size + index)),
+                ProgramValue::Int32(value(6 * size + index)),
             );
             state = state.with_memory(memory);
             let (((), work), persistent) = crate::persistent::measure_persistent_work(|| {
@@ -8103,7 +8116,7 @@ fn nearest_statement_snapshots_stop_at_an_exhausted_deadline() {
                 region: CodeRegionRef::Region(index),
                 kind: ProgramPointKind::Entry,
             },
-            CState::new(),
+            ExecutionState::new(),
         );
     }
     let mut entries = snapshots.statement_entries_nearest(128);
@@ -9900,7 +9913,7 @@ fn recorded_call_results_scale_and_replace_execution_occurrences() {
     for size in [16usize, 64, 256, 1024] {
         let mut snapshots = RecordedSnapshots::new();
         let value = |index| {
-            CValue::Bool(MachineTerm::bool_cast(
+            ProgramValue::Bool(MachineTerm::bool_cast(
                 MachineIntegerType::UInt8,
                 ConditionTerm::Variable(Variable(700_000 + index)),
             ))
@@ -9911,7 +9924,7 @@ fn recorded_call_results_scale_and_replace_execution_occurrences() {
             });
             assert!(work <= 2, "{size}: insertion {work}");
         }
-        let CValue::Bool(first) = value(0) else {
+        let ProgramValue::Bool(first) = value(0) else {
             unreachable!()
         };
         let (region, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -9957,7 +9970,7 @@ fn recorded_algebraic_field_names_use_changed_instances_and_direct_lookups() {
     .unwrap();
     for size in [16usize, 64, 256, 1024] {
         let mut snapshots = RecordedSnapshots::new();
-        let mut state = CState::new();
+        let mut state = ExecutionState::new();
         for index in 0..size {
             let variable = Variable(900_000 + index as u64);
             let identity = Variable(800_000 + index as u64);
@@ -10740,13 +10753,14 @@ fn volatile_read_results_use_selected_event_indexes() {
         let mut points = RecordedSnapshots::new();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 0..size {
-                let value = CValue::Int32(MachineTerm::Variable(Variable(800000 + index as u64)));
+                let value =
+                    ProgramValue::Int32(MachineTerm::Variable(Variable(800000 + index as u64)));
                 points.record_read_event_values(index, std::iter::once(&value));
                 assert!(points.read_event_naming_value(&value).is_some());
             }
         });
         samples.push(work);
-        let first = CValue::Int32(MachineTerm::Variable(Variable(800000)));
+        let first = ProgramValue::Int32(MachineTerm::Variable(Variable(800000)));
         let branch = points.clone();
         points.record_read_event_values(0, std::iter::empty());
         assert!(points.read_event_naming_value(&first).is_none());
@@ -10779,7 +10793,7 @@ fn volatile_read_results_use_selected_event_indexes() {
                 region: CodeRegionRef::Region(0),
                 kind: ProgramPointKind::Exit,
             },
-            crate::kernel::CState::new(),
+            crate::kernel::ExecutionState::new(),
         );
         points.record_read_event_values(0, std::iter::once(&first));
         points.remove(&ProgramPointRef {
@@ -11060,13 +11074,16 @@ fn a_loop_exit_reads_only_the_points_its_pass_recorded() {
     let pass_work = |before: usize, during: usize| {
         let mut snapshots = RecordedSnapshots::new();
         for index in 0..before {
-            snapshots.insert(region(index, ProgramPointKind::Entry), CState::new());
+            snapshots.insert(
+                region(index, ProgramPointKind::Entry),
+                ExecutionState::new(),
+            );
         }
         let mark = snapshots.history_mark();
         for index in 0..during {
             snapshots.insert(
                 region(before + index, ProgramPointKind::Exit),
-                CState::new(),
+                ExecutionState::new(),
             );
         }
         let (points, work) = measure_deterministic_work(|| snapshots.recorded_since(&mark));

@@ -15,7 +15,7 @@ impl SpecValue {
         if then_value == else_value {
             return Ok(Some(then_value.clone()));
         }
-        let is_bool = |value: &Self| value.c_type() == CType::Bool;
+        let is_bool = |value: &Self| value.c_type() == ProgramType::Bool;
         if (is_bool(then_value) && else_value.machine().is_some())
             || (is_bool(else_value) && then_value.machine().is_some())
         {

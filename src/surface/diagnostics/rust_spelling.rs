@@ -72,7 +72,7 @@ pub(crate) fn slice_call_arguments(name: &str, mut arguments: Vec<String>) -> Ve
 /// The type a slice constructor is written at, `Slice<u8>` in a function
 /// written in Rust syntax and `Slice<uint8>` elsewhere: a slice standing
 /// alone, `Slice<u8>::Slice(p, n)[1]`, has no context to infer it from.
-pub(crate) fn slice_type_spelling(element: &CType) -> Option<String> {
+pub(crate) fn slice_type_spelling(element: &ProgramType) -> Option<String> {
     let name = if rust_spelling() {
         rust_scalar_spelling(element)?
     } else {
@@ -301,18 +301,18 @@ pub(crate) fn rust_variable_spelling(name: &str) -> Option<String> {
 }
 
 /// The Rust name of the scalar type `c_type`, `u32` for `uint32`.
-pub(super) fn rust_scalar_spelling(c_type: &CType) -> Option<&'static str> {
+pub(super) fn rust_scalar_spelling(c_type: &ProgramType) -> Option<&'static str> {
     Some(match c_type {
-        CType::Int8 => "i8",
-        CType::Int16 => "i16",
-        CType::Int32 => "i32",
-        CType::UInt8 => "u8",
-        CType::UInt16 => "u16",
-        CType::UInt32 => "u32",
-        CType::Int64 => "i64",
-        CType::UInt64 => "u64",
-        CType::Int128 => "i128",
-        CType::UInt128 => "u128",
+        ProgramType::Int8 => "i8",
+        ProgramType::Int16 => "i16",
+        ProgramType::Int32 => "i32",
+        ProgramType::UInt8 => "u8",
+        ProgramType::UInt16 => "u16",
+        ProgramType::UInt32 => "u32",
+        ProgramType::Int64 => "i64",
+        ProgramType::UInt64 => "u64",
+        ProgramType::Int128 => "i128",
+        ProgramType::UInt128 => "u128",
         _ => return None,
     })
 }

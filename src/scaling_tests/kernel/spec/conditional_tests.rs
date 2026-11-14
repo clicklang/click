@@ -66,7 +66,7 @@ fn identical_conditional_arms_normalize_without_revisiting_shared_suffixes() {
         let format = MachineIntegerType::Int32;
         let guard =
             KernelTermImport::default().condition(&ConditionTerm::Variable(Variable(998202)));
-        let base = KernelTerm::variable(KernelType::C(CType::Int32), Variable(998203));
+        let base = KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(998203));
         let mut root = base.clone();
         for _ in 0..size {
             root = KernelTerm::machine_if_shared(format, [guard.clone(), root.clone(), root]);

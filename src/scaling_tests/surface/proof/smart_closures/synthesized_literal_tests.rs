@@ -8,7 +8,7 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 #[test]
 fn speculative_solve_premise_spelling_declines_large_components_without_rendering() {
     let function = syntax::parse_function("int32 noop() { return 0; }").unwrap();
-    let state = CState::new();
+    let state = ExecutionState::new();
     let snapshots = RecordedSnapshots::new();
     let surfaces = SurfacePropositionMap::default();
     let predicates = PredicateEnvironment::new(&[]);
@@ -68,7 +68,7 @@ fn reflexive_pointer_metadata_does_not_search_snapshot_history() {
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
     let pointer = Pointer::symbolic(Variable(8_179_830));
-    let state = CState::new().with_local("p", CValue::pointer(pointer.clone()));
+    let state = ExecutionState::new().with_local("p", ProgramValue::pointer(pointer.clone()));
     let reflexive = Proposition::ConditionIs(
         ConditionTerm::PointerEqual(Box::new(pointer.clone()), Box::new(pointer)),
         true,
@@ -147,7 +147,7 @@ fn native_signed_certificate_results_do_not_walk_ambient_facts() {
     };
     let function = syntax::parse_function("int32 noop(int32 x) { return x; }").unwrap();
     let x = MachineTerm::Variable(Variable(8_172_000));
-    let arguments = [CExpression::Value(CValue::Int32(x.clone()))];
+    let arguments = [ProgramExpression::Value(ProgramValue::Int32(x.clone()))];
     let premise = Proposition::ConditionIs(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
@@ -181,12 +181,12 @@ fn native_signed_certificate_results_do_not_walk_ambient_facts() {
         conclusion: 0,
     };
     let surface = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Variable("x".into())),
+        left: ContractExpression::CFragment(ProgramExpression::Variable("x".into())),
         operator: ComparisonOperator::LessEqual,
         right: ContractExpression::IntegerLiteral("1".into()),
     };
     let pairs = [(premise.clone(), surface.clone())];
-    let state = CState::new();
+    let state = ExecutionState::new();
     let snapshots = RecordedSnapshots::new();
     let surfaces = SurfacePropositionMap::default();
     let predicates = PredicateEnvironment::new(&[]);

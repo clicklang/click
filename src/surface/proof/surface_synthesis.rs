@@ -30,12 +30,12 @@ struct SurfaceSynthesisBudget {
 thread_local! {
     static STRUCTURAL_GOAL_SYNTHESIS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static SYNTHESIS_QUALIFIED_SOURCES: std::cell::RefCell<Option<SurfacePropositionMap>> = const { std::cell::RefCell::new(None) };
-    static SYNTHESIS_ENTRY_STATE: std::cell::RefCell<Option<CState>> = const { std::cell::RefCell::new(None) };
+    static SYNTHESIS_ENTRY_STATE: std::cell::RefCell<Option<ExecutionState>> = const { std::cell::RefCell::new(None) };
     /// A second reference state, named by its own recorded snapshot selector
     /// rather than by `old(...)`. A loop back edge needs this: the iteration
     /// entry is neither the function entry nor the current state, and the
     /// ranking members compare the two ends of one iteration.
-    static SYNTHESIS_SNAPSHOT_STATE: std::cell::RefCell<Option<(CState, SnapshotSelector)>> = const { std::cell::RefCell::new(None) };
+    static SYNTHESIS_SNAPSHOT_STATE: std::cell::RefCell<Option<(ExecutionState, SnapshotSelector)>> = const { std::cell::RefCell::new(None) };
     /// The proof's recorded points. A load registered in a memory that
     /// neither the spelled state nor the entry state reads is spelled at the
     /// point whose memory reads it, found by
@@ -108,7 +108,7 @@ pub(in crate::surface) struct SynthesisStructOwners {
     /// The function's global and static arrays by kernel and source name: the source name and
     /// declared shape an element read is spelled with.
     storage_arrays: BTreeMap<String, (String, Vec<u32>)>,
-    storage_scalars: BTreeMap<Pointer, (String, CType)>,
+    storage_scalars: BTreeMap<Pointer, (String, ProgramType)>,
     /// Declaration spellings for kernel identifiers in retained C arguments.
     storage_source_names: BTreeMap<String, ContractExpression>,
 }
@@ -219,7 +219,7 @@ impl LocalStructLayoutScope {
             .map(|(kernel, source)| {
                 (
                     kernel.to_owned(),
-                    ContractExpression::CFragment(CExpression::Variable(source.to_owned())),
+                    ContractExpression::CFragment(ProgramExpression::Variable(source.to_owned())),
                 )
             })
             .collect();
@@ -238,7 +238,7 @@ impl LocalStructLayoutScope {
 /// Restore declaration names in one retained call argument. This traverses
 /// only that argument and performs indexed name lookups; it never synthesizes
 /// an alias from facts or memory history.
-pub(in crate::surface) fn source_c_argument(argument: &CExpression) -> CExpression {
+pub(in crate::surface) fn source_c_argument(argument: &ProgramExpression) -> ProgramExpression {
     SYNTHESIS_STRUCT_OWNERS.with(|slot| {
         let owners = slot.borrow();
         let owners = owners
@@ -270,15 +270,18 @@ impl Drop for LocalStructLayoutScope {
 /// One object synthesis may spell field reads through: how its pointer is
 /// written, the pointer's value here, and the struct layout at that value.
 struct StructOwner {
-    base: CExpression,
-    pointer: crate::kernel::CPointerValue,
+    base: ProgramExpression,
+    pointer: crate::kernel::PointerValue,
     layout: syntax::C0StructLayout,
 }
 
 /// The cast `void *` parameters, with their argument values, and the
 /// struct-pointer locals present in this state. Declared struct-pointer
 /// parameters keep their own parameter-based spelling paths.
-fn struct_owners(parameter_binding: ParameterBinding<'_>, state: &CState) -> Vec<StructOwner> {
+fn struct_owners(
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+) -> Vec<StructOwner> {
     let Some(owners) = SYNTHESIS_STRUCT_OWNERS.with(|slot| slot.borrow().clone()) else {
         return Vec::new();
     };
@@ -288,15 +291,15 @@ fn struct_owners(parameter_binding: ParameterBinding<'_>, state: &CState) -> Vec
         .iter()
         .zip(parameter_binding.arguments)
     {
-        let (Some((struct_name, layout)), CExpression::Value(CValue::Pointer(base))) =
+        let (Some((struct_name, layout)), ProgramExpression::Value(ProgramValue::Pointer(base))) =
             (owners.cast_parameters.get(parameter.name()), argument)
         else {
             continue;
         };
         found.push(StructOwner {
-            base: CExpression::Cast {
-                expression: Box::new(CExpression::Variable(parameter.name().to_string())),
-                target_type: CType::Int32Pointer,
+            base: ProgramExpression::Cast {
+                expression: Box::new(ProgramExpression::Variable(parameter.name().to_string())),
+                target_type: ProgramType::Int32Pointer,
                 integer_mode: crate::kernel::CIntegerCastMode::Standard,
                 pointee_struct: Some(struct_name.clone()),
                 pointee_volatile: false,
@@ -312,9 +315,11 @@ fn struct_owners(parameter_binding: ParameterBinding<'_>, state: &CState) -> Vec
             continue;
         }
         let native = value.native();
-        if let (Some(layout), CValue::Pointer(base)) = (owners.locals.get(name), native.as_ref()) {
+        if let (Some(layout), ProgramValue::Pointer(base)) =
+            (owners.locals.get(name), native.as_ref())
+        {
             found.push(StructOwner {
-                base: CExpression::Variable(surface_local_name(name).to_string()),
+                base: ProgramExpression::Variable(surface_local_name(name).to_string()),
                 pointer: base.clone(),
                 layout: layout.clone(),
             });
@@ -323,11 +328,11 @@ fn struct_owners(parameter_binding: ParameterBinding<'_>, state: &CState) -> Vec
     found
 }
 
-fn owner_field_pointer(base: &CExpression, offset_bytes: u32) -> CExpression {
+fn owner_field_pointer(base: &ProgramExpression, offset_bytes: u32) -> ProgramExpression {
     if offset_bytes == 0 {
         base.clone()
     } else {
-        CExpression::PointerOffsetBytes {
+        ProgramExpression::PointerOffsetBytes {
             pointer: Box::new(base.clone()),
             bytes: offset_bytes,
         }
@@ -337,15 +342,15 @@ fn owner_field_pointer(base: &CExpression, offset_bytes: u32) -> CExpression {
 /// A range base synthesis can name: a parameter or local by its spelling,
 /// or a pointer field read through a struct-pointer parameter or local.
 struct NamedRangeBase {
-    lowered: CExpression,
+    lowered: ProgramExpression,
     surface: ContractExpression,
-    pointer: crate::kernel::CPointerValue,
+    pointer: crate::kernel::PointerValue,
     width: u32,
 }
 
 fn range_struct_owners(
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
 ) -> Vec<StructOwner> {
     let mut owners: Vec<StructOwner> = Vec::new();
     for (parameter, argument) in parameter_binding
@@ -353,14 +358,14 @@ fn range_struct_owners(
         .iter()
         .zip(parameter_binding.arguments)
     {
-        if let (Some(layout), CExpression::Value(CValue::Pointer(base))) = (
+        if let (Some(layout), ProgramExpression::Value(ProgramValue::Pointer(base))) = (
             parameter
                 .pointee_struct_layout()
                 .or_else(|| parameter.struct_layout()),
             argument,
         ) {
             owners.push(StructOwner {
-                base: CExpression::Variable(parameter.name().to_string()),
+                base: ProgramExpression::Variable(parameter.name().to_string()),
                 pointer: base.clone(),
                 layout: layout.clone(),
             });
@@ -377,7 +382,7 @@ fn synthesize_struct_loadable_segment(
     base: &Pointer,
     bytes: &MachineTerm,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
 ) -> Option<ClickProposition> {
     let bytes = bytes.as_const()?;
     for owner in range_struct_owners(parameter_binding, state) {
@@ -426,8 +431,8 @@ fn synthesize_struct_loadable_segment(
                     uninitialized: false,
                     state: ContractSegmentState::Current,
                     base: owner.base,
-                    start: CExpression::Value(int32(start / width)),
-                    end: CExpression::Value(int32(end / width)),
+                    start: ProgramExpression::Value(int32(start / width)),
+                    end: ProgramExpression::Value(int32(end / width)),
                     surface: ContractSegmentSurface::Field {
                         value_bytes: Some(width),
                         base: None,
@@ -438,17 +443,17 @@ fn synthesize_struct_loadable_segment(
                 },
             });
         }
-        let cast = CExpression::Cast {
+        let cast = ProgramExpression::Cast {
             expression: Box::new(owner.base),
-            target_type: CType::UInt8Pointer,
+            target_type: ProgramType::UInt8Pointer,
             integer_mode: crate::kernel::CIntegerCastMode::Standard,
             pointee_struct: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,
         };
-        let start = CExpression::Value(int32(start));
-        let end = CExpression::Value(int32(end));
+        let start = ProgramExpression::Value(int32(start));
+        let end = ProgramExpression::Value(int32(end));
         return Some(ClickProposition::Loadable {
             segment: ContractSegment {
                 uninitialized: false,
@@ -473,14 +478,14 @@ fn synthesize_struct_loadable_segment(
 /// layout scope; the pointer values come from this state's memory.
 fn field_pointer_bases(
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
 ) -> Vec<NamedRangeBase> {
     let owners = range_struct_owners(parameter_binding, state);
     let mut bases = Vec::new();
     for owner in owners {
         for (field_name, field) in owner.layout.fields() {
             let value_type = field.c_type().to_kernel_type();
-            let Some(width) = value_type.pointee_type().map(CType::byte_width) else {
+            let Some(width) = value_type.pointee_type().map(ProgramType::byte_width) else {
                 continue;
             };
             if width == 0 {
@@ -488,22 +493,24 @@ fn field_pointer_bases(
             }
             let field_pointer = owner.pointer.offset_by_bytes(field.offset_bytes());
             let loaded = match state.memory().load(&field_pointer) {
-                CExpressionOutcome::Value(CValue::Pointer(loaded)) => loaded,
+                CExpressionOutcome::Value(ProgramValue::Pointer(loaded)) => loaded,
                 // Contract memory can keep a pointer field as the
                 // pointer-width load of the field: the pointer it names is
                 // that read.
-                CExpressionOutcome::Value(CValue::Int32(value)) => {
+                CExpressionOutcome::Value(ProgramValue::Int32(value)) => {
                     let Some(pointer) = Pointer::loaded(&value) else {
                         continue;
                     };
-                    let CValue::Pointer(loaded) = CValue::typed_pointer(pointer, value_type) else {
+                    let ProgramValue::Pointer(loaded) =
+                        ProgramValue::typed_pointer(pointer, value_type)
+                    else {
                         continue;
                     };
                     loaded
                 }
                 _ => continue,
             };
-            let lowered = CExpression::TypedLoad {
+            let lowered = ProgramExpression::TypedLoad {
                 pointer: Box::new(owner_field_pointer(&owner.base, field.offset_bytes())),
                 value_type,
                 volatile: false,
@@ -530,12 +537,12 @@ fn field_pointer_bases(
 
 fn named_range_bases(
     parameter_binding: ParameterBinding<'_>,
-    state: Option<&CState>,
-    full_state: &CState,
+    state: Option<&ExecutionState>,
+    full_state: &ExecutionState,
 ) -> Vec<NamedRangeBase> {
     let mut bases = named_pointer_bases(parameter_binding, state)
         .map(|(name, pointer, width)| {
-            let lowered = CExpression::Variable(name);
+            let lowered = ProgramExpression::Variable(name);
             NamedRangeBase {
                 surface: ContractExpression::CFragment(lowered.clone()),
                 lowered,
@@ -562,7 +569,7 @@ impl Drop for QualifiedSynthesisScope {
     }
 }
 
-struct SynthesisEntryScope(Option<CState>);
+struct SynthesisEntryScope(Option<ExecutionState>);
 impl Drop for SynthesisEntryScope {
     fn drop(&mut self) {
         SYNTHESIS_ENTRY_STATE.with(|slot| {
@@ -574,8 +581,8 @@ impl Drop for SynthesisEntryScope {
 pub(in crate::surface) fn synthesize_surface_proposition_at_entry_and_post(
     proposition: &Proposition,
     parameter_binding: ParameterBinding<'_>,
-    entry: &CState,
-    post: &CState,
+    entry: &ExecutionState,
+    post: &ExecutionState,
 ) -> Option<ClickProposition> {
     let _entry =
         SynthesisEntryScope(SYNTHESIS_ENTRY_STATE.with(|slot| slot.replace(Some(entry.clone()))));
@@ -587,8 +594,8 @@ pub(in crate::surface) fn synthesize_surface_proposition_at_entry_and_post(
 pub(in crate::surface) fn synthesize_surface_proposition_at_entry_post_with_bound_variable_names(
     proposition: &Proposition,
     parameter_binding: ParameterBinding<'_>,
-    entry: &CState,
-    post: &CState,
+    entry: &ExecutionState,
+    post: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ClickProposition> {
     let _entry =
@@ -609,9 +616,9 @@ pub(in crate::surface) fn synthesize_surface_proposition_at_entry_post_with_boun
 pub(in crate::surface) fn synthesize_surface_proposition_at_entry_post_and_snapshot(
     proposition: &Proposition,
     parameter_binding: ParameterBinding<'_>,
-    entry: &CState,
-    post: &CState,
-    snapshot: Option<(&CState, &SnapshotSelector)>,
+    entry: &ExecutionState,
+    post: &ExecutionState,
+    snapshot: Option<(&ExecutionState, &SnapshotSelector)>,
 ) -> Option<ClickProposition> {
     let _snapshot = SynthesisSnapshotScope(SYNTHESIS_SNAPSHOT_STATE.with(|slot| {
         slot.replace(snapshot.map(|(state, selector)| (state.clone(), selector.clone())))
@@ -619,7 +626,7 @@ pub(in crate::surface) fn synthesize_surface_proposition_at_entry_post_and_snaps
     synthesize_surface_proposition_at_entry_and_post(proposition, parameter_binding, entry, post)
 }
 
-struct SynthesisSnapshotScope(Option<(CState, SnapshotSelector)>);
+struct SynthesisSnapshotScope(Option<(ExecutionState, SnapshotSelector)>);
 impl Drop for SynthesisSnapshotScope {
     fn drop(&mut self) {
         SYNTHESIS_SNAPSHOT_STATE.with(|slot| {
@@ -647,7 +654,9 @@ impl Drop for SynthesisRecordedPointsScope {
 
 /// A recorded state whose structural read selection reproduces this read.
 /// Prefer the point recording its memory, then indexed nearby points.
-fn recorded_point_of_load(read: &MachineTerm) -> Option<(SnapshotSelector, CState, MachineTerm)> {
+fn recorded_point_of_load(
+    read: &MachineTerm,
+) -> Option<(SnapshotSelector, ExecutionState, MachineTerm)> {
     let MachineTerm::MemoryLoad(memory, _, _) = read else {
         return None;
     };
@@ -668,18 +677,18 @@ fn recorded_point_of_load(read: &MachineTerm) -> Option<(SnapshotSelector, CStat
 /// The name of the local that keeps `term` in its object at `pointer`, in
 /// `state`: a borrowed Rust enum local `o` read there is spelled `o`. The
 /// local's name reads its object at the point it was last written
-/// ([`CState::held_local_value`]), so it spells exactly that read.
+/// ([`ExecutionState::held_local_value`]), so it spells exactly that read.
 fn synthesize_held_value_local(
     term: &crate::kernel::AlgebraicTerm,
     pointer: &Pointer,
-    state: &CState,
+    state: &ExecutionState,
 ) -> Option<ContractExpression> {
     let (name, _, _) = state.locals().held_value_locals().find(|(_, _, slot)| {
         crate::instrumentation::record_deterministic_work(1);
         *slot == pointer
     })?;
-    matches!(state.held_local_value(name), Some(CValue::Parameter(held)) if held.as_ref() == term)
-        .then(|| ContractExpression::CFragment(CExpression::Variable(name.to_string())))
+    matches!(state.held_local_value(name), Some(ProgramValue::Parameter(held)) if held.as_ref() == term)
+        .then(|| ContractExpression::CFragment(ProgramExpression::Variable(name.to_string())))
 }
 
 /// `at(point, o)` for a read of a held-value local's object that no nearer
@@ -751,7 +760,7 @@ fn synthesize_snapshot_local(term: &MachineTerm) -> Option<ContractExpression> {
             expression: Box::new(if crate::surface::is_click_value_name(name) {
                 ContractExpression::CBinding(name.to_string())
             } else {
-                ContractExpression::CFragment(CExpression::Variable(
+                ContractExpression::CFragment(ProgramExpression::Variable(
                     surface_local_name(name).to_string(),
                 ))
             }),
@@ -774,7 +783,7 @@ fn synthesize_recorded_local(term: &MachineTerm) -> Option<ContractExpression> {
             expression: Box::new(if crate::surface::is_click_value_name(name) {
                 ContractExpression::CBinding(name.to_string())
             } else {
-                ContractExpression::CFragment(CExpression::Variable(
+                ContractExpression::CFragment(ProgramExpression::Variable(
                     surface_local_name(name).to_string(),
                 ))
             }),
@@ -868,7 +877,7 @@ impl SurfacePointerFrame {
     fn enter(
         pointer: &Pointer,
         parameter_binding: ParameterBinding<'_>,
-        state: &CState,
+        state: &ExecutionState,
         bound_variables: &BTreeMap<Variable, String>,
     ) -> Option<Self> {
         // All borrowed inputs remain live for this frame. Their addresses
@@ -1059,7 +1068,7 @@ pub(super) fn surface_synthesis_failure(prefix: &str, kernel: &Proposition) -> S
 pub(in crate::surface) fn synthesize_surface_proposition(
     proposition: &Proposition,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
 ) -> Option<ClickProposition> {
     let _scope = SurfaceSynthesisScope::enter();
     synthesize_surface_proposition_with_guard_fallback(
@@ -1085,7 +1094,7 @@ pub(in crate::surface) fn synthesize_store_index_disequality(
     cell_index: &MachineTerm,
     format: MachineIntegerType,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ClickProposition> {
     let _scope = SurfaceSynthesisScope::enter();
@@ -1093,9 +1102,9 @@ pub(in crate::surface) fn synthesize_store_index_disequality(
         let expression =
             synthesize_surface_bitvector(term, parameter_binding, state, bound_variables)?;
         let ctype = match format {
-            MachineIntegerType::Int32 => CType::Int32,
-            MachineIntegerType::Int64 => CType::Int64,
-            MachineIntegerType::UInt64 => CType::UInt64,
+            MachineIntegerType::Int32 => ProgramType::Int32,
+            MachineIntegerType::Int64 => ProgramType::Int64,
+            MachineIntegerType::UInt64 => ProgramType::UInt64,
             _ => return None,
         };
         if matches!(
@@ -1130,7 +1139,7 @@ pub(in crate::surface) fn synthesize_store_index_disequality(
 pub(in crate::surface) fn synthesize_surface_machine_expression(
     term: &MachineTerm,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
 ) -> Option<ContractExpression> {
     let _scope = SurfaceSynthesisScope::enter();
     synthesize_surface_bitvector(term, parameter_binding, state, &BTreeMap::new())
@@ -1167,17 +1176,17 @@ fn proof_binder_name(variable: Variable) -> Option<String> {
 }
 
 thread_local! {
-    static PROOF_LOCAL_VALUE_NAMES: std::cell::RefCell<Vec<(CValue, String)>> =
+    static PROOF_LOCAL_VALUE_NAMES: std::cell::RefCell<Vec<(ProgramValue, String)>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
 /// Runs `operation` with the proof locals that name C values, such as an
 /// unfold's named witnesses, in scope for [`synthesize_surface_value`].
 pub(in crate::surface) fn with_proof_local_value_names<R>(
-    names: Vec<(CValue, String)>,
+    names: Vec<(ProgramValue, String)>,
     operation: impl FnOnce() -> R,
 ) -> R {
-    struct Restore(Vec<(CValue, String)>);
+    struct Restore(Vec<(ProgramValue, String)>);
     impl Drop for Restore {
         fn drop(&mut self) {
             let previous = std::mem::take(&mut self.0);
@@ -1194,19 +1203,19 @@ pub(in crate::surface) fn with_proof_local_value_names<R>(
 fn synthesize_surface_pointer_address(
     pointer: &Pointer,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ContractExpression> {
     let operand =
         synthesize_surface_pointer_expression(pointer, parameter_binding, state, bound_variables)?;
     Some(crate::surface::lowering::contract_c_unary(
         operand,
-        CExpression::Cast {
-            expression: Box::new(CExpression::Value(CValue::typed_pointer(
+        ProgramExpression::Cast {
+            expression: Box::new(ProgramExpression::Value(ProgramValue::typed_pointer(
                 pointer.clone(),
-                CType::VoidPointer,
+                ProgramType::VoidPointer,
             ))),
-            target_type: CType::UInt64,
+            target_type: ProgramType::UInt64,
             integer_mode: crate::kernel::CIntegerCastMode::Standard,
             pointee_struct: None,
             pointee_volatile: false,
@@ -1217,9 +1226,9 @@ fn synthesize_surface_pointer_address(
 }
 
 pub(in crate::surface) fn synthesize_surface_value(
-    value: &CValue,
+    value: &ProgramValue,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
 ) -> Option<ContractExpression> {
     if let Some(name) = PROOF_LOCAL_VALUE_NAMES.with(|names| {
         names
@@ -1228,7 +1237,9 @@ pub(in crate::surface) fn synthesize_surface_value(
             .find(|(named, _)| named == value)
             .map(|(_, name)| name.clone())
     }) {
-        return Some(ContractExpression::CFragment(CExpression::Variable(name)));
+        return Some(ContractExpression::CFragment(ProgramExpression::Variable(
+            name,
+        )));
     }
     if let Some(region) = SYNTHESIS_RECORDED_POINTS
         .with(|points| points.borrow().as_ref()?.read_event_naming_value(value))
@@ -1237,13 +1248,13 @@ pub(in crate::surface) fn synthesize_surface_value(
     }
     let _scope = SurfaceSynthesisScope::enter();
     match value {
-        CValue::Pointer(pointer) => synthesize_surface_pointer_expression(
+        ProgramValue::Pointer(pointer) => synthesize_surface_pointer_expression(
             pointer.pointer(),
             parameter_binding,
             state,
             &BTreeMap::new(),
         ),
-        CValue::Int32(term) | CValue::UInt32(term) => {
+        ProgramValue::Int32(term) | ProgramValue::UInt32(term) => {
             synthesize_surface_bitvector(term, parameter_binding, state, &BTreeMap::new())
         }
         _ => None,
@@ -1253,7 +1264,7 @@ pub(in crate::surface) fn synthesize_surface_value(
 pub(in crate::surface) fn synthesize_surface_proposition_with_bound_variable_names(
     proposition: &Proposition,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ClickProposition> {
     let _scope = SurfaceSynthesisScope::enter();
@@ -1271,7 +1282,7 @@ pub(in crate::surface) fn synthesize_surface_proposition_with_bound_variable_nam
 pub(in crate::surface::proof) fn synthesize_source_projection_proposition_with_bound_variable_names(
     proposition: &Proposition,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ClickProposition> {
     let _scope = SurfaceSynthesisScope::enter();
@@ -1301,7 +1312,7 @@ pub(in crate::surface::proof) fn synthesize_source_projection_proposition_with_b
 pub(in crate::surface) fn synthesize_surface_proposition_with_names(
     proposition: &Proposition,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     names: &BTreeMap<Variable, String>,
 ) -> Option<ClickProposition> {
     let _scope = SurfaceSynthesisScope::enter();
@@ -1316,7 +1327,7 @@ pub(in crate::surface) fn synthesize_surface_proposition_with_names(
 fn synthesize_surface_proposition_with_guard_fallback(
     proposition: &Proposition,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ClickProposition> {
     let literal = synthesize_surface_proposition_with_bound_variables(
@@ -1344,7 +1355,7 @@ fn synthesize_surface_proposition_with_guard_fallback(
 fn synthesize_surface_proposition_with_bound_variables(
     proposition: &Proposition,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ClickProposition> {
     let _frame = SurfaceSynthesisFrame::enter("proposition")?;
@@ -1487,7 +1498,7 @@ fn synthesized_surface_matches_proposition(
     candidate: &ClickProposition,
     proposition: &Proposition,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
 ) -> bool {
     // A retained call requirement may carry a caller variable as the
     // selected pointer argument. The normal contract environment builder
@@ -1498,9 +1509,9 @@ fn synthesized_surface_matches_proposition(
         .arguments
         .iter()
         .map(|argument| match argument {
-            CExpression::Variable(name) => match state.locals().get(name) {
+            ProgramExpression::Variable(name) => match state.locals().get(name) {
                 Some(value) if value.pointer().is_some() => {
-                    CExpression::Value(value.clone().into_native())
+                    ProgramExpression::Value(value.clone().into_native())
                 }
                 _ => argument.clone(),
             },
@@ -1546,7 +1557,7 @@ fn synthesized_surface_matches_proposition(
 fn synthesize_surface_quantified_proposition(
     proposition: &Proposition,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ClickProposition> {
     match proposition {
@@ -1624,7 +1635,7 @@ fn synthesize_zero_based_loadable_segment(
     base: &Pointer,
     bytes: &MachineTerm,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ClickProposition> {
     // A displaced pointer may encode the start of a named range. Prefer that
@@ -1647,8 +1658,8 @@ fn synthesize_zero_based_loadable_segment(
             return None;
         }
         (
-            CExpression::Value(int32(byte_count / 4)),
-            CType::Int32Pointer,
+            ProgramExpression::Value(int32(byte_count / 4)),
+            ProgramType::Int32Pointer,
         )
     } else if let binary_term!(Int32, Multiply, left, right) = bytes {
         let elements = if right.as_const() == Some(4) {
@@ -1674,7 +1685,7 @@ fn synthesize_zero_based_loadable_segment(
                 state,
                 bound_variables,
             )?)?,
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
         )
     } else if !matches!(bytes, binary_term!(Int32, Subtract, _, _)) {
         // A byte extent remains unscaled over an explicit byte pointer.
@@ -1685,7 +1696,7 @@ fn synthesize_zero_based_loadable_segment(
                 state,
                 bound_variables,
             )?)?,
-            CType::UInt8Pointer,
+            ProgramType::UInt8Pointer,
         )
     } else {
         return None;
@@ -1694,7 +1705,7 @@ fn synthesize_zero_based_loadable_segment(
     // These counts use scalar units, regardless of the named pointer's
     // pointee (including a struct-valued proof binder). Spell those units
     // explicitly instead of relying on its historical four-byte carrier.
-    let semantic_base = CExpression::Cast {
+    let semantic_base = ProgramExpression::Cast {
         expression: Box::new(semantic_base?),
         target_type: element_pointer_type,
         integer_mode: crate::kernel::CIntegerCastMode::Standard,
@@ -1709,11 +1720,11 @@ fn synthesize_zero_based_loadable_segment(
             uninitialized: false,
             state: ContractSegmentState::Current,
             base: semantic_base,
-            start: CExpression::Value(int32(0)),
+            start: ProgramExpression::Value(int32(0)),
             end: element_count.clone(),
             surface: ContractSegmentSurface::Range {
                 base: surface_base,
-                start: ContractExpression::CFragment(CExpression::Value(int32(0))),
+                start: ContractExpression::CFragment(ProgramExpression::Value(int32(0))),
                 end: ContractExpression::CFragment(element_count),
             },
         },
@@ -1732,7 +1743,7 @@ fn synthesize_exact_external_zero_based_byte_range(
     base: &Pointer,
     bytes: &MachineTerm,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Result<Option<ClickProposition>, ()> {
     if base.block != PointerBlock::ExternalArgument {
@@ -1753,8 +1764,8 @@ fn synthesize_exact_external_zero_based_byte_range(
                 return None;
             }
             let pointer = match argument {
-                CExpression::Value(CValue::Pointer(pointer)) => pointer,
-                CExpression::Variable(name) => state.locals().get(name)?.pointer()?,
+                ProgramExpression::Value(ProgramValue::Pointer(pointer)) => pointer,
+                ProgramExpression::Variable(name) => state.locals().get(name)?.pointer()?,
                 _ => return None,
             };
             (pointer.pointer() == base && pointer.c_type().pointee_type()?.byte_width() == 1)
@@ -1769,8 +1780,8 @@ fn synthesize_exact_external_zero_based_byte_range(
     let end = synthesize_surface_bitvector(bytes, parameter_binding, state, bound_variables)
         .and_then(|end| contract_expression_to_c_fragment(&end))
         .ok_or(())?;
-    let named = CExpression::Variable(name);
-    let start = CExpression::Value(int32(0));
+    let named = ProgramExpression::Variable(name);
+    let start = ProgramExpression::Value(int32(0));
     Ok(Some(ClickProposition::Loadable {
         segment: ContractSegment {
             uninitialized: false,
@@ -1801,7 +1812,7 @@ fn synthesize_named_range_loadable_segment(
     base: &Pointer,
     bytes: &MachineTerm,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ClickProposition> {
     if let Some(segment) = synthesize_struct_loadable_segment(base, bytes, parameter_binding, state)
@@ -1939,7 +1950,7 @@ fn synthesize_external_symbolic_element_range(
     base: &Pointer,
     bytes: &MachineTerm,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ClickProposition> {
     let (name, index) = parameter_binding
@@ -1948,13 +1959,13 @@ fn synthesize_external_symbolic_element_range(
         .zip(parameter_binding.arguments)
         .find_map(|(parameter, argument)| {
             let named_base = match argument {
-                CExpression::Value(CValue::Pointer(pointer)) => pointer,
+                ProgramExpression::Value(ProgramValue::Pointer(pointer)) => pointer,
                 // Call-site arguments normally have already been evaluated
                 // to values, but a retained call requirement can carry the
                 // caller's exact variable expression instead. Resolve only
                 // that selected name through the current state's indexed
                 // local binding; do not infer a pointer from ambient facts.
-                CExpression::Variable(name) => state.locals().get(name)?.pointer()?,
+                ProgramExpression::Variable(name) => state.locals().get(name)?.pointer()?,
                 _ => return None,
             };
             if parameter
@@ -2005,8 +2016,8 @@ fn synthesize_external_symbolic_element_range(
         let semantic_base =
             synthesize_surface_pointer(base, parameter_binding, state, bound_variables)?;
         let surface_base = ContractExpression::CFragment(semantic_base.clone());
-        let start = CExpression::Value(int32(0));
-        let end = CExpression::Value(int32(1));
+        let start = ProgramExpression::Value(int32(0));
+        let end = ProgramExpression::Value(int32(1));
         return Some(ClickProposition::Loadable {
             segment: ContractSegment {
                 uninitialized: false,
@@ -2035,7 +2046,7 @@ fn synthesize_external_symbolic_element_range(
         state,
         bound_variables,
     )?)?;
-    let named = CExpression::Variable(surface_local_name(name).to_string());
+    let named = ProgramExpression::Variable(surface_local_name(name).to_string());
     Some(ClickProposition::Loadable {
         segment: ContractSegment {
             uninitialized: false,
@@ -2077,14 +2088,14 @@ fn int32_scaled_value(offset: &PointerOffsetTerm, width: i64) -> Option<MachineT
 /// pointer locals. The walk is over those two named lists only.
 fn named_pointer_bases<'a>(
     parameter_binding: ParameterBinding<'a>,
-    state: Option<&'a CState>,
-) -> impl Iterator<Item = (String, crate::kernel::CPointerValue, u32)> + 'a {
+    state: Option<&'a ExecutionState>,
+) -> impl Iterator<Item = (String, crate::kernel::PointerValue, u32)> + 'a {
     parameter_binding
         .parameters
         .iter()
         .zip(parameter_binding.arguments)
         .filter_map(|(parameter, argument)| {
-            let CExpression::Value(CValue::Pointer(base)) = argument else {
+            let ProgramExpression::Value(ProgramValue::Pointer(base)) = argument else {
                 return None;
             };
             let width = parameter
@@ -2098,7 +2109,7 @@ fn named_pointer_bases<'a>(
             state.locals().object_values().filter_map(|(name, value)| {
                 value.pointer()?;
                 let native = value.native();
-                let CValue::Pointer(base) = native.as_ref() else {
+                let ProgramValue::Pointer(base) = native.as_ref() else {
                     return None;
                 };
                 let width = base.c_type().pointee_type()?.byte_width();
@@ -2115,10 +2126,10 @@ fn named_pointer_bases<'a>(
 /// current-state value, while this equation must retain its memory version.
 fn synthesize_load_defining_equation(
     variable: &Variable,
-    memory: &crate::kernel::SharedCMemory,
+    memory: &crate::kernel::SharedMemory,
     pointer: &Pointer,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ClickProposition> {
     let (registered_memory, registered_pointer) =
@@ -2130,7 +2141,7 @@ fn synthesize_load_defining_equation(
         return None;
     }
 
-    let synthesize_at = |snapshot: &CState| {
+    let synthesize_at = |snapshot: &ExecutionState| {
         let load = registered_load_in_state(variable, snapshot)?;
         // Let the ordinary load spelling select a qualified source, an exact
         // local cell, a field, or the pointer/load fallback. It receives the
@@ -2191,7 +2202,7 @@ fn synthesize_load_defining_equation(
 fn synthesize_surface_bool(
     condition: &ConditionTerm,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ContractExpression> {
     let _frame = SurfaceSynthesisFrame::enter("bool")?;
@@ -2268,13 +2279,13 @@ fn synthesize_surface_bool(
 
 /// Whether `expression` reads a `bool` local of `state`, or reads one at a
 /// recorded point.
-fn names_bool_local(expression: &ContractExpression, state: &CState) -> bool {
+fn names_bool_local(expression: &ContractExpression, state: &ExecutionState) -> bool {
     match expression {
-        ContractExpression::CFragment(CExpression::Variable(name))
+        ContractExpression::CFragment(ProgramExpression::Variable(name))
         | ContractExpression::CBinding(name) => state
             .locals()
             .get(name)
-            .is_some_and(|value| value.c_type() == CType::Bool),
+            .is_some_and(|value| value.c_type() == ProgramType::Bool),
         ContractExpression::At { expression, .. } => names_bool_local(expression, state),
         _ => false,
     }
@@ -2283,7 +2294,7 @@ fn names_bool_local(expression: &ContractExpression, state: &CState) -> bool {
 fn synthesize_surface_atomic_proposition(
     proposition: &Proposition,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ClickProposition> {
     // A `bool` local's truth, C's test `w != 0` at `uint8` of its carrier:
@@ -2344,7 +2355,7 @@ fn synthesize_surface_atomic_proposition(
         fn sequence(
             value: &crate::kernel::SequenceTerm,
             parameter_binding: ParameterBinding<'_>,
-            state: &CState,
+            state: &ExecutionState,
             bound: &BTreeMap<Variable, String>,
         ) -> Option<ContractExpression> {
             let _frame = SurfaceSynthesisFrame::enter("sequence")?;
@@ -2354,7 +2365,7 @@ fn synthesize_surface_atomic_proposition(
                         values
                             .iter()
                             .map(|value| {
-                                let CValue::Int32(value) = value else {
+                                let ProgramValue::Int32(value) = value else {
                                     return None;
                                 };
                                 synthesize_surface_bitvector(value, parameter_binding, state, bound)
@@ -2392,11 +2403,14 @@ fn synthesize_surface_atomic_proposition(
     } = proposition
     {
         let mut call_arguments = Vec::new();
-        let mut index = usize::from(matches!(kernel_arguments.first(), Some(Term::CState(_))));
+        let mut index = usize::from(matches!(
+            kernel_arguments.first(),
+            Some(Term::ExecutionState(_))
+        ));
         while index < kernel_arguments.len() {
             match &kernel_arguments[index] {
                 Term::CMemory(_) => {
-                    let Some(Term::CValue(CValue::Pointer(pointer))) =
+                    let Some(Term::ProgramValue(ProgramValue::Pointer(pointer))) =
                         kernel_arguments.get(index + 1)
                     else {
                         return None;
@@ -2409,7 +2423,7 @@ fn synthesize_surface_atomic_proposition(
                     )?));
                     index += 2;
                 }
-                Term::CValue(CValue::Pointer(pointer)) => {
+                Term::ProgramValue(ProgramValue::Pointer(pointer)) => {
                     call_arguments.push(ContractExpression::CFragment(synthesize_surface_pointer(
                         pointer,
                         parameter_binding,
@@ -2418,7 +2432,7 @@ fn synthesize_surface_atomic_proposition(
                     )?));
                     index += 1;
                 }
-                Term::CValue(crate::kernel::int_promoted_c_value!(value)) => {
+                Term::ProgramValue(crate::kernel::int_promoted_c_value!(value)) => {
                     call_arguments.push(synthesize_surface_bitvector(
                         value,
                         parameter_binding,
@@ -2509,7 +2523,7 @@ fn synthesize_surface_atomic_proposition(
         let pointer =
             synthesize_surface_pointer(pointer, parameter_binding, state, bound_variables)?;
         let validity = ClickProposition::Defined {
-            expression: ContractExpression::CFragment(CExpression::TypedLoad {
+            expression: ContractExpression::CFragment(ProgramExpression::TypedLoad {
                 pointer: Box::new(pointer),
                 value_type: *value_type,
                 volatile: false,
@@ -3034,7 +3048,7 @@ pub(super) fn integer_typed_expression(value: ContractExpression) -> ContractExp
 fn synthesize_surface_integer(
     term: &crate::kernel::IntegerTerm,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ContractExpression> {
     let term = crate::kernel::KernelTermImport::default().integer(&term.clone().into());
@@ -3047,7 +3061,7 @@ fn synthesize_surface_integer(
 pub(super) fn raise_kernel_term(
     term: &crate::kernel::KernelTerm,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<SurfaceTerm> {
     use crate::kernel::{KernelIntegerOperator as Op, KernelTermNode as Node, KernelType};
@@ -3255,7 +3269,7 @@ pub(super) fn raise_kernel_term(
             let KernelType::C(ty) = term.ty() else {
                 return None;
             };
-            SurfaceTerm::CFragment(CExpression::Value(
+            SurfaceTerm::CFragment(ProgramExpression::Value(
                 literal.value_at(MachineIntegerType::from_c_type(*ty)?),
             ))
         }
@@ -3334,8 +3348,8 @@ pub(super) fn raise_kernel_term(
                 }
                 SurfaceTerm::CUnary {
                     operand: Box::new(expression),
-                    lowered: CExpression::Cast {
-                        expression: Box::new(CExpression::Value(int32(0))),
+                    lowered: ProgramExpression::Cast {
+                        expression: Box::new(ProgramExpression::Value(int32(0))),
                         target_type: destination.c_type(),
                         integer_mode: if *encoding == MachineCastSpelling::UInt32From64 {
                             crate::kernel::CIntegerCastMode::Standard
@@ -3370,7 +3384,10 @@ fn integer_conversion_name(format: crate::kernel::MachineIntegerType) -> &'stati
 }
 
 /// Keep the observation's interpretation inside its snapshot selector.
-fn synthesize_observation_operand(expression: SurfaceTerm, format: CType) -> Option<SurfaceTerm> {
+fn synthesize_observation_operand(
+    expression: SurfaceTerm,
+    format: ProgramType,
+) -> Option<SurfaceTerm> {
     Some(match expression {
         SurfaceTerm::At {
             selector,
@@ -3387,8 +3404,8 @@ fn synthesize_observation_operand(expression: SurfaceTerm, format: CType) -> Opt
             operand: Box::new(expression),
             // CUnary's Surface operand is authoritative. A C fragment
             // would discard resource fields and scoped binding information.
-            lowered: CExpression::Cast {
-                expression: Box::new(CExpression::Value(int32(0))),
+            lowered: ProgramExpression::Cast {
+                expression: Box::new(ProgramExpression::Value(int32(0))),
                 target_type: format,
                 integer_mode: crate::kernel::CIntegerCastMode::CConversion,
                 pointee_struct: None,
@@ -3411,7 +3428,7 @@ fn synthesize_observation_operand(expression: SurfaceTerm, format: CType) -> Opt
 fn synthesize_unsigned_comparison(
     condition: &ConditionTerm,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ClickProposition> {
     let ConditionTerm::Compare {
@@ -3438,8 +3455,8 @@ fn synthesize_unsigned_comparison(
     // The `uint32` local holding the operand, named directly: a signed local
     // can hold the same bits, and its name would make the comparison signed.
     let operand = |term: &MachineTerm| match term.as_const() {
-        Some(_) => Some(ContractExpression::CFragment(CExpression::Value(
-            CValue::UInt32(term.clone()),
+        Some(_) => Some(ContractExpression::CFragment(ProgramExpression::Value(
+            ProgramValue::UInt32(term.clone()),
         ))),
         None => state
             .locals()
@@ -3448,14 +3465,14 @@ fn synthesize_unsigned_comparison(
                 *name != "result"
                     && *name != crate::kernel::C_CONTRACT_RESULT_NAME
                     && state.locals().get(name).is_some_and(|value| {
-                        value.c_type() == crate::kernel::CType::UInt32
+                        value.c_type() == crate::kernel::ProgramType::UInt32
                             && value
                                 .native_payload()
-                                .is_none_or(|native| matches!(native, CValue::UInt32(_)))
+                                .is_none_or(|native| matches!(native, ProgramValue::UInt32(_)))
                     })
             })
             .map(|name| {
-                ContractExpression::CFragment(CExpression::Variable(
+                ContractExpression::CFragment(ProgramExpression::Variable(
                     surface_local_name(name).to_string(),
                 ))
             })
@@ -3486,7 +3503,7 @@ fn synthesize_unsigned_comparison(
 pub(super) fn synthesize_surface_resource_subject(
     resource: &CResource,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ResourceSubject> {
     let _frame = SurfaceSynthesisFrame::enter("resource")?;
@@ -3515,11 +3532,11 @@ pub(super) fn synthesize_surface_resource_subject(
     // A scalar's storage is its address, not its current value or the zero
     // offset within its block. The slot index supplies the exact local name.
     let surface_base = if let Some(name) = state.locals().name_for_slot(range.base()) {
-        let object = CExpression::Variable(surface_local_name(name).to_string());
+        let object = ProgramExpression::Variable(surface_local_name(name).to_string());
         let address = if state.locals().array_object_element_type(name).is_some() {
             object
         } else {
-            CExpression::AddressOf(Box::new(object))
+            ProgramExpression::AddressOf(Box::new(object))
         };
         ContractExpression::CFragment(address)
     } else {
@@ -3534,17 +3551,17 @@ pub(super) fn synthesize_surface_resource_subject(
     // pointee width of the name (for example, a struct field's backing).
     // Spell scalar coordinates explicitly; pointer casts retain provenance.
     let scalar_pointer_type = match range.element_width() {
-        1 => Some(CType::UInt8Pointer),
-        2 => Some(CType::UInt16Pointer),
-        4 => Some(CType::Int32Pointer),
-        8 => Some(CType::UInt64Pointer),
+        1 => Some(ProgramType::UInt8Pointer),
+        2 => Some(ProgramType::UInt16Pointer),
+        4 => Some(ProgramType::Int32Pointer),
+        8 => Some(ProgramType::UInt64Pointer),
         _ => None,
     };
     let surface_base = match scalar_pointer_type {
         Some(target_type) => ContractExpression::CUnary {
             operand: Box::new(surface_base),
-            lowered: CExpression::Cast {
-                expression: Box::new(CExpression::Value(int32(0))),
+            lowered: ProgramExpression::Cast {
+                expression: Box::new(ProgramExpression::Value(int32(0))),
                 target_type,
                 integer_mode: crate::kernel::CIntegerCastMode::Standard,
                 pointee_struct: None,
@@ -3595,14 +3612,14 @@ pub(super) fn synthesize_surface_resource_subject(
 pub(in crate::surface) fn synthesize_surface_equality_across_points(
     proposition: &Proposition,
     parameter_binding: ParameterBinding<'_>,
-    points: &[(ProgramPointRef, &CState)],
+    points: &[(ProgramPointRef, &ExecutionState)],
 ) -> Option<ClickProposition> {
     let _scope = SurfaceSynthesisScope::enter();
     let Proposition::ConditionIs(condition, true) = proposition else {
         return None;
     };
     let bound_variables = BTreeMap::new();
-    let anchored = |synthesize: &dyn Fn(&CState) -> Option<ContractExpression>| {
+    let anchored = |synthesize: &dyn Fn(&ExecutionState) -> Option<ContractExpression>| {
         points
             .iter()
             .take_while(|_| !crate::instrumentation::deadline_exceeded())
@@ -3685,8 +3702,12 @@ pub(in crate::surface) fn synthesize_surface_equality_across_points(
 /// Whether a parameter's bare name still means the value it was passed: false
 /// once the function has reassigned it, when the bare name means the new value
 /// and the passed one is spelled at function entry instead.
-fn parameter_names_its_argument(name: &str, argument: &CExpression, state: &CState) -> bool {
-    let CExpression::Value(passed) = argument else {
+fn parameter_names_its_argument(
+    name: &str,
+    argument: &ProgramExpression,
+    state: &ExecutionState,
+) -> bool {
+    let ProgramExpression::Value(passed) = argument else {
         return true;
     };
     state
@@ -3698,7 +3719,7 @@ fn parameter_names_its_argument(name: &str, argument: &CExpression, state: &CSta
 pub(super) fn synthesize_surface_pointer_offset(
     term: &PointerOffsetTerm,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ContractExpression> {
     let _frame = SurfaceSynthesisFrame::enter("pointer-offset")?;
@@ -3707,11 +3728,11 @@ pub(super) fn synthesize_surface_pointer_offset(
         .iter()
         .zip(parameter_binding.arguments)
     {
-        if let CExpression::Value(CValue::Pointer(pointer)) = argument
+        if let ProgramExpression::Value(ProgramValue::Pointer(pointer)) = argument
             && pointer.offset == *term
             && parameter_names_its_argument(parameter.name(), argument, state)
         {
-            return Some(ContractExpression::CFragment(CExpression::Variable(
+            return Some(ContractExpression::CFragment(ProgramExpression::Variable(
                 parameter.name().to_string(),
             )));
         }
@@ -3737,11 +3758,11 @@ pub(super) fn synthesize_surface_pointer_offset(
                 else {
                     return None;
                 };
-                Some(ContractExpression::CFragment(CExpression::Add(
+                Some(ContractExpression::CFragment(ProgramExpression::Add(
                     Box::new(base),
-                    Box::new(CExpression::Value(CValue::Int32(MachineTerm::constant(
-                        (byte_offset / 4) as u32,
-                    )))),
+                    Box::new(ProgramExpression::Value(ProgramValue::Int32(
+                        MachineTerm::constant((byte_offset / 4) as u32),
+                    ))),
                 )))
             };
             let dynamically_indexed_pointer =
@@ -3766,7 +3787,7 @@ pub(super) fn synthesize_surface_pointer_offset(
                         state,
                         bound_variables,
                     )?)?;
-                    Some(ContractExpression::CFragment(CExpression::Add(
+                    Some(ContractExpression::CFragment(ProgramExpression::Add(
                         Box::new(base),
                         Box::new(index),
                     )))
@@ -3798,14 +3819,14 @@ pub(super) fn synthesize_surface_pointer_offset(
 fn synthesize_parameter_field_pointer_value(
     term: &PointerOffsetTerm,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
 ) -> Option<ContractExpression> {
     for (parameter, argument) in parameter_binding
         .parameters
         .iter()
         .zip(parameter_binding.arguments)
     {
-        let (Some(layout), CExpression::Value(CValue::Pointer(base))) =
+        let (Some(layout), ProgramExpression::Value(ProgramValue::Pointer(base))) =
             (parameter.struct_layout(), argument)
         else {
             continue;
@@ -3817,23 +3838,25 @@ fn synthesize_parameter_field_pointer_value(
             }
             let field_pointer = base.offset_by_bytes(field.offset_bytes());
             let loaded_offset = match state.memory().load(&field_pointer) {
-                CExpressionOutcome::Value(CValue::Pointer(value)) => value.offset.clone(),
+                CExpressionOutcome::Value(ProgramValue::Pointer(value)) => value.offset.clone(),
                 // Struct pointer fields are represented in contract memory
                 // by their pointer-width scalar offset.
-                CExpressionOutcome::Value(CValue::Int32(value)) => PointerOffsetTerm::scale_int32(
-                    value,
-                    i64::from(value_type.pointee_type()?.byte_width()),
-                ),
+                CExpressionOutcome::Value(ProgramValue::Int32(value)) => {
+                    PointerOffsetTerm::scale_int32(
+                        value,
+                        i64::from(value_type.pointee_type()?.byte_width()),
+                    )
+                }
                 _ => continue,
             };
             if !crate::kernel::offsets_have_same_canonical_form(&loaded_offset, term) {
                 continue;
             }
-            let base_expression = CExpression::Variable(parameter.name().to_string());
+            let base_expression = ProgramExpression::Variable(parameter.name().to_string());
             let lowered_pointer = if field.offset_bytes() == 0 {
                 base_expression.clone()
             } else {
-                CExpression::PointerOffsetBytes {
+                ProgramExpression::PointerOffsetBytes {
                     pointer: Box::new(base_expression.clone()),
                     bytes: field.offset_bytes(),
                 }
@@ -3842,7 +3865,7 @@ fn synthesize_parameter_field_pointer_value(
                 pointee_struct: None,
                 base: Box::new(ContractExpression::CFragment(base_expression)),
                 field: field_name.clone(),
-                lowered: CExpression::TypedLoad {
+                lowered: ProgramExpression::TypedLoad {
                     pointer: Box::new(lowered_pointer),
                     value_type,
                     volatile: false,
@@ -3865,11 +3888,13 @@ fn synthesize_parameter_field_pointer_value(
             }
             let field_pointer = owner.pointer.offset_by_bytes(field.offset_bytes());
             let loaded_offset = match state.memory().load(&field_pointer) {
-                CExpressionOutcome::Value(CValue::Pointer(value)) => value.offset.clone(),
-                CExpressionOutcome::Value(CValue::Int32(value)) => PointerOffsetTerm::scale_int32(
-                    value,
-                    i64::from(value_type.pointee_type()?.byte_width()),
-                ),
+                CExpressionOutcome::Value(ProgramValue::Pointer(value)) => value.offset.clone(),
+                CExpressionOutcome::Value(ProgramValue::Int32(value)) => {
+                    PointerOffsetTerm::scale_int32(
+                        value,
+                        i64::from(value_type.pointee_type()?.byte_width()),
+                    )
+                }
                 _ => continue,
             };
             if !crate::kernel::offsets_have_same_canonical_form(&loaded_offset, term) {
@@ -3879,7 +3904,7 @@ fn synthesize_parameter_field_pointer_value(
                 pointee_struct: None,
                 base: Box::new(ContractExpression::CFragment(owner.base.clone())),
                 field: field_name.clone(),
-                lowered: CExpression::TypedLoad {
+                lowered: ProgramExpression::TypedLoad {
                     pointer: Box::new(owner_field_pointer(&owner.base, field.offset_bytes())),
                     value_type,
                     volatile: false,
@@ -3895,12 +3920,12 @@ fn synthesize_parameter_field_pointer_value(
 }
 
 /// Compatibility entry for pointer carriers still registered under a name.
-fn registered_load_in_state(variable: &Variable, state: &CState) -> Option<MachineTerm> {
+fn registered_load_in_state(variable: &Variable, state: &ExecutionState) -> Option<MachineTerm> {
     let read = crate::kernel::registered_load_term_for_variable(variable)?;
     scalar_read_in_state(&read, state)
 }
 
-fn scalar_read_in_state(read: &MachineTerm, state: &CState) -> Option<MachineTerm> {
+fn scalar_read_in_state(read: &MachineTerm, state: &ExecutionState) -> Option<MachineTerm> {
     let MachineTerm::MemoryLoad(_, pointer, kind) = read else {
         return None;
     };
@@ -3914,13 +3939,13 @@ fn scalar_read_in_state(read: &MachineTerm, state: &CState) -> Option<MachineTer
 // operands when either operand is uint32. Keep an explicit snapshot outside
 // the cast so reconstruction never silently changes which memory is read.
 fn synthesize_uint32_operand(expression: ContractExpression) -> Option<ContractExpression> {
-    synthesize_observation_operand(expression, CType::UInt32)
+    synthesize_observation_operand(expression, ProgramType::UInt32)
 }
 
 /// `expression` converted to `int32`, inside its snapshot selector: the
 /// signed counterpart of [`synthesize_uint32_operand`].
 fn synthesize_int32_operand(expression: ContractExpression) -> Option<ContractExpression> {
-    synthesize_observation_operand(expression, CType::Int32)
+    synthesize_observation_operand(expression, ProgramType::Int32)
 }
 
 /// Whether [`synthesize_surface_bitvector`] spells `term` as a `uint32`
@@ -3931,7 +3956,7 @@ fn synthesize_int32_operand(expression: ContractExpression) -> Option<ContractEx
 fn bitvector_spells_uint32(
     term: &MachineTerm,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> bool {
     if let MachineTerm::Variable(variable) = term
@@ -3946,7 +3971,7 @@ fn bitvector_spells_uint32(
         return state
             .locals()
             .get(name)
-            .is_some_and(|value| value.c_type() == CType::UInt32);
+            .is_some_and(|value| value.c_type() == ProgramType::UInt32);
     }
     if let Some(name) = describe_parameter_bitvector(term, parameter_binding) {
         return parameter_binding
@@ -3982,13 +4007,13 @@ fn bitvector_spells_uint32(
 fn synthesize_population_entry_count(
     term: &MachineTerm,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
 ) -> Option<ContractExpression> {
     let MachineTerm::Variable(variable) = term else {
         return None;
     };
     let population = state.population_with_entry_count(*variable)?;
-    let [AlgebraicValue::C(CValue::Pointer(anchor))] = population.arguments() else {
+    let [AlgebraicValue::C(ProgramValue::Pointer(anchor))] = population.arguments() else {
         return None;
     };
     let anchor = synthesize_surface_pointer_expression(
@@ -4037,11 +4062,11 @@ fn synthesize_named_integer_local<'a>(
     }
     if let Some(name) = named {
         return Some(if name == crate::kernel::C_CONTRACT_RESULT_NAME {
-            ContractExpression::CFragment(CExpression::Variable("result".to_string()))
+            ContractExpression::CFragment(ProgramExpression::Variable("result".to_string()))
         } else if crate::surface::is_click_value_name(name) {
             ContractExpression::CBinding(name.to_string())
         } else {
-            ContractExpression::CFragment(CExpression::Variable(
+            ContractExpression::CFragment(ProgramExpression::Variable(
                 surface_local_name(name).to_string(),
             ))
         });
@@ -4052,7 +4077,7 @@ fn synthesize_named_integer_local<'a>(
 fn synthesize_surface_bitvector(
     term: &MachineTerm,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ContractExpression> {
     let _frame = SurfaceSynthesisFrame::enter("bitvector")?;
@@ -4065,20 +4090,20 @@ fn synthesize_surface_bitvector(
         && let Some(name) =
             folds::binder_name(false, *variable).or_else(|| bound_variables.get(variable).cloned())
     {
-        return Some(ContractExpression::CFragment(CExpression::Variable(
+        return Some(ContractExpression::CFragment(ProgramExpression::Variable(
             name.clone(),
         )));
     }
     if let int32_constant!(_) = term {
-        return Some(ContractExpression::CFragment(CExpression::Value(
-            CValue::Int32(term.clone()),
+        return Some(ContractExpression::CFragment(ProgramExpression::Value(
+            ProgramValue::Int32(term.clone()),
         )));
     }
     // A `uint32` constant keeps its format, so an operator over it spells
     // and lowers back at `uint32`.
     if let uint32_constant!(_) = term {
-        return Some(ContractExpression::CFragment(CExpression::Value(
-            CValue::UInt32(term.clone()),
+        return Some(ContractExpression::CFragment(ProgramExpression::Value(
+            ProgramValue::UInt32(term.clone()),
         )));
     }
     if let Some(named) = synthesize_named_integer_local(state.locals().names_holding_integer(term))
@@ -4104,19 +4129,21 @@ fn synthesize_surface_bitvector(
                 expression: Box::new(if crate::surface::is_click_value_name(&name) {
                     ContractExpression::CBinding(name)
                 } else {
-                    ContractExpression::CFragment(CExpression::Variable(name))
+                    ContractExpression::CFragment(ProgramExpression::Variable(name))
                 }),
             }
         } else if crate::surface::is_click_value_name(&name) {
             ContractExpression::CBinding(name)
         } else {
-            ContractExpression::CFragment(CExpression::Variable(name))
+            ContractExpression::CFragment(ProgramExpression::Variable(name))
         });
     }
     if let MachineTerm::Variable(variable) = term
         && let Some(name) = proof_binder_name(*variable)
     {
-        return Some(ContractExpression::CFragment(CExpression::Variable(name)));
+        return Some(ContractExpression::CFragment(ProgramExpression::Variable(
+            name,
+        )));
     }
     if let Some(region) = SYNTHESIS_RECORDED_POINTS
         .with(|points| points.borrow().as_ref()?.read_event_naming_scalar(term))
@@ -4125,7 +4152,7 @@ fn synthesize_surface_bitvector(
     }
     if let Some(result) = state_call_result(
         state,
-        |value| matches!(value.numeric_value(), CValue::Bool(held) | crate::kernel::integer_c_value!(held) if held == term),
+        |value| matches!(value.numeric_value(), ProgramValue::Bool(held) | crate::kernel::integer_c_value!(held) if held == term),
     ) {
         return Some(result);
     }
@@ -4194,7 +4221,7 @@ fn synthesize_surface_bitvector(
         } => {
             let operand =
                 synthesize_surface_bitvector(value, parameter_binding, state, bound_variables)?;
-            Some(ContractExpression::CFragment(CExpression::Cast {
+            Some(ContractExpression::CFragment(ProgramExpression::Cast {
                 expression: Box::new(contract_expression_to_c_fragment(&operand)?),
                 target_type: destination.c_type(),
                 integer_mode: crate::kernel::CIntegerCastMode::CConversion,
@@ -4220,13 +4247,15 @@ fn synthesize_surface_bitvector(
 
         crate::kernel::native_constant!(format, _) => {
             let value = if *format == MachineIntegerType::Int128 {
-                CValue::Int128(term.clone())
+                ProgramValue::Int128(term.clone())
             } else if *format == MachineIntegerType::UInt128 {
-                CValue::UInt128(term.clone())
+                ProgramValue::UInt128(term.clone())
             } else {
                 return None;
             };
-            Some(ContractExpression::CFragment(CExpression::Value(value)))
+            Some(ContractExpression::CFragment(ProgramExpression::Value(
+                value,
+            )))
         }
         bits32_constant!(_) => {
             unreachable!("constants returned above")
@@ -4301,9 +4330,9 @@ fn synthesize_surface_bitvector(
         MachineTerm::PointerAddress(pointer, _) => {
             let pointer =
                 synthesize_surface_pointer(pointer, parameter_binding, state, bound_variables)?;
-            Some(ContractExpression::CFragment(CExpression::Cast {
+            Some(ContractExpression::CFragment(ProgramExpression::Cast {
                 expression: Box::new(pointer),
-                target_type: CType::UInt64,
+                target_type: ProgramType::UInt64,
                 integer_mode: crate::kernel::CIntegerCastMode::Standard,
                 pointee_struct: None,
                 pointee_volatile: false,
@@ -4351,7 +4380,7 @@ fn synthesize_surface_bitvector(
             // unless the entry/recorded route above supplies Old or At.
             if *kind == crate::kernel::LoadKind::Int32
                 && let Some(field) =
-                    synthesize_owned_field_at_address(kernel_pointer, CType::Int32, state)
+                    synthesize_owned_field_at_address(kernel_pointer, ProgramType::Int32, state)
             {
                 return Some(field);
             }
@@ -4361,7 +4390,9 @@ fn synthesize_surface_bitvector(
             {
                 return Some(ContractExpression::Index(
                     Box::new(field),
-                    Box::new(ContractExpression::CFragment(CExpression::Value(int32(0)))),
+                    Box::new(ContractExpression::CFragment(ProgramExpression::Value(
+                        int32(0),
+                    ))),
                 ));
             }
 
@@ -4380,7 +4411,7 @@ fn synthesize_surface_bitvector(
             // the spelled address. The case-split caller checks the spelling
             // against the selected kernel condition before using it.
             if *kind == crate::kernel::LoadKind::Bits64 {
-                for value_type in [CType::Int64, CType::UInt64] {
+                for value_type in [ProgramType::Int64, ProgramType::UInt64] {
                     if let Some(field) =
                         synthesize_owned_field_at_address(kernel_pointer, value_type, state)
                             .or_else(|| {
@@ -4409,31 +4440,33 @@ fn synthesize_surface_bitvector(
                     .iter()
                     .zip(parameter_binding.arguments)
                     .find_map(|(parameter, argument)| {
-                        let CExpression::Value(CValue::Pointer(base)) = argument else {
+                        let ProgramExpression::Value(ProgramValue::Pointer(base)) = argument else {
                             return None;
                         };
                         let element_type = parameter.c_type().pointee_type()?.to_kernel_type();
-                        if !matches!(element_type, CType::Int64 | CType::UInt64) {
+                        if !matches!(element_type, ProgramType::Int64 | ProgramType::UInt64) {
                             return None;
                         }
                         kernel_pointer.element_index_from_base_with_width(base, 8)?;
                         Some(element_type)
                     })
-                    .unwrap_or(CType::Int64);
+                    .unwrap_or(ProgramType::Int64);
                 let pointer = synthesize_surface_pointer(
                     kernel_pointer,
                     parameter_binding,
                     state,
                     bound_variables,
                 )?;
-                return Some(ContractExpression::CFragment(CExpression::TypedLoad {
-                    pointer: Box::new(pointer),
-                    value_type,
-                    volatile: false,
-                    pointee_constant: false,
-                    access_class: None,
-                    source: Default::default(),
-                }));
+                return Some(ContractExpression::CFragment(
+                    ProgramExpression::TypedLoad {
+                        pointer: Box::new(pointer),
+                        value_type,
+                        volatile: false,
+                        pointee_constant: false,
+                        access_class: None,
+                        source: Default::default(),
+                    },
+                ));
             }
             // Globals and function-static scalars have internal slot names
             // that need not be legal source tokens. Use the declaration's
@@ -4443,7 +4476,9 @@ fn synthesize_surface_bitvector(
                 let (name, ty) = owners.as_ref()?.storage_scalars.get(kernel_pointer)?;
                 (crate::kernel::LoadKind::of_type(*ty) == Some(*kind)).then(|| name.clone())
             }) {
-                return Some(ContractExpression::CFragment(CExpression::Variable(name)));
+                return Some(ContractExpression::CFragment(ProgramExpression::Variable(
+                    name,
+                )));
             }
             if let PointerBlock::Concrete(block) = &kernel_pointer.block
                 && let Some(name) = block.strip_prefix("local:")
@@ -4454,12 +4489,15 @@ fn synthesize_surface_bitvector(
                     .is_some_and(|ty| ty.pointee_type().is_none())
             {
                 // A memory-resident scalar local reads as its own name.
-                Some(ContractExpression::CFragment(CExpression::Variable(
+                Some(ContractExpression::CFragment(ProgramExpression::Variable(
                     name.to_string(),
                 )))
-            } else if let Some(field) =
-                synthesize_struct_field_load(kernel_pointer, CType::Int32, parameter_binding, state)
-            {
+            } else if let Some(field) = synthesize_struct_field_load(
+                kernel_pointer,
+                ProgramType::Int32,
+                parameter_binding,
+                state,
+            ) {
                 Some(field)
             } else if let Some(indexed_field) = synthesize_parameter_field_indexed_int32_load(
                 kernel_pointer,
@@ -4489,7 +4527,7 @@ fn synthesize_surface_bitvector(
                     .iter()
                     .zip(parameter_binding.arguments)
                     .find_map(|(parameter, argument)| {
-                        let CExpression::Value(CValue::Pointer(base)) = argument else {
+                        let ProgramExpression::Value(ProgramValue::Pointer(base)) = argument else {
                             return None;
                         };
                         let element_type = parameter.c_type().pointee_type()?;
@@ -4514,15 +4552,15 @@ fn synthesize_surface_bitvector(
                 // own type, including through byte-addressed struct fields.
                 let typed_word = value_type.is_none() && *kind == crate::kernel::LoadKind::Int32;
                 let value_type = if *kind == crate::kernel::LoadKind::UInt8 {
-                    Some(CType::UInt8)
+                    Some(ProgramType::UInt8)
                 } else if typed_word {
-                    Some(CType::Int32)
+                    Some(ProgramType::Int32)
                 } else {
                     value_type
                 };
                 Some(ContractExpression::CFragment(match value_type {
-                    Some(value_type) if value_type == CType::UInt8 || typed_word => {
-                        CExpression::TypedLoad {
+                    Some(value_type) if value_type == ProgramType::UInt8 || typed_word => {
+                        ProgramExpression::TypedLoad {
                             pointer: Box::new(pointer),
                             value_type,
                             volatile: false,
@@ -4531,7 +4569,7 @@ fn synthesize_surface_bitvector(
                             source: Default::default(),
                         }
                     }
-                    _ => CExpression::Load(Box::new(pointer)),
+                    _ => ProgramExpression::Load(Box::new(pointer)),
                 }))
             }
         }
@@ -4546,7 +4584,7 @@ fn synthesize_surface_bitvector(
                 && let Some(name) =
                     state.local_name_holding_bitvector_variable_at(*variable, &pointer)
             {
-                return Some(ContractExpression::CFragment(CExpression::Variable(
+                return Some(ContractExpression::CFragment(ProgramExpression::Variable(
                     name.to_string(),
                 )));
             }
@@ -4557,7 +4595,7 @@ fn synthesize_surface_bitvector(
                 && !STRUCTURAL_GOAL_SYNTHESIS.with(|slot| slot.get())
                 && let Some(name) = state.local_name_holding_bitvector_variable(*variable)
             {
-                return Some(ContractExpression::CFragment(CExpression::Variable(
+                return Some(ContractExpression::CFragment(ProgramExpression::Variable(
                     name.to_string(),
                 )));
             }
@@ -4590,11 +4628,11 @@ fn synthesize_surface_bitvector(
                     synthesize_load_at_recorded_point(variable, parameter_binding, bound_variables)
                 })
         }
-        int64_constant!(value) => Some(ContractExpression::CFragment(CExpression::Value(
-            CValue::Int64(MachineTerm::int64_constant(constant_i64(*value))),
+        int64_constant!(value) => Some(ContractExpression::CFragment(ProgramExpression::Value(
+            ProgramValue::Int64(MachineTerm::int64_constant(constant_i64(*value))),
         ))),
-        uint64_constant!(value) => Some(ContractExpression::CFragment(CExpression::Value(
-            CValue::UInt64(MachineTerm::uint64_constant(constant_u64(*value))),
+        uint64_constant!(value) => Some(ContractExpression::CFragment(ProgramExpression::Value(
+            ProgramValue::UInt64(MachineTerm::uint64_constant(constant_u64(*value))),
         ))),
         cast_term!(Int64From32, value)
         | cast_term!(Int64FromUInt32, value)
@@ -4617,15 +4655,15 @@ fn synthesize_surface_bitvector(
                     operand = synthesize_int32_operand(operand)?;
                 }
             }
-            Some(ContractExpression::CFragment(CExpression::Cast {
+            Some(ContractExpression::CFragment(ProgramExpression::Cast {
                 expression: Box::new(contract_expression_to_c_fragment(&operand)?),
                 target_type: if matches!(
                     term,
                     cast_term!(Int64From32, _) | cast_term!(Int64FromUInt32, _)
                 ) {
-                    CType::Int64
+                    ProgramType::Int64
                 } else {
-                    CType::UInt64
+                    ProgramType::UInt64
                 },
                 integer_mode: crate::kernel::CIntegerCastMode::CConversion,
                 pointee_struct: None,
@@ -4634,17 +4672,24 @@ fn synthesize_surface_bitvector(
                 explicit_qualification: false,
             }))
         }
-        cast_term!(UInt32From64, value) => Some(ContractExpression::CFragment(CExpression::Cast {
-            expression: Box::new(contract_expression_to_c_fragment(
-                &synthesize_surface_bitvector(value, parameter_binding, state, bound_variables)?,
-            )?),
-            target_type: CType::UInt32,
-            integer_mode: crate::kernel::CIntegerCastMode::Standard,
-            pointee_struct: None,
-            pointee_volatile: false,
-            pointee_constant: false,
-            explicit_qualification: false,
-        })),
+        cast_term!(UInt32From64, value) => {
+            Some(ContractExpression::CFragment(ProgramExpression::Cast {
+                expression: Box::new(contract_expression_to_c_fragment(
+                    &synthesize_surface_bitvector(
+                        value,
+                        parameter_binding,
+                        state,
+                        bound_variables,
+                    )?,
+                )?),
+                target_type: ProgramType::UInt32,
+                integer_mode: crate::kernel::CIntegerCastMode::Standard,
+                pointee_struct: None,
+                pointee_volatile: false,
+                pointee_constant: false,
+                explicit_qualification: false,
+            }))
+        }
         MachineTerm::Binary {
             op, left, right, ..
         } => {
@@ -4732,7 +4777,7 @@ fn synthesize_surface_call(
     name: &str,
     values: &[crate::kernel::PureFunctionArgument],
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ContractExpression> {
     let _frame = SurfaceSynthesisFrame::enter("function-call")?;
@@ -4760,25 +4805,27 @@ fn synthesize_surface_call(
 fn synthesize_legacy_call_argument(
     value: &crate::kernel::PureFunctionArgument,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<SurfaceTerm> {
     Some(match value {
-        crate::kernel::PureFunctionArgument::Value(CValue::Bool(word)) => synthesize_surface_bool(
-            &ConditionTerm::truth_of_bool_word(word),
-            parameter_binding,
-            state,
-            bound_variables,
-        )?,
+        crate::kernel::PureFunctionArgument::Value(ProgramValue::Bool(word)) => {
+            synthesize_surface_bool(
+                &ConditionTerm::truth_of_bool_word(word),
+                parameter_binding,
+                state,
+                bound_variables,
+            )?
+        }
         // A word argument's term carries its own width; the candidate's
         // round trip confirms the call lowers it at the parameter's type.
         crate::kernel::PureFunctionArgument::Value(
-            CValue::Int32(value)
-            | CValue::UInt32(value)
-            | CValue::Int64(value)
-            | CValue::UInt64(value)
-            | CValue::Int128(value)
-            | CValue::UInt128(value),
+            ProgramValue::Int32(value)
+            | ProgramValue::UInt32(value)
+            | ProgramValue::Int64(value)
+            | ProgramValue::UInt64(value)
+            | ProgramValue::Int128(value)
+            | ProgramValue::UInt128(value),
         ) => synthesize_surface_bitvector(value, parameter_binding, state, bound_variables)?,
         crate::kernel::PureFunctionArgument::Integer(value) => {
             synthesize_surface_integer(value, parameter_binding, state, bound_variables)?
@@ -4788,7 +4835,7 @@ fn synthesize_legacy_call_argument(
         }
         crate::kernel::PureFunctionArgument::ArrayRef {
             memory,
-            pointer: CValue::Pointer(pointer),
+            pointer: ProgramValue::Pointer(pointer),
             ..
         } => {
             let snapshot = crate::kernel::intern_c_memory_ref(memory);
@@ -4824,7 +4871,7 @@ fn synthesize_legacy_call_argument(
 fn synthesize_parameter_field_indexed_int32_load(
     pointer: &Pointer,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ContractExpression> {
     let _frame = SurfaceSynthesisFrame::enter("indexed-field")?;
@@ -4851,12 +4898,12 @@ fn synthesize_parameter_field_indexed_int32_load(
         };
         let field = synthesize_struct_field_load(
             field_pointer,
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
             parameter_binding,
             state,
         )?;
         let index = match index {
-            None => ContractExpression::CFragment(CExpression::Value(int32(0))),
+            None => ContractExpression::CFragment(ProgramExpression::Value(int32(0))),
             Some(PointerOffsetTerm::Int32Scaled {
                 value,
                 byte_width: 4,
@@ -4867,7 +4914,7 @@ fn synthesize_parameter_field_indexed_int32_load(
                 bound_variables,
             )?,
             Some(PointerOffsetTerm::Constant(bytes)) if bytes % 4 == 0 => {
-                ContractExpression::CFragment(CExpression::Value(int32(
+                ContractExpression::CFragment(ProgramExpression::Value(int32(
                     u32::try_from(bytes / 4).ok()?,
                 )))
             }
@@ -4889,11 +4936,11 @@ fn synthesize_parameter_field_indexed_int32_load(
     if let ContractExpression::Field {
         base, field: name, ..
     } = &field
-        && let ContractExpression::CFragment(CExpression::Variable(owner)) = base.as_ref()
+        && let ContractExpression::CFragment(ProgramExpression::Variable(owner)) = base.as_ref()
     {
         let has_scalar_stride = |layout: &syntax::C0StructLayout| {
             layout.fields().get(name).is_some_and(|declaration| {
-                declaration.c_type().to_kernel_type() == CType::Int32Pointer
+                declaration.c_type().to_kernel_type() == ProgramType::Int32Pointer
                     && declaration.struct_name().is_none()
                     && declaration.union_name().is_none()
             })
@@ -4922,9 +4969,9 @@ fn synthesize_parameter_field_indexed_int32_load(
     // struct's size. Spell the address through the supported byte view and
     // retain the scalar load's width explicitly.
     let bytes = ContractExpression::CUnary {
-        lowered: CExpression::Cast {
+        lowered: ProgramExpression::Cast {
             expression: Box::new(contract_expression_to_c_fragment(&field)?),
-            target_type: CType::UInt8Pointer,
+            target_type: ProgramType::UInt8Pointer,
             integer_mode: crate::kernel::CIntegerCastMode::Standard,
             pointee_struct: None,
             pointee_volatile: false,
@@ -4937,13 +4984,15 @@ fn synthesize_parameter_field_indexed_int32_load(
         Box::new(bytes),
         Box::new(ContractExpression::Multiply(
             Box::new(index),
-            Box::new(ContractExpression::CFragment(CExpression::Value(int32(4)))),
+            Box::new(ContractExpression::CFragment(ProgramExpression::Value(
+                int32(4),
+            ))),
         )),
     );
     Some(ContractExpression::CUnary {
-        lowered: CExpression::TypedLoad {
+        lowered: ProgramExpression::TypedLoad {
             pointer: Box::new(contract_expression_to_c_fragment(&address)?),
-            value_type: CType::Int32,
+            value_type: ProgramType::Int32,
             volatile: false,
             pointee_constant: false,
             access_class: None,
@@ -4959,7 +5008,7 @@ fn synthesize_parameter_field_indexed_int32_load(
 fn synthesize_local_struct_pointer_field(
     term: &MachineTerm,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
 ) -> Option<ContractExpression> {
     for owner in struct_owners(parameter_binding, state) {
         for (field_name, field) in owner.layout.fields() {
@@ -4972,23 +5021,23 @@ fn synthesize_local_struct_pointer_field(
                 continue;
             };
             let loaded = match loaded.numeric_value().clone() {
-                CValue::PointerInteger(_) => unreachable!("numeric projection"),
-                CValue::Int8(value) => value,
-                CValue::Bool(value)
-                | CValue::Int16(value)
-                | CValue::Int32(value)
-                | CValue::UInt8(value)
-                | CValue::UInt16(value)
-                | CValue::UInt32(value)
-                | CValue::Int64(value)
-                | CValue::UInt64(value)
-                | CValue::Int128(value)
-                | CValue::UInt128(value) => value,
-                CValue::Pointer(_)
-                | CValue::Parameter(_)
-                | CValue::Void
-                | CValue::Float32(_)
-                | CValue::Float64(_) => {
+                ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
+                ProgramValue::Int8(value) => value,
+                ProgramValue::Bool(value)
+                | ProgramValue::Int16(value)
+                | ProgramValue::Int32(value)
+                | ProgramValue::UInt8(value)
+                | ProgramValue::UInt16(value)
+                | ProgramValue::UInt32(value)
+                | ProgramValue::Int64(value)
+                | ProgramValue::UInt64(value)
+                | ProgramValue::Int128(value)
+                | ProgramValue::UInt128(value) => value,
+                ProgramValue::Pointer(_)
+                | ProgramValue::Parameter(_)
+                | ProgramValue::Void
+                | ProgramValue::Float32(_)
+                | ProgramValue::Float64(_) => {
                     continue;
                 }
             };
@@ -4999,7 +5048,7 @@ fn synthesize_local_struct_pointer_field(
                 pointee_struct: None,
                 base: Box::new(ContractExpression::CFragment(owner.base.clone())),
                 field: field_name.clone(),
-                lowered: CExpression::TypedLoad {
+                lowered: ProgramExpression::TypedLoad {
                     pointer: Box::new(owner_field_pointer(&owner.base, field.offset_bytes())),
                     value_type,
                     volatile: false,
@@ -5016,7 +5065,7 @@ fn synthesize_local_struct_pointer_field(
 
 fn synthesize_local_aggregate_field(
     term: &MachineTerm,
-    state: &CState,
+    state: &ExecutionState,
 ) -> Option<ContractExpression> {
     state
         .locals()
@@ -5024,10 +5073,10 @@ fn synthesize_local_aggregate_field(
         .find_map(|(name, layout, slot)| {
             layout.fields().iter().find_map(|field| {
                 let (element_type, element_count) = match field.c_type() {
-                    CType::Int32 => (CType::Int32, 1),
-                    CType::UInt8 => (CType::UInt8, 1),
-                    CType::Int32Array(length) => (CType::Int32, length),
-                    CType::UInt8Array(length) => (CType::UInt8, length),
+                    ProgramType::Int32 => (ProgramType::Int32, 1),
+                    ProgramType::UInt8 => (ProgramType::UInt8, 1),
+                    ProgramType::Int32Array(length) => (ProgramType::Int32, length),
+                    ProgramType::UInt8Array(length) => (ProgramType::UInt8, length),
                     _ => return None,
                 };
                 (0..element_count).find_map(|index| {
@@ -5051,32 +5100,32 @@ fn synthesize_local_aggregate_field(
                         return None;
                     };
                     let value_term = match value.numeric_value().clone() {
-                        CValue::PointerInteger(_) => unreachable!("numeric projection"),
-                        CValue::Int8(value) => value,
-                        CValue::Bool(value)
-                        | CValue::Int16(value)
-                        | CValue::Int32(value)
-                        | CValue::UInt8(value)
-                        | CValue::UInt16(value)
-                        | CValue::UInt32(value)
-                        | CValue::Int64(value)
-                        | CValue::UInt64(value)
-                        | CValue::Int128(value)
-                        | CValue::UInt128(value) => value,
-                        CValue::Pointer(_)
-                        | CValue::Parameter(_)
-                        | CValue::Void
-                        | CValue::Float32(_)
-                        | CValue::Float64(_) => return None,
+                        ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
+                        ProgramValue::Int8(value) => value,
+                        ProgramValue::Bool(value)
+                        | ProgramValue::Int16(value)
+                        | ProgramValue::Int32(value)
+                        | ProgramValue::UInt8(value)
+                        | ProgramValue::UInt16(value)
+                        | ProgramValue::UInt32(value)
+                        | ProgramValue::Int64(value)
+                        | ProgramValue::UInt64(value)
+                        | ProgramValue::Int128(value)
+                        | ProgramValue::UInt128(value) => value,
+                        ProgramValue::Pointer(_)
+                        | ProgramValue::Parameter(_)
+                        | ProgramValue::Void
+                        | ProgramValue::Float32(_)
+                        | ProgramValue::Float64(_) => return None,
                     };
                     if value_term != *term {
                         return None;
                     }
-                    let base = CExpression::Variable(surface_local_name(name).to_string());
+                    let base = ProgramExpression::Variable(surface_local_name(name).to_string());
                     let lowered_pointer = if field.offset_bytes() == 0 {
                         base.clone()
                     } else {
-                        CExpression::PointerOffsetBytes {
+                        ProgramExpression::PointerOffsetBytes {
                             pointer: Box::new(base.clone()),
                             bytes: field.offset_bytes(),
                         }
@@ -5085,7 +5134,7 @@ fn synthesize_local_aggregate_field(
                         pointee_struct: None,
                         base: Box::new(ContractExpression::CFragment(base)),
                         field: field.name().to_string(),
-                        lowered: CExpression::TypedLoad {
+                        lowered: ProgramExpression::TypedLoad {
                             pointer: Box::new(lowered_pointer),
                             value_type: field.c_type(),
                             volatile: false,
@@ -5101,15 +5150,15 @@ fn synthesize_local_aggregate_field(
                         // Spell the element with one subscript per declared
                         // dimension, as the parser reads it back.
                         let mut remaining = index;
-                        let mut indexes = vec![CExpression::Value(int32(0)); shape.len()];
+                        let mut indexes = vec![ProgramExpression::Value(int32(0)); shape.len()];
                         for (slot, dimension) in indexes.iter_mut().zip(shape).rev() {
-                            *slot = CExpression::Value(int32(remaining % dimension));
+                            *slot = ProgramExpression::Value(int32(remaining % dimension));
                             remaining /= dimension;
                         }
                         let ContractExpression::Field { lowered, .. } = &field_expression else {
                             unreachable!()
                         };
-                        let lowered = CExpression::Index(
+                        let lowered = ProgramExpression::Index(
                             Box::new(lowered.clone()),
                             Box::new(crate::surface::parser::flatten_array_indices(
                                 indexes.clone(),
@@ -5128,9 +5177,9 @@ fn synthesize_local_aggregate_field(
                     } else {
                         Some(ContractExpression::Index(
                             Box::new(field_expression),
-                            Box::new(ContractExpression::CFragment(CExpression::Value(int32(
-                                index,
-                            )))),
+                            Box::new(ContractExpression::CFragment(ProgramExpression::Value(
+                                int32(index),
+                            ))),
                         ))
                     }
                 })
@@ -5200,7 +5249,7 @@ fn synthesize_local_indexed_load(
     pointer: &Pointer,
     kind: crate::kernel::LoadKind,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ContractExpression> {
     let _frame = SurfaceSynthesisFrame::enter("local-index")?;
@@ -5236,7 +5285,7 @@ fn synthesize_local_indexed_load(
             return None;
         }
         Some(ContractExpression::Index(
-            Box::new(ContractExpression::CFragment(CExpression::Variable(
+            Box::new(ContractExpression::CFragment(ProgramExpression::Variable(
                 surface_local_name(name).to_string(),
             ))),
             Box::new(synthesize_surface_bitvector(
@@ -5257,7 +5306,7 @@ fn synthesize_local_indexed_load(
 fn synthesize_static_storage_array_element_load(
     pointer: &Pointer,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ContractExpression> {
     if !pointer.block.is_static_storage_block() {
@@ -5275,7 +5324,7 @@ fn synthesize_static_storage_array_element_load(
             }
             let (source, shape) = owners.storage_arrays.get(name)?;
             let index = pointer.element_index_from_base_with_width(slot, 4)?;
-            let base = CExpression::Variable(source.clone());
+            let base = ProgramExpression::Variable(source.clone());
             if shape.len() <= 1 {
                 if !bitvector_term_is_load_free(&index) {
                     return None;
@@ -5291,12 +5340,12 @@ fn synthesize_static_storage_array_element_load(
                 ));
             }
             let mut remaining = index.as_const()?;
-            let mut indexes = vec![CExpression::Value(int32(0)); shape.len()];
+            let mut indexes = vec![ProgramExpression::Value(int32(0)); shape.len()];
             for (subscript, dimension) in indexes.iter_mut().zip(shape).rev() {
-                *subscript = CExpression::Value(int32(remaining % dimension));
+                *subscript = ProgramExpression::Value(int32(remaining % dimension));
                 remaining /= dimension;
             }
-            let lowered = CExpression::Index(
+            let lowered = ProgramExpression::Index(
                 Box::new(base.clone()),
                 Box::new(crate::surface::parser::flatten_array_indices(
                     indexes.clone(),
@@ -5317,7 +5366,7 @@ fn synthesize_static_storage_array_element_load(
 
 fn synthesize_parameter_field_load(
     pointer: &Pointer,
-    value_type: CType,
+    value_type: ProgramType,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<ContractExpression> {
     for (parameter, argument) in parameter_binding
@@ -5325,7 +5374,7 @@ fn synthesize_parameter_field_load(
         .iter()
         .zip(parameter_binding.arguments)
     {
-        let (Some(layout), CExpression::Value(CValue::Pointer(base))) = (
+        let (Some(layout), ProgramExpression::Value(ProgramValue::Pointer(base))) = (
             parameter
                 .pointee_struct_layout()
                 .or_else(|| parameter.struct_layout()),
@@ -5350,11 +5399,11 @@ fn synthesize_parameter_field_load(
         if field.c_type().to_kernel_type() != value_type {
             continue;
         }
-        let base = CExpression::Variable(parameter.name().to_string());
+        let base = ProgramExpression::Variable(parameter.name().to_string());
         let field_pointer = if offset_bytes == 0 {
             base.clone()
         } else {
-            CExpression::PointerOffsetBytes {
+            ProgramExpression::PointerOffsetBytes {
                 pointer: Box::new(base.clone()),
                 bytes: offset_bytes,
             }
@@ -5363,7 +5412,7 @@ fn synthesize_parameter_field_load(
             pointee_struct: None,
             base: Box::new(ContractExpression::CFragment(base)),
             field: field_name.clone(),
-            lowered: CExpression::TypedLoad {
+            lowered: ProgramExpression::TypedLoad {
                 pointer: Box::new(field_pointer),
                 value_type,
                 volatile: false,
@@ -5382,9 +5431,9 @@ fn synthesize_parameter_field_load(
 /// struct and this state holds the local's pointer value.
 fn synthesize_local_field_load(
     pointer: &Pointer,
-    value_type: CType,
+    value_type: ProgramType,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
 ) -> Option<ContractExpression> {
     for owner in struct_owners(parameter_binding, state) {
         // Compare each field's address with the load's pointer directly: an
@@ -5407,7 +5456,7 @@ fn synthesize_local_field_load(
             pointee_struct: None,
             base: Box::new(ContractExpression::CFragment(owner.base.clone())),
             field: field_name.clone(),
-            lowered: CExpression::TypedLoad {
+            lowered: ProgramExpression::TypedLoad {
                 pointer: Box::new(owner_field_pointer(&owner.base, field.offset_bytes())),
                 value_type,
                 volatile: false,
@@ -5425,9 +5474,9 @@ fn synthesize_local_field_load(
 /// that, through a struct-pointer local of the function under proof.
 fn synthesize_struct_field_load(
     pointer: &Pointer,
-    value_type: CType,
+    value_type: ProgramType,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
 ) -> Option<ContractExpression> {
     synthesize_parameter_field_load(pointer, value_type, parameter_binding)
         .or_else(|| synthesize_local_field_load(pointer, value_type, parameter_binding, state))
@@ -5438,8 +5487,8 @@ fn synthesize_struct_field_load(
 /// This is a candidate spelling; callers must re-lower it to the exact fact.
 fn synthesize_owned_field_at_address(
     address: &Pointer,
-    value_type: CType,
-    state: &CState,
+    value_type: ProgramType,
+    state: &ExecutionState,
 ) -> Option<ContractExpression> {
     let PointerBlock::Concrete(block) = &address.block else {
         return None;
@@ -5450,12 +5499,12 @@ fn synthesize_owned_field_at_address(
     let field = layout.fields().iter().find(|field| {
         field.c_type() == value_type && slot.offset_by_bytes(field.offset_bytes()) == *address
     })?;
-    let base = CExpression::Variable(surface_local_name(name).to_string());
+    let base = ProgramExpression::Variable(surface_local_name(name).to_string());
     Some(ContractExpression::Field {
         pointee_struct: None,
         base: Box::new(ContractExpression::CFragment(base.clone())),
         field: field.name().to_string(),
-        lowered: CExpression::TypedLoad {
+        lowered: ProgramExpression::TypedLoad {
             pointer: Box::new(owner_field_pointer(&base, field.offset_bytes())),
             value_type,
             volatile: false,
@@ -5471,7 +5520,7 @@ fn synthesize_owned_field_at_address(
 /// that read: a legacy load variable whose canonical load in `state` is
 /// itself, or a loaded pointer at displacement zero that `state`'s canonical
 /// read of its defining address reproduces.
-fn pointer_read_address_in_state(pointer: &Pointer, state: &CState) -> Option<Pointer> {
+fn pointer_read_address_in_state(pointer: &Pointer, state: &ExecutionState) -> Option<Pointer> {
     if pointer.offset != PointerOffsetTerm::Constant(0) {
         return None;
     }
@@ -5490,7 +5539,10 @@ fn pointer_read_address_in_state(pointer: &Pointer, state: &CState) -> Option<Po
     }
 }
 
-fn synthesize_owned_pointer_field(pointer: &Pointer, state: &CState) -> Option<ContractExpression> {
+fn synthesize_owned_pointer_field(
+    pointer: &Pointer,
+    state: &ExecutionState,
+) -> Option<ContractExpression> {
     let address = pointer_read_address_in_state(pointer, state)?;
     let PointerBlock::Concrete(block) = &address.block else {
         return None;
@@ -5504,12 +5556,12 @@ fn synthesize_owned_pointer_field(pointer: &Pointer, state: &CState) -> Option<C
     let field = layout.fields().iter().find(|field| {
         field.c_type().is_pointer() && slot.offset_by_bytes(field.offset_bytes()) == address
     })?;
-    let base = CExpression::Variable(surface_local_name(name).to_string());
+    let base = ProgramExpression::Variable(surface_local_name(name).to_string());
     Some(ContractExpression::Field {
         pointee_struct: None,
         base: Box::new(ContractExpression::CFragment(base.clone())),
         field: field.name().to_string(),
-        lowered: CExpression::TypedLoad {
+        lowered: ProgramExpression::TypedLoad {
             pointer: Box::new(owner_field_pointer(&base, field.offset_bytes())),
             value_type: field.c_type(),
             volatile: false,
@@ -5563,20 +5615,20 @@ fn synthesis_element_index(
 fn synthesize_surface_pointer(
     pointer: &Pointer,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
-) -> Option<CExpression> {
+) -> Option<ProgramExpression> {
     let _pointer_frame =
         SurfacePointerFrame::enter(pointer, parameter_binding, state, bound_variables)?;
     let _frame = SurfaceSynthesisFrame::enter("pointer")?;
     if pointer == &Pointer::null() {
-        return Some(CExpression::Value(int32(0)));
+        return Some(ProgramExpression::Value(int32(0)));
     }
     // A function's address spells as the function's name.
     if let (PointerBlock::Function(function), PointerOffsetTerm::Constant(0)) =
         (&pointer.block, &pointer.offset)
     {
-        return Some(CExpression::FunctionAddress(function.clone()));
+        return Some(ProgramExpression::FunctionAddress(function.clone()));
     }
     // A pointer a proof binder names, such as a match arm's payload.
     if let (PointerBlock::Symbolic(variable), PointerOffsetTerm::Constant(0)) =
@@ -5584,7 +5636,7 @@ fn synthesize_surface_pointer(
         && let Some(name) =
             folds::binder_name(false, *variable).or_else(|| bound_variables.get(variable).cloned())
     {
-        return Some(CExpression::Variable(name.clone()));
+        return Some(ProgramExpression::Variable(name.clone()));
     }
     // Exact parameter addresses retain their source identity at proof entry.
     // Naming a stored pointer must not enumerate all earlier parameters.
@@ -5593,14 +5645,14 @@ fn synthesize_surface_pointer(
         .and_then(|names| names.pointer_source(pointer))
         && parameter_names_its_argument(parameter.name(), argument, state)
     {
-        return Some(CExpression::Variable(parameter.name().to_string()));
+        return Some(ProgramExpression::Variable(parameter.name().to_string()));
     }
     if let Some(expression) = parameter_binding
         .parameters
         .iter()
         .zip(parameter_binding.arguments)
         .find_map(|(parameter, argument)| {
-            let CExpression::Value(CValue::Pointer(base)) = argument else {
+            let ProgramExpression::Value(ProgramValue::Pointer(base)) = argument else {
                 return None;
             };
             if !parameter_names_its_argument(parameter.name(), argument, state) {
@@ -5615,12 +5667,12 @@ fn synthesize_surface_pointer(
                 .pointee_struct_layout()
                 .or_else(|| parameter.struct_layout())
                 .map_or(element_width, syntax::C0StructLayout::size_bytes);
-            let name = CExpression::Variable(parameter.name().to_string());
+            let name = ProgramExpression::Variable(parameter.name().to_string());
             let Some(index) = synthesis_element_index(pointer, base, element_width) else {
                 let bytes = pointer
                     .element_index_from_base_with_width(base, 1)?
                     .as_const()?;
-                return (bytes <= i32::MAX as u32).then(|| CExpression::PointerOffsetBytes {
+                return (bytes <= i32::MAX as u32).then(|| ProgramExpression::PointerOffsetBytes {
                     pointer: Box::new(name),
                     bytes,
                 });
@@ -5634,7 +5686,7 @@ fn synthesize_surface_pointer(
             let ContractExpression::CFragment(index) = index else {
                 return None;
             };
-            Some(CExpression::Add(Box::new(base), Box::new(index)))
+            Some(ProgramExpression::Add(Box::new(base), Box::new(index)))
         })
     {
         return Some(expression);
@@ -5656,12 +5708,12 @@ fn synthesize_surface_pointer(
                         .map(syntax::C0StructLayout::size_bytes)
                 })
                 .unwrap_or(element_width);
-            let name = CExpression::Variable(surface_local_name(name).to_string());
+            let name = ProgramExpression::Variable(surface_local_name(name).to_string());
             let Some(index) = synthesis_element_index(pointer, base, element_width) else {
                 let bytes = pointer
                     .element_index_from_base_with_width(base, 1)?
                     .as_const()?;
-                return (bytes <= i32::MAX as u32).then(|| CExpression::PointerOffsetBytes {
+                return (bytes <= i32::MAX as u32).then(|| ProgramExpression::PointerOffsetBytes {
                     pointer: Box::new(name),
                     bytes,
                 });
@@ -5675,7 +5727,7 @@ fn synthesize_surface_pointer(
             let ContractExpression::CFragment(index) = index else {
                 return None;
             };
-            Some(CExpression::Add(Box::new(base), Box::new(index)))
+            Some(ProgramExpression::Add(Box::new(base), Box::new(index)))
         })
     {
         return Some(expression);
@@ -5693,13 +5745,13 @@ fn synthesize_surface_pointer(
         && (state.locals().aggregate_layout(name).is_some()
             || state.locals().scalar_object_type(name).is_some())
     {
-        let base = CExpression::AddressOf(Box::new(CExpression::Variable(
+        let base = ProgramExpression::AddressOf(Box::new(ProgramExpression::Variable(
             surface_local_name(name).to_string(),
         )));
         return Some(if bytes == 0 {
             base
         } else {
-            CExpression::PointerOffsetBytes {
+            ProgramExpression::PointerOffsetBytes {
                 pointer: Box::new(base),
                 bytes,
             }
@@ -5720,11 +5772,11 @@ fn synthesize_surface_pointer(
                     return None;
                 };
                 let bytes = u32::try_from(at.checked_sub(*start)?).ok()?;
-                let base = CExpression::Variable(surface_local_name(name).to_string());
+                let base = ProgramExpression::Variable(surface_local_name(name).to_string());
                 Some(if bytes == 0 {
                     base
                 } else {
-                    CExpression::PointerOffsetBytes {
+                    ProgramExpression::PointerOffsetBytes {
                         pointer: Box::new(base),
                         bytes,
                     }
@@ -5737,7 +5789,7 @@ fn synthesize_surface_pointer(
         (&pointer.block, &pointer.offset)
         && let Some(name) = proof_binder_name(*variable)
     {
-        return Some(CExpression::Variable(name));
+        return Some(ProgramExpression::Variable(name));
     }
     if let Some(field) = synthesize_owned_pointer_field(pointer, state) {
         return contract_expression_to_c_fragment(&field);
@@ -5751,7 +5803,7 @@ fn synthesize_surface_pointer(
                 block: pointer.block.clone(),
                 offset: PointerOffsetTerm::Constant(0),
             };
-            return Some(CExpression::PointerOffsetBytes {
+            return Some(ProgramExpression::PointerOffsetBytes {
                 pointer: Box::new(synthesize_surface_pointer(
                     &base,
                     parameter_binding,
@@ -5766,31 +5818,33 @@ fn synthesize_surface_pointer(
         }
         let field = synthesize_struct_field_load(
             &read.defining_address,
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
             parameter_binding,
             state,
         )
         .or_else(|| {
-            Some(ContractExpression::CFragment(CExpression::TypedLoad {
-                pointer: Box::new(synthesize_surface_pointer(
-                    &read.defining_address,
-                    parameter_binding,
-                    state,
-                    bound_variables,
-                )?),
-                value_type: CType::Int32Pointer,
-                volatile: false,
-                pointee_constant: false,
-                access_class: None,
-                source: Default::default(),
-            }))
+            Some(ContractExpression::CFragment(
+                ProgramExpression::TypedLoad {
+                    pointer: Box::new(synthesize_surface_pointer(
+                        &read.defining_address,
+                        parameter_binding,
+                        state,
+                        bound_variables,
+                    )?),
+                    value_type: ProgramType::Int32Pointer,
+                    volatile: false,
+                    pointee_constant: false,
+                    access_class: None,
+                    source: Default::default(),
+                },
+            ))
         })?;
         return contract_expression_to_c_fragment(&field);
     }
     if !parameter_binding.arguments.iter().any(|argument| {
         matches!(
             argument,
-            CExpression::Value(CValue::Pointer(base)) if base.block == pointer.block
+            ProgramExpression::Value(ProgramValue::Pointer(base)) if base.block == pointer.block
         )
     }) {
         return None;
@@ -5808,8 +5862,8 @@ fn synthesize_surface_pointer(
 /// `<call>.result` for the result of one of the running statement's call
 /// steps that `matches`: the state holds only that statement's calls.
 fn state_call_result(
-    state: &CState,
-    matches: impl Fn(&CValue) -> bool,
+    state: &ExecutionState,
+    matches: impl Fn(&ProgramValue) -> bool,
 ) -> Option<ContractExpression> {
     let (call, _) = state.call_results.as_ref()?.iter().find(|(_, value)| {
         crate::instrumentation::record_deterministic_work(1);
@@ -5832,7 +5886,10 @@ pub(super) fn call_result_expression(local: &str) -> Option<ContractExpression> 
 
 /// `<region>.result` for a pointer a call's result temporary holds: the
 /// call names the value it introduced, which no source name spells.
-fn synthesize_call_result_pointer(pointer: &Pointer, state: &CState) -> Option<ContractExpression> {
+fn synthesize_call_result_pointer(
+    pointer: &Pointer,
+    state: &ExecutionState,
+) -> Option<ContractExpression> {
     state
         .locals()
         .pointer_objects_in_block(&pointer.block)
@@ -5848,7 +5905,7 @@ fn synthesize_call_result_pointer(pointer: &Pointer, state: &CState) -> Option<C
 fn synthesize_surface_pointer_expression(
     pointer: &Pointer,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ContractExpression> {
     let _frame = SurfaceSynthesisFrame::enter("pointer-expression")?;
@@ -5887,14 +5944,14 @@ fn synthesize_surface_pointer_expression(
     }
     if let Some(result) = state_call_result(
         state,
-        |value| matches!(value, CValue::Pointer(held) if held.pointer() == pointer),
+        |value| matches!(value, ProgramValue::Pointer(held) if held.pointer() == pointer),
     ) {
         return Some(result);
     }
     if parameter_binding.arguments.iter().any(|argument| {
         matches!(
             argument,
-            CExpression::Value(CValue::Pointer(base)) if base.block == pointer.block
+            ProgramExpression::Value(ProgramValue::Pointer(base)) if base.block == pointer.block
         )
     }) && let Some(offset) = synthesize_surface_pointer_offset(
         &pointer.offset,
@@ -5946,7 +6003,7 @@ fn synthesize_recorded_pointer_expression(
 fn synthesize_entry_pointer_expression(
     pointer: &Pointer,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ContractExpression> {
     let _ = state;
@@ -5962,11 +6019,11 @@ fn synthesize_entry_pointer_expression(
 /// state, or failing that the snapshot state as `at(<selector>, ..)`,
 /// registers that read.
 fn synthesize_loaded_pointer_value(
-    pointer: &crate::kernel::CPointerValue,
+    pointer: &crate::kernel::PointerValue,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
 ) -> Option<ContractExpression> {
-    let at_state = |state: &CState| {
+    let at_state = |state: &ExecutionState| {
         let address = pointer_read_address_in_state(pointer.pointer(), state)?;
         synthesize_struct_field_load(&address, pointer.c_type(), parameter_binding, state)
     };
@@ -5994,8 +6051,8 @@ fn synthesize_loaded_pointer_value(
 /// kernel's naming law, as [`pointer_read_address_in_state`] decides it.
 fn recorded_point_of_pointer_read(
     pointer: &Pointer,
-    state: &CState,
-) -> Option<(SnapshotSelector, CState)> {
+    state: &ExecutionState,
+) -> Option<(SnapshotSelector, ExecutionState)> {
     if pointer.offset != PointerOffsetTerm::Constant(0) {
         return None;
     }
@@ -6029,10 +6086,13 @@ fn recorded_point_of_pointer_read(
 /// current state's instance holds it at that field, `at(<selector>, o.size)`
 /// where the snapshot state's does, and `old(o.size)` where the entry
 /// state's does. One registry lookup and one instance lookup per state.
-fn synthesize_scalar_model_field(variable: Variable, state: &CState) -> Option<ContractExpression> {
+fn synthesize_scalar_model_field(
+    variable: Variable,
+    state: &ExecutionState,
+) -> Option<ContractExpression> {
     let origin = crate::kernel::model_fields::registered_model_field_origin(variable)?;
     let owner = crate::kernel::model_fields::registered_instance_spelling(origin.identity)?;
-    let field_at = |state: &CState| {
+    let field_at = |state: &ExecutionState| {
         let instance = state.resource_instance_at_path(origin.identity, &[])?;
         matches!(
             instance.fields().get(origin.field_index),
@@ -6118,7 +6178,7 @@ fn synthesize_snapshot_pointer_expression(
 fn synthesize_surface_algebraic(
     term: &crate::kernel::AlgebraicTerm,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ContractExpression> {
     let _frame = SurfaceSynthesisFrame::enter("algebraic")?;
@@ -6154,18 +6214,18 @@ fn synthesize_surface_algebraic(
                 .iter()
                 .zip(parameter_binding.arguments)
                 .find(|(_, argument)| {
-                    matches!(argument, CExpression::Value(CValue::Parameter(value))
+                    matches!(argument, ProgramExpression::Value(ProgramValue::Parameter(value))
                         if value.as_ref() == term)
                 })
             {
-                return Some(ContractExpression::CFragment(CExpression::Variable(
+                return Some(ContractExpression::CFragment(ProgramExpression::Variable(
                     parameter.name().to_string(),
                 )));
             }
             // A value a call returned is spelled by its call.
             if let Some(result) = state_call_result(
                 state,
-                |value| matches!(value, CValue::Parameter(held) if held.as_ref() == term),
+                |value| matches!(value, ProgramValue::Parameter(held) if held.as_ref() == term),
             ) {
                 return Some(result);
             }
@@ -6177,13 +6237,13 @@ fn synthesize_surface_algebraic(
             // A value a local holds, a Rust local of an enum, a `Vec` or a
             // library iterator, is spelled by that local: now, or at the
             // snapshot the goal reads.
-            let held_by = |state: &CState| {
+            let held_by = |state: &ExecutionState| {
                 state
                     .locals()
                     .names_holding_algebraic(term)
                     .first()
                     .map(|name| {
-                        ContractExpression::CFragment(CExpression::Variable(
+                        ContractExpression::CFragment(ProgramExpression::Variable(
                             surface_local_name(name).to_string(),
                         ))
                     })
@@ -6203,12 +6263,12 @@ fn synthesize_surface_algebraic(
             }
             let origin = crate::kernel::model_fields::registered_model_field_origin(*variable)?;
             let owner = crate::kernel::model_fields::registered_instance_spelling(origin.identity)?;
-            let field_at = |state: &CState| {
+            let field_at = |state: &ExecutionState| {
                 let instance = state.resource_instance_at_path(origin.identity, &[])?;
                 let held = instance.fields().get(origin.field_index)?;
                 let exact = match held {
                     crate::kernel::AlgebraicValue::Algebraic(value) => value == term,
-                    crate::kernel::AlgebraicValue::C(CValue::Parameter(value)) => {
+                    crate::kernel::AlgebraicValue::C(ProgramValue::Parameter(value)) => {
                         value.as_ref() == term
                     }
                     _ => false,
@@ -6252,13 +6312,13 @@ fn synthesize_surface_algebraic(
             .iter()
             .zip(parameter_binding.arguments)
             .find(|(_, argument)| {
-                matches!(argument, CExpression::Value(CValue::Pointer(value))
+                matches!(argument, ProgramExpression::Value(ProgramValue::Pointer(value))
                     if value.pointer() == pointer.as_ref())
             })
             .map(|(parameter, _)| {
-                ContractExpression::CFragment(CExpression::Load(Box::new(CExpression::Variable(
-                    parameter.name().to_string(),
-                ))))
+                ContractExpression::CFragment(ProgramExpression::Load(Box::new(
+                    ProgramExpression::Variable(parameter.name().to_string()),
+                )))
             })
             .or_else(|| synthesize_held_value_local(term, pointer, state))
             .or_else(|| synthesize_recorded_held_value_local(term, pointer)),
@@ -6266,7 +6326,7 @@ fn synthesize_surface_algebraic(
             let arguments = fields
                 .iter()
                 .map(|field| match field {
-                    crate::kernel::AlgebraicValue::C(CValue::Parameter(term)) => {
+                    crate::kernel::AlgebraicValue::C(ProgramValue::Parameter(term)) => {
                         synthesize_surface_algebraic(
                             term,
                             parameter_binding,
@@ -6280,7 +6340,7 @@ fn synthesize_surface_algebraic(
                         state,
                         bound_variables,
                     ),
-                    crate::kernel::AlgebraicValue::C(CValue::Pointer(pointer)) => {
+                    crate::kernel::AlgebraicValue::C(ProgramValue::Pointer(pointer)) => {
                         synthesize_surface_pointer_expression(
                             pointer,
                             parameter_binding,
@@ -6295,16 +6355,16 @@ fn synthesize_surface_algebraic(
                             // without widening their views. An explicit cast
                             // is needed only for a checked root view; adding
                             // it to a saved narrow view would change the value.
-                            if pointer.c_type() == CType::VoidPointer
+                            if pointer.c_type() == ProgramType::VoidPointer
                                 && pointer.extent_is_known()
                                 && pointer.extent().is_none()
                             {
                                 ContractExpression::CUnary {
-                                    lowered: CExpression::Cast {
-                                        expression: Box::new(CExpression::Value(CValue::Pointer(
-                                            pointer.clone(),
-                                        ))),
-                                        target_type: CType::VoidPointer,
+                                    lowered: ProgramExpression::Cast {
+                                        expression: Box::new(ProgramExpression::Value(
+                                            ProgramValue::Pointer(pointer.clone()),
+                                        )),
+                                        target_type: ProgramType::VoidPointer,
                                         integer_mode: crate::kernel::CIntegerCastMode::Standard,
                                         pointee_struct: None,
                                         pointee_volatile: false,
@@ -6318,7 +6378,7 @@ fn synthesize_surface_algebraic(
                             }
                         })
                     }
-                    crate::kernel::AlgebraicValue::C(CValue::Int32(value)) => {
+                    crate::kernel::AlgebraicValue::C(ProgramValue::Int32(value)) => {
                         synthesize_surface_bitvector(
                             value,
                             parameter_binding,
@@ -6332,18 +6392,18 @@ fn synthesize_surface_algebraic(
                     // it, which carry theirs. A constant of such a width
                     // would need its literal suffix and is not spelled.
                     crate::kernel::AlgebraicValue::C(
-                        CValue::Bool(value @ MachineTerm::Variable(variable))
-                        | CValue::Int8(value @ MachineTerm::Variable(variable))
-                        | CValue::Int16(value @ MachineTerm::Variable(variable))
-                        | CValue::UInt8(value @ MachineTerm::Variable(variable))
-                        | CValue::UInt16(value @ MachineTerm::Variable(variable))
-                        | CValue::UInt32(value @ MachineTerm::Variable(variable))
-                        | CValue::Int64(value @ MachineTerm::Variable(variable))
-                        | CValue::UInt64(value @ MachineTerm::Variable(variable)),
+                        ProgramValue::Bool(value @ MachineTerm::Variable(variable))
+                        | ProgramValue::Int8(value @ MachineTerm::Variable(variable))
+                        | ProgramValue::Int16(value @ MachineTerm::Variable(variable))
+                        | ProgramValue::UInt8(value @ MachineTerm::Variable(variable))
+                        | ProgramValue::UInt16(value @ MachineTerm::Variable(variable))
+                        | ProgramValue::UInt32(value @ MachineTerm::Variable(variable))
+                        | ProgramValue::Int64(value @ MachineTerm::Variable(variable))
+                        | ProgramValue::UInt64(value @ MachineTerm::Variable(variable)),
                     ) => bound_variables
                         .get(variable)
                         .map(|name| {
-                            ContractExpression::CFragment(CExpression::Variable(name.clone()))
+                            ContractExpression::CFragment(ProgramExpression::Variable(name.clone()))
                         })
                         .or_else(|| {
                             synthesize_surface_bitvector(

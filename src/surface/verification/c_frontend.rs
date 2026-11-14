@@ -958,13 +958,13 @@ pub(super) fn parse_c_source_unit(
 /// A qualified scalar name denotes its storage read in the selected snapshot,
 /// including `old` and recorded snapshots, rather than one fixed input value.
 fn qualified_scalar_read(
-    address: CValue,
-    value_type: CType,
+    address: ProgramValue,
+    value_type: ProgramType,
     pointee_constant: bool,
     pointee_volatile: bool,
-) -> CExpression {
-    let read = CExpression::TypedLoad {
-        pointer: Box::new(CExpression::Value(address)),
+) -> ProgramExpression {
+    let read = ProgramExpression::TypedLoad {
+        pointer: Box::new(ProgramExpression::Value(address)),
         value_type,
         volatile: false,
         pointee_constant,
@@ -972,7 +972,7 @@ fn qualified_scalar_read(
         source: Default::default(),
     };
     if value_type.is_object_pointer() && pointee_volatile {
-        CExpression::Cast {
+        ProgramExpression::Cast {
             expression: Box::new(read),
             target_type: value_type,
             integer_mode: crate::kernel::CIntegerCastMode::Standard,
@@ -995,7 +995,7 @@ pub(super) fn unit_qualified_objects(
     for (name, global) in &unit.globals {
         if let Some(pointer_type) = global.c_type().pointer_type() {
             let pointer = CMemory::global_pointer(global.kernel_name());
-            let address = CValue::typed_pointer(pointer, pointer_type.to_kernel_type())
+            let address = ProgramValue::typed_pointer(pointer, pointer_type.to_kernel_type())
                 .with_pointer_pointee_constant(global.is_constant())
                 .with_pointer_pointee_volatile(global.is_volatile());
             let expression = qualified_scalar_read(
@@ -1008,7 +1008,7 @@ pub(super) fn unit_qualified_objects(
                 name.clone(),
                 parser::QualifiedCObject {
                     expression,
-                    address: Some(CExpression::Value(CValue::typed_pointer(
+                    address: Some(ProgramExpression::Value(ProgramValue::typed_pointer(
                         CMemory::global_pointer(global.kernel_name()),
                         pointer_type.to_kernel_type(),
                     ))),
@@ -1024,11 +1024,13 @@ pub(super) fn unit_qualified_objects(
             objects.insert(
                 name.clone(),
                 parser::QualifiedCObject {
-                    expression: CExpression::Value(CValue::typed_pointer_with_pointee_constant(
-                        CMemory::global_pointer(array.kernel_name()),
-                        pointer_type.to_kernel_type(),
-                        array.is_constant(),
-                    )),
+                    expression: ProgramExpression::Value(
+                        ProgramValue::typed_pointer_with_pointee_constant(
+                            CMemory::global_pointer(array.kernel_name()),
+                            pointer_type.to_kernel_type(),
+                            array.is_constant(),
+                        ),
+                    ),
                     address: None,
                     struct_name: None,
                     array_shape: array.index_shape(),
@@ -1041,11 +1043,13 @@ pub(super) fn unit_qualified_objects(
         objects.insert(
             name.clone(),
             parser::QualifiedCObject {
-                expression: CExpression::Value(CValue::typed_pointer_with_pointee_constant(
-                    CMemory::global_pointer(aggregate.kernel_name()),
-                    CType::Int32Pointer,
-                    aggregate.is_constant(),
-                )),
+                expression: ProgramExpression::Value(
+                    ProgramValue::typed_pointer_with_pointee_constant(
+                        CMemory::global_pointer(aggregate.kernel_name()),
+                        ProgramType::Int32Pointer,
+                        aggregate.is_constant(),
+                    ),
+                ),
                 address: None,
                 struct_name: Some(aggregate.struct_name().to_owned()),
                 array_shape: None,
@@ -1058,11 +1062,13 @@ pub(super) fn unit_qualified_objects(
             objects.insert(
                 name.clone(),
                 parser::QualifiedCObject {
-                    expression: CExpression::Value(CValue::typed_pointer_with_pointee_constant(
-                        CMemory::global_pointer(aggregate_array.kernel_name()),
-                        CType::Int32Pointer,
-                        aggregate_array.is_constant(),
-                    )),
+                    expression: ProgramExpression::Value(
+                        ProgramValue::typed_pointer_with_pointee_constant(
+                            CMemory::global_pointer(aggregate_array.kernel_name()),
+                            ProgramType::Int32Pointer,
+                            aggregate_array.is_constant(),
+                        ),
+                    ),
                     address: None,
                     struct_name: Some(aggregate_array.struct_name().to_owned()),
                     array_shape: Some(vec![length]),
@@ -1101,7 +1107,7 @@ pub(super) fn unit_qualified_objects(
         for local in function.static_locals().values() {
             if let Some(pointer_type) = local.c_type().pointer_type() {
                 let pointer = CMemory::static_pointer(function.name(), local.kernel_name());
-                let address = CValue::typed_pointer(pointer, pointer_type.to_kernel_type())
+                let address = ProgramValue::typed_pointer(pointer, pointer_type.to_kernel_type())
                     .with_pointer_pointee_constant(local.is_constant())
                     .with_pointer_pointee_volatile(local.is_volatile());
                 let expression = qualified_scalar_read(
@@ -1114,7 +1120,7 @@ pub(super) fn unit_qualified_objects(
                     format!("{}::{}", function.name(), local.name()),
                     parser::QualifiedCObject {
                         expression,
-                        address: Some(CExpression::Value(CValue::typed_pointer(
+                        address: Some(ProgramExpression::Value(ProgramValue::typed_pointer(
                             CMemory::static_pointer(function.name(), local.kernel_name()),
                             pointer_type.to_kernel_type(),
                         ))),
@@ -1130,8 +1136,8 @@ pub(super) fn unit_qualified_objects(
                 objects.insert(
                     format!("{}::{}", function.name(), array.name()),
                     parser::QualifiedCObject {
-                        expression: CExpression::Value(
-                            CValue::typed_pointer_with_pointee_constant(
+                        expression: ProgramExpression::Value(
+                            ProgramValue::typed_pointer_with_pointee_constant(
                                 CMemory::static_pointer(function.name(), array.kernel_name()),
                                 pointer_type.to_kernel_type(),
                                 array.is_constant(),
@@ -1149,11 +1155,13 @@ pub(super) fn unit_qualified_objects(
             objects.insert(
                 format!("{}::{}", function.name(), aggregate.name()),
                 parser::QualifiedCObject {
-                    expression: CExpression::Value(CValue::typed_pointer_with_pointee_constant(
-                        CMemory::static_pointer(function.name(), aggregate.kernel_name()),
-                        CType::Int32Pointer,
-                        aggregate.is_constant(),
-                    )),
+                    expression: ProgramExpression::Value(
+                        ProgramValue::typed_pointer_with_pointee_constant(
+                            CMemory::static_pointer(function.name(), aggregate.kernel_name()),
+                            ProgramType::Int32Pointer,
+                            aggregate.is_constant(),
+                        ),
+                    ),
                     address: None,
                     struct_name: Some(aggregate.struct_name().to_owned()),
                     array_shape: None,
@@ -1165,11 +1173,13 @@ pub(super) fn unit_qualified_objects(
             objects.insert(
                 format!("{}::{}", function.name(), aggregate_array.name()),
                 parser::QualifiedCObject {
-                    expression: CExpression::Value(CValue::typed_pointer_with_pointee_constant(
-                        CMemory::static_pointer(function.name(), aggregate_array.kernel_name()),
-                        CType::Int32Pointer,
-                        aggregate_array.is_constant(),
-                    )),
+                    expression: ProgramExpression::Value(
+                        ProgramValue::typed_pointer_with_pointee_constant(
+                            CMemory::static_pointer(function.name(), aggregate_array.kernel_name()),
+                            ProgramType::Int32Pointer,
+                            aggregate_array.is_constant(),
+                        ),
+                    ),
                     address: None,
                     struct_name: Some(aggregate_array.struct_name().to_owned()),
                     array_shape: Some(vec![aggregate_array.length()]),

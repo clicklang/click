@@ -10,7 +10,7 @@ change which C programs Click accepts.
 
 ## Representation
 
-`SharedCMemory` is the stable identity of an interned `CMemory` value. The
+`SharedMemory` is the stable identity of an interned `CMemory` value. The
 arena assigns dense identifiers. A separately stored `CMemoryDerivation`
 describes the edge from an already-interned parent to a child snapshot.
 Keeping provenance outside `CMemory` means that equality, hashing, and ordering

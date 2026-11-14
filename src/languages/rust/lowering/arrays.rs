@@ -2,8 +2,11 @@
 //! copies. Constructor operands are captured before any destination write.
 use super::*;
 
-pub(super) fn array_length(element: CType, length: u64) -> Result<u32, String> {
-    if !matches!(element, CType::UInt8 | CType::UInt32 | CType::Int32) {
+pub(super) fn array_length(element: ProgramType, length: u64) -> Result<u32, String> {
+    if !matches!(
+        element,
+        ProgramType::UInt8 | ProgramType::UInt32 | ProgramType::Int32
+    ) {
         return Err("fixed arrays require i32, u8 or u32 elements".into());
     }
     if length > i32::MAX as u64 / u64::from(element.byte_width()) {
@@ -12,7 +15,7 @@ pub(super) fn array_length(element: CType, length: u64) -> Result<u32, String> {
     u32::try_from(length).map_err(|_| "array length exceeds modeled storage".into())
 }
 
-fn array_layout(element: CType, length: u64) -> Result<CAggregateLayout, String> {
+fn array_layout(element: ProgramType, length: u64) -> Result<CAggregateLayout, String> {
     let length = array_length(element, length)?;
     let width = element.byte_width();
     let fields = (0..length)
@@ -28,7 +31,7 @@ impl Context<'_> {
         element: &Type,
         length: u64,
         initializer: &E,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         let element = scalar_type(element)?.to_kernel_type();
         let layout = array_layout(element, length)?;
         self.local_arrays.insert(name.into());
@@ -42,29 +45,29 @@ impl Context<'_> {
 
     pub(super) fn assign_array(
         &mut self,
-        target: CExpression,
-        element: CType,
+        target: ProgramExpression,
+        element: ProgramType,
         length: u64,
         value: &E,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         array_length(element, length)?;
         // Record field addresses retain the record pointer's pointee type.
         // Element addressing must instead use the array's scalar stride.
         let target = reference_view(
             target,
             match element {
-                CType::UInt8 => CType::UInt8Pointer,
-                CType::UInt32 => CType::UInt32Pointer,
-                CType::Int32 => CType::Int32Pointer,
+                ProgramType::UInt8 => ProgramType::UInt8Pointer,
+                ProgramType::UInt32 => ProgramType::UInt32Pointer,
+                ProgramType::Int32 => ProgramType::Int32Pointer,
                 _ => unreachable!(),
             },
             false,
             false,
         );
         let source_type = match element {
-            CType::UInt8 => Type::U8,
-            CType::UInt32 => Type::U32,
-            CType::Int32 => Type::I32,
+            ProgramType::UInt8 => Type::U8,
+            ProgramType::UInt32 => Type::U32,
+            ProgramType::Int32 => Type::I32,
             _ => return Err("unsupported fixed array element".into()),
         };
         let mut captures = c_skip();
@@ -127,11 +130,11 @@ impl Context<'_> {
 impl Context<'_> {
     pub(super) fn assign_array_region(
         &mut self,
-        target: CExpression,
-        element: CType,
+        target: ProgramExpression,
+        element: ProgramType,
         length: u64,
         value: &E,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         let count = array_length(element, length)?;
         match value {
             E::Array { .. } => self.assign_array(target, element, length, value),
@@ -143,9 +146,9 @@ impl Context<'_> {
                     return Err("array repeat length disagrees with destination".into());
                 }
                 let value_type = match element {
-                    CType::UInt8 => Type::U8,
-                    CType::UInt32 => Type::U32,
-                    CType::Int32 => Type::I32,
+                    ProgramType::UInt8 => Type::U8,
+                    ProgramType::UInt32 => Type::U32,
+                    ProgramType::Int32 => Type::I32,
                     _ => unreachable!(),
                 };
                 let (prefix, value) = self.prepared_expr(value)?;

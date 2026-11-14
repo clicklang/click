@@ -4,7 +4,7 @@
 use sha2::{Digest, Sha256};
 
 /// The resource interface planned for the four selected pthread mutex calls.
-/// This describes contract binders; it does not implement a `CFunction`
+/// This describes contract binders; it does not implement a `ProgramFunction`
 /// contract or authorize any resource transfer in the verifier.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MutexOperation {

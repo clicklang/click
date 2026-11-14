@@ -117,9 +117,9 @@ fn charon_owned_array_construction_and_moves_have_bounded_work_at_large_extents(
                 .len(),
             3
         );
-        fn nodes(statement: &crate::kernel::CStatement) -> usize {
+        fn nodes(statement: &crate::kernel::ProgramStatement) -> usize {
             match statement {
-                crate::kernel::CStatement::Seq(sequence) => {
+                crate::kernel::ProgramStatement::Seq(sequence) => {
                     sequence.len() - 1
                         + sequence
                             .iter()
@@ -194,9 +194,9 @@ fn charon_nonuniform_sparse_snapshots_have_bounded_work_at_large_extents() {
             }
         }
         let (functions, _) = super::super::super::lowering::lower(&export).unwrap();
-        fn nodes(statement: &crate::kernel::CStatement) -> usize {
+        fn nodes(statement: &crate::kernel::ProgramStatement) -> usize {
             match statement {
-                crate::kernel::CStatement::Seq(sequence) => {
+                crate::kernel::ProgramStatement::Seq(sequence) => {
                     sequence.len() - 1
                         + sequence
                             .iter()
@@ -320,7 +320,7 @@ fn charon_slice_metadata_verification_work_is_independent_of_length() {
 
 #[test]
 fn charon_array_lowering_and_verification_work_do_not_expand_with_length() {
-    use crate::kernel::CStatement as C;
+    use crate::kernel::ProgramStatement as C;
     fn shape(s: &C) -> (usize, usize) {
         match s {
             C::Seq(statements) => {

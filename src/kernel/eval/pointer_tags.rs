@@ -811,8 +811,8 @@ pub(in crate::kernel) fn cast_tagged_address_to_pointer(
     term: &MachineTerm,
     assumptions: &PureFactContext,
     obligations: &mut Vec<ProofObligation>,
-    target_type: CType,
-) -> Result<Option<CPointerValue>, String> {
+    target_type: ProgramType,
+) -> Result<Option<PointerValue>, String> {
     let mut used = UsedFacts::new();
     let form = match form_of(
         MachineOperandView::Legacy(term),
@@ -832,7 +832,7 @@ pub(in crate::kernel) fn cast_tagged_address_to_pointer(
     );
     match assumptions.decide(&tag_is_zero) {
         Some(true) => Ok(Some(
-            CPointerValue::new(form.pointer, target_type)
+            PointerValue::new(form.pointer, target_type)
                 .with_declared_object_class(form.object_class),
         )),
         Some(false) => Err(
@@ -854,7 +854,7 @@ pub(in crate::kernel) fn cast_tagged_address_to_pointer(
                 return Err(format!("{context}; they are refuted"));
             }
             Ok(Some(
-                CPointerValue::new(form.pointer, target_type)
+                PointerValue::new(form.pointer, target_type)
                     .with_declared_object_class(form.object_class),
             ))
         }
@@ -1136,11 +1136,11 @@ mod exact_word_address_tests {
             .assume_condition(ConditionTerm::pointer_aligned(pointer.clone(), 4), true);
         let mut obligations = Vec::new();
         let encoded = cast_c_value_to_type(
-            CValue::Pointer(
-                CPointerValue::new(pointer.clone(), CType::Int32Pointer)
+            ProgramValue::Pointer(
+                PointerValue::new(pointer.clone(), ProgramType::Int32Pointer)
                     .with_object_class(Some(class.clone())),
             ),
-            CType::UInt64,
+            ProgramType::UInt64,
             IntegerConversion::Modular,
             &mut obligations,
             &assumptions,
@@ -1148,16 +1148,16 @@ mod exact_word_address_tests {
         .unwrap();
         let decoded = cast_c_value_to_type(
             encoded.clone(),
-            CType::Float64Pointer,
+            ProgramType::Float64Pointer,
             IntegerConversion::Modular,
             &mut obligations,
             &assumptions,
         )
         .unwrap();
         assert!(
-            matches!(decoded, CValue::Pointer(ref value) if value.object_class() == Some(class.clone()))
+            matches!(decoded, ProgramValue::Pointer(ref value) if value.object_class() == Some(class.clone()))
         );
-        let CValue::UInt64(address) = encoded.numeric_value() else {
+        let ProgramValue::UInt64(address) = encoded.numeric_value() else {
             panic!("encoded address")
         };
         let address = address.clone();
@@ -1176,20 +1176,20 @@ mod exact_word_address_tests {
                 &word,
                 &assumptions,
                 &mut obligations,
-                CType::Float64Pointer,
+                ProgramType::Float64Pointer,
             )
             .unwrap()
             .unwrap();
             assert_eq!(decoded.pointer(), &pointer);
             assert_eq!(decoded.object_class(), Some(class.clone()));
-            assert_eq!(decoded.c_type(), CType::Float64Pointer);
+            assert_eq!(decoded.c_type(), ProgramType::Float64Pointer);
         }
         assert!(
             cast_tagged_address_to_pointer(
                 &tagged,
                 &assumptions,
                 &mut obligations,
-                CType::Int32Pointer
+                ProgramType::Int32Pointer
             )
             .is_err()
         );
@@ -1220,10 +1220,14 @@ mod exact_word_address_tests {
         let parent = PureFactContext::new();
         let branch = parent.clone().assume_proposition(premise.clone());
         let mut obligations = Vec::new();
-        let decoded =
-            cast_tagged_address_to_pointer(&word, &branch, &mut obligations, CType::Float64Pointer)
-                .unwrap()
-                .unwrap();
+        let decoded = cast_tagged_address_to_pointer(
+            &word,
+            &branch,
+            &mut obligations,
+            ProgramType::Float64Pointer,
+        )
+        .unwrap()
+        .unwrap();
         assert_eq!(decoded.pointer(), &pointer);
         assert_eq!(decoded.object_class(), Some(class));
         for context in [parent, branch.restricted_to_facts(&[], &[])] {
@@ -1232,7 +1236,7 @@ mod exact_word_address_tests {
                     &word,
                     &context,
                     &mut obligations,
-                    CType::Float64Pointer
+                    ProgramType::Float64Pointer
                 )
                 .unwrap()
                 .is_none()
@@ -1242,7 +1246,7 @@ mod exact_word_address_tests {
             &MachineTerm::pointer_address(pointer),
             &PureFactContext::new(),
             &mut obligations,
-            CType::Float64Pointer,
+            ProgramType::Float64Pointer,
         )
         .unwrap()
         .unwrap();
@@ -1273,7 +1277,7 @@ mod exact_word_address_tests {
                     &expression,
                     &assumptions,
                     &mut obligations,
-                    CType::Int32Pointer
+                    ProgramType::Int32Pointer
                 )
                 .unwrap(),
                 None

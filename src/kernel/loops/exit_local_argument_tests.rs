@@ -1,8 +1,11 @@
 use super::*;
 
 fn fixture(snapshot: CResourceSnapshot) -> (CLoopBinder, Vec<ResourceInstance>) {
-    let schema =
-        ResourceFieldSchema::new(vec![("tag".into(), ResourceFieldType::C(CType::Int32))]).unwrap();
+    let schema = ResourceFieldSchema::new(vec![(
+        "tag".into(),
+        ResourceFieldType::C(ProgramType::Int32),
+    )])
+    .unwrap();
     let spec = CResourceSpec::new(
         CResourceTerm::Instance {
             identity: Variable(99),
@@ -12,7 +15,7 @@ fn fixture(snapshot: CResourceSnapshot) -> (CLoopBinder, Vec<ResourceInstance>) 
                 name: "cursor".into(),
                 arguments: vec![c_variable("cur")],
                 argument_snapshots: vec![snapshot],
-                parameter_types: vec![CType::Int32],
+                parameter_types: vec![ProgramType::Int32],
             }),
         },
         CResourceAccessMode::Own,
@@ -46,10 +49,10 @@ fn fixture(snapshot: CResourceSnapshot) -> (CLoopBinder, Vec<ResourceInstance>) 
 fn exit_local_argument_requires_current_snapshot_and_every_exit() {
     let _session = crate::kernel::VerificationSession::enter();
     let exits = [
-        CState::new().with_local("cur", int32(1)),
-        CState::new().with_local("cur", int32(2)),
+        ExecutionState::new().with_local("cur", int32(1)),
+        ExecutionState::new().with_local("cur", int32(2)),
     ];
-    let successor = CState::new().with_local("cur", int32(3));
+    let successor = ExecutionState::new().with_local("cur", int32(3));
     for snapshot in [CResourceSnapshot::Entry, CResourceSnapshot::Post] {
         let (binder, instances) = fixture(snapshot);
         assert_eq!(
@@ -84,24 +87,24 @@ fn exit_local_argument_requires_current_snapshot_and_every_exit() {
 fn exit_address_argument_tracks_only_the_declared_current_local() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointers = [1, 2, 3].map(|id| {
-        CValue::typed_pointer(
+        ProgramValue::typed_pointer(
             Pointer::symbolic(Variable(880_000 + id)),
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
         )
     });
-    let address = |value: &CValue| {
-        let CValue::Pointer(pointer) = value else {
+    let address = |value: &ProgramValue| {
+        let ProgramValue::Pointer(pointer) = value else {
             unreachable!()
         };
-        AlgebraicValue::C(CValue::UInt64(MachineTerm::pointer_address(
+        AlgebraicValue::C(ProgramValue::UInt64(MachineTerm::pointer_address(
             pointer.pointer().clone(),
         )))
     };
     let exits = [
-        CState::new().with_local("cur", pointers[0].clone()),
-        CState::new().with_local("cur", pointers[1].clone()),
+        ExecutionState::new().with_local("cur", pointers[0].clone()),
+        ExecutionState::new().with_local("cur", pointers[1].clone()),
     ];
-    let successor = CState::new().with_local("cur", pointers[2].clone());
+    let successor = ExecutionState::new().with_local("cur", pointers[2].clone());
     for snapshot in [
         CResourceSnapshot::Current,
         CResourceSnapshot::Entry,
@@ -129,9 +132,9 @@ fn exit_address_argument_tracks_only_the_declared_current_local() {
                 schema,
                 resource: Box::new(CResourceTerm::Composite {
                     name: "cursor".into(),
-                    arguments: vec![CExpression::Cast {
+                    arguments: vec![ProgramExpression::Cast {
                         expression: Box::new(c_variable("cur")),
-                        target_type: CType::UInt64,
+                        target_type: ProgramType::UInt64,
                         integer_mode: CIntegerCastMode::Standard,
                         pointee_struct: None,
                         pointee_volatile: false,
@@ -139,7 +142,7 @@ fn exit_address_argument_tracks_only_the_declared_current_local() {
                         explicit_qualification: false,
                     }],
                     argument_snapshots: vec![snapshot],
-                    parameter_types: vec![CType::UInt64],
+                    parameter_types: vec![ProgramType::UInt64],
                 }),
             },
             CResourceAccessMode::Own,

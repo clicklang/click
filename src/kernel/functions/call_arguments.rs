@@ -3,18 +3,18 @@
 use super::*;
 
 pub(super) fn with_contract_argument_views(
-    state: &CState,
-    function: &CFunction,
-    values: &[CValue],
-) -> CState {
+    state: &ExecutionState,
+    function: &ProgramFunction,
+    values: &[ProgramValue],
+) -> ExecutionState {
     with_contract_interface_argument_views(state, function.contract_interface(), values)
 }
 
 pub(super) fn with_contract_interface_argument_views(
-    state: &CState,
+    state: &ExecutionState,
     interface: &CFunctionContractInterface,
-    values: &[CValue],
-) -> CState {
+    values: &[ProgramValue],
+) -> ExecutionState {
     let mut state = state.clone();
     state.resources = state.resources.unpublished_contract_view();
     for (parameter, value) in interface.parameters().iter().zip(values) {
@@ -46,8 +46,11 @@ pub(super) fn with_contract_interface_argument_views(
             parameter.is_constant(),
             parameter.pointee_is_constant(),
         );
-        if let CValue::Pointer(pointer) = &value {
-            let Some(element_width) = parameter.c_type().pointee_type().map(CType::byte_width)
+        if let ProgramValue::Pointer(pointer) = &value {
+            let Some(element_width) = parameter
+                .c_type()
+                .pointee_type()
+                .map(ProgramType::byte_width)
             else {
                 // An opaque object pointer carries identity and qualifiers,
                 // but no element width. Do not manufacture a contract view
@@ -70,15 +73,15 @@ pub(super) fn with_contract_interface_argument_views(
 }
 
 pub(super) fn set_function_result(
-    state: &mut CState,
-    function: &CFunction,
+    state: &mut ExecutionState,
+    function: &ProgramFunction,
     value: impl Into<StoredExecutionValue>,
 ) {
     set_contract_result(state, function.contract_interface(), value);
 }
 
 pub(super) fn set_contract_result(
-    state: &mut CState,
+    state: &mut ExecutionState,
     interface: &CFunctionContractInterface,
     value: impl Into<StoredExecutionValue>,
 ) {
@@ -97,7 +100,7 @@ pub(super) fn set_contract_result(
     }
     let value = value.into_native();
     if let Some(layout) = interface.return_aggregate_layout()
-        && let CValue::Pointer(pointer) = &value
+        && let ProgramValue::Pointer(pointer) = &value
     {
         if interface.aggregate_return_mode() == CAggregateReturnMode::Copy {
             state.set_memory(
@@ -148,17 +151,17 @@ pub(super) enum AggregateReturnRefusal {
 // materializes a value, while construction mode completes the selected object.
 // Every body-completion path must use this boundary before retiring the source.
 pub(super) fn complete_aggregate_return(
-    state: &mut CState,
-    function: &CFunction,
-    value: CValue,
-) -> Result<CValue, AggregateReturnRefusal> {
+    state: &mut ExecutionState,
+    function: &ProgramFunction,
+    value: ProgramValue,
+) -> Result<ProgramValue, AggregateReturnRefusal> {
     if function.contract_interface().aggregate_return_mode() == CAggregateReturnMode::Construction {
         return construction_return::complete(state, function.contract_interface(), value);
     }
     let layout = function
         .return_aggregate_layout()
         .ok_or(AggregateReturnRefusal::InvalidValue)?;
-    let CValue::Pointer(pointer) = value else {
+    let ProgramValue::Pointer(pointer) = value else {
         return Err(AggregateReturnRefusal::InvalidValue);
     };
     if pointer.is_null() {
@@ -183,7 +186,10 @@ pub(super) fn complete_aggregate_return(
         layout,
     ));
     state.next_local_frame = frame.saturating_add(1);
-    Ok(CValue::typed_pointer(destination, function.return_type()))
+    Ok(ProgramValue::typed_pointer(
+        destination,
+        function.return_type(),
+    ))
 }
 
 /// The undefined behavior of the implicit conversion a `return` performs when
@@ -192,14 +198,14 @@ pub(super) fn complete_aggregate_return(
 /// pointer-returning function only moves it and is not refused. `state` is the
 /// state at the `return`.
 pub(super) fn freed_pointer_return_conversion(
-    state: &CState,
-    function: &CFunction,
+    state: &ExecutionState,
+    function: &ProgramFunction,
     value: &StoredExecutionValue,
     assumptions: &PureFactContext,
 ) -> Option<CUndefinedBehavior> {
     let value = value.native_payload()?;
     let return_type = function.return_type();
-    if return_type == CType::Void
+    if return_type == ProgramType::Void
         || return_type.is_pointer()
         || function.return_aggregate_layout().is_some()
         || state.memory().heap_has_no_deallocations()
@@ -215,9 +221,9 @@ pub(super) fn freed_pointer_return_conversion(
 /// parameter only moves it and is not refused. `state` is the caller state the
 /// arguments were evaluated in.
 pub(super) fn freed_pointer_argument_conversion(
-    state: &CState,
+    state: &ExecutionState,
     interface: &CFunctionContractInterface,
-    values: &[CValue],
+    values: &[ProgramValue],
     assumptions: &PureFactContext,
 ) -> Option<CUndefinedBehavior> {
     if state.memory().heap_has_no_deallocations() {
@@ -238,10 +244,10 @@ pub(super) fn freed_pointer_argument_conversion(
 /// (`design/effective-types.md`). The callee is verified accessing the
 /// object through that type, so the caller must not hand it another.
 pub(super) fn incompatible_pointer_argument(
-    state: &CState,
+    state: &ExecutionState,
     function_name: &str,
     interface: &CFunctionContractInterface,
-    values: &[CValue],
+    values: &[ProgramValue],
     assumptions: &PureFactContext,
 ) -> Option<CRuntimeError> {
     interface
@@ -250,7 +256,7 @@ pub(super) fn incompatible_pointer_argument(
         .zip(values)
         .find_map(|(parameter, value)| {
             let pointee = parameter.pointee_class()?;
-            let CValue::Pointer(pointer) = value else {
+            let ProgramValue::Pointer(pointer) = value else {
                 return None;
             };
             let object = state
@@ -285,14 +291,14 @@ pub(super) fn incompatible_pointer_argument(
 /// type that the declared return type's pointee cannot designate; callers
 /// access the object through that type (`design/effective-types.md`).
 pub(super) fn incompatible_pointer_return(
-    state: &CState,
-    function: &CFunction,
+    state: &ExecutionState,
+    function: &ProgramFunction,
     value: &StoredExecutionValue,
     assumptions: &PureFactContext,
 ) -> Option<CRuntimeError> {
     let value = value.native_payload()?;
     let pointee = function.contract_interface().return_pointee_class()?;
-    let CValue::Pointer(pointer) = value else {
+    let ProgramValue::Pointer(pointer) = value else {
         return None;
     };
     let object = state
@@ -324,21 +330,21 @@ pub(super) fn incompatible_pointer_return(
 
 pub(in crate::kernel) fn coerce_retained_function_return_value(
     value: StoredExecutionValue,
-    function: &CFunction,
+    function: &ProgramFunction,
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Option<StoredExecutionValue> {
     if value.shared().is_some()
         && matches!(
             value.c_type(),
-            CType::Int8
-                | CType::UInt8
-                | CType::Int16
-                | CType::UInt16
-                | CType::Int32
-                | CType::UInt32
-                | CType::Int64
-                | CType::UInt64
+            ProgramType::Int8
+                | ProgramType::UInt8
+                | ProgramType::Int16
+                | ProgramType::UInt16
+                | ProgramType::Int32
+                | ProgramType::UInt32
+                | ProgramType::Int64
+                | ProgramType::UInt64
         )
         && value.c_type() == function.return_type()
     {
@@ -349,11 +355,11 @@ pub(in crate::kernel) fn coerce_retained_function_return_value(
 }
 
 pub(super) fn coerce_function_return_value(
-    value: CValue,
-    function: &CFunction,
+    value: ProgramValue,
+    function: &ProgramFunction,
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Option<CValue> {
+) -> Option<ProgramValue> {
     // Plain struct returns use `uint8*` as their internal ABI slot, while the
     // source expression that supplies the value retains the pointee type of
     // the object it addresses (for example, `int32*` for `return *source`).
@@ -362,11 +368,14 @@ pub(super) fn coerce_function_return_value(
     // uses `int32*` for a struct pointer and `uint8*` for an address-backed
     // struct value, so only those two data-pointer views cross this boundary.
     if function.return_aggregate_layout().is_some()
-        && let CValue::Pointer(pointer) = &value
-        && matches!(pointer.c_type(), CType::Int32Pointer | CType::UInt8Pointer)
+        && let ProgramValue::Pointer(pointer) = &value
+        && matches!(
+            pointer.c_type(),
+            ProgramType::Int32Pointer | ProgramType::UInt8Pointer
+        )
         && !pointer.pointer().block.is_function()
     {
-        return Some(CValue::typed_pointer(
+        return Some(ProgramValue::typed_pointer(
             pointer.pointer().clone(),
             function.return_type(),
         ));
@@ -381,15 +390,15 @@ pub(super) fn coerce_function_return_value(
 }
 
 pub(in crate::kernel) fn coerce_c_value_with_pointee_constant(
-    value: CValue,
-    c_type: CType,
+    value: ProgramValue,
+    c_type: ProgramType,
     pointee_constant: bool,
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Option<CValue> {
+) -> Option<ProgramValue> {
     // This is an implicit conversion boundary. Explicit C casts have their
     // own rules; storage read-only status is independently checked on writes.
-    if matches!(&value, CValue::Pointer(pointer) if pointer.pointee_constant())
+    if matches!(&value, ProgramValue::Pointer(pointer) if pointer.pointee_constant())
         && c_type.is_pointer()
         && !pointee_constant
     {
@@ -402,14 +411,17 @@ pub(in crate::kernel) fn coerce_c_value_with_pointee_constant(
 }
 
 #[cfg(test)]
-pub(super) fn symbolic_function_result(function: &CFunction, variable: Variable) -> CValue {
+pub(super) fn symbolic_function_result(
+    function: &ProgramFunction,
+    variable: Variable,
+) -> ProgramValue {
     symbolic_contract_result(function.contract_interface(), variable)
 }
 
 pub(super) fn symbolic_contract_result(
     interface: &CFunctionContractInterface,
     variable: Variable,
-) -> CValue {
+) -> ProgramValue {
     // An aggregate returned by value is not a pointer the callee handed over:
     // it is a fresh object the C abstract machine creates for the caller to
     // copy out of, and the program has no name and no prior pointer for it.
@@ -420,7 +432,7 @@ pub(super) fn symbolic_contract_result(
     // load through it would then need aliasing evidence that no honest contract
     // about a returned struct can state.
     if interface.return_aggregate_layout().is_some() {
-        return CValue::typed_pointer(
+        return ProgramValue::typed_pointer(
             Pointer::verifier_temporary(variable),
             interface.return_type(),
         )
@@ -432,79 +444,81 @@ pub(super) fn symbolic_contract_result(
         .with_pointer_declared_object_class(interface.return_pointee_class())
 }
 
-pub(crate) fn symbolic_call_result(c_type: CType, variable: Variable) -> CValue {
+pub(crate) fn symbolic_call_result(c_type: ProgramType, variable: Variable) -> ProgramValue {
     match c_type {
-        CType::Parameter(name) => CValue::Parameter(Box::new(AlgebraicTerm {
+        ProgramType::Parameter(name) => ProgramValue::Parameter(Box::new(AlgebraicTerm {
             algebraic_type: name.algebraic_type(),
             node: AlgebraicTermNode::Variable(variable),
         })),
-        CType::Void => CValue::Void,
+        ProgramType::Void => ProgramValue::Void,
         // A `bool` is a binder of the kernel sort `Bool` (Stage 5), carried
         // as its cast (rule C1), so the binder is the parameter's own name.
-        CType::Bool => CValue::of_bool(crate::kernel::ConditionTerm::Variable(variable)),
-        CType::VoidPointer | CType::VoidPointerPointer => {
-            CValue::typed_pointer(Pointer::symbolic(variable), c_type)
+        ProgramType::Bool => {
+            ProgramValue::of_bool(crate::kernel::ConditionTerm::Variable(variable))
         }
-        CType::Int8 => CValue::Int8(MachineTerm::Variable(variable)),
-        CType::Int16 => CValue::Int16(MachineTerm::Variable(variable)),
-        CType::Int32 => CValue::Int32(MachineTerm::Variable(variable)),
-        CType::UInt8 => CValue::UInt8(MachineTerm::Variable(variable)),
-        CType::UInt16 => CValue::UInt16(MachineTerm::Variable(variable)),
-        CType::UInt32 => CValue::UInt32(MachineTerm::Variable(variable)),
-        CType::Int64 => CValue::Int64(MachineTerm::Variable(variable)),
-        CType::UInt64 => CValue::UInt64(MachineTerm::Variable(variable)),
-        CType::Int128 => CValue::Int128(MachineTerm::Variable(variable)),
-        CType::UInt128 => CValue::UInt128(MachineTerm::Variable(variable)),
-        CType::Float32 => CValue::Float32(MachineTerm::Variable(variable)),
-        CType::Float64 => CValue::Float64(MachineTerm::Variable(variable)),
-        CType::Int8Pointer | CType::Int8PointerPointer => {
-            CValue::typed_pointer(Pointer::symbolic(variable), c_type)
+        ProgramType::VoidPointer | ProgramType::VoidPointerPointer => {
+            ProgramValue::typed_pointer(Pointer::symbolic(variable), c_type)
         }
-        CType::ParameterPointer(_)
-        | CType::Int16Pointer
-        | CType::UInt16Pointer
-        | CType::Int32Pointer
-        | CType::UInt8Pointer
-        | CType::UInt32Pointer
-        | CType::Int128Pointer
-        | CType::Int64Pointer
-        | CType::UInt128Pointer
-        | CType::UInt64Pointer
-        | CType::Int16PointerPointer
-        | CType::UInt16PointerPointer
-        | CType::Int32PointerPointer
-        | CType::UInt8PointerPointer
-        | CType::UInt32PointerPointer
-        | CType::Int128PointerPointer
-        | CType::Int64PointerPointer
-        | CType::UInt128PointerPointer
-        | CType::UInt64PointerPointer
-        | CType::Float32Pointer
-        | CType::Float64Pointer
-        | CType::Float32PointerPointer
-        | CType::Float64PointerPointer => {
-            CValue::typed_pointer(Pointer::symbolic(variable), c_type)
+        ProgramType::Int8 => ProgramValue::Int8(MachineTerm::Variable(variable)),
+        ProgramType::Int16 => ProgramValue::Int16(MachineTerm::Variable(variable)),
+        ProgramType::Int32 => ProgramValue::Int32(MachineTerm::Variable(variable)),
+        ProgramType::UInt8 => ProgramValue::UInt8(MachineTerm::Variable(variable)),
+        ProgramType::UInt16 => ProgramValue::UInt16(MachineTerm::Variable(variable)),
+        ProgramType::UInt32 => ProgramValue::UInt32(MachineTerm::Variable(variable)),
+        ProgramType::Int64 => ProgramValue::Int64(MachineTerm::Variable(variable)),
+        ProgramType::UInt64 => ProgramValue::UInt64(MachineTerm::Variable(variable)),
+        ProgramType::Int128 => ProgramValue::Int128(MachineTerm::Variable(variable)),
+        ProgramType::UInt128 => ProgramValue::UInt128(MachineTerm::Variable(variable)),
+        ProgramType::Float32 => ProgramValue::Float32(MachineTerm::Variable(variable)),
+        ProgramType::Float64 => ProgramValue::Float64(MachineTerm::Variable(variable)),
+        ProgramType::Int8Pointer | ProgramType::Int8PointerPointer => {
+            ProgramValue::typed_pointer(Pointer::symbolic(variable), c_type)
         }
-        CType::FunctionPointer(_) => {
-            CValue::typed_pointer(Pointer::symbolic_function(variable), c_type)
+        ProgramType::ParameterPointer(_)
+        | ProgramType::Int16Pointer
+        | ProgramType::UInt16Pointer
+        | ProgramType::Int32Pointer
+        | ProgramType::UInt8Pointer
+        | ProgramType::UInt32Pointer
+        | ProgramType::Int128Pointer
+        | ProgramType::Int64Pointer
+        | ProgramType::UInt128Pointer
+        | ProgramType::UInt64Pointer
+        | ProgramType::Int16PointerPointer
+        | ProgramType::UInt16PointerPointer
+        | ProgramType::Int32PointerPointer
+        | ProgramType::UInt8PointerPointer
+        | ProgramType::UInt32PointerPointer
+        | ProgramType::Int128PointerPointer
+        | ProgramType::Int64PointerPointer
+        | ProgramType::UInt128PointerPointer
+        | ProgramType::UInt64PointerPointer
+        | ProgramType::Float32Pointer
+        | ProgramType::Float64Pointer
+        | ProgramType::Float32PointerPointer
+        | ProgramType::Float64PointerPointer => {
+            ProgramValue::typed_pointer(Pointer::symbolic(variable), c_type)
         }
-        CType::Int8Array(_) => {
+        ProgramType::FunctionPointer(_) => {
+            ProgramValue::typed_pointer(Pointer::symbolic_function(variable), c_type)
+        }
+        ProgramType::Int8Array(_) => {
             unreachable!("C functions cannot return array values")
         }
-        CType::Int32Array(_)
-        | CType::UInt8Array(_)
-        | CType::Int16Array(_)
-        | CType::UInt16Array(_)
-        | CType::UInt32Array(_)
-        | CType::Int128Array(_)
-        | CType::Int64Array(_)
-        | CType::UInt128Array(_)
-        | CType::UInt64Array(_)
-        | CType::Float32Array(_)
-        | CType::Float64Array(_) => {
+        ProgramType::Int32Array(_)
+        | ProgramType::UInt8Array(_)
+        | ProgramType::Int16Array(_)
+        | ProgramType::UInt16Array(_)
+        | ProgramType::UInt32Array(_)
+        | ProgramType::Int128Array(_)
+        | ProgramType::Int64Array(_)
+        | ProgramType::UInt128Array(_)
+        | ProgramType::UInt64Array(_)
+        | ProgramType::Float32Array(_)
+        | ProgramType::Float64Array(_) => {
             unreachable!("C functions cannot return array values")
         }
-        CType::PointerArray(_, _) => {
+        ProgramType::PointerArray(_, _) => {
             unreachable!("C functions cannot return array values")
         }
     }
@@ -513,7 +527,7 @@ pub(crate) fn symbolic_call_result(c_type: CType, variable: Variable) -> CValue 
 pub(in crate::kernel) fn add_memory_store_obligation(
     memory: &CMemory,
     pointer: &Pointer,
-    value: &CValue,
+    value: &ProgramValue,
     mut obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Option<Vec<ProofObligation>> {
@@ -534,8 +548,8 @@ pub(in crate::kernel) fn add_memory_store_obligation(
 }
 
 pub(in crate::kernel) fn evaluate_c_arguments_paths(
-    state: &CState,
-    arguments: &[CExpression],
+    state: &ExecutionState,
+    arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
     environment: Option<&CExecutionEnvironment>,
@@ -608,11 +622,11 @@ pub(in crate::kernel) fn evaluate_c_arguments_paths(
 }
 
 pub(super) fn type_function_address_value(
-    expression: &CExpression,
-    value: CValue,
+    expression: &ProgramExpression,
+    value: ProgramValue,
     environment: Option<&CExecutionEnvironment>,
-) -> CValue {
-    let CExpression::FunctionAddress(name) = expression else {
+) -> ProgramValue {
+    let ProgramExpression::FunctionAddress(name) = expression else {
         return value;
     };
     let Some(environment) = environment else {
@@ -622,26 +636,30 @@ pub(super) fn type_function_address_value(
         return value;
     };
     match value {
-        CValue::Pointer(pointer)
+        ProgramValue::Pointer(pointer)
             if pointer.block.is_function()
-                && pointer.c_type() == CType::FunctionPointer(CallbackSignature::UNSPECIFIED) =>
+                && pointer.c_type()
+                    == ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED) =>
         {
             // Return and parameter qualifications belong to the callback
             // signature, not to the function-pointer object's pointee view.
-            CValue::typed_pointer(pointer.into_pointer(), function.function_pointer_type())
+            ProgramValue::typed_pointer(pointer.into_pointer(), function.function_pointer_type())
         }
         value => value,
     }
 }
 
-pub(super) fn argument_binding_error(function: &CFunction, values: &[CValue]) -> String {
+pub(super) fn argument_binding_error(
+    function: &ProgramFunction,
+    values: &[ProgramValue],
+) -> String {
     contract_argument_binding_error(function.contract_interface(), function.name(), values)
 }
 
 pub(super) fn contract_argument_binding_error(
     interface: &CFunctionContractInterface,
     name: &str,
-    values: &[CValue],
+    values: &[ProgramValue],
 ) -> String {
     if interface
         .parameters()
@@ -650,9 +668,9 @@ pub(super) fn contract_argument_binding_error(
         .any(|(parameter, value)| {
             matches!(
                 (parameter.c_type(), value),
-                (CType::FunctionPointer(expected), CValue::Pointer(actual))
+                (ProgramType::FunctionPointer(expected), ProgramValue::Pointer(actual))
                     if actual.block.is_function()
-                        && actual.c_type() != CType::FunctionPointer(expected)
+                        && actual.c_type() != ProgramType::FunctionPointer(expected)
             )
         })
     {
@@ -670,7 +688,7 @@ pub(super) fn contract_argument_binding_error(
 /// metadata rather than by scanning all read-only memory, so a call summary
 /// cannot accidentally certify an unrelated block.
 pub(super) fn append_string_literal_loadable_facts(
-    function: &CFunction,
+    function: &ProgramFunction,
     outcome: &CFunctionOutcome,
     facts: &mut ExecutionFacts,
 ) {
@@ -694,10 +712,10 @@ pub(super) fn append_string_literal_loadable_facts(
 }
 
 pub(in crate::kernel) fn bind_c_function_arguments(
-    caller_state: &CState,
-    function: &CFunction,
-    values: &[CValue],
-) -> Option<CState> {
+    caller_state: &ExecutionState,
+    function: &ProgramFunction,
+    values: &[ProgramValue],
+) -> Option<ExecutionState> {
     bind_c_function_arguments_with(caller_state, function, values, false)
 }
 
@@ -706,11 +724,11 @@ pub(in crate::kernel) fn bind_c_function_arguments(
 /// it is the function's input itself, whose cells the producer of a proof's
 /// entry names as their own entry values.
 pub(in crate::kernel) fn bind_c_function_arguments_with(
-    caller_state: &CState,
-    function: &CFunction,
-    values: &[CValue],
+    caller_state: &ExecutionState,
+    function: &ProgramFunction,
+    values: &[ProgramValue],
     input_aggregates: bool,
-) -> Option<CState> {
+) -> Option<ExecutionState> {
     // Preserve the value-only representation for parameters whose addresses
     // never escape. Besides avoiding unnecessary memory cells, this
     // keeps ordinary call summaries unchanged. A frame is needed only when
@@ -730,14 +748,14 @@ pub(in crate::kernel) fn bind_c_function_arguments_with(
                 && (parameter.is_volatile() && parameter.c_type().is_pointer()
                     || matches!(
                         parameter.c_type(),
-                        CType::Int8
-                            | CType::Int16
-                            | CType::Int32
-                            | CType::UInt8
-                            | CType::UInt16
-                            | CType::UInt32
-                            | CType::Float32
-                            | CType::Float64
+                        ProgramType::Int8
+                            | ProgramType::Int16
+                            | ProgramType::Int32
+                            | ProgramType::UInt8
+                            | ProgramType::UInt16
+                            | ProgramType::UInt32
+                            | ProgramType::Float32
+                            | ProgramType::Float64
                     ))
         })
         .map(|parameter| parameter.name())
@@ -747,7 +765,7 @@ pub(in crate::kernel) fn bind_c_function_arguments_with(
         .parameters()
         .iter()
         .any(|parameter| parameter.aggregate_layout().is_some());
-    let mut callee_state = CState::new()
+    let mut callee_state = ExecutionState::new()
         .with_memory(caller_state.memory.clone())
         .with_resource_context(caller_state.resources.clone())
         .with_next_local_frame(
@@ -795,7 +813,7 @@ pub(in crate::kernel) fn bind_c_function_arguments_with(
     callee_state = initialize_c_function_globals(&callee_state, function);
     for (parameter, value) in function.parameters().iter().zip(values) {
         if let Some(layout) = parameter.aggregate_layout() {
-            let CValue::Pointer(pointer) = value else {
+            let ProgramValue::Pointer(pointer) = value else {
                 return None;
             };
             if pointer.is_null() {
@@ -908,11 +926,11 @@ pub(in crate::kernel) fn bind_c_function_arguments_with(
 /// resolve to the program's stable storage; that identity is not body-proof
 /// evidence. Named callbacks supply no concrete storage.
 pub(super) fn bind_c_contract_arguments(
-    caller_state: &CState,
+    caller_state: &ExecutionState,
     interface: &CFunctionContractInterface,
-    values: &[CValue],
-    storage: Option<&CFunction>,
-) -> Option<CState> {
+    values: &[ProgramValue],
+    storage: Option<&ProgramFunction>,
+) -> Option<ExecutionState> {
     if values.len() != interface.parameters().len() {
         return None;
     }
@@ -921,7 +939,7 @@ pub(super) fn bind_c_contract_arguments(
         .parameters()
         .iter()
         .any(|parameter| parameter.aggregate_layout().is_some());
-    let mut callee_state = CState::new()
+    let mut callee_state = ExecutionState::new()
         .with_memory(caller_state.memory.clone())
         .with_resource_context(caller_state.resources.clone())
         .with_next_local_frame(if has_aggregate_parameters {
@@ -959,7 +977,7 @@ pub(super) fn bind_c_contract_arguments(
     }
     for (parameter, value) in interface.parameters().iter().zip(values) {
         if let Some(layout) = parameter.aggregate_layout() {
-            let CValue::Pointer(pointer) = value else {
+            let ProgramValue::Pointer(pointer) = value else {
                 return None;
             };
             if pointer.is_null() {
@@ -1007,16 +1025,16 @@ pub(super) fn bind_c_contract_arguments(
 }
 
 pub(super) fn coerce_c_function_argument_without_obligations(
-    value: &CValue,
-    parameter: &CParameter,
-) -> Option<CValue> {
+    value: &ProgramValue,
+    parameter: &ProgramParameter,
+) -> Option<ProgramValue> {
     coerce_c_contract_argument_without_obligations(value, parameter)
 }
 
 pub(super) fn coerce_c_contract_argument_without_obligations(
-    value: &CValue,
-    parameter: &CParameter,
-) -> Option<CValue> {
+    value: &ProgramValue,
+    parameter: &ProgramParameter,
+) -> Option<ProgramValue> {
     let mut obligations = Vec::new();
     let value = coerce_c_value_with_pointee_constant(
         value.clone(),
@@ -1029,11 +1047,11 @@ pub(super) fn coerce_c_contract_argument_without_obligations(
 }
 
 pub(super) fn coerce_c_function_arguments(
-    function: &CFunction,
-    values: &[CValue],
+    function: &ProgramFunction,
+    values: &[ProgramValue],
     existing_obligations: &[ProofObligation],
     assumptions: &PureFactContext,
-) -> Option<(Vec<CValue>, Vec<ProofObligation>)> {
+) -> Option<(Vec<ProgramValue>, Vec<ProofObligation>)> {
     coerce_c_contract_arguments(
         function.contract_interface(),
         values,
@@ -1044,10 +1062,10 @@ pub(super) fn coerce_c_function_arguments(
 
 pub(super) fn coerce_c_contract_arguments(
     interface: &CFunctionContractInterface,
-    values: &[CValue],
+    values: &[ProgramValue],
     existing_obligations: &[ProofObligation],
     assumptions: &PureFactContext,
-) -> Option<(Vec<CValue>, Vec<ProofObligation>)> {
+) -> Option<(Vec<ProgramValue>, Vec<ProofObligation>)> {
     if values.len() != interface.parameters().len() {
         return None;
     }
@@ -1060,15 +1078,15 @@ pub(super) fn coerce_c_contract_arguments(
             // A contract stated over one integer type's cells accepts a
             // pointer to the other signedness of the same width: C11 6.5p7
             // lets either read the object, and loads read a cell of either
-            // signedness through either type (`CType::read_cell`). This is
+            // signedness through either type (`ProgramType::read_cell`). This is
             // how a byte contract such as `strlen`'s serves a signed plain
             // `char *`.
             let value = match value {
-                CValue::Pointer(pointer)
+                ProgramValue::Pointer(pointer)
                     if parameter.c_type() != pointer.c_type()
                         && parameter.c_type().is_signedness_view_of(pointer.c_type()) =>
                 {
-                    CValue::Pointer(pointer.clone().with_type(parameter.c_type()))
+                    ProgramValue::Pointer(pointer.clone().with_type(parameter.c_type()))
                 }
                 value => value.clone(),
             };

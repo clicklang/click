@@ -6,7 +6,7 @@ fn a_loop_frame_normalizes_its_retained_views_once() {
     let mut samples = Vec::new();
     for count in [4u64, 8, 16, 32, 64] {
         let assumptions = PureFactContext::new();
-        let state = CState::new();
+        let state = ExecutionState::new();
         let views = (0..count)
             .map(|index| {
                 CResourceFact::view_memory(CMemoryRange::new(
@@ -67,8 +67,10 @@ fn loop_binding_carryover_ignores_ambient_observations() {
         for count in [4usize, 16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
             let assumptions = PureFactContext::new();
-            let pointer =
-                CPointerValue::new(Pointer::symbolic(Variable(9_370_001)), CType::Int32Pointer);
+            let pointer = PointerValue::new(
+                Pointer::symbolic(Variable(9_370_001)),
+                ProgramType::Int32Pointer,
+            );
             let view = CResourceFact::view_memory(CMemoryRange::from_pointer_value(
                 &pointer,
                 0u32.into(),
@@ -76,9 +78,9 @@ fn loop_binding_carryover_ignores_ambient_observations() {
                 4,
             ));
             let spec = CResourceSpec::viewed_memory(CMemorySegment::new(
-                CExpression::Value(CValue::Pointer(pointer)),
-                CExpression::Value(CValue::Int32(0u32.into())),
-                CExpression::Value(CValue::Int32(8u32.into())),
+                ProgramExpression::Value(ProgramValue::Pointer(pointer)),
+                ProgramExpression::Value(ProgramValue::Int32(0u32.into())),
+                ProgramExpression::Value(ProgramValue::Int32(8u32.into())),
             ));
             let observations = if case == "retained_metadata" {
                 1
@@ -116,7 +118,7 @@ fn loop_binding_carryover_ignores_ambient_observations() {
                     bindings = bindings.with_inserted(old[0].1, binding.clone());
                 }
             }
-            let entry = CState::new()
+            let entry = ExecutionState::new()
                 .with_resource_context(resources)
                 .with_loan_ledger(Some(ledger))
                 .with_loan_participant(Some(holder))
@@ -220,10 +222,10 @@ fn explicit_loop_views_keep_scalar_owners_without_visiting_observations() {
             CResourceFact::own_memory(CMemoryRange::new(scalar.clone(), 0u32.into(), 4u32.into()));
         let heap_owner =
             CResourceFact::own_memory(CMemoryRange::new(heap, 0u32.into(), 4u32.into()));
-        let state = CState::new().with_memory(CMemory::new().with_declared_scalar_block(
+        let state = ExecutionState::new().with_memory(CMemory::new().with_declared_scalar_block(
             scalar.block,
             4,
-            CType::Int32,
+            ProgramType::Int32,
         ));
         let mut withheld = ResourceContext::new_with_equalities(&assumptions)
             .unchecked_with_fact(scalar_owner.clone())
@@ -268,8 +270,10 @@ fn explicit_loop_frame_ignores_rejected_heap_owners() {
         let _session = crate::kernel::VerificationSession::enter();
         let facts = PureFactContext::new();
         let scalar = Pointer::symbolic(Variable(9_390_001));
-        let viewed =
-            CPointerValue::new(Pointer::symbolic(Variable(9_390_002)), CType::Int32Pointer);
+        let viewed = PointerValue::new(
+            Pointer::symbolic(Variable(9_390_002)),
+            ProgramType::Int32Pointer,
+        );
         let scalar_owner =
             CResourceFact::own_memory(CMemoryRange::new(scalar.clone(), 0u32.into(), 4u32.into()));
         let view = CResourceFact::view_memory(CMemoryRange::from_pointer_value(
@@ -279,13 +283,14 @@ fn explicit_loop_frame_ignores_rejected_heap_owners() {
             4,
         ));
         let spec = CResourceSpec::viewed_memory(CMemorySegment::new(
-            CExpression::Value(CValue::Pointer(viewed)),
-            CExpression::Value(CValue::Int32(0u32.into())),
-            CExpression::Value(CValue::Int32(1u32.into())),
+            ProgramExpression::Value(ProgramValue::Pointer(viewed)),
+            ProgramExpression::Value(ProgramValue::Int32(0u32.into())),
+            ProgramExpression::Value(ProgramValue::Int32(1u32.into())),
         ));
         let mut withheld =
             ResourceContext::new_with_equalities(&facts).unchecked_with_fact(scalar_owner.clone());
-        let mut memory = CMemory::new().with_declared_scalar_block(scalar.block, 4, CType::Int32);
+        let mut memory =
+            CMemory::new().with_declared_scalar_block(scalar.block, 4, ProgramType::Int32);
         let mut heaps = Vec::new();
         for index in 0..count {
             let owner = CResourceFact::own_memory(CMemoryRange::new(
@@ -303,7 +308,7 @@ fn explicit_loop_frame_ignores_rejected_heap_owners() {
         declared.synchronize_memory_equalities(&facts);
         let resources = withheld.clone().unchecked_with_fact(view.clone());
         resources.synchronize_memory_equalities(&facts);
-        let entry = CState::new()
+        let entry = ExecutionState::new()
             .with_memory(memory)
             .with_resource_context(resources);
         let mut samples = Vec::new();

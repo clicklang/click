@@ -100,7 +100,7 @@ fn raw_read_address_registration_does_not_walk_memory_history() {
         let before = CMemory::new();
         let execution = before.with_block("local:raw-read", 8).store(
             CMemory::local_pointer("raw-read"),
-            CValue::Int32(0u32.into()),
+            ProgramValue::Int32(0u32.into()),
         );
         let load = |memory: &CMemory| {
             MachineTerm::MemoryLoad(
@@ -115,7 +115,7 @@ fn raw_read_address_registration_does_not_walk_memory_history() {
         };
         let after = execution.clone().store(
             backing.offset_by_int32_elements(var(88)),
-            CValue::Int32(7u32.into()),
+            ProgramValue::Int32(7u32.into()),
         );
         let selected = Pointer {
             block: owner.block.clone(),
@@ -147,7 +147,7 @@ fn nested_named_pointer_reads_ignore_unrelated_definitions() {
         for index in 0..size {
             memory
                 .memory()
-                .symbolic_pointer_load(&address(950_000 + index), CType::Int32Pointer);
+                .symbolic_pointer_load(&address(950_000 + index), ProgramType::Int32Pointer);
         }
         let field = address(940_061);
         let arena = Pointer::symbolic(Variable(940_062));
@@ -231,14 +231,14 @@ fn narrow_read_projection_edge_does_not_walk_memory_history() {
             for index in 0..size {
                 history = history.store(
                     address(500_000 + index),
-                    CValue::Int32(MachineTerm::constant(index as u32)),
+                    ProgramValue::Int32(MachineTerm::constant(index as u32)),
                 );
             }
             let source = intern_c_memory(history.clone());
             let projected = intern_c_memory(history.with_block("local:projection", 1));
             let cell = address(1);
             crate::kernel::reasoning::record_canonical_load_projection(&source, &projected, &cell);
-            let read = |memory: &SharedCMemory| {
+            let read = |memory: &SharedMemory| {
                 MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
                     memory, &cell, kind, bytes,
                 ))

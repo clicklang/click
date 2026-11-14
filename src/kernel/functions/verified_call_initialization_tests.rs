@@ -22,7 +22,7 @@ fn uninitialized_cell_spec() -> CResourceSpec {
     )
 }
 
-fn caller_state(pointer: &Pointer) -> CState {
+fn caller_state(pointer: &Pointer) -> ExecutionState {
     let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own(
         CResource::Memory(CMemoryRange::new(
             pointer.clone(),
@@ -30,13 +30,17 @@ fn caller_state(pointer: &Pointer) -> CState {
             MachineTerm::constant(1),
         )),
     ));
-    CState::new()
+    ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(CMemory::new().with_block(pointer.block.clone(), 4))
         .with_resource_context(resources)
 }
 
-fn apply(function: CFunction, state: &CState, pointer: &Pointer) -> Vec<CFunctionPath> {
+fn apply(
+    function: ProgramFunction,
+    state: &ExecutionState,
+    pointer: &Pointer,
+) -> Vec<CFunctionPath> {
     let environment =
         CExecutionEnvironment::new().with_verified_function_rule(CVerifiedFunctionRule {
             pointer_result: None,
@@ -60,9 +64,9 @@ fn apply(function: CFunction, state: &CState, pointer: &Pointer) -> Vec<CFunctio
 fn an_owning_call_requires_the_caller_to_initialize_the_range() {
     let pointer = local_pointer();
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "read_owned",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         c_return(c_index(c_variable("p"), c_int32_literal(0))),
     )
     .with_resource_summary(vec![owned_cell_spec()], Vec::new());
@@ -80,9 +84,9 @@ fn an_owning_call_requires_the_caller_to_initialize_the_range() {
 fn owned_write_keeps_an_uninitialized_output_writable() {
     let pointer = local_pointer();
     let function = c_function(
-        CType::Void,
+        ProgramType::Void,
         "write_owned",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         c_store(
             c_index(c_variable("p"), c_int32_literal(0)),
             c_int32_literal(7),

@@ -19,28 +19,35 @@ fn copying_a_union_drops_destination_views_absent_from_source() {
             0,
             4,
             vec![
-                CAggregateUnionField::new("byte", 0, CType::UInt8),
-                CAggregateUnionField::new("word", 0, CType::Int32),
+                CAggregateUnionField::new("byte", 0, ProgramType::UInt8),
+                CAggregateUnionField::new("word", 0, ProgramType::Int32),
             ],
         )],
     );
     let memory = CMemory::new()
         .with_block(source.block.clone(), 4)
         .with_block(destination.block.clone(), 4)
-        .store_union(source.clone(), CType::UInt8, crate::kernel::uint8(0xAA))
+        .store_union(
+            source.clone(),
+            ProgramType::UInt8,
+            crate::kernel::uint8(0xAA),
+        )
         .store_union(
             destination.clone(),
-            CType::Int32,
-            CValue::Int32(MachineTerm::constant(0x5151)),
+            ProgramType::Int32,
+            ProgramValue::Int32(MachineTerm::constant(0x5151)),
         );
 
     let copied = copy_aggregate_fields(memory, &source, &destination, &layout);
 
     assert_eq!(
-        copied.known_union_value(&destination, CType::UInt8),
+        copied.known_union_value(&destination, ProgramType::UInt8),
         Some(crate::kernel::uint8(0xAA)),
     );
-    assert_eq!(copied.known_union_value(&destination, CType::Int32), None);
+    assert_eq!(
+        copied.known_union_value(&destination, ProgramType::Int32),
+        None
+    );
 }
 
 /// A local `{ int32 tag; union { int32 number; uint8 byte; } }` whose
@@ -58,26 +65,29 @@ fn forgotten_local_packet(union_written: bool) -> (CMemory, Pointer, Pointer, CA
     let layout = CAggregateLayout::with_unions(
         8,
         4,
-        vec![CAggregateField::new("tag", 0, CType::Int32)],
+        vec![CAggregateField::new("tag", 0, ProgramType::Int32)],
         vec![CAggregateUnion::new(
             "u",
             4,
             4,
             vec![
-                CAggregateUnionField::new("number", 0, CType::Int32),
-                CAggregateUnionField::new("byte", 0, CType::UInt8),
+                CAggregateUnionField::new("number", 0, ProgramType::Int32),
+                CAggregateUnionField::new("byte", 0, ProgramType::UInt8),
             ],
         )],
     );
     let mut memory = CMemory::new()
         .with_block(source.block.clone(), 8)
         .with_block(destination.block.clone(), 8)
-        .store(source.clone(), CValue::Int32(MachineTerm::constant(1)));
+        .store(
+            source.clone(),
+            ProgramValue::Int32(MachineTerm::constant(1)),
+        );
     if union_written {
         memory = memory.store_union(
             source.offset_by_bytes(4),
-            CType::Int32,
-            CValue::Int32(MachineTerm::constant(2)),
+            ProgramType::Int32,
+            ProgramValue::Int32(MachineTerm::constant(2)),
         );
     }
     // `source[u] = …` for an index the facts do not place: every cell
@@ -90,7 +100,7 @@ fn forgotten_local_packet(union_written: bool) -> (CMemory, Pointer, Pointer, CA
     assert!(memory.known_value(&source).is_none());
     assert!(
         memory
-            .known_union_value(&source.offset_by_bytes(4), CType::Int32)
+            .known_union_value(&source.offset_by_bytes(4), ProgramType::Int32)
             .is_none()
     );
     (memory, source, destination, layout)
@@ -106,7 +116,7 @@ fn copying_forgotten_initialized_fields_carries_unknown_values() {
     assert!(copied.known_value(&destination).is_some());
     assert!(
         copied
-            .known_union_value(&destination.offset_by_bytes(4), CType::Int32)
+            .known_union_value(&destination.offset_by_bytes(4), ProgramType::Int32)
             .is_some()
     );
 }

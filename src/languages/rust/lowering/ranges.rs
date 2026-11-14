@@ -28,7 +28,7 @@ impl Context<'_> {
         name: &str,
         element: &Type,
         inclusive: bool,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         if !element.is_integer() {
             return Err("a Rust range requires an integer element".into());
         }
@@ -53,7 +53,7 @@ impl Context<'_> {
             if !self.locals.insert(done.clone()) {
                 return Err("range bound identity collision".into());
             }
-            result = c_seq(result, c_declare(done, CType::Int32));
+            result = c_seq(result, c_declare(done, ProgramType::Int32));
         }
         Ok(result)
     }
@@ -77,7 +77,7 @@ impl Context<'_> {
         target: &str,
         start: &E,
         end: &E,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         self.range_element(target)?;
         let bounds = c_seq(
             self.assign(&format!("{target}_start"), start)?,
@@ -93,7 +93,11 @@ impl Context<'_> {
         })
     }
 
-    pub(super) fn range_move(&self, target: &str, source: &str) -> Result<CStatement, String> {
+    pub(super) fn range_move(
+        &self,
+        target: &str,
+        source: &str,
+    ) -> Result<ProgramStatement, String> {
         if target == source
             || self.range_element(target)? != self.range_element(source)?
             || self.inclusive(target)? != self.inclusive(source)?
@@ -120,7 +124,7 @@ impl Context<'_> {
         })
     }
 
-    pub(super) fn range_has_next(&self, iterator: &str) -> Result<CExpression, String> {
+    pub(super) fn range_has_next(&self, iterator: &str) -> Result<ProgramExpression, String> {
         self.range_element(iterator)?;
         let start = c_variable(format!("{iterator}_start"));
         let end = c_variable(format!("{iterator}_end"));
@@ -140,7 +144,7 @@ impl Context<'_> {
         option: &str,
         option_type: &str,
         taken: Option<bool>,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         let element = self.range_element(iterator)?;
         let start = format!("{iterator}_start");
         let local = |name: &str| E::Local { name: name.into() };

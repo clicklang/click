@@ -583,7 +583,7 @@ mod tests {
             vec![crate::kernel::int32(argument).into()].into(),
             crate::kernel::ResourceFieldSchema::new(vec![(
                 "value".into(),
-                crate::kernel::ResourceFieldType::C(crate::kernel::CType::Int32),
+                crate::kernel::ResourceFieldType::C(crate::kernel::ProgramType::Int32),
             )])
             .unwrap(),
             vec![crate::kernel::int32(0).into()].into(),
@@ -621,7 +621,7 @@ mod tests {
                 };
                 let resources = ResourceContext::new().unchecked_with_fact(source.clone());
                 let mut named_state =
-                    crate::kernel::CState::new().with_resource_context(resources.clone());
+                    crate::kernel::ExecutionState::new().with_resource_context(resources.clone());
                 let mut names = crate::kernel::named_authority::NamedMutexAuthorities::new()
                     .bind(Variable(7000), &source, &named_state)
                     .unwrap();

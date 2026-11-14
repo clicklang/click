@@ -989,10 +989,10 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     /// Ordinary value facts alone do not replace the lowering's safety evidence.
     pub(in crate::surface::proof) fn prepare_loop_invariant_bundle(
         &self,
-        loop_entry_state: &CState,
-        loop_head_state: &CState,
+        loop_entry_state: &ExecutionState,
+        loop_head_state: &ExecutionState,
         head_iterations: &crate::kernel::IntegerTerm,
-        condition: &CExpression,
+        condition: &ProgramExpression,
         invariant_checks: &[CLoopInvariantCheck],
         ranking_measures: &[crate::kernel::CRankingComponent],
         structural_measure: Option<&str>,

@@ -11,14 +11,14 @@ pub(crate) use closing::{
 /// A specification made from this path's own entry premises. Generic
 /// specifications can add arbitrary premises and carry no such authority.
 pub(crate) struct CheckedPathSpecification {
-    function: CFunction,
+    function: ProgramFunction,
     specification: CFunctionSpecification,
     theorem: Theorem,
     path_origin: Theorem,
 }
 
 impl CheckedPathSpecification {
-    pub(crate) fn new(function: &CFunction, path: &SymbolicCExecutionPath) -> Option<Self> {
+    pub(crate) fn new(function: &ProgramFunction, path: &SymbolicCExecutionPath) -> Option<Self> {
         let mut conclusion = path.theorem.proposition();
         while let Proposition::Implies(_, body) = conclusion {
             conclusion = body;
@@ -82,7 +82,7 @@ impl CheckedPathSpecification {
 }
 
 pub(crate) fn c_checked_function_proposition_with_reason(
-    function: &CFunction,
+    function: &ProgramFunction,
     specification: &CFunctionSpecification,
     theorem: &Theorem,
     completion: &crate::kernel::proof::CheckedProposition,
@@ -255,7 +255,7 @@ mod cached_read_completion_tests {
         memory.clone().with_seeded_cells(
             pointer("cache", 0),
             width,
-            CType::Int32,
+            ProgramType::Int32,
             0,
             count,
             intern_c_memory_ref(source),
@@ -267,9 +267,9 @@ mod cached_read_completion_tests {
         published: CMemory,
     ) -> Result<CCheckedFunctionProposition, String> {
         let proposition = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
-        let state = CState::new().with_memory(published);
+        let state = ExecutionState::new().with_memory(published);
         let function = c_function(
-            CType::Int32,
+            ProgramType::Int32,
             "cached_read_completion",
             vec![],
             c_return(c_int32_literal(0)),
@@ -312,7 +312,7 @@ mod cached_read_completion_tests {
                             OutcomeProofCore {
                                 identity: OutcomeIdentity::fresh(),
                                 result: Arc::new(int32(0)),
-                                state: CState::new().with_memory(memory).into(),
+                                state: ExecutionState::new().with_memory(memory).into(),
                                 store_consequences_available: false,
                                 is_exceptional: false,
                                 effect_facts: ExecutionFacts::new().into(),
@@ -417,7 +417,7 @@ mod cached_read_completion_tests {
 }
 
 pub fn c_function_outcomes_definitionally_equal(
-    function: &CFunction,
+    function: &ProgramFunction,
     left: &CFunctionOutcome,
     right: &CFunctionOutcome,
     assumptions: &PureFactContext,
@@ -604,8 +604,8 @@ pub(crate) fn matching_recomputed_call_havoc_views(
     left: &CMemory,
     right: &CMemory,
     assumptions: &PureFactContext,
-) -> Option<Vec<(SharedCMemory, SharedCMemory)>> {
-    fn transparent_base(derivation: &CMemoryDerivation) -> Option<&SharedCMemory> {
+) -> Option<Vec<(SharedMemory, SharedMemory)>> {
+    fn transparent_base(derivation: &CMemoryDerivation) -> Option<&SharedMemory> {
         match derivation {
             CMemoryDerivation::Store {
                 base,
@@ -633,18 +633,18 @@ pub(crate) fn matching_recomputed_call_havoc_views(
     /// must see through them. Purely structural — the load's memory operand
     /// must be the base itself (by interned identity), no proving.
     fn store_is_self_materialization(
-        base: &SharedCMemory,
+        base: &SharedMemory,
         pointer: &Pointer,
-        value: &CValue,
+        value: &ProgramValue,
     ) -> bool {
-        let (CValue::Int8(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))
-        | CValue::Int16(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))
-        | CValue::Int32(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))
-        | CValue::UInt8(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))
-        | CValue::UInt16(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))
-        | CValue::UInt32(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))
-        | CValue::Int64(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))
-        | CValue::UInt64(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))) = value
+        let (ProgramValue::Int8(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))
+        | ProgramValue::Int16(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))
+        | ProgramValue::Int32(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))
+        | ProgramValue::UInt8(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))
+        | ProgramValue::UInt16(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))
+        | ProgramValue::UInt32(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))
+        | ProgramValue::Int64(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))
+        | ProgramValue::UInt64(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))) = value
         else {
             return false;
         };
@@ -658,7 +658,7 @@ pub(crate) fn matching_recomputed_call_havoc_views(
         left: &CMemory,
         right: &CMemory,
         assumptions: &PureFactContext,
-        views: &mut Vec<(SharedCMemory, SharedCMemory)>,
+        views: &mut Vec<(SharedMemory, SharedMemory)>,
     ) -> bool {
         if c_memories_definitionally_equal(left, right, assumptions) {
             return true;
@@ -833,7 +833,7 @@ mod range_list_equality_graph_tests {
             block: "range-list".into(),
             offset: PointerOffsetTerm::scale_int32(index, 4),
         };
-        let load = |memory: &SharedCMemory, index| {
+        let load = |memory: &SharedMemory, index| {
             MachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
                 memory,
                 &pointer(index),
@@ -843,12 +843,10 @@ mod range_list_equality_graph_tests {
             ))
         };
         let (a, b) = (var(91), var(92));
-        let after = crate::kernel::intern_c_memory(
-            before
-                .memory()
-                .clone()
-                .store(pointer(b.clone()), CValue::Int32(MachineTerm::constant(9))),
-        );
+        let after = crate::kernel::intern_c_memory(before.memory().clone().store(
+            pointer(b.clone()),
+            ProgramValue::Int32(MachineTerm::constant(9)),
+        ));
         let base = Pointer::symbolic(Variable(9100));
         let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
         let range = |start| CMemoryRange::new(base.clone(), start, MachineTerm::constant(16));
@@ -999,7 +997,7 @@ fn memory_cells_definitionally_contained(
 }
 
 fn materialized_load_is_unchanged(
-    value: &CValue,
+    value: &ProgramValue,
     symbolic_memory: &CMemory,
     pointer: &Pointer,
     assumptions: &PureFactContext,
@@ -1017,14 +1015,16 @@ fn materialized_load_is_unchanged(
         crate::kernel::integer64_c_value!(bits) => load_of(bits),
         // Object and function pointers share the exact structural descriptor;
         // the remaining branches adapt legacy registered names and offsets.
-        CValue::Pointer(pointer_value) if pointer_value.pointer().as_loaded_value().is_some() => {
+        ProgramValue::Pointer(pointer_value)
+            if pointer_value.pointer().as_loaded_value().is_some() =>
+        {
             crate::kernel::equality_graph::logical_pointer_read_term(pointer_value.pointer())
         }
-        CValue::Pointer(pointer_value) => match pointer_value.pointer() {
+        ProgramValue::Pointer(pointer_value) => match pointer_value.pointer() {
             Pointer {
                 block: PointerBlock::FunctionSymbolic(variable),
                 offset: PointerOffsetTerm::Constant(0),
-            } if matches!(pointer_value.c_type(), CType::FunctionPointer(_)) => {
+            } if matches!(pointer_value.c_type(), ProgramType::FunctionPointer(_)) => {
                 load_of(&MachineTerm::Variable(*variable))
             }
             Pointer {
@@ -1062,15 +1062,15 @@ fn materialized_load_is_unchanged(
 
 struct CertifiedFunctionClaimPath {
     completion_path_origin: Option<Theorem>,
-    caller_state: CState,
-    arguments: Vec<CExpression>,
+    caller_state: ExecutionState,
+    arguments: Vec<ProgramExpression>,
     outcome: CFunctionOutcome,
-    exit_state: Option<CState>,
-    entry_state: CState,
+    exit_state: Option<ExecutionState>,
+    entry_state: ExecutionState,
     required_resources: ResourceContext,
     checked_required_resources: Vec<crate::kernel::functions::CCheckedResourceFact>,
     entry_resources: ResourceContext,
-    post_state: Option<CState>,
+    post_state: Option<ExecutionState>,
     post_resources: Option<ResourceContext>,
     assumptions: PureFactContext,
     effect_facts: ExecutionFacts,
@@ -1119,7 +1119,7 @@ fn unproved_contract_path_condition(
 }
 
 fn prepare_function_claim_path(
-    function: &CFunction,
+    function: &ProgramFunction,
     path: &SymbolicCExecutionPath,
     checked_resource_claims: Vec<CFunctionContractClaimKey>,
     checked_resource_transition: bool,
@@ -1502,9 +1502,9 @@ fn prepare_function_claim_path(
         post_state.locals.set_typed(
             C_EXCEPTIONAL_RESULT_NAME.to_string(),
             value.clone().into_native(),
-            CType::Int32,
+            ProgramType::Int32,
         );
-    } else if function.return_type() != CType::Void {
+    } else if function.return_type() != ProgramType::Void {
         post_state.locals.set_typed(
             C_CONTRACT_RESULT_NAME.to_string(),
             value.clone().into_native(),
@@ -1609,8 +1609,8 @@ fn prepare_function_claim_path(
 fn with_unmatched_instance_body_views(
     resources: crate::kernel::ResourceContext,
     instances: &[CResourceFact],
-    function: &CFunction,
-    state: &CState,
+    function: &ProgramFunction,
+    state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> crate::kernel::ResourceContext {
     let views = instances
@@ -1664,11 +1664,11 @@ fn obligation_has_known_condition_consequent(
 }
 
 fn function_claim_holds_on_prepared_path(
-    function: &CFunction,
+    function: &ProgramFunction,
     claim: &CFunctionContractClaim,
     path: &CertifiedFunctionClaimPath,
     checked_propositions: &CheckedPropositionIndex<'_>,
-    completion_origin_state: Option<&CState>,
+    completion_origin_state: Option<&ExecutionState>,
     checking_assumptions: Option<&PureFactContext>,
 ) -> bool {
     let CertifiedFunctionClaimPath {
@@ -2344,12 +2344,12 @@ impl CClaimGoal {
 /// applying the contract reads the same thing: `bind_c_contract_arguments`
 /// copies the argument into a block of its own that no body runs against.
 fn contract_view_of_entry(
-    mut entry_state: CState,
-    function: &CFunction,
-    arguments: &[CExpression],
-) -> CState {
+    mut entry_state: ExecutionState,
+    function: &ProgramFunction,
+    arguments: &[ProgramExpression],
+) -> ExecutionState {
     for (parameter, argument) in function.parameters().iter().zip(arguments) {
-        if let (Some(layout), CExpression::Value(CValue::Pointer(argument))) =
+        if let (Some(layout), ProgramExpression::Value(ProgramValue::Pointer(argument))) =
             (parameter.aggregate_layout(), argument)
         {
             entry_state.locals.set_aggregate_object_at(
@@ -2367,17 +2367,17 @@ fn contract_view_of_entry(
 /// context when the outcome, ambient facts, or resource representation changes.
 /// Predicate unfold choices affect individual goals, not these prepared views.
 pub(crate) struct CFunctionEnsureGoalContext<'a> {
-    function: &'a CFunction,
-    entry_state: CState,
-    post_state: CState,
+    function: &'a ProgramFunction,
+    entry_state: ExecutionState,
+    post_state: ExecutionState,
     assumptions: PureFactContext,
 }
 
 impl<'a> CFunctionEnsureGoalContext<'a> {
     pub(crate) fn new(
-        function: &'a CFunction,
-        caller_state: &CState,
-        arguments: &[CExpression],
+        function: &'a ProgramFunction,
+        caller_state: &ExecutionState,
+        arguments: &[ProgramExpression],
         outcome: &CFunctionOutcome,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
@@ -2420,7 +2420,7 @@ impl<'a> CFunctionEnsureGoalContext<'a> {
         post_state.observed_population_families = return_state.observed_population_families.clone();
         // Preserve checked body consumption evidence when reconstructing the exit.
         post_state.population_effects = return_state.population_effects.clone();
-        if function.return_type() != CType::Void {
+        if function.return_type() != ProgramType::Void {
             post_state.locals.set_typed(
                 C_CONTRACT_RESULT_NAME.to_string(),
                 value.clone().into_native(),
@@ -2501,10 +2501,10 @@ impl<'a> CFunctionEnsureGoalContext<'a> {
 /// explicitly unfolded it. `None` means a non-returning outcome or a view/goal
 /// that cannot be reconstructed.
 pub fn c_function_ensure_goals(
-    function: &CFunction,
+    function: &ProgramFunction,
     contract_index: usize,
-    caller_state: &CState,
-    arguments: &[CExpression],
+    caller_state: &ExecutionState,
+    arguments: &[ProgramExpression],
     outcome: &CFunctionOutcome,
     assumptions: &PureFactContext,
     unfolded_predicates: &[String],
@@ -2519,10 +2519,10 @@ pub fn c_function_ensure_goals(
 /// reserved payload binding and observes the state at the throw boundary.
 /// Returning outcomes do not owe an exceptional postcondition.
 pub(crate) fn c_function_exceptional_ensure_goals(
-    function: &CFunction,
+    function: &ProgramFunction,
     contract_index: usize,
-    caller_state: &CState,
-    arguments: &[CExpression],
+    caller_state: &ExecutionState,
+    arguments: &[ProgramExpression],
     outcome: &CFunctionOutcome,
     assumptions: &PureFactContext,
 ) -> Option<Vec<CClaimGoal>> {
@@ -2553,7 +2553,7 @@ pub(crate) fn c_function_exceptional_ensure_goals(
     post_state.locals.set_typed(
         C_EXCEPTIONAL_RESULT_NAME.to_string(),
         value.clone().into_native(),
-        CType::Int32,
+        ProgramType::Int32,
     );
     let lowering_assumptions = assumptions
         .clone()
@@ -2601,7 +2601,7 @@ pub(crate) fn c_function_exceptional_ensure_goals(
 }
 
 pub fn c_verified_function_contract_claims(
-    function: &CFunction,
+    function: &ProgramFunction,
     contract_execution: &CFunctionContractExecution,
 ) -> Option<Vec<CVerifiedFunctionContractClaim>> {
     collect_function_contract_claims(function, contract_execution, &[], false)
@@ -2670,8 +2670,8 @@ pub(crate) fn completion_key(proposition: &Proposition) -> Proposition {
         // at fixes that state, so the key compares predicates without it.
         Proposition::Predicate { name, arguments } => {
             let mut arguments = arguments.clone();
-            if let Some(Term::CState(state)) = arguments.first_mut() {
-                **state = CState::new();
+            if let Some(Term::ExecutionState(state)) = arguments.first_mut() {
+                **state = ExecutionState::new();
             }
             Proposition::Predicate {
                 name: name.clone(),
@@ -2783,13 +2783,13 @@ struct CheckedPropositionIndex<'a> {
     by_claim: BTreeMap<CFunctionContractClaimTarget, Vec<&'a CCheckedFunctionProposition>>,
     by_literal_outcome: BTreeMap<
         CFunctionContractClaimTarget,
-        BTreeMap<(bool, CValue), Vec<&'a CCheckedFunctionProposition>>,
+        BTreeMap<(bool, ProgramValue), Vec<&'a CCheckedFunctionProposition>>,
     >,
 }
 
 /// Index only bounded scalar payloads; hashing an arbitrary symbolic value or
 /// an outcome's state would traverse the execution history on every lookup.
-fn literal_completion_key(outcome: &CFunctionOutcome) -> Option<(bool, CValue)> {
+fn literal_completion_key(outcome: &CFunctionOutcome) -> Option<(bool, ProgramValue)> {
     let (exceptional, value) = match outcome {
         CFunctionOutcome::Return { value, .. } => (false, value),
         CFunctionOutcome::Throw { value, .. } => (true, value),
@@ -2816,24 +2816,27 @@ fn literal_completion_key(outcome: &CFunctionOutcome) -> Option<(bool, CValue)> 
     native_literal_completion_key(exceptional, value.native_payload()?)
 }
 
-fn native_literal_completion_key(exceptional: bool, value: &CValue) -> Option<(bool, CValue)> {
+fn native_literal_completion_key(
+    exceptional: bool,
+    value: &ProgramValue,
+) -> Option<(bool, ProgramValue)> {
     let term = match value.numeric_value() {
-        CValue::PointerInteger(_) => unreachable!("numeric projection"),
-        CValue::Void => return Some((exceptional, CValue::Void)),
-        CValue::Bool(term)
-        | CValue::Int8(term)
-        | CValue::Int16(term)
-        | CValue::Int32(term)
-        | CValue::UInt8(term)
-        | CValue::UInt16(term)
-        | CValue::UInt32(term)
-        | CValue::Int64(term)
-        | CValue::UInt64(term)
-        | CValue::Int128(term)
-        | CValue::UInt128(term)
-        | CValue::Float32(term)
-        | CValue::Float64(term) => term,
-        CValue::Pointer(_) | CValue::Parameter(_) => return None,
+        ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
+        ProgramValue::Void => return Some((exceptional, ProgramValue::Void)),
+        ProgramValue::Bool(term)
+        | ProgramValue::Int8(term)
+        | ProgramValue::Int16(term)
+        | ProgramValue::Int32(term)
+        | ProgramValue::UInt8(term)
+        | ProgramValue::UInt16(term)
+        | ProgramValue::UInt32(term)
+        | ProgramValue::Int64(term)
+        | ProgramValue::UInt64(term)
+        | ProgramValue::Int128(term)
+        | ProgramValue::UInt128(term)
+        | ProgramValue::Float32(term)
+        | ProgramValue::Float64(term) => term,
+        ProgramValue::Pointer(_) | ProgramValue::Parameter(_) => return None,
     };
     match term {
         MachineTerm::Constant { .. } => Some((exceptional, value.clone())),
@@ -2846,7 +2849,7 @@ fn native_literal_completion_key(exceptional: bool, value: &CValue) -> Option<(b
 /// Resource and effect claims still use the legacy boundary implementation;
 /// migrating those remaining obligations belongs to contract closing.
 pub(crate) fn c_function_contract_claims_from_completions(
-    function: &CFunction,
+    function: &ProgramFunction,
     contract_execution: &CFunctionContractExecution,
     checked_propositions: &[CCheckedFunctionProposition],
 ) -> Option<Vec<CVerifiedFunctionContractClaim>> {
@@ -2854,7 +2857,7 @@ pub(crate) fn c_function_contract_claims_from_completions(
 }
 
 fn collect_function_contract_claims(
-    function: &CFunction,
+    function: &ProgramFunction,
     contract_execution: &CFunctionContractExecution,
     checked_propositions: &[CCheckedFunctionProposition],
     require_closing_evidence: bool,
@@ -2972,7 +2975,7 @@ struct ContractPathSetView<'a> {
 impl ContractPathSetView<'_> {
     fn prepared(
         &self,
-        function: &CFunction,
+        function: &ProgramFunction,
     ) -> &Result<Vec<CertifiedFunctionClaimPath>, ContractPathPreparationFailure> {
         self.prepared.get_or_init(|| {
             crate::instrumentation::measure_operation(
@@ -3178,7 +3181,7 @@ fn closed_proposition_holds_on_every_case(
 /// whose paths it holds. Each set is a complete execution of the function
 /// under its case, so one certifying set is authority for the case.
 fn claim_holds_on_some_path_set_of_every_case(
-    function: &CFunction,
+    function: &ProgramFunction,
     claim: &CFunctionContractClaim,
     cases: &[Vec<ContractPathSetView<'_>>],
     checked_propositions: &CheckedPropositionIndex<'_>,
@@ -3229,7 +3232,7 @@ fn claim_holds_on_some_path_set_of_every_case(
 /// `None` means the frontier itself is incomplete or could not be prepared for
 /// claim checking. An empty vector means every claim holds.
 pub fn c_unverified_function_contract_claims(
-    function: &CFunction,
+    function: &ProgramFunction,
     contract_execution: &CFunctionContractExecution,
 ) -> Result<Vec<CFunctionContractClaimKey>, String> {
     unverified_function_contract_claims(function, contract_execution, &[], false)
@@ -3240,7 +3243,7 @@ pub fn c_unverified_function_contract_claims(
 /// the same evidence here ensures a later failing claim does not make an
 /// already checked proposition look unproved in the reported claim list.
 pub(crate) fn c_unverified_function_contract_claims_with_checked_propositions(
-    function: &CFunction,
+    function: &ProgramFunction,
     contract_execution: &CFunctionContractExecution,
     checked_propositions: &[CCheckedFunctionProposition],
 ) -> Result<Vec<CFunctionContractClaimKey>, String> {
@@ -3253,7 +3256,7 @@ pub(crate) fn c_unverified_function_contract_claims_with_checked_propositions(
 }
 
 pub(crate) fn c_unverified_function_contract_claims_diagnostic(
-    function: &CFunction,
+    function: &ProgramFunction,
     contract_execution: &CFunctionContractExecution,
     checked_propositions: &[CCheckedFunctionProposition],
 ) -> Result<Vec<CFunctionContractClaimKey>, ContractPathPreparationFailure> {
@@ -3261,7 +3264,7 @@ pub(crate) fn c_unverified_function_contract_claims_diagnostic(
 }
 
 fn unverified_function_contract_claims(
-    function: &CFunction,
+    function: &ProgramFunction,
     contract_execution: &CFunctionContractExecution,
     checked_propositions: &[CCheckedFunctionProposition],
     require_closing_evidence: bool,
@@ -3318,7 +3321,7 @@ fn unverified_function_contract_claims(
 /// Certifies one contract claim only after a kernel-produced complete
 /// execution frontier establishes that exact claim for the exact function.
 pub fn c_verified_function_contract_claim(
-    function: &CFunction,
+    function: &ProgramFunction,
     key: CFunctionContractClaimKey,
     execution: &CFunctionContractExecution,
 ) -> Option<CVerifiedFunctionContractClaim> {
@@ -3335,7 +3338,7 @@ pub fn c_verified_function_contract_claim(
 /// domain. See `docs/internals/kernel.md`, "Source obligations and checked
 /// evidence".
 pub fn c_verified_function_rule(
-    function: CFunction,
+    function: ProgramFunction,
     proofs: &[CVerifiedFunctionContractClaim],
 ) -> Option<CVerifiedFunctionRule> {
     if function.is_program_entry()
@@ -3382,7 +3385,7 @@ pub fn c_verified_function_rule(
 /// A construction return assumes completion into the checked caller-owned
 /// destination, including its initialized value fields. Ordinary writable
 /// buffers and void construction parameters receive no such guarantee.
-pub fn c_external_function_rule(function: CFunction) -> Option<CExternalFunctionRule> {
+pub fn c_external_function_rule(function: ProgramFunction) -> Option<CExternalFunctionRule> {
     (!function.is_program_entry()
         && function
             .contract_interface()
@@ -3421,7 +3424,7 @@ pub fn c_function_termination_plan(
 /// This is crate-private so an external caller cannot install an unverified
 /// recursive contract into a kernel execution environment.
 pub(crate) fn c_recursive_function_contract_hypothesis(
-    function: CFunction,
+    function: ProgramFunction,
 ) -> Option<CVerifiedFunctionRule> {
     (!function.is_program_entry()
         && function.verified_direct_contract_supported()
@@ -3447,7 +3450,7 @@ pub(crate) fn c_recursive_function_contract_hypothesis(
 /// This is the kernel boundary for conditional partial verification; it never
 /// certifies the unselected body.
 pub(crate) fn c_unselected_function_contract_assumption(
-    function: CFunction,
+    function: ProgramFunction,
 ) -> Option<CExternalFunctionRule> {
     (!function.is_program_entry()
         && function.verified_direct_contract_supported()
@@ -3465,7 +3468,7 @@ pub(crate) fn c_unselected_function_contract_assumption(
 /// for an omitted postcondition. An explicitly declared mutable frame needs
 /// an effect claim even when the frame is empty on a particular execution
 /// path; a resource-derived frame is covered by its resource transition.
-fn function_contract_claims_are_complete(function: &CFunction) -> bool {
+fn function_contract_claims_are_complete(function: &ProgramFunction) -> bool {
     let claims = function.contract_claims();
     (0..function.contract_ensures().len()).all(|index| {
         claims.iter().any(|claim| {
@@ -3501,7 +3504,9 @@ fn function_contract_claims_are_complete(function: &CFunction) -> bool {
 /// Returns diagnostic keys for obligations that have no corresponding claim.
 /// The public key type predates separate proposition/resource vectors, so the
 /// target index is used for an unclaimed diagnostic entry.
-fn missing_function_contract_claim_keys(function: &CFunction) -> Vec<CFunctionContractClaimKey> {
+fn missing_function_contract_claim_keys(
+    function: &ProgramFunction,
+) -> Vec<CFunctionContractClaimKey> {
     let claims = function.contract_claims();
     let mut missing = Vec::new();
     for index in 0..function.contract_ensures().len() {
@@ -3632,7 +3637,7 @@ mod checked_proposition_index_tests {
         let context = PureFactContext::new().assume_proposition(route.clone());
         let pointer = Pointer::symbolic(Variable(71_031));
         let equation = ExecutionPureFact::logical_read_equation(
-            CPointerValue::new(pointer.clone(), CType::Int32Pointer),
+            PointerValue::new(pointer.clone(), ProgramType::Int32Pointer),
             Pointer::loaded_value(&intern_c_memory(CMemory::new()), &pointer),
         );
         let mut paths = vec![
@@ -3705,14 +3710,19 @@ mod checked_proposition_index_tests {
     fn completions_are_indexed_by_the_claim_they_closed() {
         let truth = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
         let checked = |claim: Option<CFunctionContractClaimTarget>| {
-            let function = CFunction::new(CType::Void, "indexed", Vec::new(), CStatement::Skip);
+            let function = ProgramFunction::new(
+                ProgramType::Void,
+                "indexed",
+                Vec::new(),
+                ProgramStatement::Skip,
+            );
             let specification = CFunctionSpecification::new(
-                CState::new(),
+                ExecutionState::new(),
                 Vec::new(),
                 Vec::new(),
                 CFunctionOutcome::Return {
-                    value: CValue::Void.into(),
-                    state: Box::new(CState::new()),
+                    value: ProgramValue::Void.into(),
+                    state: Box::new(ExecutionState::new()),
                 },
             );
             CCheckedFunctionProposition {
@@ -3739,8 +3749,8 @@ mod checked_proposition_index_tests {
 
     #[test]
     fn certification_does_not_promote_body_facts_to_entry_premises() {
-        let function = CFunction::new(
-            CType::Int32,
+        let function = ProgramFunction::new(
+            ProgramType::Int32,
             "entry_resource_fact_boundary",
             Vec::new(),
             c_return(c_int32_literal(0)),
@@ -3755,13 +3765,13 @@ mod checked_proposition_index_tests {
             ),
             true,
         );
-        let state = CState::new();
+        let state = ExecutionState::new();
         let proposition = Proposition::CFunctionExecutes {
             state: Box::new(state.clone()),
             function: Box::new(function.clone()),
             arguments: Vec::new(),
             outcome: CFunctionOutcome::Return {
-                value: CValue::Int32(MachineTerm::constant(0)).into(),
+                value: ProgramValue::Int32(MachineTerm::constant(0)).into(),
                 state: Box::new(state),
             },
         };
@@ -3831,12 +3841,12 @@ mod heap_status_equality_tests {
         ));
 
         let left = CFunctionOutcome::Return {
-            value: CValue::Int32(MachineTerm::constant(0)).into(),
-            state: Box::new(CState::new().with_memory(base)),
+            value: ProgramValue::Int32(MachineTerm::constant(0)).into(),
+            state: Box::new(ExecutionState::new().with_memory(base)),
         };
         let right = CFunctionOutcome::Return {
-            value: CValue::Int32(MachineTerm::constant(0)).into(),
-            state: Box::new(CState::new().with_memory(other)),
+            value: ProgramValue::Int32(MachineTerm::constant(0)).into(),
+            state: Box::new(ExecutionState::new().with_memory(other)),
         };
         assert!(!c_function_outcomes_program_state_definitionally_equal(
             &left,
@@ -3908,16 +3918,16 @@ mod wide_range_reader_tests {
 mod materialized_function_load_tests {
     use super::*;
 
-    fn callback_load(memory: &CMemory, address: &Pointer, kind: LoadKind) -> CValue {
+    fn callback_load(memory: &CMemory, address: &Pointer, kind: LoadKind) -> ProgramValue {
         let load = MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(memory.clone()),
             Box::new(address.clone()),
             kind,
         );
         let (variable, _) = crate::kernel::load_variable_for_term(&load).unwrap();
-        CValue::typed_pointer(
+        ProgramValue::typed_pointer(
             Pointer::symbolic_function(variable),
-            CType::FunctionPointer(CallbackSignature::UNSPECIFIED),
+            ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
         )
     }
 
@@ -3931,7 +3941,8 @@ mod materialized_function_load_tests {
         let value = callback_load(
             &memory,
             &address,
-            LoadKind::of_type(CType::FunctionPointer(CallbackSignature::UNSPECIFIED)).unwrap(),
+            LoadKind::of_type(ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED))
+                .unwrap(),
         );
         let facts = PureFactContext::new();
         assert!(materialized_load_is_unchanged(
@@ -3953,7 +3964,8 @@ mod materialized_function_load_tests {
         let value = callback_load(
             &memory,
             &address,
-            LoadKind::of_type(CType::FunctionPointer(CallbackSignature::UNSPECIFIED)).unwrap(),
+            LoadKind::of_type(ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED))
+                .unwrap(),
         );
         assert!(!materialized_load_is_unchanged(
             &value,
@@ -3965,17 +3977,17 @@ mod materialized_function_load_tests {
         assert!(!materialized_load_is_unchanged(
             &narrow, &memory, &address, &facts
         ));
-        let arbitrary = CValue::typed_pointer(
+        let arbitrary = ProgramValue::typed_pointer(
             Pointer::symbolic_function(Variable(97_555_001)),
-            CType::FunctionPointer(CallbackSignature::UNSPECIFIED),
+            ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
         );
         assert!(!materialized_load_is_unchanged(
             &arbitrary, &memory, &address, &facts
         ));
-        let CValue::Pointer(pointer_value) = value else {
+        let ProgramValue::Pointer(pointer_value) = value else {
             unreachable!()
         };
-        let displaced = CValue::typed_pointer(
+        let displaced = ProgramValue::typed_pointer(
             pointer_value.pointer().offset_by_bytes(1),
             pointer_value.c_type(),
         );
@@ -3986,7 +3998,8 @@ mod materialized_function_load_tests {
         let original = callback_load(
             &memory,
             &address,
-            LoadKind::of_type(CType::FunctionPointer(CallbackSignature::UNSPECIFIED)).unwrap(),
+            LoadKind::of_type(ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED))
+                .unwrap(),
         );
         assert!(!materialized_load_is_unchanged(
             &original, &changed, &address, &facts
@@ -4059,7 +4072,7 @@ mod claim_requirement_tests {
                 OutcomeProofCore {
                     identity: OutcomeIdentity::fresh(),
                     result: Arc::new(int32(0)),
-                    state: CState::new().into(),
+                    state: ExecutionState::new().into(),
                     store_consequences_available: false,
                     is_exceptional,
                     effect_facts: ExecutionFacts::new().into(),
@@ -4125,19 +4138,24 @@ mod retained_literal_completion_scaling_tests {
 mod contract_closing_tests {
     use super::*;
 
-    fn fixture(path_count: usize) -> (CFunction, CFunctionContractExecution) {
-        let function = c_function(CType::Int32, "closed", vec![], c_return(c_int32_literal(0)))
-            .with_contract(
-                vec![],
-                vec![SpecProposition::Comparison {
-                    left: SpecExpression::CExpression(c_int32_literal(0)),
-                    operator: CComparisonOperator::Equal,
-                    right: SpecExpression::CExpression(c_int32_literal(0)),
-                }],
-                vec![],
-                vec![CFunctionContractClaim::ensure_proposition(0, 0)],
-                true,
-            );
+    fn fixture(path_count: usize) -> (ProgramFunction, CFunctionContractExecution) {
+        let function = c_function(
+            ProgramType::Int32,
+            "closed",
+            vec![],
+            c_return(c_int32_literal(0)),
+        )
+        .with_contract(
+            vec![],
+            vec![SpecProposition::Comparison {
+                left: SpecExpression::ProgramExpression(c_int32_literal(0)),
+                operator: CComparisonOperator::Equal,
+                right: SpecExpression::ProgramExpression(c_int32_literal(0)),
+            }],
+            vec![],
+            vec![CFunctionContractClaim::ensure_proposition(0, 0)],
+            true,
+        );
         let paths = (0..path_count)
             .map(|_| SymbolicCExecutionPath {
                 call_parameters: None,
@@ -4149,12 +4167,12 @@ mod contract_closing_tests {
                 effect_facts: ExecutionFacts::new(),
                 obligations: vec![],
                 theorem: Theorem::new(Proposition::CFunctionVerifies {
-                    state: Box::new(CState::new()),
+                    state: Box::new(ExecutionState::new()),
                     function: Box::new(function.clone()),
                     arguments: vec![],
                     outcome: CFunctionOutcome::Return {
                         value: int32(0).into(),
-                        state: Box::new(CState::new()),
+                        state: Box::new(ExecutionState::new()),
                     },
                 }),
                 loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
@@ -4182,7 +4200,7 @@ mod contract_closing_tests {
     }
 
     fn completions(
-        function: &CFunction,
+        function: &ProgramFunction,
         execution: &CFunctionContractExecution,
     ) -> Vec<CCheckedFunctionProposition> {
         execution.cases[0][0]
@@ -4192,7 +4210,7 @@ mod contract_closing_tests {
                 path_origin: Some(path.theorem.clone()),
                 function: function.clone(),
                 specification: CFunctionSpecification::new(
-                    CState::new(),
+                    ExecutionState::new(),
                     vec![],
                     vec![],
                     path_function_outcome(path).unwrap().clone(),

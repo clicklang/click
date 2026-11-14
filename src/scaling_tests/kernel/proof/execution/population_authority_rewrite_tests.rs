@@ -15,7 +15,8 @@ fn private_member_facts_cannot_use_ambient_cell_ownership() {
         name: "reference".into(),
         arguments: description.arguments().to_vec().into(),
     });
-    let [crate::kernel::AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments()
+    let [crate::kernel::AlgebraicValue::C(ProgramValue::Pointer(pointer))] =
+        description.arguments()
     else {
         unreachable!()
     };
@@ -30,7 +31,7 @@ fn private_member_facts_cannot_use_ambient_cell_ownership() {
     ]);
     let definition = CCompositeResourceDefinition::new(
         "reference",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![CResourceSpec::owned_memory(CMemorySegment::new(
@@ -39,7 +40,7 @@ fn private_member_facts_cannot_use_ambient_cell_ownership() {
             c_int32_literal(1),
         ))],
         vec![crate::kernel::SpecProposition::Comparison {
-            left: crate::kernel::SpecExpression::CExpression(crate::kernel::c_index(
+            left: crate::kernel::SpecExpression::ProgramExpression(crate::kernel::c_index(
                 c_variable("p"),
                 c_int32_literal(1),
             )),
@@ -62,7 +63,7 @@ fn private_member_facts_cannot_use_ambient_cell_ownership() {
         crate::kernel::functions::instantiate_private_member_body_facts(
             &member,
             &definition,
-            &CState::new()
+            &ExecutionState::new()
                 .with_population_creation_tracking()
                 .with_memory(memory.clone())
                 .with_resource_context(resources.clone()),
@@ -71,7 +72,7 @@ fn private_member_facts_cannot_use_ambient_cell_ownership() {
         .is_none()
     );
     let work = [8, 32, 128, 512].map(|locals| {
-        let mut state = CState::new()
+        let mut state = ExecutionState::new()
             .with_population_creation_tracking()
             .with_memory(memory.clone())
             .with_resource_context(resources.clone());
@@ -116,7 +117,7 @@ fn authority_count_observation_rejects_unchecked_deltas_and_scales() {
         });
         let definition = CCompositeResourceDefinition::new(
             "reference",
-            vec![crate::kernel::c_parameter("p", CType::Int32Pointer)],
+            vec![crate::kernel::c_parameter("p", ProgramType::Int32Pointer)],
             None,
             false,
             vec![],
@@ -139,10 +140,10 @@ fn authority_count_observation_rejects_unchecked_deltas_and_scales() {
         }
         state = state.with_resource_context(resources);
         let function = c_function(
-            CType::Void,
+            ProgramType::Void,
             "observe",
             vec![],
-            CStatement::Return(CExpression::Value(CValue::Void)),
+            ProgramStatement::Return(ProgramExpression::Value(ProgramValue::Void)),
         )
         .with_composite_resource_definitions(vec![definition]);
         let bound = crate::kernel::api::checked_owned_resource_count_lower_bound(

@@ -2,7 +2,7 @@
 //! behavioral refinement: it neither executes nor proves implications.
 use super::*;
 
-pub(super) fn same_interface(contract: &CFunctionContract, function: &CFunction) -> bool {
+pub(super) fn same_interface(contract: &CFunctionContract, function: &ProgramFunction) -> bool {
     // Proof binders are introduced by the named contract's explicit
     // application syntax and are checked by the binder judgment.  The
     // ordinary one-call refinement relation compares the shared behavioral
@@ -43,7 +43,7 @@ fn normalize(interface: &CFunctionContractInterface) -> CFunctionContractInterfa
     // what they call a parameter stay one interface.
     for measure in &mut interface.recursion_measure {
         match measure {
-            CRankingComponent::CExpression(expression) => names.c(expression),
+            CRankingComponent::ProgramExpression(expression) => names.c(expression),
             // The declared spelling is what a diagnostic prints, not part of
             // the interface, exactly as a resource binder's spelling is not.
             // Erase it so two declarations that differ only in what they call
@@ -65,23 +65,23 @@ fn normalize(interface: &CFunctionContractInterface) -> CFunctionContractInterfa
 mod tests {
     use super::*;
 
-    fn interface(parameter: &str, local: &str, body: &str) -> CFunction {
+    fn interface(parameter: &str, local: &str, body: &str) -> ProgramFunction {
         c_function(
-            CType::Void,
+            ProgramType::Void,
             "interface",
-            vec![c_parameter(parameter, CType::Int32)],
-            CStatement::Skip,
+            vec![c_parameter(parameter, ProgramType::Int32)],
+            ProgramStatement::Skip,
         )
         .with_contract(
             vec![],
             vec![SpecProposition::Comparison {
                 left: SpecExpression::Let {
                     name: local.to_string(),
-                    value: Box::new(SpecExpression::CExpression(c_variable(parameter))),
-                    body: Box::new(SpecExpression::CExpression(c_variable(body))),
+                    value: Box::new(SpecExpression::ProgramExpression(c_variable(parameter))),
+                    body: Box::new(SpecExpression::ProgramExpression(c_variable(body))),
                 },
                 operator: CComparisonOperator::Equal,
-                right: SpecExpression::CExpression(c_variable(parameter)),
+                right: SpecExpression::ProgramExpression(c_variable(parameter)),
             }],
             vec![],
             vec![],
@@ -106,15 +106,15 @@ mod tests {
             let observation =
                 SpecIntegerExpression::FromMachine(Box::new(SpecExpression::IntegerToMachine {
                     value: Box::new(SpecIntegerExpression::FromMachine(Box::new(
-                        SpecExpression::CExpression(c_variable(referenced)),
+                        SpecExpression::ProgramExpression(c_variable(referenced)),
                     ))),
                     destination: MachineIntegerType::Int32,
                 }));
             c_function(
-                CType::Void,
+                ProgramType::Void,
                 "interface",
-                vec![c_parameter(parameter, CType::Int32)],
-                CStatement::Skip,
+                vec![c_parameter(parameter, ProgramType::Int32)],
+                ProgramStatement::Skip,
             )
             .with_contract(
                 vec![],
@@ -144,9 +144,9 @@ mod tests {
                 let mut proposition = SpecProposition::Comparison {
                     left: SpecExpression::CountedResourceCount {
                         name: "Token".into(),
-                        arguments: vec![Some(SpecExpression::CExpression(c_variable(format!(
-                            "argument{index}"
-                        ))))],
+                        arguments: vec![Some(SpecExpression::ProgramExpression(c_variable(
+                            format!("argument{index}"),
+                        )))],
                     },
                     operator: CComparisonOperator::Equal,
                     right: SpecExpression::Value(int32(1)),
@@ -160,7 +160,13 @@ mod tests {
     #[test]
     fn lexical_identity_preserves_resource_projection_identity_and_snapshot() {
         let interface = |identity, at_entry| {
-            c_function(CType::Void, "interface", vec![], CStatement::Skip).with_contract(
+            c_function(
+                ProgramType::Void,
+                "interface",
+                vec![],
+                ProgramStatement::Skip,
+            )
+            .with_contract(
                 vec![],
                 vec![SpecProposition::Comparison {
                     left: SpecExpression::ResourceField {
@@ -170,10 +176,10 @@ mod tests {
                             field_index: 0,
                             at_entry,
                         },
-                        c_type: CType::Int32,
+                        c_type: ProgramType::Int32,
                     },
                     operator: CComparisonOperator::Equal,
-                    right: SpecExpression::Value(CValue::Int32(MachineTerm::constant(0))),
+                    right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
                 }],
                 vec![],
                 vec![],
@@ -227,9 +233,9 @@ impl Names {
             self.bindings.remove(&name);
         }
     }
-    fn c(&mut self, expression: &mut CExpression) {
+    fn c(&mut self, expression: &mut ProgramExpression) {
         self.visit();
-        use CExpression::*;
+        use ProgramExpression::*;
         match expression {
             Variable(name) => self.reference(name),
             Value(_) | FunctionAddress(_) | CallResult { .. } => {}
@@ -358,7 +364,7 @@ impl Names {
             // Instance identities are not lexical C parameter names.
             Value(_) | ResourceField { .. } => {}
             IntegerToMachine { value, .. } => self.integer(value),
-            CExpression(e) => self.c(e),
+            ProgramExpression(e) => self.c(e),
             AggregateFieldValue {
                 parameter, pointer, ..
             } => {
@@ -456,7 +462,7 @@ impl Names {
         match &mut expression.node {
             Variable(_) | ResourceField(_) => {}
             Binding(name) => self.reference(name),
-            CValue(value) => self.expression(value),
+            ProgramValue(value) => self.expression(value),
             Constructor { fields, .. } => {
                 for field in fields {
                     match field {

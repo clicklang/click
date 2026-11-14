@@ -10,19 +10,24 @@ use super::*;
 /// consume (`roadmap/scaling.md`).
 #[test]
 fn allocating_call_does_not_expand_the_callers_kept_objects() {
-    let boxed = c_function(CType::Void, "unused", vec![], c_return(c_void_value()))
-        .with_composite_resource_definitions(vec![CCompositeResourceDefinition::new(
-            "boxed",
-            vec![c_parameter("p", CType::Int32Pointer)],
-            None,
-            false,
-            vec![CResourceSpec::owned_memory(CMemorySegment::new(
-                c_variable("p"),
-                c_int32_literal(0),
-                c_int32_literal(1),
-            ))],
-            vec![],
-        )]);
+    let boxed = c_function(
+        ProgramType::Void,
+        "unused",
+        vec![],
+        c_return(c_void_value()),
+    )
+    .with_composite_resource_definitions(vec![CCompositeResourceDefinition::new(
+        "boxed",
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        None,
+        false,
+        vec![CResourceSpec::owned_memory(CMemorySegment::new(
+            c_variable("p"),
+            c_int32_literal(0),
+            c_int32_literal(1),
+        ))],
+        vec![],
+    )]);
     let interface = boxed.contract_interface();
     let heap = |id: u64| Pointer {
         block: PointerBlock::Heap(id),
@@ -41,7 +46,7 @@ fn allocating_call_does_not_expand_the_callers_kept_objects() {
                     .expect("a fresh live object");
                 kept = kept.unchecked_with_fact(CResourceFact::own_composite(
                     "boxed".into(),
-                    vec![CValue::pointer(object)],
+                    vec![ProgramValue::pointer(object)],
                 ));
             }
             let created = heap(932_000);
@@ -49,7 +54,7 @@ fn allocating_call_does_not_expand_the_callers_kept_objects() {
                 created.clone(),
                 bytes.clone(),
             ));
-            let state = CState::new().with_memory(memory.clone());
+            let state = ExecutionState::new().with_memory(memory.clone());
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
                 apply_verified_heap_allocation_delta(
                     memory.clone(),

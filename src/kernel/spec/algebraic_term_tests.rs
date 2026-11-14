@@ -1,7 +1,7 @@
 use super::*;
 
 fn maybe_type() -> AlgebraicType {
-    let arguments = vec![AlgebraicValueType::C(CType::Int32)];
+    let arguments = vec![AlgebraicValueType::C(ProgramType::Int32)];
     let variants: std::sync::Arc<[AlgebraicVariantType]> = vec![
         AlgebraicVariantType {
             name: "None".to_string(),
@@ -9,7 +9,7 @@ fn maybe_type() -> AlgebraicType {
         },
         AlgebraicVariantType {
             name: "Some".to_string(),
-            fields: vec![AlgebraicValueType::C(CType::Int32)],
+            fields: vec![AlgebraicValueType::C(ProgramType::Int32)],
         },
     ]
     .into();
@@ -84,7 +84,7 @@ fn algebraic_integer_match_reconnects_symbolic_and_concrete_fields() {
             },
         };
         let paths = evaluate_spec_algebraic_at_state_in(
-            &CState::default(),
+            &ExecutionState::default(),
             &expression,
             None,
             &PureFactContext::new(),
@@ -163,7 +163,7 @@ fn algebraic_integer_match_reconnects_symbolic_and_concrete_fields() {
         &[pair_arm]
     ));
     let mut bad = arm;
-    bad.binding_types = vec![AlgebraicValueType::C(CType::Int32)];
+    bad.binding_types = vec![AlgebraicValueType::C(ProgramType::Int32)];
     assert!(!spec_algebraic_result_match_arms_are_well_formed(
         &ty,
         &[bad]
@@ -183,8 +183,10 @@ fn value_or_match(scrutinee: SpecAlgebraicExpression) -> SpecExpression {
             SpecAlgebraicMatchArm {
                 variant: "Some".to_string(),
                 bindings: vec!["value".to_string()],
-                binding_types: vec![AlgebraicValueType::C(CType::Int32)],
-                body: SpecExpression::CExpression(CExpression::Variable("value".to_string())),
+                binding_types: vec![AlgebraicValueType::C(ProgramType::Int32)],
+                body: SpecExpression::ProgramExpression(ProgramExpression::Variable(
+                    "value".to_string(),
+                )),
             },
         ],
     }
@@ -205,21 +207,21 @@ fn envelope_type(maybe_type: &AlgebraicType) -> AlgebraicType {
     .into();
     let value_type = AlgebraicValueType::Algebraic {
         name: "Envelope".to_string(),
-        arguments: vec![AlgebraicValueType::C(CType::Int32)],
+        arguments: vec![AlgebraicValueType::C(ProgramType::Int32)],
     };
     let mut schemas = maybe_type.schemas.definitions().clone();
     schemas.insert(value_type, variants.clone());
     AlgebraicType {
         rigid: false,
         name: "Envelope".to_string(),
-        arguments: vec![AlgebraicValueType::C(CType::Int32)],
+        arguments: vec![AlgebraicValueType::C(ProgramType::Int32)],
         variants,
         schemas: std::sync::Arc::new(AlgebraicSchemas::new(schemas)),
     }
 }
 
 fn recursive_list_type() -> AlgebraicType {
-    let arguments = vec![AlgebraicValueType::C(CType::Int32)];
+    let arguments = vec![AlgebraicValueType::C(ProgramType::Int32)];
     let value_type = AlgebraicValueType::Algebraic {
         name: "List".to_string(),
         arguments: arguments.clone(),
@@ -231,7 +233,10 @@ fn recursive_list_type() -> AlgebraicType {
         },
         AlgebraicVariantType {
             name: "Cons".to_string(),
-            fields: vec![AlgebraicValueType::C(CType::Int32), value_type.clone()],
+            fields: vec![
+                AlgebraicValueType::C(ProgramType::Int32),
+                value_type.clone(),
+            ],
         },
     ]
     .into();
@@ -268,11 +273,11 @@ fn ungrounded_recursive_type() -> AlgebraicType {
 }
 
 fn wide_type(variant_count: usize) -> AlgebraicType {
-    let arguments = vec![AlgebraicValueType::C(CType::Int32)];
+    let arguments = vec![AlgebraicValueType::C(ProgramType::Int32)];
     let variants: std::sync::Arc<[AlgebraicVariantType]> = (0..variant_count)
         .map(|index| AlgebraicVariantType {
             name: format!("V{index}"),
-            fields: vec![AlgebraicValueType::C(CType::Int32)],
+            fields: vec![AlgebraicValueType::C(ProgramType::Int32)],
         })
         .collect::<Vec<_>>()
         .into();
@@ -299,9 +304,13 @@ fn resource_initializer_capture_keeps_unknowns_and_calls_symbolic() {
             algebraic_type: ty.clone(),
             node: SpecAlgebraicExpressionNode::Variable(Variable(41)),
         };
-        let captured =
-            capture_spec_algebraic_value(&CState::new(), &variable, None, &PureFactContext::new())
-                .unwrap();
+        let captured = capture_spec_algebraic_value(
+            &ExecutionState::new(),
+            &variable,
+            None,
+            &PureFactContext::new(),
+        )
+        .unwrap();
         assert_eq!(captured.node, AlgebraicTermNode::Variable(Variable(41)));
         let call = SpecAlgebraicExpression {
             algebraic_type: ty,
@@ -310,9 +319,13 @@ fn resource_initializer_capture_keeps_unknowns_and_calls_symbolic() {
                 arguments: vec![SpecPureFunctionArgument::Algebraic(variable)],
             },
         };
-        let captured =
-            capture_spec_algebraic_value(&CState::new(), &call, None, &PureFactContext::new())
-                .unwrap();
+        let captured = capture_spec_algebraic_value(
+            &ExecutionState::new(),
+            &call,
+            None,
+            &PureFactContext::new(),
+        )
+        .unwrap();
         assert!(matches!(
             captured.node,
             AlgebraicTermNode::PureFunctionApplication { .. }
@@ -332,7 +345,7 @@ fn arbitrary_algebraic_value_is_one_variable_without_eager_cases() {
         let mut budget = SpecEvaluation::logical(&mut execution_budget);
         let next_variable = budget.next_kernel_variable;
         let paths = evaluate_spec_algebraic_at_state_in(
-            &CState::new(),
+            &ExecutionState::new(),
             &expression,
             None,
             &PureFactContext::new(),
@@ -355,7 +368,7 @@ fn arbitrary_algebraic_value_is_one_variable_without_eager_cases() {
 #[test]
 fn cached_pointer_read_equations_do_not_escape_symbolic_match_arms() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer_type = AlgebraicValueType::C(CType::Int64Pointer);
+    let pointer_type = AlgebraicValueType::C(ProgramType::Int64Pointer);
     let value_type = AlgebraicValueType::Algebraic {
         name: "PointerBox".into(),
         arguments: vec![],
@@ -378,7 +391,7 @@ fn cached_pointer_read_equations_do_not_escape_symbolic_match_arms() {
     let value = Pointer::symbolic(Variable(71_041));
     let memory = CMemory::new().store(
         address.clone(),
-        CValue::typed_pointer(value, CType::Int64Pointer),
+        ProgramValue::typed_pointer(value, ProgramType::Int64Pointer),
     );
     let body = SpecAlgebraicExpression {
         algebraic_type: result_type.clone(),
@@ -386,15 +399,15 @@ fn cached_pointer_read_equations_do_not_escape_symbolic_match_arms() {
             variant: "Box".into(),
             fields: vec![SpecAlgebraicValue::C(SpecExpression::MemoryLoad {
                 memory: SpecMemory::Fixed(memory.clone()),
-                pointer: Box::new(SpecExpression::Value(CValue::typed_pointer(
+                pointer: Box::new(SpecExpression::Value(ProgramValue::typed_pointer(
                     address.clone(),
-                    CType::Int64PointerPointer,
+                    ProgramType::Int64PointerPointer,
                 ))),
-                value_type: CType::Int64Pointer,
+                value_type: ProgramType::Int64Pointer,
             })],
         },
     };
-    let state = CState::new();
+    let state = ExecutionState::new();
     let context = PureFactContext::new();
     let direct = evaluate_spec_algebraic_at_state_in(
         &state,
@@ -410,7 +423,7 @@ fn cached_pointer_read_equations_do_not_escape_symbolic_match_arms() {
     let read = crate::kernel::eval::evaluate_logical_memory_load_paths(
         &memory,
         address.clone(),
-        CType::Int64Pointer,
+        ProgramType::Int64Pointer,
         Vec::new().into(),
         Vec::new(),
         &context,
@@ -448,7 +461,7 @@ fn cached_pointer_read_equations_do_not_escape_symbolic_match_arms() {
                 SpecAlgebraicResultMatchArm {
                     variant: "Some".into(),
                     bindings: vec!["unused".into()],
-                    binding_types: vec![AlgebraicValueType::C(CType::Int32)],
+                    binding_types: vec![AlgebraicValueType::C(ProgramType::Int32)],
                     binding_variables: vec![None],
                     body: Box::new(body),
                 },
@@ -529,7 +542,7 @@ fn match_on_symbolic_algebraic_value_remains_one_expression_path() {
     });
     let exports = KernelTermExport::machine_export_count();
     let paths = evaluate_spec_expression_paths_with_loop_entry_in(
-        &CState::new(),
+        &ExecutionState::new(),
         &expression,
         None,
         &PureFactContext::new(),
@@ -544,7 +557,7 @@ fn match_on_symbolic_algebraic_value_remains_one_expression_path() {
     );
     assert!(paths[0].facts.is_empty());
     assert!(paths[0].obligations.is_empty());
-    let CValue::Int32(MachineTerm::AlgebraicMatch { scrutinee, arms }) =
+    let ProgramValue::Int32(MachineTerm::AlgebraicMatch { scrutinee, arms }) =
         &paths[0].value.clone().into_native()
     else {
         panic!("unknown match should lower to an algebraic-match term");
@@ -591,7 +604,7 @@ fn nested_match_binder_remains_symbolic_inside_its_arm() {
     };
 
     let paths = evaluate_spec_expression_paths_with_loop_entry_in(
-        &CState::new(),
+        &ExecutionState::new(),
         &expression,
         None,
         &PureFactContext::new(),
@@ -610,7 +623,7 @@ fn nested_match_binder_remains_symbolic_inside_its_arm() {
         matched.arguments[2].node(),
         crate::kernel::KernelTermNode::Match(_)
     ));
-    let CValue::Int32(MachineTerm::AlgebraicMatch { arms, .. }) =
+    let ProgramValue::Int32(MachineTerm::AlgebraicMatch { arms, .. }) =
         &paths[0].value.clone().into_native()
     else {
         panic!("the outer match should remain symbolic");
@@ -647,14 +660,14 @@ fn algebraic_result_match_on_symbolic_value_remains_one_term() {
                 SpecAlgebraicResultMatchArm {
                     variant: "Some".to_string(),
                     bindings: vec!["value".to_string()],
-                    binding_types: vec![AlgebraicValueType::C(CType::Int32)],
+                    binding_types: vec![AlgebraicValueType::C(ProgramType::Int32)],
                     binding_variables: vec![None],
                     body: Box::new(SpecAlgebraicExpression {
                         algebraic_type: algebraic_type.clone(),
                         node: SpecAlgebraicExpressionNode::Constructor {
                             variant: "Some".to_string(),
-                            fields: vec![SpecAlgebraicValue::C(SpecExpression::CExpression(
-                                CExpression::Variable("value".to_string()),
+                            fields: vec![SpecAlgebraicValue::C(SpecExpression::ProgramExpression(
+                                ProgramExpression::Variable("value".to_string()),
                             ))],
                         },
                     }),
@@ -663,7 +676,7 @@ fn algebraic_result_match_on_symbolic_value_remains_one_term() {
         },
     };
     let paths = evaluate_spec_algebraic_at_state_in(
-        &CState::new(),
+        &ExecutionState::new(),
         &expression,
         None,
         &PureFactContext::new(),
@@ -690,7 +703,7 @@ fn match_on_known_constructor_reduces_to_selected_arm() {
         },
     });
     let paths = evaluate_spec_expression_paths_with_loop_entry_in(
-        &CState::new(),
+        &ExecutionState::new(),
         &expression,
         None,
         &PureFactContext::new(),
@@ -704,7 +717,11 @@ fn match_on_known_constructor_reduces_to_selected_arm() {
 
 #[test]
 fn pure_pointer_result_preserves_type_and_unsupported_results_are_explicit() {
-    for result_type in [CType::Int32Pointer, CType::VoidPointer, CType::Void] {
+    for result_type in [
+        ProgramType::Int32Pointer,
+        ProgramType::VoidPointer,
+        ProgramType::Void,
+    ] {
         let expression = SpecExpression::PureFunctionApplication {
             name: "select".into(),
             arguments: vec![],
@@ -716,23 +733,26 @@ fn pure_pointer_result_preserves_type_and_unsupported_results_are_explicit() {
             projection: None,
         };
         let result = evaluate_spec_expression_paths_with_loop_entry_in(
-            &CState::new(),
+            &ExecutionState::new(),
             &expression,
             None,
             &PureFactContext::new(),
             &mut SpecEvaluation::logical(&mut ExecutionBudget::new()),
         );
-        if result_type == CType::Void {
+        if result_type == ProgramType::Void {
             assert!(matches!(
                 result,
-                Err(ExecutionLimit::UnsupportedPureFunctionResult(CType::Void))
+                Err(ExecutionLimit::UnsupportedPureFunctionResult(
+                    ProgramType::Void
+                ))
             ));
         } else {
             let paths = result.expect("a pointer-valued pure call has one opaque result");
             assert_eq!(paths.len(), 1);
             assert_eq!(paths[0].value.c_type(), result_type);
             // The declared return type's class reaches the pointer result.
-            let crate::kernel::CValue::Pointer(pointer) = &paths[0].value.clone().into_native()
+            let crate::kernel::ProgramValue::Pointer(pointer) =
+                &paths[0].value.clone().into_native()
             else {
                 panic!("a pointer result");
             };
@@ -740,7 +760,7 @@ fn pure_pointer_result_preserves_type_and_unsupported_results_are_explicit() {
                 pointer.object_class().map(|class| class.spelling()),
                 Some("struct node".to_string())
             );
-            let CValue::Pointer(pointer) = &paths[0].value.clone().into_native() else {
+            let ProgramValue::Pointer(pointer) = &paths[0].value.clone().into_native() else {
                 panic!("lost pointer sort")
             };
             assert!(matches!(
@@ -760,13 +780,13 @@ fn pure_function_application_is_not_eagerly_evaluated() {
         arguments: vec![SpecPureFunctionArgument::Value(SpecExpression::Value(
             int32(41),
         ))],
-        result_type: CType::Int32,
+        result_type: ProgramType::Int32,
         pointer_result: None,
         result_object_class: None,
         projection: None,
     };
     let paths = evaluate_spec_expression_paths_with_loop_entry_in(
-        &CState::new(),
+        &ExecutionState::new(),
         &expression,
         None,
         &PureFactContext::new(),
@@ -782,7 +802,7 @@ fn pure_function_application_is_not_eagerly_evaluated() {
                 _ => panic!("common integer call result"),
             })
             .unwrap(),
-        PureFunctionArgument::Value(CValue::Int32(MachineTerm::ClickFunctionApplication {
+        PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::ClickFunctionApplication {
             name: "increment".to_string(),
             arguments: vec![PureFunctionArgument::Value(int32(41))],
         }))
@@ -800,13 +820,13 @@ fn pure_function_application_retains_symbolic_algebraic_argument() {
                 node: SpecAlgebraicExpressionNode::Variable(Variable(61)),
             },
         )],
-        result_type: CType::Int32,
+        result_type: ProgramType::Int32,
         pointer_result: None,
         result_object_class: None,
         projection: None,
     };
     let paths = evaluate_spec_expression_paths_with_loop_entry_in(
-        &CState::new(),
+        &ExecutionState::new(),
         &expression,
         None,
         &PureFactContext::new(),
@@ -815,7 +835,7 @@ fn pure_function_application_retains_symbolic_algebraic_argument() {
     .expect("an ADT argument should remain one typed term");
 
     assert_eq!(paths.len(), 1);
-    let CValue::Int32(MachineTerm::ClickFunctionApplication { arguments, .. }) =
+    let ProgramValue::Int32(MachineTerm::ClickFunctionApplication { arguments, .. }) =
         &paths[0].value.clone().into_native()
     else {
         panic!("pure call should remain an application");
@@ -843,7 +863,7 @@ fn malformed_symbolic_match_is_rejected_before_term_construction() {
 
     assert!(
         evaluate_spec_expression_paths_with_loop_entry_in(
-            &CState::new(),
+            &ExecutionState::new(),
             &expression,
             None,
             &PureFactContext::new(),
@@ -863,7 +883,7 @@ fn nominal_pointer_constructor_matches_preserve_the_checked_payload() {
     use crate::kernel::effective_type::{CAccessClass, CStructClass};
     use std::sync::Arc;
     let class = CAccessClass::Struct(CStructClass::opaque("node"));
-    let field_type = AlgebraicValueType::ObjectPointer(CType::Int32Pointer, class.clone());
+    let field_type = AlgebraicValueType::ObjectPointer(ProgramType::Int32Pointer, class.clone());
     let arguments = vec![field_type.clone()];
     let variants: Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
         name: "At".to_string(),
@@ -889,8 +909,9 @@ fn nominal_pointer_constructor_matches_preserve_the_checked_payload() {
         None,
     ] {
         let valid = actual_class.as_ref() == Some(&class);
-        let payload = CValue::typed_pointer(Pointer::symbolic(Variable(44)), CType::Int32Pointer)
-            .with_pointer_object_class(actual_class);
+        let payload =
+            ProgramValue::typed_pointer(Pointer::symbolic(Variable(44)), ProgramType::Int32Pointer)
+                .with_pointer_object_class(actual_class);
         let constructor = SpecAlgebraicExpression {
             algebraic_type: ty.clone(),
             node: SpecAlgebraicExpressionNode::Constructor {
@@ -906,11 +927,13 @@ fn nominal_pointer_constructor_matches_preserve_the_checked_payload() {
                 variant: "At".to_string(),
                 bindings: vec!["p".to_string()],
                 binding_types: vec![field_type.clone()],
-                body: SpecExpression::CExpression(CExpression::Variable("p".to_string())),
+                body: SpecExpression::ProgramExpression(ProgramExpression::Variable(
+                    "p".to_string(),
+                )),
             }],
         };
         let paths = evaluate_spec_expression_paths_with_loop_entry_in(
-            &CState::new(),
+            &ExecutionState::new(),
             &scalar_match,
             None,
             &PureFactContext::new(),
@@ -934,8 +957,8 @@ fn nominal_pointer_constructor_matches_preserve_the_checked_payload() {
                         algebraic_type: ty.clone(),
                         node: SpecAlgebraicExpressionNode::Constructor {
                             variant: "At".to_string(),
-                            fields: vec![SpecAlgebraicValue::C(SpecExpression::CExpression(
-                                CExpression::Variable("p".to_string()),
+                            fields: vec![SpecAlgebraicValue::C(SpecExpression::ProgramExpression(
+                                ProgramExpression::Variable("p".to_string()),
                             ))],
                         },
                     }),
@@ -943,7 +966,7 @@ fn nominal_pointer_constructor_matches_preserve_the_checked_payload() {
             },
         };
         let paths = evaluate_spec_algebraic_at_state_in(
-            &CState::new(),
+            &ExecutionState::new(),
             &model_match,
             None,
             &PureFactContext::new(),
@@ -976,7 +999,7 @@ fn model_argument_guard_query_does_not_materialize_stored_models() {
             fields: vec![SpecAlgebraicValue::Algebraic(stored.clone())],
         },
     };
-    let state = CState::new();
+    let state = ExecutionState::new();
     let assumptions = PureFactContext::new();
     for expression in [&stored, &envelope] {
         assert!(
@@ -993,9 +1016,9 @@ fn model_argument_guard_query_does_not_materialize_stored_models() {
         node: SpecAlgebraicExpressionNode::Constructor {
             variant: "Some".into(),
             fields: vec![SpecAlgebraicValue::C(SpecExpression::Subtract(
-                Box::new(SpecExpression::Value(CValue::Int32(MachineTerm::Variable(
-                    Variable(90_001),
-                )))),
+                Box::new(SpecExpression::Value(ProgramValue::Int32(
+                    MachineTerm::Variable(Variable(90_001)),
+                ))),
                 Box::new(SpecExpression::Value(int32(1))),
             ))],
         },
@@ -1041,7 +1064,7 @@ fn maybe_variable(variable: Variable) -> AlgebraicTerm {
     }
 }
 
-fn maybe_constructor(payload: Option<CValue>) -> AlgebraicTerm {
+fn maybe_constructor(payload: Option<ProgramValue>) -> AlgebraicTerm {
     AlgebraicTerm {
         algebraic_type: maybe_type(),
         node: AlgebraicTermNode::Constructor {
@@ -1056,7 +1079,7 @@ fn signed_match_is_fact_stable_and_retains_guarded_definedness() {
     let variable = Variable(41);
     let lower = |assumptions: &PureFactContext| {
         let mut paths = evaluate_spec_expression_paths_with_loop_entry_in(
-            &CState::new(),
+            &ExecutionState::new(),
             &signed_value_or_match(variable),
             None,
             assumptions,

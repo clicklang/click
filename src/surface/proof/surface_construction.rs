@@ -5,7 +5,7 @@ fn checked_surface_fact_in_state_with_assumptions(
     kernel: &Proposition,
     assumptions: &PureFactContext,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<ClickProposition, ClickError> {
     let check = |surface: &ClickProposition| {
@@ -243,7 +243,7 @@ fn proposition_snapshot_memories(proposition: &Proposition) -> Vec<CMemory> {
     memories
 }
 
-type SnapshotMatches<'a> = Vec<(&'a SnapshotSelector, &'a CState)>;
+type SnapshotMatches<'a> = Vec<(&'a SnapshotSelector, &'a ExecutionState)>;
 
 pub(super) fn snapshot_indexed_selectors<'a>(
     kernel: &Proposition,
@@ -272,7 +272,7 @@ pub(super) fn checked_surface_comparison_fact_in_state_with_indexed_facts(
     available: &ProofFacts,
     assumptions: &PureFactContext,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<ClickProposition, ClickError> {
     checked_surface_comparison_fact_in_state_with_availability(
@@ -297,7 +297,7 @@ fn checked_surface_comparison_fact_in_state_with_availability(
     indexed_available: Option<&ProofFacts>,
     allow_snapshot_blind_candidates: bool,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<ClickProposition, ClickError> {
     let _qualified_sources =
@@ -345,7 +345,7 @@ fn checked_surface_comparison_fact_in_state_with_availability(
             .collect::<BTreeMap<_, _>>();
         let mut names = BTreeMap::<Variable, Option<String>>::new();
         for (name, expression) in bindings.iter() {
-            if let ContractExpression::CFragment(CExpression::Value(CValue::Int32(
+            if let ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::Int32(
                 MachineTerm::Variable(variable),
             ))) = expression
             {

@@ -1,6 +1,7 @@
 use super::*;
 use crate::kernel::{
-    CType, IntegerTerm, KernelTerm, KernelType, MachineBinaryOp, SharedMachineIntegerTerm, Variable,
+    IntegerTerm, KernelTerm, KernelType, MachineBinaryOp, ProgramType, SharedMachineIntegerTerm,
+    Variable,
 };
 
 #[test]
@@ -9,7 +10,7 @@ fn conversion_root_queries_retain_shared_prefixes() {
     for size in [8, 32, 96] {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let mut term = KernelTerm::variable(KernelType::C(CType::Int32), Variable(982100));
+        let mut term = KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(982100));
         let narrow = IntegerTerm::from_machine(
             MachineIntegerType::Int8,
             MachineTerm::Variable(Variable(982101)),

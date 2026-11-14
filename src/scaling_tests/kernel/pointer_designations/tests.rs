@@ -26,7 +26,7 @@ fn designation_queries_ignore_unrelated_origins() {
 
 #[test]
 fn typed_access_does_not_search_unrelated_address_equalities_or_ranges() {
-    let value = |id| CPointerValue::new(Pointer::symbolic(Variable(id)), CType::Int32Pointer);
+    let value = |id| PointerValue::new(Pointer::symbolic(Variable(id)), ProgramType::Int32Pointer);
     let a = value(870_001);
     let b = value(870_002);
     let mut samples = Vec::new();
@@ -86,7 +86,10 @@ fn typed_access_does_not_search_unrelated_address_equalities_or_ranges() {
 
 #[test]
 fn pointer_integer_round_trips_ignore_unrelated_facts() {
-    let pointer = CPointerValue::new(Pointer::symbolic(Variable(992_001)), CType::Int32Pointer);
+    let pointer = PointerValue::new(
+        Pointer::symbolic(Variable(992_001)),
+        ProgramType::Int32Pointer,
+    );
     let mut samples = Vec::new();
     for size in [16u64, 64, 256] {
         let mut context = PureFactContext::new();
@@ -102,8 +105,8 @@ fn pointer_integer_round_trips_ignore_unrelated_facts() {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             let mut obligations = Vec::new();
             let word = crate::kernel::eval::cast_c_value_to_type(
-                CValue::Pointer(pointer.clone()),
-                CType::UInt64,
+                ProgramValue::Pointer(pointer.clone()),
+                ProgramType::UInt64,
                 crate::kernel::eval::IntegerConversion::Modular,
                 &mut obligations,
                 &context,
@@ -111,13 +114,13 @@ fn pointer_integer_round_trips_ignore_unrelated_facts() {
             .unwrap();
             let back = crate::kernel::eval::cast_c_value_to_type(
                 word,
-                CType::Int32Pointer,
+                ProgramType::Int32Pointer,
                 crate::kernel::eval::IntegerConversion::Modular,
                 &mut obligations,
                 &context,
             )
             .unwrap();
-            assert_eq!(back, CValue::Pointer(pointer.clone()));
+            assert_eq!(back, ProgramValue::Pointer(pointer.clone()));
             assert!(obligations.is_empty());
         });
         samples.push(work);
@@ -131,25 +134,25 @@ fn pointer_integer_round_trips_ignore_unrelated_facts() {
 #[test]
 fn packed_word_contract_lookup_and_scope_ignore_unrelated_words() {
     let _session = VerificationSession::enter();
-    let value = |id| CPointerValue::new(Pointer::symbolic(Variable(id)), CType::Int32Pointer);
-    let equality = |a: &CPointerValue, b: &CPointerValue| {
+    let value = |id| PointerValue::new(Pointer::symbolic(Variable(id)), ProgramType::Int32Pointer);
+    let equality = |a: &PointerValue, b: &PointerValue| {
         Proposition::ConditionIs(
             ConditionTerm::PointerValueEqual(Box::new(a.clone()), Box::new(b.clone())),
             true,
         )
     };
     let reconstructed = |id| {
-        let word = CValue::UInt64(MachineTerm::Variable(Variable(id)))
+        let word = ProgramValue::UInt64(MachineTerm::Variable(Variable(id)))
             .complete_word(Pointer::symbolic(Variable(id + 1)));
         let value = crate::kernel::eval::cast_c_value_to_type(
             word,
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
             crate::kernel::eval::IntegerConversion::Modular,
             &mut Vec::new(),
             &PureFactContext::new(),
         )
         .unwrap();
-        let CValue::Pointer(pointer) = value else {
+        let ProgramValue::Pointer(pointer) = value else {
             panic!("pointer")
         };
         pointer
@@ -202,15 +205,18 @@ fn recent_pointer_read_origin_avoids_older_alias_histories() {
             older.push(pointer);
         }
         let before = intern_c_memory_ref(&memory);
-        let read = |snapshot: &SharedCMemory, pointer: &Pointer| {
-            CPointerValue::from_read(
+        let read = |snapshot: &SharedMemory, pointer: &Pointer| {
+            PointerValue::from_read(
                 Pointer::loaded_value(snapshot, pointer),
-                CType::Int32Pointer,
+                ProgramType::Int32Pointer,
                 snapshot,
                 pointer,
             )
         };
-        let value = CPointerValue::new(Pointer::symbolic(Variable(994_001)), CType::Int32Pointer);
+        let value = PointerValue::new(
+            Pointer::symbolic(Variable(994_001)),
+            ProgramType::Int32Pointer,
+        );
         let fact = |pointer: &Pointer| {
             Proposition::ConditionIs(
                 ConditionTerm::PointerValueEqual(
@@ -251,7 +257,7 @@ fn recent_pointer_read_origin_avoids_older_alias_histories() {
             &before,
             &after,
             &selected,
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
             &[Proposition::CMemoryEffectSummary {
                 before: before.memory().clone(),
                 after: after.clone(),
@@ -269,7 +275,7 @@ fn recent_pointer_read_origin_avoids_older_alias_histories() {
         assert!(matched);
         samples.push(work);
         assert!(!missing.pointer_designations_match(&target, &value));
-        let overwritten = after.store(selected.clone(), CValue::UInt32(0u32.into()));
+        let overwritten = after.store(selected.clone(), ProgramValue::UInt32(0u32.into()));
         let partial = read(&intern_c_memory_ref(&overwritten), &selected);
         assert!(!context.pointer_designations_match(&partial, &value));
     }

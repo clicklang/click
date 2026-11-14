@@ -3,12 +3,13 @@ use super::*;
 
 #[test]
 fn pointee_const_return_rebinding_is_allowed_but_store_through_pointer_is_not() {
-    let value = CValue::typed_pointer(Pointer::symbolic(Variable(916)), CType::Int32Pointer);
-    let mut state = CState::new().with_local("p", value.clone());
+    let value =
+        ProgramValue::typed_pointer(Pointer::symbolic(Variable(916)), ProgramType::Int32Pointer);
+    let mut state = ExecutionState::new().with_local("p", value.clone());
     state.locals.set_typed_with_all_qualifiers(
         "q",
         value,
-        CType::Int32Pointer,
+        ProgramType::Int32Pointer,
         false,
         false,
         false,
@@ -49,16 +50,17 @@ fn pointee_const_return_rebinding_is_allowed_but_store_through_pointer_is_not() 
 
 #[test]
 fn pointee_const_return_inline_call_preserves_pointer_identity() {
-    let function = CFunction::new(
-        CType::Int32Pointer,
+    let function = ProgramFunction::new(
+        ProgramType::Int32Pointer,
         "view",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         c_return(c_variable("p")),
     )
     .with_return_pointee_constant(true)
     .with_inline_body();
-    let value = CValue::typed_pointer(Pointer::symbolic(Variable(917)), CType::Int32Pointer);
-    let state = CState::new().with_local("p", value.clone());
+    let value =
+        ProgramValue::typed_pointer(Pointer::symbolic(Variable(917)), ProgramType::Int32Pointer);
+    let state = ExecutionState::new().with_local("p", value.clone());
     let environment = CExecutionEnvironment::new().with_function(function);
     let paths = execute_c_call_assign_paths(
         &state,
@@ -75,7 +77,7 @@ fn pointee_const_return_inline_call_preserves_pointer_identity() {
     };
     let local_native_output_76 = state.locals.get_native("temporary");
     let result = local_native_output_76.as_deref().unwrap();
-    assert!(matches!(result, CValue::Pointer(pointer) if pointer.pointee_constant()));
+    assert!(matches!(result, ProgramValue::Pointer(pointer) if pointer.pointee_constant()));
     let equality =
         c_value_comparison_proposition(result, CComparisonOperator::Equal, &value).unwrap();
     assert!(crate::kernel::search::ProofSearch::proves(
@@ -87,8 +89,8 @@ fn pointee_const_return_inline_call_preserves_pointer_identity() {
 
 #[test]
 fn pointee_const_return_direct_and_callback_calls_preserve_const() {
-    let function = CFunction::new(
-        CType::UInt8Pointer,
+    let function = ProgramFunction::new(
+        ProgramType::UInt8Pointer,
         "text",
         Vec::new(),
         c_return(c_int32_literal(0)),
@@ -97,7 +99,7 @@ fn pointee_const_return_direct_and_callback_calls_preserve_const() {
     let function_type = function.function_pointer_type();
     let environment = CExecutionEnvironment::new().with_function(function);
     let paths = execute_c_call_assign_paths(
-        &CState::new(),
+        &ExecutionState::new(),
         "temporary",
         "text",
         &[],
@@ -108,9 +110,9 @@ fn pointee_const_return_direct_and_callback_calls_preserve_const() {
     .unwrap();
     assert!(matches!(&paths[0].outcome, CStatementOutcome::Normal(state)
             if matches!(state.locals.binding("temporary"), Some(CLocalBinding::Object { pointee_constant: true, .. }))));
-    let state = CState::new().with_local(
+    let state = ExecutionState::new().with_local(
         "callback",
-        CValue::typed_pointer(
+        ProgramValue::typed_pointer(
             Pointer {
                 block: PointerBlock::Function("text".to_string()),
                 offset: PointerOffsetTerm::Constant(0),
@@ -133,7 +135,7 @@ fn pointee_const_return_direct_and_callback_calls_preserve_const() {
 
     let state = state.with_local(
         "mutable",
-        CValue::typed_pointer(Pointer::null(), CType::UInt8Pointer),
+        ProgramValue::typed_pointer(Pointer::null(), ProgramType::UInt8Pointer),
     );
     let paths = execute_c_call_assign_paths(
         &state,
@@ -150,11 +152,13 @@ fn pointee_const_return_direct_and_callback_calls_preserve_const() {
         CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch)
     ));
 
-    let incompatible =
-        CType::FunctionPointer(CType::function_pointer_signature(CType::UInt8Pointer, &[]));
-    let state = CState::new().with_local(
+    let incompatible = ProgramType::FunctionPointer(ProgramType::function_pointer_signature(
+        ProgramType::UInt8Pointer,
+        &[],
+    ));
+    let state = ExecutionState::new().with_local(
         "callback",
-        CValue::typed_pointer(
+        ProgramValue::typed_pointer(
             Pointer {
                 block: PointerBlock::Function("text".into()),
                 offset: PointerOffsetTerm::Constant(0),
@@ -183,14 +187,16 @@ fn pointee_const_return_assignment_preserves_destination_and_temporary_qualifier
     for source_const in [false, true] {
         for destination_const in [false, true] {
             for immutable in [false, true] {
-                let value =
-                    CValue::typed_pointer(Pointer::symbolic(Variable(912)), CType::UInt8Pointer)
-                        .with_pointer_pointee_constant(source_const);
-                let mut state = CState::new();
+                let value = ProgramValue::typed_pointer(
+                    Pointer::symbolic(Variable(912)),
+                    ProgramType::UInt8Pointer,
+                )
+                .with_pointer_pointee_constant(source_const);
+                let mut state = ExecutionState::new();
                 state.locals.set_typed_with_all_qualifiers(
                     "text",
                     value.clone(),
-                    CType::UInt8Pointer,
+                    ProgramType::UInt8Pointer,
                     false,
                     false,
                     immutable,
@@ -216,9 +222,10 @@ fn pointee_const_return_assignment_preserves_destination_and_temporary_qualifier
             }
         }
     }
-    let value = CValue::typed_pointer(Pointer::symbolic(Variable(913)), CType::UInt8Pointer)
-        .with_pointer_pointee_constant(true);
-    let mut state = CState::new();
+    let value =
+        ProgramValue::typed_pointer(Pointer::symbolic(Variable(913)), ProgramType::UInt8Pointer)
+            .with_pointer_pointee_constant(true);
+    let mut state = ExecutionState::new();
     assert!(
         assign_call_result(
             &mut state,
@@ -240,7 +247,7 @@ fn pointee_const_return_assignment_preserves_destination_and_temporary_qualifier
 
 #[test]
 fn call_result_cannot_overwrite_reserved_mutex_storage() {
-    let state = CState::new().with_local("result", int32(0));
+    let state = ExecutionState::new().with_local("result", int32(0));
     let pointer = state.locals.slot("result").unwrap().clone();
     let mut state = crate::kernel::mutexes::MutexContext::new(state)
         .initialize_empty(pointer, 40)
@@ -260,39 +267,48 @@ fn call_result_cannot_overwrite_reserved_mutex_storage() {
 
 #[test]
 fn pointee_const_return_symbolic_callback_checks_signature_and_destination() {
-    let template = CFunction::new(CType::Int32Pointer, "view", vec![], CStatement::Skip)
-        .with_return_pointee_constant(true)
-        .with_contract(vec![], vec![], vec![], vec![], true);
+    let template = ProgramFunction::new(
+        ProgramType::Int32Pointer,
+        "view",
+        vec![],
+        ProgramStatement::Skip,
+    )
+    .with_return_pointee_constant(true)
+    .with_contract(vec![], vec![], vec![], vec![], true);
     let contract = CFunctionContract::new("View", template).unwrap();
     let qualified = contract.function_pointer_type();
-    let unqualified =
-        CType::FunctionPointer(CType::function_pointer_signature(CType::Int32Pointer, &[]));
+    let unqualified = ProgramType::FunctionPointer(ProgramType::function_pointer_signature(
+        ProgramType::Int32Pointer,
+        &[],
+    ));
     let pointer = Pointer {
         block: PointerBlock::FunctionSymbolic(Variable(890)),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let value = CValue::typed_pointer(pointer.clone(), qualified);
+    let value = ProgramValue::typed_pointer(pointer.clone(), qualified);
     let assumptions = PureFactContext::new().assume_proposition(Proposition::Predicate {
         name: contract.predicate_name(),
         arguments: vec![
-            Term::CState(Box::new(CState::new().with_population_creation_tracking())),
-            Term::CValue(value),
+            Term::ExecutionState(Box::new(
+                ExecutionState::new().with_population_creation_tracking(),
+            )),
+            Term::ProgramValue(value),
         ],
     });
     let environment = CExecutionEnvironment::new().with_function_contract(contract);
     for (signature, mutable_destination) in
         [(qualified, false), (qualified, true), (unqualified, false)]
     {
-        let mut state = CState::new()
+        let mut state = ExecutionState::new()
             .with_population_creation_tracking()
             .with_local(
                 "callback",
-                CValue::typed_pointer(pointer.clone(), signature),
+                ProgramValue::typed_pointer(pointer.clone(), signature),
             );
         if mutable_destination {
             state = state.with_local(
                 "temporary",
-                CValue::typed_pointer(Pointer::null(), CType::Int32Pointer),
+                ProgramValue::typed_pointer(Pointer::null(), ProgramType::Int32Pointer),
             );
         }
         let paths = execute_c_call_assign_paths(

@@ -701,9 +701,9 @@ mod call_havoc_local_retention_tests {
         };
         let before = CMemory::new()
             .with_block(block.clone(), 16)
-            .store(at(0), CValue::Int32(MachineTerm::constant(7)))
-            .store(at(8), CValue::Int32(MachineTerm::constant(1)))
-            .store(at(12), CValue::Int32(MachineTerm::constant(9)));
+            .store(at(0), ProgramValue::Int32(MachineTerm::constant(7)))
+            .store(at(8), ProgramValue::Int32(MachineTerm::constant(1)))
+            .store(at(12), ProgramValue::Int32(MachineTerm::constant(9)));
         let range = CMemoryRange::new_with_element_width(at(8), 0u32.into(), 4u32.into(), 1);
         let facts = PureFactContext::new();
         let after = before.clone().with_call_memory_havoc(
@@ -727,7 +727,7 @@ mod call_havoc_local_retention_tests {
         ));
         let stale = after
             .clone()
-            .store(at(8), CValue::Int32(MachineTerm::constant(1)));
+            .store(at(8), ProgramValue::Int32(MachineTerm::constant(1)));
         assert!(!stale.matches_call_memory_havoc_result(
             &before,
             std::slice::from_ref(&range),
@@ -744,7 +744,7 @@ mod call_havoc_local_retention_tests {
         };
         let before = CMemory::new()
             .with_block(at(0).block.clone(), 16)
-            .store(at(0), CValue::Int32(MachineTerm::constant(7)));
+            .store(at(0), ProgramValue::Int32(MachineTerm::constant(7)));
         let range = CMemoryRange::new_with_element_width(at(0), 0u32.into(), 16u32.into(), 1);
         let facts = PureFactContext::new();
         let after = before.clone().with_call_memory_havoc(
@@ -758,7 +758,7 @@ mod call_havoc_local_retention_tests {
         assert!(!after.has_initialized_bytes_at(&at(8), 4));
         let named = after.clone().materialize_named_cell(
             at(0),
-            CValue::Int32(MachineTerm::Variable(Variable(944_016))),
+            ProgramValue::Int32(MachineTerm::Variable(Variable(944_016))),
         );
         assert!(
             named.known_value(&at(0)).is_none(),
@@ -767,7 +767,7 @@ mod call_havoc_local_retention_tests {
         assert!(named.has_initialized_bytes_at(&at(0), 4));
         let fresh = after
             .clone()
-            .materialize_named_cell(at(8), CValue::Int32(MachineTerm::constant(1)));
+            .materialize_named_cell(at(8), ProgramValue::Int32(MachineTerm::constant(1)));
         assert!(fresh.known_value(&at(8)).is_none());
         let mut forged = after.clone();
         std::sync::Arc::make_mut(&mut forged.heap)
@@ -807,8 +807,8 @@ mod call_havoc_local_retention_tests {
                 8,
                 vec![(
                     pointer.clone(),
-                    CType::Int32,
-                    CValue::Int32(MachineTerm::constant(1)),
+                    ProgramType::Int32,
+                    ProgramValue::Int32(MachineTerm::constant(1)),
                 )],
             );
         let range =
@@ -820,7 +820,7 @@ mod call_havoc_local_retention_tests {
             &facts,
             None,
         );
-        assert_eq!(after.known_union_value(&pointer, CType::Int32), None);
+        assert_eq!(after.known_union_value(&pointer, ProgramType::Int32), None);
         assert!(after.matches_call_memory_havoc_result(
             &before,
             std::slice::from_ref(&range),
@@ -836,9 +836,10 @@ mod call_havoc_local_retention_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let alias = Pointer::symbolic(Variable(944_021));
-        let before = CMemory::new()
-            .with_block(pointer.block.clone(), 4)
-            .store(pointer.clone(), CValue::Int32(MachineTerm::constant(7)));
+        let before = CMemory::new().with_block(pointer.block.clone(), 4).store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(7)),
+        );
         let facts = PureFactContext::new().assume_condition(
             ConditionTerm::pointer_equal(alias.clone(), pointer.offset_by_bytes(1)),
             true,
@@ -860,7 +861,7 @@ mod call_havoc_local_retention_tests {
         ));
         assert!(
             !after
-                .store(pointer, CValue::Int32(MachineTerm::constant(7)))
+                .store(pointer, ProgramValue::Int32(MachineTerm::constant(7)))
                 .matches_call_memory_havoc_result(
                     &before,
                     std::slice::from_ref(&range),
@@ -897,7 +898,7 @@ mod call_havoc_local_retention_tests {
             MachineTerm::constant(0),
             MachineTerm::constant(1),
         );
-        let value = CValue::Int32(MachineTerm::constant(41));
+        let value = ProgramValue::Int32(MachineTerm::constant(41));
         let before = CMemory::new()
             .with_block(local.block.clone(), 4)
             .store(local.clone(), value.clone());
@@ -958,8 +959,8 @@ mod call_havoc_union_view_tests {
         let view = |pointer: &Pointer, value: u32| {
             (
                 pointer.clone(),
-                CType::Int32,
-                CValue::Int32(MachineTerm::constant(value)),
+                ProgramType::Int32,
+                ProgramValue::Int32(MachineTerm::constant(value)),
             )
         };
         let before = CMemory::new()
@@ -979,10 +980,10 @@ mod call_havoc_union_view_tests {
             &assumptions,
             None,
         );
-        assert_eq!(after.known_union_value(&written, CType::Int32), None);
+        assert_eq!(after.known_union_value(&written, ProgramType::Int32), None);
         assert_eq!(
-            after.known_union_value(&sibling, CType::Int32),
-            Some(CValue::Int32(MachineTerm::constant(5)))
+            after.known_union_value(&sibling, ProgramType::Int32),
+            Some(ProgramValue::Int32(MachineTerm::constant(5)))
         );
         assert!(after.matches_call_memory_havoc_result(
             &before,
@@ -993,8 +994,8 @@ mod call_havoc_union_view_tests {
 
         let mut stale = after.clone();
         std::sync::Arc::make_mut(&mut stale.union_cells).insert(
-            (written.clone(), CType::Int32),
-            CValue::Int32(MachineTerm::constant(3)),
+            (written.clone(), ProgramType::Int32),
+            ProgramValue::Int32(MachineTerm::constant(3)),
         );
         assert!(!stale.matches_call_memory_havoc_result(
             &before,
@@ -1009,11 +1010,11 @@ mod call_havoc_union_view_tests {
 mod forget_cached_values_tests {
     use super::*;
 
-    fn int32_view(pointer: &Pointer, value: u32) -> (Pointer, CType, CValue) {
+    fn int32_view(pointer: &Pointer, value: u32) -> (Pointer, ProgramType, ProgramValue) {
         (
             pointer.clone(),
-            CType::Int32,
-            CValue::Int32(MachineTerm::constant(value)),
+            ProgramType::Int32,
+            ProgramValue::Int32(MachineTerm::constant(value)),
         )
     }
 
@@ -1054,10 +1055,10 @@ mod forget_cached_values_tests {
             None,
             None,
         );
-        assert_eq!(after.known_union_value(&written, CType::Int32), None);
+        assert_eq!(after.known_union_value(&written, ProgramType::Int32), None);
         assert_eq!(
-            after.known_union_value(&preserved, CType::Int32),
-            Some(CValue::Int32(MachineTerm::constant(5)))
+            after.known_union_value(&preserved, ProgramType::Int32),
+            Some(ProgramValue::Int32(MachineTerm::constant(5)))
         );
     }
 
@@ -1111,9 +1112,10 @@ mod forget_cached_values_tests {
         assert!(!narrow.is_zeroed_heap_address(&at(0), 8, &facts));
         assert!(narrow.is_zeroed_heap_address(&at(8), 4, &facts));
         // Eight bytes at 0 contain the four at 4, and miss the four at 8.
-        let wide = memory
-            .clone()
-            .store(at(0), CValue::Int64(MachineTerm::int64_constant(1 << 40)));
+        let wide = memory.clone().store(
+            at(0),
+            ProgramValue::Int64(MachineTerm::int64_constant(1 << 40)),
+        );
         assert!(!wide.is_zeroed_heap_address(&at(4), 4, &facts));
         assert!(wide.is_zeroed_heap_address(&at(8), 4, &facts));
         // A symbolic offset into a block that holds a cell is not separated
@@ -1279,17 +1281,17 @@ impl CLocalEnvironment {
         Self::default()
     }
 
-    pub fn with(mut self, name: impl Into<String>, value: CValue) -> Self {
+    pub fn with(mut self, name: impl Into<String>, value: ProgramValue) -> Self {
         self.set(name, value);
         self
     }
 
-    pub fn set(&mut self, name: impl Into<String>, value: CValue) {
+    pub fn set(&mut self, name: impl Into<String>, value: ProgramValue) {
         let c_type = value.c_type();
         self.set_typed(name, value, c_type);
     }
 
-    pub fn set_typed(&mut self, name: impl Into<String>, value: CValue, c_type: CType) {
+    pub fn set_typed(&mut self, name: impl Into<String>, value: ProgramValue, c_type: ProgramType) {
         self.set_typed_with_qualifiers(name, value, c_type, false, false);
     }
 
@@ -1297,8 +1299,8 @@ impl CLocalEnvironment {
     pub(in crate::kernel) fn bind_logical_typed(
         &mut self,
         name: impl Into<String>,
-        value: CValue,
-        c_type: CType,
+        value: ProgramValue,
+        c_type: ProgramType,
     ) {
         let name = name.into();
         self.set_typed(name.clone(), value, c_type);
@@ -1319,8 +1321,8 @@ impl CLocalEnvironment {
     pub(in crate::kernel) fn set_typed_with_qualifiers(
         &mut self,
         name: impl Into<String>,
-        value: CValue,
-        c_type: CType,
+        value: ProgramValue,
+        c_type: ProgramType,
         volatile: bool,
         pointee_volatile: bool,
     ) {
@@ -1338,8 +1340,8 @@ impl CLocalEnvironment {
     pub(in crate::kernel) fn set_typed_with_all_qualifiers(
         &mut self,
         name: impl Into<String>,
-        value: CValue,
-        c_type: CType,
+        value: ProgramValue,
+        c_type: ProgramType,
         volatile: bool,
         pointee_volatile: bool,
         constant: bool,
@@ -1367,8 +1369,8 @@ impl CLocalEnvironment {
     pub(in crate::kernel) fn set_typed_qualified_with_all_qualifiers(
         &mut self,
         name: impl Into<String>,
-        value: CValue,
-        c_type: CType,
+        value: ProgramValue,
+        c_type: ProgramType,
         slot: Pointer,
         volatile: bool,
         pointee_volatile: bool,
@@ -1407,7 +1409,7 @@ impl CLocalEnvironment {
     pub(in crate::kernel) fn set_global_with_all_qualifiers(
         &mut self,
         name: impl Into<String>,
-        c_type: CType,
+        c_type: ProgramType,
         slot: Pointer,
         volatile: bool,
         pointee_volatile: bool,
@@ -1430,7 +1432,7 @@ impl CLocalEnvironment {
     pub(in crate::kernel) fn set_uninitialized_with_all_qualifiers(
         &mut self,
         name: impl Into<String>,
-        c_type: CType,
+        c_type: ProgramType,
         slot: Pointer,
         volatile: bool,
         pointee_volatile: bool,
@@ -1453,7 +1455,7 @@ impl CLocalEnvironment {
     pub(in crate::kernel) fn set_array_object_at(
         &mut self,
         name: impl Into<String>,
-        element_type: CType,
+        element_type: ProgramType,
         length: u32,
         slot: Pointer,
     ) {
@@ -1463,7 +1465,7 @@ impl CLocalEnvironment {
     pub(in crate::kernel) fn set_array_object_at_with_constant(
         &mut self,
         name: impl Into<String>,
-        element_type: CType,
+        element_type: ProgramType,
         length: u32,
         slot: Pointer,
         constant: bool,
@@ -1509,7 +1511,7 @@ impl CLocalEnvironment {
         &mut self,
         name: impl Into<String>,
         value: impl Into<StoredExecutionValue>,
-        c_type: CType,
+        c_type: ProgramType,
         volatile: bool,
         pointee_volatile: bool,
         constant: bool,
@@ -1571,12 +1573,12 @@ impl CLocalEnvironment {
     }
 
     /// Explicit legacy output: reconstruct one selected native value, without caching it.
-    pub fn get_native(&self, name: &str) -> Option<std::borrow::Cow<'_, CValue>> {
+    pub fn get_native(&self, name: &str) -> Option<std::borrow::Cow<'_, ProgramValue>> {
         self.get(name).map(|value| value.native())
     }
 
     /// Read one automatic array's metadata by name without scanning the frame.
-    pub fn array_object_element_type(&self, name: &str) -> Option<CType> {
+    pub fn array_object_element_type(&self, name: &str) -> Option<ProgramType> {
         match self.bindings.get(name) {
             Some(CLocalBinding::ArrayObject { element_type, .. }) => Some(*element_type),
             _ => None,
@@ -1644,7 +1646,7 @@ impl CLocalEnvironment {
     /// The type of the value local `name`'s object holds, and the object's
     /// address, for a local that keeps one value in memory
     /// ([`CAggregateLayout::holding_value`]).
-    pub fn held_value_local(&self, name: &str) -> Option<(CType, &Pointer)> {
+    pub fn held_value_local(&self, name: &str) -> Option<(ProgramType, &Pointer)> {
         match self.bindings.get(name)? {
             CLocalBinding::AggregateObject { layout, slot, .. } => {
                 Some((layout.value_type()?, slot))
@@ -1655,7 +1657,7 @@ impl CLocalEnvironment {
 
     /// The locals that keep one value in memory, with the value's type and
     /// the object's address.
-    pub fn held_value_locals(&self) -> impl Iterator<Item = (&str, CType, &Pointer)> + '_ {
+    pub fn held_value_locals(&self) -> impl Iterator<Item = (&str, ProgramType, &Pointer)> + '_ {
         self.aggregate_object_values()
             .filter_map(|(name, layout, slot)| Some((name, layout.value_type()?, slot)))
     }
@@ -1663,7 +1665,7 @@ impl CLocalEnvironment {
     /// Read one local array's pointer and element type without scanning the frame.
     /// `None` for an array whose elements have no pointer type of their own,
     /// as [`Self::array_object_values`] leaves it out.
-    pub fn array_object_value(&self, name: &str) -> Option<(CValue, CType)> {
+    pub fn array_object_value(&self, name: &str) -> Option<(ProgramValue, ProgramType)> {
         let CLocalBinding::ArrayObject {
             element_type,
             slot,
@@ -1674,7 +1676,7 @@ impl CLocalEnvironment {
             return None;
         };
         Some((
-            CValue::typed_pointer_with_pointee_constant(
+            ProgramValue::typed_pointer_with_pointee_constant(
                 slot.clone(),
                 element_type.pointer_to()?,
                 *constant,
@@ -1687,7 +1689,9 @@ impl CLocalEnvironment {
     /// type. An array whose elements have no pointer type of their own, such
     /// as `const char *const *t[]`, has no such pointer value and is left
     /// out: a proof cannot name it, though execution reads it.
-    pub fn array_object_values(&self) -> impl Iterator<Item = (&str, CValue, CType)> + '_ {
+    pub fn array_object_values(
+        &self,
+    ) -> impl Iterator<Item = (&str, ProgramValue, ProgramType)> + '_ {
         self.bindings
             .iter()
             .filter_map(|(name, binding)| match binding {
@@ -1698,7 +1702,7 @@ impl CLocalEnvironment {
                     ..
                 } => Some((
                     name.as_str(),
-                    CValue::typed_pointer_with_pointee_constant(
+                    ProgramValue::typed_pointer_with_pointee_constant(
                         slot.clone(),
                         element_type.pointer_to()?,
                         *constant,
@@ -1712,7 +1716,7 @@ impl CLocalEnvironment {
             })
     }
 
-    pub(in crate::kernel) fn object_type(&self, name: &str) -> Option<CType> {
+    pub(in crate::kernel) fn object_type(&self, name: &str) -> Option<ProgramType> {
         match self.binding(name) {
             Some(CLocalBinding::Object { c_type, .. }) => Some(*c_type),
             Some(CLocalBinding::UninitializedObject { c_type, .. }) => Some(*c_type),
@@ -1723,7 +1727,7 @@ impl CLocalEnvironment {
         }
     }
 
-    pub(crate) fn scalar_object_type(&self, name: &str) -> Option<CType> {
+    pub(crate) fn scalar_object_type(&self, name: &str) -> Option<ProgramType> {
         match self.binding(name) {
             Some(CLocalBinding::Object { c_type, .. }) => Some(*c_type),
             Some(CLocalBinding::UninitializedObject { c_type, .. }) => Some(*c_type),
@@ -1756,7 +1760,7 @@ impl CLocalEnvironment {
     pub(crate) fn array_objects_with_slot_in(
         &self,
         block: &PointerBlock,
-    ) -> Vec<(&str, CType, &Pointer)> {
+    ) -> Vec<(&str, ProgramType, &Pointer)> {
         self.names_with_slot_in(block)
             .into_iter()
             .filter_map(|name| match self.binding(name)? {
@@ -1857,17 +1861,17 @@ fn held_integer_term(binding: &CLocalBinding) -> Option<&MachineTerm> {
         return None;
     };
     match value.native_payload()?.numeric_value() {
-        CValue::Bool(term)
-        | CValue::Int8(term)
-        | CValue::Int16(term)
-        | CValue::Int32(term)
-        | CValue::UInt8(term)
-        | CValue::UInt16(term)
-        | CValue::UInt32(term)
-        | CValue::Int64(term)
-        | CValue::UInt64(term)
-        | CValue::Int128(term)
-        | CValue::UInt128(term) => Some(term),
+        ProgramValue::Bool(term)
+        | ProgramValue::Int8(term)
+        | ProgramValue::Int16(term)
+        | ProgramValue::Int32(term)
+        | ProgramValue::UInt8(term)
+        | ProgramValue::UInt16(term)
+        | ProgramValue::UInt32(term)
+        | ProgramValue::Int64(term)
+        | ProgramValue::UInt64(term)
+        | ProgramValue::Int128(term)
+        | ProgramValue::UInt128(term) => Some(term),
         _ => None,
     }
 }
@@ -1879,7 +1883,7 @@ fn held_algebraic_value(binding: &CLocalBinding) -> Option<&AlgebraicTerm> {
         return None;
     };
     match value.native_payload()?.numeric_value() {
-        CValue::Parameter(term) if matches!(term.node, AlgebraicTermNode::Variable(_)) => {
+        ProgramValue::Parameter(term) if matches!(term.node, AlgebraicTermNode::Variable(_)) => {
             Some(term)
         }
         _ => None,
@@ -2115,7 +2119,7 @@ impl CLocalEnvironment {
     pub(crate) fn pointer_objects_in_block<'a>(
         &'a self,
         block: &PointerBlock,
-    ) -> impl Iterator<Item = (&'a str, &'a CPointerValue)> {
+    ) -> impl Iterator<Item = (&'a str, &'a PointerValue)> {
         self.pointer_objects_by_block
             .get(block)
             .into_iter()
@@ -2143,7 +2147,7 @@ impl CLocalEnvironment {
             } else {
                 held.native_payload()
                     .is_some_and(|value| match value.numeric_value() {
-                        CValue::Bool(bits) | integer_c_value!(bits) => bits == term,
+                        ProgramValue::Bool(bits) | integer_c_value!(bits) => bits == term,
                         _ => false,
                     })
             }
@@ -2168,7 +2172,7 @@ impl CLocalEnvironment {
             } else {
                 held.native_payload()
                     .is_some_and(|value| match value.numeric_value() {
-                        CValue::Bool(bits) | integer_c_value!(bits) => {
+                        ProgramValue::Bool(bits) | integer_c_value!(bits) => {
                             KernelTermImport::default().machine(format, bits) == *term
                         }
                         _ => false,
@@ -2378,7 +2382,7 @@ impl CLocalEnvironment {
     }
 }
 
-impl CBlock {
+impl MemoryBlock {
     pub fn new(size: u32) -> Self {
         Self {
             size: HeapExtent::int32(size),
@@ -3007,7 +3011,7 @@ enum CallHavocCellRule {
 /// part of a cached cell even when its start differs from the cell's start.
 fn call_havoc_keeps_cell(
     pointer: &Pointer,
-    value: &CValue,
+    value: &ProgramValue,
     mutable_ranges: &[CMemoryRange],
     assumptions: &PureFactContext,
     kept: Option<&CallKeptOwnership>,
@@ -3327,11 +3331,12 @@ impl CMemory {
         // constructor, so the refusal lives here.
         if block.is_havoc_block() || block.is_call_havoc_block() {
             let diagnostic_base = self.clone();
-            std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), CBlock::new(size));
+            std::sync::Arc::make_mut(&mut self.blocks)
+                .insert(block.clone(), MemoryBlock::new(size));
             self.record_diagnostic_transform(
                 "insert havoc marker",
                 vec![diagnostic_base],
-                vec![CValue::pointer(Pointer {
+                vec![ProgramValue::pointer(Pointer {
                     block,
                     offset: PointerOffsetTerm::Constant(0),
                 })],
@@ -3339,7 +3344,7 @@ impl CMemory {
             return self;
         }
         let base = intern_derivation_base(&mut self);
-        std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), CBlock::new(size));
+        std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), MemoryBlock::new(size));
         record_c_memory_derivation(&mut self, CMemoryDerivation::BlockDeclared { base, block });
         self
     }
@@ -3387,7 +3392,7 @@ impl CMemory {
         pointer: &Pointer,
         width: u32,
         class: Option<crate::kernel::effective_type::CAccessClass>,
-        value: &CValue,
+        value: &ProgramValue,
     ) -> Self {
         if !matches!(pointer.block, PointerBlock::Heap(_)) {
             return self;
@@ -3423,7 +3428,7 @@ impl CMemory {
         };
         let mut memory = self;
         let base = intern_derivation_base(&mut memory);
-        let mut declaration = CBlock::new(size);
+        let mut declaration = MemoryBlock::new(size);
         declaration.declared_class = Some(declared_class);
         declaration.read_only = read_only;
         std::sync::Arc::make_mut(&mut memory.blocks).insert(block.clone(), declaration);
@@ -3441,7 +3446,7 @@ impl CMemory {
         self,
         block: PointerBlock,
         size: u32,
-        c_type: CType,
+        c_type: ProgramType,
     ) -> Self {
         self.with_classed_scalar_block(block, size, c_type, None)
     }
@@ -3454,11 +3459,11 @@ impl CMemory {
         mut self,
         block: PointerBlock,
         size: u32,
-        c_type: CType,
+        c_type: ProgramType,
         declared_class: Option<crate::kernel::effective_type::CAccessClass>,
     ) -> Self {
         let base = intern_derivation_base(&mut self);
-        let mut declaration = CBlock::new(size);
+        let mut declaration = MemoryBlock::new(size);
         declaration.declared_scalar_type = Some(c_type);
         declaration.declared_class = declared_class
             .or_else(|| crate::kernel::effective_type::CAccessClass::of_kernel_type(c_type));
@@ -3497,16 +3502,16 @@ impl CMemory {
     pub fn with_uninitialized_block(mut self, block: impl Into<PointerBlock>, size: u32) -> Self {
         let diagnostic_base = self.clone();
         let block = block.into();
-        std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), CBlock::new(size));
+        std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), MemoryBlock::new(size));
         self.record_diagnostic_transform(
             "declare uninitialized block",
             vec![diagnostic_base],
             vec![
-                CValue::pointer(Pointer {
+                ProgramValue::pointer(Pointer {
                     block: block.clone(),
                     offset: PointerOffsetTerm::Constant(0),
                 }),
-                CValue::Int32(size.into()),
+                ProgramValue::Int32(size.into()),
             ],
         );
         self.with_uninitialized_object(
@@ -3536,7 +3541,10 @@ impl CMemory {
         self.record_diagnostic_transform(
             "mark uninitialized object",
             vec![diagnostic_base],
-            vec![CValue::pointer(pointer.clone()), CValue::Int32(size.into())],
+            vec![
+                ProgramValue::pointer(pointer.clone()),
+                ProgramValue::Int32(size.into()),
+            ],
         );
         self
     }
@@ -3603,7 +3611,8 @@ impl CMemory {
     ) -> Self {
         let block = block.into();
         let base = intern_derivation_base(&mut self);
-        std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), CBlock::read_only(size));
+        std::sync::Arc::make_mut(&mut self.blocks)
+            .insert(block.clone(), MemoryBlock::read_only(size));
         record_c_memory_derivation(&mut self, CMemoryDerivation::BlockDeclared { base, block });
         self
     }
@@ -3627,7 +3636,7 @@ impl CMemory {
             self.record_diagnostic_transform(
                 "declare block access class",
                 vec![diagnostic_base],
-                vec![CValue::pointer(Pointer {
+                vec![ProgramValue::pointer(Pointer {
                     block: block.clone(),
                     offset: PointerOffsetTerm::Constant(0),
                 })],
@@ -3643,16 +3652,16 @@ impl CMemory {
     ) -> Self {
         let diagnostic_base = self.clone();
         let block = block.into();
-        std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), CBlock::new(size));
+        std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), MemoryBlock::new(size));
         self.record_diagnostic_transform(
             "declare synthetic block",
             vec![diagnostic_base],
             vec![
-                CValue::pointer(Pointer {
+                ProgramValue::pointer(Pointer {
                     block: block.clone(),
                     offset: PointerOffsetTerm::Constant(0),
                 }),
-                CValue::Int32(size.into()),
+                ProgramValue::Int32(size.into()),
             ],
         );
         self
@@ -3732,7 +3741,7 @@ impl CMemory {
         pointer: &Pointer,
         assumptions: &PureFactContext,
         kept_owners: &ResourceContext,
-    ) -> Result<(Self, Vec<(Pointer, CType)>), CInvalidFree> {
+    ) -> Result<(Self, Vec<(Pointer, ProgramType)>), CInvalidFree> {
         // An aliased spelling of this allocation (a contract-returned pointer
         // proven equal to it, e.g. `ensures result == p`) is one address too.
         // Retiring through one identity has to retire it through both, else a
@@ -3827,7 +3836,7 @@ impl CMemory {
                     };
                     // Function pointers do not yet use logical version reads.
                     if value_type.pointee_type().is_some()
-                        && !matches!(value_type, CType::FunctionPointer(_))
+                        && !matches!(value_type, ProgramType::FunctionPointer(_))
                         && !crate::instrumentation::in_uncharged_debug_check()
                     {
                         pointer_frames.push((cell.clone(), value_type));
@@ -4257,7 +4266,7 @@ impl CMemory {
         old_pointer: Pointer,
         old_bytes: HeapExtent,
         zeroed_prefix: Option<MachineTerm>,
-        copied_cells: Vec<(PointerOffsetTerm, CValue)>,
+        copied_cells: Vec<(PointerOffsetTerm, ProgramValue)>,
         initialized_prefix: Vec<(i64, u32)>,
     ) -> Self {
         let diagnostic_base = self.clone();
@@ -4277,8 +4286,8 @@ impl CMemory {
             "register pending reallocation",
             vec![diagnostic_base],
             vec![
-                CValue::pointer(base.clone()),
-                CValue::pointer(old_pointer.clone()),
+                ProgramValue::pointer(base.clone()),
+                ProgramValue::pointer(old_pointer.clone()),
                 old_bytes.token_value(),
             ],
         );
@@ -4305,10 +4314,7 @@ impl CMemory {
     /// Name the success identity already reserved by this allocation producer.
     /// This is a value observation, not evidence that allocation succeeded or
     /// that the object is still live. No facts or memory history are consulted.
-    pub(crate) fn fresh_allocation_identity(
-        &self,
-        result: &CPointerValue,
-    ) -> Option<CPointerValue> {
+    pub(crate) fn fresh_allocation_identity(&self, result: &PointerValue) -> Option<PointerValue> {
         let base = result.pointer();
         match base.block {
             PointerBlock::Heap(_) => Some(result.clone()),
@@ -4426,7 +4432,7 @@ impl CMemory {
             .pending_object_classes
             .remove(base);
         if succeeds {
-            let mut block = CBlock::with_symbolic_size(bytes.clone());
+            let mut block = MemoryBlock::with_symbolic_size(bytes.clone());
             block.declared_class = object_class;
             std::sync::Arc::make_mut(&mut self.blocks).insert(resolved_base.block.clone(), block);
             std::sync::Arc::make_mut(&mut self.heap)
@@ -4473,7 +4479,7 @@ impl CMemory {
         self.record_diagnostic_transform(
             "consume pending reallocation",
             vec![diagnostic_base.clone()],
-            vec![CValue::pointer(base.clone())],
+            vec![ProgramValue::pointer(base.clone())],
         );
         let (mut memory, bytes, resolved_base) = if succeeds {
             self = self
@@ -4505,7 +4511,7 @@ impl CMemory {
             memory.record_diagnostic_transform(
                 "restore reallocation zeroed prefix",
                 vec![diagnostic_base.clone()],
-                vec![CValue::pointer(resolved_base.clone())],
+                vec![ProgramValue::pointer(resolved_base.clone())],
             );
             for (offset, value) in &pending.copied_cells {
                 memory = memory.store(
@@ -4583,7 +4589,7 @@ impl CMemory {
         );
         std::sync::Arc::make_mut(&mut self.blocks).insert(
             marker.into(),
-            CBlock::new(mutable_ranges.map_or(0, memory_havoc_write_set_fingerprint)),
+            MemoryBlock::new(mutable_ranges.map_or(0, memory_havoc_write_set_fingerprint)),
         );
         if let Some(base) = base {
             record_c_memory_derivation(
@@ -4723,7 +4729,7 @@ impl CMemory {
             .chain(sibling_memories.iter().copied())
             .map(intern_c_memory_ref)
             .collect::<Vec<_>>();
-        incoming.sort_by_key(SharedCMemory::arena_id);
+        incoming.sort_by_key(SharedMemory::arena_id);
         incoming.dedup();
         let Some(first) = sibling_memories.first() else {
             return Err("an interface memory join has no sibling states".to_string());
@@ -4995,7 +5001,7 @@ impl CMemory {
                 .collect::<BTreeSet<_>>(),
         };
         let mut blocks = blocks;
-        blocks.insert(format!("havoc:{}", variable.0).into(), CBlock::new(0));
+        blocks.insert(format!("havoc:{}", variable.0).into(), MemoryBlock::new(0));
         self.blocks = std::sync::Arc::new(blocks);
         let forgotten = std::sync::Arc::make_mut(&mut self.forgotten);
         forgotten.ended_local_blocks = ended_local_blocks;
@@ -5111,7 +5117,7 @@ impl CMemory {
         self.forget_zeroed_allocations_written_by(mutable_ranges, assumptions);
         std::sync::Arc::make_mut(&mut self.blocks).insert(
             format!("call-havoc:{}", variable.0).into(),
-            CBlock::new(memory_havoc_write_set_fingerprint(mutable_ranges)),
+            MemoryBlock::new(memory_havoc_write_set_fingerprint(mutable_ranges)),
         );
         // Keep the legacy marker's semantic shape and add a collision-free
         // structural key for the checked write set, and for the memory the
@@ -5120,7 +5126,7 @@ impl CMemory {
         // call-havoc edge as the only global memory barrier.
         std::sync::Arc::make_mut(&mut self.blocks).insert(
             call_write_set_marker(variable.0, mutable_ranges, kept_ranges.as_ref()),
-            CBlock::new(0),
+            MemoryBlock::new(0),
         );
         if let Some(base) = base {
             record_c_memory_derivation(
@@ -5244,8 +5250,9 @@ impl CMemory {
         let write_set_marker =
             call_write_set_marker(variable, mutable_ranges, kept_ranges.as_ref());
         if added_blocks.len() != 2
-            || **marker_block != CBlock::new(memory_havoc_write_set_fingerprint(mutable_ranges))
-            || self.blocks.get(&write_set_marker) != Some(&CBlock::new(0))
+            || **marker_block
+                != MemoryBlock::new(memory_havoc_write_set_fingerprint(mutable_ranges))
+            || self.blocks.get(&write_set_marker) != Some(&MemoryBlock::new(0))
         {
             return false;
         }
@@ -5271,10 +5278,10 @@ impl CMemory {
         mut self,
         base: Pointer,
         element_width: u32,
-        element_type: CType,
+        element_type: ProgramType,
         first: u32,
         count: u32,
-        source: SharedCMemory,
+        source: SharedMemory,
     ) -> Self {
         if first >= count {
             return self;
@@ -5325,10 +5332,10 @@ impl CMemory {
         self,
         base: Pointer,
         element_width: u32,
-        element_type: CType,
+        element_type: ProgramType,
         first: u32,
         count: u32,
-        source: SharedCMemory,
+        source: SharedMemory,
     ) -> Result<Self, Self> {
         if first >= count {
             return Ok(self);
@@ -5360,9 +5367,9 @@ impl CMemory {
     pub(crate) fn with_symbolic_storage_run(
         self,
         base: Pointer,
-        element_type: CType,
+        element_type: ProgramType,
         count: u32,
-        source: SharedCMemory,
+        source: SharedMemory,
     ) -> Result<Self, Self> {
         if count == 0 {
             return Ok(self);
@@ -5397,8 +5404,8 @@ impl CMemory {
         base: &Pointer,
         stride: u32,
         count: u32,
-        fields: &[(u32, CType)],
-        source: SharedCMemory,
+        fields: &[(u32, ProgramType)],
+        source: SharedMemory,
     ) -> Result<Self, Self> {
         if base.block.is_local_block()
             || matches!(base.block, PointerBlock::Heap(_))
@@ -5461,9 +5468,9 @@ impl CMemory {
     pub(crate) fn with_constant_run(
         self,
         base: Pointer,
-        element_type: CType,
+        element_type: ProgramType,
         count: u32,
-        value: CValue,
+        value: ProgramValue,
     ) -> Result<Self, Self> {
         if count == 0 {
             return Ok(self);
@@ -5558,9 +5565,9 @@ impl CMemory {
     pub(in crate::kernel) fn initialize_scalar_array(
         self,
         base: &Pointer,
-        element_type: CType,
+        element_type: ProgramType,
         count: u32,
-        value: CValue,
+        value: ProgramValue,
         copy: bool,
     ) -> Result<Self, CRuntimeError> {
         self.write_scalar_array_region(
@@ -5577,9 +5584,9 @@ impl CMemory {
     pub(in crate::kernel) fn write_scalar_array_region(
         mut self,
         base: &Pointer,
-        element_type: CType,
+        element_type: ProgramType,
         count: u32,
-        value: CValue,
+        value: ProgramValue,
         copy: bool,
         fresh: bool,
         assumptions: &PureFactContext,
@@ -5589,7 +5596,7 @@ impl CMemory {
             .filter(|bytes| *bytes <= i32::MAX as u32)
             .ok_or(CRuntimeError::TypeMismatch)?;
         let snapshot_copy = copy
-            && matches!(&value, CValue::Pointer(source) if
+            && matches!(&value, ProgramValue::Pointer(source) if
             !source.pointer().block.is_local_block()
             || self.cells.runs_in_block(&source.pointer().block)
                 .any(|run| !matches!(run.value_mode(), RunValueMode::Constant(_))));
@@ -5619,8 +5626,10 @@ impl CMemory {
                             })
                 })
         };
-        if !matches!(element_type, CType::Int32 | CType::UInt8 | CType::UInt32)
-            || !valid_region(base)
+        if !matches!(
+            element_type,
+            ProgramType::Int32 | ProgramType::UInt8 | ProgramType::UInt32
+        ) || !valid_region(base)
             || !self.run_can_stand_for_cells_at(base)
             || (fresh
                 && (base.offset != PointerOffsetTerm::Constant(0)
@@ -5641,7 +5650,7 @@ impl CMemory {
         let mut spans = Vec::new();
         let mut cells = Vec::new();
         if copy {
-            let CValue::Pointer(pointer) = &value else {
+            let ProgramValue::Pointer(pointer) = &value else {
                 return Err(CRuntimeError::TypeMismatch);
             };
             let pointer = pointer.pointer();
@@ -5818,9 +5827,9 @@ impl CMemory {
     pub(in crate::kernel) fn write_scalar_array_snapshot(
         mut self,
         base: &Pointer,
-        element: CType,
+        element: ProgramType,
         count: u32,
-        value: CValue,
+        value: ProgramValue,
         copy: bool,
         fresh: bool,
         assumptions: &PureFactContext,
@@ -5829,11 +5838,14 @@ impl CMemory {
             .checked_mul(element.byte_width())
             .filter(|bytes| *bytes <= i32::MAX as u32)
             .ok_or(CRuntimeError::TypeMismatch)?;
-        if !matches!(element, CType::Int32 | CType::UInt8 | CType::UInt32) {
+        if !matches!(
+            element,
+            ProgramType::Int32 | ProgramType::UInt8 | ProgramType::UInt32
+        ) {
             return Err(CRuntimeError::TypeMismatch);
         }
         if count == 0 {
-            if (copy && !matches!(value, CValue::Pointer(_)))
+            if (copy && !matches!(value, ProgramValue::Pointer(_)))
                 || (!copy && value.c_type() != element)
             {
                 return Err(CRuntimeError::TypeMismatch);
@@ -5881,7 +5893,7 @@ impl CMemory {
         let mut captured_runs = Vec::new();
         let mut captured_cells = Vec::new();
         if copy {
-            let CValue::Pointer(pointer) = value else {
+            let ProgramValue::Pointer(pointer) = value else {
                 return Err(CRuntimeError::TypeMismatch);
             };
             let pointer = pointer.pointer();
@@ -6037,10 +6049,10 @@ impl CMemory {
         mut self,
         base: Pointer,
         element_width: u32,
-        element_type: CType,
+        element_type: ProgramType,
         first: u32,
         count: u32,
-        source: SharedCMemory,
+        source: SharedMemory,
         mode: RunValueMode,
     ) -> Self {
         let mut holes = IndexIntervals::default();
@@ -6099,7 +6111,7 @@ impl CMemory {
         self
     }
 
-    pub fn store(self, pointer: Pointer, value: CValue) -> Self {
+    pub fn store(self, pointer: Pointer, value: ProgramValue) -> Self {
         self.store_with_context(pointer, value, &PureFactContext::new())
     }
 
@@ -6107,7 +6119,7 @@ impl CMemory {
     /// The observation is computed here so callers cannot supply a new value
     /// under the guise of a read.
     #[cfg(test)]
-    pub(crate) fn materialize_symbolic_cell(self, pointer: Pointer, c_type: CType) -> Self {
+    pub(crate) fn materialize_symbolic_cell(self, pointer: Pointer, c_type: ProgramType) -> Self {
         let value = crate::kernel::eval::symbolic_storage_cell_value(&self, &pointer, c_type, true);
         match value {
             Some(value) => self.materialize_named_cell(pointer, value),
@@ -6122,10 +6134,10 @@ impl CMemory {
     pub(crate) fn materialize_cell_from_source(
         self,
         pointer: Pointer,
-        c_type: CType,
-        source: SharedCMemory,
+        c_type: ProgramType,
+        source: SharedMemory,
     ) -> Self {
-        let value = if let CType::Parameter(parameter) = c_type {
+        let value = if let ProgramType::Parameter(parameter) = c_type {
             AlgebraicTermNode::parameter_load(source, pointer.clone(), parameter)
         } else {
             let load = crate::kernel::eval::canonical_cell_load(source, pointer.clone(), c_type);
@@ -6140,7 +6152,7 @@ impl CMemory {
     pub(in crate::kernel) fn materialize_named_cell(
         mut self,
         pointer: Pointer,
-        value: CValue,
+        value: ProgramValue,
     ) -> Self {
         if self.cells.contains_key(&pointer) {
             return self;
@@ -6183,7 +6195,7 @@ impl CMemory {
     pub fn store_with_context(
         self,
         pointer: Pointer,
-        value: CValue,
+        value: ProgramValue,
         context: &PureFactContext,
     ) -> Self {
         self.store_with_effective_type(pointer, value, context, None, false)
@@ -6197,7 +6209,7 @@ impl CMemory {
     pub(in crate::kernel) fn store_classed_with_context(
         self,
         pointer: Pointer,
-        value: CValue,
+        value: ProgramValue,
         context: &PureFactContext,
         class: Option<crate::kernel::effective_type::CAccessClass>,
     ) -> Self {
@@ -6208,7 +6220,7 @@ impl CMemory {
     pub(in crate::kernel) fn store_invalidating_with_context(
         self,
         pointer: Pointer,
-        value: CValue,
+        value: ProgramValue,
         context: &PureFactContext,
     ) -> Self {
         self.store_with_effective_type(pointer, value, context, None, true)
@@ -6217,7 +6229,7 @@ impl CMemory {
     fn store_with_effective_type(
         mut self,
         pointer: Pointer,
-        value: CValue,
+        value: ProgramValue,
         context: &PureFactContext,
         effective_type: Option<Option<crate::kernel::effective_type::CAccessClass>>,
         invalidate_aliases: bool,
@@ -6363,7 +6375,7 @@ impl CMemory {
         pointers.into_iter().collect()
     }
 
-    pub(in crate::kernel) fn known_value(&self, pointer: &Pointer) -> Option<CValue> {
+    pub(in crate::kernel) fn known_value(&self, pointer: &Pointer) -> Option<ProgramValue> {
         self.cells.get(pointer)
     }
 
@@ -6379,17 +6391,17 @@ impl CMemory {
             .changed_concrete_cells(earlier.map(|earlier| earlier.cells.as_ref()))
             .into_iter()
             .filter_map(|(_, value)| match value.numeric_value() {
-                CValue::Bool(term)
-                | CValue::Int8(term)
-                | CValue::Int16(term)
-                | CValue::Int32(term)
-                | CValue::UInt8(term)
-                | CValue::UInt16(term)
-                | CValue::UInt32(term)
-                | CValue::Int64(term)
-                | CValue::UInt64(term)
-                | CValue::Int128(term)
-                | CValue::UInt128(term) => Some(term),
+                ProgramValue::Bool(term)
+                | ProgramValue::Int8(term)
+                | ProgramValue::Int16(term)
+                | ProgramValue::Int32(term)
+                | ProgramValue::UInt8(term)
+                | ProgramValue::UInt16(term)
+                | ProgramValue::UInt32(term)
+                | ProgramValue::Int64(term)
+                | ProgramValue::UInt64(term)
+                | ProgramValue::Int128(term)
+                | ProgramValue::UInt128(term) => Some(term),
                 _ => None,
             })
             .collect()
@@ -6400,13 +6412,13 @@ impl CMemory {
     }
 
     /// The typed union views recorded at exactly `pointer`: one key range,
-    /// since `(Pointer, CType)` keys order by pointer first.
+    /// since `(Pointer, ProgramType)` keys order by pointer first.
     fn union_views_at<'a>(
         &'a self,
         pointer: &'a Pointer,
-    ) -> impl Iterator<Item = (&'a (Pointer, CType), &'a CValue)> + 'a {
+    ) -> impl Iterator<Item = (&'a (Pointer, ProgramType), &'a ProgramValue)> + 'a {
         self.union_cells
-            .range::<_, (Pointer, CType)>((pointer.clone(), CType::Void)..)
+            .range::<_, (Pointer, ProgramType)>((pointer.clone(), ProgramType::Void)..)
             .take_while(move |((cell_pointer, _), _)| cell_pointer == pointer)
     }
 
@@ -6562,8 +6574,8 @@ impl CMemory {
     pub(in crate::kernel) fn known_union_value(
         &self,
         pointer: &Pointer,
-        value_type: CType,
-    ) -> Option<CValue> {
+        value_type: ProgramType,
+    ) -> Option<ProgramValue> {
         self.union_cells
             .get(&(pointer.clone(), value_type))
             .cloned()
@@ -6571,9 +6583,9 @@ impl CMemory {
 
     /// The pointer a typed union view records at exactly `pointer`, when one
     /// does: one key range, as [`Self::union_views_at`] reads it.
-    pub(in crate::kernel) fn known_union_pointer(&self, pointer: &Pointer) -> Option<CValue> {
+    pub(in crate::kernel) fn known_union_pointer(&self, pointer: &Pointer) -> Option<ProgramValue> {
         self.union_views_at(pointer)
-            .find(|(_, value)| matches!(value, CValue::Pointer(_)))
+            .find(|(_, value)| matches!(value, ProgramValue::Pointer(_)))
             .map(|(_, value)| value.clone())
     }
 
@@ -6581,8 +6593,8 @@ impl CMemory {
     pub(in crate::kernel) fn store_union(
         self,
         pointer: Pointer,
-        value_type: CType,
-        value: CValue,
+        value_type: ProgramType,
+        value: ProgramValue,
     ) -> Self {
         self.store_union_views(
             pointer.clone(),
@@ -6602,7 +6614,7 @@ impl CMemory {
         self,
         written_pointer: Pointer,
         written_bytes: u32,
-        views: Vec<(Pointer, CType, CValue)>,
+        views: Vec<(Pointer, ProgramType, ProgramValue)>,
     ) -> Self {
         let diagnostic_base = self.clone();
         let mut memory = self.without_possible_aliasing_cells(
@@ -6631,8 +6643,8 @@ impl CMemory {
             "replace union views",
             vec![diagnostic_base],
             vec![
-                CValue::pointer(written_pointer.clone()),
-                CValue::Int32(written_bytes.into()),
+                ProgramValue::pointer(written_pointer.clone()),
+                ProgramValue::Int32(written_bytes.into()),
             ],
         );
         memory
@@ -6648,7 +6660,7 @@ impl CMemory {
         &self,
         base: &Pointer,
         offset_bytes: u32,
-        c_type: CType,
+        c_type: ProgramType,
     ) -> Self {
         let diagnostic_base = self.clone();
         let Some(field_start) = base
@@ -6708,9 +6720,9 @@ impl CMemory {
             "forget copied field contents",
             vec![diagnostic_base],
             vec![
-                CValue::pointer(base.clone()),
-                CValue::Int32(offset_bytes.into()),
-                CValue::Int32(c_type.byte_width().into()),
+                ProgramValue::pointer(base.clone()),
+                ProgramValue::Int32(offset_bytes.into()),
+                ProgramValue::Int32(c_type.byte_width().into()),
             ],
         );
         memory
@@ -6734,7 +6746,7 @@ impl CMemory {
         memory.record_diagnostic_transform(
             "remove cell for conditional load",
             vec![diagnostic_base],
-            vec![CValue::pointer(pointer.clone())],
+            vec![ProgramValue::pointer(pointer.clone())],
         );
         memory
     }
@@ -6800,18 +6812,20 @@ impl CMemory {
         let mut forgotten_cells = Vec::new();
         let dropped_run_slots;
         {
-            let mut keep_cell =
-                |pointer: &Pointer, value: &CValue| match fate(pointer, CachedValue::Cell(value)) {
-                    CachedValueFate::Kept => true,
-                    CachedValueFate::Overwritten | CachedValueFate::Retired => false,
-                    CachedValueFate::Forgotten => {
-                        push_dropped_initialized(
-                            &mut forgotten_cells,
-                            (pointer.clone(), value.byte_width()),
-                        );
-                        false
-                    }
-                };
+            let mut keep_cell = |pointer: &Pointer, value: &ProgramValue| match fate(
+                pointer,
+                CachedValue::Cell(value),
+            ) {
+                CachedValueFate::Kept => true,
+                CachedValueFate::Overwritten | CachedValueFate::Retired => false,
+                CachedValueFate::Forgotten => {
+                    push_dropped_initialized(
+                        &mut forgotten_cells,
+                        (pointer.clone(), value.byte_width()),
+                    );
+                    false
+                }
+            };
             let cells = std::sync::Arc::make_mut(&mut self.cells);
             dropped_run_slots = match scope {
                 ForgetScope::Everywhere => cells.retain_by(&mut keep_cell, run_rule),
@@ -6838,7 +6852,8 @@ impl CMemory {
             };
         }
         if !self.union_cells.is_empty() {
-            let mut keep_view = |(pointer, c_type): &(Pointer, CType), value: &CValue| match fate(
+            let mut keep_view = |(pointer, c_type): &(Pointer, ProgramType),
+                                 value: &ProgramValue| match fate(
                 pointer,
                 CachedValue::UnionView(*c_type, value),
             ) {
@@ -7112,7 +7127,7 @@ impl CMemory {
         // Objects a known address equality ties to the written one may share
         // the written bytes.
         let address_connected = assumptions.address_connected_objects(&normalized_pointer);
-        let cell_fate = |cell_pointer: &Pointer, cell_value: &CValue| {
+        let cell_fate = |cell_pointer: &Pointer, cell_value: &ProgramValue| {
             let normalized_cell_pointer = Pointer {
                 block: cell_pointer.block.clone(),
                 offset: normalize_exact_memory_loads_in_pointer_offset(
@@ -7183,7 +7198,7 @@ impl CMemory {
                 CachedValueFate::Forgotten
             }
         };
-        let view_fate = |cell_pointer: &Pointer, cell_type: CType| {
+        let view_fate = |cell_pointer: &Pointer, cell_type: ProgramType| {
             let normalized_cell_pointer = Pointer {
                 block: cell_pointer.block.clone(),
                 offset: normalize_exact_memory_loads_in_pointer_offset(
@@ -7455,16 +7470,18 @@ impl CMemory {
     }
 
     pub(in crate::kernel) fn is_read_only_block(&self, block: &PointerBlock) -> bool {
-        self.blocks.get(block).is_some_and(CBlock::is_read_only)
+        self.blocks
+            .get(block)
+            .is_some_and(MemoryBlock::is_read_only)
     }
 
     pub(in crate::kernel) fn block_size(&self, block: &PointerBlock) -> Option<&MachineTerm> {
-        self.blocks.get(block).map(CBlock::size)
+        self.blocks.get(block).map(MemoryBlock::size)
     }
 
-    /// The block's byte count with its format; see [`CBlock::extent`].
+    /// The block's byte count with its format; see [`MemoryBlock::extent`].
     pub(in crate::kernel) fn block_extent(&self, block: &PointerBlock) -> Option<&HeapExtent> {
-        self.blocks.get(block).map(CBlock::extent)
+        self.blocks.get(block).map(MemoryBlock::extent)
     }
 
     /// Whether some allocation this snapshot has already freed may contain
@@ -7519,7 +7536,7 @@ impl CMemory {
     pub(in crate::kernel) fn can_store_concretely(
         &self,
         pointer: &Pointer,
-        value: &CValue,
+        value: &ProgramValue,
     ) -> bool {
         !self.is_read_only_block(&pointer.block)
             && (self.cells.contains_key(pointer)
@@ -7544,7 +7561,7 @@ impl CMemory {
             .is_some_and(|end| end <= block_size)
     }
 
-    pub(in crate::kernel) fn symbolic_int32_load(&self, pointer: &Pointer) -> CValue {
+    pub(in crate::kernel) fn symbolic_int32_load(&self, pointer: &Pointer) -> ProgramValue {
         int32(MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
@@ -7554,7 +7571,7 @@ impl CMemory {
 
     /// A signed byte read: the two's-complement conversion of the byte's
     /// one unsigned read ([`MachineTerm::memory_read`]).
-    pub(in crate::kernel) fn symbolic_int8_load(&self, pointer: &Pointer) -> CValue {
+    pub(in crate::kernel) fn symbolic_int8_load(&self, pointer: &Pointer) -> ProgramValue {
         int8(MachineTerm::memory_read(
             crate::kernel::intern_c_memory(self.clone()),
             pointer.clone(),
@@ -7562,7 +7579,7 @@ impl CMemory {
         ))
     }
 
-    pub(in crate::kernel) fn symbolic_int16_load(&self, pointer: &Pointer) -> CValue {
+    pub(in crate::kernel) fn symbolic_int16_load(&self, pointer: &Pointer) -> ProgramValue {
         int16(MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
@@ -7570,7 +7587,7 @@ impl CMemory {
         ))
     }
 
-    pub(in crate::kernel) fn symbolic_uint8_load(&self, pointer: &Pointer) -> CValue {
+    pub(in crate::kernel) fn symbolic_uint8_load(&self, pointer: &Pointer) -> ProgramValue {
         uint8(MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
@@ -7578,7 +7595,7 @@ impl CMemory {
         ))
     }
 
-    pub(in crate::kernel) fn symbolic_uint16_load(&self, pointer: &Pointer) -> CValue {
+    pub(in crate::kernel) fn symbolic_uint16_load(&self, pointer: &Pointer) -> ProgramValue {
         uint16(MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
@@ -7586,7 +7603,7 @@ impl CMemory {
         ))
     }
 
-    pub(in crate::kernel) fn symbolic_uint32_load(&self, pointer: &Pointer) -> CValue {
+    pub(in crate::kernel) fn symbolic_uint32_load(&self, pointer: &Pointer) -> ProgramValue {
         uint32(MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
@@ -7594,16 +7611,16 @@ impl CMemory {
         ))
     }
 
-    pub(in crate::kernel) fn symbolic_int64_load(&self, pointer: &Pointer) -> CValue {
-        CValue::Int64(MachineTerm::MemoryLoad(
+    pub(in crate::kernel) fn symbolic_int64_load(&self, pointer: &Pointer) -> ProgramValue {
+        ProgramValue::Int64(MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
             LoadKind::Bits64,
         ))
     }
 
-    pub(in crate::kernel) fn symbolic_uint64_load(&self, pointer: &Pointer) -> CValue {
-        CValue::UInt64(MachineTerm::MemoryLoad(
+    pub(in crate::kernel) fn symbolic_uint64_load(&self, pointer: &Pointer) -> ProgramValue {
+        ProgramValue::UInt64(MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
             LoadKind::Bits64,
@@ -7614,7 +7631,7 @@ impl CMemory {
         &self,
         pointer: &Pointer,
         ty: MachineIntegerType,
-    ) -> Option<CValue> {
+    ) -> Option<ProgramValue> {
         if ty.format().bits() != 128 {
             return None;
         }
@@ -7624,22 +7641,22 @@ impl CMemory {
             LoadKind::of_type(ty.c_type())?,
         );
         Some(match ty {
-            MachineIntegerType::Int128 => CValue::Int128(load),
-            MachineIntegerType::UInt128 => CValue::UInt128(load),
+            MachineIntegerType::Int128 => ProgramValue::Int128(load),
+            MachineIntegerType::UInt128 => ProgramValue::UInt128(load),
             _ => return None,
         })
     }
 
-    pub(in crate::kernel) fn symbolic_float32_load(&self, pointer: &Pointer) -> CValue {
-        CValue::Float32(MachineTerm::MemoryLoad(
+    pub(in crate::kernel) fn symbolic_float32_load(&self, pointer: &Pointer) -> ProgramValue {
+        ProgramValue::Float32(MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
             LoadKind::Float32,
         ))
     }
 
-    pub(in crate::kernel) fn symbolic_float64_load(&self, pointer: &Pointer) -> CValue {
-        CValue::Float64(MachineTerm::MemoryLoad(
+    pub(in crate::kernel) fn symbolic_float64_load(&self, pointer: &Pointer) -> ProgramValue {
+        ProgramValue::Float64(MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
             LoadKind::Float64,
@@ -7651,14 +7668,14 @@ impl CMemory {
     pub(in crate::kernel) fn symbolic_pointer_version_load(
         &self,
         pointer: &Pointer,
-        value_type: CType,
-    ) -> CValue {
+        value_type: ProgramType,
+    ) -> ProgramValue {
         let snapshot = crate::kernel::intern_c_memory(self.clone());
         // A version read is a named read, or a value the memory holds for the
         // cell, either of which already carries its definition.
         match Pointer::version_read_value(&snapshot, pointer) {
-            Ok(held) => CValue::Pointer(held.with_type(value_type)),
-            Err(value) => CValue::Pointer(CPointerValue::from_read(
+            Ok(held) => ProgramValue::Pointer(held.with_type(value_type)),
+            Err(value) => ProgramValue::Pointer(PointerValue::from_read(
                 value, value_type, &snapshot, pointer,
             )),
         }
@@ -7667,8 +7684,8 @@ impl CMemory {
     pub(in crate::kernel) fn symbolic_pointer_load(
         &self,
         pointer: &Pointer,
-        value_type: CType,
-    ) -> CValue {
+        value_type: ProgramType,
+    ) -> ProgramValue {
         let snapshot = crate::kernel::intern_c_memory(self.clone());
         let value = Pointer::loaded(&MachineTerm::MemoryLoad(
             snapshot.clone(),
@@ -7681,19 +7698,20 @@ impl CMemory {
         // resource argument evaluator does not retain a C load's fact stream.
         crate::kernel::equality_graph::EqualityGraph::default()
             .register_pointer_read_definition(&value, &snapshot, pointer);
-        CValue::Pointer(CPointerValue::from_read(
+        ProgramValue::Pointer(PointerValue::from_read(
             value, value_type, &snapshot, pointer,
         ))
     }
 }
 
-impl CState {
+impl ExecutionState {
     /// The value local `name` keeps in its object, for a local that keeps
     /// one value of an abstract or enum type in memory, as a Click name reads
     /// it: the read of the object at the point it was last written, never
     /// the value a store left there, so `o` names one read per version.
-    pub fn held_local_value(&self, name: &str) -> Option<CValue> {
-        let (CType::Parameter(value_type), slot) = self.locals().held_value_local(name)? else {
+    pub fn held_local_value(&self, name: &str) -> Option<ProgramValue> {
+        let (ProgramType::Parameter(value_type), slot) = self.locals().held_value_local(name)?
+        else {
             return None;
         };
         Some(AlgebraicTermNode::parameter_load(
@@ -7707,7 +7725,7 @@ impl CState {
     /// diagnostic, or `None` when the states are equal. A differing resource
     /// context names a resource fact held on one side only; every other part
     /// is named by what it is.
-    pub(crate) fn first_difference(&self, other: &CState) -> Option<String> {
+    pub(crate) fn first_difference(&self, other: &ExecutionState) -> Option<String> {
         if self.resources != other.resources {
             let only_in = |left: &ResourceContext, right: &ResourceContext| {
                 left.facts()
@@ -8390,7 +8408,8 @@ impl CState {
             self.authority_wrapper_candidates(selected, definition, assumptions, require_folded)?;
         let mut counts = Vec::with_capacity(descriptions.len());
         for description in descriptions {
-            let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+            let [AlgebraicValue::C(ProgramValue::Pointer(pointer))] = description.arguments()
+            else {
                 return Err("control authority needs one pointer anchor".into());
             };
             let anchor = pointer.pointer();
@@ -8558,7 +8577,8 @@ impl CState {
             self.authority_wrapper_candidates(selected, definition, assumptions, true)?;
         let mut components = Vec::with_capacity(descriptions.len());
         for description in &descriptions {
-            let [AlgebraicValue::C(CValue::Pointer(anchor_value))] = description.arguments() else {
+            let [AlgebraicValue::C(ProgramValue::Pointer(anchor_value))] = description.arguments()
+            else {
                 return Err("control authority needs one pointer anchor".into());
             };
             let anchor = anchor_value.pointer().clone();
@@ -8591,12 +8611,12 @@ impl CState {
             {
                 return Err("control must own exact memory, allocation, and authority".into());
             }
-            let is_parameter = |expression: &SpecExpression| matches!(expression, SpecExpression::CExpression(CExpression::Variable(name)) if name == parameter);
+            let is_parameter = |expression: &SpecExpression| matches!(expression, SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) if name == parameter);
             let is_counter_load = |expression: &SpecExpression| {
                 let SpecExpression::MemoryLoad {
                     memory: SpecMemory::Current,
                     pointer,
-                    value_type: CType::Int32,
+                    value_type: ProgramType::Int32,
                 } = expression
                 else {
                     return false;
@@ -8611,7 +8631,7 @@ impl CState {
                         byte_width: 4,
                     } => {
                         is_parameter(pointer)
-                            && matches!(elements.as_ref(), SpecExpression::Value(CValue::Int32(zero)) if zero.as_const() == Some(0))
+                            && matches!(elements.as_ref(), SpecExpression::Value(ProgramValue::Int32(zero)) if zero.as_const() == Some(0))
                     }
                     _ => false,
                 }
@@ -8677,7 +8697,7 @@ impl CState {
         {
             return Err("Requires one folded authority control resource".into());
         }
-        let mut evaluation = CState::new().with_memory(self.memory.clone());
+        let mut evaluation = ExecutionState::new().with_memory(self.memory.clone());
         evaluation.population_effects = self.population_effects.clone();
         for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
             let value = argument
@@ -8822,7 +8842,7 @@ impl CState {
         selected: &CResourceFact,
         establish: bool,
         assumptions: &PureFactContext,
-    ) -> Result<(CState, CheckedPopulationAuthorityExchange), String> {
+    ) -> Result<(ExecutionState, CheckedPopulationAuthorityExchange), String> {
         if self
             .population_effects
             .predicate_count_permissions
@@ -8837,7 +8857,7 @@ impl CState {
         if quantity.as_const() != Some(1) {
             return Err("Requires one authority(R(p))".into());
         }
-        let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+        let [AlgebraicValue::C(ProgramValue::Pointer(pointer))] = description.arguments() else {
             return Err("authority requires one pointer anchor".into());
         };
         let anchor = pointer.pointer();
@@ -8907,7 +8927,7 @@ impl CState {
         produce: bool,
         definition: &super::super::CCompositeResourceDefinition,
         assumptions: &PureFactContext,
-    ) -> Result<(CState, CheckedPopulationMemberExchange), String> {
+    ) -> Result<(ExecutionState, CheckedPopulationMemberExchange), String> {
         if self
             .population_effects
             .predicate_count_permissions
@@ -8958,7 +8978,8 @@ impl CState {
             arguments.clone(),
             super::super::ResourceFieldSchema::new(vec![]).expect("empty resource schema is valid"),
         );
-        let Some(AlgebraicValue::C(CValue::Pointer(pointer))) = description.arguments().first()
+        let Some(AlgebraicValue::C(ProgramValue::Pointer(pointer))) =
+            description.arguments().first()
         else {
             return Err("Requires an exact pointer-anchored authorized resource R(p)".into());
         };
@@ -9161,7 +9182,7 @@ impl CState {
     /// operation and does not use this lifecycle exchange.
     pub(in crate::kernel) fn record_instance_population_exchange(
         &mut self,
-        before: &CState,
+        before: &ExecutionState,
         instance: &super::super::ResourceInstance,
         produce: bool,
         assumptions: &PureFactContext,
@@ -9200,7 +9221,8 @@ impl CState {
                     .map_err(|refusal| format!("named member change refused: {refusal}"))?
             }
         } else if produce {
-            let Some(AlgebraicValue::C(CValue::Pointer(pointer))) = description.arguments().first()
+            let Some(AlgebraicValue::C(ProgramValue::Pointer(pointer))) =
+                description.arguments().first()
             else {
                 return Ok(());
             };
@@ -9351,7 +9373,7 @@ impl CState {
                 .shares_storage_with(&other.observed_population_families)
     }
 
-    pub fn with_local(mut self, name: impl Into<String>, value: CValue) -> Self {
+    pub fn with_local(mut self, name: impl Into<String>, value: ProgramValue) -> Self {
         self.locals.set(name, value);
         self
     }
@@ -9415,7 +9437,7 @@ impl CState {
 
     pub fn with_resource_context(mut self, resources: ResourceContext) -> Self {
         // ResourceContext owns the canonical persistent dependency root. The
-        // CState field is only a shared mirror, so replacing a context does
+        // ExecutionState field is only a shared mirror, so replacing a context does
         // not scan unrelated resources or active loans.
         self.loan_view_bindings =
             crate::kernel::loans::LoanViewBindings::from_state(resources.loan_dependency_state());
@@ -9514,18 +9536,18 @@ impl CState {
         &self.locals
     }
 
-    pub(crate) fn local_object_type(&self, name: &str) -> Option<CType> {
+    pub(crate) fn local_object_type(&self, name: &str) -> Option<ProgramType> {
         self.locals.object_type(name)
     }
 
-    pub(crate) fn global_object_type(&self, name: &str) -> Option<CType> {
+    pub(crate) fn global_object_type(&self, name: &str) -> Option<ProgramType> {
         self.locals
             .is_global_object(name)
             .then(|| self.locals.object_type(name))
             .flatten()
     }
 
-    pub(crate) fn global_array_element_type(&self, name: &str) -> Option<CType> {
+    pub(crate) fn global_array_element_type(&self, name: &str) -> Option<ProgramType> {
         self.locals
             .is_array_object(name)
             .then(|| self.locals.object_type(name))
@@ -9539,7 +9561,7 @@ impl CState {
     /// The value one scalar local or parameter holds now, by name: a stored
     /// local's slot cell, or a logical parameter's binding, which no store
     /// can change. Nothing when a stored slot's cell is not known.
-    pub(crate) fn scalar_local_value(&self, name: &str) -> Option<CValue> {
+    pub(crate) fn scalar_local_value(&self, name: &str) -> Option<ProgramValue> {
         match self.locals.binding(name)? {
             CLocalBinding::Object {
                 storage_declared: false,
@@ -9558,7 +9580,7 @@ impl CState {
     /// The values held by memory-resident scalar locals at offset zero.
     /// Resolve names through the local-slot index so framed parameter blocks
     /// are exposed with their source name rather than their internal block id.
-    pub fn local_cell_values(&self) -> impl Iterator<Item = (&str, CValue)> + '_ {
+    pub fn local_cell_values(&self) -> impl Iterator<Item = (&str, ProgramValue)> + '_ {
         // A local's slot is at offset zero of its block, so a run holds one
         // only at the slot spelled that way, looked up rather than visited.
         let run_slots = self.memory.cells.runs().filter_map(|run| {
@@ -9674,7 +9696,7 @@ impl CState {
                     };
                 // A store through a pointer to the other signedness of the
                 // object's width wrote the same bits; the local reads them in
-                // its own type (`CType::read_cell`).
+                // its own type (`ProgramType::read_cell`).
                 memory
                     .known_value(&slot)
                     .and_then(|value| {
@@ -10075,20 +10097,20 @@ mod union_store_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let memory = CMemory::new()
-            .store_union(base.clone(), CType::UInt8, crate::kernel::uint8(0xAA))
+            .store_union(base.clone(), ProgramType::UInt8, crate::kernel::uint8(0xAA))
             .store_union(
                 base.clone(),
-                CType::Int32,
-                CValue::Int32(MachineTerm::constant(0x51)),
+                ProgramType::Int32,
+                ProgramValue::Int32(MachineTerm::constant(0x51)),
             );
         assert_eq!(
-            memory.known_union_value(&base, CType::UInt8),
+            memory.known_union_value(&base, ProgramType::UInt8),
             None,
             "the old byte view must not survive the wider member write"
         );
         assert_eq!(
-            memory.known_union_value(&base, CType::Int32),
-            Some(CValue::Int32(MachineTerm::constant(0x51))),
+            memory.known_union_value(&base, ProgramType::Int32),
+            Some(ProgramValue::Int32(MachineTerm::constant(0x51))),
         );
     }
 }
@@ -10249,13 +10271,13 @@ mod join_allocation_spelling_tests {
 #[derive(Clone, Copy, Debug)]
 pub(super) enum CachedValue<'a> {
     /// A cell, or one slot of a run.
-    Cell(&'a CValue),
+    Cell(&'a ProgramValue),
     /// A typed view of union storage, keyed by the member type it records.
-    UnionView(CType, &'a CValue),
+    UnionView(ProgramType, &'a ProgramValue),
 }
 
 impl<'a> CachedValue<'a> {
-    pub(super) fn value(self) -> &'a CValue {
+    pub(super) fn value(self) -> &'a ProgramValue {
         match self {
             Self::Cell(value) | Self::UnionView(_, value) => value,
         }
@@ -10363,8 +10385,14 @@ mod initialization_record_tests {
     fn written_pair(block: &str) -> CMemory {
         CMemory::new()
             .with_block(block, 8)
-            .store(element(block, 0), CValue::Int32(MachineTerm::constant(5)))
-            .store(element(block, 1), CValue::Int32(MachineTerm::constant(5)))
+            .store(
+                element(block, 0),
+                ProgramValue::Int32(MachineTerm::constant(5)),
+            )
+            .store(
+                element(block, 1),
+                ProgramValue::Int32(MachineTerm::constant(5)),
+            )
     }
 
     fn forgotten_pair(block: &str) -> CMemory {
@@ -10384,7 +10412,10 @@ mod initialization_record_tests {
         assert!(forgotten.has_initialized_bytes_at(&element(block, 0), 8));
         assert!(!forgotten.has_initialized_bytes_at(&element(block, 1), 8));
         // The store the forgetting precedes only initializes more.
-        let stored = forgotten.store(unplaced(block), CValue::Int32(MachineTerm::constant(7)));
+        let stored = forgotten.store(
+            unplaced(block),
+            ProgramValue::Int32(MachineTerm::constant(7)),
+        );
         assert!(stored.has_initialized_bytes_at(&element(block, 0), 8));
     }
 
@@ -10407,9 +10438,10 @@ mod initialization_record_tests {
         // One arm forgot both values but keeps their initialization; the
         // other still caches only the first element.
         let forgotten = forgotten_pair(block);
-        let first_only = CMemory::new()
-            .with_block(block, 8)
-            .store(element(block, 0), CValue::Int32(MachineTerm::constant(5)));
+        let first_only = CMemory::new().with_block(block, 8).store(
+            element(block, 0),
+            ProgramValue::Int32(MachineTerm::constant(5)),
+        );
         let arms = [&forgotten, &first_only];
         let joined = forgotten
             .clone()
@@ -10428,7 +10460,7 @@ mod initialization_record_tests {
     /// `count` int32s (`stride` 4), its zero contents seeded as constant runs
     /// with no initialization recorded, so only the runs say it was written.
     fn zero_runs(block: &str, count: u32, stride: u32) -> CMemory {
-        let zero = CValue::Int32(MachineTerm::constant(0));
+        let zero = ProgramValue::Int32(MachineTerm::constant(0));
         let runs = (0..stride / 4)
             .map(|field| CConstantRun {
                 offset: 4 * field,
@@ -10527,8 +10559,14 @@ mod initialization_record_tests {
         assert!(!written.has_initialized_bytes_under(&read, 4, &index_between(&index, 0, 2)));
         let gap = CMemory::new()
             .with_block(block, 12)
-            .store(element(block, 0), CValue::Int32(MachineTerm::constant(5)))
-            .store(element(block, 2), CValue::Int32(MachineTerm::constant(5)));
+            .store(
+                element(block, 0),
+                ProgramValue::Int32(MachineTerm::constant(5)),
+            )
+            .store(
+                element(block, 2),
+                ProgramValue::Int32(MachineTerm::constant(5)),
+            );
         assert!(!gap.has_initialized_bytes_under(&read, 4, &index_between(&index, 0, 2)));
         assert!(gap.has_initialized_bytes_under(&read, 4, &index_between(&index, 2, 2)));
     }
@@ -10545,7 +10583,7 @@ mod initialization_record_tests {
 mod local_variable_spelling_tests {
     use super::*;
 
-    fn scalar(state: CState, name: &str, value: CValue) -> CState {
+    fn scalar(state: ExecutionState, name: &str, value: ProgramValue) -> ExecutionState {
         let memory = state
             .memory()
             .clone()
@@ -10569,7 +10607,7 @@ mod local_variable_spelling_tests {
             } else {
                 locals.set(
                     &name,
-                    CValue::pointer(Pointer {
+                    ProgramValue::pointer(Pointer {
                         block: blocks[step % 2].clone(),
                         offset: PointerOffsetTerm::Constant(step as i64),
                     }),
@@ -10632,17 +10670,20 @@ mod local_variable_spelling_tests {
             deep(y.clone()),
             MachineTerm::constant(7),
         ];
-        let mut state = CState::new();
+        let mut state = ExecutionState::new();
         for step in 0..60usize {
             let name = format!("v{}", step % 13);
             if step % 7 == 6 {
                 state.locals.remove(&name);
             } else {
                 let term = terms[step % terms.len()].clone();
-                state = state.with_local(name, CValue::Int32(term));
+                state = state.with_local(name, ProgramValue::Int32(term));
             }
         }
-        state = state.with_local("pointer", CValue::pointer(CMemory::local_pointer("v0")));
+        state = state.with_local(
+            "pointer",
+            ProgramValue::pointer(CMemory::local_pointer("v0")),
+        );
         for term in &terms {
             let scanned = state
                 .locals()
@@ -10660,7 +10701,7 @@ mod local_variable_spelling_tests {
 
     fn held_integer_term_of(value: &StoredExecutionValue) -> Option<&MachineTerm> {
         match value.native_payload()?.numeric_value() {
-            crate::kernel::integer_c_value!(term) | CValue::Bool(term) => Some(term),
+            crate::kernel::integer_c_value!(term) | ProgramValue::Bool(term) => Some(term),
             _ => None,
         }
     }
@@ -10668,8 +10709,12 @@ mod local_variable_spelling_tests {
     #[test]
     fn local_variable_spelling_uses_current_memory_and_stable_slot_order() {
         let variable = Variable(971_010);
-        let value = CValue::UInt64(MachineTerm::Variable(variable));
-        let state = scalar(scalar(CState::new(), "z", value.clone()), "a", value);
+        let value = ProgramValue::UInt64(MachineTerm::Variable(variable));
+        let state = scalar(
+            scalar(ExecutionState::new(), "z", value.clone()),
+            "a",
+            value,
+        );
         assert_eq!(
             state.local_name_holding_bitvector_variable(variable),
             Some("a")
@@ -10681,7 +10726,7 @@ mod local_variable_spelling_tests {
         );
         let state = state.clone().with_memory(state.memory().clone().store(
             CMemory::local_pointer("a"),
-            CValue::UInt64(MachineTerm::uint64_constant(0)),
+            ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
         ));
         assert_eq!(
             state.local_name_holding_bitvector_variable(variable),
@@ -10694,7 +10739,7 @@ mod local_variable_spelling_tests {
         );
         let state = state.clone().with_memory(state.memory().clone().store(
             CMemory::local_pointer("z"),
-            CValue::UInt64(MachineTerm::uint64_constant(0)),
+            ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
         ));
         assert_eq!(state.local_name_holding_bitvector_variable(variable), None);
     }
@@ -10741,7 +10786,7 @@ mod kept_range_identity_tests {
     fn kept_range_hash_collisions_distinguish_composite_exclusions() {
         let composite = ResourceContext::new().unchecked_with_fact(CResourceFact::own_composite(
             "boxed".into(),
-            vec![CValue::pointer(Pointer::symbolic(Variable(9)))],
+            vec![ProgramValue::pointer(Pointer::symbolic(Variable(9)))],
         ));
         let intern = |original, introduced| {
             intern_kept_range_set_with_exclusions_and_hash(

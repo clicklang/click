@@ -44,7 +44,7 @@ fn old_collect_spec_algebraic_expression_c_variables(
             reads.model = true;
             Ok(())
         }
-        SpecAlgebraicExpressionNode::CValue(value) => {
+        SpecAlgebraicExpressionNode::ProgramValue(value) => {
             old_collect_spec_expression_c_variables(value, reads)
         }
         SpecAlgebraicExpressionNode::Constructor { fields, .. } => {
@@ -118,7 +118,7 @@ fn old_collect_spec_expression_c_variables(
     charge_termination_work(1);
     match expression {
         SpecExpression::Value(_) => Ok(()),
-        SpecExpression::CExpression(expression) => {
+        SpecExpression::ProgramExpression(expression) => {
             collect_c_expression_variables(expression, &mut reads.variables);
             Ok(())
         }

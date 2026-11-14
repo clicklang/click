@@ -337,7 +337,7 @@ mod memory_condition_match_tests {
             MachineTerm::Variable(crate::kernel::eval::load_variable_for_term(&raw).unwrap().0);
         let changed = memory
             .clone()
-            .store(pointer.clone(), CValue::Int32(9u32.into()));
+            .store(pointer.clone(), ProgramValue::Int32(9u32.into()));
         let condition = |kind, term| {
             let left = MachineTerm::add(term, 1u32.into());
             let right = MachineTerm::Variable(Variable(999_001));

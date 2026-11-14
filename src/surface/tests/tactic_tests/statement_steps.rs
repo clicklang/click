@@ -288,7 +288,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
                 crate::kernel::LoadKind::Int32,
             )),
         );
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_memory(before_memory)
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
             CResourceFact::own_memory(CMemoryRange::new(
@@ -306,11 +306,11 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         },
         true,
     );
-    let statement = CStatement::TypedStore {
+    let statement = ProgramStatement::TypedStore {
         access_class: None,
-        pointer: CExpression::Value(CValue::pointer(second)),
-        value: CExpression::Value(int32(9)),
-        value_type: CType::Int32,
+        pointer: ProgramExpression::Value(ProgramValue::pointer(second)),
+        value: ProgramExpression::Value(int32(9)),
+        value_type: ProgramType::Int32,
         volatile: false,
         pointee_constant: false,
         source: Default::default(),
@@ -403,8 +403,8 @@ fn failed_call_step_reports_its_unresolved_required_precondition() {
     assert_eq!(
         call_site.source_arguments.as_slice(),
         [
-            CExpression::Variable("x".to_string()),
-            CExpression::Variable("y".to_string())
+            ProgramExpression::Variable("x".to_string()),
+            ProgramExpression::Variable("y".to_string())
         ]
     );
 
@@ -1138,8 +1138,8 @@ fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
     let read = Pointer::loaded_value(&crate::kernel::intern_c_memory(CMemory::new()), &owner);
     let proposition = Proposition::ConditionIs(
         ConditionTerm::pointer_value_equal(
-            crate::kernel::CPointerValue::new(read, CType::Int32Pointer),
-            crate::kernel::CPointerValue::new(data.clone(), CType::Int32Pointer),
+            crate::kernel::PointerValue::new(read, ProgramType::Int32Pointer),
+            crate::kernel::PointerValue::new(data.clone(), ProgramType::Int32Pointer),
         ),
         true,
     );
@@ -1148,26 +1148,26 @@ fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
         syntax::C0Parameter::new(C0Type::Int32Pointer, "data".to_string(), None),
     ];
     let arguments = [
-        CExpression::Value(CValue::pointer(owner)),
-        CExpression::Value(CValue::pointer(data)),
+        ProgramExpression::Value(ProgramValue::pointer(owner)),
+        ProgramExpression::Value(ProgramValue::pointer(data)),
     ];
 
     let surface = super::proof::synthesize_surface_proposition(
         &proposition,
         ParameterBinding::new(&parameters, &arguments),
-        &CState::new(),
+        &ExecutionState::new(),
     )
     .expect("pointer-offset equality should have a surface form");
 
     assert!(matches!(
         surface,
         ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::TypedLoad {
-                value_type: CType::Int32Pointer,
+            left: ContractExpression::CFragment(ProgramExpression::TypedLoad {
+                value_type: ProgramType::Int32Pointer,
                 ..
             }),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::CFragment(CExpression::Variable(name)),
+            right: ContractExpression::CFragment(ProgramExpression::Variable(name)),
         } if name == "data"
     ));
 }
@@ -1185,8 +1185,8 @@ fn synthesizes_a_reassigned_pointer_parameter_at_entry() {
     let current = Pointer::symbolic(Variable(44));
     let proposition = Proposition::ConditionIs(
         ConditionTerm::pointer_value_equal(
-            crate::kernel::CPointerValue::new(passed.clone(), CType::Int32Pointer),
-            crate::kernel::CPointerValue::new(current.clone(), CType::Int32Pointer),
+            crate::kernel::PointerValue::new(passed.clone(), ProgramType::Int32Pointer),
+            crate::kernel::PointerValue::new(current.clone(), ProgramType::Int32Pointer),
         ),
         true,
     );
@@ -1195,9 +1195,11 @@ fn synthesizes_a_reassigned_pointer_parameter_at_entry() {
         "p".to_string(),
         None,
     )];
-    let arguments = [CExpression::Value(CValue::pointer(passed.clone()))];
-    let entry = CState::new().with_local("p", CValue::pointer(passed));
-    let post = CState::new().with_local("p", CValue::pointer(current));
+    let arguments = [ProgramExpression::Value(ProgramValue::pointer(
+        passed.clone(),
+    ))];
+    let entry = ExecutionState::new().with_local("p", ProgramValue::pointer(passed));
+    let post = ExecutionState::new().with_local("p", ProgramValue::pointer(current));
 
     let surface = super::proof::synthesize_surface_proposition_at_entry_and_post(
         &proposition,
@@ -1238,32 +1240,32 @@ fn synthesizes_dynamically_indexed_pointer_offset_equality() {
         syntax::C0Parameter::new(C0Type::Int32, "index".to_string(), None),
     ];
     let arguments = [
-        CExpression::Value(CValue::pointer(Pointer {
+        ProgramExpression::Value(ProgramValue::pointer(Pointer {
             block: "arg-memory".into(),
             offset: owner_offset,
         })),
-        CExpression::Value(CValue::pointer(Pointer {
+        ProgramExpression::Value(ProgramValue::pointer(Pointer {
             block: "arg-memory".into(),
             offset: data_offset,
         })),
-        CExpression::Value(CValue::Int32(index)),
+        ProgramExpression::Value(ProgramValue::Int32(index)),
     ];
 
     let surface = super::proof::synthesize_surface_proposition(
         &proposition,
         ParameterBinding::new(&parameters, &arguments),
-        &CState::new(),
+        &ExecutionState::new(),
     )
     .expect("dynamically indexed pointer equality should have a surface form");
 
     assert!(matches!(
         surface,
         ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::Add(left, right)),
+            left: ContractExpression::CFragment(ProgramExpression::Add(left, right)),
             operator: ComparisonOperator::Equal,
             ..
-        } if matches!(left.as_ref(), CExpression::Variable(name) if name == "data")
-            && matches!(right.as_ref(), CExpression::Variable(name) if name == "index")
+        } if matches!(left.as_ref(), ProgramExpression::Variable(name) if name == "data")
+            && matches!(right.as_ref(), ProgramExpression::Variable(name) if name == "index")
     ));
 }
 

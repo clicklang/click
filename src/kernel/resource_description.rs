@@ -191,7 +191,7 @@ impl ResourceDescription {
             || self.arguments().len() != 1
             || !matches!(
                 self.arguments()[0],
-                AlgebraicValue::C(super::CValue::Pointer(_))
+                AlgebraicValue::C(super::ProgramValue::Pointer(_))
             )
             || !self.resource_arguments().is_empty()
         {
@@ -249,7 +249,7 @@ impl ResourceDescription {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{CType, ResourceFieldType, Variable, int32};
+    use crate::kernel::{ProgramType, ResourceFieldType, Variable, int32};
     use std::collections::BTreeSet;
     use std::hash::{Hash, Hasher};
 
@@ -258,8 +258,11 @@ mod tests {
             Variable(identity),
             family.into(),
             vec![int32(argument).into()].into(),
-            ResourceFieldSchema::new(vec![("value".into(), ResourceFieldType::C(CType::Int32))])
-                .unwrap(),
+            ResourceFieldSchema::new(vec![(
+                "value".into(),
+                ResourceFieldType::C(ProgramType::Int32),
+            )])
+            .unwrap(),
             vec![int32(observed).into()].into(),
         )
         .unwrap()
@@ -311,9 +314,11 @@ mod tests {
             ResourceDescription::from_instance(&instance(3, "state", 8, 10))
         );
         let mut different_schema = later;
-        different_schema.schema =
-            ResourceFieldSchema::new(vec![("other".into(), ResourceFieldType::C(CType::Int32))])
-                .unwrap();
+        different_schema.schema = ResourceFieldSchema::new(vec![(
+            "other".into(),
+            ResourceFieldType::C(ProgramType::Int32),
+        )])
+        .unwrap();
         assert_ne!(
             description,
             ResourceDescription::from_instance(&different_schema)
@@ -360,7 +365,7 @@ mod tests {
         let second = spec.with_resource_arguments(vec![Variable(2)]);
         assert!(
             CResourceSpec::quantified(
-                crate::kernel::CExpression::Value(int32(1)),
+                crate::kernel::ProgramExpression::Value(int32(1)),
                 first.clone(),
                 CResourceTransferRole::Borrow,
                 CResourceSnapshot::Current,

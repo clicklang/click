@@ -21,10 +21,10 @@ use crate::persistent::PersistentMap;
 use super::functions::suspend_verified_worker;
 use super::loans::{LoanLedger, LoanViewBinding, LoanViewBindings, StableViewTransferPlan};
 use super::{
-    CExecutionEnvironment, CMemory, CMemoryRange, CResourceFact, CRuntimeError, CState, CValue,
+    CExecutionEnvironment, CMemory, CMemoryRange, CResourceFact, CRuntimeError,
     CVerifiedFunctionRule, CVerifiedFunctionTerminationRule, ConditionTerm, ExecutionBudget,
-    ExecutionPureFact, ExecutionResult, MachineTerm, Pointer, PointerBlock, Proposition,
-    PureFactContext, ResourceContext,
+    ExecutionPureFact, ExecutionResult, ExecutionState, MachineTerm, Pointer, PointerBlock,
+    ProgramValue, Proposition, PureFactContext, ResourceContext,
 };
 
 /// A kernel identity, not the integer representation of `pthread_t`. The C
@@ -119,8 +119,14 @@ pub(super) struct PendingThreadCreate {
 /// applies them to the worker's checked post-create memory in source order.
 #[derive(Clone, Debug)]
 pub(super) enum PendingThreadMemoryDelta {
-    Declare { block: PointerBlock, bytes: u32 },
-    Store { pointer: Pointer, value: CValue },
+    Declare {
+        block: PointerBlock,
+        bytes: u32,
+    },
+    Store {
+        pointer: Pointer,
+        value: ProgramValue,
+    },
 }
 
 /// Only the authority changed by create is guarded. The visible C state keeps
@@ -139,7 +145,7 @@ struct PendingCreateAuthority {
 }
 
 impl PendingCreateAuthority {
-    fn from_state(state: &CState) -> Self {
+    fn from_state(state: &ExecutionState) -> Self {
         Self {
             resources: state.resources.clone(),
             loan_ledger: state.loan_ledger.clone(),
@@ -153,7 +159,7 @@ impl PendingCreateAuthority {
         }
     }
 
-    fn install(&self, state: &mut CState) {
+    fn install(&self, state: &mut ExecutionState) {
         state.resources = self.resources.clone();
         state.loan_ledger = self.loan_ledger.clone();
         state.loan_view_bindings = self.loan_view_bindings.clone();
@@ -170,7 +176,7 @@ struct PendingThreadCreateStorage {
     identity: u64,
     status: MachineTerm,
     handle_slot: Pointer,
-    handle_value: CValue,
+    handle_value: ProgramValue,
     success_memory: CMemory,
     success: PendingCreateAuthority,
     failure: PendingCreateAuthority,
@@ -184,7 +190,7 @@ impl PendingThreadCreate {
         NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     }
 
-    pub(super) fn protects_local(&self, state: &CState, name: &str) -> bool {
+    pub(super) fn protects_local(&self, state: &ExecutionState, name: &str) -> bool {
         state
             .locals
             .slots
@@ -192,16 +198,16 @@ impl PendingThreadCreate {
             .is_some_and(|output| output == name)
     }
 
-    pub(super) fn has_local_handle_slot(&self, state: &CState) -> bool {
+    pub(super) fn has_local_handle_slot(&self, state: &ExecutionState) -> bool {
         state.locals.slots.contains_key(&self.storage.handle_slot)
     }
 
     pub(super) fn new(
         status: MachineTerm,
         handle_slot: Pointer,
-        handle_value: CValue,
-        success: &CState,
-        failure: &CState,
+        handle_value: ProgramValue,
+        success: &ExecutionState,
+        failure: &ExecutionState,
     ) -> Self {
         debug_assert!(success.pending_thread_create.is_none());
         debug_assert!(failure.pending_thread_create.is_none());
@@ -262,7 +268,7 @@ impl PendingThreadCreate {
         status: impl Fn(&MachineTerm) -> MachineTerm,
         resources: impl Fn(&ResourceContext) -> ResourceContext,
         pointer: impl Fn(&Pointer) -> Pointer,
-        value: impl Fn(&CValue) -> CValue,
+        value: impl Fn(&ProgramValue) -> ProgramValue,
         memory: impl Fn(&CMemory) -> CMemory,
     ) -> Self {
         let storage = &self.storage;
@@ -313,9 +319,9 @@ impl PendingThreadCreate {
 
     pub(super) fn resolve(
         &self,
-        visible: &CState,
+        visible: &ExecutionState,
         assumptions: &PureFactContext,
-    ) -> Option<CState> {
+    ) -> Option<ExecutionState> {
         let zero = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -636,8 +642,8 @@ impl ThreadLedger {
 }
 
 impl ThreadHandle {
-    pub(super) fn c_value(self) -> CValue {
-        CValue::UInt64(super::MachineTerm::PureFunctionApplication {
+    pub(super) fn c_value(self) -> ProgramValue {
+        ProgramValue::UInt64(super::MachineTerm::PureFunctionApplication {
             // This name cannot be spelled by C or Click source. The term is
             // copied as an opaque pthread_t value, never derived from its
             // machine integer representation.
@@ -646,16 +652,16 @@ impl ThreadHandle {
         })
     }
 
-    pub(super) fn from_c_value(value: &CValue) -> Option<Self> {
+    pub(super) fn from_c_value(value: &ProgramValue) -> Option<Self> {
         match value {
-            CValue::UInt64(super::MachineTerm::PureFunctionApplication { name, arguments })
-                if arguments.is_empty() =>
-            {
-                name.strip_prefix("\0click.pthread.handle:")?
-                    .parse()
-                    .ok()
-                    .map(Self)
-            }
+            ProgramValue::UInt64(super::MachineTerm::PureFunctionApplication {
+                name,
+                arguments,
+            }) if arguments.is_empty() => name
+                .strip_prefix("\0click.pthread.handle:")?
+                .parse()
+                .ok()
+                .map(Self),
             _ => None,
         }
     }
@@ -792,11 +798,11 @@ impl PreparedThreadCreate<'_> {
 /// a successful join consumes its entry in the successor path's registry.
 #[derive(Clone)]
 pub(super) struct ThreadContext {
-    parent: CState,
+    parent: ExecutionState,
 }
 
 impl ThreadContext {
-    pub(super) fn new(mut parent: CState) -> Result<Self, CRuntimeError> {
+    pub(super) fn new(mut parent: ExecutionState) -> Result<Self, CRuntimeError> {
         if parent
             .mutex_ledger
             .as_ref()
@@ -827,7 +833,7 @@ impl ThreadContext {
         Ok(Self { parent })
     }
 
-    pub(super) fn parent(&self) -> &CState {
+    pub(super) fn parent(&self) -> &ExecutionState {
         &self.parent
     }
 
@@ -835,7 +841,7 @@ impl ThreadContext {
         &'a self,
         worker: &CVerifiedFunctionRule,
         termination: Option<&CVerifiedFunctionTerminationRule>,
-        argument: CValue,
+        argument: ProgramValue,
         assumptions: &PureFactContext,
         environment: &CExecutionEnvironment,
         budget: &mut ExecutionBudget,
@@ -905,7 +911,7 @@ impl ThreadContext {
         &self,
         worker: &CVerifiedFunctionRule,
         termination: Option<&CVerifiedFunctionTerminationRule>,
-        argument: CValue,
+        argument: ProgramValue,
         assumptions: &PureFactContext,
         environment: &CExecutionEnvironment,
         budget: &mut ExecutionBudget,

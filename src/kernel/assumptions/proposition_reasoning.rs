@@ -3995,8 +3995,8 @@ impl PureFactContext {
                 ConditionTerm::PointerValueEqual(fact_left, fact_right),
                 ConditionTerm::PointerValueEqual(target_left, target_right),
             ) => {
-                let same = |fact: &crate::kernel::CPointerValue,
-                            target: &crate::kernel::CPointerValue| {
+                let same = |fact: &crate::kernel::PointerValue,
+                            target: &crate::kernel::PointerValue| {
                     fact == target
                         || fact.c_type() == target.c_type()
                             && self.pointer_designations_match(fact, target)
@@ -5530,9 +5530,9 @@ mod comparison_operand_order_tests {
             name: "selected_size".into(),
             arguments: (0..size)
                 .map(|index| {
-                    PureFunctionArgument::Value(CValue::typed_pointer(
+                    PureFunctionArgument::Value(ProgramValue::typed_pointer(
                         Pointer::symbolic(Variable(9_992_000 + size * 1000 + index)),
-                        CType::Int32Pointer,
+                        ProgramType::Int32Pointer,
                     ))
                 })
                 .collect(),
@@ -5934,7 +5934,7 @@ mod shared_wide_order_evidence_tests {
         use crate::kernel::proof::ProofFacts;
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let variable = |id| KernelTerm::variable(KernelType::C(CType::Int32), Variable(id));
+        let variable = |id| KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(id));
         let observe =
             |root| IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, root).unwrap());
         let measure = MachineTerm::Variable(Variable(987120));
@@ -5965,7 +5965,7 @@ mod shared_wide_order_evidence_tests {
     fn shared_signed_order_path_keeps_constant_tail_and_strictness() {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let variable = |id| KernelTerm::variable(KernelType::C(CType::Int32), Variable(id));
+        let variable = |id| KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(id));
         let root = KernelTerm::machine_binary_shared(
             ty,
             MachineBinaryOp::Multiply,
@@ -6095,7 +6095,7 @@ mod retained_individual_order_tests {
     fn individual_order_steps_retain_exact_sources_and_branch_authority() {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let x = KernelTerm::variable(KernelType::C(CType::Int32), Variable(995201));
+        let x = KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(995201));
         let value =
             KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Multiply, [x.clone(), x]);
         let upper = MachineTerm::constant(100);

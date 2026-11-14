@@ -14,7 +14,7 @@ fn scalar_expression(expression: &SpecExpression) -> bool {
     use SpecExpression::*;
     match expression {
         Value(_) => true,
-        CExpression(expression) => scalar_c_expression(expression),
+        ProgramExpression(expression) => scalar_c_expression(expression),
         Add(a, b)
         | Subtract(a, b)
         | Multiply(a, b)
@@ -31,8 +31,8 @@ fn scalar_expression(expression: &SpecExpression) -> bool {
         _ => false,
     }
 }
-fn scalar_c_expression(expression: &CExpression) -> bool {
-    use CExpression::*;
+fn scalar_c_expression(expression: &ProgramExpression) -> bool {
+    use ProgramExpression::*;
     match expression {
         Value(_) | Variable(_) => true,
         Cast { expression, .. } | Not(expression) | BitwiseNot(expression) => {
@@ -70,10 +70,10 @@ fn scalar_condition(condition: &SpecProposition) -> bool {
 }
 
 fn source_condition(
-    state: &CState,
+    state: &ExecutionState,
     spec: &CResourceSpec,
     assumptions: &PureFactContext,
-) -> Result<(ConditionTerm, CValue), String> {
+) -> Result<(ConditionTerm, ProgramValue), String> {
     let guard = spec
         .guard()
         .ok_or("conditional loop resource has no condition")?;
@@ -115,7 +115,7 @@ fn source_condition(
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(match &value {
-                CValue::Int32(term) => term.clone(),
+                ProgramValue::Int32(term) => term.clone(),
                 _ => unreachable!(),
             }),
             right: Box::new(1u32.into()),
@@ -125,7 +125,7 @@ fn source_condition(
 }
 
 fn source_mutex(
-    state: &CState,
+    state: &ExecutionState,
     spec: &CResourceSpec,
     assumptions: &PureFactContext,
 ) -> Result<Pointer, String> {
@@ -160,7 +160,7 @@ fn source_mutex(
         )
     })?;
     let pointer = match result {
-        Ok(CValue::Pointer(pointer)) => pointer,
+        Ok(ProgramValue::Pointer(pointer)) => pointer,
         Ok(_) => return Err("conditional loop guard requires a mutex pointer".into()),
         Err(message) => return Err(message.into()),
     };
@@ -177,7 +177,7 @@ fn missing_guard(spec: &CResourceSpec) -> String {
     )
 }
 
-fn instance_with_value(carrier: &DirectLoopGuard, value: CValue) -> ResourceInstance {
+fn instance_with_value(carrier: &DirectLoopGuard, value: ProgramValue) -> ResourceInstance {
     ResourceInstance::new(
         carrier.head.identity(),
         carrier.head.name().into(),
@@ -189,12 +189,12 @@ fn instance_with_value(carrier: &DirectLoopGuard, value: CValue) -> ResourceInst
 }
 
 pub(in crate::kernel) fn prepare_direct_loop_guard(
-    entry: &CState,
-    head: &CState,
+    entry: &ExecutionState,
+    head: &ExecutionState,
     spec: &CResourceSpec,
     identity: Variable,
     assumptions: &PureFactContext,
-) -> Result<(CState, Pointer), String> {
+) -> Result<(ExecutionState, Pointer), String> {
     let mutex = source_mutex(entry, spec, assumptions)?;
     // A previous loop may have left an empty or held carrier at its exit.
     // Retire it only by the same checked ownership exchange as a runtime use.
@@ -209,7 +209,7 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
                 .is_some()
         })
     {
-        let open = |state: &CState| -> Result<CState, String> {
+        let open = |state: &ExecutionState| -> Result<ExecutionState, String> {
             let context = MutexContext::new(state.clone());
             let opened = context
                 .open_direct_loop_guard(&mutex, assumptions)
@@ -250,13 +250,17 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
         return Err(missing_guard(spec));
     }
     let (condition, value) = source_condition(head, spec, assumptions)?;
-    let schema =
-        ResourceFieldSchema::new(vec![("active".into(), ResourceFieldType::C(CType::Int32))])
-            .unwrap();
+    let schema = ResourceFieldSchema::new(vec![(
+        "active".into(),
+        ResourceFieldType::C(ProgramType::Int32),
+    )])
+    .unwrap();
     let name = format!("$conditional-loop-guard:{}", identity.0);
     let body = CResourceSpec::new(
         CResourceTerm::MutexGuard {
-            mutex: Box::new(CExpression::Value(CValue::pointer(mutex.clone()))),
+            mutex: Box::new(ProgramExpression::Value(ProgramValue::pointer(
+                mutex.clone(),
+            ))),
             snapshot: CResourceSnapshot::Current,
         },
         CResourceAccessMode::Own,
@@ -269,7 +273,7 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
         name.clone(),
         vec![],
         Some(SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_variable("active")),
+            left: SpecExpression::ProgramExpression(c_variable("active")),
             operator: CComparisonOperator::NotEqual,
             right: SpecExpression::Value(int32(0)),
         }),
@@ -319,9 +323,9 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
 }
 
 pub(in crate::kernel) fn select_direct_loop_guards(
-    state: &CState,
+    state: &ExecutionState,
     pointers: Vec<Pointer>,
-) -> CState {
+) -> ExecutionState {
     let Some(ledger) = &state.mutex_ledger else {
         return state.clone();
     };
@@ -380,10 +384,10 @@ impl MutexContext {
 
 /// Close this head's conditional ownership before comparing ordinary resources.
 pub(in crate::kernel) fn normalize_direct_loop_guards(
-    top: &CState,
-    next: &CState,
+    top: &ExecutionState,
+    next: &ExecutionState,
     assumptions: &PureFactContext,
-) -> Result<(CState, Vec<Pointer>), String> {
+) -> Result<(ExecutionState, Vec<Pointer>), String> {
     let mut state = next.clone();
     let mut checked = Vec::new();
     let Some(ledger) = &top.mutex_ledger else {

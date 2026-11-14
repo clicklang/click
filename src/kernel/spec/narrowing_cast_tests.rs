@@ -72,19 +72,19 @@ fn retained_narrowing_casts_match_native_terms_at_every_supported_width() {
 #[test]
 fn narrowing_producer_keeps_other_boundaries_outside_its_slice() {
     let _session = VerificationSession::enter();
-    let native = SpecValue::Native(CValue::Int32(MachineTerm::Variable(Variable(995441))));
-    assert!(shared_machine::cast_narrowing(&native, CType::Int8).is_none());
+    let native = SpecValue::Native(ProgramValue::Int32(MachineTerm::Variable(Variable(995441))));
+    assert!(shared_machine::cast_narrowing(&native, ProgramType::Int8).is_none());
     let root = KernelTermImport::default().machine(
         MachineIntegerType::Int32,
         &MachineTerm::Variable(Variable(995441)),
     );
     for target in [
-        CType::Int64,
-        CType::UInt64,
-        CType::Int32,
-        CType::UInt32,
-        CType::Int128,
-        CType::Bool,
+        ProgramType::Int64,
+        ProgramType::UInt64,
+        ProgramType::Int32,
+        ProgramType::UInt32,
+        ProgramType::Int128,
+        ProgramType::Bool,
     ] {
         assert!(shared_machine::cast_narrowing(&SpecValue::Shared(root.clone()), target).is_none());
     }
@@ -95,7 +95,7 @@ fn narrowing_producer_keeps_other_boundaries_outside_its_slice() {
             MachineTerm::Variable(Variable(995441)),
         ),
     );
-    assert!(shared_machine::cast_narrowing(&SpecValue::Shared(call), CType::Int8).is_none());
+    assert!(shared_machine::cast_narrowing(&SpecValue::Shared(call), ProgramType::Int8).is_none());
 }
 
 mod scaling_tests {

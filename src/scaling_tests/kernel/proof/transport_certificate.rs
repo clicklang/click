@@ -28,13 +28,13 @@ fn transport_certificate_work_is_linear_in_explicit_nodes() {
         let equality = |left: u64, right: u64| {
             Proposition::ConditionIs(
                 ConditionTerm::PointerValueEqual(
-                    Box::new(CPointerValue::new(
+                    Box::new(PointerValue::new(
                         Pointer::symbolic(Variable(8_390_000 + left)),
-                        CType::Int32Pointer,
+                        ProgramType::Int32Pointer,
                     )),
-                    Box::new(CPointerValue::new(
+                    Box::new(PointerValue::new(
                         Pointer::symbolic(Variable(8_390_000 + right)),
-                        CType::Int32Pointer,
+                        ProgramType::Int32Pointer,
                     )),
                 ),
                 true,
@@ -73,7 +73,7 @@ fn transport_certificate_work_is_linear_in_explicit_nodes() {
 
 #[test]
 fn transport_certificate_scalar_names_do_not_walk_prior_memory_history() {
-    for value_type in [CType::Int32, CType::UInt8] {
+    for value_type in [ProgramType::Int32, ProgramType::UInt8] {
         let costs = [4, 16, 64, 256].map(|history| {
             let _session = crate::kernel::VerificationSession::enter();
             let _reads = typed_reads::ReadScope::enter();
@@ -110,10 +110,10 @@ fn transport_certificate_scalar_names_do_not_walk_prior_memory_history() {
             *result = proposition.clone();
             // A byte read is compared through its `int32` widening, as C
             // promotes it.
-            let read = |memory: &SharedCMemory| {
+            let read = |memory: &SharedMemory| {
                 let bits =
                     integer_bits(tests::observe(memory.memory(), &address, value_type)).unwrap();
-                Box::new(if value_type == CType::UInt8 {
+                Box::new(if value_type == ProgramType::UInt8 {
                     MachineTerm::machine_integer_cast(
                         MachineIntegerType::UInt8,
                         MachineIntegerType::Int32,
@@ -141,15 +141,19 @@ fn transport_certificate_scalar_names_do_not_walk_prior_memory_history() {
             let (result, cost) =
                 crate::instrumentation::measure_deterministic_work(|| certificate.apply(|_| true));
             assert_eq!(result.unwrap(), goal);
-            if value_type == CType::UInt8 {
+            if value_type == ProgramType::UInt8 {
                 // A one-byte separation must not preserve a four-byte read,
                 // even when both read types are present at the same address.
                 let wider = Proposition::ConditionIs(
                     ConditionTerm::equal(
-                        integer_bits(tests::observe(after.memory(), &address, CType::Int32))
+                        integer_bits(tests::observe(after.memory(), &address, ProgramType::Int32))
                             .unwrap(),
-                        integer_bits(tests::observe(before.memory(), &address, CType::Int32))
-                            .unwrap(),
+                        integer_bits(tests::observe(
+                            before.memory(),
+                            &address,
+                            ProgramType::Int32,
+                        ))
+                        .unwrap(),
                     ),
                     true,
                 );
@@ -179,7 +183,7 @@ fn transport_certificate_uses_selected_observations_without_scanning_the_registr
             tests::observe(
                 &memory,
                 &Pointer::symbolic(Variable(8_410_000 + index)),
-                CType::Int32Pointer,
+                ProgramType::Int32Pointer,
             );
         }
         let (result, cost) =
@@ -207,7 +211,7 @@ fn region_footprint_preservation_does_not_walk_prior_memory_history() {
         let Proposition::CMemoryMutatesOnly { before, after, .. } = effect else {
             unreachable!()
         };
-        let entry = CState::new().with_memory(before.clone());
+        let entry = ExecutionState::new().with_memory(before.clone());
         let exit = entry.clone().with_memory(after.clone());
         let effects = vec![ExecutionPureFact::certified(effect.clone())];
         let (footprint, recording_cost) =
@@ -257,7 +261,7 @@ fn region_footprint_preservation_does_not_walk_prior_memory_history() {
 fn simple_footprint_separation_does_not_walk_a_region_sequence() {
     let costs = [4, 16, 64, 256].map(|length| {
         let _session = crate::kernel::VerificationSession::enter();
-        let state = CState::new();
+        let state = ExecutionState::new();
         let leaf = crate::kernel::RegionFootprint::transition(
             "statement(0).footprint".into(),
             &state,
@@ -296,7 +300,7 @@ fn simple_footprint_separation_does_not_walk_a_region_sequence() {
 fn selected_footprint_separations_are_linear_with_one_shared_address_bucket() {
     let costs = [4u64, 16, 64, 256].map(|count| {
         let _session = crate::kernel::VerificationSession::enter();
-        let state = CState::new();
+        let state = ExecutionState::new();
         let range = |index: u64| {
             CMemoryRange::new_with_element_width(
                 Pointer {
@@ -345,7 +349,7 @@ fn selected_footprint_separations_are_linear_with_one_shared_address_bucket() {
 fn two_footprints_do_not_expand_into_a_cartesian_product() {
     let costs = [4u64, 16, 64, 256].map(|count| {
         let _session = crate::kernel::VerificationSession::enter();
-        let state = CState::new();
+        let state = ExecutionState::new();
         let resources = (0..count).fold(state.resources().clone(), |resources, index| {
             resources.unchecked_with_fact(CResourceFact::own_token(
                 format!("changed_{index}"),
@@ -445,7 +449,8 @@ fn abstract_memory_preservation_does_not_walk_read_history() {
 fn definedness_preservation_ignores_history_and_ambient_facts() {
     let costs = [4, 16, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
-        let (certificate, separation, old, goal) = tests::definedness_fixture(size, CType::UInt8);
+        let (certificate, separation, old, goal) =
+            tests::definedness_fixture(size, ProgramType::UInt8);
         let mut facts = crate::kernel::proof::ProofFacts::from_ordered(&[]);
         facts = facts.with_fact(separation);
         facts = facts.with_fact(old.clone());
@@ -461,7 +466,7 @@ fn definedness_preservation_ignores_history_and_ambient_facts() {
             facts = facts.with_fact(Proposition::CMemoryReadDefined {
                 memory: memory
                     .clone()
-                    .store(pointer.clone(), CValue::Int32((i as u32).into())),
+                    .store(pointer.clone(), ProgramValue::Int32((i as u32).into())),
                 pointer: pointer.clone(),
                 value_type: *value_type,
             });

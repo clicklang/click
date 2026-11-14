@@ -9,8 +9,10 @@ fn construction_destination_binding_work_ignores_unrelated_caller_objects() {
     let mut work_by_size = Vec::new();
     for count in [4, 32, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut caller =
-            allocate_destination(&CState::new().with_population_creation_tracking(), "node");
+        let mut caller = allocate_destination(
+            &ExecutionState::new().with_population_creation_tracking(),
+            "node",
+        );
         let at = caller.locals.slot("node").unwrap().clone();
         caller = caller.with_aggregate_return_destination(at, node_layout());
         for index in 0..count {
@@ -29,7 +31,7 @@ fn construction_destination_binding_work_ignores_unrelated_caller_objects() {
             construction_return::bind(
                 &caller,
                 function.contract_interface(),
-                &mut CState::new().with_population_creation_tracking(),
+                &mut ExecutionState::new().with_population_creation_tracking(),
             )
             .unwrap();
         });
@@ -70,7 +72,7 @@ fn construction_completion_work_scales_with_value_fields() {
                 8,
                 (0..count)
                     .map(|index| {
-                        CAggregateField::new(format!("field{index}"), index * 8, CType::Int32)
+                        CAggregateField::new(format!("field{index}"), index * 8, ProgramType::Int32)
                     })
                     .collect(),
             );
@@ -91,27 +93,27 @@ fn construction_completion_work_scales_with_value_fields() {
                     CMemoryRange::new(at.clone(), 0u32.into(), (count * 2).into()),
                 ))
             };
-            let caller = CState::new()
+            let caller = ExecutionState::new()
                 .with_population_creation_tracking()
                 .with_memory(CMemory::new().with_uninitialized_block(at.block.clone(), count * 8))
                 .with_resource_context(resources)
                 .with_aggregate_return_destination(at.clone(), layout.clone());
             let function = if parameter {
                 c_function(
-                    CType::Void,
+                    ProgramType::Void,
                     "wide_constructor",
-                    vec![c_parameter("destination", CType::Int32Pointer)],
+                    vec![c_parameter("destination", ProgramType::Int32Pointer)],
                     c_skip(),
                 )
                 .with_construction_parameter(0, layout)
             } else {
-                c_function(CType::VoidPointer, "wide_result", vec![], c_skip())
+                c_function(ProgramType::VoidPointer, "wide_result", vec![], c_skip())
                     .with_construction_return(layout)
             };
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let mut state = caller.clone().with_local(
                     "destination",
-                    CValue::typed_pointer(at.clone(), CType::Int32Pointer),
+                    ProgramValue::typed_pointer(at.clone(), ProgramType::Int32Pointer),
                 );
                 construction_return::bind(&caller, function.contract_interface(), &mut state)
                     .unwrap();
@@ -128,7 +130,7 @@ fn construction_completion_work_scales_with_value_fields() {
                     construction_return::complete(
                         &state,
                         function.contract_interface(),
-                        CValue::typed_pointer(at.clone(), CType::VoidPointer),
+                        ProgramValue::typed_pointer(at.clone(), ProgramType::VoidPointer),
                     )
                     .unwrap();
                 }

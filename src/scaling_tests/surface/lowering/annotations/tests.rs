@@ -49,7 +49,7 @@ fn integer_certificate_lowering_scales_with_nodes_not_unrelated_bindings() {
 fn proposition_snapshot_selection_matches_full_context_without_unrelated_bindings() {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
-    let entry = CState::new().with_local("used", int32(1));
+    let entry = ExecutionState::new().with_local("used", int32(1));
     let atom = |expression| ClickProposition::Comparison {
         left: expression,
         operator: ComparisonOperator::Equal,
@@ -66,7 +66,7 @@ fn proposition_snapshot_selection_matches_full_context_without_unrelated_binding
     );
     let mut costs = Vec::new();
     for size in [16, 64, 256, 1024] {
-        let mut state = CState::new().with_local("used", int32(2));
+        let mut state = ExecutionState::new().with_local("used", int32(2));
         for index in 0..size {
             state = state.with_local(format!("unused{index}"), int32(index));
         }
@@ -142,7 +142,7 @@ fn putting_a_lowered_loop_in_place_reads_its_path_not_the_loops_before_it() {
         .to_kernel_function();
         let body = function.body();
         let paths = KernelLoopPaths::of(body);
-        let replacement = CStatement::While {
+        let replacement = ProgramStatement::While {
             condition: crate::kernel::c_int32_literal(0),
             invariant: Vec::new(),
             invariant_checks: Vec::new(),
@@ -153,7 +153,7 @@ fn putting_a_lowered_loop_in_place_reads_its_path_not_the_loops_before_it() {
             do_while: false,
             backedge_target: None,
             natural_exit_target: None,
-            body: Box::new(CStatement::Skip),
+            body: Box::new(ProgramStatement::Skip),
         };
         let mut size_visits = Vec::new();
         for target in [0, loops / 2, loops - 1] {
@@ -167,7 +167,7 @@ fn putting_a_lowered_loop_in_place_reads_its_path_not_the_loops_before_it() {
                 kernel_loop_replaced(body, target, &mut 0, &replacement).as_ref(),
                 "loop({target}) of {loops}"
             );
-            let (CStatement::Seq(old), CStatement::Seq(new)) = (body, &replaced) else {
+            let (ProgramStatement::Seq(old), ProgramStatement::Seq(new)) = (body, &replaced) else {
                 panic!("a block body");
             };
             assert_eq!(
@@ -198,7 +198,7 @@ fn mathematical_lowering_keeps_repeated_squares_shared_without_evaluation() {
         Box::new(ContractExpression::Binding("selected".into())),
         Box::new(ContractExpression::Binding("selected".into())),
     );
-    let state = CState::new();
+    let state = ExecutionState::new();
     let snapshots = RecordedSnapshots::new();
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);

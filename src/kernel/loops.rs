@@ -16,14 +16,14 @@ mod pointee_const_return_tests;
 mod head_invariant_refusal_tests;
 
 pub(super) fn assign_call_result(
-    state: &mut CState,
+    state: &mut ExecutionState,
     target: &str,
     value: impl Into<StoredExecutionValue>,
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Result<(), CRuntimeError> {
     let value = value.into();
-    if value.c_type() == CType::Void {
+    if value.c_type() == ProgramType::Void {
         return Err(CRuntimeError::TypeMismatch);
     }
     let (c_type, volatile, pointee_volatile, pointee_constant) = match state.locals.binding(target)
@@ -73,14 +73,14 @@ pub(super) fn assign_call_result(
         && value.c_type() == c_type
         && matches!(
             c_type,
-            CType::Int8
-                | CType::UInt8
-                | CType::Int16
-                | CType::UInt16
-                | CType::Int32
-                | CType::UInt32
-                | CType::Int64
-                | CType::UInt64
+            ProgramType::Int8
+                | ProgramType::UInt8
+                | ProgramType::Int16
+                | ProgramType::UInt16
+                | ProgramType::Int32
+                | ProgramType::UInt32
+                | ProgramType::Int64
+                | ProgramType::UInt64
         ) {
         value
     } else {
@@ -151,10 +151,10 @@ fn authority_call_refusal_path() -> CStatementExecutionPath {
 }
 
 pub(super) fn execute_c_call_assign_paths(
-    state: &CState,
+    state: &ExecutionState,
     target: &str,
     function_name: &str,
-    arguments: &[CExpression],
+    arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
     execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
@@ -162,7 +162,7 @@ pub(super) fn execute_c_call_assign_paths(
     if !is_modeled_pthread_call(function_name, execution_context.environment)
         && !matches!(
             state.locals.object_type(function_name),
-            Some(CType::FunctionPointer(_))
+            Some(ProgramType::FunctionPointer(_))
         )
         && execution_context
             .environment
@@ -274,12 +274,12 @@ pub(super) fn execute_c_call_assign_paths(
         return execute_c_realloc_assign_paths(state, target, arguments, assumptions, budget);
     }
 
-    if let Some(CType::FunctionPointer(signature)) = state.locals.object_type(function_name) {
+    if let Some(ProgramType::FunctionPointer(signature)) = state.locals.object_type(function_name) {
         return execute_c_indirect_call_assign_paths(
             state,
             target,
             function_name,
-            CType::FunctionPointer(signature),
+            ProgramType::FunctionPointer(signature),
             arguments,
             assumptions,
             execution_context,
@@ -340,13 +340,13 @@ pub(super) fn execute_c_call_assign_paths(
     .into_iter()
     .map(|mut path| {
         let call_result = match &path.outcome {
-            CFunctionOutcome::Return { value, .. } if value.c_type() != CType::Void => Some(value.clone()),
+            CFunctionOutcome::Return { value, .. } if value.c_type() != ProgramType::Void => Some(value.clone()),
             _ => None,
         };
         let outcome = match path.outcome {
             CFunctionOutcome::Return { value, mut state } => {
                 if function.contract_interface().aggregate_return_mode() == CAggregateReturnMode::Construction {
-                    let exact = matches!(value.native_payload(), Some(CValue::Pointer(pointer))
+                    let exact = matches!(value.native_payload(), Some(ProgramValue::Pointer(pointer))
                         if state.locals.aggregate_object_pointer(target) == Some(pointer.pointer()));
                     state.aggregate_destination = original_destination.clone();
                     return CStatementExecutionPath {
@@ -363,7 +363,7 @@ pub(super) fn execute_c_call_assign_paths(
                     };
                 }
 
-                if value.c_type() == CType::Void {
+                if value.c_type() == ProgramType::Void {
                     return CStatementExecutionPath {
                         call_parameters: path.call_parameters.clone(),
                         loop_invariant_correspondence: Default::default(),
@@ -415,7 +415,7 @@ pub(super) fn execute_c_call_assign_paths(
                             loan_evidence: path.loan_evidence.clone(),
                         };
                     }
-                    let Some(CValue::Pointer(pointer)) = value.native_payload() else {
+                    let Some(ProgramValue::Pointer(pointer)) = value.native_payload() else {
                         return CStatementExecutionPath {
                             call_parameters: path.call_parameters.clone(),
                             loop_invariant_correspondence: Default::default(),
@@ -552,10 +552,10 @@ pub(super) fn execute_c_call_assign_paths(
 }
 
 pub(super) fn execute_c_call_paths(
-    state: &CState,
+    state: &ExecutionState,
     result_call: Option<u32>,
     function_name: &str,
-    arguments: &[CExpression],
+    arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
     execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
@@ -563,7 +563,7 @@ pub(super) fn execute_c_call_paths(
     if !is_modeled_pthread_call(function_name, execution_context.environment)
         && !matches!(
             state.locals.object_type(function_name),
-            Some(CType::FunctionPointer(_))
+            Some(ProgramType::FunctionPointer(_))
         )
         && execution_context
             .environment
@@ -661,11 +661,11 @@ pub(super) fn execute_c_call_paths(
     if let Some(path) = unbound_modeled_pthread_call(function_name, execution_context.environment) {
         return Ok(vec![path]);
     }
-    if let Some(CType::FunctionPointer(signature)) = state.locals.object_type(function_name) {
+    if let Some(ProgramType::FunctionPointer(signature)) = state.locals.object_type(function_name) {
         let paths = execute_c_indirect_call_paths(
             state,
             function_name,
-            CType::FunctionPointer(signature),
+            ProgramType::FunctionPointer(signature),
             arguments,
             assumptions,
             execution_context,
@@ -676,7 +676,7 @@ pub(super) fn execute_c_call_paths(
             call_parameters: path.call_parameters.clone(),
             loop_invariant_correspondence: Default::default(),
             call_result: match &path.outcome {
-                CFunctionOutcome::Return { value, .. } if value.c_type() != CType::Void => {
+                CFunctionOutcome::Return { value, .. } if value.c_type() != ProgramType::Void => {
                     Some(value.clone())
                 }
                 _ => None,
@@ -724,7 +724,7 @@ pub(super) fn execute_c_call_paths(
         call_parameters: path.call_parameters.clone(),
         loop_invariant_correspondence: Default::default(),
         call_result: match &path.outcome {
-            CFunctionOutcome::Return { value, .. } if value.c_type() != CType::Void => {
+            CFunctionOutcome::Return { value, .. } if value.c_type() != ProgramType::Void => {
                 Some(value.clone())
             }
             _ => None,
@@ -777,12 +777,12 @@ fn unbound_modeled_pthread_call(
 /// operation. Forget observations both before acquisition and after release;
 /// otherwise joining immediately after a parent write could preserve it.
 fn freshen_shared_mutex_payload(
-    state: &CState,
+    state: &ExecutionState,
     mutex: &Pointer,
     assumptions: &PureFactContext,
     environment: &CExecutionEnvironment,
     budget: &mut ExecutionBudget,
-) -> Result<(CState, Vec<CMemoryRange>), CRuntimeError> {
+) -> Result<(ExecutionState, Vec<CMemoryRange>), CRuntimeError> {
     if !state
         .thread_ledger
         .as_ref()
@@ -817,10 +817,10 @@ fn freshen_shared_mutex_payload(
 }
 
 fn execute_modeled_pthread_mutex_paths(
-    state: &CState,
+    state: &ExecutionState,
     target: Option<&str>,
     function_name: &str,
-    arguments: &[CExpression],
+    arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
     environment: &CExecutionEnvironment,
     budget: &mut ExecutionBudget,
@@ -903,16 +903,16 @@ fn execute_modeled_pthread_mutex_paths(
                 CFunctionOutcome::RuntimeError(error) => CStatementOutcome::RuntimeError(error),
                 _ => refusal("modeled-pthread mutex argument did not evaluate"),
             }
-        } else if !matches!(&path.values[0], CValue::Pointer(pointer) if !pointer.is_null()) {
+        } else if !matches!(&path.values[0], ProgramValue::Pointer(pointer) if !pointer.is_null()) {
             refusal("modeled-pthread mutex requires a nonnull mutex pointer")
         } else if initializing
             && !matches!(&path.values[1],
-                CValue::Pointer(pointer) if pointer.is_null())
-            && !matches!(&path.values[1], CValue::Int32(int32_constant!(0)))
+                ProgramValue::Pointer(pointer) if pointer.is_null())
+            && !matches!(&path.values[1], ProgramValue::Int32(int32_constant!(0)))
         {
             refusal("modeled-pthread mutex init requires null attributes")
         } else {
-            let CValue::Pointer(mutex) = &path.values[0] else {
+            let ProgramValue::Pointer(mutex) = &path.values[0] else {
                 unreachable!()
             };
             let current = super::reasoning::path_facts::assumptions_with_path_context(
@@ -1201,7 +1201,7 @@ fn execute_modeled_pthread_mutex_paths(
                         assign_call_result(
                             &mut next,
                             target,
-                            CValue::Int32(MachineTerm::constant(0)),
+                            ProgramValue::Int32(MachineTerm::constant(0)),
                             &mut path.obligations,
                             &current,
                         )
@@ -1219,7 +1219,7 @@ fn execute_modeled_pthread_mutex_paths(
             call_parameters: None,
             loop_invariant_correspondence: Default::default(),
             call_result: matches!(outcome, CStatementOutcome::Normal(_))
-                .then(|| CValue::Int32(MachineTerm::constant(0)).into()),
+                .then(|| ProgramValue::Int32(MachineTerm::constant(0)).into()),
             outcome,
             facts: path.facts,
             obligations: path.obligations,
@@ -1231,18 +1231,18 @@ fn execute_modeled_pthread_mutex_paths(
 }
 
 fn modeled_pthread_handle_store(
-    state: &CState,
-    slot: &CValue,
-    value: CValue,
+    state: &ExecutionState,
+    slot: &ProgramValue,
+    value: ProgramValue,
     assumptions: &PureFactContext,
     environment: &CExecutionEnvironment,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Option<(CState, Vec<ProofObligation>)>> {
-    let statement = CStatement::TypedStore {
+) -> ExecutionResult<Option<(ExecutionState, Vec<ProofObligation>)>> {
+    let statement = ProgramStatement::TypedStore {
         access_class: None,
-        pointer: CExpression::Value(slot.clone()),
-        value: CExpression::Value(value),
-        value_type: CType::UInt64,
+        pointer: ProgramExpression::Value(slot.clone()),
+        value: ProgramExpression::Value(value),
+        value_type: ProgramType::UInt64,
         volatile: false,
         pointee_constant: false,
         source: Default::default(),
@@ -1264,11 +1264,11 @@ fn modeled_pthread_handle_store(
 }
 
 fn modeled_pthread_indeterminate_handle(
-    mut state: CState,
+    mut state: ExecutionState,
     slot: &Pointer,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<CState> {
+) -> ExecutionResult<ExecutionState> {
     let range = CMemoryRange::new_with_element_width(
         slot.clone(),
         MachineTerm::constant(0),
@@ -1330,9 +1330,9 @@ enum ModeledCreateStatus<'a> {
 }
 
 fn execute_modeled_pthread_create_paths(
-    state: &CState,
+    state: &ExecutionState,
     status_destination: ModeledCreateStatus<'_>,
-    arguments: &[CExpression],
+    arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
     environment: &CExecutionEnvironment,
     budget: &mut ExecutionBudget,
@@ -1370,14 +1370,14 @@ fn execute_modeled_pthread_create_paths(
                 CFunctionOutcome::RuntimeError(error) => CStatementOutcome::RuntimeError(error),
                 _ => refusal("modeled-pthread create argument did not evaluate"),
             }
-        } else if !matches!(&path.values[0], CValue::Pointer(slot) if slot.c_type() == CType::UInt64Pointer)
-            || !matches!(&path.values[1], CValue::Pointer(attr) if attr.is_null())
-            || !matches!(&path.values[3], CValue::Pointer(_))
+        } else if !matches!(&path.values[0], ProgramValue::Pointer(slot) if slot.c_type() == ProgramType::UInt64Pointer)
+            || !matches!(&path.values[1], ProgramValue::Pointer(attr) if attr.is_null())
+            || !matches!(&path.values[3], ProgramValue::Pointer(_))
         {
             refusal(
                 "modeled-pthread create requires a writable pthread_t slot, null attributes, and a pointer argument",
             )
-        } else if let CValue::Pointer(callback) = &path.values[2] {
+        } else if let ProgramValue::Pointer(callback) = &path.values[2] {
             if let PointerBlock::Function(worker_name) = &callback.block {
                 let Some(worker) = environment.get_verified_function_rule(worker_name) else {
                     paths.push(CStatementExecutionPath::new(
@@ -1389,12 +1389,13 @@ fn execute_modeled_pthread_create_paths(
                     ));
                     continue;
                 };
-                let callback_type =
-                    CType::FunctionPointer(CType::qualified_function_pointer_signature(
-                        CType::VoidPointer,
+                let callback_type = ProgramType::FunctionPointer(
+                    ProgramType::qualified_function_pointer_signature(
+                        ProgramType::VoidPointer,
                         false,
-                        &[(CType::VoidPointer, false)],
-                    ));
+                        &[(ProgramType::VoidPointer, false)],
+                    ),
+                );
                 if callback.c_type() != callback_type
                     || worker.function.function_pointer_type() != callback_type
                 {
@@ -1436,7 +1437,7 @@ fn execute_modeled_pthread_create_paths(
                             let failure = prepared.failure();
                             let (success, handle, _) = prepared.success();
                             let checked_failure_value =
-                                CValue::UInt64(MachineTerm::uint64_constant(0));
+                                ProgramValue::UInt64(MachineTerm::uint64_constant(0));
                             let slot = &path.values[0];
                             let checked_success = modeled_pthread_handle_store(
                                 success.parent(),
@@ -1461,7 +1462,7 @@ fn execute_modeled_pthread_create_paths(
                             {
                                 path.obligations.extend(success_obligations);
                                 path.obligations.extend(failure_obligations);
-                                let CValue::Pointer(slot_pointer) = slot else {
+                                let ProgramValue::Pointer(slot_pointer) = slot else {
                                     unreachable!()
                                 };
                                 let output_slot = slot_pointer.pointer();
@@ -1473,7 +1474,7 @@ fn execute_modeled_pthread_create_paths(
                                 )?;
                                 let status =
                                     MachineTerm::Variable(budget.allocate_kernel_variable()?);
-                                let result = CValue::Int32(status.clone());
+                                let result = ProgramValue::Int32(status.clone());
                                 call_result = Some(result.clone());
                                 let unwritable = match status_destination {
                                     ModeledCreateStatus::Local(target) => {
@@ -1559,9 +1560,9 @@ fn execute_modeled_pthread_create_paths(
 }
 
 fn execute_modeled_pthread_join_paths(
-    state: &CState,
+    state: &ExecutionState,
     target: Option<&str>,
-    arguments: &[CExpression],
+    arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
     environment: &CExecutionEnvironment,
     budget: &mut ExecutionBudget,
@@ -1592,7 +1593,7 @@ fn execute_modeled_pthread_join_paths(
                 CFunctionOutcome::RuntimeError(error) => CStatementOutcome::RuntimeError(error),
                 _ => refusal("modeled-pthread join argument did not evaluate"),
             }
-        } else if !matches!(&path.values[1], CValue::Pointer(pointer) if pointer.is_null()) {
+        } else if !matches!(&path.values[1], ProgramValue::Pointer(pointer) if pointer.is_null()) {
             refusal("modeled-pthread join requires a null result slot")
         } else if let Some(handle) = super::threads::ThreadHandle::from_c_value(&path.values[0]) {
             let current = super::reasoning::path_facts::assumptions_with_path_context(
@@ -1617,7 +1618,7 @@ fn execute_modeled_pthread_join_paths(
                         assign_call_result(
                             &mut next,
                             target,
-                            CValue::Int32(MachineTerm::constant(0)),
+                            ProgramValue::Int32(MachineTerm::constant(0)),
                             &mut path.obligations,
                             &current,
                         )
@@ -1635,7 +1636,7 @@ fn execute_modeled_pthread_join_paths(
         };
         paths.push(
             CStatementExecutionPath::new(outcome, path.facts, path.obligations)
-                .with_call_result(Some(CValue::Int32(MachineTerm::constant(0)))),
+                .with_call_result(Some(ProgramValue::Int32(MachineTerm::constant(0)))),
         );
     }
     budget.check_path_width(paths.len())?;
@@ -1643,11 +1644,11 @@ fn execute_modeled_pthread_join_paths(
 }
 
 fn execute_c_indirect_call_assign_paths(
-    state: &CState,
+    state: &ExecutionState,
     target: &str,
     function_name: &str,
-    function_type: CType,
-    arguments: &[CExpression],
+    function_type: ProgramType,
+    arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
     execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
@@ -1665,14 +1666,14 @@ fn execute_c_indirect_call_assign_paths(
         .into_iter()
         .map(|mut path| {
             let call_result = match &path.outcome {
-                CFunctionOutcome::Return { value, .. } if value.c_type() != CType::Void => {
+                CFunctionOutcome::Return { value, .. } if value.c_type() != ProgramType::Void => {
                     Some(value.clone())
                 }
                 _ => None,
             };
             let outcome = match path.outcome {
                 CFunctionOutcome::Return { value, mut state } => {
-                    if value.c_type() == CType::Void || state.locals.is_array_object(target) {
+                    if value.c_type() == ProgramType::Void || state.locals.is_array_object(target) {
                         CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch)
                     } else {
                         let current =
@@ -1711,16 +1712,16 @@ fn execute_c_indirect_call_assign_paths(
 }
 
 fn execute_c_indirect_call_paths(
-    state: &CState,
+    state: &ExecutionState,
     function_name: &str,
-    function_type: CType,
-    arguments: &[CExpression],
+    function_type: ProgramType,
+    arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
     execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CFunctionPath>> {
     budget.install_c_byte_order(execution_context.environment.byte_order());
-    if function_type == CType::FunctionPointer(CallbackSignature::UNSPECIFIED) {
+    if function_type == ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED) {
         return Ok(vec![CFunctionPath::new(
             CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
                 "indirect calls require a supported callback signature".into(),
@@ -1742,7 +1743,7 @@ fn execute_c_indirect_call_paths(
             obligations,
         } = target_path;
         let target_names = match outcome {
-            CExpressionOutcome::Value(CValue::Pointer(pointer))
+            CExpressionOutcome::Value(ProgramValue::Pointer(pointer))
                 if pointer.offset == PointerOffsetTerm::Constant(0) =>
             {
                 match &pointer.block {
@@ -1757,7 +1758,7 @@ fn execute_c_indirect_call_paths(
                     PointerBlock::FunctionSymbolic(_)
                     | PointerBlock::Function(_)
                     | PointerBlock::LoadedPointer(_)
-                        if matches!(pointer.c_type(), CType::FunctionPointer(_)) =>
+                        if matches!(pointer.c_type(), ProgramType::FunctionPointer(_)) =>
                     {
                         let target_assumptions =
                             assumptions_with_path_context(assumptions, &facts, &obligations);
@@ -1905,8 +1906,8 @@ fn execute_c_indirect_call_paths(
 /// `CStatementVerifies` for `statement`: the one statement driver under the
 /// verification judgment.
 pub(super) fn execute_c_statement_verification_paths(
-    state: &CState,
-    statement: &CStatement,
+    state: &ExecutionState,
+    statement: &ProgramStatement,
     assumptions: &PureFactContext,
     execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
@@ -1930,8 +1931,8 @@ pub(super) fn execute_c_statement_verification_paths(
 /// Under [`CLoopSemantics::ApplyVerifiedRules`] a loop with checks and no
 /// applicable rule has no paths: its authority is the rule.
 pub(in crate::kernel) fn abstract_loop_paths(
-    state: &CState,
-    statement: &CStatement,
+    state: &ExecutionState,
+    statement: &ProgramStatement,
     assumptions: &PureFactContext,
     execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
@@ -1939,7 +1940,7 @@ pub(in crate::kernel) fn abstract_loop_paths(
 ) -> ExecutionResult<Option<Vec<CStatementExecutionPath>>> {
     let annotated = matches!(
         statement,
-        CStatement::While {
+        ProgramStatement::While {
             invariant_checks,
             effect_checks,
             ranking_measures,
@@ -2009,8 +2010,8 @@ pub(in crate::kernel) fn abstract_loop_paths(
 /// be unchanged at the loop-state join.
 #[cfg(test)]
 pub(crate) fn c_loop_state_components_match_at_back_edge(
-    top_state: &CState,
-    next_state: &CState,
+    top_state: &ExecutionState,
+    next_state: &ExecutionState,
     assumptions: &PureFactContext,
     composite_resource_definitions: &[CCompositeResourceDefinition],
 ) -> Result<(), String> {
@@ -2025,8 +2026,8 @@ pub(crate) fn c_loop_state_components_match_at_back_edge(
 
 /// Validate protocol custody before forgetting a loop binder's model values.
 pub(crate) fn c_loop_binder_state_components_match_at_back_edge(
-    top: &CState,
-    next: &CState,
+    top: &ExecutionState,
+    next: &ExecutionState,
     binders: &[CLoopBinder],
     assumptions: &PureFactContext,
     definitions: &[CCompositeResourceDefinition],
@@ -2075,7 +2076,7 @@ pub(crate) fn c_loop_binder_state_components_match_at_back_edge(
 }
 
 fn check_loop_guard_custody(
-    state: &CState,
+    state: &ExecutionState,
     mutex: &Pointer,
     held: &ConditionTerm,
     assumptions: &PureFactContext,
@@ -2098,8 +2099,8 @@ fn check_loop_guard_custody(
 /// unresolved condition is treated as potentially continuing, so callers do
 /// not export a state-changing body path as a final exit accidentally.
 pub(crate) fn c_loop_condition_may_continue(
-    state: &CState,
-    condition: &CExpression,
+    state: &ExecutionState,
+    condition: &ProgramExpression,
     assumptions: &PureFactContext,
 ) -> Result<bool, String> {
     c_loop_condition_feasibility(state, condition, assumptions)
@@ -2113,8 +2114,8 @@ pub(crate) fn c_loop_condition_may_continue(
 }
 
 fn c_loop_condition_feasibility(
-    state: &CState,
-    condition: &CExpression,
+    state: &ExecutionState,
+    condition: &ProgramExpression,
     assumptions: &PureFactContext,
 ) -> ExecutionResult<(bool, bool)> {
     let mut budget = ExecutionBudget::beside_live_state().with_c_expression_cost(condition);
@@ -2229,8 +2230,8 @@ fn condition_complement(condition: &ConditionTerm) -> Option<ConditionTerm> {
 }
 
 fn c_loop_state_components_match_at_back_edge_inner(
-    top_state: &CState,
-    next_state: &CState,
+    top_state: &ExecutionState,
+    next_state: &ExecutionState,
     composite_resource_definitions: &[CCompositeResourceDefinition],
     assumptions: &PureFactContext,
     checked_mutexes: &[Pointer],
@@ -2369,14 +2370,14 @@ fn c_loop_state_components_match_at_back_edge_inner(
 /// The parts of one `while` statement the loop rule reads, borrowed from it.
 #[derive(Clone, Copy)]
 pub(super) struct CWhileLoop<'a> {
-    pub(super) condition: &'a CExpression,
+    pub(super) condition: &'a ProgramExpression,
     pub(super) invariant: &'a [Proposition],
     pub(super) invariant_checks: &'a [CLoopInvariantCheck],
     pub(super) effect_checks: &'a [CLoopEffectCheck],
     pub(super) resource_specs: &'a [CResourceSpec],
     pub(super) ranking_measures: &'a [CRankingComponent],
     pub(super) structural_measure: Option<&'a str>,
-    pub(super) body: &'a CStatement,
+    pub(super) body: &'a ProgramStatement,
     pub(super) do_while: bool,
     pub(super) backedge_target: Option<CControlTargetId>,
     pub(super) natural_exit_target: Option<CControlTargetId>,
@@ -2384,8 +2385,8 @@ pub(super) struct CWhileLoop<'a> {
 
 impl<'a> CWhileLoop<'a> {
     /// The loop a `while` statement states, or `None` for any other statement.
-    pub(super) fn of(statement: &'a CStatement) -> Option<Self> {
-        let CStatement::While {
+    pub(super) fn of(statement: &'a ProgramStatement) -> Option<Self> {
+        let ProgramStatement::While {
             condition,
             invariant,
             invariant_checks,
@@ -2419,7 +2420,7 @@ impl<'a> CWhileLoop<'a> {
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn execute_c_while_exit_paths_with_proven_phases(
-    state: &CState,
+    state: &ExecutionState,
     while_loop: CWhileLoop<'_>,
     assumptions: &PureFactContext,
     execution_context: CExecutionContext<'_>,
@@ -2780,11 +2781,11 @@ impl LoopExitFacts {
 #[allow(clippy::too_many_arguments)]
 fn join_loop_exits(
     head: &CLoopHead,
-    body: &CStatement,
+    body: &ProgramStatement,
     invariant_propositions: &crate::kernel::proof::PersistentSequence<Proposition>,
     binders: &[CLoopBinder],
     exits: Vec<(
-        CState,
+        ExecutionState,
         ExecutionFacts,
         Vec<ProofObligation>,
         CheckedLoanCallEvidenceSequence,
@@ -2943,15 +2944,15 @@ mod loop_invariant_correspondence_tests;
 #[allow(clippy::too_many_arguments)]
 fn abstract_loop_exit_states(
     head: &CLoopHead,
-    body: &CStatement,
+    body: &ProgramStatement,
     binders: &[CLoopBinder],
-    states: &[&CState],
+    states: &[&ExecutionState],
     exit_facts: &[&ExecutionFacts],
     retained_contexts: &[Option<PureFactContext>],
     assumptions: &PureFactContext,
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
-) -> Result<(CState, Vec<LoopExitRestatement>), String> {
+) -> Result<(ExecutionState, Vec<LoopExitRestatement>), String> {
     // This join already restates and exports each exit's facts. Index that
     // explicit input once per exit, shared by all binder equality checks;
     // never rebuild the path context for each binder or argument.
@@ -3100,7 +3101,7 @@ fn loop_exit_argument_contexts(
 /// (empty when the loop has none); an exit's context is built here only when
 /// it is missing, so no exit's facts are assumed twice.
 fn retain_proven_loop_exit_cells(
-    states: &mut [CState],
+    states: &mut [ExecutionState],
     facts: &[&ExecutionFacts],
     built: &[PureFactContext],
     assumptions: &PureFactContext,
@@ -3129,7 +3130,7 @@ fn retain_proven_loop_exit_cells(
         // (the signs of zero differ). Boolean reads normalize their byte.
         if matches!(
             value,
-            CValue::Bool(_) | CValue::Float32(_) | CValue::Float64(_)
+            ProgramValue::Bool(_) | ProgramValue::Float32(_) | ProgramValue::Float64(_)
         ) {
             continue;
         }
@@ -3180,8 +3181,8 @@ fn retain_proven_loop_exit_cells(
 /// to prove anything. Consult only exact fact indexes and the trusted graph.
 fn indexed_loop_exit_load_equality(
     context: &PureFactContext,
-    load: &CValue,
-    value: &CValue,
+    load: &ProgramValue,
+    value: &ProgramValue,
 ) -> Option<bool> {
     let Proposition::ConditionIs(condition, expected) =
         c_value_comparison_proposition(load, CComparisonOperator::Equal, value)?
@@ -3269,13 +3270,18 @@ struct LoopExitRestatement {
 impl LoopExitRestatement {
     /// Records that this exit's `held` value became the successor's `fresh`
     /// one.
-    fn pin(&mut self, fresh: &CValue, held: &CValue) {
+    fn pin(&mut self, fresh: &ProgramValue, held: &ProgramValue) {
         // The C comparison form, not a raw term equality: a proof after the
         // loop spells this disjunct as `x == <value>`, and `cases` needs the
         // exported fact to be exactly what that spelling lowers to.
         self.equations.push(
             c_value_comparison_proposition(fresh, CComparisonOperator::Equal, held).unwrap_or_else(
-                || Proposition::Equal(Term::CValue(fresh.clone()), Term::CValue(held.clone())),
+                || {
+                    Proposition::Equal(
+                        Term::ProgramValue(fresh.clone()),
+                        Term::ProgramValue(held.clone()),
+                    )
+                },
             ),
         );
         if let (Some(MachineTerm::Variable(from)), Some(to)) =
@@ -3403,31 +3409,31 @@ fn equation_states_nothing(equation: &Proposition) -> bool {
 }
 
 /// The scalar term a C value carries, for the one-variable renaming above.
-fn scalar_bitvector(value: &CValue) -> Option<&MachineTerm> {
+fn scalar_bitvector(value: &ProgramValue) -> Option<&MachineTerm> {
     match value.numeric_value() {
-        CValue::PointerInteger(_) => unreachable!("numeric projection"),
-        CValue::Int8(term) => Some(term),
-        CValue::Bool(term)
-        | CValue::Int16(term)
-        | CValue::Int32(term)
-        | CValue::UInt8(term)
-        | CValue::UInt16(term)
-        | CValue::UInt32(term)
-        | CValue::Int64(term)
-        | CValue::UInt64(term)
-        | CValue::Int128(term)
-        | CValue::UInt128(term)
-        | CValue::Float32(term)
-        | CValue::Float64(term) => Some(term),
-        CValue::Void | CValue::Pointer(_) | CValue::Parameter(_) => None,
+        ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
+        ProgramValue::Int8(term) => Some(term),
+        ProgramValue::Bool(term)
+        | ProgramValue::Int16(term)
+        | ProgramValue::Int32(term)
+        | ProgramValue::UInt8(term)
+        | ProgramValue::UInt16(term)
+        | ProgramValue::UInt32(term)
+        | ProgramValue::Int64(term)
+        | ProgramValue::UInt64(term)
+        | ProgramValue::Int128(term)
+        | ProgramValue::UInt128(term)
+        | ProgramValue::Float32(term)
+        | ProgramValue::Float64(term) => Some(term),
+        ProgramValue::Void | ProgramValue::Pointer(_) | ProgramValue::Parameter(_) => None,
     }
 }
 
 /// Gives each declared loop binder the arguments and fields every exit agrees
 /// on, and one fresh name wherever they disagree.
 fn abstract_loop_exit_binders(
-    successor: &mut CState,
-    exits: &[CState],
+    successor: &mut ExecutionState,
+    exits: &[ExecutionState],
     binders: &[CLoopBinder],
     contexts: &[PureFactContext],
     restatements: &mut [LoopExitRestatement],
@@ -3513,8 +3519,8 @@ fn abstract_loop_exit_binders(
 /// Locals have already been joined, so a changed cursor supplies its one
 /// fresh value to every binder that explicitly tracks it.
 fn loop_exit_local_arguments(
-    successor: &CState,
-    exits: &[CState],
+    successor: &ExecutionState,
+    exits: &[ExecutionState],
     binder: &CLoopBinder,
     instances: &[ResourceInstance],
     contexts: &[PureFactContext],
@@ -3546,25 +3552,25 @@ fn loop_exit_local_arguments(
             // It must follow the local's joined value just as a direct index
             // does; it never transfers the pointer's designation or extent.
             let (name, address_only) = match expression {
-                CExpression::Variable(name) => (name, false),
-                CExpression::Cast {
+                ProgramExpression::Variable(name) => (name, false),
+                ProgramExpression::Cast {
                     expression,
-                    target_type: CType::UInt64,
+                    target_type: ProgramType::UInt64,
                     ..
                 } => {
-                    let CExpression::Variable(name) = expression.as_ref() else {
+                    let ProgramExpression::Variable(name) = expression.as_ref() else {
                         return None;
                     };
                     (name, true)
                 }
                 _ => return None,
             };
-            let project = |value: &CValue| {
+            let project = |value: &ProgramValue| {
                 if address_only {
-                    let CValue::Pointer(pointer) = value else {
+                    let ProgramValue::Pointer(pointer) = value else {
                         return None;
                     };
-                    Some(CValue::UInt64(MachineTerm::pointer_address(
+                    Some(ProgramValue::UInt64(MachineTerm::pointer_address(
                         pointer.pointer().clone(),
                     )))
                 } else {
@@ -3596,7 +3602,11 @@ mod exit_local_argument_tests;
 /// If an exit never produced it, no common value can be read after the loop.
 /// Discard only loop-written names absent at entry, and only when every held
 /// binding has no declared storage. Memory and resource authority remain intact.
-fn discard_loop_exit_partial_value_bindings(top: &CState, body: &CStatement, exits: &mut [CState]) {
+fn discard_loop_exit_partial_value_bindings(
+    top: &ExecutionState,
+    body: &ProgramStatement,
+    exits: &mut [ExecutionState],
+) {
     let mut names = BTreeSet::new();
     collect_loop_modified_locals(body, &mut names);
     for name in names {
@@ -3697,7 +3707,7 @@ fn exhausted_identities(limit: ExecutionLimit) -> String {
 fn resource_value_term(value: &AlgebraicValue) -> Term {
     match value {
         AlgebraicValue::Integer(term) => Term::Integer(term.clone()),
-        AlgebraicValue::C(value) => Term::CValue(value.clone()),
+        AlgebraicValue::C(value) => Term::ProgramValue(value.clone()),
         AlgebraicValue::Algebraic(term) => Term::Algebraic(term.clone()),
     }
 }
@@ -3705,7 +3715,7 @@ fn resource_value_term(value: &AlgebraicValue) -> Term {
 /// What the join replaced in the successor, for the residual comparison to
 /// put back at each exit.
 struct LoopExitAbstraction<'a> {
-    locals: &'a [(String, CType)],
+    locals: &'a [(String, ProgramType)],
     uninitialized: &'a [String],
     cells: &'a BTreeSet<Pointer>,
     bookkeeping: bool,
@@ -3721,7 +3731,10 @@ struct LoopExitAbstraction<'a> {
 /// one path never produced. What this gives up is exactly such a read.
 ///
 /// One pass over the successor's names, looking each up in every exit.
-fn abstract_loop_exit_initialization(successor: &mut CState, exits: &[CState]) -> Vec<String> {
+fn abstract_loop_exit_initialization(
+    successor: &mut ExecutionState,
+    exits: &[ExecutionState],
+) -> Vec<String> {
     let names = successor
         .locals
         .bindings
@@ -3788,8 +3801,8 @@ fn abstract_loop_exit_initialization(successor: &mut CState, exits: &[CState]) -
 /// a loop whose exits agree keeps its memory's identity and every read
 /// equality through it. Returns whether it applied.
 fn join_loop_exit_storage_bookkeeping(
-    successor: &mut CState,
-    exits: &[CState],
+    successor: &mut ExecutionState,
+    exits: &[ExecutionState],
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
 ) -> Result<bool, String> {
@@ -3853,7 +3866,7 @@ fn join_loop_exit_storage_bookkeeping(
             };
             std::sync::Arc::make_mut(&mut memory.blocks).insert(
                 PointerBlock::Concrete(format!("{prefix}:{}", marker.0)),
-                CBlock::new(0),
+                MemoryBlock::new(0),
             );
         }
         let minted = crate::kernel::intern_c_memory(
@@ -3875,12 +3888,12 @@ fn join_loop_exit_storage_bookkeeping(
 /// Havocs the locals the exits disagree on, keeping the rest, and reports
 /// which ones it abstracted.
 fn abstract_loop_exit_locals(
-    successor: &mut CState,
-    exits: &[CState],
+    successor: &mut ExecutionState,
+    exits: &[ExecutionState],
     restatements: &mut [LoopExitRestatement],
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
-) -> Result<Vec<(String, CType)>, String> {
+) -> Result<Vec<(String, ProgramType)>, String> {
     let mut abstracted = Vec::new();
     let names = successor
         .locals()
@@ -3960,8 +3973,8 @@ fn abstract_loop_exit_locals(
 /// the disjunction relates the two. A loop that declares no binder has nothing
 /// to read such a cell through, so the disagreement is refused by name.
 fn abstract_loop_exit_memory(
-    successor: &mut CState,
-    exits: &[CState],
+    successor: &mut ExecutionState,
+    exits: &[ExecutionState],
     resynced: &BTreeSet<Pointer>,
     no_binders: bool,
     declared_memory: &[CMemoryRange],
@@ -4097,7 +4110,7 @@ fn abstract_loop_exit_memory(
 
 /// The memory ranges a loop's own header declared, rather than folded into one
 /// of its binders.
-fn loop_declared_memory_ranges(body_state: &CState) -> Vec<CMemoryRange> {
+fn loop_declared_memory_ranges(body_state: &ExecutionState) -> Vec<CMemoryRange> {
     body_state
         .resources()
         .facts()
@@ -4111,57 +4124,57 @@ fn loop_declared_memory_ranges(body_state: &CState) -> Vec<CMemoryRange> {
 
 /// The abstract value a loop havoc gives a local of this type, if it has one.
 fn fresh_loop_local_value(
-    c_type: CType,
+    c_type: ProgramType,
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Option<CValue>> {
+) -> ExecutionResult<Option<ProgramValue>> {
     // An array object is never assigned by name (C forbids it) and binds as
     // an array object rather than a scalar one, and `void` has no value, so
     // neither type takes an identity from the counter at all.
     match c_type {
-        CType::Int8Array(_) => return Ok(None),
-        CType::Void
-        | CType::Int32Array(_)
-        | CType::UInt8Array(_)
-        | CType::Int16Array(_)
-        | CType::UInt16Array(_)
-        | CType::UInt32Array(_)
-        | CType::Int128Array(_)
-        | CType::Int64Array(_)
-        | CType::UInt128Array(_)
-        | CType::UInt64Array(_)
-        | CType::Float32Array(_)
-        | CType::Float64Array(_) => return Ok(None),
+        ProgramType::Int8Array(_) => return Ok(None),
+        ProgramType::Void
+        | ProgramType::Int32Array(_)
+        | ProgramType::UInt8Array(_)
+        | ProgramType::Int16Array(_)
+        | ProgramType::UInt16Array(_)
+        | ProgramType::UInt32Array(_)
+        | ProgramType::Int128Array(_)
+        | ProgramType::Int64Array(_)
+        | ProgramType::UInt128Array(_)
+        | ProgramType::UInt64Array(_)
+        | ProgramType::Float32Array(_)
+        | ProgramType::Float64Array(_) => return Ok(None),
         _ => {}
     }
     let variable = variables.next_in(budget)?;
     Ok(Some(match c_type {
-        CType::Bool => CValue::Bool(MachineTerm::Variable(variable)),
-        CType::Int8 => int8(MachineTerm::Variable(variable)),
-        CType::Int16 => int16(MachineTerm::Variable(variable)),
-        CType::Int32 => int32(MachineTerm::Variable(variable)),
-        CType::UInt8 => uint8(MachineTerm::Variable(variable)),
-        CType::UInt16 => uint16(MachineTerm::Variable(variable)),
-        CType::UInt32 => uint32(MachineTerm::Variable(variable)),
-        CType::Int64 => CValue::Int64(MachineTerm::Variable(variable))
+        ProgramType::Bool => ProgramValue::Bool(MachineTerm::Variable(variable)),
+        ProgramType::Int8 => int8(MachineTerm::Variable(variable)),
+        ProgramType::Int16 => int16(MachineTerm::Variable(variable)),
+        ProgramType::Int32 => int32(MachineTerm::Variable(variable)),
+        ProgramType::UInt8 => uint8(MachineTerm::Variable(variable)),
+        ProgramType::UInt16 => uint16(MachineTerm::Variable(variable)),
+        ProgramType::UInt32 => uint32(MachineTerm::Variable(variable)),
+        ProgramType::Int64 => ProgramValue::Int64(MachineTerm::Variable(variable))
             .complete_word(Pointer::symbolic(variable)),
-        CType::UInt64 => CValue::UInt64(MachineTerm::Variable(variable))
+        ProgramType::UInt64 => ProgramValue::UInt64(MachineTerm::Variable(variable))
             .complete_word(Pointer::symbolic(variable)),
-        CType::Float32 => CValue::Float32(MachineTerm::Variable(variable)),
-        CType::Float64 => CValue::Float64(MachineTerm::Variable(variable)),
-        CType::FunctionPointer(_) => {
-            CValue::typed_pointer(Pointer::symbolic_function(variable), c_type)
+        ProgramType::Float32 => ProgramValue::Float32(MachineTerm::Variable(variable)),
+        ProgramType::Float64 => ProgramValue::Float64(MachineTerm::Variable(variable)),
+        ProgramType::FunctionPointer(_) => {
+            ProgramValue::typed_pointer(Pointer::symbolic_function(variable), c_type)
         }
         // A local holding a spec value, a Rust enum, a `Vec` or a library
         // iterator, takes a fresh value of its own type.
-        CType::Parameter(parameter) => CValue::Parameter(Box::new(AlgebraicTerm {
+        ProgramType::Parameter(parameter) => ProgramValue::Parameter(Box::new(AlgebraicTerm {
             algebraic_type: parameter.algebraic_type(),
             node: AlgebraicTermNode::Variable(variable),
         })),
         // A pointer local reassigned in the body (`p = p + 1`) must not keep
         // its entry value across the abstract iteration, exactly as the join
         // abstraction treats it; an invariant must relate it.
-        _ => CValue::typed_pointer(Pointer::symbolic(variable), c_type),
+        _ => ProgramValue::typed_pointer(Pointer::symbolic(variable), c_type),
     }))
 }
 
@@ -4175,8 +4188,8 @@ fn fresh_loop_local_value(
 /// binders — and the join refuses under that name rather than exporting a
 /// state no exit stands in.
 fn loop_exit_residual_difference(
-    successor: &CState,
-    exit: &CState,
+    successor: &ExecutionState,
+    exit: &ExecutionState,
     abstracted: &LoopExitAbstraction<'_>,
     binders: &[CLoopBinder],
     assumptions: &PureFactContext,
@@ -4291,12 +4304,12 @@ fn loop_exit_residual_difference(
         memory.record_diagnostic_transform(
             "restore loop exit cells",
             vec![witness.memory.clone(), seated.memory.clone()],
-            cells.iter().cloned().map(CValue::pointer).collect(),
+            cells.iter().cloned().map(ProgramValue::pointer).collect(),
         );
         exit_memory.record_diagnostic_transform(
             "abstract unmatched loop exit cells",
             vec![seated.memory.clone(), witness.memory.clone()],
-            cells.iter().cloned().map(CValue::pointer).collect(),
+            cells.iter().cloned().map(ProgramValue::pointer).collect(),
         );
         witness = witness.with_memory(memory);
         seated = seated.with_memory(exit_memory);
@@ -4346,8 +4359,8 @@ fn loop_exit_resources_agree(
 /// differs afterwards. The equivalent component is then taken from the left
 /// state so the remaining components are compared by `==` as before.
 fn loop_exit_state_difference(
-    left: &CState,
-    right: &CState,
+    left: &ExecutionState,
+    right: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> Option<String> {
     // Creation ledgers that record the same state differ only in their
@@ -4375,7 +4388,7 @@ fn loop_exit_state_difference(
     }
     // Keep this exhaustive: a new checked state component must also acquire a
     // diagnostic name. These comparisons explain rejection, not join acceptance.
-    let CState {
+    let ExecutionState {
         aggregate_destination,
         instance_field_scope,
         resource_bindings,
@@ -4501,7 +4514,7 @@ fn loop_exit_state_difference(
 
 #[allow(clippy::too_many_arguments)]
 fn execute_c_while_exit_paths(
-    state: &CState,
+    state: &ExecutionState,
     while_loop: CWhileLoop<'_>,
     assumptions: &PureFactContext,
     environment: &CExecutionEnvironment,
@@ -4980,8 +4993,8 @@ fn dropped_range_extent_reason(extent: &crate::kernel::DroppedRangeExtent) -> St
 }
 
 pub(super) fn collect_invariant_check_obligations(
-    state: &CState,
-    loop_entry_state: &CState,
+    state: &ExecutionState,
+    loop_entry_state: &ExecutionState,
     invariant_checks: &[CLoopInvariantCheck],
     phase: InvariantPhase,
     head_iterations: Option<&IntegerTerm>,
@@ -5002,8 +5015,8 @@ pub(super) fn collect_invariant_check_obligations(
 }
 
 pub(super) fn collect_invariant_check_obligations_without_search(
-    state: &CState,
-    loop_entry_state: &CState,
+    state: &ExecutionState,
+    loop_entry_state: &ExecutionState,
     invariant_checks: &[CLoopInvariantCheck],
     phase: InvariantPhase,
     head_iterations: Option<&IntegerTerm>,
@@ -5026,7 +5039,7 @@ pub(super) fn collect_invariant_check_obligations_without_search(
 /// Collects every declaration's exact lowered goals before outstanding-obligation
 /// filtering. Equal or already-known goals retain their declaration positions.
 pub(super) fn collect_loop_entry_goals(
-    state: &CState,
+    state: &ExecutionState,
     checks: &[CLoopInvariantCheck],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -5047,8 +5060,8 @@ pub(super) fn collect_loop_entry_goals(
 
 #[allow(clippy::too_many_arguments)]
 fn collect_invariant_check_obligations_with_mode(
-    state: &CState,
-    loop_entry_state: &CState,
+    state: &ExecutionState,
+    loop_entry_state: &ExecutionState,
     invariant_checks: &[CLoopInvariantCheck],
     phase: InvariantPhase,
     head_iterations: Option<&IntegerTerm>,
@@ -5301,8 +5314,8 @@ fn collect_invariant_check_obligations_with_mode(
 /// over cells the context already shows loadable, has exactly the members
 /// above.
 pub(super) fn collect_loop_ranking_obligations(
-    state: &CState,
-    iteration_entry_state: &CState,
+    state: &ExecutionState,
+    iteration_entry_state: &ExecutionState,
     head_iterations: Option<&IntegerTerm>,
     ranking_measures: &[CRankingComponent],
     assumptions: &PureFactContext,
@@ -5389,8 +5402,8 @@ pub(super) fn collect_loop_ranking_obligations(
 /// scalar int32 expression is a proof failure at the loop, never a silently
 /// dropped ranking obligation.
 pub(super) fn loop_ranking_obligations_or_refusal(
-    state: &CState,
-    iteration_entry_state: &CState,
+    state: &ExecutionState,
+    iteration_entry_state: &ExecutionState,
     head_iterations: &IntegerTerm,
     ranking_measures: &[CRankingComponent],
     assumptions: &PureFactContext,
@@ -5423,7 +5436,7 @@ pub(super) struct LoopPreservationSummary {
 }
 
 pub(super) fn collect_loop_preservation_summary(
-    loop_entry_state: &CState,
+    loop_entry_state: &ExecutionState,
     head: &CLoopHead,
     while_loop: CWhileLoop<'_>,
     composite_resource_definitions: &[CCompositeResourceDefinition],
@@ -5906,7 +5919,7 @@ impl EvaluatedMemorySegment {
 }
 
 fn evaluate_whole_loop_effect_ranges(
-    before_state: &CState,
+    before_state: &ExecutionState,
     effect_checks: &[CLoopEffectCheck],
     include_mutable_summaries: bool,
     assumptions: &PureFactContext,
@@ -5974,8 +5987,8 @@ fn evaluate_whole_loop_effect_ranges(
 }
 
 pub(super) fn collect_whole_loop_effect_summaries(
-    before_state: &CState,
-    after_state: &CState,
+    before_state: &ExecutionState,
+    after_state: &ExecutionState,
     ranges_by_summary: &[Vec<CMemoryRange>],
 ) -> Vec<Proposition> {
     ranges_by_summary
@@ -5996,17 +6009,17 @@ pub(super) fn collect_whole_loop_effect_summaries(
 /// what the loop declared, and the rest of the enclosing frame's resources are
 /// withheld until the loop exits.
 pub(super) struct CLoopHead {
-    pub(super) top: CState,
-    pub(super) body: CState,
+    pub(super) top: ExecutionState,
+    pub(super) body: ExecutionState,
     /// The head state the loop reads its guard and invariants from: `top`
     /// with the cells of each folded matched instance's selected arm
     /// published as views (D7). Ownership is untouched, and the loop's exit
     /// outcome is `top`, so the extra read authority never leaves the head.
-    pub(super) guard: CState,
+    pub(super) guard: ExecutionState,
     /// The loop's entry state with each binder bound to the instance it
     /// names. Entry invariant checks read binder fields from here, so a loop
     /// binder that renames an enclosing instance is available at entry too.
-    pub(super) entry: CState,
+    pub(super) entry: ExecutionState,
     /// The head's pass count `K`: a fresh Integer standing for the number of
     /// passes the loop has completed when it reaches this head. Every
     /// invariant this head assumes reads `iterations` as `K`, and every back
@@ -6028,7 +6041,10 @@ pub(super) struct CLoopHead {
 #[derive(Clone, Debug)]
 pub(super) enum CLoopResourceFailure {
     Message(String),
-    Unheld { fact: CResourceFact, state: CState },
+    Unheld {
+        fact: CResourceFact,
+        state: ExecutionState,
+    },
 }
 
 impl CLoopResourceFailure {
@@ -6055,9 +6071,9 @@ impl CLoopHead {
     /// Return the withheld frame while retaining the body's final exchange.
     pub(super) fn restored_exit_state(
         &self,
-        state: &CState,
+        state: &ExecutionState,
         assumptions: &PureFactContext,
-    ) -> CState {
+    ) -> ExecutionState {
         if !self.narrows_resources() {
             return state.clone();
         }
@@ -6071,11 +6087,11 @@ impl CLoopHead {
 }
 
 pub(crate) fn restore_loop_exit_state(
-    state: &CState,
+    state: &ExecutionState,
     body: &ResourceContext,
     frame: &ResourceContext,
     assumptions: &PureFactContext,
-) -> CState {
+) -> ExecutionState {
     if state.resources() == body {
         return state.clone().with_resource_context(frame.clone());
     }
@@ -6121,7 +6137,7 @@ pub(super) fn environment_composite_resource_definitions(
 /// uninstalled and the loop's declaration failure is the verdict; the
 /// declared frame then fails closed like an inherited one.
 fn install_declared_loop_frames(
-    entry_state: &CState,
+    entry_state: &ExecutionState,
     effect_checks: &[CLoopEffectCheck],
     resource_specs: &[CResourceSpec],
     definitions: &[CCompositeResourceDefinition],
@@ -6175,7 +6191,7 @@ fn install_declared_loop_frames(
 /// havocked. Named resource binders still read their arguments/models at the
 /// abstract head; their independently derived views are never captured here.
 fn capture_loop_entry_memory_specs(
-    entry: &CState,
+    entry: &ExecutionState,
     specs: &[CResourceSpec],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -6204,7 +6220,7 @@ fn capture_loop_entry_memory_specs(
                 "loop entry memory operand",
                 budget,
             )? {
-                Ok(value) => *expression = CExpression::Value(value),
+                Ok(value) => *expression = ProgramExpression::Value(value),
                 Err(message) => {
                     failures.push(CLoopResourceFailure::Message(format!(
                         "could not capture loop entry memory footprint: {message}"
@@ -6224,12 +6240,12 @@ fn capture_loop_entry_memory_specs(
 }
 
 pub(super) fn prepare_loop_top_state(
-    entry_state: &CState,
+    entry_state: &ExecutionState,
     effect_checks: &[CLoopEffectCheck],
     invariant_checks: &[CLoopInvariantCheck],
     resource_specs: &[CResourceSpec],
     definitions: &[CCompositeResourceDefinition],
-    body: &CStatement,
+    body: &ProgramStatement,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
     variables: &mut KernelVariableGenerator,
@@ -6714,14 +6730,14 @@ pub(super) fn prepare_loop_top_state(
 /// one may not. Cost is one pass over the instances the state holds, as the
 /// free-standing publication is.
 fn with_selected_arm_views_attached(
-    state: CState,
-    premise_state: &CState,
+    state: ExecutionState,
+    premise_state: &ExecutionState,
     invariant_checks: &[CLoopInvariantCheck],
     iterations: &IntegerTerm,
     definitions: &[CCompositeResourceDefinition],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<CState> {
+) -> ExecutionResult<ExecutionState> {
     if definitions.is_empty() {
         return Ok(state);
     }
@@ -6808,14 +6824,14 @@ fn with_selected_arm_views_attached(
 ///
 /// Cost is the selected arms' own clauses plus one lowering of each invariant.
 fn with_selected_arm_views(
-    state: &CState,
-    premise_state: &CState,
+    state: &ExecutionState,
+    premise_state: &ExecutionState,
     invariant_checks: &[CLoopInvariantCheck],
     iterations: &IntegerTerm,
     definitions: &[CCompositeResourceDefinition],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<CState> {
+) -> ExecutionResult<ExecutionState> {
     if definitions.is_empty() {
         return Ok(state.clone());
     }
@@ -6853,7 +6869,10 @@ fn with_selected_arm_views(
 // owned projection: that copy could survive consumption of the owner. Each
 // explicit output view uses the exact membership index, without scanning
 // owners or other representations of the view.
-fn with_arm_views_preserving_support(state: &CState, views: Vec<CResourceFact>) -> CState {
+fn with_arm_views_preserving_support(
+    state: &ExecutionState,
+    views: Vec<CResourceFact>,
+) -> ExecutionState {
     let mut resources = state.resources().clone();
     for view in views {
         crate::instrumentation::record_deterministic_work(1);
@@ -6887,7 +6906,7 @@ mod arm_view_support_tests {
 /// resources taken out. The body sees the kept part only as views, so it
 /// can write none of it. `Err` names a clause the function does not hold.
 fn loop_declared_and_withheld_resources(
-    entry_state: &CState,
+    entry_state: &ExecutionState,
     resource_specs: &[CResourceSpec],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -6944,9 +6963,9 @@ fn with_owner_read_authority_rederived(
     mut resources: ResourceContext,
     declared: &[CResourceFact],
     definitions: &[CCompositeResourceDefinition],
-    head: &CState,
+    head: &ExecutionState,
     assumptions: &PureFactContext,
-    binding_source: Option<&CState>,
+    binding_source: Option<&ExecutionState>,
 ) -> ResourceContext {
     for owner in declared.iter().filter(|fact| fact.is_own()) {
         if matches!(owner.resource(), CResource::Instance(_)) {
@@ -7008,9 +7027,9 @@ fn with_loop_frame_resources(
     mut body_resources: ResourceContext,
     withheld: &ResourceContext,
     allow_frame_views: bool,
-    top_state: &CState,
+    top_state: &ExecutionState,
     assumptions: &PureFactContext,
-    binding_source: &CState,
+    binding_source: &ExecutionState,
 ) -> ResourceContext {
     let candidates: Box<dyn Iterator<Item = &CResourceFact> + '_> = if allow_frame_views {
         Box::new(withheld.iter())
@@ -7064,13 +7083,13 @@ fn with_loop_frame_resources(
 }
 
 fn loop_body_resource_context(
-    entry_state: &CState,
-    top_state: &CState,
+    entry_state: &ExecutionState,
+    top_state: &ExecutionState,
     resource_specs: &[CResourceSpec],
     definitions: &[CCompositeResourceDefinition],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<(CState, Vec<CLoopResourceFailure>)> {
+) -> ExecutionResult<(ExecutionState, Vec<CLoopResourceFailure>)> {
     if resource_specs.is_empty() {
         return Ok((top_state.clone(), Vec::new()));
     }
@@ -7161,11 +7180,11 @@ pub(crate) fn c_loop_binders(resource_specs: &[CResourceSpec]) -> Vec<CLoopBinde
 /// checks the arguments of those instances alone, so it costs the instances
 /// of one family rather than the surrounding context.
 fn rebind_loop_binder_instances(
-    state: &CState,
+    state: &ExecutionState,
     resource_specs: &[CResourceSpec],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<CState, String>> {
+) -> ExecutionResult<Result<ExecutionState, String>> {
     if !resource_specs.iter().any(CResourceSpec::is_instance) {
         return Ok(Ok(state.clone()));
     }
@@ -7231,11 +7250,11 @@ fn rebind_loop_binder_instances(
 /// re-reads the loop's source clauses, so the same rule serves the kernel's
 /// own back edge and the surface `close_invariants` join.
 pub(crate) fn c_loop_state_with_loop_binders_rebound(
-    loop_head_state: &CState,
-    state: &CState,
+    loop_head_state: &ExecutionState,
+    state: &ExecutionState,
     binders: &[CLoopBinder],
     assumptions: &PureFactContext,
-) -> Result<CState, String> {
+) -> Result<ExecutionState, String> {
     if binders.is_empty() {
         return Ok(state.clone());
     }
@@ -7297,7 +7316,7 @@ pub(crate) fn c_loop_state_with_loop_binders_rebound(
 /// candidates come from the family's shape bucket, so the search costs the
 /// instances of that family rather than the whole resource context.
 fn rebind_one_loop_binder_instance(
-    state: &CState,
+    state: &ExecutionState,
     identity: Variable,
     binder: &str,
     resource: (
@@ -7307,7 +7326,7 @@ fn rebind_one_loop_binder_instance(
     ),
     claimed: &mut BTreeSet<Variable>,
     assumptions: &PureFactContext,
-) -> Result<CState, String> {
+) -> Result<ExecutionState, String> {
     let (name, arguments, references) = resource;
     let arguments_match = |instance: &ResourceInstance| {
         instance.resource_arguments() == references
@@ -7401,8 +7420,8 @@ fn rebind_one_loop_binder_instance(
 /// the selected arm's own children and the constructor's own fields; the
 /// surrounding resource context is never scanned.
 pub(crate) fn loop_structural_descent_failure(
-    loop_head_state: &CState,
-    back_edge_state: &CState,
+    loop_head_state: &ExecutionState,
+    back_edge_state: &ExecutionState,
     binders: &[CLoopBinder],
     measure: &str,
     definitions: &[CCompositeResourceDefinition],
@@ -7604,10 +7623,10 @@ fn structural_measure_reaches_instance(
 /// a change of ownership. The join therefore compares the binder's family and
 /// arguments and sets its model aside.
 pub(crate) fn c_loop_state_with_head_binder_models(
-    next_state: &CState,
-    head_state: &CState,
+    next_state: &ExecutionState,
+    head_state: &ExecutionState,
     binders: &[CLoopBinder],
-) -> CState {
+) -> ExecutionState {
     let mut state = next_state.clone();
     for binder in binders {
         let identity = binder.identity;
@@ -7650,12 +7669,12 @@ pub(crate) fn c_loop_state_with_head_binder_models(
 /// carry at loop entry. This is the resource-field counterpart of havocking
 /// the locals the body writes.
 fn havoc_loop_binder_instance_fields(
-    state: &CState,
+    state: &ExecutionState,
     resource_specs: &[CResourceSpec],
     assumptions: &PureFactContext,
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<CState> {
+) -> ExecutionResult<ExecutionState> {
     let mut state = state.clone();
     for spec in resource_specs {
         let Some(identity) = spec.instance_identity() else {
@@ -7708,7 +7727,7 @@ fn havoc_loop_binder_instance_fields(
 /// `None` means the clause could not be read here; the caller keeps whatever
 /// the instance already carries rather than inventing arguments.
 fn loop_binder_declared_arguments(
-    state: &CState,
+    state: &ExecutionState,
     spec: &CResourceSpec,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -7759,8 +7778,8 @@ fn viewed_form_of_resource_fact(fact: &CResourceFact) -> Option<CResourceFact> {
 }
 
 pub(super) fn collect_loop_effect_check_obligations(
-    before_state: &CState,
-    after_state: &CState,
+    before_state: &ExecutionState,
+    after_state: &ExecutionState,
     effect_checks: &[CLoopEffectCheck],
     facts: &(impl ExecutionFactSource + ?Sized),
     path_obligations: &[ProofObligation],
@@ -7965,7 +7984,7 @@ pub(super) fn collect_loop_effect_check_obligations(
 }
 
 pub(super) fn evaluate_loop_effect_segment(
-    state: &CState,
+    state: &ExecutionState,
     segment: &CMemorySegment,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -7992,13 +8011,13 @@ pub(super) fn evaluate_loop_effect_segment(
 }
 
 pub(super) fn evaluate_loop_effect_segment_with_facts(
-    state: &CState,
+    state: &ExecutionState,
     segment: &CMemorySegment,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<(EvaluatedMemorySegment, ExecutionFacts), ValueRefusal>> {
     let mut facts = Vec::new();
-    let mut evaluate = |expression: &CExpression, label: &str| {
+    let mut evaluate = |expression: &ProgramExpression, label: &str| {
         let local_assumptions = assumptions_with_path_context(assumptions, &facts, &[]);
         let evaluated = evaluate_loop_effect_segment_value_with_facts(
             state,
@@ -8019,7 +8038,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
         Ok(Ok(value))
     };
     let base = match evaluate(&segment.base, "segment base")? {
-        Ok(CValue::Pointer(pointer)) => pointer,
+        Ok(ProgramValue::Pointer(pointer)) => pointer,
         Ok(value) => {
             return Ok(Err(ValueRefusal::from(format!(
                 "segment base evaluated to a {} value, not a pointer",
@@ -8055,7 +8074,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
         return Ok(Ok((evaluated, facts.into())));
     }
     let start = match start_value {
-        Ok(CValue::Int32(value)) => value,
+        Ok(ProgramValue::Int32(value)) => value,
         Ok(value) if crate::kernel::narrow_range_constant(&value).is_some() => {
             crate::kernel::narrow_range_constant(&value).expect("checked above")
         }
@@ -8068,7 +8087,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
         Err(message) => return Ok(Err(message)),
     };
     let end = match end_value {
-        Ok(CValue::Int32(value)) => value,
+        Ok(ProgramValue::Int32(value)) => value,
         Ok(value) if crate::kernel::narrow_range_constant(&value).is_some() => {
             crate::kernel::narrow_range_constant(&value).expect("checked above")
         }
@@ -8100,12 +8119,12 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
 }
 
 pub(super) fn evaluate_loop_effect_segment_value(
-    state: &CState,
-    expression: &CExpression,
+    state: &ExecutionState,
+    expression: &ProgramExpression,
     assumptions: &PureFactContext,
     label: &str,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<CValue, ValueRefusal>> {
+) -> ExecutionResult<Result<ProgramValue, ValueRefusal>> {
     Ok(evaluate_loop_effect_segment_value_with_facts(
         state,
         expression,
@@ -8159,12 +8178,12 @@ impl std::fmt::Display for ValueRefusal {
 }
 
 fn evaluate_loop_effect_segment_value_with_facts(
-    state: &CState,
-    expression: &CExpression,
+    state: &ExecutionState,
+    expression: &ProgramExpression,
     assumptions: &PureFactContext,
     label: &str,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<(CValue, ExecutionFacts), ValueRefusal>> {
+) -> ExecutionResult<Result<(ProgramValue, ExecutionFacts), ValueRefusal>> {
     evaluate_loop_effect_segment_value_capturing(
         state,
         expression,
@@ -8176,13 +8195,13 @@ fn evaluate_loop_effect_segment_value_with_facts(
 }
 
 pub(super) fn evaluate_resource_argument_value(
-    state: &CState,
-    expression: &CExpression,
+    state: &ExecutionState,
+    expression: &ProgramExpression,
     assumptions: &PureFactContext,
     label: &str,
     budget: &mut ExecutionBudget,
     diagnostic: &mut Option<CRuntimeError>,
-) -> ExecutionResult<Result<CValue, ValueRefusal>> {
+) -> ExecutionResult<Result<ProgramValue, ValueRefusal>> {
     Ok(evaluate_loop_effect_segment_value_capturing(
         state,
         expression,
@@ -8195,13 +8214,13 @@ pub(super) fn evaluate_resource_argument_value(
 }
 
 fn evaluate_loop_effect_segment_value_capturing(
-    state: &CState,
-    expression: &CExpression,
+    state: &ExecutionState,
+    expression: &ProgramExpression,
     assumptions: &PureFactContext,
     label: &str,
     budget: &mut ExecutionBudget,
     diagnostic: Option<&mut Option<CRuntimeError>>,
-) -> ExecutionResult<Result<(CValue, ExecutionFacts), ValueRefusal>> {
+) -> ExecutionResult<Result<(ProgramValue, ExecutionFacts), ValueRefusal>> {
     // A contract's operand, such as a resource argument, is a specification:
     // its reads are not C accesses, and facts must not replace pointer metadata.
     // Use the same fact-stable evaluation as written proof propositions so a
@@ -8432,8 +8451,8 @@ pub(super) fn false_equals_true_proposition() -> Proposition {
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn assume_invariant_checks(
-    state: &CState,
-    loop_entry_state: &CState,
+    state: &ExecutionState,
+    loop_entry_state: &ExecutionState,
     invariant_checks: &[CLoopInvariantCheck],
     iterations: &IntegerTerm,
     assumptions: &PureFactContext,
@@ -8481,8 +8500,8 @@ impl HeadInvariantRefusal {
 /// with no context when that happens.
 #[allow(clippy::too_many_arguments)]
 fn assume_invariant_checks_explained(
-    state: &CState,
-    loop_entry_state: &CState,
+    state: &ExecutionState,
+    loop_entry_state: &ExecutionState,
     invariant_checks: &[CLoopInvariantCheck],
     iterations: &IntegerTerm,
     assumptions: &PureFactContext,
@@ -8657,8 +8676,8 @@ impl CConditionAssumption {
 /// `parent->rb_right`, and the second conjunct reads it. Any other guard is
 /// evaluated whole. Either way the guard is evaluated once.
 pub(super) fn assume_condition_branches(
-    state: &CState,
-    condition: &CExpression,
+    state: &ExecutionState,
+    condition: &ProgramExpression,
     definitions: &[CCompositeResourceDefinition],
     assumptions: &PureFactContext,
     prefix_facts: &(impl ExecutionFactSource + ?Sized),
@@ -8694,9 +8713,12 @@ pub(super) fn assume_condition_branches(
 ///
 /// `a && b && c` is one guard with three exit paths and three reading
 /// positions; anything else is one conjunct, evaluated exactly as it is.
-fn guard_conjuncts<'a>(condition: &'a CExpression, conjuncts: &mut Vec<&'a CExpression>) {
+fn guard_conjuncts<'a>(
+    condition: &'a ProgramExpression,
+    conjuncts: &mut Vec<&'a ProgramExpression>,
+) {
     match condition {
-        CExpression::And(left, right) => {
+        ProgramExpression::And(left, right) => {
             guard_conjuncts(left, conjuncts);
             guard_conjuncts(right, conjuncts);
         }
@@ -8719,8 +8741,8 @@ fn guard_conjuncts<'a>(condition: &'a CExpression, conjuncts: &mut Vec<&'a CExpr
 /// publication per conjunct: the arms of the instances held, evaluated once
 /// each. No conjunct is revisited and no prefix is searched over.
 fn assume_guard_conjunct_branches(
-    state: &CState,
-    conjuncts: &[&CExpression],
+    state: &ExecutionState,
+    conjuncts: &[&ProgramExpression],
     definitions: &[CCompositeResourceDefinition],
     assumptions: &PureFactContext,
     prefix_facts: &(impl ExecutionFactSource + ?Sized),
@@ -8769,12 +8791,12 @@ fn assume_guard_conjunct_branches(
 /// untouched; only read authority is published, and only for a cell every
 /// possible arm owns.
 fn with_guard_prefix_arm_views(
-    state: &CState,
+    state: &ExecutionState,
     definitions: &[CCompositeResourceDefinition],
     assumptions: &PureFactContext,
     facts: &(impl ExecutionFactSource + ?Sized),
     obligations: &[ProofObligation],
-) -> CState {
+) -> ExecutionState {
     let prefix_assumptions = assumptions_with_path_context(assumptions, facts, obligations);
     let views = crate::kernel::publish_instance_arms(
         state.resources(),
@@ -8791,8 +8813,8 @@ fn with_guard_prefix_arm_views(
 
 /// One evaluation of a whole guard at one state.
 fn assume_condition_branches_at_state(
-    state: &CState,
-    condition: &CExpression,
+    state: &ExecutionState,
+    condition: &ProgramExpression,
     assumptions: &PureFactContext,
     prefix_facts: &(impl ExecutionFactSource + ?Sized),
     prefix_obligations: &[ProofObligation],
@@ -8857,8 +8879,8 @@ fn assume_condition_branches_at_state(
 /// the guard did not decide. An undecided path belongs to both requests: it
 /// rules out neither the iteration nor the exit.
 pub(super) fn assume_condition_truthiness(
-    state: &CState,
-    condition: &CExpression,
+    state: &ExecutionState,
+    condition: &ProgramExpression,
     definitions: &[CCompositeResourceDefinition],
     assumptions: &PureFactContext,
     prefix_facts: &(impl ExecutionFactSource + ?Sized),
@@ -8899,14 +8921,14 @@ pub(super) fn undecided_loop_guard_context(outcome: &CStatementOutcome) -> Strin
 }
 
 pub(super) fn havoc_loop_modified_locals(
-    state: &CState,
-    body: &CStatement,
+    state: &ExecutionState,
+    body: &ProgramStatement,
     escaped: &BTreeSet<String>,
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
     mutable_ranges: Option<&[CMemoryRange]>,
     kept_by_function: Option<CallKeptRanges>,
-) -> ExecutionResult<CState> {
+) -> ExecutionResult<ExecutionState> {
     let mut state = state.clone();
     let mut names = BTreeSet::new();
     collect_loop_modified_locals(body, &mut names);
@@ -9021,55 +9043,58 @@ fn validate_loop_havoc_stable_loans(
     Ok(())
 }
 
-pub(super) fn statement_may_write_memory(state: &CState, statement: &CStatement) -> bool {
+pub(super) fn statement_may_write_memory(
+    state: &ExecutionState,
+    statement: &ProgramStatement,
+) -> bool {
     match statement {
-        CStatement::ScalarReferenceScope(scope) => !scope.cleared_locals().is_empty(),
-        CStatement::Skip
-        | CStatement::EndScalarReference(_)
-        | CStatement::Break
-        | CStatement::Continue
-        | CStatement::Goto { .. }
-        | CStatement::Declare {
+        ProgramStatement::ScalarReferenceScope(scope) => !scope.cleared_locals().is_empty(),
+        ProgramStatement::Skip
+        | ProgramStatement::EndScalarReference(_)
+        | ProgramStatement::Break
+        | ProgramStatement::Continue
+        | ProgramStatement::Goto { .. }
+        | ProgramStatement::Declare {
             zero_fill: None,
             initializer: None,
             ..
         }
-        | CStatement::DeclareAggregate { .. }
-        | CStatement::Assert { .. }
-        | CStatement::LoopTest { .. }
-        | CStatement::Throw(_)
-        | CStatement::Return(_) => false,
+        | ProgramStatement::DeclareAggregate { .. }
+        | ProgramStatement::Assert { .. }
+        | ProgramStatement::LoopTest { .. }
+        | ProgramStatement::Throw(_)
+        | ProgramStatement::Return(_) => false,
         // A zero-filled declaration stores into the object it declares, as
         // the element stores it stands for did.
-        CStatement::Declare {
+        ProgramStatement::Declare {
             zero_fill: Some(_), ..
         }
-        | CStatement::Declare {
+        | ProgramStatement::Declare {
             initializer: Some(_),
             ..
         } => true,
-        CStatement::Assign { name, .. } => state.locals.is_global_object(name),
-        CStatement::CallAssign { .. }
-        | CStatement::Call { .. }
-        | CStatement::CallResult { .. }
-        | CStatement::HeapAllocate { .. }
-        | CStatement::HeapFree { .. }
-        | CStatement::EndAutomaticLifetimes { .. }
-        | CStatement::Store { .. }
-        | CStatement::TypedStore { .. }
-        | CStatement::CopyAggregate { .. }
-        | CStatement::InitializeScalarArray { .. }
-        | CStatement::Update { .. } => true,
-        CStatement::Seq(statements) => statements
+        ProgramStatement::Assign { name, .. } => state.locals.is_global_object(name),
+        ProgramStatement::CallAssign { .. }
+        | ProgramStatement::Call { .. }
+        | ProgramStatement::CallResult { .. }
+        | ProgramStatement::HeapAllocate { .. }
+        | ProgramStatement::HeapFree { .. }
+        | ProgramStatement::EndAutomaticLifetimes { .. }
+        | ProgramStatement::Store { .. }
+        | ProgramStatement::TypedStore { .. }
+        | ProgramStatement::CopyAggregate { .. }
+        | ProgramStatement::InitializeScalarArray { .. }
+        | ProgramStatement::Update { .. } => true,
+        ProgramStatement::Seq(statements) => statements
             .iter()
             .any(|statement| statement_may_write_memory(state, statement)),
-        CStatement::TryCatchInt32 {
+        ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
         } => {
             statement_may_write_memory(state, try_body)
                 || statement_may_write_memory(state, handler)
         }
-        CStatement::If {
+        ProgramStatement::If {
             then_branch,
             else_branch,
             ..
@@ -9077,9 +9102,9 @@ pub(super) fn statement_may_write_memory(state: &CState, statement: &CStatement)
             statement_may_write_memory(state, then_branch)
                 || statement_may_write_memory(state, else_branch)
         }
-        CStatement::ForStep { step, .. } => statement_may_write_memory(state, step),
-        CStatement::While { body, .. } => statement_may_write_memory(state, body),
-        CStatement::Switch { cases, .. } => cases
+        ProgramStatement::ForStep { step, .. } => statement_may_write_memory(state, step),
+        ProgramStatement::While { body, .. } => statement_may_write_memory(state, body),
+        ProgramStatement::Switch { cases, .. } => cases
             .iter()
             .any(|case| statement_may_write_memory(state, &case.body)),
     }
@@ -9088,58 +9113,61 @@ pub(super) fn statement_may_write_memory(state: &CState, statement: &CStatement)
 #[cfg(test)]
 mod v10_tests;
 
-pub(super) fn collect_loop_modified_locals(statement: &CStatement, names: &mut BTreeSet<String>) {
+pub(super) fn collect_loop_modified_locals(
+    statement: &ProgramStatement,
+    names: &mut BTreeSet<String>,
+) {
     match statement {
-        CStatement::ScalarReferenceScope(scope) => {
+        ProgramStatement::ScalarReferenceScope(scope) => {
             names.extend(scope.cleared_locals().iter().map(|(name, _)| name.clone()))
         }
-        CStatement::EndAutomaticLifetimes { names: retired } => {
+        ProgramStatement::EndAutomaticLifetimes { names: retired } => {
             names.extend(retired.iter().cloned())
         }
-        CStatement::Skip
-        | CStatement::EndScalarReference(_)
-        | CStatement::Break
-        | CStatement::Continue
-        | CStatement::Goto { .. }
-        | CStatement::Declare {
+        ProgramStatement::Skip
+        | ProgramStatement::EndScalarReference(_)
+        | ProgramStatement::Break
+        | ProgramStatement::Continue
+        | ProgramStatement::Goto { .. }
+        | ProgramStatement::Declare {
             initializer: None, ..
         }
-        | CStatement::DeclareAggregate { .. }
-        | CStatement::Assert { .. }
-        | CStatement::LoopTest { .. }
-        | CStatement::Throw(_)
-        | CStatement::Return(_)
-        | CStatement::Store { .. }
-        | CStatement::TypedStore { .. }
-        | CStatement::CopyAggregate { .. }
-        | CStatement::InitializeScalarArray { .. } => {}
-        CStatement::Update { target, .. } => {
-            if let CExpression::Variable(name) = target {
+        | ProgramStatement::DeclareAggregate { .. }
+        | ProgramStatement::Assert { .. }
+        | ProgramStatement::LoopTest { .. }
+        | ProgramStatement::Throw(_)
+        | ProgramStatement::Return(_)
+        | ProgramStatement::Store { .. }
+        | ProgramStatement::TypedStore { .. }
+        | ProgramStatement::CopyAggregate { .. }
+        | ProgramStatement::InitializeScalarArray { .. } => {}
+        ProgramStatement::Update { target, .. } => {
+            if let ProgramExpression::Variable(name) = target {
                 names.insert(name.clone());
             }
         }
-        CStatement::Declare {
+        ProgramStatement::Declare {
             name,
             initializer: Some(_),
             ..
         }
-        | CStatement::Assign { name, .. } => {
+        | ProgramStatement::Assign { name, .. } => {
             names.insert(name.clone());
         }
-        CStatement::CallAssign { target, .. } => {
+        ProgramStatement::CallAssign { target, .. } => {
             names.insert(target.clone());
         }
-        CStatement::Call { .. } | CStatement::CallResult { .. } => {}
-        CStatement::HeapAllocate { target, .. } => {
+        ProgramStatement::Call { .. } | ProgramStatement::CallResult { .. } => {}
+        ProgramStatement::HeapAllocate { target, .. } => {
             names.insert(target.clone());
         }
-        CStatement::HeapFree { .. } => {}
-        CStatement::Seq(statements) => {
+        ProgramStatement::HeapFree { .. } => {}
+        ProgramStatement::Seq(statements) => {
             for statement in statements.iter() {
                 collect_loop_modified_locals(statement, names);
             }
         }
-        CStatement::TryCatchInt32 {
+        ProgramStatement::TryCatchInt32 {
             try_body,
             binding,
             handler,
@@ -9149,7 +9177,7 @@ pub(super) fn collect_loop_modified_locals(statement: &CStatement, names: &mut B
             names.insert(binding.clone());
             collect_loop_modified_locals(handler, names);
         }
-        CStatement::If {
+        ProgramStatement::If {
             then_branch,
             else_branch,
             ..
@@ -9157,13 +9185,13 @@ pub(super) fn collect_loop_modified_locals(statement: &CStatement, names: &mut B
             collect_loop_modified_locals(then_branch, names);
             collect_loop_modified_locals(else_branch, names);
         }
-        CStatement::ForStep { step, .. } => {
+        ProgramStatement::ForStep { step, .. } => {
             collect_loop_modified_locals(step, names);
         }
-        CStatement::While { body, .. } => {
+        ProgramStatement::While { body, .. } => {
             collect_loop_modified_locals(body, names);
         }
-        CStatement::Switch { cases, .. } => {
+        ProgramStatement::Switch { cases, .. } => {
             for case in cases {
                 collect_loop_modified_locals(&case.body, names);
             }
@@ -9233,12 +9261,15 @@ fn run_slots_clear_of_loop_summaries(
     Some(run.with_holes(holes))
 }
 
-pub(super) fn address_escaped_scalar_locals(state: &CState, body: &CStatement) -> BTreeSet<String> {
+pub(super) fn address_escaped_scalar_locals(
+    state: &ExecutionState,
+    body: &ProgramStatement,
+) -> BTreeSet<String> {
     let mut escaped = BTreeSet::new();
     collect_address_taken_locals(body, &mut escaped);
 
-    let record_pointer = |value: &CValue, escaped: &mut BTreeSet<String>| {
-        if let CValue::Pointer(pointer) = value
+    let record_pointer = |value: &ProgramValue, escaped: &mut BTreeSet<String>| {
+        if let ProgramValue::Pointer(pointer) = value
             && let Some(name) = state.locals.name_for_slot(pointer)
         {
             escaped.insert(name.to_string());
@@ -9278,8 +9309,8 @@ pub(super) fn address_escaped_scalar_locals(state: &CState, body: &CStatement) -
 /// local or a memory cell holds where the loop is entered. Constant objects
 /// are never written.
 fn loop_written_automatic_objects(
-    state: &CState,
-    body: &CStatement,
+    state: &ExecutionState,
+    body: &ProgramStatement,
     escaped: &BTreeSet<String>,
 ) -> Vec<CMemoryRange> {
     let mut names = escaped.clone();
@@ -9317,69 +9348,70 @@ fn loop_written_automatic_objects(
 /// Calls `visit` on each expression `statement` and its nested statements
 /// evaluate.
 fn for_each_statement_expression<'a>(
-    statement: &'a CStatement,
-    visit: &mut impl FnMut(&'a CExpression),
+    statement: &'a ProgramStatement,
+    visit: &mut impl FnMut(&'a ProgramExpression),
 ) {
     match statement {
-        CStatement::EndAutomaticLifetimes { .. }
-        | CStatement::Skip
-        | CStatement::EndScalarReference(_)
-        | CStatement::ScalarReferenceScope(_)
-        | CStatement::Break
-        | CStatement::Continue
-        | CStatement::Goto { .. }
-        | CStatement::Declare {
+        ProgramStatement::EndAutomaticLifetimes { .. }
+        | ProgramStatement::Skip
+        | ProgramStatement::EndScalarReference(_)
+        | ProgramStatement::ScalarReferenceScope(_)
+        | ProgramStatement::Break
+        | ProgramStatement::Continue
+        | ProgramStatement::Goto { .. }
+        | ProgramStatement::Declare {
             initializer: None, ..
         }
-        | CStatement::DeclareAggregate { .. }
-        | CStatement::HeapAllocate { .. } => {}
-        CStatement::Declare {
+        | ProgramStatement::DeclareAggregate { .. }
+        | ProgramStatement::HeapAllocate { .. } => {}
+        ProgramStatement::Declare {
             initializer: Some(expression),
             ..
         }
-        | CStatement::Assign { expression, .. }
-        | CStatement::HeapFree {
+        | ProgramStatement::Assign { expression, .. }
+        | ProgramStatement::HeapFree {
             pointer: expression,
         }
-        | CStatement::Assert {
+        | ProgramStatement::Assert {
             condition: expression,
             ..
         }
-        | CStatement::LoopTest {
+        | ProgramStatement::LoopTest {
             condition: expression,
         }
-        | CStatement::Return(expression)
-        | CStatement::Throw(expression) => visit(expression),
-        CStatement::CallAssign { arguments, .. }
-        | CStatement::Call { arguments, .. }
-        | CStatement::CallResult { arguments, .. } => arguments.iter().for_each(&mut *visit),
-        CStatement::Store { pointer, value } | CStatement::TypedStore { pointer, value, .. } => {
+        | ProgramStatement::Return(expression)
+        | ProgramStatement::Throw(expression) => visit(expression),
+        ProgramStatement::CallAssign { arguments, .. }
+        | ProgramStatement::Call { arguments, .. }
+        | ProgramStatement::CallResult { arguments, .. } => arguments.iter().for_each(&mut *visit),
+        ProgramStatement::Store { pointer, value }
+        | ProgramStatement::TypedStore { pointer, value, .. } => {
             visit(pointer);
             visit(value);
         }
-        CStatement::CopyAggregate { target, source, .. }
-        | CStatement::InitializeScalarArray { target, source, .. } => {
+        ProgramStatement::CopyAggregate { target, source, .. }
+        | ProgramStatement::InitializeScalarArray { target, source, .. } => {
             visit(target);
             visit(source);
         }
-        CStatement::Update {
+        ProgramStatement::Update {
             target, operand, ..
         } => {
             visit(target);
             visit(operand);
         }
-        CStatement::Seq(statements) => {
+        ProgramStatement::Seq(statements) => {
             for statement in statements.iter() {
                 for_each_statement_expression(statement, visit);
             }
         }
-        CStatement::TryCatchInt32 {
+        ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
         } => {
             for_each_statement_expression(try_body, visit);
             for_each_statement_expression(handler, visit);
         }
-        CStatement::If {
+        ProgramStatement::If {
             condition,
             then_branch,
             else_branch,
@@ -9388,14 +9420,14 @@ fn for_each_statement_expression<'a>(
             for_each_statement_expression(then_branch, visit);
             for_each_statement_expression(else_branch, visit);
         }
-        CStatement::ForStep { step, .. } => for_each_statement_expression(step, visit),
-        CStatement::While {
+        ProgramStatement::ForStep { step, .. } => for_each_statement_expression(step, visit),
+        ProgramStatement::While {
             condition, body, ..
         } => {
             visit(condition);
             for_each_statement_expression(body, visit);
         }
-        CStatement::Switch { expression, cases } => {
+        ProgramStatement::Switch { expression, cases } => {
             visit(expression);
             for case in cases {
                 for_each_statement_expression(&case.body, visit);
@@ -9404,77 +9436,81 @@ fn for_each_statement_expression<'a>(
     }
 }
 
-pub(crate) fn collect_address_taken_locals(statement: &CStatement, names: &mut BTreeSet<String>) {
+pub(crate) fn collect_address_taken_locals(
+    statement: &ProgramStatement,
+    names: &mut BTreeSet<String>,
+) {
     match statement {
-        CStatement::EndAutomaticLifetimes { .. } => {}
-        CStatement::Skip
-        | CStatement::EndScalarReference(_)
-        | CStatement::ScalarReferenceScope(_)
-        | CStatement::Break
-        | CStatement::Continue
-        | CStatement::Goto { .. }
-        | CStatement::Declare {
+        ProgramStatement::EndAutomaticLifetimes { .. } => {}
+        ProgramStatement::Skip
+        | ProgramStatement::EndScalarReference(_)
+        | ProgramStatement::ScalarReferenceScope(_)
+        | ProgramStatement::Break
+        | ProgramStatement::Continue
+        | ProgramStatement::Goto { .. }
+        | ProgramStatement::Declare {
             initializer: None, ..
         }
-        | CStatement::DeclareAggregate { .. } => {}
-        CStatement::Declare {
+        | ProgramStatement::DeclareAggregate { .. } => {}
+        ProgramStatement::Declare {
             initializer: Some(expression),
             ..
         }
-        | CStatement::Assign { expression, .. } => {
+        | ProgramStatement::Assign { expression, .. } => {
             collect_address_taken_in_expression(expression, names)
         }
-        CStatement::CallAssign { arguments, .. } => {
+        ProgramStatement::CallAssign { arguments, .. } => {
             for argument in arguments {
                 collect_address_taken_in_expression(argument, names);
             }
         }
-        CStatement::Call { arguments, .. } | CStatement::CallResult { arguments, .. } => {
+        ProgramStatement::Call { arguments, .. }
+        | ProgramStatement::CallResult { arguments, .. } => {
             for argument in arguments {
                 collect_address_taken_in_expression(argument, names);
             }
         }
-        CStatement::HeapAllocate { .. } => {}
-        CStatement::HeapFree { pointer } => {
+        ProgramStatement::HeapAllocate { .. } => {}
+        ProgramStatement::HeapFree { pointer } => {
             collect_address_taken_in_expression(pointer, names);
         }
-        CStatement::Assert { condition, .. } | CStatement::LoopTest { condition } => {
+        ProgramStatement::Assert { condition, .. } | ProgramStatement::LoopTest { condition } => {
             collect_address_taken_in_expression(condition, names)
         }
-        CStatement::Return(expression) | CStatement::Throw(expression) => {
+        ProgramStatement::Return(expression) | ProgramStatement::Throw(expression) => {
             collect_address_taken_in_expression(expression, names)
         }
-        CStatement::Store { pointer, value } => {
+        ProgramStatement::Store { pointer, value } => {
             collect_address_taken_in_expression(pointer, names);
             collect_address_taken_in_expression(value, names);
         }
-        CStatement::TypedStore { pointer, value, .. } => {
+        ProgramStatement::TypedStore { pointer, value, .. } => {
             collect_address_taken_in_expression(pointer, names);
             collect_address_taken_in_expression(value, names);
         }
-        CStatement::CopyAggregate { target, source, .. }
-        | CStatement::InitializeScalarArray { target, source, .. } => {
+        ProgramStatement::CopyAggregate { target, source, .. }
+        | ProgramStatement::InitializeScalarArray { target, source, .. } => {
             collect_address_taken_in_expression(target, names);
             collect_address_taken_in_expression(source, names);
         }
-        CStatement::Update {
+        ProgramStatement::Update {
             target, operand, ..
         } => {
             collect_address_taken_in_expression(target, names);
             collect_address_taken_in_expression(operand, names);
         }
-        CStatement::Seq(statements) => {
+        ProgramStatement::Seq(statements) => {
             for statement in statements.iter() {
                 collect_address_taken_locals(statement, names);
             }
         }
-        CStatement::TryCatchInt32 {
+        ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
         } => {
             collect_address_taken_locals(try_body, names);
             collect_address_taken_locals(handler, names);
         }
-        CStatement::If {
+        ProgramStatement::If {
             condition,
             then_branch,
             else_branch,
@@ -9483,16 +9519,16 @@ pub(crate) fn collect_address_taken_locals(statement: &CStatement, names: &mut B
             collect_address_taken_locals(then_branch, names);
             collect_address_taken_locals(else_branch, names);
         }
-        CStatement::ForStep { step, .. } => {
+        ProgramStatement::ForStep { step, .. } => {
             collect_address_taken_locals(step, names);
         }
-        CStatement::While {
+        ProgramStatement::While {
             condition, body, ..
         } => {
             collect_address_taken_in_expression(condition, names);
             collect_address_taken_locals(body, names);
         }
-        CStatement::Switch { expression, cases } => {
+        ProgramStatement::Switch { expression, cases } => {
             collect_address_taken_in_expression(expression, names);
             for case in cases {
                 collect_address_taken_locals(&case.body, names);
@@ -9502,23 +9538,23 @@ pub(crate) fn collect_address_taken_locals(statement: &CStatement, names: &mut B
 }
 
 pub(super) fn collect_address_taken_in_expression(
-    expression: &CExpression,
+    expression: &ProgramExpression,
     names: &mut BTreeSet<String>,
 ) {
     match expression {
         // `&target`: any local reachable in the target may have its address
         // escape, so conservatively record every variable it mentions.
-        CExpression::AddressOf(target) | CExpression::CheckedObjectAddress(target) => {
+        ProgramExpression::AddressOf(target) | ProgramExpression::CheckedObjectAddress(target) => {
             collect_variable_names(target, names)
         }
-        CExpression::Value(_)
-        | CExpression::Variable(_)
-        | CExpression::FunctionAddress(_)
-        | CExpression::CallResult { .. } => {}
-        CExpression::Cast { expression, .. } => {
+        ProgramExpression::Value(_)
+        | ProgramExpression::Variable(_)
+        | ProgramExpression::FunctionAddress(_)
+        | ProgramExpression::CallResult { .. } => {}
+        ProgramExpression::Cast { expression, .. } => {
             collect_address_taken_in_expression(expression, names)
         }
-        CExpression::Conditional {
+        ProgramExpression::Conditional {
             condition,
             then_branch,
             else_branch,
@@ -9527,49 +9563,49 @@ pub(super) fn collect_address_taken_in_expression(
             collect_address_taken_in_expression(then_branch, names);
             collect_address_taken_in_expression(else_branch, names);
         }
-        CExpression::FloatNegate(expression)
-        | CExpression::FloatClassification { expression, .. }
-        | CExpression::EnumField {
+        ProgramExpression::FloatNegate(expression)
+        | ProgramExpression::FloatClassification { expression, .. }
+        | ProgramExpression::EnumField {
             value: expression, ..
         }
-        | CExpression::EnumIs {
+        | ProgramExpression::EnumIs {
             value: expression, ..
         } => collect_address_taken_in_expression(expression, names),
-        CExpression::EnumConstruct { fields, .. } => {
+        ProgramExpression::EnumConstruct { fields, .. } => {
             for field in fields {
                 collect_address_taken_in_expression(field, names);
             }
         }
-        CExpression::PointerOffsetBytes { pointer, .. }
-        | CExpression::Subobject { pointer, .. } => {
+        ProgramExpression::PointerOffsetBytes { pointer, .. }
+        | ProgramExpression::Subobject { pointer, .. } => {
             collect_address_taken_in_expression(pointer, names)
         }
-        CExpression::Not(inner) | CExpression::Load(inner) => {
+        ProgramExpression::Not(inner) | ProgramExpression::Load(inner) => {
             collect_address_taken_in_expression(inner, names)
         }
-        CExpression::TypedLoad { pointer, .. } => {
+        ProgramExpression::TypedLoad { pointer, .. } => {
             collect_address_taken_in_expression(pointer, names)
         }
         crate::kernel::binary_c_expression!(left, right) => {
             collect_address_taken_in_expression(left, names);
             collect_address_taken_in_expression(right, names);
         }
-        CExpression::BitwiseNot(expression) => {
+        ProgramExpression::BitwiseNot(expression) => {
             collect_address_taken_in_expression(expression, names);
         }
     }
 }
 
-pub(super) fn collect_variable_names(expression: &CExpression, names: &mut BTreeSet<String>) {
+pub(super) fn collect_variable_names(expression: &ProgramExpression, names: &mut BTreeSet<String>) {
     match expression {
-        CExpression::Variable(name) => {
+        ProgramExpression::Variable(name) => {
             names.insert(name.clone());
         }
-        CExpression::Value(_)
-        | CExpression::FunctionAddress(_)
-        | CExpression::CallResult { .. } => {}
-        CExpression::Cast { expression, .. } => collect_variable_names(expression, names),
-        CExpression::Conditional {
+        ProgramExpression::Value(_)
+        | ProgramExpression::FunctionAddress(_)
+        | ProgramExpression::CallResult { .. } => {}
+        ProgramExpression::Cast { expression, .. } => collect_variable_names(expression, names),
+        ProgramExpression::Conditional {
             condition,
             then_branch,
             else_branch,
@@ -9578,31 +9614,31 @@ pub(super) fn collect_variable_names(expression: &CExpression, names: &mut BTree
             collect_variable_names(then_branch, names);
             collect_variable_names(else_branch, names);
         }
-        CExpression::FloatNegate(expression)
-        | CExpression::FloatClassification { expression, .. }
-        | CExpression::EnumField {
+        ProgramExpression::FloatNegate(expression)
+        | ProgramExpression::FloatClassification { expression, .. }
+        | ProgramExpression::EnumField {
             value: expression, ..
         }
-        | CExpression::EnumIs {
+        | ProgramExpression::EnumIs {
             value: expression, ..
         } => collect_variable_names(expression, names),
-        CExpression::EnumConstruct { fields, .. } => {
+        ProgramExpression::EnumConstruct { fields, .. } => {
             for field in fields {
                 collect_variable_names(field, names);
             }
         }
-        CExpression::PointerOffsetBytes { pointer, .. }
-        | CExpression::Subobject { pointer, .. } => collect_variable_names(pointer, names),
-        CExpression::AddressOf(inner)
-        | CExpression::CheckedObjectAddress(inner)
-        | CExpression::Not(inner)
-        | CExpression::Load(inner) => collect_variable_names(inner, names),
-        CExpression::TypedLoad { pointer, .. } => collect_variable_names(pointer, names),
+        ProgramExpression::PointerOffsetBytes { pointer, .. }
+        | ProgramExpression::Subobject { pointer, .. } => collect_variable_names(pointer, names),
+        ProgramExpression::AddressOf(inner)
+        | ProgramExpression::CheckedObjectAddress(inner)
+        | ProgramExpression::Not(inner)
+        | ProgramExpression::Load(inner) => collect_variable_names(inner, names),
+        ProgramExpression::TypedLoad { pointer, .. } => collect_variable_names(pointer, names),
         crate::kernel::binary_c_expression!(left, right) => {
             collect_variable_names(left, names);
             collect_variable_names(right, names);
         }
-        CExpression::BitwiseNot(expression) => {
+        ProgramExpression::BitwiseNot(expression) => {
             collect_variable_names(expression, names);
         }
     }
@@ -9624,19 +9660,27 @@ fn c_value_object_class(
     value.pointer()?.object_class()
 }
 
-fn with_retained_object_class(fresh: CValue, previous: Option<&StoredExecutionValue>) -> CValue {
+fn with_retained_object_class(
+    fresh: ProgramValue,
+    previous: Option<&StoredExecutionValue>,
+) -> ProgramValue {
     fresh.with_pointer_declared_object_class(previous.and_then(c_value_object_class))
 }
 
 /// Legacy fresh-pointer construction is the output boundary for this loop abstraction.
-fn with_retained_extent(fresh: CValue, previous: Option<&StoredExecutionValue>) -> CValue {
+fn with_retained_extent(
+    fresh: ProgramValue,
+    previous: Option<&StoredExecutionValue>,
+) -> ProgramValue {
     let Some(previous) = previous.filter(|value| value.pointer().is_some()) else {
         return fresh;
     };
     let previous = previous.native();
     match (fresh, previous.as_ref()) {
-        (CValue::Pointer(pointer), CValue::Pointer(previous)) if previous.extent().is_some() => {
-            CValue::Pointer(
+        (ProgramValue::Pointer(pointer), ProgramValue::Pointer(previous))
+            if previous.extent().is_some() =>
+        {
+            ProgramValue::Pointer(
                 pointer
                     .with_extent(previous.extent().cloned())
                     .with_designation(std::sync::Arc::new(previous.designation().clone()))
@@ -9655,7 +9699,7 @@ fn with_retained_extent(fresh: CValue, previous: Option<&StoredExecutionValue>) 
 /// claims nothing. A pointer without an extent is bounded by its complete
 /// object, as before.
 fn segment_extent_refusal(
-    base: &CPointerValue,
+    base: &PointerValue,
     segment: &EvaluatedMemorySegment,
     assumptions: &PureFactContext,
 ) -> Option<String> {
@@ -9672,7 +9716,7 @@ fn segment_extent_refusal(
 /// [`segment_extent_refusal`] for a lowered range: a proof step's clause
 /// names its range through the same pointer value.
 pub(crate) fn memory_range_extent_refusal(
-    base: &CPointerValue,
+    base: &PointerValue,
     range: &CMemoryRange,
     assumptions: &PureFactContext,
 ) -> Option<String> {
@@ -9691,7 +9735,7 @@ pub(crate) fn memory_range_extent_refusal(
 }
 
 fn range_extent_refusal(
-    base: &CPointerValue,
+    base: &PointerValue,
     start: &MachineTerm,
     end: &MachineTerm,
     element_width: u32,

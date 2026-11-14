@@ -635,7 +635,7 @@ impl<'a> MachineOperandView<'a> {
     }
 
     /// Inspect a read without rebuilding its address or surrounding arithmetic.
-    pub(crate) fn read(self) -> Option<(&'a SharedCMemory, &'a Pointer, LoadKind)> {
+    pub(crate) fn read(self) -> Option<(&'a SharedMemory, &'a Pointer, LoadKind)> {
         if let Self::Shared(root) = self
             && let Some(value) = root.machine_conversion_leaf()
         {

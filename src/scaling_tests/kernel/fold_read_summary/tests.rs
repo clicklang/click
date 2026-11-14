@@ -169,7 +169,7 @@ fn retained_offset_summary_does_not_expand_index_dags() {
     let mut samples = Vec::new();
     for size in [16, 64, 256] {
         let _session = VerificationSession::enter();
-        let mut root = KernelTerm::variable(KernelType::C(CType::Int32), ITEM);
+        let mut root = KernelTerm::variable(KernelType::C(ProgramType::Int32), ITEM);
         for _ in 0..size {
             root = KernelTerm::machine_binary_shared(
                 MachineIntegerType::Int32,

@@ -34,7 +34,7 @@ use super::loans::MutexUseLoan;
 use super::loans::{LoanHoldId, LoanLedger, LoanParticipantId, MutexUseBinding};
 use crate::persistent::PersistentMap;
 
-use super::{CResource, CResourceFact, CState, ConditionTerm, Pointer, PureFactContext};
+use super::{CResource, CResourceFact, ConditionTerm, ExecutionState, Pointer, PureFactContext};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum MutexTransitionError {
@@ -175,7 +175,7 @@ pub(super) enum MutexProtocolMismatch {
 /// map path, not unrelated mutexes or resources.
 #[derive(Clone)]
 pub(super) struct MutexContext {
-    state: CState,
+    state: ExecutionState,
     runtime_loan_transition: Option<(
         LoanLedger,
         LoanParticipantId,
@@ -355,7 +355,7 @@ impl MutexStorageIndex {
 /// Contract application checks its entire mutable footprint through this same
 /// gate, including effects of an abstract preserving helper.
 pub(super) fn storage_write_refusal(
-    state: &CState,
+    state: &ExecutionState,
     write: &super::CMemoryRange,
     assumptions: &PureFactContext,
 ) -> Option<super::CRuntimeError> {
@@ -376,7 +376,7 @@ pub(super) fn storage_write_refusal(
 /// the mutex holds those bytes, so diagnostics name it rather than the
 /// missing ownership. Free when no initialization consumed storage.
 pub(in crate::kernel) fn consumed_storage_refusal(
-    state: &CState,
+    state: &ExecutionState,
     missing: &super::CMemoryRange,
     assumptions: &PureFactContext,
 ) -> Option<super::CRuntimeError> {
@@ -391,7 +391,7 @@ pub(in crate::kernel) fn consumed_storage_refusal(
 /// possibly matching assumed guard, even when that guard is folded away.
 /// The guard projection is computed at independent entry, not at each call.
 pub(super) fn abstract_guard_acquisition_refusal(
-    state: &CState,
+    state: &ExecutionState,
     mutex: &Pointer,
     assumptions: &PureFactContext,
 ) -> Option<super::CRuntimeError> {
@@ -620,9 +620,9 @@ fn fresh_acquisition_epoch() -> Result<u64, MutexTransitionError> {
 /// initialize a mutex or make a transition executable. Hidden wrapper inputs
 /// remain under the protocol freeze until their occurrences can be bound too.
 pub(super) fn bind_assumed_guard_inputs(
-    mut state: CState,
+    mut state: ExecutionState,
     assumptions: &PureFactContext,
-) -> Result<CState, super::loans::LoanRefusal> {
+) -> Result<ExecutionState, super::loans::LoanRefusal> {
     use super::loans::LoanRefusal;
     let inputs = state.resources.facts().iter().filter(|fact|
         matches!(fact.resource(), CResource::MutexGuard(identity) if identity.epoch.is_none()))
@@ -666,9 +666,9 @@ pub(super) fn bind_assumed_guard_inputs(
 
 /// Bind direct lifecycle inputs without initializing runtime storage.
 pub(super) fn bind_assumed_lifetime_inputs(
-    mut state: CState,
+    mut state: ExecutionState,
     assumptions: &PureFactContext,
-) -> Result<CState, super::loans::LoanRefusal> {
+) -> Result<ExecutionState, super::loans::LoanRefusal> {
     use super::loans::LoanRefusal;
     let inputs = state.resources.facts().iter().filter(|fact|
         matches!(fact.resource(), CResource::MutexLive(identity) if identity.epoch.is_none()))
@@ -723,7 +723,7 @@ impl MutexGuard {
 /// Describe the lifecycle resource for the current initialization. This does
 /// not establish ownership; callers must check the ordinary resource context.
 pub(super) fn live_resource(
-    state: &CState,
+    state: &ExecutionState,
     mutex: &Pointer,
     abstract_entry: bool,
 ) -> Option<CResourceFact> {
@@ -750,7 +750,7 @@ pub(super) fn live_resource(
 }
 
 /// A description is not authority: only a rooted owned occurrence permits use.
-pub(super) fn use_resource(state: &CState, mutex: &Pointer) -> CResourceFact {
+pub(super) fn use_resource(state: &ExecutionState, mutex: &Pointer) -> CResourceFact {
     state
         .resources
         .mutex_use_candidate_at(mutex)
@@ -768,7 +768,7 @@ pub(super) fn use_resource(state: &CState, mutex: &Pointer) -> CResourceFact {
 /// Describe an acquisition without establishing ownership. Abstract entry
 /// assumptions are inputs; execution still requires checked resource transfer.
 pub(super) fn guard_resource(
-    state: &CState,
+    state: &ExecutionState,
     mutex: &Pointer,
     abstract_entry: bool,
 ) -> Option<CResourceFact> {
@@ -803,7 +803,7 @@ pub(super) fn guard_resource(
 /// Current conservative call discipline: use helpers may acquire, so an
 /// entry guard or another outstanding local acquisition must be separate.
 pub(super) fn acquisition_availability_refusal(
-    state: &CState,
+    state: &ExecutionState,
     mutex: &Pointer,
     assumptions: &PureFactContext,
 ) -> Option<MutexTransitionError> {
@@ -825,7 +825,7 @@ pub(super) fn acquisition_availability_refusal(
 /// byte values. Automatic objects have implicit storage ownership; all other
 /// objects require ordinary explicit memory ownership.
 pub(super) fn initialization_storage_refusal(
-    state: &CState,
+    state: &ExecutionState,
     mutex: &Pointer,
     bytes: u32,
     alignment: u32,
@@ -884,7 +884,7 @@ pub(super) fn initialization_storage_refusal(
 /// Whether initialization storage is an automatic object, owned implicitly
 /// by its scope rather than by an explicit memory resource.
 pub(super) fn storage_is_automatic(
-    state: &CState,
+    state: &ExecutionState,
     mutex: &Pointer,
     bytes: u32,
     assumptions: &PureFactContext,
@@ -897,7 +897,7 @@ pub(super) fn storage_is_automatic(
 /// guard contracts lack checked lifecycle inputs for deciding this dependency;
 /// refuse retirement there until the lifetime-loan model can discharge it.
 pub(super) fn storage_retirement_refusal(
-    state: &CState,
+    state: &ExecutionState,
     allocation: &super::CMemoryRange,
     assumptions: &PureFactContext,
 ) -> Option<super::CRuntimeError> {
@@ -947,7 +947,7 @@ fn may_alias_automatic_storage(block: &super::PointerBlock) -> bool {
 /// ordinary resource context. An abstract preserving input predates locals
 /// created by its helper and cannot initialize another mutex there.
 pub(super) fn automatic_storage_refusal(
-    state: &CState,
+    state: &ExecutionState,
     local: &str,
     block: &super::PointerBlock,
 ) -> Option<super::CRuntimeError> {
@@ -975,7 +975,7 @@ pub(super) fn automatic_storage_refusal(
 }
 
 impl MutexContext {
-    pub(super) fn new(mut state: CState) -> Self {
+    pub(super) fn new(mut state: ExecutionState) -> Self {
         state.mutex_ledger.get_or_insert_with(MutexLedger::new);
         Self {
             state,
@@ -984,18 +984,21 @@ impl MutexContext {
     }
 
     #[cfg(test)]
-    pub(super) fn state(&self) -> &CState {
+    pub(super) fn state(&self) -> &ExecutionState {
         &self.state
     }
 
     #[cfg(test)]
-    pub(super) fn into_state(self) -> CState {
+    pub(super) fn into_state(self) -> ExecutionState {
         self.state
     }
 
     pub(super) fn into_runtime_transition(
         self,
-    ) -> (CState, super::loans::CheckedLoanCallEvidenceSequence) {
+    ) -> (
+        ExecutionState,
+        super::loans::CheckedLoanCallEvidenceSequence,
+    ) {
         use super::loans::{
             CheckedLoanCallEvidence, append_checked_loan_evidence,
             empty_checked_loan_evidence_sequence,
@@ -1970,13 +1973,13 @@ impl MutexLedger {
     /// forgotten memory and forget nothing further. The fresh instance's
     /// footprint is not derived here: unfolding names it in current memory.
     pub(super) fn havoc_protected_for_call(
-        state: &CState,
+        state: &ExecutionState,
         mutex: &Pointer,
         definition: &super::CCompositeResourceDefinition,
         definitions: &[super::CCompositeResourceDefinition],
         assumptions: &PureFactContext,
         budget: &mut super::ExecutionBudget,
-    ) -> Result<(CState, Vec<super::CMemoryRange>), MutexTransitionError> {
+    ) -> Result<(ExecutionState, Vec<super::CMemoryRange>), MutexTransitionError> {
         let Some(ledger) = state.mutex_ledger.as_ref() else {
             return Ok((state.clone(), Vec::new()));
         };
@@ -2509,7 +2512,7 @@ mod tests {
         use super::super::*;
         CResourceSpec::new(
             CResourceTerm::MutexGuard {
-                mutex: Box::new(CExpression::Value(CValue::pointer(mutex))),
+                mutex: Box::new(ProgramExpression::Value(ProgramValue::pointer(mutex))),
                 snapshot: CResourceSnapshot::Current,
             },
             CResourceAccessMode::Own,
@@ -2521,8 +2524,8 @@ mod tests {
     }
 
     fn evaluate_guard(
-        entry: &CState,
-        current: &CState,
+        entry: &ExecutionState,
+        current: &ExecutionState,
         mutex: Pointer,
         snapshot: super::super::CResourceSnapshot,
     ) -> CResourceFact {
@@ -2541,7 +2544,7 @@ mod tests {
     fn assumed_lifetime_inputs_are_generative_and_keep_description_without_authority() {
         let assumptions = PureFactContext::new();
         let address = mutex(0);
-        let mut input = CState::new();
+        let mut input = ExecutionState::new();
         input.preserves_mutex_protocols = true;
         let description = live_resource(&input, &address, true).unwrap();
         input.resources = input.resources.unchecked_with_fact(description.clone());
@@ -2581,8 +2584,8 @@ mod tests {
         assert!(bind_assumed_lifetime_inputs(input, &assumptions).is_err());
     }
 
-    fn assumed_guard_state(address: &Pointer) -> CState {
-        let mut state = CState::new();
+    fn assumed_guard_state(address: &Pointer) -> ExecutionState {
+        let mut state = ExecutionState::new();
         state.preserves_mutex_protocols = true;
         let description = guard_resource(&state, address, true).unwrap();
         state.resources = state.resources.unchecked_with_fact(description);
@@ -2612,7 +2615,7 @@ mod tests {
         ));
         let unchanged = bind_assumed_guard_inputs(first.clone(), &assumptions).unwrap();
         assert_eq!(guard_resource(&unchanged, &address, false), Some(required));
-        let concrete = MutexContext::new(CState::new())
+        let concrete = MutexContext::new(ExecutionState::new())
             .initialize_empty(address.clone(), 40)
             .unwrap()
             .acquire_current(&address, &assumptions)
@@ -2654,7 +2657,7 @@ mod tests {
         use super::super::CResourceSnapshot;
         let assumptions = PureFactContext::new();
         let address = mutex(0);
-        let entry = MutexContext::new(CState::new())
+        let entry = MutexContext::new(ExecutionState::new())
             .initialize_empty(address.clone(), 40)
             .unwrap()
             .acquire_current(&address, &assumptions)
@@ -2700,7 +2703,7 @@ mod tests {
     fn symbolic_guard_description_grants_no_authority_and_is_mutex_specific() {
         use super::super::CResourceSnapshot;
         let assumptions = PureFactContext::new();
-        let mut state = CState::new();
+        let mut state = ExecutionState::new();
         state.preserves_mutex_protocols = true;
         let guard = evaluate_guard(&state, &state, mutex(0), CResourceSnapshot::Current);
         let other = evaluate_guard(&state, &state, mutex(1), CResourceSnapshot::Current);
@@ -2719,7 +2722,7 @@ mod tests {
                 .try_compose_with_fact(guard, &assumptions)
                 .is_err()
         );
-        let concrete = MutexContext::new(CState::new())
+        let concrete = MutexContext::new(ExecutionState::new())
             .initialize_empty(mutex(0), 40)
             .unwrap()
             .acquire_current(&mutex(0), &assumptions)
@@ -2741,7 +2744,7 @@ mod tests {
     fn preserving_contract_freezes_every_mutex_transition() {
         let assumptions = PureFactContext::new();
         let address = mutex(0);
-        let initialized = MutexContext::new(CState::new())
+        let initialized = MutexContext::new(ExecutionState::new())
             .initialize_empty(address.clone(), 40)
             .unwrap();
         let (holding, _) = initialized.acquire(&address, &assumptions).unwrap();
@@ -2772,7 +2775,7 @@ mod tests {
     fn guard_ownership_is_independent_of_heldness_and_required_by_unlock() {
         let assumptions = PureFactContext::new();
         let mutex = mutex(0);
-        let initialized = MutexContext::new(CState::new())
+        let initialized = MutexContext::new(ExecutionState::new())
             .initialize_empty(mutex.clone(), 40)
             .unwrap();
         let (holding, guard) = initialized.acquire(&mutex, &assumptions).unwrap();
@@ -2894,7 +2897,7 @@ mod tests {
     #[test]
     fn guard_algebra_is_exclusive_unit_ownership_without_views_or_memory() {
         let assumptions = PureFactContext::new();
-        let (holding, guard) = MutexContext::new(CState::new())
+        let (holding, guard) = MutexContext::new(ExecutionState::new())
             .initialize_empty(mutex(0), 40)
             .unwrap()
             .acquire(&mutex(0), &assumptions)
@@ -2960,7 +2963,7 @@ mod tests {
     #[test]
     fn use_resource_algebra_is_exclusive_unit_ownership_without_views_or_memory() {
         let assumptions = PureFactContext::new();
-        let (lent, loan) = MutexContext::new(CState::new())
+        let (lent, loan) = MutexContext::new(ExecutionState::new())
             .initialize_empty(mutex(0), 40)
             .unwrap()
             .lend_use(&mutex(0), &assumptions)
@@ -3027,7 +3030,7 @@ mod tests {
     fn lifetime_owner_is_required_independently_of_initialization_metadata() {
         let assumptions = PureFactContext::new();
         let address = mutex(0);
-        let initialized = MutexContext::new(CState::new())
+        let initialized = MutexContext::new(ExecutionState::new())
             .initialize_empty(address.clone(), 40)
             .unwrap();
         let live = live_resource(initialized.state(), &address, false).unwrap();
@@ -3074,7 +3077,7 @@ mod tests {
     fn old_lifetime_owner_cannot_authorize_reinitialized_mutex() {
         let assumptions = PureFactContext::new();
         let address = mutex(0);
-        let first = MutexContext::new(CState::new())
+        let first = MutexContext::new(ExecutionState::new())
             .initialize_empty(address.clone(), 40)
             .unwrap();
         let old = live_resource(first.state(), &address, false).unwrap();
@@ -3169,7 +3172,7 @@ mod tests {
     fn empty_mutex_supplies_and_consumes_exclusive_guard() {
         let assumptions = PureFactContext::new();
         let mutex = mutex(0);
-        let initialized = MutexContext::new(CState::new())
+        let initialized = MutexContext::new(ExecutionState::new())
             .initialize_empty(mutex.clone(), 40)
             .unwrap();
         assert!(
@@ -3222,8 +3225,8 @@ mod tests {
         assert!(destroyed.state().mutex_ledger.is_none());
     }
 
-    fn automatic_holder() -> (CState, Pointer) {
-        let state = CState::new().with_local("holder", super::super::int32(0));
+    fn automatic_holder() -> (ExecutionState, Pointer) {
+        let state = ExecutionState::new().with_local("holder", super::super::int32(0));
         let slot = state.locals().slot("holder").unwrap().clone();
         let state =
             state.with_memory(super::super::CMemory::new().with_block(slot.block.clone(), 88));
@@ -3303,8 +3306,8 @@ mod tests {
         for continue_after in [false, true] {
             let paths = eval::execute_c_statement_paths(
                 &state,
-                &CStatement::ForStep {
-                    step: Box::new(CStatement::Skip),
+                &ProgramStatement::ForStep {
+                    step: Box::new(ProgramStatement::Skip),
                     exited_locals: vec!["holder".into()],
                     continue_after,
                 },
@@ -3377,7 +3380,7 @@ mod tests {
         let base = mutex(91_100);
         let address = base.offset_by_bytes(8);
         let assumptions = PureFactContext::new();
-        let initialized = MutexContext::new(CState::new())
+        let initialized = MutexContext::new(ExecutionState::new())
             .initialize_empty(address.clone(), 40)
             .unwrap();
         let held = initialized.acquire_current(&address, &assumptions).unwrap();
@@ -3437,9 +3440,9 @@ mod tests {
             .initialize_empty(address.clone(), 40)
             .unwrap();
         let statement = c_typed_store(
-            CExpression::Value(CValue::pointer(address.clone())),
+            ProgramExpression::Value(ProgramValue::pointer(address.clone())),
             c_int32_literal(7),
-            CType::Int32,
+            ProgramType::Int32,
         );
         let assumptions = PureFactContext::new();
         let outcome = eval::execute_c_statement(context.state(), &statement, &assumptions);
@@ -3490,9 +3493,11 @@ mod tests {
             let environment = CExecutionEnvironment::new().with_modeled_pthread_binding(Some(
                 crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin(),
             ));
-            let statement = CStatement::Call {
+            let statement = ProgramStatement::Call {
                 function_name: name.into(),
-                arguments: vec![CExpression::Value(CValue::pointer(address.clone()))],
+                arguments: vec![ProgramExpression::Value(ProgramValue::pointer(
+                    address.clone(),
+                ))],
             };
             let paths = eval::execute_c_statement_paths(
                 &state,
@@ -3517,7 +3522,7 @@ mod tests {
     fn reservation_requires_separation_from_a_symbolic_alias() {
         use super::super::*;
         let address = Pointer::symbolic(Variable(91_101));
-        let context = MutexContext::new(CState::new())
+        let context = MutexContext::new(ExecutionState::new())
             .initialize_empty(address.clone(), 40)
             .unwrap();
         let write = storage_range(&mutex(91_102), 8);
@@ -3537,7 +3542,7 @@ mod tests {
         use super::super::*;
         let held = Pointer::symbolic(Variable(91_201));
         let requested = Pointer::symbolic(Variable(91_202));
-        let mut state = CState::new();
+        let mut state = ExecutionState::new();
         state.mutex_input_reservations = MutexInputReservations::from_ranges_and_guards(
             [storage_range(&requested, 40)],
             [storage_range(&held, 40)],
@@ -3559,7 +3564,7 @@ mod tests {
 
     #[test]
     fn unresolved_assumed_guard_blocks_external_acquisition_only() {
-        let mut state = CState::new();
+        let mut state = ExecutionState::new();
         state.mutex_input_reservations = MutexInputReservations::from_ranges_and_guards(
             [],
             [super::super::CMemoryRange::unnamed_footprint()],
@@ -3591,7 +3596,7 @@ mod tests {
         use super::super::*;
         let base = mutex(91_103);
         register_block_alignment(&base.block, 8);
-        let state = CState::new().with_resource_context(
+        let state = ExecutionState::new().with_resource_context(
             ResourceContext::new()
                 .unchecked_with_fact(CResourceFact::own_memory(storage_range(&base, 128))),
         );
@@ -3627,7 +3632,7 @@ mod tests {
     fn abstract_reservation_is_retained_without_granting_runtime_authority() {
         use super::super::*;
         let address = mutex(91_201);
-        let mut state = CState::new();
+        let mut state = ExecutionState::new();
         state.preserves_mutex_protocols = true;
         state.mutex_input_reservations =
             MutexInputReservations::from_ranges([storage_range(&address, 40)]);
@@ -3677,7 +3682,7 @@ mod tests {
             .assume_condition(ConditionTerm::pointer_aligned(pointer.clone(), 8), true);
         let state_for = |bytes, owned| {
             let range = allocation_range(pointer.clone(), bytes);
-            CState::new().with_resource_context(ResourceContext::new().unchecked_with_fact(
+            ExecutionState::new().with_resource_context(ResourceContext::new().unchecked_with_fact(
                 if owned {
                     CResourceFact::own_memory(range)
                 } else {
@@ -3685,7 +3690,11 @@ mod tests {
                 },
             ))
         };
-        for state in [CState::new(), state_for(39, true), state_for(40, false)] {
+        for state in [
+            ExecutionState::new(),
+            state_for(39, true),
+            state_for(40, false),
+        ] {
             assert!(matches!(
                 initialization_storage_refusal(&state, &pointer, 40, 8, &aligned),
                 Some(CRuntimeError::MissingResource { .. })
@@ -3752,10 +3761,10 @@ mod tests {
         let environment = CExecutionEnvironment::new().with_modeled_pthread_binding(Some(
             crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin(),
         ));
-        let statement = CStatement::Call {
+        let statement = ProgramStatement::Call {
             function_name: "pthread_mutex_init".into(),
             arguments: vec![
-                CExpression::Value(CValue::pointer(pointer.clone())),
+                ProgramExpression::Value(ProgramValue::pointer(pointer.clone())),
                 c_int32_literal(0),
             ],
         };
@@ -3838,9 +3847,11 @@ mod tests {
             ));
             let paths = eval::execute_c_statement_paths(
                 context.state(),
-                &CStatement::Call {
+                &ProgramStatement::Call {
                     function_name: name.into(),
-                    arguments: vec![CExpression::Value(CValue::pointer(pointer.clone()))],
+                    arguments: vec![ProgramExpression::Value(ProgramValue::pointer(
+                        pointer.clone(),
+                    ))],
                 },
                 &assumptions,
                 CExecutionContext::execute_bodies(&environment),
@@ -3889,7 +3900,7 @@ mod tests {
         let assumptions = PureFactContext::new();
         let base = mutex(0);
         let address = base.offset_by_bytes(8);
-        let state = MutexContext::new(CState::new())
+        let state = MutexContext::new(ExecutionState::new())
             .initialize_empty(address.clone(), 40)
             .unwrap();
         let whole = allocation_range(base.clone(), 48);
@@ -3974,7 +3985,7 @@ mod tests {
             offset: PointerOffsetTerm::constant(0),
         };
         let symbolic = Pointer::symbolic(Variable(90_001));
-        let context = MutexContext::new(CState::new())
+        let context = MutexContext::new(ExecutionState::new())
             .initialize_empty(symbolic.clone(), 40)
             .unwrap();
         let allocation = allocation_range(base, 48);
@@ -4017,9 +4028,9 @@ mod tests {
             .unwrap();
         let layout = CAggregateLayout::new(48, 8, vec![]);
         let declarations = [
-            CStatement::Declare {
+            ProgramStatement::Declare {
                 name: "holder".into(),
-                c_type: CType::Int32,
+                c_type: ProgramType::Int32,
                 volatile: false,
                 pointee_volatile: false,
                 constant: false,
@@ -4028,19 +4039,19 @@ mod tests {
                 zero_fill: None,
                 declared_class: None,
             },
-            CStatement::DeclareAggregate {
+            ProgramStatement::DeclareAggregate {
                 name: "holder".into(),
                 layout: layout.clone(),
                 kind: CAggregateDeclarationKind::Local,
                 declared_class: None,
             },
-            CStatement::DeclareAggregate {
+            ProgramStatement::DeclareAggregate {
                 name: "holder".into(),
                 layout: layout.clone(),
                 kind: CAggregateDeclarationKind::Constructor,
                 declared_class: None,
             },
-            CStatement::DeclareAggregate {
+            ProgramStatement::DeclareAggregate {
                 name: "holder".into(),
                 layout,
                 kind: CAggregateDeclarationKind::ConstructionDestination,
@@ -4087,7 +4098,7 @@ mod tests {
         let assumptions = PureFactContext::new();
         for (extent, offset) in [(u32::MAX, 8), (i32::MAX as u32, i32::MAX as u32 - 8)] {
             let base = mutex(0);
-            let state = MutexContext::new(CState::new())
+            let state = MutexContext::new(ExecutionState::new())
                 .initialize_empty(base.offset_by_bytes(offset), 40)
                 .unwrap();
             assert!(
@@ -4103,7 +4114,8 @@ mod tests {
 
     #[test]
     fn abstract_guard_storage_retirement_requires_lifecycle_support() {
-        let state = CState::new().with_resource_context(super::super::ResourceContext::new());
+        let state =
+            ExecutionState::new().with_resource_context(super::super::ResourceContext::new());
         let mut state = state;
         state.preserves_mutex_protocols = true;
         assert_eq!(
@@ -4120,7 +4132,7 @@ mod tests {
     fn loop_back_edge_checks_mutex_ownership_and_accepts_a_balanced_exchange() {
         let assumptions = PureFactContext::new();
         let mutex = mutex(0);
-        let head = MutexContext::new(CState::new())
+        let head = MutexContext::new(ExecutionState::new())
             .initialize_empty(mutex.clone(), 40)
             .unwrap();
         let held = head.acquire_current(&mutex, &assumptions).unwrap();
@@ -4149,7 +4161,7 @@ mod tests {
         for protected in [None, Some(invariant(1, 0))] {
             let initial = match &protected {
                 Some(fact) => context(fact.clone()),
-                None => MutexContext::new(CState::new()),
+                None => MutexContext::new(ExecutionState::new()),
             };
             // Keep a second mutex alive: the ledger lineage and aggregate
             // counts alone cannot distinguish replacing the selected mutex.
@@ -4200,7 +4212,7 @@ mod tests {
     #[test]
     fn initialization_is_generative_and_cannot_be_substituted_on_a_guard() {
         let assumptions = PureFactContext::new();
-        let initial = MutexContext::new(CState::new());
+        let initial = MutexContext::new(ExecutionState::new());
         let first = initial.initialize_empty(mutex(0), 40).unwrap();
         let second = initial.initialize_empty(mutex(0), 40).unwrap();
         let first_id = first
@@ -4236,7 +4248,7 @@ mod tests {
     #[test]
     fn loop_may_initialize_and_destroy_a_mutex_absent_at_its_head() {
         let assumptions = PureFactContext::new();
-        let head = MutexContext::new(CState::new())
+        let head = MutexContext::new(ExecutionState::new())
             .initialize_empty(mutex(0), 40)
             .unwrap();
         let local = head.initialize_empty(mutex(1), 40).unwrap();
@@ -4253,7 +4265,7 @@ mod tests {
     }
 
     use crate::kernel::{
-        CType, PointerOffsetTerm, ResourceContext, ResourceFieldSchema, ResourceFieldType,
+        PointerOffsetTerm, ProgramType, ResourceContext, ResourceFieldSchema, ResourceFieldType,
         ResourceInstance, Variable, int32,
     };
 
@@ -4267,7 +4279,7 @@ mod tests {
     fn invariant(identity: u64, revision: u32) -> CResourceFact {
         let schema = ResourceFieldSchema::new(vec![(
             "revision".into(),
-            ResourceFieldType::C(CType::Int32),
+            ResourceFieldType::C(ProgramType::Int32),
         )])
         .unwrap();
         CResourceFact::own(CResource::Instance(
@@ -4284,14 +4296,16 @@ mod tests {
 
     fn context(fact: CResourceFact) -> MutexContext {
         MutexContext::new(
-            CState::new().with_resource_context(ResourceContext::new().unchecked_with_fact(fact)),
+            ExecutionState::new()
+                .with_resource_context(ResourceContext::new().unchecked_with_fact(fact)),
         )
     }
 
     #[test]
     fn shared_acquisitions_forget_each_previous_payload_observation() {
         use crate::kernel::{
-            CCompositeResourceDefinition, CParameter, CValue, ExecutionBudget, ResourceDescription,
+            CCompositeResourceDefinition, ExecutionBudget, ProgramParameter, ProgramValue,
+            ResourceDescription,
         };
         use std::collections::BTreeMap;
 
@@ -4299,13 +4313,13 @@ mod tests {
         let address = mutex(0);
         let schema = ResourceFieldSchema::new(vec![(
             "revision".into(),
-            ResourceFieldType::C(CType::Int32),
+            ResourceFieldType::C(ProgramType::Int32),
         )])
         .unwrap();
         let instance = ResourceInstance::new(
             Variable(902),
             "counter_state".into(),
-            vec![CValue::pointer(address.clone()).into()].into(),
+            vec![ProgramValue::pointer(address.clone()).into()].into(),
             schema.clone(),
             vec![int32(7).into()].into(),
         )
@@ -4313,7 +4327,7 @@ mod tests {
         let expected_type = ResourceDescription::from_instance(&instance);
         let definition = CCompositeResourceDefinition::new(
             "counter_state",
-            vec![CParameter::new("p", CType::Int32Pointer)],
+            vec![ProgramParameter::new("p", ProgramType::Int32Pointer)],
             None,
             false,
             vec![],
@@ -4412,7 +4426,7 @@ mod tests {
             .unwrap();
         assert_ne!(returned.fields(), written.fields());
         assert_eq!(ResourceDescription::from_instance(returned), expected_type);
-        let empty = MutexContext::new(CState::new())
+        let empty = MutexContext::new(ExecutionState::new())
             .initialize_empty(mutex(1), 40)
             .unwrap();
         assert!(
@@ -4427,17 +4441,19 @@ mod tests {
     }
 
     fn runtime_mutex_call(
-        state: &CState,
+        state: &ExecutionState,
         address: &Pointer,
         name: &str,
-    ) -> Result<CState, super::super::CRuntimeError> {
+    ) -> Result<ExecutionState, super::super::CRuntimeError> {
         use super::super::*;
         let environment = CExecutionEnvironment::new().with_modeled_pthread_binding(Some(
             crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin(),
         ));
-        let statement = CStatement::Call {
+        let statement = ProgramStatement::Call {
             function_name: name.into(),
-            arguments: vec![CExpression::Value(CValue::pointer(address.clone()))],
+            arguments: vec![ProgramExpression::Value(ProgramValue::pointer(
+                address.clone(),
+            ))],
         };
         let paths = eval::execute_c_statement_paths(
             state,
@@ -4580,7 +4596,7 @@ mod tests {
     fn acquire_current_uses_the_lifecycle_authority_beside_an_unbound_use_description() {
         let assumptions = PureFactContext::new();
         let address = mutex(0);
-        let live = MutexContext::new(CState::new())
+        let live = MutexContext::new(ExecutionState::new())
             .initialize_empty(address.clone(), 40)
             .unwrap();
         let live_fact = live
@@ -4643,7 +4659,7 @@ mod tests {
     fn use_resource_requires_owned_occurrence_in_addition_to_live_loan() {
         let assumptions = PureFactContext::new();
         let address = mutex(0);
-        let initialized = MutexContext::new(CState::new())
+        let initialized = MutexContext::new(ExecutionState::new())
             .initialize_empty(address.clone(), 40)
             .unwrap();
         let (lent, loan) = initialized.lend_use(&address, &assumptions).unwrap();
@@ -4704,7 +4720,7 @@ mod tests {
     fn use_resource_exchange_restores_exact_parent_and_refuses_missing_child() {
         let assumptions = PureFactContext::new();
         let address = mutex(0);
-        let initialized = MutexContext::new(CState::new())
+        let initialized = MutexContext::new(ExecutionState::new())
             .initialize_empty(address.clone(), 40)
             .unwrap();
         let (lent, root) = initialized.lend_use(&address, &assumptions).unwrap();
@@ -4843,7 +4859,7 @@ mod tests {
     fn use_reborrow_respects_protocol_freeze_and_rejects_replaced_child() {
         let assumptions = PureFactContext::new();
         let address = mutex(0);
-        let initialized = MutexContext::new(CState::new())
+        let initialized = MutexContext::new(ExecutionState::new())
             .initialize_empty(address.clone(), 40)
             .unwrap();
         let (lent, root) = initialized.lend_use(&address, &assumptions).unwrap();
@@ -4971,7 +4987,7 @@ mod tests {
         let assumptions = PureFactContext::new();
         let address = mutex(0);
         let other = mutex(1);
-        let initialized = MutexContext::new(CState::new())
+        let initialized = MutexContext::new(ExecutionState::new())
             .initialize_empty(address.clone(), 40)
             .unwrap()
             .initialize_empty(other.clone(), 40)
@@ -5045,7 +5061,7 @@ mod tests {
     fn use_guard_cannot_release_without_its_loan_state_or_holder() {
         let assumptions = PureFactContext::new();
         let address = mutex(0);
-        let initialized = MutexContext::new(CState::new())
+        let initialized = MutexContext::new(ExecutionState::new())
             .initialize_empty(address.clone(), 40)
             .unwrap();
         let (lent, loan) = initialized.lend_use(&address, &assumptions).unwrap();
@@ -5093,7 +5109,7 @@ mod tests {
     fn preserving_protocol_cannot_forget_a_guards_lifetime_hold() {
         let assumptions = PureFactContext::new();
         let address = mutex(0);
-        let initialized = MutexContext::new(CState::new())
+        let initialized = MutexContext::new(ExecutionState::new())
             .initialize_empty(address.clone(), 40)
             .unwrap();
         let (lent, loan) = initialized.lend_use(&address, &assumptions).unwrap();

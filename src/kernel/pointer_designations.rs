@@ -1,5 +1,5 @@
 //! Value-origin equality. Address congruence must never enter this index.
-use super::CPointerValue;
+use super::PointerValue;
 use crate::persistent::{PersistentMap, PersistentSet};
 
 /// Persistent union by size. Insertion touches two root paths; a branch
@@ -112,7 +112,7 @@ impl<K: Ord + Clone> ValueClasses<K> {
     }
 }
 
-pub(super) fn prefer_pointer(left: &CPointerValue, right: &CPointerValue) -> CPointerValue {
+pub(super) fn prefer_pointer(left: &PointerValue, right: &PointerValue) -> PointerValue {
     // A contract supplies the designation of an opaque incoming value. Its
     // explicit subobject boundary takes precedence over an unknown extent.
     if !left.extent_is_known() && right.extent_is_known()
@@ -150,10 +150,10 @@ mod tests {
         assert!(!sibling.equal(&100, &500));
     }
 
-    fn value(id: u64) -> CPointerValue {
-        CPointerValue::new(Pointer::symbolic(Variable(id)), CType::Int32Pointer)
+    fn value(id: u64) -> PointerValue {
+        PointerValue::new(Pointer::symbolic(Variable(id)), ProgramType::Int32Pointer)
     }
-    fn equality(a: &CPointerValue, b: &CPointerValue) -> Proposition {
+    fn equality(a: &PointerValue, b: &PointerValue) -> Proposition {
         Proposition::ConditionIs(
             ConditionTerm::PointerValueEqual(Box::new(a.clone()), Box::new(b.clone())),
             true,
@@ -164,12 +164,12 @@ mod tests {
         let a = MachineTerm::Variable(Variable(809_998));
         let b = MachineTerm::Variable(Variable(809_999));
         let pointer = |index| {
-            CPointerValue::new(
+            PointerValue::new(
                 Pointer {
                     block: PointerBlock::ExternalArgument,
                     offset: PointerOffsetTerm::scale_int32(index, 4),
                 },
-                CType::Int32Pointer,
+                ProgramType::Int32Pointer,
             )
         };
         let equality = ConditionTerm::PointerValueEqual(
@@ -185,7 +185,7 @@ mod tests {
     #[test]
     fn a_proven_null_address_denotes_the_unique_null_value() {
         let pointer = value(810_000);
-        let null = CPointerValue::new(Pointer::null(), CType::Int32Pointer);
+        let null = PointerValue::new(Pointer::null(), ProgramType::Int32Pointer);
         let empty = PureFactContext::new();
         assert!(!empty.pointer_designations_match(&pointer, &null));
         let context = empty.assume_condition(
@@ -194,8 +194,8 @@ mod tests {
         );
         assert!(context.pointer_designations_match(&pointer, &null));
         assert!(crate::kernel::resource_arguments_proven_equal(
-            &CValue::Pointer(pointer).into(),
-            &CValue::Pointer(null).into(),
+            &ProgramValue::Pointer(pointer).into(),
+            &ProgramValue::Pointer(null).into(),
             &context,
         ));
     }
@@ -334,7 +334,8 @@ mod tests {
         let snapshot = crate::kernel::intern_c_memory(CMemory::new());
         let cell = Pointer::symbolic(Variable(824_002));
         let read_address = Pointer::symbolic(Variable(824_003));
-        let read = CPointerValue::from_read(read_address, CType::Int32Pointer, &snapshot, &cell);
+        let read =
+            PointerValue::from_read(read_address, ProgramType::Int32Pointer, &snapshot, &cell);
         let context = PureFactContext::new().assume_proposition(equality(&read, &member));
         assert!(context.pointer_value_at_entry(&read).extent().is_some());
         assert!(context.pointer_value_at_entry(&parent).extent().is_none());
@@ -347,15 +348,15 @@ mod tests {
         let a = value(825_001);
         let b = value(825_002);
         let snapshot = crate::kernel::intern_c_memory(CMemory::new());
-        let x = CPointerValue::from_read(
+        let x = PointerValue::from_read(
             Pointer::symbolic(Variable(825_003)),
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
             &snapshot,
             a.pointer(),
         );
-        let y = CPointerValue::from_read(
+        let y = PointerValue::from_read(
             Pointer::symbolic(Variable(825_004)),
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
             &snapshot,
             b.pointer(),
         );

@@ -8,7 +8,7 @@ use crate::kernel::{constant_u32, int32_constant};
 fn specification_pointer_values_do_not_adopt_fact_supplied_bounds() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = Pointer::symbolic(Variable(989_900));
-    let value = CPointerValue::new(pointer.clone(), CType::Int32Pointer);
+    let value = PointerValue::new(pointer.clone(), ProgramType::Int32Pointer);
     let bounded = value.clone().with_extent(Some(SubobjectExtent {
         start: pointer,
         width: 4u32.into(),
@@ -19,11 +19,11 @@ fn specification_pointer_values_do_not_adopt_fact_supplied_bounds() {
         true,
     );
     assert_ne!(facts.pointer_value_at_entry(&value), value);
-    let state = CState::new().with_local("p", CValue::Pointer(value.clone()));
+    let state = ExecutionState::new().with_local("p", ProgramValue::Pointer(value.clone()));
     let _specification = crate::kernel::eval::SpecificationReadScope::enter();
     for expression in [
-        CExpression::Value(CValue::Pointer(value.clone())),
-        CExpression::Variable("p".to_owned()),
+        ProgramExpression::Value(ProgramValue::Pointer(value.clone())),
+        ProgramExpression::Variable("p".to_owned()),
     ] {
         for context in [&PureFactContext::new(), &facts] {
             let paths = evaluate_c_expression_paths(
@@ -36,7 +36,7 @@ fn specification_pointer_values_do_not_adopt_fact_supplied_bounds() {
             assert_eq!(paths.len(), 1);
             assert_eq!(
                 paths[0].outcome,
-                CExpressionOutcome::Value(CValue::Pointer(value.clone())),
+                CExpressionOutcome::Value(ProgramValue::Pointer(value.clone())),
                 "{expression:?}",
             );
         }
@@ -97,8 +97,11 @@ fn checked_wide_to_int_narrowing_requires_each_representability_bound() {
         MachineTerm::uint64_constant(i32::MAX as u64),
     );
     for (input, bounds) in [
-        (CValue::Int64(value.clone()), vec![lower, signed_upper]),
-        (CValue::UInt64(value.clone()), vec![unsigned_upper]),
+        (
+            ProgramValue::Int64(value.clone()),
+            vec![lower, signed_upper],
+        ),
+        (ProgramValue::UInt64(value.clone()), vec![unsigned_upper]),
     ] {
         for provided in 0..=bounds.len() {
             let mut assumptions = PureFactContext::new();
@@ -108,19 +111,19 @@ fn checked_wide_to_int_narrowing_requires_each_representability_bound() {
             let mut obligations = Vec::new();
             let modular = crate::kernel::eval::coerce_c_value_to_type(
                 input.clone(),
-                CType::Int32,
+                ProgramType::Int32,
                 &mut obligations,
                 &assumptions,
             )
             .unwrap();
             assert_eq!(
                 modular,
-                CValue::Int32(MachineTerm::uint32_from_64(value.clone()))
+                ProgramValue::Int32(MachineTerm::uint32_from_64(value.clone()))
             );
             assert!(obligations.is_empty());
             let result = crate::kernel::eval::coerce_c_value_to_type_as(
                 input.clone(),
-                CType::Int32,
+                ProgramType::Int32,
                 crate::kernel::eval::IntegerConversion::Checked,
                 &mut obligations,
                 &assumptions,
@@ -141,10 +144,10 @@ fn checked_wide_to_int_narrowing_requires_each_representability_bound() {
 #[test]
 fn wide_to_int_narrowing_checks_signed_and_unsigned_boundaries() {
     use crate::kernel::eval::IntegerConversion;
-    let convert = |value: CValue, conversion, obligations: &mut Vec<ProofObligation>| {
+    let convert = |value: ProgramValue, conversion, obligations: &mut Vec<ProofObligation>| {
         crate::kernel::eval::coerce_c_value_to_type_as(
             value,
-            CType::Int32,
+            ProgramType::Int32,
             conversion,
             obligations,
             &PureFactContext::new(),
@@ -161,7 +164,7 @@ fn wide_to_int_narrowing_checks_signed_and_unsigned_boundaries() {
         i64::MAX,
     ] {
         let mut obligations = Vec::new();
-        let input = CValue::Int64(MachineTerm::int64_constant(value));
+        let input = ProgramValue::Int64(MachineTerm::int64_constant(value));
         // C's conversion keeps the low word, read as signed.
         assert_eq!(
             convert(input.clone(), IntegerConversion::Modular, &mut obligations),
@@ -190,7 +193,7 @@ fn wide_to_int_narrowing_checks_signed_and_unsigned_boundaries() {
         u64::MAX,
     ] {
         let mut obligations = Vec::new();
-        let input = CValue::UInt64(MachineTerm::uint64_constant(value));
+        let input = ProgramValue::UInt64(MachineTerm::uint64_constant(value));
         assert_eq!(
             convert(input.clone(), IntegerConversion::Modular, &mut obligations),
             Some(int32(value as u32))
@@ -355,27 +358,33 @@ fn bitwise_xor_normalizes_swap_identities() {
 
 #[test]
 fn floating_point_constant_conversions_round_in_integer_space() {
-    let state = CState::new();
+    let state = ExecutionState::new();
     let cases = [
         (
-            c_cast(c_uint64_literal(16_777_217), CType::Float32),
-            CValue::Float32(MachineTerm::constant(0x4b80_0000)),
+            c_cast(c_uint64_literal(16_777_217), ProgramType::Float32),
+            ProgramValue::Float32(MachineTerm::constant(0x4b80_0000)),
         ),
         (
-            c_cast(c_uint64_literal(9_007_199_254_740_993), CType::Float64),
-            CValue::Float64(MachineTerm::uint64_constant(0x4340_0000_0000_0000)),
+            c_cast(
+                c_uint64_literal(9_007_199_254_740_993),
+                ProgramType::Float64,
+            ),
+            ProgramValue::Float64(MachineTerm::uint64_constant(0x4340_0000_0000_0000)),
         ),
         (
-            c_cast(c_float64_literal(0x3ff0_0000_1000_0000), CType::Float32),
-            CValue::Float32(MachineTerm::constant(0x3f80_0000)),
+            c_cast(
+                c_float64_literal(0x3ff0_0000_1000_0000),
+                ProgramType::Float32,
+            ),
+            ProgramValue::Float32(MachineTerm::constant(0x3f80_0000)),
         ),
         (
-            c_cast(c_float32_literal(0x3fc0_0000), CType::Float64),
-            CValue::Float64(MachineTerm::uint64_constant(0x3ff8_0000_0000_0000)),
+            c_cast(c_float32_literal(0x3fc0_0000), ProgramType::Float64),
+            ProgramValue::Float64(MachineTerm::uint64_constant(0x3ff8_0000_0000_0000)),
         ),
         (
-            c_cast(c_int64_literal(-16_777_217), CType::Float32),
-            CValue::Float32(MachineTerm::constant(0xcb80_0000)),
+            c_cast(c_int64_literal(-16_777_217), ProgramType::Float32),
+            ProgramValue::Float32(MachineTerm::constant(0xcb80_0000)),
         ),
     ];
 
@@ -395,19 +404,22 @@ fn floating_point_constant_conversions_round_in_integer_space() {
 
 #[test]
 fn floating_point_to_integer_conversion_truncates_and_rejects_invalid_values() {
-    let state = CState::new();
+    let state = ExecutionState::new();
     let valid = [
         (
-            c_cast(c_float32_literal(0x4070_0000), CType::Int32),
-            CValue::Int32(MachineTerm::constant(3)),
+            c_cast(c_float32_literal(0x4070_0000), ProgramType::Int32),
+            ProgramValue::Int32(MachineTerm::constant(3)),
         ),
         (
-            c_cast(c_float64_literal(0xc00e_0000_0000_0000), CType::Int64),
-            CValue::Int64(MachineTerm::int64_constant(-3)),
+            c_cast(c_float64_literal(0xc00e_0000_0000_0000), ProgramType::Int64),
+            ProgramValue::Int64(MachineTerm::int64_constant(-3)),
         ),
         (
-            c_cast(c_float64_literal(0x8000_0000_0000_0000), CType::UInt32),
-            CValue::UInt32(MachineTerm::uint32_constant(0)),
+            c_cast(
+                c_float64_literal(0x8000_0000_0000_0000),
+                ProgramType::UInt32,
+            ),
+            ProgramValue::UInt32(MachineTerm::uint32_constant(0)),
         ),
     ];
     for (expression, expected) in valid {
@@ -424,10 +436,10 @@ fn floating_point_to_integer_conversion_truncates_and_rejects_invalid_values() {
     }
 
     for expression in [
-        c_cast(c_float64_literal(0x7ff8_0000_0000_0000), CType::Int32),
-        c_cast(c_float64_literal(0x7ff0_0000_0000_0000), CType::Int32),
-        c_cast(c_float64_literal(0x41e0_0000_0000_0000), CType::Int32),
-        c_cast(c_float64_literal(0x7fef_ffff_ffff_ffff), CType::Int64),
+        c_cast(c_float64_literal(0x7ff8_0000_0000_0000), ProgramType::Int32),
+        c_cast(c_float64_literal(0x7ff0_0000_0000_0000), ProgramType::Int32),
+        c_cast(c_float64_literal(0x41e0_0000_0000_0000), ProgramType::Int32),
+        c_cast(c_float64_literal(0x7fef_ffff_ffff_ffff), ProgramType::Int64),
     ] {
         let theorem = prove_c_expression_evaluation(state.clone(), expression.clone())
             .expect("invalid floating-to-integer conversion should retain a diagnostic");
@@ -444,7 +456,7 @@ fn floating_point_to_integer_conversion_truncates_and_rejects_invalid_values() {
 
 #[test]
 fn floating_point_conditions_follow_ieee_ordering_and_classification() {
-    let state = CState::new();
+    let state = ExecutionState::new();
     let evaluate = |condition| {
         let evaluation =
             prove_symbolic_c_condition_evaluation(state.clone(), condition, PureFactContext::new());
@@ -462,7 +474,9 @@ fn floating_point_conditions_follow_ieee_ordering_and_classification() {
         }
     };
     let assert_ordering =
-        |left: CExpression, right: CExpression, expected: (bool, bool, bool, bool, bool, bool)| {
+        |left: ProgramExpression,
+         right: ProgramExpression,
+         expected: (bool, bool, bool, bool, bool, bool)| {
             assert_eq!(
                 evaluate(c_less_than(left.clone(), right.clone())),
                 expected.0
@@ -554,7 +568,7 @@ fn floating_point_conditions_follow_ieee_ordering_and_classification() {
 #[test]
 fn symbolic_floating_conditions_split_and_preserve_float_truthiness() {
     let variable = Variable(901);
-    let state = CState::new().with_local("value", float32(MachineTerm::Variable(variable)));
+    let state = ExecutionState::new().with_local("value", float32(MachineTerm::Variable(variable)));
     let outcomes = |condition| {
         prove_symbolic_c_condition_evaluation(state.clone(), condition, PureFactContext::new())
             .paths()
@@ -598,7 +612,7 @@ fn symbolic_floating_conditions_split_and_preserve_float_truthiness() {
 
 #[test]
 fn floating_point_arithmetic_rounds_both_widths_in_integer_space() {
-    let state = CState::new();
+    let state = ExecutionState::new();
     let evaluate = |expression| {
         let theorem = prove_c_expression_evaluation(state.clone(), expression)
             .expect("constant floating arithmetic should evaluate");
@@ -613,28 +627,36 @@ fn floating_point_arithmetic_rounds_both_widths_in_integer_space() {
             c_float32_literal(1.0f32.to_bits()),
             c_float32_literal(2.0f32.to_bits()),
         )),
-        CExpressionOutcome::Value(CValue::Float32(MachineTerm::constant(3.0f32.to_bits(),)))
+        CExpressionOutcome::Value(ProgramValue::Float32(MachineTerm::constant(
+            3.0f32.to_bits(),
+        )))
     );
     assert_eq!(
         evaluate(c_subtract(
             c_float32_literal(1.0f32.to_bits()),
             c_float32_literal(2.0f32.to_bits()),
         )),
-        CExpressionOutcome::Value(CValue::Float32(MachineTerm::constant((-1.0f32).to_bits(),)))
+        CExpressionOutcome::Value(ProgramValue::Float32(MachineTerm::constant(
+            (-1.0f32).to_bits(),
+        )))
     );
     assert_eq!(
         evaluate(c_multiply(
             c_float32_literal(1.5f32.to_bits()),
             c_float32_literal(2.0f32.to_bits()),
         )),
-        CExpressionOutcome::Value(CValue::Float32(MachineTerm::constant(3.0f32.to_bits(),)))
+        CExpressionOutcome::Value(ProgramValue::Float32(MachineTerm::constant(
+            3.0f32.to_bits(),
+        )))
     );
     assert_eq!(
         evaluate(c_divide(
             c_float32_literal(3.0f32.to_bits()),
             c_float32_literal(2.0f32.to_bits()),
         )),
-        CExpressionOutcome::Value(CValue::Float32(MachineTerm::constant(1.5f32.to_bits(),)))
+        CExpressionOutcome::Value(ProgramValue::Float32(MachineTerm::constant(
+            1.5f32.to_bits(),
+        )))
     );
 
     assert_eq!(
@@ -642,7 +664,7 @@ fn floating_point_arithmetic_rounds_both_widths_in_integer_space() {
             c_float64_literal(1.0f64.to_bits()),
             c_float64_literal(2.0f64.to_bits()),
         )),
-        CExpressionOutcome::Value(CValue::Float64(MachineTerm::uint64_constant(
+        CExpressionOutcome::Value(ProgramValue::Float64(MachineTerm::uint64_constant(
             3.0f64.to_bits(),
         )))
     );
@@ -651,7 +673,7 @@ fn floating_point_arithmetic_rounds_both_widths_in_integer_space() {
             c_float64_literal(1.5f64.to_bits()),
             c_float64_literal(2.0f64.to_bits()),
         )),
-        CExpressionOutcome::Value(CValue::Float64(MachineTerm::uint64_constant(
+        CExpressionOutcome::Value(ProgramValue::Float64(MachineTerm::uint64_constant(
             3.0f64.to_bits(),
         )))
     );
@@ -660,17 +682,17 @@ fn floating_point_arithmetic_rounds_both_widths_in_integer_space() {
             c_float64_literal(3.0f64.to_bits()),
             c_float64_literal(2.0f64.to_bits()),
         )),
-        CExpressionOutcome::Value(CValue::Float64(MachineTerm::uint64_constant(
+        CExpressionOutcome::Value(ProgramValue::Float64(MachineTerm::uint64_constant(
             1.5f64.to_bits(),
         )))
     );
     assert_eq!(
         evaluate(c_float_negate(c_float32_literal(0x8000_0000))),
-        CExpressionOutcome::Value(CValue::Float32(MachineTerm::constant(0)))
+        CExpressionOutcome::Value(ProgramValue::Float32(MachineTerm::constant(0)))
     );
     assert_eq!(
         evaluate(c_float_negate(c_float64_literal(0))),
-        CExpressionOutcome::Value(CValue::Float64(MachineTerm::uint64_constant(
+        CExpressionOutcome::Value(ProgramValue::Float64(MachineTerm::uint64_constant(
             0x8000_0000_0000_0000,
         )))
     );
@@ -678,7 +700,7 @@ fn floating_point_arithmetic_rounds_both_widths_in_integer_space() {
 
 #[test]
 fn floating_point_arithmetic_preserves_ieee_exceptions_and_ties() {
-    let state = CState::new();
+    let state = ExecutionState::new();
     let evaluate = |expression| {
         let theorem = prove_c_expression_evaluation(state.clone(), expression)
             .expect("constant floating arithmetic should evaluate");
@@ -687,9 +709,10 @@ fn floating_point_arithmetic_preserves_ieee_exceptions_and_ties() {
             proposition => panic!("unexpected floating arithmetic theorem {proposition:?}"),
         }
     };
-    let f32_value = |bits| CExpressionOutcome::Value(CValue::Float32(MachineTerm::constant(bits)));
+    let f32_value =
+        |bits| CExpressionOutcome::Value(ProgramValue::Float32(MachineTerm::constant(bits)));
     let f64_value =
-        |bits| CExpressionOutcome::Value(CValue::Float64(MachineTerm::uint64_constant(bits)));
+        |bits| CExpressionOutcome::Value(ProgramValue::Float64(MachineTerm::uint64_constant(bits)));
 
     // The halfway case rounds to the even significand; an exact ulp reaches
     // the next representable value.
@@ -808,11 +831,11 @@ fn floating_point_arithmetic_preserves_ieee_exceptions_and_ties() {
 #[test]
 fn symbolic_floating_arithmetic_remains_typed_and_opaque() {
     let variable = Variable(902);
-    let state = CState::new().with_local("value", float32(MachineTerm::Variable(variable)));
+    let state = ExecutionState::new().with_local("value", float32(MachineTerm::Variable(variable)));
     let expression = c_add(c_variable("value"), c_float32_literal(1.0f32.to_bits()));
     let theorem = prove_c_expression_evaluation(state, expression).expect("symbolic float add");
     let Proposition::CExpressionEvaluates {
-        outcome: CExpressionOutcome::Value(CValue::Float32(term)),
+        outcome: CExpressionOutcome::Value(ProgramValue::Float32(term)),
         ..
     } = theorem.proposition()
     else {
@@ -823,7 +846,7 @@ fn symbolic_floating_arithmetic_remains_typed_and_opaque() {
 
 #[test]
 fn mixed_floating_arithmetic_promotes_to_the_wider_or_present_float_type() {
-    let state = CState::new();
+    let state = ExecutionState::new();
     let evaluate = |expression| {
         let theorem = prove_c_expression_evaluation(state.clone(), expression)
             .expect("mixed floating arithmetic should evaluate");
@@ -838,7 +861,7 @@ fn mixed_floating_arithmetic_promotes_to_the_wider_or_present_float_type() {
             c_float32_literal(1.5f32.to_bits()),
             c_float64_literal(2.0f64.to_bits()),
         )),
-        CExpressionOutcome::Value(CValue::Float64(MachineTerm::uint64_constant(
+        CExpressionOutcome::Value(ProgramValue::Float64(MachineTerm::uint64_constant(
             3.5f64.to_bits(),
         )))
     );
@@ -847,14 +870,16 @@ fn mixed_floating_arithmetic_promotes_to_the_wider_or_present_float_type() {
             c_float32_literal(1.5f32.to_bits()),
             c_int32_literal(2)
         )),
-        CExpressionOutcome::Value(CValue::Float32(MachineTerm::constant(3.5f32.to_bits(),)))
+        CExpressionOutcome::Value(ProgramValue::Float32(MachineTerm::constant(
+            3.5f32.to_bits(),
+        )))
     );
     assert_eq!(
         evaluate(c_less_than(
             c_float64_literal(1.0f64.to_bits()),
             c_int32_literal(2),
         )),
-        CExpressionOutcome::Value(CValue::Int32(MachineTerm::constant(1)))
+        CExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::constant(1)))
     );
 }
 
@@ -863,16 +888,18 @@ fn symbolic_float_conversions_remain_typed_and_float_to_integer_is_guarded() {
     let f32_variable = Variable(903);
     let f64_variable = Variable(904);
     let integer_variable = Variable(905);
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_local("f32", float32(MachineTerm::Variable(f32_variable)))
         .with_local("f64", float64(MachineTerm::Variable(f64_variable)))
         .with_local("integer", int32(MachineTerm::Variable(integer_variable)));
 
-    let theorem =
-        prove_c_expression_evaluation(state.clone(), c_cast(c_variable("integer"), CType::Float64))
-            .expect("symbolic integer-to-float conversion should evaluate");
+    let theorem = prove_c_expression_evaluation(
+        state.clone(),
+        c_cast(c_variable("integer"), ProgramType::Float64),
+    )
+    .expect("symbolic integer-to-float conversion should evaluate");
     let Proposition::CExpressionEvaluates {
-        outcome: CExpressionOutcome::Value(CValue::Float64(term)),
+        outcome: CExpressionOutcome::Value(ProgramValue::Float64(term)),
         ..
     } = theorem.proposition()
     else {
@@ -880,11 +907,13 @@ fn symbolic_float_conversions_remain_typed_and_float_to_integer_is_guarded() {
     };
     assert!(matches!(term, MachineTerm::PureFunctionApplication { .. }));
 
-    let theorem =
-        prove_c_expression_evaluation(state.clone(), c_cast(c_variable("f32"), CType::Float64))
-            .expect("symbolic float widening conversion should evaluate");
+    let theorem = prove_c_expression_evaluation(
+        state.clone(),
+        c_cast(c_variable("f32"), ProgramType::Float64),
+    )
+    .expect("symbolic float widening conversion should evaluate");
     let Proposition::CExpressionEvaluates {
-        outcome: CExpressionOutcome::Value(CValue::Float64(term)),
+        outcome: CExpressionOutcome::Value(ProgramValue::Float64(term)),
         ..
     } = theorem.proposition()
     else {
@@ -894,7 +923,7 @@ fn symbolic_float_conversions_remain_typed_and_float_to_integer_is_guarded() {
 
     let paths = evaluate_c_expression_paths(
         &state,
-        &c_cast(c_variable("f64"), CType::Int32),
+        &c_cast(c_variable("f64"), ProgramType::Int32),
         &PureFactContext::new(),
         &mut ExecutionBudget::default(),
     )
@@ -902,14 +931,16 @@ fn symbolic_float_conversions_remain_typed_and_float_to_integer_is_guarded() {
     assert_eq!(paths.len(), 1);
     assert!(matches!(
         paths[0].outcome,
-        CExpressionOutcome::Value(CValue::Int32(MachineTerm::PureFunctionApplication { .. }))
+        CExpressionOutcome::Value(ProgramValue::Int32(
+            MachineTerm::PureFunctionApplication { .. }
+        ))
     ));
     assert_eq!(paths[0].obligations.len(), 3);
 }
 
 #[test]
 fn signed_add_overflow_is_native_undefined_behavior() {
-    let state = CState::new();
+    let state = ExecutionState::new();
     let theorem = prove_c_expression_evaluation(
         state.clone(),
         c_add(c_int32_literal(2_147_483_647), c_int32_literal(1)),
@@ -942,8 +973,8 @@ fn wide_shift_counts_are_checked_before_narrowing() {
                     let count_term = MachineTerm::Variable(count_variable);
                     let (count_value, count_type, count_fact) = if unsigned_count {
                         (
-                            CValue::UInt64(count_term.clone()),
-                            CType::UInt64,
+                            ProgramValue::UInt64(count_term.clone()),
+                            ProgramType::UInt64,
                             ConditionTerm::uint64_equal(
                                 count_term.clone(),
                                 MachineTerm::uint64_constant(count_value_bits),
@@ -951,8 +982,8 @@ fn wide_shift_counts_are_checked_before_narrowing() {
                         )
                     } else {
                         (
-                            CValue::Int64(count_term.clone()),
-                            CType::Int64,
+                            ProgramValue::Int64(count_term.clone()),
+                            ProgramType::Int64,
                             ConditionTerm::int64_equal(
                                 count_term.clone(),
                                 MachineTerm::int64_constant(count_value_bits as i64),
@@ -960,11 +991,17 @@ fn wide_shift_counts_are_checked_before_narrowing() {
                         )
                     };
                     let (left_value, left_type) = if left_is_64_bit {
-                        (CValue::Int64(MachineTerm::int64_constant(1)), CType::Int64)
+                        (
+                            ProgramValue::Int64(MachineTerm::int64_constant(1)),
+                            ProgramType::Int64,
+                        )
                     } else {
-                        (CValue::Int32(MachineTerm::constant(1)), CType::Int32)
+                        (
+                            ProgramValue::Int32(MachineTerm::constant(1)),
+                            ProgramType::Int32,
+                        )
                     };
-                    let mut state = CState::new()
+                    let mut state = ExecutionState::new()
                         .with_local("left", left_value.clone())
                         .with_local("count", count_value.clone());
                     state.locals.set_typed("left", left_value, left_type);
@@ -1027,7 +1064,7 @@ fn wide_shift_counts_are_checked_before_narrowing() {
 
 #[test]
 fn condition_evaluation_certifies_c_truthiness_directly() {
-    let state = CState::new();
+    let state = ExecutionState::new();
     let condition = c_less_than(c_int32_literal(1), c_int32_literal(2));
     let evaluation = prove_symbolic_c_condition_evaluation(
         state.clone(),
@@ -1051,7 +1088,7 @@ fn condition_evaluation_certifies_c_truthiness_directly() {
 
 #[test]
 fn void_truthiness_is_an_explicit_type_error() {
-    let state = CState::new();
+    let state = ExecutionState::new();
     let condition = c_void_value();
     let evaluation = prove_symbolic_c_condition_evaluation(
         state.clone(),
@@ -1093,8 +1130,8 @@ fn void_truthiness_is_an_explicit_type_error() {
 #[test]
 fn void_local_declaration_is_an_explicit_type_error() {
     let paths = execute_c_statement_paths(
-        &CState::new(),
-        &c_declare("invalid", CType::Void),
+        &ExecutionState::new(),
+        &c_declare("invalid", ProgramType::Void),
         &PureFactContext::new(),
         CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
@@ -1108,8 +1145,12 @@ fn void_local_declaration_is_an_explicit_type_error() {
     );
 
     let paths = execute_c_statement_paths(
-        &CState::new(),
-        &c_if(c_void_value(), CStatement::Skip, CStatement::Skip),
+        &ExecutionState::new(),
+        &c_if(
+            c_void_value(),
+            ProgramStatement::Skip,
+            ProgramStatement::Skip,
+        ),
         &PureFactContext::new(),
         CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
@@ -1125,7 +1166,7 @@ fn void_local_declaration_is_an_explicit_type_error() {
 #[test]
 fn symbolic_condition_evaluation_exposes_both_truthiness_paths() {
     let x = Variable(90);
-    let state = CState::new().with_local("x", int32(MachineTerm::Variable(x)));
+    let state = ExecutionState::new().with_local("x", int32(MachineTerm::Variable(x)));
     let condition = c_greater_equal(c_variable("x"), c_int32_literal(0));
     let evaluation =
         prove_symbolic_c_condition_evaluation(state, condition, PureFactContext::new());
@@ -1151,7 +1192,7 @@ fn symbolic_condition_evaluation_exposes_both_truthiness_paths() {
 
 #[test]
 fn int32_subtraction_is_native() {
-    let state = CState::new();
+    let state = ExecutionState::new();
     let statement = c_return(c_subtract(c_int32_literal(7), c_int32_literal(2)));
     let theorem =
         prove_symbolic_c_execution(state.clone(), statement.clone(), PureFactContext::new())
@@ -1192,7 +1233,7 @@ fn nonnegative_ordered_subtraction_does_not_overflow() {
 
 #[test]
 fn signed_subtract_overflow_is_native_undefined_behavior() {
-    let state = CState::new();
+    let state = ExecutionState::new();
     let theorem = prove_c_expression_evaluation(
         state.clone(),
         c_subtract(c_int32_literal(2_147_483_648), c_int32_literal(1)),
@@ -1211,7 +1252,7 @@ fn signed_subtract_overflow_is_native_undefined_behavior() {
 
 #[test]
 fn int32_comparisons_return_c_int32_zero_or_one() {
-    let state = CState::new();
+    let state = ExecutionState::new();
     let examples = [
         (
             c_less_equal(c_int32_literal(2), c_int32_literal(2)),
@@ -1260,11 +1301,11 @@ fn pointer_equality_returns_c_int32_zero_or_one() {
         block: "other".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let state = CState::new()
-        .with_local("p", CValue::pointer(p))
-        .with_local("same", CValue::pointer(same))
-        .with_local("next", CValue::pointer(next))
-        .with_local("other", CValue::pointer(other));
+    let state = ExecutionState::new()
+        .with_local("p", ProgramValue::pointer(p))
+        .with_local("same", ProgramValue::pointer(same))
+        .with_local("next", ProgramValue::pointer(next))
+        .with_local("other", ProgramValue::pointer(other));
     let examples = [
         (c_equal(c_variable("p"), c_variable("same")), int32(1)),
         (c_equal(c_variable("p"), c_variable("next")), int32(0)),
@@ -1291,15 +1332,15 @@ fn pointer_values_preserve_their_exact_c_types_without_changing_address_identity
         block: "same-address".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let int32_pointer = CValue::typed_pointer(address.clone(), CType::Int32Pointer);
-    let uint8_pointer = CValue::typed_pointer(address.clone(), CType::UInt8Pointer);
+    let int32_pointer = ProgramValue::typed_pointer(address.clone(), ProgramType::Int32Pointer);
+    let uint8_pointer = ProgramValue::typed_pointer(address.clone(), ProgramType::UInt8Pointer);
 
-    assert_eq!(int32_pointer.c_type(), CType::Int32Pointer);
-    assert_eq!(uint8_pointer.c_type(), CType::UInt8Pointer);
-    let CValue::Pointer(int32_pointer) = int32_pointer else {
+    assert_eq!(int32_pointer.c_type(), ProgramType::Int32Pointer);
+    assert_eq!(uint8_pointer.c_type(), ProgramType::UInt8Pointer);
+    let ProgramValue::Pointer(int32_pointer) = int32_pointer else {
         unreachable!();
     };
-    let CValue::Pointer(uint8_pointer) = uint8_pointer else {
+    let ProgramValue::Pointer(uint8_pointer) = uint8_pointer else {
         unreachable!();
     };
     assert_eq!(int32_pointer.pointer(), uint8_pointer.pointer());
@@ -1308,7 +1349,10 @@ fn pointer_values_preserve_their_exact_c_types_without_changing_address_identity
 #[test]
 fn explicit_wide_integer_pointer_cast_accepts_only_proven_null_without_origin() {
     let word = MachineTerm::Variable(Variable(4242));
-    for value in [CValue::UInt64(word.clone()), CValue::Int64(word.clone())] {
+    for value in [
+        ProgramValue::UInt64(word.clone()),
+        ProgramValue::Int64(word.clone()),
+    ] {
         for known_value in [None, Some(0), Some(4)] {
             let mut assumptions = PureFactContext::new();
             if let Some(known) = known_value {
@@ -1320,7 +1364,7 @@ fn explicit_wide_integer_pointer_cast_accepts_only_proven_null_without_origin() 
             let mut obligations = Vec::new();
             let cast = crate::kernel::eval::cast_c_value_to_type(
                 value.clone(),
-                CType::UInt8Pointer,
+                ProgramType::UInt8Pointer,
                 crate::kernel::eval::IntegerConversion::Modular,
                 &mut obligations,
                 &assumptions,
@@ -1328,7 +1372,7 @@ fn explicit_wide_integer_pointer_cast_accepts_only_proven_null_without_origin() 
             if known_value == Some(0) {
                 assert_eq!(
                     cast.unwrap(),
-                    CValue::typed_pointer(Pointer::null(), CType::UInt8Pointer),
+                    ProgramValue::typed_pointer(Pointer::null(), ProgramType::UInt8Pointer),
                 );
             } else {
                 assert!(matches!(cast, Err(CRuntimeError::PointerConversion(_))));
@@ -1346,11 +1390,15 @@ fn pointer_cast_retags_the_view_but_pointer_type_mismatch_is_not_implicit() {
         block: "typed-pointer".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let mut state = CState::new();
+    let mut state = ExecutionState::new();
     state.locals.set_typed_with_all_qualifiers(
         "int32_p",
-        CValue::typed_pointer_with_pointee_constant(address.clone(), CType::Int32Pointer, true),
-        CType::Int32Pointer,
+        ProgramValue::typed_pointer_with_pointee_constant(
+            address.clone(),
+            ProgramType::Int32Pointer,
+            true,
+        ),
+        ProgramType::Int32Pointer,
         false,
         false,
         false,
@@ -1358,11 +1406,11 @@ fn pointer_cast_retags_the_view_but_pointer_type_mismatch_is_not_implicit() {
     );
     state.locals.set_typed(
         "uint8_p",
-        CValue::pointer(address.clone()),
-        CType::UInt8Pointer,
+        ProgramValue::pointer(address.clone()),
+        ProgramType::UInt8Pointer,
     );
 
-    let cast = c_cast(c_variable("int32_p"), CType::UInt8Pointer);
+    let cast = c_cast(c_variable("int32_p"), ProgramType::UInt8Pointer);
     let cast_theorem = prove_c_expression_evaluation(state.clone(), cast.clone())
         .expect("an explicit pointer cast should evaluate");
     let Proposition::CExpressionEvaluates {
@@ -1372,8 +1420,8 @@ fn pointer_cast_retags_the_view_but_pointer_type_mismatch_is_not_implicit() {
     else {
         panic!("explicit pointer cast did not produce a value");
     };
-    assert_eq!(value.c_type(), CType::UInt8Pointer);
-    let CValue::Pointer(value) = value else {
+    assert_eq!(value.c_type(), ProgramType::UInt8Pointer);
+    let ProgramValue::Pointer(value) = value else {
         unreachable!();
     };
     assert_eq!(value.pointer(), &address);
@@ -1385,19 +1433,19 @@ fn pointer_cast_retags_the_view_but_pointer_type_mismatch_is_not_implicit() {
         &state,
         &SpecExpression::Cast(
             Box::new(SpecExpression::Value(
-                CValue::typed_pointer_with_pointee_constant(
+                ProgramValue::typed_pointer_with_pointee_constant(
                     address.clone(),
-                    CType::Int32Pointer,
+                    ProgramType::Int32Pointer,
                     true,
                 ),
             )),
-            CType::UInt8Pointer,
+            ProgramType::UInt8Pointer,
         ),
         None,
         &PureFactContext::new(),
     )
     .unwrap();
-    let CValue::Pointer(spec_pointer) = spec_value else {
+    let ProgramValue::Pointer(spec_pointer) = spec_value else {
         panic!("byte-view spec cast must yield a pointer");
     };
     assert_eq!(spec_pointer.pointer(), &address);
@@ -1421,31 +1469,31 @@ fn spec_pointer_equality_lowers_to_a_pure_fact() {
     let left = Pointer::symbolic(Variable(22_100));
     let right = Pointer::symbolic(Variable(22_101));
     let equality = ConditionTerm::PointerValueEqual(
-        Box::new(CPointerValue::new(left.clone(), CType::Int32Pointer)),
-        Box::new(CPointerValue::new(right.clone(), CType::Int32Pointer)),
+        Box::new(PointerValue::new(left.clone(), ProgramType::Int32Pointer)),
+        Box::new(PointerValue::new(right.clone(), ProgramType::Int32Pointer)),
     );
 
     assert_eq!(
         c_value_comparison_proposition(
-            &CValue::pointer(left.clone()),
+            &ProgramValue::pointer(left.clone()),
             CComparisonOperator::Equal,
-            &CValue::pointer(right.clone()),
+            &ProgramValue::pointer(right.clone()),
         ),
         Some(Proposition::ConditionIs(equality.clone(), true)),
     );
     assert_eq!(
         c_value_comparison_proposition(
-            &CValue::pointer(left.clone()),
+            &ProgramValue::pointer(left.clone()),
             CComparisonOperator::NotEqual,
-            &CValue::pointer(right),
+            &ProgramValue::pointer(right),
         ),
         Some(Proposition::ConditionIs(equality, false)),
     );
     assert_eq!(
         c_value_comparison_proposition(
-            &CValue::pointer(left),
+            &ProgramValue::pointer(left),
             CComparisonOperator::LessThan,
-            &CValue::Int32(MachineTerm::constant(0)),
+            &ProgramValue::Int32(MachineTerm::constant(0)),
         ),
         None,
     );
@@ -1511,9 +1559,9 @@ fn spec_pointer_order_lowers_same_block_offsets() {
     };
     assert_eq!(
         c_value_comparison_proposition(
-            &CValue::pointer(left),
+            &ProgramValue::pointer(left),
             CComparisonOperator::LessThan,
-            &CValue::pointer(right),
+            &ProgramValue::pointer(right),
         ),
         Some(Proposition::ConditionIs(
             ConditionTerm::Constant(true),
@@ -1525,7 +1573,7 @@ fn spec_pointer_order_lowers_same_block_offsets() {
 #[test]
 fn symbolic_pointer_truthiness_keeps_null_and_nonnull_paths() {
     let paths = c_truthiness_paths(
-        CValue::pointer(Pointer::symbolic(Variable(22_000))),
+        ProgramValue::pointer(Pointer::symbolic(Variable(22_000))),
         Vec::new().into(),
         Vec::new(),
         &PureFactContext::new(),
@@ -1546,9 +1594,9 @@ fn pointer_equality_accepts_int32_zero_as_null_pointer_constant() {
         block: "array".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let state = CState::new()
-        .with_local("nullp", CValue::pointer(null))
-        .with_local("p", CValue::pointer(nonnull));
+    let state = ExecutionState::new()
+        .with_local("nullp", ProgramValue::pointer(null))
+        .with_local("p", ProgramValue::pointer(nonnull));
     let examples = [
         (c_equal(c_variable("nullp"), c_int32_literal(0)), int32(1)),
         (c_equal(c_int32_literal(0), c_variable("nullp")), int32(1)),
@@ -1599,11 +1647,11 @@ fn not_equal_and_not_return_c_int32_zero_or_one() {
         block: "array".into(),
         offset: PointerOffsetTerm::Constant(4),
     };
-    let state = CState::new()
-        .with_local("nullp", CValue::pointer(null))
-        .with_local("p", CValue::pointer(p))
-        .with_local("same", CValue::pointer(same))
-        .with_local("next", CValue::pointer(next));
+    let state = ExecutionState::new()
+        .with_local("nullp", ProgramValue::pointer(null))
+        .with_local("p", ProgramValue::pointer(p))
+        .with_local("same", ProgramValue::pointer(same))
+        .with_local("next", ProgramValue::pointer(next));
     let examples = [
         (
             c_not_equal(c_int32_literal(4), c_int32_literal(5)),
@@ -1641,8 +1689,8 @@ fn logical_and_or_short_circuit_right_operand() {
         block: "missing".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let invalid_load = c_typed_load(c_pointer_value(invalid_pointer), CType::Int32);
-    let state = CState::new().with_resource_context(view_memory_context(
+    let invalid_load = c_typed_load(c_pointer_value(invalid_pointer), ProgramType::Int32);
+    let state = ExecutionState::new().with_resource_context(view_memory_context(
         Pointer {
             block: "missing".into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -1684,19 +1732,19 @@ fn void_pointer_dereferences_report_indeterminate_pointee_type() {
         block: "array".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let pointer_value = || c_typed_pointer_value(pointer.clone(), CType::VoidPointer);
+    let pointer_value = || c_typed_pointer_value(pointer.clone(), ProgramType::VoidPointer);
     let expressions = [
         c_load(pointer_value()),
         c_index(pointer_value(), c_int32_literal(1)),
     ];
 
     for expression in expressions {
-        let theorem = prove_c_expression_evaluation(CState::new(), expression.clone())
+        let theorem = prove_c_expression_evaluation(ExecutionState::new(), expression.clone())
             .expect("a void-pointer dereference should produce an explicit model error");
         assert_eq!(
             theorem.proposition(),
             &Proposition::CExpressionEvaluates {
-                state: Box::new(CState::new()),
+                state: Box::new(ExecutionState::new()),
                 expression,
                 outcome: CExpressionOutcome::RuntimeError(CRuntimeError::IndeterminatePointeeType,),
             }
@@ -1710,7 +1758,7 @@ fn captured_typed_pointer_load_requires_read_authority() {
         block: "array".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let state = CState::new();
+    let state = ExecutionState::new();
     let expression = c_load(c_pointer_value(pointer.clone()));
     let theorem = prove_c_expression_evaluation(state.clone(), expression.clone())
         .expect("a typed pointer without a view should report the missing authority");
@@ -1732,8 +1780,8 @@ fn captured_void_pointer_arithmetic_retains_the_gnu_byte_stride() {
         block: "bytes".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let state = CState::new().with_memory(CMemory::new().with_block("bytes", 8));
-    let value = || c_typed_pointer_value(pointer.clone(), CType::VoidPointer);
+    let state = ExecutionState::new().with_memory(CMemory::new().with_block("bytes", 8));
+    let value = || c_typed_pointer_value(pointer.clone(), ProgramType::VoidPointer);
     for expression in [
         c_add(value(), c_int32_literal(1)),
         c_add(c_int32_literal(1), value()),
@@ -1745,9 +1793,9 @@ fn captured_void_pointer_arithmetic_retains_the_gnu_byte_stride() {
             &Proposition::CExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: CExpressionOutcome::Value(CValue::typed_pointer(
+                outcome: CExpressionOutcome::Value(ProgramValue::typed_pointer(
                     pointer.offset_by_bytes(1),
-                    CType::VoidPointer,
+                    ProgramType::VoidPointer,
                 )),
             }
         );
@@ -1757,14 +1805,14 @@ fn captured_void_pointer_arithmetic_retains_the_gnu_byte_stride() {
 #[test]
 fn function_pointer_operations_report_indeterminate_pointee_type() {
     let pointer = Pointer::function("callback");
-    let function_type = CType::FunctionPointer(CType::function_pointer_signature(
-        CType::Int32,
-        &[CType::Int32],
+    let function_type = ProgramType::FunctionPointer(ProgramType::function_pointer_signature(
+        ProgramType::Int32,
+        &[ProgramType::Int32],
     ));
-    let mut state = CState::new();
+    let mut state = ExecutionState::new();
     state
         .locals
-        .set_typed("callback", CValue::pointer(pointer), function_type);
+        .set_typed("callback", ProgramValue::pointer(pointer), function_type);
     let expressions = [
         c_load(c_variable("callback")),
         c_add(c_variable("callback"), c_int32_literal(1)),
@@ -1799,9 +1847,9 @@ fn symbolic_pointer_equality_reports_branch_facts() {
     // A C comparison states that the addresses are equal, not the pointers.
     let condition =
         crate::kernel::eval::c_pointer_comparison_condition(left.clone(), right.clone());
-    let state = CState::new()
-        .with_local("p", CValue::pointer(left))
-        .with_local("q", CValue::pointer(right));
+    let state = ExecutionState::new()
+        .with_local("p", ProgramValue::pointer(left))
+        .with_local("q", ProgramValue::pointer(right));
     let statement = c_if(
         c_equal(c_variable("p"), c_variable("q")),
         c_return(c_int32_literal(1)),
@@ -1851,7 +1899,7 @@ fn symbolic_pointer_equality_reports_branch_facts() {
 
 #[test]
 fn if_uses_c_int32_truthiness() {
-    let state = CState::new();
+    let state = ExecutionState::new();
     let statement = c_if(
         c_int32_literal(7),
         c_return(c_int32_literal(1)),
@@ -1873,7 +1921,7 @@ fn if_uses_c_int32_truthiness() {
         }
     );
 
-    let state = CState::new();
+    let state = ExecutionState::new();
     let statement = c_if(
         c_int32_literal(0),
         c_return(c_int32_literal(1)),
@@ -1898,9 +1946,9 @@ fn if_uses_c_int32_truthiness() {
 
 #[test]
 fn assignment_and_sequence_update_native_state() {
-    let state = CState::new().with_local("x", int32(0));
+    let state = ExecutionState::new().with_local("x", int32(0));
     let statement = c_seq(c_assign("x", c_int32_literal(2)), c_return(c_variable("x")));
-    let final_state = CState::new().with_local("x", int32(2));
+    let final_state = ExecutionState::new().with_local("x", int32(2));
     let theorem =
         prove_symbolic_c_execution(state.clone(), statement.clone(), PureFactContext::new())
             .expect("assignment sequence should execute");
@@ -1925,16 +1973,19 @@ fn store_then_load_threads_native_memory() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let resources = own_memory_context(pointer.clone(), 0, 1);
-    let state = CState::new().with_resource_context(resources.clone());
+    let state = ExecutionState::new().with_resource_context(resources.clone());
     let statement = c_seq(
         c_typed_store(
             c_pointer_value(pointer.clone()),
             c_int32_literal(9),
-            CType::Int32,
+            ProgramType::Int32,
         ),
-        c_return(c_typed_load(c_pointer_value(pointer.clone()), CType::Int32)),
+        c_return(c_typed_load(
+            c_pointer_value(pointer.clone()),
+            ProgramType::Int32,
+        )),
     );
-    let final_state = CState::new()
+    let final_state = ExecutionState::new()
         .with_memory(CMemory::new().store(pointer.clone(), int32(9)))
         .with_resource_context(resources);
     let theorem =
@@ -1960,8 +2011,8 @@ fn viewed_memory_resource_permits_symbolic_external_load_from_incomplete_memory(
         block: "block".into(),
         offset: PointerOffsetTerm::Constant(4),
     };
-    let state = CState::new()
-        .with_local("p", CValue::pointer(pointer.clone()))
+    let state = ExecutionState::new()
+        .with_local("p", ProgramValue::pointer(pointer.clone()))
         .with_resource_context(view_memory_context(pointer.clone(), 0, 1));
     let statement = c_return(c_load(c_variable("p")));
     let execution =
@@ -1997,18 +2048,21 @@ fn block_backed_store_then_load_needs_no_memory_obligation() {
     };
     let memory = CMemory::new().with_block("block", 16);
     let resources = own_memory_context(pointer.clone(), 0, 1);
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_memory(memory.clone())
         .with_resource_context(resources.clone());
     let statement = c_seq(
         c_typed_store(
             c_pointer_value(pointer.clone()),
             c_int32_literal(9),
-            CType::Int32,
+            ProgramType::Int32,
         ),
-        c_return(c_typed_load(c_pointer_value(pointer.clone()), CType::Int32)),
+        c_return(c_typed_load(
+            c_pointer_value(pointer.clone()),
+            ProgramType::Int32,
+        )),
     );
-    let final_state = CState::new()
+    let final_state = ExecutionState::new()
         .with_memory(memory.store(pointer, int32(9)))
         .with_resource_context(resources);
     let theorem =
@@ -2035,8 +2089,8 @@ fn block_backed_missing_load_returns_symbolic_value_without_obligation() {
         offset: PointerOffsetTerm::Constant(4),
     };
     let memory = CMemory::new().with_block("block", 16);
-    let state = CState::new()
-        .with_local("p", CValue::pointer(pointer.clone()))
+    let state = ExecutionState::new()
+        .with_local("p", ProgramValue::pointer(pointer.clone()))
         .with_memory(memory.clone())
         .with_resource_context(view_memory_context(pointer.clone(), 0, 1));
     let statement = c_return(c_load(c_variable("p")));
@@ -2076,8 +2130,8 @@ fn pointer_addition_scales_int32_offsets_for_loads() {
         .with_block("block", 16)
         .store(second.clone(), int32(23));
     let resources = view_memory_context(base.clone(), 1, 2);
-    let state = CState::new()
-        .with_local("p", CValue::pointer(base.clone()))
+    let state = ExecutionState::new()
+        .with_local("p", ProgramValue::pointer(base.clone()))
         .with_memory(memory)
         .with_resource_context(resources.clone());
     let statement = c_return(c_load(c_add(c_variable("p"), c_int32_literal(1))));
@@ -2093,10 +2147,10 @@ fn pointer_addition_scales_int32_offsets_for_loads() {
             outcome: CStatementOutcome::Return {
                 value: int32(23).into(),
                 state: Box::new(
-                    CState::new()
+                    ExecutionState::new()
                         .with_local(
                             "p",
-                            CValue::pointer(Pointer {
+                            ProgramValue::pointer(Pointer {
                                 block: "block".into(),
                                 offset: PointerOffsetTerm::Constant(0),
                             }),
@@ -2119,8 +2173,8 @@ fn pointer_addition_rejects_an_int32_index_beyond_the_object() {
         block: "array".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let state = CState::new()
-        .with_local("p", CValue::pointer(base))
+    let state = ExecutionState::new()
+        .with_local("p", ProgramValue::pointer(base))
         .with_memory(CMemory::new().with_block("array", 8));
     let expression = c_add(c_variable("p"), c_int32_literal(3));
 
@@ -2147,16 +2201,20 @@ fn uint64_pointer_index_bounds_use_the_full_value() {
         block: "bytes".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let mut state = CState::new()
-        .with_local("array", CValue::pointer(base.clone()))
-        .with_local("index", CValue::UInt64(index.clone()))
+    let mut state = ExecutionState::new()
+        .with_local("array", ProgramValue::pointer(base.clone()))
+        .with_local("index", ProgramValue::UInt64(index.clone()))
         .with_memory(CMemory::new().with_block("bytes", 8));
-    state
-        .locals
-        .set_typed("array", CValue::pointer(base), CType::UInt8Pointer);
-    state
-        .locals
-        .set_typed("index", CValue::UInt64(index.clone()), CType::UInt64);
+    state.locals.set_typed(
+        "array",
+        ProgramValue::pointer(base),
+        ProgramType::UInt8Pointer,
+    );
+    state.locals.set_typed(
+        "index",
+        ProgramValue::UInt64(index.clone()),
+        ProgramType::UInt64,
+    );
     let expression = c_add(c_variable("array"), c_variable("index"));
     let assumptions = PureFactContext::new().assume_condition(
         ConditionTerm::uint64_equal(index, MachineTerm::uint64_constant(0x1_0000_0003)),
@@ -2183,7 +2241,7 @@ fn pointer_index_sum_overflow_is_pointer_undefined_behavior() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),
     };
-    let state = CState::new().with_local("p", CValue::pointer(base));
+    let state = ExecutionState::new().with_local("p", ProgramValue::pointer(base));
     let expression = c_add(
         c_add(c_variable("p"), c_int32_literal(i32::MAX as u32)),
         c_int32_literal(1),
@@ -2208,10 +2266,10 @@ fn pointer_index_sum_overflow_is_undefined_for_a_uint8_pointer() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),
     };
-    let mut state = CState::new().with_local("p", CValue::pointer(base.clone()));
+    let mut state = ExecutionState::new().with_local("p", ProgramValue::pointer(base.clone()));
     state
         .locals
-        .set_typed("p", CValue::pointer(base), CType::UInt8Pointer);
+        .set_typed("p", ProgramValue::pointer(base), ProgramType::UInt8Pointer);
     let expression = c_add(
         c_add(c_variable("p"), c_int32_literal(i32::MAX as u32)),
         c_int32_literal(1),
@@ -2236,8 +2294,8 @@ fn pointer_addition_allows_the_one_past_int32_element() {
         block: "array".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let state = CState::new()
-        .with_local("p", CValue::pointer(base.clone()))
+    let state = ExecutionState::new()
+        .with_local("p", ProgramValue::pointer(base.clone()))
         .with_memory(CMemory::new().with_block("array", 8));
     let expression = c_add(c_variable("p"), c_int32_literal(2));
     let result = Pointer {
@@ -2253,7 +2311,7 @@ fn pointer_addition_allows_the_one_past_int32_element() {
         &Proposition::CExpressionEvaluates {
             state: Box::new(state),
             expression,
-            outcome: CExpressionOutcome::Value(CValue::pointer(result)),
+            outcome: CExpressionOutcome::Value(ProgramValue::pointer(result)),
         }
     );
 }
@@ -2264,12 +2322,12 @@ fn pointer_addition_rejects_a_uint8_index_beyond_the_object() {
         block: "bytes".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let mut state = CState::new()
-        .with_local("p", CValue::pointer(base.clone()))
+    let mut state = ExecutionState::new()
+        .with_local("p", ProgramValue::pointer(base.clone()))
         .with_memory(CMemory::new().with_block("bytes", 4));
     state
         .locals
-        .set_typed("p", CValue::pointer(base), CType::UInt8Pointer);
+        .set_typed("p", ProgramValue::pointer(base), ProgramType::UInt8Pointer);
     let expression = c_add(c_variable("p"), c_int32_literal(5));
 
     let theorem = prove_c_expression_evaluation(state.clone(), expression.clone())
@@ -2291,8 +2349,8 @@ fn byte_offset_rejects_a_pointer_beyond_the_object() {
         block: "object".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let state = CState::new()
-        .with_local("p", CValue::pointer(base))
+    let state = ExecutionState::new()
+        .with_local("p", ProgramValue::pointer(base))
         .with_memory(CMemory::new().with_block("object", 4));
     let expression = c_pointer_offset_bytes(c_variable("p"), 5);
 
@@ -2319,9 +2377,9 @@ fn pointer_relational_comparison_orders_same_block_elements() {
         block: "array".into(),
         offset: PointerOffsetTerm::Constant(8),
     };
-    let state = CState::new()
-        .with_local("first", CValue::pointer(first))
-        .with_local("second", CValue::pointer(second));
+    let state = ExecutionState::new()
+        .with_local("first", ProgramValue::pointer(first))
+        .with_local("second", ProgramValue::pointer(second));
     let examples = [
         (c_less_than(c_variable("first"), c_variable("second")), 1),
         (c_less_equal(c_variable("first"), c_variable("second")), 1),
@@ -2356,9 +2414,9 @@ fn pointer_subtraction_returns_same_block_element_distance() {
         block: "array".into(),
         offset: PointerOffsetTerm::Constant(8),
     };
-    let state = CState::new()
-        .with_local("start", CValue::pointer(start))
-        .with_local("end", CValue::pointer(end));
+    let state = ExecutionState::new()
+        .with_local("start", ProgramValue::pointer(start))
+        .with_local("end", ProgramValue::pointer(end));
     let expression = c_subtract(c_variable("end"), c_variable("start"));
 
     let theorem = prove_c_expression_evaluation(state.clone(), expression.clone())
@@ -2384,15 +2442,17 @@ fn uint8_pointer_subtraction_returns_byte_distance() {
         block: "bytes".into(),
         offset: PointerOffsetTerm::Constant(3),
     };
-    let mut state = CState::new()
-        .with_local("start", CValue::pointer(start.clone()))
-        .with_local("end", CValue::pointer(end.clone()));
+    let mut state = ExecutionState::new()
+        .with_local("start", ProgramValue::pointer(start.clone()))
+        .with_local("end", ProgramValue::pointer(end.clone()));
+    state.locals.set_typed(
+        "start",
+        ProgramValue::pointer(start),
+        ProgramType::UInt8Pointer,
+    );
     state
         .locals
-        .set_typed("start", CValue::pointer(start), CType::UInt8Pointer);
-    state
-        .locals
-        .set_typed("end", CValue::pointer(end), CType::UInt8Pointer);
+        .set_typed("end", ProgramValue::pointer(end), ProgramType::UInt8Pointer);
     let expression = c_subtract(c_variable("end"), c_variable("start"));
 
     let theorem = prove_c_expression_evaluation(state.clone(), expression.clone())
@@ -2414,8 +2474,8 @@ fn pointer_subtraction_by_one_steps_back_one_element() {
         block: "array".into(),
         offset: PointerOffsetTerm::Constant(8),
     };
-    let state = CState::new()
-        .with_local("p", CValue::pointer(pointer))
+    let state = ExecutionState::new()
+        .with_local("p", ProgramValue::pointer(pointer))
         .with_memory(CMemory::new().with_block("array", 12));
     let expression = c_subtract(c_variable("p"), c_int32_literal(1));
     let result = Pointer {
@@ -2431,7 +2491,7 @@ fn pointer_subtraction_by_one_steps_back_one_element() {
         &Proposition::CExpressionEvaluates {
             state: Box::new(state),
             expression,
-            outcome: CExpressionOutcome::Value(CValue::pointer(result)),
+            outcome: CExpressionOutcome::Value(ProgramValue::pointer(result)),
         }
     );
 }
@@ -2446,9 +2506,9 @@ fn pointer_comparison_rejects_different_blocks_as_undefined_behavior() {
         block: "right".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let state = CState::new()
-        .with_local("left", CValue::pointer(left))
-        .with_local("right", CValue::pointer(right));
+    let state = ExecutionState::new()
+        .with_local("left", ProgramValue::pointer(left))
+        .with_local("right", ProgramValue::pointer(right));
     let expression = c_less_than(c_variable("left"), c_variable("right"));
 
     let theorem = prove_c_expression_evaluation(state.clone(), expression.clone())
@@ -2474,9 +2534,9 @@ fn pointer_subtraction_rejects_different_blocks_as_undefined_behavior() {
         block: "right".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let state = CState::new()
-        .with_local("left", CValue::pointer(left))
-        .with_local("right", CValue::pointer(right));
+    let state = ExecutionState::new()
+        .with_local("left", ProgramValue::pointer(left))
+        .with_local("right", ProgramValue::pointer(right));
     let expression = c_subtract(c_variable("left"), c_variable("right"));
 
     let theorem = prove_c_expression_evaluation(state.clone(), expression.clone())
@@ -2500,9 +2560,9 @@ fn pointer_order_and_subtraction_require_external_parameters_to_share_an_object(
     };
     let left = external(31_000);
     let right = external(31_001);
-    let state = CState::new()
-        .with_local("left", CValue::pointer(left))
-        .with_local("right", CValue::pointer(right));
+    let state = ExecutionState::new()
+        .with_local("left", ProgramValue::pointer(left))
+        .with_local("right", ProgramValue::pointer(right));
 
     for expression in [
         c_less_than(c_variable("left"), c_variable("right")),
@@ -2550,9 +2610,9 @@ fn null_pointers_have_no_object_provenance_for_ordering_or_subtraction() {
         &null, &null
     )));
 
-    let state = CState::new()
-        .with_local("left", CValue::pointer(null.clone()))
-        .with_local("right", CValue::pointer(null));
+    let state = ExecutionState::new()
+        .with_local("left", ProgramValue::pointer(null.clone()))
+        .with_local("right", ProgramValue::pointer(null));
     for expression in [
         c_less_than(c_variable("left"), c_variable("right")),
         c_less_equal(c_variable("left"), c_variable("right")),
@@ -2597,7 +2657,7 @@ fn an_external_pointer_does_not_share_an_object_with_itself_until_nonnull() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(31_050)), 4),
     };
-    let state = CState::new().with_local("pointer", CValue::pointer(pointer));
+    let state = ExecutionState::new().with_local("pointer", ProgramValue::pointer(pointer));
 
     for expression in [
         c_less_than(c_variable("pointer"), c_variable("pointer")),
@@ -2628,7 +2688,7 @@ fn nonempty_loadability_establishes_external_pointer_object_provenance() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(31_060)), 4),
     };
-    let state = CState::new().with_local("pointer", CValue::pointer(pointer.clone()));
+    let state = ExecutionState::new().with_local("pointer", ProgramValue::pointer(pointer.clone()));
     let loadable = |bytes| Proposition::CMemoryLoadable {
         memory: state.memory().clone(),
         base: pointer.clone(),
@@ -2701,8 +2761,8 @@ fn viewed_memory_resource_permits_pointer_addition_load_beyond_memory_block() {
         offset: PointerOffsetTerm::Constant(4),
     };
     let memory = CMemory::new().with_block("block", 4);
-    let state = CState::new()
-        .with_local("p", CValue::pointer(base.clone()))
+    let state = ExecutionState::new()
+        .with_local("p", ProgramValue::pointer(base.clone()))
         .with_memory(memory.clone())
         .with_resource_context(view_memory_context(base, 1, 2));
     let statement = c_return(c_load(c_add(c_variable("p"), c_int32_literal(1))));
@@ -2737,8 +2797,8 @@ fn fixed_bound_store_loop_touches_only_valid_pointer_range() {
     };
     let memory = CMemory::new().with_block("block", 12);
     let resources = own_memory_context(base.clone(), 0, 3);
-    let state = CState::new()
-        .with_local("p", CValue::pointer(base.clone()))
+    let state = ExecutionState::new()
+        .with_local("p", ProgramValue::pointer(base.clone()))
         .with_local("i", int32(0))
         .with_memory(memory.clone())
         .with_resource_context(resources.clone());
@@ -2773,10 +2833,10 @@ fn fixed_bound_store_loop_touches_only_valid_pointer_range() {
             },
             int32(2),
         );
-    let final_state = CState::new()
+    let final_state = ExecutionState::new()
         .with_local(
             "p",
-            CValue::pointer(Pointer {
+            ProgramValue::pointer(Pointer {
                 block: "block".into(),
                 offset: PointerOffsetTerm::Constant(0),
             }),
@@ -2816,8 +2876,8 @@ fn symbolic_loadable_discharges_pointer_access_obligation() {
         block: "array".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let state = CState::new()
-        .with_local("p", CValue::pointer(base.clone()))
+    let state = ExecutionState::new()
+        .with_local("p", ProgramValue::pointer(base.clone()))
         .with_local("i", int32(i_bits.clone()))
         .with_memory(memory.clone())
         .with_resource_context(own_memory_context(base.clone(), 0, n_bits.clone()));
@@ -3315,13 +3375,13 @@ fn singleton_integer_range_forces_equality() {
 #[test]
 fn signed_byte_narrowing_checks_each_bound_and_unsigned_inputs() {
     use crate::kernel::eval::IntegerConversion;
-    let convert = |value: CValue,
+    let convert = |value: ProgramValue,
                    conversion,
                    obligations: &mut Vec<ProofObligation>,
                    assumptions: &PureFactContext| {
         crate::kernel::eval::coerce_c_value_to_type_as(
             value,
-            CType::Int8,
+            ProgramType::Int8,
             conversion,
             obligations,
             assumptions,
@@ -3341,8 +3401,8 @@ fn signed_byte_narrowing_checks_each_bound_and_unsigned_inputs() {
         let mut obligations = Vec::new();
         // C's conversion is the low byte, read as signed, owing nothing.
         let word = match &input {
-            CValue::Int32(int32_constant!(word)) => constant_u32(*word),
-            narrow @ (CValue::Int16(_) | CValue::UInt8(_)) => {
+            ProgramValue::Int32(int32_constant!(word)) => constant_u32(*word),
+            narrow @ (ProgramValue::Int16(_) | ProgramValue::UInt8(_)) => {
                 MachineIntegerType::from_c_type(narrow.c_type())
                     .and_then(|ty| ty.constant_from_value(narrow))
                     .and_then(|value| value.to_i128())
@@ -3367,7 +3427,7 @@ fn signed_byte_narrowing_checks_each_bound_and_unsigned_inputs() {
             &mut obligations,
             &PureFactContext::new(),
         );
-        assert_eq!(result.unwrap().c_type(), CType::Int8, "{input:?}");
+        assert_eq!(result.unwrap().c_type(), ProgramType::Int8, "{input:?}");
         assert_eq!(obligations.is_empty(), valid, "{input:?}");
         for obligation in &obligations {
             let Proposition::ConditionIs(condition, true) = obligation.proposition() else {
@@ -3467,16 +3527,16 @@ fn signed_byte_narrowing_checks_each_bound_and_unsigned_inputs() {
 
 #[test]
 fn signed_byte_arithmetic_promotes_with_range_facts() {
-    let value = CExpression::Value(int8(MachineTerm::Variable(Variable(817))));
-    let expression = CExpression::Subtract(
-        Box::new(CExpression::Multiply(
+    let value = ProgramExpression::Value(int8(MachineTerm::Variable(Variable(817))));
+    let expression = ProgramExpression::Subtract(
+        Box::new(ProgramExpression::Multiply(
             Box::new(value),
             Box::new(c_int32_literal(2)),
         )),
         Box::new(c_int32_literal(1)),
     );
     let paths = evaluate_c_expression_paths(
-        &CState::new(),
+        &ExecutionState::new(),
         &expression,
         &PureFactContext::new(),
         &mut ExecutionBudget::default(),
@@ -3486,7 +3546,7 @@ fn signed_byte_arithmetic_promotes_with_range_facts() {
     assert!(
         matches!(
             paths[0].outcome,
-            CExpressionOutcome::Value(CValue::Int32(_))
+            CExpressionOutcome::Value(ProgramValue::Int32(_))
         ),
         "{paths:?}"
     );
@@ -3521,9 +3581,10 @@ fn exact_signed_constant_bounds_preserve_frozen_load_identity() {
         )),
         Some(true)
     );
-    let changed = memory
-        .clone()
-        .store(pointer.clone(), CValue::Int32(MachineTerm::constant(0)));
+    let changed = memory.clone().store(
+        pointer.clone(),
+        ProgramValue::Int32(MachineTerm::constant(0)),
+    );
     let changed_load = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory(changed),
         Box::new(pointer.clone()),
@@ -3621,9 +3682,10 @@ fn exact_signed_mirror_normalization_checks_snapshot_address_and_selected_premis
         )
         .is_ok()
     );
-    let changed = memory
-        .clone()
-        .store(pointer.clone(), CValue::Int32(MachineTerm::constant(0)));
+    let changed = memory.clone().store(
+        pointer.clone(),
+        ProgramValue::Int32(MachineTerm::constant(0)),
+    );
     for (snapshot, address) in [
         (changed, pointer.clone()),
         (
@@ -3665,7 +3727,7 @@ fn exact_signed_mirror_normalization_checks_snapshot_address_and_selected_premis
 #[test]
 fn uint64_bit_reinterpretation_has_a_distinct_checked_cast_boundary() {
     let assert_type_mismatch = |expression| {
-        let theorem = prove_c_expression_evaluation(CState::new(), expression).unwrap();
+        let theorem = prove_c_expression_evaluation(ExecutionState::new(), expression).unwrap();
         assert!(matches!(
             theorem.proposition(),
             Proposition::CExpressionEvaluates {
@@ -3676,9 +3738,9 @@ fn uint64_bit_reinterpretation_has_a_distinct_checked_cast_boundary() {
     };
     for bits in [0u64, 1, i64::MAX as u64, 1u64 << 63, u64::MAX] {
         let expression = c_uint64_bits_to_int64(c_uint64_literal(bits));
-        let theorem = prove_c_expression_evaluation(CState::new(), expression).unwrap();
+        let theorem = prove_c_expression_evaluation(ExecutionState::new(), expression).unwrap();
         let Proposition::CExpressionEvaluates {
-            outcome: CExpressionOutcome::Value(CValue::Int64(value)),
+            outcome: CExpressionOutcome::Value(ProgramValue::Int64(value)),
             ..
         } = theorem.proposition()
         else {
@@ -3687,11 +3749,11 @@ fn uint64_bit_reinterpretation_has_a_distinct_checked_cast_boundary() {
         assert_eq!(value.int64_as_const(), Some(bits as i64));
         // Bit reinterpretation accepts every bit pattern. Ordinary conversion
         // preserves the value only within the signed destination's range.
-        let ordinary = c_cast(c_uint64_literal(bits), CType::Int64);
+        let ordinary = c_cast(c_uint64_literal(bits), ProgramType::Int64);
         if bits <= i64::MAX as u64 {
-            let theorem = prove_c_expression_evaluation(CState::new(), ordinary).unwrap();
+            let theorem = prove_c_expression_evaluation(ExecutionState::new(), ordinary).unwrap();
             let Proposition::CExpressionEvaluates {
-                outcome: CExpressionOutcome::Value(CValue::Int64(value)),
+                outcome: CExpressionOutcome::Value(ProgramValue::Int64(value)),
                 ..
             } = theorem.proposition()
             else {
@@ -3699,15 +3761,15 @@ fn uint64_bit_reinterpretation_has_a_distinct_checked_cast_boundary() {
             };
             assert_eq!(value.int64_as_const(), Some(bits as i64));
         } else {
-            assert!(prove_c_expression_evaluation(CState::new(), ordinary).is_none());
+            assert!(prove_c_expression_evaluation(ExecutionState::new(), ordinary).is_none());
         }
     }
     assert_type_mismatch(c_uint64_bits_to_int64(c_int32_literal(1)));
     let mut malformed = c_uint64_bits_to_int64(c_uint64_literal(1));
-    let CExpression::Cast { target_type, .. } = &mut malformed else {
+    let ProgramExpression::Cast { target_type, .. } = &mut malformed else {
         unreachable!()
     };
-    *target_type = CType::UInt64;
+    *target_type = ProgramType::UInt64;
     assert_type_mismatch(malformed);
 }
 
@@ -3744,25 +3806,25 @@ fn reinterpreted_unsigned_arithmetic_keeps_signed_operators_and_definedness() {
 #[test]
 fn modulo_casts_are_explicit_integer_boundaries_and_preserve_operand_definedness() {
     let outcome = |expression| {
-        let theorem = prove_c_expression_evaluation(CState::new(), expression).unwrap();
+        let theorem = prove_c_expression_evaluation(ExecutionState::new(), expression).unwrap();
         let Proposition::CExpressionEvaluates { outcome, .. } = theorem.proposition() else {
             panic!("expected evaluation");
         };
         outcome.clone()
     };
     for target in [
-        CType::Int8,
-        CType::Int16,
-        CType::Int32,
-        CType::Int64,
-        CType::UInt8,
-        CType::UInt16,
-        CType::UInt32,
-        CType::UInt64,
+        ProgramType::Int8,
+        ProgramType::Int16,
+        ProgramType::Int32,
+        ProgramType::Int64,
+        ProgramType::UInt8,
+        ProgramType::UInt16,
+        ProgramType::UInt32,
+        ProgramType::UInt64,
     ] {
         for flag in [false, true] {
             let actual = outcome(c_integer_cast_modulo(
-                CExpression::Value(CValue::bool_constant(flag)),
+                ProgramExpression::Value(ProgramValue::bool_constant(flag)),
                 target,
             ));
             let ty = MachineIntegerType::from_c_type(target).unwrap();
@@ -3775,16 +3837,19 @@ fn modulo_casts_are_explicit_integer_boundaries_and_preserve_operand_definedness
         }
     }
     for expression in [
-        c_integer_cast_modulo(c_int32_literal(1), CType::Bool),
-        c_integer_cast_modulo(c_int32_literal(1), CType::Float64),
-        c_integer_cast_modulo(c_int32_literal(1), CType::Int32Pointer),
+        c_integer_cast_modulo(c_int32_literal(1), ProgramType::Bool),
+        c_integer_cast_modulo(c_int32_literal(1), ProgramType::Float64),
+        c_integer_cast_modulo(c_int32_literal(1), ProgramType::Int32Pointer),
         c_integer_cast_modulo(
-            CExpression::Value(CValue::Float32(MachineTerm::constant(0))),
-            CType::Int32,
+            ProgramExpression::Value(ProgramValue::Float32(MachineTerm::constant(0))),
+            ProgramType::Int32,
         ),
         c_integer_cast_modulo(
-            CExpression::Value(CValue::typed_pointer(Pointer::null(), CType::Int32Pointer)),
-            CType::UInt64,
+            ProgramExpression::Value(ProgramValue::typed_pointer(
+                Pointer::null(),
+                ProgramType::Int32Pointer,
+            )),
+            ProgramType::UInt64,
         ),
     ] {
         assert_eq!(
@@ -3794,21 +3859,21 @@ fn modulo_casts_are_explicit_integer_boundaries_and_preserve_operand_definedness
     }
     let overflow = c_add(c_int32_literal(i32::MAX as u32), c_int32_literal(1));
     assert!(matches!(
-        outcome(c_integer_cast_modulo(overflow, CType::UInt8)),
+        outcome(c_integer_cast_modulo(overflow, ProgramType::UInt8)),
         CExpressionOutcome::UndefinedBehavior(_)
     ));
     // The explicit rule wraps; an ordinary C narrowing still requires bounds.
     assert_eq!(
         outcome(c_integer_cast_modulo(
             c_int64_literal(i64::MAX),
-            CType::Int32
+            ProgramType::Int32
         )),
-        CExpressionOutcome::Value(CValue::Int32(MachineTerm::constant(u32::MAX)))
+        CExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::constant(u32::MAX)))
     );
     assert!(
         prove_c_expression_evaluation(
-            CState::new(),
-            c_cast(c_int64_literal(i64::MAX), CType::Int32),
+            ExecutionState::new(),
+            c_cast(c_int64_literal(i64::MAX), ProgramType::Int32),
         )
         .is_none()
     );
@@ -3824,20 +3889,25 @@ fn modulo_casts_are_explicit_integer_boundaries_and_preserve_operand_definedness
 #[test]
 fn a_modular_narrowing_files_its_range_and_no_identity_with_its_operand() {
     for (index, source) in [
-        CValue::Int32(MachineTerm::Variable(Variable(983_101))),
+        ProgramValue::Int32(MachineTerm::Variable(Variable(983_101))),
         crate::kernel::uint32(MachineTerm::Variable(Variable(983_102))),
-        CValue::Int64(MachineTerm::Variable(Variable(983_103))),
-        CValue::UInt64(MachineTerm::Variable(Variable(983_104))),
-        CValue::Int128(MachineTerm::Variable(Variable(983_105))),
-        CValue::UInt128(MachineTerm::Variable(Variable(983_106))),
+        ProgramValue::Int64(MachineTerm::Variable(Variable(983_103))),
+        ProgramValue::UInt64(MachineTerm::Variable(Variable(983_104))),
+        ProgramValue::Int128(MachineTerm::Variable(Variable(983_105))),
+        ProgramValue::UInt128(MachineTerm::Variable(Variable(983_106))),
     ]
     .into_iter()
     .enumerate()
     {
-        for target in [CType::Int8, CType::UInt8, CType::Int16, CType::UInt16] {
+        for target in [
+            ProgramType::Int8,
+            ProgramType::UInt8,
+            ProgramType::Int16,
+            ProgramType::UInt16,
+        ] {
             let paths = evaluate_c_expression_paths(
-                &CState::new(),
-                &c_integer_cast_modulo(CExpression::Value(source.clone()), target),
+                &ExecutionState::new(),
+                &c_integer_cast_modulo(ProgramExpression::Value(source.clone()), target),
                 &PureFactContext::new(),
                 &mut ExecutionBudget::default(),
             )
@@ -3894,13 +3964,13 @@ fn unsigned_narrowing_distributes_constant_subtraction_modulo_the_low_word() {
 
 /// A pointer at `pair + offset` whose subobject extent is `[pair + start,
 /// pair + start + width)`, as `&pair.first` would carry.
-fn subobject_pointer(offset: i64, start: i64, width: u32) -> CPointerValue {
-    CPointerValue::new(
+fn subobject_pointer(offset: i64, start: i64, width: u32) -> PointerValue {
+    PointerValue::new(
         Pointer {
             block: "pair".into(),
             offset: PointerOffsetTerm::Constant(offset),
         },
-        CType::Int32Pointer,
+        ProgramType::Int32Pointer,
     )
     .with_extent(Some(SubobjectExtent {
         start: Pointer {
@@ -3911,11 +3981,11 @@ fn subobject_pointer(offset: i64, start: i64, width: u32) -> CPointerValue {
     }))
 }
 
-fn evaluated_pointer(state: &CState, expression: CExpression) -> CPointerValue {
+fn evaluated_pointer(state: &ExecutionState, expression: ProgramExpression) -> PointerValue {
     let theorem = prove_c_expression_evaluation(state.clone(), expression)
         .expect("the pointer expression should evaluate");
     let Proposition::CExpressionEvaluates {
-        outcome: CExpressionOutcome::Value(CValue::Pointer(value)),
+        outcome: CExpressionOutcome::Value(ProgramValue::Pointer(value)),
         ..
     } = theorem.proposition()
     else {
@@ -3927,7 +3997,7 @@ fn evaluated_pointer(state: &CState, expression: CExpression) -> CPointerValue {
 #[test]
 fn pointer_arithmetic_and_casts_keep_the_subobject_extent() {
     let first = subobject_pointer(0, 0, 4);
-    let state = CState::new().with_local("p", CValue::Pointer(first.clone()));
+    let state = ExecutionState::new().with_local("p", ProgramValue::Pointer(first.clone()));
 
     // One past `first` is still `first`'s pointer: the extent does not move
     // with the address, so the address it now shares with `second` does not
@@ -3944,8 +4014,8 @@ fn pointer_arithmetic_and_casts_keep_the_subobject_extent() {
     );
     assert_eq!(back.extent(), first.extent());
 
-    let cast = evaluated_pointer(&state, c_cast(c_variable("p"), CType::Int64Pointer));
-    assert_eq!(cast.c_type(), CType::Int64Pointer);
+    let cast = evaluated_pointer(&state, c_cast(c_variable("p"), ProgramType::Int64Pointer));
+    assert_eq!(cast.c_type(), ProgramType::Int64Pointer);
     assert_eq!(cast.extent(), first.extent());
 }
 
@@ -3956,7 +4026,7 @@ fn equal_addresses_with_different_extents_are_different_values() {
     assert_eq!(one_past_first.pointer(), second.pointer());
     assert_ne!(one_past_first, second);
     assert_ne!(
-        CPointerValue::new(second.pointer().clone(), CType::Int32Pointer),
+        PointerValue::new(second.pointer().clone(), ProgramType::Int32Pointer),
         second
     );
 }
@@ -3971,14 +4041,16 @@ fn substitution_maps_the_extent_start_with_the_address() {
             PointerOffsetTerm::Constant(delta),
         ),
     };
-    let value = CValue::Pointer(
-        CPointerValue::new(address(4), CType::Int32Pointer).with_extent(Some(SubobjectExtent {
-            start: address(0),
-            width: MachineTerm::constant(4),
-        })),
+    let value = ProgramValue::Pointer(
+        PointerValue::new(address(4), ProgramType::Int32Pointer).with_extent(Some(
+            SubobjectExtent {
+                start: address(0),
+                width: MachineTerm::constant(4),
+            },
+        )),
     );
     let replacement = MachineTerm::Variable(Variable(98_102));
-    let CValue::Pointer(substituted) =
+    let ProgramValue::Pointer(substituted) =
         substitute_bitvector_variable_in_c_value(&value, base, &replacement)
     else {
         unreachable!();
@@ -4003,35 +4075,37 @@ mod scaling_tests {
 #[test]
 fn implicit_byte_pointer_coercion_retains_the_selected_extent() {
     let address = Pointer::symbolic(Variable(22_102));
-    let pointer = CPointerValue::new(address.clone(), CType::Int8Pointer).with_extent(Some(
+    let pointer = PointerValue::new(address.clone(), ProgramType::Int8Pointer).with_extent(Some(
         SubobjectExtent {
             start: address,
             width: 4u32.into(),
         },
     ));
     let (value, _) = c_evaluate_spec_expression_at_state(
-        &CState::new(),
+        &ExecutionState::new(),
         &SpecExpression::PointerCoercion(
-            Box::new(SpecExpression::Value(CValue::Pointer(pointer.clone()))),
-            CType::UInt8Pointer,
+            Box::new(SpecExpression::Value(ProgramValue::Pointer(
+                pointer.clone(),
+            ))),
+            ProgramType::UInt8Pointer,
         ),
         None,
         &PureFactContext::new(),
     )
     .unwrap();
-    let CValue::Pointer(coerced) = value else {
+    let ProgramValue::Pointer(coerced) = value else {
         panic!("a pointer coercion must yield a pointer")
     };
-    assert_eq!(coerced.c_type(), CType::UInt8Pointer);
+    assert_eq!(coerced.c_type(), ProgramType::UInt8Pointer);
     assert_eq!(coerced.designation(), pointer.designation());
     assert_eq!(coerced.opaque_extent(), pointer.opaque_extent());
     assert_eq!(coerced.extent(), pointer.extent());
-    for source in [CType::Int8Pointer, CType::UInt8Pointer] {
-        for target in [CType::Int8Pointer, CType::UInt8Pointer] {
+    for source in [ProgramType::Int8Pointer, ProgramType::UInt8Pointer] {
+        for target in [ProgramType::Int8Pointer, ProgramType::UInt8Pointer] {
             let (value, _) = c_evaluate_spec_expression_at_state(
-                &CState::new(),
+                &ExecutionState::new(),
                 &SpecExpression::Cast(
-                    Box::new(SpecExpression::Value(CValue::Pointer(
+                    Box::new(SpecExpression::Value(ProgramValue::Pointer(
                         pointer.clone().with_type(source),
                     ))),
                     target,
@@ -4040,7 +4114,7 @@ fn implicit_byte_pointer_coercion_retains_the_selected_extent() {
                 &PureFactContext::new(),
             )
             .unwrap();
-            let CValue::Pointer(explicit) = value else {
+            let ProgramValue::Pointer(explicit) = value else {
                 panic!("a pointer cast must yield a pointer")
             };
             assert_eq!(explicit.c_type(), target);
@@ -4050,15 +4124,15 @@ fn implicit_byte_pointer_coercion_retains_the_selected_extent() {
         }
     }
     for (source, target) in [
-        (CType::Int32Pointer, CType::UInt8Pointer),
-        (CType::VoidPointer, CType::UInt8Pointer),
-        (CType::Int8Pointer, CType::VoidPointer),
-        (CType::VoidPointer, CType::VoidPointer),
+        (ProgramType::Int32Pointer, ProgramType::UInt8Pointer),
+        (ProgramType::VoidPointer, ProgramType::UInt8Pointer),
+        (ProgramType::Int8Pointer, ProgramType::VoidPointer),
+        (ProgramType::VoidPointer, ProgramType::VoidPointer),
     ] {
         let (value, _) = c_evaluate_spec_expression_at_state(
-            &CState::new(),
+            &ExecutionState::new(),
             &SpecExpression::Cast(
-                Box::new(SpecExpression::Value(CValue::Pointer(
+                Box::new(SpecExpression::Value(ProgramValue::Pointer(
                     pointer.clone().with_type(source),
                 ))),
                 target,
@@ -4067,7 +4141,7 @@ fn implicit_byte_pointer_coercion_retains_the_selected_extent() {
             &PureFactContext::new(),
         )
         .unwrap();
-        let CValue::Pointer(explicit) = value else {
+        let ProgramValue::Pointer(explicit) = value else {
             panic!("a pointer cast must yield a pointer")
         };
         assert!(explicit.extent_is_known());
@@ -4081,14 +4155,14 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
     let a = Pointer::symbolic(Variable(22_111));
     let b = Pointer::symbolic(Variable(22_112));
     let stored = subobject_pointer(0, 0, 4);
-    let before_b = CMemory::new().store(a.clone(), CValue::Pointer(stored.clone()));
+    let before_b = CMemory::new().store(a.clone(), ProgramValue::Pointer(stored.clone()));
     let memory = before_b
         .clone()
-        .store(b.clone(), CValue::Pointer(stored.clone()));
+        .store(b.clone(), ProgramValue::Pointer(stored.clone()));
     let read = |memory: &CMemory, address: &Pointer| {
-        CPointerValue::from_read(
+        PointerValue::from_read(
             stored.pointer().clone(),
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
             &crate::kernel::intern_c_memory_ref(memory),
             address,
         )
@@ -4108,7 +4182,7 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
         &before_b,
         &memory,
         &a,
-        CType::Int32Pointer,
+        ProgramType::Int32Pointer,
         &[Proposition::CMemoryMutatesOnly {
             before: before_b.clone(),
             after: memory.clone(),
@@ -4135,7 +4209,9 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
     let original = read(&before, &c);
     let changed = before.clone().store(b.clone(), int32(1));
     let later = read(&changed, &c);
-    let copied = changed.clone().store(a.clone(), CValue::Pointer(later));
+    let copied = changed
+        .clone()
+        .store(a.clone(), ProgramValue::Pointer(later));
     let framed = context
         .clone()
         .assume_proposition(separation(
@@ -4150,7 +4226,7 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
         &before,
         &changed,
         &c,
-        CType::Int32Pointer,
+        ProgramType::Int32Pointer,
         &[Proposition::CMemoryMutatesOnly {
             before: before.clone(),
             after: changed.clone(),
@@ -4166,14 +4242,14 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
     assert!(!context.pointer_designations_match(&read(&partial, &a), &stored));
     let numeric = CMemory::new().store(
         a.clone(),
-        CValue::UInt64(MachineTerm::pointer_address(stored.pointer().clone())),
+        ProgramValue::UInt64(MachineTerm::pointer_address(stored.pointer().clone())),
     );
     assert!(!context.pointer_designations_match(&read(&numeric, &a), &stored));
 }
 
-fn checked_term(value: &CValue) -> MachineTerm {
+fn checked_term(value: &ProgramValue) -> MachineTerm {
     match value {
-        CValue::Int8(term) => term.clone(),
+        ProgramValue::Int8(term) => term.clone(),
         other => panic!("{other:?}"),
     }
 }
@@ -4187,22 +4263,27 @@ fn array_index_conversion_is_independent_of_bounds() {
         ConditionTerm::unsigned_less_than(i.clone(), MachineTerm::uint32_constant(4)),
         true,
     );
-    let base = CValue::typed_pointer(Pointer::symbolic(Variable(989_972)), CType::Int32Pointer);
+    let base = ProgramValue::typed_pointer(
+        Pointer::symbolic(Variable(989_972)),
+        ProgramType::Int32Pointer,
+    );
     for index in [
-        CValue::Int32(i.clone()),
-        CValue::UInt32(i.clone()),
-        CValue::UInt64(i.clone()),
+        ProgramValue::Int32(i.clone()),
+        ProgramValue::UInt32(i.clone()),
+        ProgramValue::UInt64(i.clone()),
     ] {
         let expression = SpecExpression::PointerOffset {
-            pointer: Box::new(SpecExpression::CExpression(CExpression::Value(
+            pointer: Box::new(SpecExpression::ProgramExpression(ProgramExpression::Value(
                 base.clone(),
             ))),
-            elements: Box::new(SpecExpression::CExpression(CExpression::Value(index))),
+            elements: Box::new(SpecExpression::ProgramExpression(ProgramExpression::Value(
+                index,
+            ))),
             byte_width: 4,
         };
         let lower = |facts: &PureFactContext| {
             crate::kernel::spec::evaluate_spec_expression_paths_with_bindings(
-                &CState::new(),
+                &ExecutionState::new(),
                 &expression,
                 facts,
                 &BTreeMap::new(),
@@ -4247,31 +4328,36 @@ fn widened_index_bounds_use_the_full_unsigned_value() {
 #[test]
 fn index_observation_follows_machine_arithmetic() {
     let base = Pointer::symbolic(Variable(989_974));
-    let leaf = |value| SpecExpression::CExpression(CExpression::Value(value));
+    let leaf = |value| SpecExpression::ProgramExpression(ProgramExpression::Value(value));
     for (index, bytes) in [
-        (leaf(CValue::Int32(MachineTerm::constant(u32::MAX))), -4),
         (
-            leaf(CValue::UInt32(MachineTerm::uint32_constant(u32::MAX))),
+            leaf(ProgramValue::Int32(MachineTerm::constant(u32::MAX))),
+            -4,
+        ),
+        (
+            leaf(ProgramValue::UInt32(MachineTerm::uint32_constant(u32::MAX))),
             4 * i64::from(u32::MAX),
         ),
         (
             SpecExpression::Add(
-                Box::new(leaf(CValue::UInt32(MachineTerm::uint32_constant(u32::MAX)))),
-                Box::new(leaf(CValue::UInt32(MachineTerm::uint32_constant(1)))),
+                Box::new(leaf(ProgramValue::UInt32(MachineTerm::uint32_constant(
+                    u32::MAX,
+                )))),
+                Box::new(leaf(ProgramValue::UInt32(MachineTerm::uint32_constant(1)))),
             ),
             0,
         ),
     ] {
         let expression = SpecExpression::PointerOffset {
-            pointer: Box::new(leaf(CValue::typed_pointer(
+            pointer: Box::new(leaf(ProgramValue::typed_pointer(
                 base.clone(),
-                CType::Int32Pointer,
+                ProgramType::Int32Pointer,
             ))),
             elements: Box::new(index),
             byte_width: 4,
         };
         let paths = crate::kernel::spec::evaluate_spec_expression_paths_with_bindings(
-            &CState::new(),
+            &ExecutionState::new(),
             &expression,
             &PureFactContext::new(),
             &BTreeMap::new(),
@@ -4279,7 +4365,7 @@ fn index_observation_follows_machine_arithmetic() {
         )
         .unwrap();
         assert_eq!(paths.len(), 1);
-        let CValue::Pointer(value) = &paths[0].value.clone().into_native() else {
+        let ProgramValue::Pointer(value) = &paths[0].value.clone().into_native() else {
             panic!("pointer result")
         };
         assert_eq!(value.pointer().offset, PointerOffsetTerm::Constant(bytes));
@@ -4311,13 +4397,15 @@ fn tag_clearing_lowering_keeps_the_written_word_under_bounds() {
         MachineTerm::uint64_bitwise_or(word.clone(), MachineTerm::uint64_from_int32(tag)),
         MachineTerm::uint64_add(word, MachineTerm::uint64_constant(1)),
     ] {
-        let leaf = |term| SpecExpression::CExpression(CExpression::Value(CValue::UInt64(term)));
+        let leaf = |term| {
+            SpecExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt64(term)))
+        };
         let expression =
             SpecExpression::BitwiseAnd(Box::new(leaf(inner.clone())), Box::new(leaf(mask.clone())));
-        let expected = CValue::UInt64(MachineTerm::uint64_bitwise_and(inner, mask.clone()));
+        let expected = ProgramValue::UInt64(MachineTerm::uint64_bitwise_and(inner, mask.clone()));
         for facts in [&PureFactContext::new(), &bounded] {
             let paths = crate::kernel::spec::evaluate_spec_expression_paths_with_bindings(
-                &CState::new(),
+                &ExecutionState::new(),
                 &expression,
                 facts,
                 &BTreeMap::new(),
@@ -4337,7 +4425,7 @@ fn specification_volatile_reads_do_not_create_execution_events() {
         block: "cell".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let initial = CState::new()
+    let initial = ExecutionState::new()
         .with_resource_context(own_memory_context(pointer.clone(), 0, 1))
         .with_memory(
             CMemory::new()
@@ -4345,11 +4433,11 @@ fn specification_volatile_reads_do_not_create_execution_events() {
                 .store(pointer.clone(), int32(7)),
         );
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "f",
         vec![
-            c_parameter("value", CType::Int32).with_volatile(true),
-            c_parameter("p", CType::Int32Pointer).with_pointee_volatile(true),
+            c_parameter("value", ProgramType::Int32).with_volatile(true),
+            c_parameter("p", ProgramType::Int32Pointer).with_pointee_volatile(true),
         ],
         c_return(c_variable("value")),
     );
@@ -4358,14 +4446,14 @@ fn specification_volatile_reads_do_not_create_execution_events() {
         &function,
         &[
             int32(7),
-            CValue::typed_pointer(pointer, CType::Int32Pointer),
+            ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer),
         ],
     )
     .unwrap();
     let _specification = crate::kernel::eval::SpecificationReadScope::enter();
     for expression in [
         c_variable("value"),
-        c_typed_load(c_variable("p"), CType::Int32),
+        c_typed_load(c_variable("p"), ProgramType::Int32),
     ] {
         let paths = evaluate_c_expression_paths(
             &state,
@@ -4411,8 +4499,8 @@ fn unsigned_division_reports_its_domain_even_when_already_known() {
                 crate::kernel::eval::apply_c_divide
             };
             let paths = apply(
-                CValue::UInt32(left.clone()),
-                CValue::UInt32(right.clone()),
+                ProgramValue::UInt32(left.clone()),
+                ProgramValue::UInt32(right.clone()),
                 vec![].into(),
                 vec![],
                 &assumptions,
@@ -4420,7 +4508,7 @@ fn unsigned_division_reports_its_domain_even_when_already_known() {
             assert_eq!(paths.len(), 1, "one conditional successor, {known:?}");
             assert!(matches!(
                 paths[0].outcome,
-                CExpressionOutcome::Value(CValue::UInt32(_))
+                CExpressionOutcome::Value(ProgramValue::UInt32(_))
             ));
             assert_eq!(
                 paths[0].obligations.len(),

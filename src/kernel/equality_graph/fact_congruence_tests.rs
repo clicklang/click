@@ -5,16 +5,16 @@ use crate::kernel::binary_node;
 #[test]
 fn complete_pointer_representative_exposes_a_stored_callback() {
     let _session = VerificationSession::enter();
-    let ty = CType::FunctionPointer(crate::kernel::CallbackSignature::UNSPECIFIED);
+    let ty = ProgramType::FunctionPointer(crate::kernel::CallbackSignature::UNSPECIFIED);
     let cell = Pointer::symbolic(Variable(998_965));
-    let target = CPointerValue::new(Pointer::function("callback"), ty);
+    let target = PointerValue::new(Pointer::function("callback"), ty);
     let memory = crate::kernel::intern_c_memory(
-        CMemory::new().store(cell.clone(), CValue::Pointer(target.clone())),
+        CMemory::new().store(cell.clone(), ProgramValue::Pointer(target.clone())),
     );
-    let read = CPointerValue::from_read(Pointer::loaded_value(&memory, &cell), ty, &memory, &cell);
+    let read = PointerValue::from_read(Pointer::loaded_value(&memory, &cell), ty, &memory, &cell);
     let graph = EqualityGraph::default();
     assert_eq!(graph.pointer_value_representative(&read), target);
-    let unknown = CPointerValue::from_read(
+    let unknown = PointerValue::from_read(
         Pointer::loaded_value(&memory, &cell.offset_by_bytes(8)),
         ty,
         &memory,
@@ -33,7 +33,7 @@ fn call(name: &str, arguments: Vec<PureFunctionArgument>) -> MachineTerm {
     }
 }
 fn scalar(term: MachineTerm) -> PureFunctionArgument {
-    PureFunctionArgument::Value(CValue::Int32(term))
+    PureFunctionArgument::Value(ProgramValue::Int32(term))
 }
 fn eq(a: MachineTerm, b: MachineTerm) -> Proposition {
     Proposition::ConditionIs(ConditionTerm::equal(a, b), true)
@@ -44,10 +44,10 @@ fn pointer(name: &str) -> Pointer {
         offset: PointerOffsetTerm::Constant(0),
     }
 }
-fn array(memory: &CMemory, p: Pointer, element_type: CType) -> PureFunctionArgument {
+fn array(memory: &CMemory, p: Pointer, element_type: ProgramType) -> PureFunctionArgument {
     PureFunctionArgument::ArrayRef {
         memory: memory.clone(),
-        pointer: CValue::Pointer(CPointerValue::new(p, CType::Int32Pointer)),
+        pointer: ProgramValue::Pointer(PointerValue::new(p, ProgramType::Int32Pointer)),
         element_type,
     }
 }
@@ -121,26 +121,28 @@ fn fact_lookup_preserves_branch_restriction_and_contradiction() {
 fn pure_application_arguments_keep_snapshots_types_and_argument_order() {
     let _session = VerificationSession::enter();
     let memory = CMemory::new().with_block("p", 4).with_block("q", 4);
-    let changed = memory.clone().store(pointer("p"), CValue::Int32(var(34)));
+    let changed = memory
+        .clone()
+        .store(pointer("p"), ProgramValue::Int32(var(34)));
     let f = |memory: &CMemory, p, ty| call("f", vec![array(memory, p, ty)]);
-    let held = eq(f(&memory, pointer("p"), CType::Int32), var(30));
+    let held = eq(f(&memory, pointer("p"), ProgramType::Int32), var(30));
     let context = PureFactContext::new()
         .assume_proposition(held)
         .assume_condition(
             ConditionTerm::PointerEqual(Box::new(pointer("p")), Box::new(pointer("q"))),
             true,
         );
-    assert!(!context.contains_known(&eq(f(&memory, pointer("q"), CType::Int32), var(30))));
+    assert!(!context.contains_known(&eq(f(&memory, pointer("q"), ProgramType::Int32), var(30))));
     let context = context.assume_condition(
         ConditionTerm::PointerValueEqual(
-            Box::new(CPointerValue::new(pointer("p"), CType::Int32Pointer)),
-            Box::new(CPointerValue::new(pointer("q"), CType::Int32Pointer)),
+            Box::new(PointerValue::new(pointer("p"), ProgramType::Int32Pointer)),
+            Box::new(PointerValue::new(pointer("q"), ProgramType::Int32Pointer)),
         ),
         true,
     );
-    assert!(context.contains_known(&eq(f(&memory, pointer("q"), CType::Int32), var(30))));
-    assert!(!context.contains_known(&eq(f(&changed, pointer("q"), CType::Int32), var(30))));
-    assert!(!context.contains_known(&eq(f(&memory, pointer("q"), CType::UInt32), var(30))));
+    assert!(context.contains_known(&eq(f(&memory, pointer("q"), ProgramType::Int32), var(30))));
+    assert!(!context.contains_known(&eq(f(&changed, pointer("q"), ProgramType::Int32), var(30))));
+    assert!(!context.contains_known(&eq(f(&memory, pointer("q"), ProgramType::UInt32), var(30))));
     let lhs = call("pair", vec![scalar(var(31)), scalar(var(32))]);
     let rhs = call("pair", vec![scalar(var(32)), scalar(var(31))]);
     assert!(!context.contains_known(&eq(lhs, rhs)));
@@ -174,8 +176,11 @@ fn fact_lookup_uses_pointer_read_congruence_after_a_late_address_alias() {
     let f = |address: &Pointer| {
         call(
             "tag",
-            vec![PureFunctionArgument::Value(CValue::Pointer(
-                CPointerValue::new(Pointer::loaded_value(&memory, address), CType::Int32Pointer),
+            vec![PureFunctionArgument::Value(ProgramValue::Pointer(
+                PointerValue::new(
+                    Pointer::loaded_value(&memory, address),
+                    ProgramType::Int32Pointer,
+                ),
             ))],
         )
     };
@@ -442,8 +447,8 @@ fn selected_cursor_chain() -> (Proposition, Vec<Proposition>) {
     let prefix = |remaining: MachineTerm| MachineTerm::ClickFunctionApplication {
         name: "prefix".into(),
         arguments: vec![
-            PureFunctionArgument::Value(CValue::UInt64(total.clone())),
-            PureFunctionArgument::Value(CValue::UInt64(remaining)),
+            PureFunctionArgument::Value(ProgramValue::UInt64(total.clone())),
+            PureFunctionArgument::Value(ProgramValue::UInt64(remaining)),
         ],
     };
     let first = prefix(remaining);
@@ -460,16 +465,21 @@ fn selected_cursor_chain() -> (Proposition, Vec<Proposition>) {
         left: Box::new(total.clone()),
         right: Box::new(after),
     };
-    let original = CPointerValue::new(
+    let original = PointerValue::new(
         Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(100_001)), 1),
         },
-        CType::UInt8Pointer,
+        ProgramType::UInt8Pointer,
     );
-    let batch = CPointerValue::new(Pointer::symbolic(Variable(1_000_001)), CType::UInt8Pointer);
-    let cursor_base =
-        CPointerValue::new(Pointer::symbolic(Variable(1_000_005)), CType::UInt8Pointer);
+    let batch = PointerValue::new(
+        Pointer::symbolic(Variable(1_000_001)),
+        ProgramType::UInt8Pointer,
+    );
+    let cursor_base = PointerValue::new(
+        Pointer::symbolic(Variable(1_000_005)),
+        ProgramType::UInt8Pointer,
+    );
     let cursor = cursor_base
         .clone()
         .with_address(cursor_base.pointer().offset_by_bytes(16));
@@ -501,7 +511,7 @@ fn selected_cursor_chain() -> (Proposition, Vec<Proposition>) {
             PointerOffsetTerm::scale_int64(difference, 1, true),
         ),
     });
-    let full = |left: CPointerValue, right: CPointerValue| {
+    let full = |left: PointerValue, right: PointerValue| {
         Proposition::ConditionIs(
             ConditionTerm::PointerValueEqual(Box::new(left), Box::new(right)),
             true,
@@ -621,15 +631,21 @@ fn refreshed_address_aliases_do_not_establish_pointer_identity() {
 #[test]
 fn selected_native_cursor_normalization_is_stable_across_context_orders() {
     use crate::kernel::proof::{ProofFacts, fact_reasoning::normalize_using_conditions};
-    let original = CPointerValue::new(
+    let original = PointerValue::new(
         Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(100_001)), 1),
         },
-        CType::UInt8Pointer,
+        ProgramType::UInt8Pointer,
     );
-    let batch = CPointerValue::new(Pointer::symbolic(Variable(1_000_001)), CType::UInt8Pointer);
-    let root = CPointerValue::new(Pointer::symbolic(Variable(1_000_005)), CType::UInt8Pointer);
+    let batch = PointerValue::new(
+        Pointer::symbolic(Variable(1_000_001)),
+        ProgramType::UInt8Pointer,
+    );
+    let root = PointerValue::new(
+        Pointer::symbolic(Variable(1_000_005)),
+        ProgramType::UInt8Pointer,
+    );
     let cursor = root
         .clone()
         .with_address(root.pointer().offset_by_bytes(16));
@@ -669,7 +685,7 @@ fn selected_native_cursor_normalization_is_stable_across_context_orders() {
             ),
         ),
     });
-    let full = |left: CPointerValue, right: CPointerValue| {
+    let full = |left: PointerValue, right: PointerValue| {
         Proposition::ConditionIs(
             ConditionTerm::PointerValueEqual(Box::new(left), Box::new(right)),
             true,
@@ -715,7 +731,8 @@ fn checked_pointer_read_retention_keeps_a_simplified_address_equation() {
     let address = Pointer::symbolic(Variable(9072));
     let read = Pointer::loaded_value(&memory, &address);
     let named = Pointer::symbolic(Variable(9073));
-    let value = CPointerValue::new(read.clone(), CType::Int32Pointer).with_address(named.clone());
+    let value =
+        PointerValue::new(read.clone(), ProgramType::Int32Pointer).with_address(named.clone());
     let fact = crate::kernel::ExecutionPureFact::logical_read_equation(value, read.clone());
     assert!(matches!(
         fact.proposition(),
@@ -735,7 +752,7 @@ fn checked_pointer_read_retention_keeps_a_simplified_address_equation() {
 #[test]
 fn named_pointer_read_definitions_follow_later_observations() {
     let _session = crate::kernel::VerificationSession::enter();
-    let name = |memory: &SharedCMemory, cell: &Pointer| {
+    let name = |memory: &SharedMemory, cell: &Pointer| {
         Pointer::loaded_value(
             &crate::kernel::memory_provenance::canonical_value_load_memory(memory, cell, 8),
             cell,
@@ -750,7 +767,7 @@ fn named_pointer_read_definitions_follow_later_observations() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let first = crate::kernel::intern_c_memory(
-        CMemory::new().store(unrelated.clone(), CValue::UInt32(1u32.into())),
+        CMemory::new().store(unrelated.clone(), ProgramValue::UInt32(1u32.into())),
     );
     let named = name(&first, &cell);
     let context = PureFactContext::new();
@@ -759,7 +776,7 @@ fn named_pointer_read_definitions_follow_later_observations() {
         first
             .memory()
             .clone()
-            .store(unrelated, CValue::UInt32(2u32.into())),
+            .store(unrelated, ProgramValue::UInt32(2u32.into())),
     );
     let later_read = Pointer::loaded_value(&later, &cell);
     // Register both endpoints before their structural equation arrives.
@@ -792,15 +809,18 @@ fn structural_pointer_read_definitions_keep_domains_and_reject_partial_writes() 
             block: PointerBlock::Heap(986_005),
             offset: PointerOffsetTerm::Constant(0),
         },
-        CValue::UInt32(1u32.into()),
+        ProgramValue::UInt32(1u32.into()),
     ));
     let named_memory =
         crate::kernel::memory_provenance::canonical_value_load_memory(&memory, &cell, 8);
-    let named = CPointerValue::new(
+    let named = PointerValue::new(
         Pointer::loaded_value(&named_memory, &cell),
-        CType::Int32Pointer,
+        ProgramType::Int32Pointer,
     );
-    let original = CPointerValue::new(Pointer::loaded_value(&memory, &cell), CType::Int32Pointer);
+    let original = PointerValue::new(
+        Pointer::loaded_value(&memory, &cell),
+        ProgramType::Int32Pointer,
+    );
     let context = PureFactContext::new();
     assert!(context.equality_graph.knows_condition(
         &ConditionTerm::PointerValueEqual(Box::new(named.clone()), Box::new(original)),
@@ -810,13 +830,13 @@ fn structural_pointer_read_definitions_keep_domains_and_reject_partial_writes() 
         memory
             .memory()
             .clone()
-            .store(cell.offset_by_bytes(4), CValue::UInt32(9u32.into())),
+            .store(cell.offset_by_bytes(4), ProgramValue::UInt32(9u32.into())),
     );
     let changed_memory =
         crate::kernel::memory_provenance::canonical_value_load_memory(&changed, &cell, 8);
-    let changed = CPointerValue::new(
+    let changed = PointerValue::new(
         Pointer::loaded_value(&changed_memory, &cell),
-        CType::Int32Pointer,
+        ProgramType::Int32Pointer,
     );
     assert!(!context.equality_graph.knows_condition(
         &ConditionTerm::PointerValueEqual(Box::new(named), Box::new(changed)),
@@ -829,15 +849,18 @@ fn stored_pointer_read_definitions_preserve_bounds_and_reject_partial_overwrites
     let _session = VerificationSession::enter();
     let slot = Pointer::symbolic(Variable(987_001));
     let target = Pointer::symbolic(Variable(987_002));
-    let stored = CPointerValue::new(target.clone(), CType::Int32Pointer).with_extent(Some(
+    let stored = PointerValue::new(target.clone(), ProgramType::Int32Pointer).with_extent(Some(
         SubobjectExtent {
             start: target.clone(),
             width: 4u32.into(),
         },
     ));
     let memory =
-        intern_c_memory(CMemory::new().store(slot.clone(), CValue::Pointer(stored.clone())));
-    let read = CPointerValue::new(Pointer::loaded_value(&memory, &slot), CType::Int32Pointer);
+        intern_c_memory(CMemory::new().store(slot.clone(), ProgramValue::Pointer(stored.clone())));
+    let read = PointerValue::new(
+        Pointer::loaded_value(&memory, &slot),
+        ProgramType::Int32Pointer,
+    );
     assert_ne!(read, stored);
     let facts = PureFactContext::new();
     assert!(facts.equality_graph.knows_condition(
@@ -856,10 +879,12 @@ fn stored_pointer_read_definitions_preserve_bounds_and_reject_partial_overwrites
         memory
             .memory()
             .clone()
-            .store(slot.offset_by_bytes(4), CValue::UInt32(9u32.into())),
+            .store(slot.offset_by_bytes(4), ProgramValue::UInt32(9u32.into())),
     );
-    let changed_read =
-        CPointerValue::new(Pointer::loaded_value(&changed, &slot), CType::Int32Pointer);
+    let changed_read = PointerValue::new(
+        Pointer::loaded_value(&changed, &slot),
+        ProgramType::Int32Pointer,
+    );
     assert!(!facts.equality_graph.knows_condition(
         &ConditionTerm::PointerValueEqual(Box::new(changed_read), Box::new(stored)),
         true
@@ -871,7 +896,10 @@ fn a_fact_retained_pointer_cache_is_not_an_unconditional_read_definition() {
     let _session = VerificationSession::enter();
     let slot = Pointer::symbolic(Variable(987_010));
     let other = Pointer::symbolic(Variable(987_011));
-    let stored = CPointerValue::new(Pointer::symbolic(Variable(987_012)), CType::Int32Pointer);
+    let stored = PointerValue::new(
+        Pointer::symbolic(Variable(987_012)),
+        ProgramType::Int32Pointer,
+    );
     let written = CMemoryRange::new(other, 0u32.into(), 2u32.into());
     let separated = PureFactContext::new().assume_proposition(Proposition::CResourceSeparate {
         left: Box::new(CResource::Memory(written.clone())),
@@ -881,15 +909,15 @@ fn a_fact_retained_pointer_cache_is_not_an_unconditional_read_definition() {
             2u32.into(),
         ))),
     });
-    let before = CMemory::new().store(slot.clone(), CValue::Pointer(stored.clone()));
+    let before = CMemory::new().store(slot.clone(), ProgramValue::Pointer(stored.clone()));
     let after = before.with_call_memory_havoc(Variable(987_013), &[written], &separated, None);
     assert_eq!(
         after.known_value(&slot),
-        Some(CValue::Pointer(stored.clone()))
+        Some(ProgramValue::Pointer(stored.clone()))
     );
-    let read = CPointerValue::new(
+    let read = PointerValue::new(
         Pointer::loaded_value(&intern_c_memory(after), &slot),
-        CType::Int32Pointer,
+        ProgramType::Int32Pointer,
     );
     assert!(!PureFactContext::new().equality_graph.knows_condition(
         &ConditionTerm::PointerValueEqual(Box::new(read), Box::new(stored)),
@@ -902,9 +930,9 @@ fn pointer_domain_queries_register_stored_read_definitions_without_prior_address
     let _session = VerificationSession::enter();
     let slot = Pointer::symbolic(Variable(989_100));
     let target = Pointer::symbolic(Variable(989_101));
-    let stored = CPointerValue::new(target.clone(), CType::Int32Pointer);
+    let stored = PointerValue::new(target.clone(), ProgramType::Int32Pointer);
     let memory =
-        intern_c_memory(CMemory::new().store(slot.clone(), CValue::Pointer(stored.clone())));
+        intern_c_memory(CMemory::new().store(slot.clone(), ProgramValue::Pointer(stored.clone())));
     let read = Pointer::loaded_value(&memory, &slot);
     let root = Pointer {
         block: PointerBlock::Heap(989_102),
@@ -912,7 +940,7 @@ fn pointer_domain_queries_register_stored_read_definitions_without_prior_address
     };
     let root_memory = intern_c_memory(CMemory::new().store(
         slot.clone(),
-        CValue::typed_pointer(root, CType::Int32Pointer),
+        ProgramValue::typed_pointer(root, ProgramType::Int32Pointer),
     ));
     let root_read = Pointer::loaded_value(&root_memory, &slot);
     // Each query starts with a cold graph. A preceding numeric/full-pointer
@@ -929,7 +957,7 @@ fn pointer_domain_queries_register_stored_read_definitions_without_prior_address
         memory
             .memory()
             .clone()
-            .store(slot.offset_by_bytes(4), CValue::UInt32(0u32.into())),
+            .store(slot.offset_by_bytes(4), ProgramValue::UInt32(0u32.into())),
     );
     let partial_read = Pointer::loaded_value(&partial, &slot);
     assert!(!EqualityGraph::default().designations_equal(&partial_read, stored.designation()));

@@ -6,7 +6,7 @@ use super::*;
 /// replace, with every slot filled from the two declarations the check read.
 ///
 /// The skeleton is the expand affordance of the automatic route. It is built
-/// from the same `CFunctionContract` and `CFunction` interfaces the check
+/// from the same `CFunctionContract` and `ProgramFunction` interfaces the check
 /// uses — the target's proof parameters, the implementation's binders, and
 /// the implementation's C parameter list — so the printed obligation cannot
 /// drift from the one that was refused. A target with no proof parameters
@@ -20,7 +20,7 @@ use super::*;
 /// without a supplied spelling keeps this interface's own.
 pub(in crate::kernel) fn named_contract_refinement_theorem_skeleton(
     contract: &CFunctionContract,
-    function: &CFunction,
+    function: &ProgramFunction,
     declared_parameter_spellings: &[Option<String>],
 ) -> String {
     let theorem = format!(
@@ -153,7 +153,7 @@ pub(super) fn snake_case_contract_name(name: &str) -> String {
 /// keeps its layout, not the tag its source wrote, so a pointer to one is
 /// spelled by its pointer type. The skeleton is source the user edits, and
 /// this is the one slot they may have to correct.
-pub(super) fn c_parameter_type_spelling(parameter: &CParameter) -> String {
+pub(super) fn c_parameter_type_spelling(parameter: &ProgramParameter) -> String {
     let base = c_type_spelling(parameter.c_type());
     if parameter.pointee_is_constant() {
         format!("const {base}")
@@ -165,66 +165,66 @@ pub(super) fn c_parameter_type_spelling(parameter: &CParameter) -> String {
 /// The C0 spelling of a kernel C type, for a diagnostic that has to say what
 /// type a value had. An aggregate pointer is spelled by its pointer type, as
 /// [`c_parameter_type_spelling`] explains.
-pub(crate) fn c_type_spelling(c_type: CType) -> &'static str {
+pub(crate) fn c_type_spelling(c_type: ProgramType) -> &'static str {
     match c_type {
-        CType::Parameter(name) => name.name(),
-        CType::ParameterPointer(name) => {
+        ProgramType::Parameter(name) => name.name(),
+        ProgramType::ParameterPointer(name) => {
             crate::kernel::TypeParameterName::intern(&format!("{}*", name.name())).name()
         }
-        CType::Void => "void",
-        CType::Bool => "bool",
-        CType::VoidPointer => "void*",
-        CType::VoidPointerPointer => "void**",
-        CType::Int8 => "int8",
-        CType::Int16 => "int16",
-        CType::Int32 => "int32",
-        CType::UInt8 => "uint8",
-        CType::UInt16 => "uint16",
-        CType::UInt32 => "uint32",
-        CType::Int64 => "int64",
-        CType::UInt64 => "uint64",
-        CType::Int128 => "int128",
-        CType::UInt128 => "uint128",
-        CType::Float32 => "float32",
-        CType::Float64 => "float64",
-        CType::Int8Pointer => "int8*",
-        CType::Int16Pointer => "int16*",
-        CType::UInt16Pointer => "uint16*",
-        CType::Int32Pointer => "int32*",
-        CType::UInt8Pointer => "uint8*",
-        CType::UInt32Pointer => "uint32*",
-        CType::Int64Pointer => "int64*",
-        CType::Int128Pointer => "int128*",
-        CType::UInt64Pointer => "uint64*",
-        CType::UInt128Pointer => "uint128*",
-        CType::Float32Pointer => "float32*",
-        CType::Float64Pointer => "float64*",
-        CType::Int8PointerPointer => "int8**",
-        CType::Int16PointerPointer => "int16**",
-        CType::UInt16PointerPointer => "uint16**",
-        CType::Int32PointerPointer => "int32**",
-        CType::UInt8PointerPointer => "uint8**",
-        CType::UInt32PointerPointer => "uint32**",
-        CType::Int64PointerPointer => "int64**",
-        CType::Int128PointerPointer => "int128**",
-        CType::UInt64PointerPointer => "uint64**",
-        CType::UInt128PointerPointer => "uint128**",
-        CType::Float32PointerPointer => "float32**",
-        CType::Float64PointerPointer => "float64**",
-        CType::FunctionPointer(_) => "void (*)()",
-        CType::Int8Array(_) => "int8*",
-        CType::Int16Array(_) => "int16*",
-        CType::Int32Array(_) => "int32*",
-        CType::UInt8Array(_) => "uint8*",
-        CType::UInt16Array(_) => "uint16*",
-        CType::UInt32Array(_) => "uint32*",
-        CType::Int64Array(_) => "int64*",
-        CType::Int128Array(_) => "int128*",
-        CType::UInt64Array(_) => "uint64*",
-        CType::UInt128Array(_) => "uint128*",
-        CType::Float32Array(_) => "float32*",
-        CType::Float64Array(_) => "float64*",
-        CType::PointerArray(element, _) => element.decayed_type_spelling(),
+        ProgramType::Void => "void",
+        ProgramType::Bool => "bool",
+        ProgramType::VoidPointer => "void*",
+        ProgramType::VoidPointerPointer => "void**",
+        ProgramType::Int8 => "int8",
+        ProgramType::Int16 => "int16",
+        ProgramType::Int32 => "int32",
+        ProgramType::UInt8 => "uint8",
+        ProgramType::UInt16 => "uint16",
+        ProgramType::UInt32 => "uint32",
+        ProgramType::Int64 => "int64",
+        ProgramType::UInt64 => "uint64",
+        ProgramType::Int128 => "int128",
+        ProgramType::UInt128 => "uint128",
+        ProgramType::Float32 => "float32",
+        ProgramType::Float64 => "float64",
+        ProgramType::Int8Pointer => "int8*",
+        ProgramType::Int16Pointer => "int16*",
+        ProgramType::UInt16Pointer => "uint16*",
+        ProgramType::Int32Pointer => "int32*",
+        ProgramType::UInt8Pointer => "uint8*",
+        ProgramType::UInt32Pointer => "uint32*",
+        ProgramType::Int64Pointer => "int64*",
+        ProgramType::Int128Pointer => "int128*",
+        ProgramType::UInt64Pointer => "uint64*",
+        ProgramType::UInt128Pointer => "uint128*",
+        ProgramType::Float32Pointer => "float32*",
+        ProgramType::Float64Pointer => "float64*",
+        ProgramType::Int8PointerPointer => "int8**",
+        ProgramType::Int16PointerPointer => "int16**",
+        ProgramType::UInt16PointerPointer => "uint16**",
+        ProgramType::Int32PointerPointer => "int32**",
+        ProgramType::UInt8PointerPointer => "uint8**",
+        ProgramType::UInt32PointerPointer => "uint32**",
+        ProgramType::Int64PointerPointer => "int64**",
+        ProgramType::Int128PointerPointer => "int128**",
+        ProgramType::UInt64PointerPointer => "uint64**",
+        ProgramType::UInt128PointerPointer => "uint128**",
+        ProgramType::Float32PointerPointer => "float32**",
+        ProgramType::Float64PointerPointer => "float64**",
+        ProgramType::FunctionPointer(_) => "void (*)()",
+        ProgramType::Int8Array(_) => "int8*",
+        ProgramType::Int16Array(_) => "int16*",
+        ProgramType::Int32Array(_) => "int32*",
+        ProgramType::UInt8Array(_) => "uint8*",
+        ProgramType::UInt16Array(_) => "uint16*",
+        ProgramType::UInt32Array(_) => "uint32*",
+        ProgramType::Int64Array(_) => "int64*",
+        ProgramType::Int128Array(_) => "int128*",
+        ProgramType::UInt64Array(_) => "uint64*",
+        ProgramType::UInt128Array(_) => "uint128*",
+        ProgramType::Float32Array(_) => "float32*",
+        ProgramType::Float64Array(_) => "float64*",
+        ProgramType::PointerArray(element, _) => element.decayed_type_spelling(),
     }
 }
 
@@ -238,7 +238,7 @@ pub(crate) fn c_type_spelling(c_type: CType) -> &'static str {
 /// by a nonempty resource transition and unguarded named mutable footprint.
 pub(in crate::kernel) fn function_refines_named_contract(
     contract: &CFunctionContract,
-    function: &CFunction,
+    function: &ProgramFunction,
     object_type_requirements: &ObjectTypeRequirements,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<bool> {
@@ -296,7 +296,7 @@ pub(super) fn contract_refines_contract(
 
 pub(in crate::kernel) fn prepare_function_contract_refinement_context(
     contract: &CFunctionContract,
-    function: &CFunction,
+    function: &ProgramFunction,
     budget: &mut ExecutionBudget,
 ) -> Option<CFunctionContractRefinementContext> {
     if !contract.has_compatible_signature_and_resource_vocabulary(function) {
@@ -313,7 +313,7 @@ pub(in crate::kernel) fn prepare_function_contract_refinement_context(
 /// the binding between the two declarations is forced.
 pub(super) fn prepare_automatic_contract_refinement_context(
     contract: &CFunctionContract,
-    function: &CFunction,
+    function: &ProgramFunction,
     budget: &mut ExecutionBudget,
 ) -> Option<CFunctionContractRefinementContext> {
     if !contract.has_compatible_signature_and_composite_vocabulary(function) {
@@ -324,7 +324,7 @@ pub(super) fn prepare_automatic_contract_refinement_context(
 
 pub(super) fn contract_refinement_context_for_checked_interfaces(
     contract: &CFunctionContract,
-    function: &CFunction,
+    function: &ProgramFunction,
     budget: &mut ExecutionBudget,
 ) -> Option<CFunctionContractRefinementContext> {
     contract_refinement_context_for_interface(
@@ -376,7 +376,7 @@ pub(in crate::kernel) fn contract_refinement_context_for_interface(
         contract,
         function_interface: function_interface.clone(),
         function_name: function_name.to_string(),
-        pointer: CPointerValue::new(
+        pointer: PointerValue::new(
             Pointer {
                 block: PointerBlock::Function(function_name.to_string()),
                 offset: PointerOffsetTerm::Constant(0),
@@ -393,9 +393,9 @@ pub(in crate::kernel) fn contract_refinement_context_for_interface(
 
 pub(in crate::kernel) fn function_contract_refinement_entry_state(
     context: &CFunctionContractRefinementContext,
-) -> CState {
+) -> ExecutionState {
     let mut state = with_contract_interface_argument_views(
-        &CState::new().with_population_creation_tracking(),
+        &ExecutionState::new().with_population_creation_tracking(),
         &context.contract.interface,
         &context.argument_values,
     );
@@ -423,9 +423,9 @@ pub(in crate::kernel) fn function_contract_refinement_entry_state(
 /// values its fact fixed for its own value parameters.
 pub(super) fn function_contract_refinement_implementation_state(
     context: &CFunctionContractRefinementContext,
-) -> CState {
+) -> ExecutionState {
     let mut state = with_contract_interface_argument_views(
-        &CState::new().with_population_creation_tracking(),
+        &ExecutionState::new().with_population_creation_tracking(),
         &context.function_interface,
         &context.argument_values,
     );
@@ -507,7 +507,7 @@ pub(in crate::kernel) fn prepare_contract_refinement_obligations(
     let result = symbolic_call_result(source.return_type(), context.result_variable);
     let mut post = entry.clone().with_memory(memory.clone());
     let mut source_post = source_entry.clone().with_memory(memory);
-    if source.return_type() != CType::Void {
+    if source.return_type() != ProgramType::Void {
         set_contract_result(&mut post, target, result.clone());
         set_contract_result(&mut source_post, source, result);
     }
@@ -537,8 +537,8 @@ pub(in crate::kernel) fn prepare_contract_refinement_obligations(
     fn lower(
         interface: &CFunctionContractInterface,
         specs: &[SpecProposition],
-        state: &CState,
-        entry: &CState,
+        state: &ExecutionState,
+        entry: &ExecutionState,
         budget: &mut ExecutionBudget,
     ) -> Option<Proposition> {
         let definitions = interface
@@ -659,7 +659,7 @@ pub(super) struct DeclaredResourceInstance {
 /// `ensures`; the pair is one binder, not two.
 pub(super) fn evaluate_declared_resource_instances(
     specs: &[&[CResourceSpec]],
-    state: &CState,
+    state: &ExecutionState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Option<Vec<DeclaredResourceInstance>>> {
@@ -731,8 +731,8 @@ pub(super) fn index_declared_instances_by_family(
 pub(super) fn forced_refinement_instance_bindings(
     contract: &CFunctionContractInterface,
     function: &CFunctionContractInterface,
-    contract_entry: &CState,
-    function_entry: &CState,
+    contract_entry: &ExecutionState,
+    function_entry: &ExecutionState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Option<Vec<RefinementInstanceBinding>>> {
@@ -825,15 +825,15 @@ pub(super) fn refinement_bindings_at_post(
     bindings: &[RefinementInstanceBinding],
     contract: &CFunctionContractInterface,
     function: &CFunctionContractInterface,
-    (contract_entry, contract_post): (&CState, &CState),
-    (function_entry, function_post): (&CState, &CState),
+    (contract_entry, contract_post): (&ExecutionState, &ExecutionState),
+    (function_entry, function_post): (&ExecutionState, &ExecutionState),
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Option<Vec<RefinementInstanceBinding>>> {
     let post_arguments = |interface: &CFunctionContractInterface,
                           identity: Variable,
-                          entry: &CState,
-                          post: &CState,
+                          entry: &ExecutionState,
+                          post: &ExecutionState,
                           budget: &mut ExecutionBudget|
      -> ExecutionResult<Option<Option<ResourceArguments>>> {
         let Some(resource) = interface
@@ -1029,12 +1029,12 @@ pub(in crate::kernel) fn arbitrary_resource_instance_fields(
 /// Installs the shared instances one side reads, under the identities that
 /// side's declaration wrote.
 pub(super) fn state_with_refinement_instances(
-    state: &CState,
+    state: &ExecutionState,
     bindings: &[RefinementInstanceBinding],
     side: RefinementSide,
     phase: RefinementPhase,
     assumptions: &PureFactContext,
-) -> Option<CState> {
+) -> Option<ExecutionState> {
     if bindings.is_empty() {
         return Some(state.clone());
     }
@@ -1116,7 +1116,7 @@ pub(super) fn function_refines_named_contract_in_case(
     else {
         return Ok(false);
     };
-    let install = |state: &CState, instances: &[RefinementInstanceBinding], side, phase| {
+    let install = |state: &ExecutionState, instances: &[RefinementInstanceBinding], side, phase| {
         state_with_refinement_instances(state, instances, side, phase, &PureFactContext::new())
     };
     let (Some(contract_entry), Some(function_entry)) = (
@@ -1248,7 +1248,7 @@ pub(super) fn function_refines_named_contract_in_case(
     ) else {
         return Ok(false);
     };
-    if function_interface.return_type() != CType::Void {
+    if function_interface.return_type() != ProgramType::Void {
         set_contract_result(&mut contract_post, contract_interface, result.clone());
         set_contract_result(&mut function_post, function_interface, result);
     }
@@ -1320,13 +1320,13 @@ pub(super) fn function_refines_named_contract_in_case(
     let Some(mut exceptional) = exceptional_preconditions else {
         return Ok(true);
     };
-    let payload = symbolic_call_result(CType::Int32, budget.allocate_kernel_variable()?);
-    let throw_frame = |entry: &CState| {
+    let payload = symbolic_call_result(ProgramType::Int32, budget.allocate_kernel_variable()?);
+    let throw_frame = |entry: &ExecutionState| {
         let mut state = entry.clone();
         state.locals.set_typed(
             C_EXCEPTIONAL_RESULT_NAME.to_string(),
             payload.clone(),
-            CType::Int32,
+            ProgramType::Int32,
         );
         state
     };

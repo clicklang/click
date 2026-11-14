@@ -225,7 +225,7 @@ impl PureFactContext {
         &self,
         memory: &CMemory,
         pointer: &Pointer,
-        value_type: CType,
+        value_type: ProgramType,
     ) -> bool {
         crate::instrumentation::record_deterministic_work(1);
         if self.memory_read_defined_facts.is_empty() {
@@ -307,7 +307,7 @@ impl PureFactContext {
         &self,
         memory: &CMemory,
         pointer: &Pointer,
-        value_type: CType,
+        value_type: ProgramType,
     ) -> bool {
         if self.has_memory_read_defined_evidence(memory, pointer, value_type) {
             return true;
@@ -4730,7 +4730,7 @@ impl PureFactContext {
     /// classes select candidates; only full extent identity admits evidence.
     pub(in crate::kernel) fn opaque_pointer_covers(
         &self,
-        value: &CPointerValue,
+        value: &PointerValue,
         position: &Pointer,
         bytes: u32,
     ) -> bool {
@@ -4744,7 +4744,8 @@ impl PureFactContext {
                 let Proposition::Predicate { arguments, .. } = fact else {
                     return false;
                 };
-                let Some(Term::CValue(CValue::Pointer(source))) = arguments.first() else {
+                let Some(Term::ProgramValue(ProgramValue::Pointer(source))) = arguments.first()
+                else {
                     return false;
                 };
                 if !self.opaque_extents_equal(origin, source.pointer()) {
@@ -5810,7 +5811,7 @@ mod seeded_interval_adjacency_tests {
         let run = CellRun::new(
             base.clone(),
             1,
-            CType::UInt8,
+            ProgramType::UInt8,
             0x8000_0000,
             source,
             IndexIntervals::default(),
@@ -6157,9 +6158,9 @@ mod shallow_composition_separation_tests {
         let boxed = |variable: u64| CResource::Composite {
             name: "boxed".into(),
             arguments: vec![crate::kernel::AlgebraicValue::C(
-                crate::kernel::CValue::Pointer(crate::kernel::CPointerValue::new(
+                crate::kernel::ProgramValue::Pointer(crate::kernel::PointerValue::new(
                     symbolic(variable),
-                    crate::kernel::CType::Int32Pointer,
+                    crate::kernel::ProgramType::Int32Pointer,
                 )),
             )]
             .into(),

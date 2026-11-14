@@ -157,7 +157,7 @@ mod tests {
 
     #[test]
     fn shared_certificate_read_identity_keeps_snapshot_address_and_kind() {
-        use crate::kernel::{CMemory, CValue, LoadKind, Pointer, VerificationSession};
+        use crate::kernel::{CMemory, LoadKind, Pointer, ProgramValue, VerificationSession};
         let _session = VerificationSession::enter();
         let address = Pointer::symbolic(Variable(997109));
         let memory = crate::kernel::intern_c_memory(CMemory::new());
@@ -186,7 +186,7 @@ mod tests {
         let other_snapshot = wrong(
             crate::kernel::intern_c_memory(memory.memory().clone().store(
                 address.clone(),
-                CValue::UInt16(MachineTerm::narrow_constant(MachineIntegerType::UInt16, 7)),
+                ProgramValue::UInt16(MachineTerm::narrow_constant(MachineIntegerType::UInt16, 7)),
             )),
             address,
             LoadKind::UInt16,

@@ -7,10 +7,10 @@
 use super::*;
 
 pub(in crate::kernel) fn abstract_loop_mutex(
-    state: &CState,
+    state: &ExecutionState,
     mutex: &Pointer,
     held: ConditionTerm,
-) -> Result<CState, String> {
+) -> Result<ExecutionState, String> {
     if state.preserves_mutex_protocols {
         return Err("loop mutex abstraction requires a concrete initialization".into());
     }
@@ -160,7 +160,7 @@ mod tests {
         }
     }
     fn initialized(address: &Pointer) -> MutexContext {
-        MutexContext::new(CState::new())
+        MutexContext::new(ExecutionState::new())
             .initialize_empty(address.clone(), 40)
             .unwrap()
     }
@@ -341,10 +341,11 @@ mod loop_rule_tests {
     use crate::kernel::functions::{loop_instance_guard, rewrite_resource_instance};
     use crate::kernel::loops::{c_loop_binder_state_components_match_at_back_edge, c_loop_binders};
     use crate::kernel::{
-        CComparisonOperator, CCompositeResourceDefinition, CExpression, CResourceAccessMode,
-        CResourceQuantity, CResourceSnapshot, CResourceSpec, CResourceTerm, CResourceTransferRole,
-        CType, CValue, PointerOffsetTerm, ResourceFamily, ResourceFieldSchema, ResourceFieldType,
-        ResourceInstance, SpecExpression, SpecProposition, Variable, c_variable, int32,
+        CComparisonOperator, CCompositeResourceDefinition, CResourceAccessMode, CResourceQuantity,
+        CResourceSnapshot, CResourceSpec, CResourceTerm, CResourceTransferRole, PointerOffsetTerm,
+        ProgramExpression, ProgramType, ProgramValue, ResourceFamily, ResourceFieldSchema,
+        ResourceFieldType, ResourceInstance, SpecExpression, SpecProposition, Variable, c_variable,
+        int32,
     };
 
     fn address() -> Pointer {
@@ -354,13 +355,16 @@ mod loop_rule_tests {
         }
     }
     fn schema() -> ResourceFieldSchema {
-        ResourceFieldSchema::new(vec![("parity".into(), ResourceFieldType::C(CType::Int32))])
-            .unwrap()
+        ResourceFieldSchema::new(vec![(
+            "parity".into(),
+            ResourceFieldType::C(ProgramType::Int32),
+        )])
+        .unwrap()
     }
     fn definition() -> CCompositeResourceDefinition {
         let guard = CResourceSpec::new(
             CResourceTerm::MutexGuard {
-                mutex: Box::new(CExpression::Value(CValue::pointer(address()))),
+                mutex: Box::new(ProgramExpression::Value(ProgramValue::pointer(address()))),
                 snapshot: CResourceSnapshot::Current,
             },
             CResourceAccessMode::Own,
@@ -373,7 +377,7 @@ mod loop_rule_tests {
             "loop_guard",
             vec![],
             Some(SpecProposition::Comparison {
-                left: SpecExpression::CExpression(c_variable("parity")),
+                left: SpecExpression::ProgramExpression(c_variable("parity")),
                 operator: CComparisonOperator::Equal,
                 right: SpecExpression::Value(int32(1)),
             }),
@@ -415,10 +419,10 @@ mod loop_rule_tests {
         )
         .unwrap()
     }
-    fn top_and_next() -> (CState, CState, CCompositeResourceDefinition) {
+    fn top_and_next() -> (ExecutionState, ExecutionState, CCompositeResourceDefinition) {
         let definition = definition();
         let assumptions = PureFactContext::new();
-        let initialized = MutexContext::new(CState::new())
+        let initialized = MutexContext::new(ExecutionState::new())
             .initialize_empty(address(), 40)
             .unwrap();
         let (folded, _) = rewrite_resource_instance(
@@ -541,7 +545,7 @@ mod loop_rule_tests {
         let mut candidate = definition.clone();
         candidate
             .parameters
-            .push(crate::kernel::c_parameter("extra", CType::Int32));
+            .push(crate::kernel::c_parameter("extra", ProgramType::Int32));
         invalid.push(candidate);
         let mut candidate = definition.clone();
         candidate.recursive = true;
@@ -574,7 +578,7 @@ mod loop_rule_tests {
             candidate.contains = vec![
                 CResourceSpec::new(
                     CResourceTerm::MutexGuard {
-                        mutex: Box::new(CExpression::Value(CValue::pointer(address()))),
+                        mutex: Box::new(ProgramExpression::Value(ProgramValue::pointer(address()))),
                         snapshot: term_snapshot,
                     },
                     CResourceAccessMode::Own,

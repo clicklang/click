@@ -50,7 +50,7 @@ fn capture_context(operation: impl FnOnce()) -> ResourceContext {
 fn owned_frontier_context(
     head: &CResourceFact,
     definition: &CCompositeResourceDefinition,
-    state: &CState,
+    state: &ExecutionState,
     facts: &PureFactContext,
 ) -> ResourceContext {
     capture_context(|| {
@@ -87,7 +87,7 @@ fn fixture() -> (
 ) {
     let at = |id| Pointer::symbolic(Variable(id));
     let (slot, middle, alias, target) = (at(881_000), at(881_001), at(881_002), at(881_003));
-    let typed = |pointer| CValue::typed_pointer(pointer, CType::Int32Pointer);
+    let typed = |pointer| ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer);
     let head = CResourceFact::view_composite(
         "dependent_projection".into(),
         vec![
@@ -99,9 +99,9 @@ fn fixture() -> (
     let definition = CCompositeResourceDefinition::new(
         "dependent_projection",
         vec![
-            c_parameter("slot", CType::Int32Pointer),
-            c_parameter("alias", CType::Int32Pointer),
-            c_parameter("target", CType::Int32Pointer),
+            c_parameter("slot", ProgramType::Int32Pointer),
+            c_parameter("alias", ProgramType::Int32Pointer),
+            c_parameter("target", ProgramType::Int32Pointer),
         ],
         None,
         false,
@@ -193,7 +193,7 @@ fn projection_evidence_still_requires_a_viewed_head_and_matching_definition() {
 fn owned_composite_frontier_selects_the_prior_child_by_graph_address() {
     let (viewed, definition, memory, branch, sibling) = fixture();
     let head = CResourceFact::own(viewed.resource().clone());
-    let state = CState::new().with_memory(memory);
+    let state = ExecutionState::new().with_memory(memory);
     let context = owned_frontier_context(&head, &definition, &state, &branch);
     let children = prior_child(context, &head);
     let alias = Pointer::symbolic(Variable(881_002));
@@ -371,7 +371,7 @@ fn framing_producer_leaves_non_direct_ownership_opaque() {
     let residual = ResourceContext::new()
         .try_compose_with_fact(head, &facts)
         .unwrap();
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_memory(memory)
         .with_resource_context(residual.clone());
     let kept = crate::kernel::functions::call_kept_ownership(

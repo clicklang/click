@@ -48,7 +48,7 @@ fn allocation_tokens_and_ranges_carry_the_extent_kind() {
             Some(extent.bytes())
         );
         assert_eq!(
-            matches!(extent.token_value(), CValue::UInt64(_)),
+            matches!(extent.token_value(), ProgramValue::UInt64(_)),
             value_is_wide
         );
         assert_eq!(extent.byte_range(base.clone()).kind(), range_kind);

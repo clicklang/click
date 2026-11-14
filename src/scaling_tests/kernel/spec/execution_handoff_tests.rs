@@ -9,7 +9,7 @@ fn specification_execution_adapter_retains_growing_machine_results() {
         for _ in 1..size {
             expression = SpecExpression::Add(
                 Box::new(expression),
-                Box::new(SpecExpression::Value(CValue::UInt32(
+                Box::new(SpecExpression::Value(ProgramValue::UInt32(
                     MachineTerm::Variable(Variable(998253)),
                 ))),
             );
@@ -21,7 +21,7 @@ fn specification_execution_adapter_retains_growing_machine_results() {
         let CExpressionOutcome::Value(SpecValue::Shared(root)) = &paths[0].outcome else {
             panic!("the adapter must retain the produced machine root");
         };
-        assert_eq!(root.ty(), &KernelType::C(CType::UInt32));
+        assert_eq!(root.ty(), &KernelType::C(ProgramType::UInt32));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         work.push(measured);
     }

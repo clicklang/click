@@ -19,9 +19,9 @@ fn target(name: &str, identity: u64, argument: u32) -> ResourceClause {
             access: ResourceAccessMode::Own,
             kind: ResourceKind::Token,
             name: "pair".into(),
-            arguments: vec![ContractExpression::CFragment(CExpression::Value(int32(
-                argument,
-            )))],
+            arguments: vec![ContractExpression::CFragment(ProgramExpression::Value(
+                int32(argument),
+            ))],
             parameter_types: vec![],
         }),
     }

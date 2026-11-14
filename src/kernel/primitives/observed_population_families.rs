@@ -3,7 +3,7 @@
 //! a call; they record no count and grant no authority.
 use super::*;
 
-/// One pointer in CState, so the common empty set costs no allocation and
+/// One pointer in ExecutionState, so the common empty set costs no allocation and
 /// unchanged sets compare by identity.
 #[derive(Clone, Default)]
 pub(crate) struct ObservedPopulationFamilies(Option<Arc<BTreeSet<String>>>);

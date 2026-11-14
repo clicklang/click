@@ -9,8 +9,8 @@ use std::sync::Arc;
 
 use super::storage::SharedValue;
 use crate::kernel::{
-    CFunctionContractClaimKey, CFunctionContractClaimTarget, CResourceFact, CState, CValue,
-    Proposition,
+    CFunctionContractClaimKey, CFunctionContractClaimTarget, CResourceFact, ExecutionState,
+    ProgramValue, Proposition,
 };
 
 /// Diagnostic evidence returned when an allocation-lifetime obligation could
@@ -145,9 +145,9 @@ impl OutcomeIdentity {
 #[derive(Clone)]
 pub(crate) struct OutcomeProofCore {
     pub(crate) identity: OutcomeIdentity,
-    pub(crate) result: Arc<CValue>,
+    pub(crate) result: Arc<ProgramValue>,
     pub(crate) store_consequences_available: bool,
-    pub(crate) state: SharedValue<CState>,
+    pub(crate) state: SharedValue<ExecutionState>,
     pub(crate) is_exceptional: bool,
     pub(crate) effect_facts: OutcomeExecutionFacts,
 }
@@ -665,7 +665,7 @@ mod outcome_claim_goal_tests {
         OutcomeProofCore {
             identity: OutcomeIdentity::fresh(),
             result: Arc::new(int32(0)),
-            state: CState::new().into(),
+            state: ExecutionState::new().into(),
             store_consequences_available: false,
             is_exceptional: false,
             effect_facts: ExecutionFacts::new().into(),
@@ -837,9 +837,9 @@ mod outcome_claim_goal_tests {
     fn closing_execution() -> crate::kernel::CCheckedFunctionExecution {
         use crate::kernel::*;
         prove_checked_c_function_execution_with_environment(
-            CState::new(),
+            ExecutionState::new(),
             c_function(
-                CType::Int32,
+                ProgramType::Int32,
                 "closing_goals",
                 vec![],
                 c_return(c_int32_literal(0)),
@@ -900,10 +900,10 @@ mod outcome_claim_goal_tests {
         );
         let (transitioned, _) = closing
             .apply_resource_transition(
-                &crate::kernel::CState::new(),
+                &crate::kernel::ExecutionState::new(),
                 crate::kernel::CFunctionOutcome::Return {
                     value: crate::kernel::api::int32(0).into(),
-                    state: Box::new(crate::kernel::CState::new()),
+                    state: Box::new(crate::kernel::ExecutionState::new()),
                 },
                 &crate::kernel::PureFactContext::new(),
             )

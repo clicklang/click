@@ -10,7 +10,7 @@ use super::*;
 #[test]
 fn verified_loop_rule_selection_is_flat_in_unrelated_ambient_facts() {
     let (statement, base_rule) = prerequisite_loop_rule_fixture();
-    let state = CState::new().with_local("i", int32(0));
+    let state = ExecutionState::new().with_local("i", int32(0));
     let guard = loop_rule_guard(1);
     let mut applicable = base_rule.clone();
     applicable.required_assumptions = PureFactContext::new().assume_condition(guard.clone(), true);
@@ -56,14 +56,15 @@ fn verified_loop_rule_selection_is_flat_in_unrelated_ambient_facts() {
 // rather than rebuilding the growing guard prefix for every declaration.
 #[test]
 fn invariant_back_edge_context_extension_scales_with_members_not_ambient_facts() {
-    let state = CState::new().with_local("i", int32(MachineTerm::Variable(Variable(912_346))));
+    let state =
+        ExecutionState::new().with_local("i", int32(MachineTerm::Variable(Variable(912_346))));
     let mut samples = Vec::new();
     for size in [8usize, 16, 32] {
         let checks = (0..size)
             .map(|index| {
                 CLoopInvariantCheck::new(
                     SpecProposition::Comparison {
-                        left: SpecExpression::CExpression(c_variable("i")),
+                        left: SpecExpression::ProgramExpression(c_variable("i")),
                         operator: CComparisonOperator::LessEqual,
                         right: SpecExpression::Value(int32(1000 + index as u32)),
                     },
@@ -127,9 +128,9 @@ fn invariant_back_edge_context_extension_scales_with_members_not_ambient_facts()
 fn a_zero_filled_automatic_array_costs_the_same_whatever_its_length() {
     let samples = [100u32, 10_000, 1_000_000].map(|length| {
         let _session = crate::kernel::VerificationSession::enter();
-        let statement = zero_filled_node_array(length, &[(20, int32(7), CType::Int32)]);
+        let statement = zero_filled_node_array(length, &[(20, int32(7), ProgramType::Int32)]);
         let (state, declaration_work) = crate::instrumentation::measure_deterministic_work(|| {
-            execute_declaration(&CState::new(), &statement)
+            execute_declaration(&ExecutionState::new(), &statement)
         });
         let last = 16 * (length - 1);
         let (loads, load_work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -138,15 +139,15 @@ fn a_zero_filled_automatic_array_costs_the_same_whatever_its_length() {
                 &c_typed_store(
                     c_pointer_offset_bytes(c_variable("items"), last),
                     c_int32_literal(9),
-                    CType::Int32,
+                    ProgramType::Int32,
                 ),
             );
             [
-                load_items_field(&state, 20, CType::Int32),
-                load_items_field(&state, last, CType::Int32),
-                load_items_field(&state, last + 4, CType::UInt8),
-                load_items_field(&stored, last, CType::Int32),
-                load_items_field(&stored, last - 16, CType::Int32),
+                load_items_field(&state, 20, ProgramType::Int32),
+                load_items_field(&state, last, ProgramType::Int32),
+                load_items_field(&state, last + 4, ProgramType::UInt8),
+                load_items_field(&stored, last, ProgramType::Int32),
+                load_items_field(&stored, last - 16, ProgramType::Int32),
             ]
         });
         let value = CExpressionOutcome::Value;
@@ -186,7 +187,7 @@ fn a_zero_filled_automatic_array_costs_the_same_whatever_its_length() {
 /// unrelated facts in scope.
 #[test]
 fn statement_theorems_do_not_list_the_context_they_executed_under() {
-    let state = CState::new().with_local("i", int32(0));
+    let state = ExecutionState::new().with_local("i", int32(0));
     let statement = c_assign("i", c_add(c_variable("i"), c_int32_literal(1)));
     let mut premise_counts = Vec::new();
     for size in [16u32, 64, 256] {

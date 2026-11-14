@@ -28,7 +28,7 @@ fn normalized_resource_spec_evaluation_preserves_indexed_lookup_scaling() {
                 CResourceSnapshot::Current,
             )
             .unwrap();
-            let state = CState::new().with_resource_context(context);
+            let state = ExecutionState::new().with_resource_context(context);
             let assumptions = PureFactContext::new();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let mut budget = ExecutionBudget::default();
@@ -429,20 +429,22 @@ fn stored_child_arguments_require_owned_memory() {
         unreachable!()
     };
     segment.end = c_int32_literal(2); // one LP64 pointer
-    arm.children[0].arguments = vec![SpecExpression::CExpression(CExpression::TypedLoad {
-        pointer: Box::new(c_variable("p")),
-        value_type: CType::Int32Pointer,
-        volatile: false,
-        pointee_constant: false,
-        access_class: None,
-        source: Default::default(),
-    })];
+    arm.children[0].arguments = vec![SpecExpression::ProgramExpression(
+        ProgramExpression::TypedLoad {
+            pointer: Box::new(c_variable("p")),
+            value_type: ProgramType::Int32Pointer,
+            volatile: false,
+            pointee_constant: false,
+            access_class: None,
+            source: Default::default(),
+        },
+    )];
     let children = vec![
         ("left".into(), Variable(501)),
         ("right".into(), Variable(502)),
     ];
     let assumptions = PureFactContext::new();
-    let rewrite = |state: &CState,
+    let rewrite = |state: &ExecutionState,
                    definition: &CCompositeResourceDefinition,
                    assumptions: &PureFactContext,
                    unfold| {
@@ -492,18 +494,20 @@ fn stored_child_arguments_require_owned_memory() {
     let concrete_state = state.clone().with_memory(
         CMemory::new()
             .with_block("unowned-link", 8)
-            .store(concrete.clone(), CValue::pointer(Pointer::null())),
+            .store(concrete.clone(), ProgramValue::pointer(Pointer::null())),
     );
     let mut concrete_definition = definition.clone();
     concrete_definition.matched.as_mut().unwrap().arms[1].children[0].arguments =
-        vec![SpecExpression::CExpression(CExpression::TypedLoad {
-            pointer: Box::new(c_pointer_value(concrete.clone())),
-            value_type: CType::Int32Pointer,
-            volatile: false,
-            pointee_constant: false,
-            access_class: None,
-            source: Default::default(),
-        })];
+        vec![SpecExpression::ProgramExpression(
+            ProgramExpression::TypedLoad {
+                pointer: Box::new(c_pointer_value(concrete.clone())),
+                value_type: ProgramType::Int32Pointer,
+                volatile: false,
+                pointee_constant: false,
+                access_class: None,
+                source: Default::default(),
+            },
+        )];
     // A materialized C block is not authority to read a link outside the
     // resource body, even though ordinary C execution can access that block.
     assert!(rewrite(&concrete_state, &concrete_definition, &assumptions, true).is_err());
@@ -577,7 +581,7 @@ fn instance_fold_preserves_memory_pieces_without_scanning_unrelated_resources() 
             })
         })
         .collect();
-    let CValue::Pointer(value) = instance.arguments()[0].as_c_value().unwrap() else {
+    let ProgramValue::Pointer(value) = instance.arguments()[0].as_c_value().unwrap() else {
         unreachable!()
     };
     let pointer = value.pointer().clone();
@@ -606,7 +610,7 @@ fn instance_fold_preserves_memory_pieces_without_scanning_unrelated_resources() 
                 CMemoryRange::new(other, MachineTerm::constant(0), MachineTerm::constant(1)),
             ));
         }
-        let state = CState::new().with_resource_context(resources);
+        let state = ExecutionState::new().with_resource_context(resources);
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::rewrite_resource_instance_selecting_children(
                 &state,
@@ -798,7 +802,7 @@ fn resource_instance_lookup_and_transfer_scale_by_identity() {
                 .map(|id| (Variable(size + id), Variable(id)))
                 .collect(),
         );
-        let mut state = CState::new().with_resource_context(context.clone());
+        let mut state = ExecutionState::new().with_resource_context(context.clone());
         state.resource_bindings = Some(bindings);
         let snapshot = state.clone();
         assert!(std::sync::Arc::ptr_eq(
@@ -1148,7 +1152,7 @@ fn exact_owned_resource_satisfies_view_without_entailment_scan() {
 fn nonexact_composite_entailment_ignores_unrelated_instances_of_the_shape() {
     let object = |index: u64| Pointer::symbolic(Variable(783_000 + index));
     let boxed = |pointer: Pointer| {
-        CResourceFact::own_composite("boxed".into(), vec![CValue::pointer(pointer)])
+        CResourceFact::own_composite("boxed".into(), vec![ProgramValue::pointer(pointer)])
     };
     let alias = Pointer::symbolic(Variable(782_999));
     let work = [16u64, 64, 256].map(|size| {
@@ -1156,8 +1160,8 @@ fn nonexact_composite_entailment_ignores_unrelated_instances_of_the_shape() {
             .unchecked_with_facts((0..size).map(|index| boxed(object(index))));
         let assumptions = PureFactContext::new().assume_condition(
             ConditionTerm::pointer_value_equal(
-                CPointerValue::new(alias.clone(), CType::Int32Pointer),
-                CPointerValue::new(object(size - 1), CType::Int32Pointer),
+                PointerValue::new(alias.clone(), ProgramType::Int32Pointer),
+                PointerValue::new(object(size - 1), ProgramType::Int32Pointer),
             ),
             true,
         );
@@ -2104,7 +2108,7 @@ fn symbolic_same_block_ranges_emit_no_pairs_with_near_linear_work() {
 fn composite_exposure_finds_held_cells_by_structure_near_linearly() {
     let definition = CCompositeResourceDefinition::new(
         "cell",
-        vec![c_parameter("item", CType::Int32Pointer)],
+        vec![c_parameter("item", ProgramType::Int32Pointer)],
         None,
         false,
         vec![CResourceSpec::owned_memory(CMemorySegment {
@@ -2128,7 +2132,7 @@ fn composite_exposure_finds_held_cells_by_structure_near_linearly() {
             let context = ResourceContext::new().unchecked_with_facts((0..size).map(|index| {
                 CResourceFact::own_composite(
                     "cell".to_string(),
-                    vec![CValue::pointer(pointer(index))],
+                    vec![ProgramValue::pointer(pointer(index))],
                 )
             }));
             let mut assumptions = PureFactContext::new();
@@ -2491,9 +2495,9 @@ fn dependent_resource_clause_work_scales_with_dependency_nodes() {
         block: PointerBlock::Concrete(format!("dependency-{index}")),
         offset: PointerOffsetTerm::Constant((index as i64) * 4),
     };
-    let load = |pointer: Pointer| CExpression::TypedLoad {
+    let load = |pointer: Pointer| ProgramExpression::TypedLoad {
         pointer: Box::new(c_pointer_value(pointer)),
-        value_type: CType::Int32Pointer,
+        value_type: ProgramType::Int32Pointer,
         volatile: false,
         pointee_constant: false,
         access_class: None,
@@ -2504,9 +2508,9 @@ fn dependent_resource_clause_work_scales_with_dependency_nodes() {
         .map(|size| {
             let pointers = (0..=size).map(pointer).collect::<Vec<_>>();
             let memory = pointers.windows(2).fold(CMemory::new(), |memory, pair| {
-                memory.store(pair[0].clone(), CValue::pointer(pair[1].clone()))
+                memory.store(pair[0].clone(), ProgramValue::pointer(pair[1].clone()))
             });
-            let state = CState::new().with_memory(memory);
+            let state = ExecutionState::new().with_memory(memory);
             // Clause 0 is the only initially readable provider.  Put it last
             // and reverse the dependents so a fixed-point implementation must
             // rescan the whole pending suffix once per dependency depth.  An
@@ -2609,7 +2613,7 @@ fn memory_invalidation_scales_with_affected_intervals_and_barrier_output() {
             );
             unrelated_views.push(view);
         }
-        let state = CState::new()
+        let state = ExecutionState::new()
             .with_memory(memory.clone())
             .with_resource_context(resources);
         let before_allocations = crate::persistent::persistent_node_allocations();
@@ -2768,7 +2772,7 @@ fn returned_scalar_and_bytewise_padding_rejoin_over_symbolic_objects() {
 fn frame_queries_ignore_folded_compositions_until_explicitly_opened() {
     let definition = CCompositeResourceDefinition::new(
         "cell",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![CResourceSpec::owned_memory(CMemorySegment {
@@ -2790,7 +2794,10 @@ fn frame_queries_ignore_folded_compositions_until_explicitly_opened() {
             let _session = crate::kernel::VerificationSession::enter();
             let pointer = |index| Pointer::symbolic(Variable(910_000 + index));
             let head = |index| {
-                CResourceFact::own_composite("cell".into(), vec![CValue::pointer(pointer(index))])
+                CResourceFact::own_composite(
+                    "cell".into(),
+                    vec![ProgramValue::pointer(pointer(index))],
+                )
             };
             let composition = |left, right| {
                 ResourceContext::new().unchecked_with_facts([head(left), head(right)])
@@ -2888,7 +2895,7 @@ fn first_pass_resource_section_does_not_expand_the_frame() {
     };
     let cell = CCompositeResourceDefinition::new(
         "cell",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![CResourceSpec::owned_memory(CMemorySegment {
@@ -2905,7 +2912,7 @@ fn first_pass_resource_section_does_not_expand_the_frame() {
     let produced = CResourceSpec::owned_memory(CMemorySegment {
         uninitialized: false,
         value_runs: Default::default(),
-        base: CExpression::Value(CValue::pointer(pointer(0))),
+        base: ProgramExpression::Value(ProgramValue::pointer(pointer(0))),
         start: c_int32_literal(0),
         end: c_int32_literal(1),
         element_width: 4,
@@ -2919,10 +2926,10 @@ fn first_pass_resource_section_does_not_expand_the_frame() {
             let frame = ResourceContext::new().unchecked_with_facts((1..=held).map(|index| {
                 CResourceFact::own_composite(
                     "cell".to_string(),
-                    vec![CValue::pointer(pointer(index))],
+                    vec![ProgramValue::pointer(pointer(index))],
                 )
             }));
-            let state = CState::new().with_resource_context(frame);
+            let state = ExecutionState::new().with_resource_context(frame);
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
                 crate::kernel::functions::evaluate_function_resource_context(
                     &state,
@@ -2979,8 +2986,8 @@ fn returned_resource_prefix_consumes_only_selected_padded_field_fragments() {
             let available = ResourceContext::new().unchecked_with_facts(pieces);
             let slot = owned(base.clone(), 2, 4, 4);
             let required = ResourceContext::new().unchecked_with_fact(slot.clone());
-            let state = CState::new().with_resource_context(available.clone());
-            let interface = CFunctionContractInterface::new(CType::Void, vec![]);
+            let state = ExecutionState::new().with_resource_context(available.clone());
+            let interface = CFunctionContractInterface::new(ProgramType::Void, vec![]);
             let assumptions = PureFactContext::new();
             let (accepted, work) = crate::instrumentation::measure_deterministic_work(|| {
                 crate::kernel::functions::jointly_consume_returned_resource_units(
@@ -3061,7 +3068,7 @@ fn known_resource_constructor_skips_predicate_refutation_work() {
             CResourceMatchArm {
                 variant: "Filled".into(),
                 bindings: vec!["value".into()],
-                binding_types: vec![AlgebraicValueType::C(CType::Int32)],
+                binding_types: vec![AlgebraicValueType::C(ProgramType::Int32)],
                 binding_variables: vec![None],
                 contains: vec![],
                 facts: vec![],
@@ -3069,7 +3076,7 @@ fn known_resource_constructor_skips_predicate_refutation_work() {
             },
         ],
     });
-    let state = CState::new().with_resource_context(
+    let state = ExecutionState::new().with_resource_context(
         ResourceContext::new()
             .unchecked_with_fact(CResourceFact::own(CResource::Instance(instance.clone()))),
     );
@@ -3163,7 +3170,7 @@ fn known_exclusion_skips_refutation_of_unpublishable_arms() {
             CResourceMatchArm {
                 variant: "Filled".into(),
                 bindings: vec!["value".into()],
-                binding_types: vec![AlgebraicValueType::C(CType::Int32)],
+                binding_types: vec![AlgebraicValueType::C(ProgramType::Int32)],
                 binding_variables: vec![None],
                 contains: vec![],
                 facts: vec![],
@@ -3171,7 +3178,7 @@ fn known_exclusion_skips_refutation_of_unpublishable_arms() {
             },
         ],
     });
-    let state = CState::new().with_resource_context(
+    let state = ExecutionState::new().with_resource_context(
         ResourceContext::new()
             .unchecked_with_fact(CResourceFact::own(CResource::Instance(instance.clone()))),
     );
@@ -3350,14 +3357,16 @@ fn checked_child_read_definitions_scale_with_exchanges_not_ambient_facts() {
     let (instance, mut definition, state) = recursive_child_fixture();
     let arm = &mut definition.matched.as_mut().unwrap().arms[1];
     arm.contains[0].memory_segment_mut().unwrap().end = c_int32_literal(2);
-    arm.children[0].arguments = vec![SpecExpression::CExpression(CExpression::TypedLoad {
-        pointer: Box::new(c_variable("p")),
-        value_type: CType::Int32Pointer,
-        volatile: false,
-        pointee_constant: false,
-        access_class: None,
-        source: Default::default(),
-    })];
+    arm.children[0].arguments = vec![SpecExpression::ProgramExpression(
+        ProgramExpression::TypedLoad {
+            pointer: Box::new(c_variable("p")),
+            value_type: ProgramType::Int32Pointer,
+            volatile: false,
+            pointee_constant: false,
+            access_class: None,
+            source: Default::default(),
+        },
+    )];
     let children = [
         ("left".into(), Variable(501)),
         ("right".into(), Variable(502)),
@@ -3901,7 +3910,7 @@ fn explicit_constant_fold_stops_at_a_gap_and_joins_mixed_width_pieces() {
                 uninitialized: false,
                 value_runs: Default::default(),
             })];
-            let CValue::Pointer(value) = instance.arguments()[0].as_c_value().unwrap() else {
+            let ProgramValue::Pointer(value) = instance.arguments()[0].as_c_value().unwrap() else {
                 unreachable!()
             };
             let piece = |start: u32, end: u32, width: u32| {
@@ -3933,7 +3942,7 @@ fn explicit_constant_fold_stops_at_a_gap_and_joins_mixed_width_pieces() {
                 resources = resources.unchecked_with_fact(piece(start, start + 1, 4));
             }
             resources.synchronize_memory_equalities(&assumptions);
-            let state = CState::new().with_resource_context(resources);
+            let state = ExecutionState::new().with_resource_context(resources);
             let mut queries = Vec::new();
             for _ in 0..3 {
                 let ((result, work), maps) = crate::persistent::measure_persistent_work(|| {
@@ -3992,7 +4001,8 @@ fn native_fold_rejection_ignores_fragments_beyond_a_gap() {
         for count in [4u32, 16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
             let (instance, mut definition, _) = instance_memory_fixture();
-            let bound = |n| CExpression::Value(CValue::UInt64(MachineTerm::uint64_constant(n)));
+            let bound =
+                |n| ProgramExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(n)));
             definition.contains = vec![CResourceSpec::owned_memory(CMemorySegment {
                 base: c_variable("p"),
                 start: bound(0),
@@ -4002,7 +4012,7 @@ fn native_fold_rejection_ignores_fragments_beyond_a_gap() {
                 uninitialized: false,
                 value_runs: Default::default(),
             })];
-            let CValue::Pointer(value) = instance.arguments()[0].as_c_value().unwrap() else {
+            let ProgramValue::Pointer(value) = instance.arguments()[0].as_c_value().unwrap() else {
                 unreachable!()
             };
             let piece = |start, end| {
@@ -4032,7 +4042,7 @@ fn native_fold_rejection_ignores_fragments_beyond_a_gap() {
                 resources = resources.unchecked_with_fact(piece(start, start + 1));
             }
             resources.synchronize_memory_equalities(&facts);
-            let state = CState::new().with_resource_context(resources);
+            let state = ExecutionState::new().with_resource_context(resources);
             let mut queries = Vec::new();
             for _ in 0..3 {
                 let ((result, work), maps) = crate::persistent::measure_persistent_work(|| {
@@ -4304,17 +4314,18 @@ fn symbolic_fold_consumption_ignores_unselected_fragments() {
             let _session = crate::kernel::VerificationSession::enter();
             let (instance, mut definition, _) = instance_memory_fixture();
             let endpoint = MachineTerm::Variable(Variable(989_980));
-            let bound = |n| CExpression::Value(CValue::UInt64(MachineTerm::uint64_constant(n)));
+            let bound =
+                |n| ProgramExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(n)));
             definition.contains = vec![CResourceSpec::owned_memory(CMemorySegment {
                 base: c_variable("p"),
                 start: bound(0),
-                end: CExpression::Value(CValue::UInt64(endpoint.clone())),
+                end: ProgramExpression::Value(ProgramValue::UInt64(endpoint.clone())),
                 element_width: 4,
                 guard: None,
                 uninitialized: false,
                 value_runs: Default::default(),
             })];
-            let CValue::Pointer(value) = instance.arguments()[0].as_c_value().unwrap() else {
+            let ProgramValue::Pointer(value) = instance.arguments()[0].as_c_value().unwrap() else {
                 unreachable!()
             };
             let piece = |start: u64, end: MachineTerm| {
@@ -4358,7 +4369,7 @@ fn symbolic_fold_consumption_ignores_unselected_fragments() {
                     .unchecked_with_fact(piece(start, MachineTerm::uint64_constant(start + 1)));
             }
             resources.synchronize_memory_equalities(&facts);
-            let state = CState::new().with_resource_context(resources);
+            let state = ExecutionState::new().with_resource_context(resources);
             let mut queries = Vec::new();
             for _ in 0..3 {
                 let ((result, work), maps) = crate::persistent::measure_persistent_work(|| {
@@ -4403,7 +4414,7 @@ fn symbolic_offset_fold_stops_at_first_gap() {
             let endpoint = MachineTerm::Variable(Variable(989_980));
             let shifted =
                 |n| MachineTerm::uint64_add(endpoint.clone(), MachineTerm::uint64_constant(n));
-            let bound = |n| CExpression::Value(CValue::UInt64(shifted(n)));
+            let bound = |n| ProgramExpression::Value(ProgramValue::UInt64(shifted(n)));
             definition.contains = vec![CResourceSpec::owned_memory(CMemorySegment {
                 base: c_variable("p"),
                 start: bound(0),
@@ -4413,7 +4424,7 @@ fn symbolic_offset_fold_stops_at_first_gap() {
                 uninitialized: false,
                 value_runs: Default::default(),
             })];
-            let CValue::Pointer(value) = instance.arguments()[0].as_c_value().unwrap() else {
+            let ProgramValue::Pointer(value) = instance.arguments()[0].as_c_value().unwrap() else {
                 unreachable!()
             };
             let piece = |start: u64, end: u64| {
@@ -4457,7 +4468,7 @@ fn symbolic_offset_fold_stops_at_first_gap() {
                 resources = resources.unchecked_with_fact(piece(start, start + 1));
             }
             resources.synchronize_memory_equalities(&facts);
-            let state = CState::new().with_resource_context(resources);
+            let state = ExecutionState::new().with_resource_context(resources);
             let mut queries = Vec::new();
             for _ in 0..3 {
                 let ((result, work), maps) = crate::persistent::measure_persistent_work(|| {
@@ -4501,7 +4512,7 @@ fn symbolic_fold_does_not_scan_incident_order_bounds() {
             let (instance, mut definition, _) = instance_memory_fixture();
             let endpoint = MachineTerm::Variable(Variable(989_980));
             let shifted = |n| MachineTerm::add(endpoint.clone(), MachineTerm::constant(n));
-            let bound = |n| CExpression::Value(CValue::Int32(shifted(n)));
+            let bound = |n| ProgramExpression::Value(ProgramValue::Int32(shifted(n)));
             definition.contains = vec![CResourceSpec::owned_memory(CMemorySegment {
                 base: c_variable("p"),
                 start: bound(0),
@@ -4511,7 +4522,7 @@ fn symbolic_fold_does_not_scan_incident_order_bounds() {
                 uninitialized: false,
                 value_runs: Default::default(),
             })];
-            let CValue::Pointer(value) = instance.arguments()[0].as_c_value().unwrap() else {
+            let ProgramValue::Pointer(value) = instance.arguments()[0].as_c_value().unwrap() else {
                 unreachable!()
             };
             let piece = |start: u32, end: u32| {
@@ -4564,7 +4575,7 @@ fn symbolic_fold_does_not_scan_incident_order_bounds() {
                 );
             }
             resources.synchronize_memory_equalities(&facts);
-            let state = CState::new().with_resource_context(resources);
+            let state = ExecutionState::new().with_resource_context(resources);
             let mut queries = Vec::new();
             for _ in 0..3 {
                 let ((result, work), maps) = crate::persistent::measure_persistent_work(|| {

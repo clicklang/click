@@ -7,18 +7,18 @@ fn address(offset: i64) -> Pointer {
     }
 }
 
-fn literal(value: CExpression) -> CValue {
-    let CExpression::Value(value) = value else {
+fn literal(value: ProgramExpression) -> ProgramValue {
+    let ProgramExpression::Value(value) = value else {
         unreachable!()
     };
     value
 }
 
-fn load(pointer: Pointer, ty: CType) -> CExpression {
-    c_typed_load(c_typed_pointer_value(pointer, CType::VoidPointer), ty)
+fn load(pointer: Pointer, ty: ProgramType) -> ProgramExpression {
+    c_typed_load(c_typed_pointer_value(pointer, ProgramType::VoidPointer), ty)
 }
 
-fn paths(state: &CState, expression: &CExpression) -> Vec<CExpressionPath> {
+fn paths(state: &ExecutionState, expression: &ProgramExpression) -> Vec<CExpressionPath> {
     evaluate_c_expression_paths(
         state,
         expression,
@@ -35,17 +35,17 @@ fn wide_storage_exact_typed_store_and_load_preserve_all_bits() {
         literal(c_int128_literal(i128::MAX)),
         literal(c_uint128_literal(u128::MAX)),
         literal(c_uint128_literal((1u128 << 127) | (1u128 << 65) | 1)),
-        CValue::Int128(MachineTerm::Variable(Variable(152_001))),
+        ProgramValue::Int128(MachineTerm::Variable(Variable(152_001))),
     ] {
         let ty = value.c_type();
-        let state = CState::new().with_memory(
+        let state = ExecutionState::new().with_memory(
             CMemory::new()
                 .with_block("local:wide-storage", 32)
                 .with_initialized_object(&address(0), 32),
         );
         let statement = c_typed_store(
-            c_typed_pointer_value(address(0), CType::VoidPointer),
-            CExpression::Value(value.clone()),
+            c_typed_pointer_value(address(0), ProgramType::VoidPointer),
+            ProgramExpression::Value(value.clone()),
             ty,
         );
         let theorem = prove_c_statement_execution(state, statement).unwrap();
@@ -66,16 +66,20 @@ fn wide_storage_exact_typed_store_and_load_preserve_all_bits() {
 
 #[test]
 fn wide_storage_symbolic_loads_keep_kind_width_and_defining_identity() {
-    let state = CState::new().with_memory(
+    let state = ExecutionState::new().with_memory(
         CMemory::new()
             .with_block("local:wide-storage", 32)
             .with_initialized_object(&address(0), 32),
     );
     let mut identities = Vec::new();
     for (ty, machine, kind) in [
-        (CType::Int128, MachineIntegerType::Int128, LoadKind::Int128),
         (
-            CType::UInt128,
+            ProgramType::Int128,
+            MachineIntegerType::Int128,
+            LoadKind::Int128,
+        ),
+        (
+            ProgramType::UInt128,
             MachineIntegerType::UInt128,
             LoadKind::UInt128,
         ),
@@ -117,8 +121,8 @@ fn wide_storage_refuses_wrong_load_kind_and_typed_reinterpretation() {
     let memory = CMemory::new()
         .with_block("local:wide-storage", 32)
         .store(address(0), literal(c_uint128_literal(u128::MAX)));
-    let state = CState::new().with_memory(memory.clone());
-    for ty in [CType::Int128, CType::Int64, CType::UInt8] {
+    let state = ExecutionState::new().with_memory(memory.clone());
+    for ty in [ProgramType::Int128, ProgramType::Int64, ProgramType::UInt8] {
         let result = paths(&state, &load(address(0), ty));
         assert_eq!(result.len(), 1);
         assert!(matches!(
@@ -136,25 +140,31 @@ fn wide_storage_refuses_wrong_load_kind_and_typed_reinterpretation() {
         assert!(!machine.accepts_wide_term(&raw));
         assert!(IntegerTerm::from_machine(machine, raw.clone()).is_none());
         let wrapped = if machine == MachineIntegerType::Int128 {
-            CValue::Int128(raw)
+            ProgramValue::Int128(raw)
         } else {
-            CValue::UInt128(raw)
+            ProgramValue::UInt128(raw)
         };
         assert!(matches!(
-            paths(&state, &CExpression::Value(wrapped))[0].outcome,
+            paths(&state, &ProgramExpression::Value(wrapped))[0].outcome,
             CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch)
         ));
     }
-    assert_eq!(CType::Int128.pointer_to(), Some(CType::Int128Pointer));
-    assert_eq!(CType::UInt128.pointer_to(), Some(CType::UInt128Pointer));
+    assert_eq!(
+        ProgramType::Int128.pointer_to(),
+        Some(ProgramType::Int128Pointer)
+    );
+    assert_eq!(
+        ProgramType::UInt128.pointer_to(),
+        Some(ProgramType::UInt128Pointer)
+    );
 }
 
 #[test]
 fn wide_storage_symbolic_load_requires_full_extent_and_local_initialization() {
     for (size, offset) in [(15, 0), (16, 1), (32, 17)] {
-        let state =
-            CState::new().with_memory(CMemory::new().with_block("local:wide-storage", size));
-        let result = paths(&state, &load(address(offset), CType::Int128));
+        let state = ExecutionState::new()
+            .with_memory(CMemory::new().with_block("local:wide-storage", size));
+        let result = paths(&state, &load(address(offset), ProgramType::Int128));
         assert!(
             !result
                 .iter()
@@ -162,7 +172,8 @@ fn wide_storage_symbolic_load_requires_full_extent_and_local_initialization() {
                     && path.obligations.is_empty())
         );
         assert!(
-            prove_c_expression_evaluation(state, load(address(offset), CType::Int128)).is_none()
+            prove_c_expression_evaluation(state, load(address(offset), ProgramType::Int128))
+                .is_none()
         );
     }
     let pointer = Pointer {
@@ -170,9 +181,9 @@ fn wide_storage_symbolic_load_requires_full_extent_and_local_initialization() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let memory = CMemory::new().with_block("local:wide-storage", 16);
-    let state = CState::new().with_memory(memory);
+    let state = ExecutionState::new().with_memory(memory);
     assert_eq!(
-        paths(&state, &load(pointer, CType::Int128))[0].outcome,
+        paths(&state, &load(pointer, ProgramType::Int128))[0].outcome,
         CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead)
     );
 }
@@ -248,7 +259,10 @@ fn wide_storage_overlapping_store_invalidates_high_bytes_and_gap_skip() {
             .without_possible_aliasing_cells(&address(offset), 1, &PureFactContext::new())
             .store(address(offset), literal(c_uint8_literal(3)));
         assert!(
-            !matches!(after.known_value(&address(0)), Some(CValue::UInt128(_))),
+            !matches!(
+                after.known_value(&address(0)),
+                Some(ProgramValue::UInt128(_))
+            ),
             "overlap {offset}"
         );
     }
@@ -294,18 +308,18 @@ fn wide_storage_external_access_needs_sixteen_bytes_of_authority() {
         let range =
             CMemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), bytes.into(), 1);
         let memory = CMemory::new().with_block("wide-external", 16);
-        let read_state = CState::new()
+        let read_state = ExecutionState::new()
             .with_memory(memory.clone())
             .with_resource_context(
                 ResourceContext::new()
                     .unchecked_with_facts([CResourceFact::view_memory(range.clone())]),
             );
-        let result = paths(&read_state, &load(pointer.clone(), CType::UInt128));
+        let result = paths(&read_state, &load(pointer.clone(), ProgramType::UInt128));
         assert_eq!(result.len(), 1);
         assert_eq!(
             matches!(
                 result[0].outcome,
-                CExpressionOutcome::Value(CValue::UInt128(_))
+                CExpressionOutcome::Value(ProgramValue::UInt128(_))
             ),
             bytes == 16
         );
@@ -315,13 +329,15 @@ fn wide_storage_external_access_needs_sixteen_bytes_of_authority() {
                 CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource { .. })
             ));
         }
-        let write_state = CState::new().with_memory(memory).with_resource_context(
-            ResourceContext::new().unchecked_with_facts([CResourceFact::own_memory(range)]),
-        );
+        let write_state = ExecutionState::new()
+            .with_memory(memory)
+            .with_resource_context(
+                ResourceContext::new().unchecked_with_facts([CResourceFact::own_memory(range)]),
+            );
         let statement = c_typed_store(
-            c_typed_pointer_value(pointer.clone(), CType::VoidPointer),
+            c_typed_pointer_value(pointer.clone(), ProgramType::VoidPointer),
             c_uint128_literal(u128::MAX),
-            CType::UInt128,
+            ProgramType::UInt128,
         );
         let theorem = prove_c_statement_execution(write_state, statement).unwrap();
         let Proposition::CStatementExecutes { outcome, .. } = theorem.proposition() else {

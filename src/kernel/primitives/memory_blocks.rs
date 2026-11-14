@@ -5,12 +5,12 @@ use std::hash::{Hash, Hasher};
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct MemoryBlocks {
-    entries: SnapshotMap<PointerBlock, CBlock>,
+    entries: SnapshotMap<PointerBlock, MemoryBlock>,
     scalars: SnapshotSet<PointerBlock>,
 }
 
 impl std::ops::Deref for MemoryBlocks {
-    type Target = SnapshotMap<PointerBlock, CBlock>;
+    type Target = SnapshotMap<PointerBlock, MemoryBlock>;
     fn deref(&self) -> &Self::Target {
         &self.entries
     }
@@ -32,7 +32,7 @@ impl MemoryBlocks {
             .iter()
             .inspect(|_| crate::instrumentation::record_deterministic_work(1))
     }
-    pub(crate) fn insert(&mut self, key: PointerBlock, value: CBlock) -> Option<CBlock> {
+    pub(crate) fn insert(&mut self, key: PointerBlock, value: MemoryBlock) -> Option<MemoryBlock> {
         if value.declared_scalar_type.is_some() {
             self.scalars.insert(key.clone());
         } else {
@@ -40,11 +40,11 @@ impl MemoryBlocks {
         }
         self.entries.insert(key, value)
     }
-    pub(crate) fn remove(&mut self, key: &PointerBlock) -> Option<CBlock> {
+    pub(crate) fn remove(&mut self, key: &PointerBlock) -> Option<MemoryBlock> {
         self.scalars.remove(key);
         self.entries.remove(key)
     }
-    pub(crate) fn get_or_insert(&mut self, key: PointerBlock, value: CBlock) -> &CBlock {
+    pub(crate) fn get_or_insert(&mut self, key: PointerBlock, value: MemoryBlock) -> &MemoryBlock {
         if !self.entries.contains_key(&key) {
             self.insert(key.clone(), value);
         }
@@ -68,7 +68,7 @@ impl MemoryBlocks {
             self.insert(key, value);
         }
     }
-    pub(crate) fn retain(&mut self, mut keep: impl FnMut(&PointerBlock, &CBlock) -> bool) {
+    pub(crate) fn retain(&mut self, mut keep: impl FnMut(&PointerBlock, &MemoryBlock) -> bool) {
         // The existing whole-map operation charges each visited declaration.
         let scalars = &mut self.scalars;
         self.entries.retain(|key, value| {
@@ -103,8 +103,8 @@ impl MemoryBlocks {
         Ok(union)
     }
 }
-impl FromIterator<(PointerBlock, CBlock)> for MemoryBlocks {
-    fn from_iter<T: IntoIterator<Item = (PointerBlock, CBlock)>>(iter: T) -> Self {
+impl FromIterator<(PointerBlock, MemoryBlock)> for MemoryBlocks {
+    fn from_iter<T: IntoIterator<Item = (PointerBlock, MemoryBlock)>>(iter: T) -> Self {
         let mut blocks = Self::default();
         for (key, value) in iter {
             blocks.insert(key, value);
@@ -122,7 +122,7 @@ mod tests {
         let scalar = Pointer::symbolic(Variable(9_392_001)).block;
         let heap = Pointer::symbolic(Variable(9_392_002)).block;
         let memory = CMemory::new()
-            .with_declared_scalar_block(scalar.clone(), 4, CType::Int32)
+            .with_declared_scalar_block(scalar.clone(), 4, ProgramType::Int32)
             .with_block(heap.clone(), 64);
         assert_eq!(
             memory.blocks.scalar_blocks().collect::<Vec<_>>(),
@@ -135,7 +135,7 @@ mod tests {
         let frozen = memory.clone().freeze_declared_scalar(&scalar);
         assert_eq!(frozen.blocks.scalar_blocks().count(), 1);
         let mut branch = (*memory.blocks).clone();
-        branch.insert(scalar.clone(), CBlock::new(4));
+        branch.insert(scalar.clone(), MemoryBlock::new(4));
         assert_eq!(branch.scalar_blocks().count(), 0);
         branch.insert(scalar.clone(), memory.blocks.get(&scalar).unwrap().clone());
         branch.retain(|key, _| key != &scalar);
@@ -148,10 +148,10 @@ mod tests {
     fn scalar_index_survives_arm_union_and_selected_projection() {
         let a = Pointer::symbolic(Variable(9_392_003)).block;
         let b = Pointer::symbolic(Variable(9_392_004)).block;
-        let first = CMemory::new().with_declared_scalar_block(a.clone(), 4, CType::Int32);
+        let first = CMemory::new().with_declared_scalar_block(a.clone(), 4, ProgramType::Int32);
         let second = first
             .clone()
-            .with_declared_scalar_block(b.clone(), 4, CType::Int32);
+            .with_declared_scalar_block(b.clone(), 4, ProgramType::Int32);
         let joined = first
             .blocks
             .union_of_arms(std::iter::once(&*second.blocks))
@@ -162,7 +162,7 @@ mod tests {
             std::iter::once((b.clone(), joined.get(&b).unwrap().clone())).collect::<MemoryBlocks>();
         assert_eq!(projected.scalar_blocks().collect::<Vec<_>>(), vec![&b]);
         let mut conflicting = joined.clone();
-        conflicting.insert(a.clone(), CBlock::new(4));
+        conflicting.insert(a.clone(), MemoryBlock::new(4));
         assert_eq!(
             joined.union_of_arms(std::iter::once(&conflicting)),
             Err(a.clone())

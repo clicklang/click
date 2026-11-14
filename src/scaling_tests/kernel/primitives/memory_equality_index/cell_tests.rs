@@ -1309,12 +1309,12 @@ fn captured_interior_pointer_reads_keep_owned_bounds_and_opaque_base_identity() 
         let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
             &memory,
             Pointer::symbolic(Variable(id)),
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
             Vec::new().into(),
             Vec::new(),
             &empty,
         );
-        let CExpressionOutcome::Value(CValue::Pointer(value)) = &paths[0].outcome else {
+        let CExpressionOutcome::Value(ProgramValue::Pointer(value)) = &paths[0].outcome else {
             panic!("pointer read")
         };
         value.pointer().clone()
@@ -1509,22 +1509,22 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
             let variable = crate::kernel::load_variable_for_cell_with_origin(
                 &snapshot,
                 &field,
-                LoadKind::of_type(CType::Int32Pointer).unwrap(),
+                LoadKind::of_type(ProgramType::Int32Pointer).unwrap(),
                 C_POINTER_BYTE_WIDTH,
                 &snapshot,
             );
             let pointer = Pointer::loaded(&MachineTerm::Variable(variable)).unwrap();
             context.register_pointer_read(&pointer, &snapshot, &field);
-            CPointerValue::from_read(pointer, CType::Int32Pointer, &snapshot, &field)
+            PointerValue::from_read(pointer, ProgramType::Int32Pointer, &snapshot, &field)
         };
         let source = read(&PureFactContext::new(), &CMemory::new());
-        let before = CMemory::new().store(field.clone(), CValue::Pointer(source.clone()));
-        let range = |base: CPointerValue, start: u32, end: u32| {
+        let before = CMemory::new().store(field.clone(), ProgramValue::Pointer(source.clone()));
+        let range = |base: PointerValue, start: u32, end: u32| {
             CMemoryRange::from_pointer_value(&base, start.into(), end.into(), 4)
         };
         let separation = Proposition::CResourceSeparate {
             left: Box::new(CResource::Memory(range(
-                CPointerValue::new(field.clone(), CType::Int32Pointer),
+                PointerValue::new(field.clone(), ProgramType::Int32Pointer),
                 0,
                 2,
             ))),
@@ -1551,9 +1551,9 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
             .unchecked_with_fact(CResourceFact::own_memory(range(current.clone(), 0, 1)));
         for index in 0..size {
             resources = resources.unchecked_with_fact(CResourceFact::own_memory(range(
-                CPointerValue::new(
+                PointerValue::new(
                     Pointer::symbolic(Variable(9_911_000 + index)),
-                    CType::Int32Pointer,
+                    ProgramType::Int32Pointer,
                 ),
                 0,
                 8,
@@ -1590,7 +1590,7 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
                 .without_fact_incrementally(&required, &context)
                 .is_none()
         );
-        let partial = after.store(field.offset_by_bytes(4), CValue::Int32(9u32.into()));
+        let partial = after.store(field.offset_by_bytes(4), ProgramValue::Int32(9u32.into()));
         let changed = CResourceFact::own_memory(range(read(&context, &partial), 0, 8));
         assert!(
             resources
@@ -1634,7 +1634,7 @@ fn framed_pointer_read_selects_interior_writes_under_live_authority() {
             let variable = crate::kernel::load_variable_for_cell_with_origin(
                 &snapshot,
                 &field,
-                LoadKind::of_type(CType::Int32Pointer).unwrap(),
+                LoadKind::of_type(ProgramType::Int32Pointer).unwrap(),
                 C_POINTER_BYTE_WIDTH,
                 &snapshot,
             );
@@ -1645,7 +1645,7 @@ fn framed_pointer_read_selects_interior_writes_under_live_authority() {
         let source = read(&PureFactContext::new(), &CMemory::new());
         let before = CMemory::new().store(
             field.clone(),
-            CValue::Pointer(CPointerValue::new(source.clone(), CType::Int32Pointer)),
+            ProgramValue::Pointer(PointerValue::new(source.clone(), ProgramType::Int32Pointer)),
         );
         let range = |base: Pointer, start: u32, end: u32| {
             CMemoryRange::new_with_element_width(base, start.into(), end.into(), 4)
@@ -1702,7 +1702,7 @@ fn framed_pointer_read_selects_interior_writes_under_live_authority() {
                 .memory_write_range(&current.offset_by_bytes(32), 4, &context)
                 .is_none()
         );
-        let partial = after.store(field.offset_by_bytes(4), CValue::Int32(9u32.into()));
+        let partial = after.store(field.offset_by_bytes(4), ProgramValue::Int32(9u32.into()));
         let changed = read(&context, &partial).offset_by_bytes(4);
         assert!(
             resources
@@ -1759,7 +1759,7 @@ fn an_indexed_read_supplier_does_not_resolve_its_pointer_history() {
         let stored = Pointer::symbolic(Variable(9_930_000));
         let mut memory = CMemory::new().store(
             field.clone(),
-            CValue::typed_pointer(stored, CType::Int32Pointer),
+            ProgramValue::typed_pointer(stored, ProgramType::Int32Pointer),
         );
         for i in 0..size {
             memory = memory.store(
@@ -1767,14 +1767,14 @@ fn an_indexed_read_supplier_does_not_resolve_its_pointer_history() {
                     block: PointerBlock::Heap(i),
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                CValue::Int32(1u32.into()),
+                ProgramValue::Int32(1u32.into()),
             );
         }
         let snapshot = crate::kernel::intern_c_memory_ref(&memory);
         let variable = crate::kernel::load_variable_for_cell_with_origin(
             &snapshot,
             &field,
-            LoadKind::of_type(CType::Int32Pointer).unwrap(),
+            LoadKind::of_type(ProgramType::Int32Pointer).unwrap(),
             C_POINTER_BYTE_WIDTH,
             &snapshot,
         );
@@ -1875,7 +1875,7 @@ fn opening_checkpoints_scale_with_selected_exchanges() {
 fn query_read_definition_merges_scale_with_changed_suppliers() {
     fn work(count: u32, unrelated_count: u32, register_query: bool) -> usize {
         let _session = crate::kernel::VerificationSession::enter();
-        let name = |memory: &SharedCMemory, address: &Pointer| {
+        let name = |memory: &SharedMemory, address: &Pointer| {
             crate::kernel::memory_provenance::canonical_value_load_memory(memory, address, 8);
             Pointer::canonical_loaded_value(memory, address)
         };
@@ -1884,13 +1884,13 @@ fn query_read_definition_merges_scale_with_changed_suppliers() {
             offset: PointerOffsetTerm::Constant(0),
         };
         let first = crate::kernel::intern_c_memory(
-            CMemory::new().store(unrelated.clone(), CValue::UInt32(1u32.into())),
+            CMemory::new().store(unrelated.clone(), ProgramValue::UInt32(1u32.into())),
         );
         let later = crate::kernel::intern_c_memory(
             first
                 .memory()
                 .clone()
-                .store(unrelated, CValue::UInt32(2u32.into())),
+                .store(unrelated, ProgramValue::UInt32(2u32.into())),
         );
         let mut resources = ResourceContext::new();
         let mut pairs = Vec::new();

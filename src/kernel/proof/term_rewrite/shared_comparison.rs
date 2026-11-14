@@ -833,7 +833,7 @@ fn comparison_read_fixture(value: MachineTerm) -> (Variable, Variable) {
     let memory = crate::kernel::intern_c_memory(
         CMemory::new()
             .with_block("opaque-comparison", 64)
-            .store(pointer(index.clone()), CValue::Int32(value)),
+            .store(pointer(index.clone()), ProgramValue::Int32(value)),
     );
     let written = MachineTerm::Binary {
         format: ty,
@@ -1636,7 +1636,8 @@ mod call_tests {
         let to = MachineTerm::Variable(Variable(995861));
         let missing = MachineTerm::Variable(Variable(995862));
         for format in crate::kernel::machine_integer::FORMATS {
-            let argument = KernelTerm::variable(KernelType::C(CType::Int32), Variable(995860));
+            let argument =
+                KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(995860));
             let root = call(format, argument);
             let native = KernelTermExport::machine(&root).unwrap();
             let expected = TermRewrite::for_bits_checked(&from, &to).bits(&native);
@@ -1682,7 +1683,7 @@ mod call_tests {
         };
         let application = SharedPureApplication::intern(
             "binder_call".into(),
-            vec![PureFunctionArgument::Value(CValue::Int32(fold))],
+            vec![PureFunctionArgument::Value(ProgramValue::Int32(fold))],
         );
         let root =
             KernelTermImport::default().machine_call(MachineIntegerType::Int32, &application);
@@ -1701,8 +1702,9 @@ mod call_tests {
         let MachineTerm::ClickFunctionApplication { arguments, .. } = actual else {
             panic!()
         };
-        let PureFunctionArgument::Value(CValue::Int32(MachineTerm::RangeFold {
-            accumulator, ..
+        let PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::RangeFold {
+            accumulator,
+            ..
         })) = &arguments[0]
         else {
             panic!()

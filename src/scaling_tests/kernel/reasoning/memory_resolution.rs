@@ -58,7 +58,7 @@ fn stored_load_alias_lookup_ignores_unrelated_cells() {
                     block: PointerBlock::ExternalArgument,
                     offset: PointerOffsetTerm::Constant(index * 4),
                 },
-                CValue::Int32(MachineTerm::constant(0)),
+                ProgramValue::Int32(MachineTerm::constant(0)),
             );
         }
         // Snapshot construction/interning belongs to the producer. Measure
@@ -69,7 +69,7 @@ fn stored_load_alias_lookup_ignores_unrelated_cells() {
         });
         assert!(absent.is_none());
         samples.push(work);
-        let value = CValue::Int32(MachineTerm::constant(17));
+        let value = ProgramValue::Int32(MachineTerm::constant(17));
         memory = memory.store(alias.clone(), value.clone());
         assert_eq!(
             stored_value_at_equal_pointer(&memory, &target, &assumptions),
@@ -221,7 +221,7 @@ fn unresolved_load_projection_ignores_earlier_objects_and_hidden_slots() {
             offset: PointerOffsetTerm::Constant(0),
         };
         let object = |index: usize| Pointer::symbolic(Variable(98_700 + index as u64));
-        let value = |index: usize| CValue::Int32((index as u32).into());
+        let value = |index: usize| ProgramValue::Int32((index as u32).into());
         let mut memory = CMemory::new();
         let mut last = 0;
         for index in 0..=size {
@@ -314,7 +314,7 @@ fn run_access_retains_cold_shared_index_dags() {
             let run = CellRun::new(
                 base.clone(),
                 4,
-                CType::Int32,
+                ProgramType::Int32,
                 16,
                 crate::kernel::intern_c_memory(CMemory::new()),
                 Default::default(),

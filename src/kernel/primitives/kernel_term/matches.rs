@@ -530,7 +530,7 @@ mod tests {
             KernelMatch::new(
                 KernelType::Integer,
                 scrutinee,
-                vec![arm("Box", KernelType::C(CType::Int32))]
+                vec![arm("Box", KernelType::C(ProgramType::Int32))]
             )
             .is_err()
         );

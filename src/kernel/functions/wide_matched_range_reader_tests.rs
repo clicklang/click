@@ -42,7 +42,7 @@ fn wide_matched_instance_projection_keeps_native_loadability() {
     )
     .unwrap();
     let segment = CMemorySegment::new(
-        CExpression::Value(CValue::pointer(base)),
+        ProgramExpression::Value(ProgramValue::pointer(base)),
         c_uint64_literal(0),
         c_uint64_literal(1 << 33),
     )
@@ -63,7 +63,7 @@ fn wide_matched_instance_projection_keeps_native_loadability() {
             children: vec![],
         }],
     });
-    let state = CState::new().with_resource_context(
+    let state = ExecutionState::new().with_resource_context(
         ResourceContext::new()
             .unchecked_with_fact(CResourceFact::own(CResource::Instance(instance.clone()))),
     );

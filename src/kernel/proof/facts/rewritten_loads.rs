@@ -403,7 +403,7 @@ mod tests {
         let initial = CMemory::new().with_block("shared-read-source", 4);
         let stored = initial
             .clone()
-            .store(pointer.clone(), CValue::Int32(sum.clone()));
+            .store(pointer.clone(), ProgramValue::Int32(sum.clone()));
         let load = |memory| {
             MachineTerm::MemoryLoad(
                 intern_c_memory(memory),
@@ -444,9 +444,10 @@ mod tests {
                 .with_checked_rewritten_loads(&later, &arithmetic)
                 .is_none()
         );
-        let overwritten = observe(load(
-            initial.store(pointer.clone(), CValue::Int32(MachineTerm::constant(7))),
-        ));
+        let overwritten = observe(load(initial.store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(7)),
+        )));
         assert!(
             facts
                 .with_checked_rewritten_loads(&overwritten, &arithmetic)

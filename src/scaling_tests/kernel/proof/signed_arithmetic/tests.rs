@@ -463,8 +463,10 @@ fn definedness_source_matching_reuses_shared_prefixes() {
         let mut import = KernelTermImport::default();
         let mut left = import.machine(format, &MachineTerm::constant(1));
         let mut right = import.machine(format, &MachineTerm::uint32_constant(1));
-        let variable =
-            KernelTerm::variable(KernelType::C(crate::kernel::CType::Int32), Variable(982500));
+        let variable = KernelTerm::variable(
+            KernelType::C(crate::kernel::ProgramType::Int32),
+            Variable(982500),
+        );
         left = KernelTerm::machine_binary_shared(
             format,
             MachineBinaryOp::Add,

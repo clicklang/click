@@ -168,12 +168,12 @@ pub(super) struct HelperReturnPermission {
 }
 
 pub(in crate::kernel) fn install_entry(
-    mut state: CState,
+    mut state: ExecutionState,
     contract: &HelperContract,
     access: &CResourceFact,
     guard: Option<&CResourceFact>,
     payload: Option<crate::kernel::ResourceInstance>,
-) -> Result<CState, MutexTransitionError> {
+) -> Result<ExecutionState, MutexTransitionError> {
     let CResource::MutexUse(identity) = access.resource() else {
         return Err("mutex helper entry requires rooted use authority".into());
     };
@@ -257,7 +257,7 @@ pub(in crate::kernel) fn install_entry(
 
 /// Raw returns may export precisely one live receipt rooted in this helper's
 /// input. The full interface output checks still run at the function boundary.
-pub(in crate::kernel) fn permits_return(state: &CState) -> bool {
+pub(in crate::kernel) fn permits_return(state: &ExecutionState) -> bool {
     let Some(permission) = state
         .mutex_input_reservations
         .as_ref()
@@ -298,7 +298,7 @@ pub(in crate::kernel) fn permits_return(state: &CState) -> bool {
         })
 }
 
-pub(in crate::kernel) fn exported_guard(state: &CState) -> Option<CResourceFact> {
+pub(in crate::kernel) fn exported_guard(state: &ExecutionState) -> Option<CResourceFact> {
     if !permits_return(state) {
         return None;
     }
@@ -313,7 +313,10 @@ pub(in crate::kernel) fn exported_guard(state: &CState) -> Option<CResourceFact>
         .guard_resource(permission.protocol.mutex())
 }
 
-pub(in crate::kernel) fn same_export_permission(entry: &CState, returned: &CState) -> bool {
+pub(in crate::kernel) fn same_export_permission(
+    entry: &ExecutionState,
+    returned: &ExecutionState,
+) -> bool {
     match (
         entry
             .mutex_input_reservations
@@ -332,7 +335,7 @@ pub(in crate::kernel) fn same_export_permission(entry: &CState, returned: &CStat
 /// Authenticate a call's selected occurrence before the ordinary partition
 /// reserves it. A declaration's stronger type is never evidence of that type.
 pub(in crate::kernel) fn check_call_access(
-    state: &CState,
+    state: &ExecutionState,
     source: &CResourceFact,
     required: &CResourceFact,
     effect: HelperEffect,
@@ -444,7 +447,7 @@ pub(in crate::kernel) fn check_call_access(
 /// Apply a certified helper's net exchange in the caller scope. Ordinary
 /// ownership partition and effect checks are performed by the call engine.
 pub(in crate::kernel) fn apply_call_effect(
-    state: &CState,
+    state: &ExecutionState,
     source: &CResourceFact,
     required: &CResourceFact,
     effect: HelperEffect,
@@ -456,7 +459,7 @@ pub(in crate::kernel) fn apply_call_effect(
     budget: &mut crate::kernel::ExecutionBudget,
 ) -> Result<
     (
-        CState,
+        ExecutionState,
         crate::kernel::loans::CheckedLoanCallEvidenceSequence,
         Vec<crate::kernel::CMemoryRange>,
     ),
@@ -664,8 +667,9 @@ pub(in crate::kernel) fn apply_call_effect(
 mod tests {
     use super::*;
     use crate::kernel::{
-        CExpression, CFunction, CFunctionOutcome, CResourceAccessMode, CResourceQuantity,
-        CResourceSnapshot, CType, CValue, ExecutionBudget, ResourceContext, c_function, c_skip,
+        CFunctionOutcome, CResourceAccessMode, CResourceQuantity, CResourceSnapshot,
+        ExecutionBudget, ProgramExpression, ProgramFunction, ProgramType, ProgramValue,
+        ResourceContext, c_function, c_skip,
     };
 
     fn mutex() -> Pointer {
@@ -678,7 +682,7 @@ mod tests {
         } else {
             CResourceSnapshot::Entry
         };
-        let address = CExpression::Value(CValue::pointer(mutex()));
+        let address = ProgramExpression::Value(ProgramValue::pointer(mutex()));
         CResourceSpec::new(
             if guard {
                 CResourceTerm::MutexGuard {
@@ -705,7 +709,7 @@ mod tests {
         .unwrap()
     }
 
-    fn function(name: &str, effect: HelperEffect) -> CFunction {
+    fn function(name: &str, effect: HelperEffect) -> ProgramFunction {
         let access = spec(false, CResourceTransferRole::Borrow);
         let guard = spec(
             true,
@@ -719,11 +723,12 @@ mod tests {
             HelperEffect::Acquire => (vec![access.clone()], vec![access, guard]),
             HelperEffect::Release => (vec![access.clone(), guard], vec![access]),
         };
-        c_function(CType::Void, name, vec![], c_skip()).with_resource_summary(requires, ensures)
+        c_function(ProgramType::Void, name, vec![], c_skip())
+            .with_resource_summary(requires, ensures)
     }
 
-    fn input(function: &CFunction, release: bool) -> CState {
-        let mut state = CState::new();
+    fn input(function: &ProgramFunction, release: bool) -> ExecutionState {
+        let mut state = ExecutionState::new();
         state.resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own(
             CResource::MutexUse(crate::kernel::MutexUseIdentity {
                 protected: None,
@@ -752,13 +757,17 @@ mod tests {
         .unwrap()
     }
 
-    fn certifies(entry: &CState, function: &CFunction, returned: &CState) -> bool {
+    fn certifies(
+        entry: &ExecutionState,
+        function: &ProgramFunction,
+        returned: &ExecutionState,
+    ) -> bool {
         crate::kernel::functions::function_return_resources_definitionally_established(
             entry,
             function,
             &[],
             &CFunctionOutcome::Return {
-                value: CValue::Void.into(),
+                value: ProgramValue::Void.into(),
                 state: Box::new(returned.clone()),
             },
             &PureFactContext::new(),
@@ -857,7 +866,7 @@ mod tests {
     #[test]
     fn preserving_guard_contract_rejects_a_replacement_acquisition() {
         let assumptions = PureFactContext::new();
-        let input = MutexContext::new(CState::new())
+        let input = MutexContext::new(ExecutionState::new())
             .initialize_empty(mutex(), 40)
             .unwrap()
             .acquire_current(&mutex(), &assumptions)
@@ -868,7 +877,7 @@ mod tests {
             .acquire_current(&mutex(), &assumptions)
             .unwrap();
         let guard = spec(true, CResourceTransferRole::Borrow);
-        let function = c_function(CType::Void, "preserve_exact_guard", vec![], c_skip())
+        let function = c_function(ProgramType::Void, "preserve_exact_guard", vec![], c_skip())
             .with_resource_summary(vec![guard.clone()], vec![guard]);
         assert!(certifies(input.state(), &function, input.state()));
         assert!(!certifies(input.state(), &function, replaced.state()));
@@ -878,7 +887,7 @@ mod tests {
     fn helper_effect_roles_cannot_be_moved_to_the_opposite_section() {
         let access = spec(false, CResourceTransferRole::Borrow);
         let guard = spec(true, CResourceTransferRole::Consume);
-        let wrong = c_function(CType::Void, "wrong_guard_section", vec![], c_skip())
+        let wrong = c_function(ProgramType::Void, "wrong_guard_section", vec![], c_skip())
             .with_resource_summary(vec![access.clone()], vec![access, guard]);
         assert!(classify(wrong.contract_interface()).is_err());
     }

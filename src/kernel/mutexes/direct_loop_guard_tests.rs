@@ -23,22 +23,22 @@ fn spec() -> CResourceSpec {
     )
     .unwrap()
     .with_guard(SpecProposition::Comparison {
-        left: SpecExpression::CExpression(c_variable("flag")),
+        left: SpecExpression::ProgramExpression(c_variable("flag")),
         operator: CComparisonOperator::Equal,
         right: SpecExpression::Value(int32(1)),
     })
 }
-fn entry() -> CState {
+fn entry() -> ExecutionState {
     MutexContext::new(
-        CState::new()
-            .with_local("mutex", CValue::pointer(address(0)))
+        ExecutionState::new()
+            .with_local("mutex", ProgramValue::pointer(address(0)))
             .with_local("flag", int32(0)),
     )
     .initialize_empty(address(0), 40)
     .unwrap()
     .state
 }
-fn head(entry: &CState, identity: u64) -> CState {
+fn head(entry: &ExecutionState, identity: u64) -> ExecutionState {
     let (state, _) = prepare_direct_loop_guard(
         entry,
         entry,
@@ -118,7 +118,7 @@ fn direct_loop_guard_rejects_changed_mutex_address() {
     let entry = entry();
     let changed = entry
         .clone()
-        .with_local("mutex", CValue::pointer(address(1)));
+        .with_local("mutex", ProgramValue::pointer(address(1)));
     assert!(
         prepare_direct_loop_guard(
             &entry,

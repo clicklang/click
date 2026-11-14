@@ -3734,13 +3734,13 @@ impl ConditionTerm {
         }
     }
 
-    pub(crate) fn pointer_value_equal(left: CPointerValue, right: CPointerValue) -> Self {
+    pub(crate) fn pointer_value_equal(left: PointerValue, right: PointerValue) -> Self {
         if (left.designation() == right.designation()
             && left.extent() == right.extent()
             && left.extent_is_known() == right.extent_is_known()
             && (left.extent_is_known() || left.opaque_extent() == right.opaque_extent()))
-            || (matches!(left.c_type(), CType::FunctionPointer(_))
-                && matches!(right.c_type(), CType::FunctionPointer(_)))
+            || (matches!(left.c_type(), ProgramType::FunctionPointer(_))
+                && matches!(right.c_type(), ProgramType::FunctionPointer(_)))
         {
             // With the complete pointer domain already identical, only the
             // numeric coordinates remain. A logical word cast's coordinates
@@ -3922,7 +3922,7 @@ fn compare_float_bits(
     }
 }
 
-impl CType {
+impl ProgramType {
     #[cfg(test)]
     pub(crate) fn function_pointer_signature(
         return_type: Self,
@@ -3961,70 +3961,70 @@ impl CType {
         // bit. The leading one distinguishes arities. Fourteen digits plus
         // the sentinel use fewer than 79 bits, preserving the 13-parameter
         // capacity without truncation or probabilistic identities.
-        fn code(c_type: CType, constant: bool) -> Option<u128> {
+        fn code(c_type: ProgramType, constant: bool) -> Option<u128> {
             if constant && !c_type.is_object_pointer() {
                 return None;
             }
             Some(
                 match c_type {
                     // A function pointer over an abstract type is not encoded.
-                    CType::Parameter(_) | CType::ParameterPointer(_) => return None,
-                    CType::Void => 0,
-                    CType::Bool => 19,
-                    CType::VoidPointer => 20,
-                    CType::Int32 => 1,
-                    CType::UInt8 => 2,
-                    CType::UInt32 => 3,
-                    CType::Int32Pointer => 4,
-                    CType::UInt8Pointer => 5,
-                    CType::Int32PointerPointer => 6,
-                    CType::UInt8PointerPointer => 7,
-                    CType::Int8 => 21,
-                    CType::Int16 => 8,
-                    CType::UInt16 => 9,
-                    CType::Int64 => 10,
-                    CType::UInt64 => 11,
-                    CType::Int8Pointer => 22,
-                    CType::Int16Pointer => 12,
-                    CType::UInt16Pointer => 13,
-                    CType::UInt32Pointer => 14,
-                    CType::Int64Pointer => 15,
-                    CType::UInt64Pointer => 16,
-                    CType::Float32 => 17,
-                    CType::Float64 => 18,
-                    CType::Int128
-                    | CType::UInt128
-                    | CType::Int128Pointer
-                    | CType::UInt128Pointer
-                    | CType::Int8PointerPointer
-                    | CType::Int8Array(_) => {
+                    ProgramType::Parameter(_) | ProgramType::ParameterPointer(_) => return None,
+                    ProgramType::Void => 0,
+                    ProgramType::Bool => 19,
+                    ProgramType::VoidPointer => 20,
+                    ProgramType::Int32 => 1,
+                    ProgramType::UInt8 => 2,
+                    ProgramType::UInt32 => 3,
+                    ProgramType::Int32Pointer => 4,
+                    ProgramType::UInt8Pointer => 5,
+                    ProgramType::Int32PointerPointer => 6,
+                    ProgramType::UInt8PointerPointer => 7,
+                    ProgramType::Int8 => 21,
+                    ProgramType::Int16 => 8,
+                    ProgramType::UInt16 => 9,
+                    ProgramType::Int64 => 10,
+                    ProgramType::UInt64 => 11,
+                    ProgramType::Int8Pointer => 22,
+                    ProgramType::Int16Pointer => 12,
+                    ProgramType::UInt16Pointer => 13,
+                    ProgramType::UInt32Pointer => 14,
+                    ProgramType::Int64Pointer => 15,
+                    ProgramType::UInt64Pointer => 16,
+                    ProgramType::Float32 => 17,
+                    ProgramType::Float64 => 18,
+                    ProgramType::Int128
+                    | ProgramType::UInt128
+                    | ProgramType::Int128Pointer
+                    | ProgramType::UInt128Pointer
+                    | ProgramType::Int8PointerPointer
+                    | ProgramType::Int8Array(_) => {
                         return None;
                     }
-                    CType::Int16PointerPointer
-                    | CType::UInt16PointerPointer
-                    | CType::UInt32PointerPointer
-                    | CType::Int128PointerPointer
-                    | CType::Int64PointerPointer
-                    | CType::UInt128PointerPointer
-                    | CType::UInt64PointerPointer
-                    | CType::FunctionPointer(_)
-                    | CType::Int32Array(_)
-                    | CType::UInt8Array(_)
-                    | CType::Int16Array(_)
-                    | CType::UInt16Array(_)
-                    | CType::UInt32Array(_)
-                    | CType::Int128Array(_)
-                    | CType::Int64Array(_)
-                    | CType::UInt128Array(_)
-                    | CType::UInt64Array(_)
-                    | CType::Float32Pointer
-                    | CType::Float64Pointer
-                    | CType::Float32PointerPointer
-                    | CType::Float64PointerPointer
-                    | CType::Float32Array(_)
-                    | CType::Float64Array(_)
-                    | CType::PointerArray(_, _)
-                    | CType::VoidPointerPointer => {
+                    ProgramType::Int16PointerPointer
+                    | ProgramType::UInt16PointerPointer
+                    | ProgramType::UInt32PointerPointer
+                    | ProgramType::Int128PointerPointer
+                    | ProgramType::Int64PointerPointer
+                    | ProgramType::UInt128PointerPointer
+                    | ProgramType::UInt64PointerPointer
+                    | ProgramType::FunctionPointer(_)
+                    | ProgramType::Int32Array(_)
+                    | ProgramType::UInt8Array(_)
+                    | ProgramType::Int16Array(_)
+                    | ProgramType::UInt16Array(_)
+                    | ProgramType::UInt32Array(_)
+                    | ProgramType::Int128Array(_)
+                    | ProgramType::Int64Array(_)
+                    | ProgramType::UInt128Array(_)
+                    | ProgramType::UInt64Array(_)
+                    | ProgramType::Float32Pointer
+                    | ProgramType::Float64Pointer
+                    | ProgramType::Float32PointerPointer
+                    | ProgramType::Float64PointerPointer
+                    | ProgramType::Float32Array(_)
+                    | ProgramType::Float64Array(_)
+                    | ProgramType::PointerArray(_, _)
+                    | ProgramType::VoidPointerPointer => {
                         return None;
                     }
                 } + if constant { 23 } else { 0 },
@@ -4174,7 +4174,7 @@ impl CType {
     /// `u`'s eight bits. Both are the modular conversion between the two
     /// byte types, so a constant is folded and a symbolic value keeps an
     /// explicit conversion term; nothing about the cell is guessed.
-    pub(crate) fn read_cell(self, stored: &CValue) -> Option<CValue> {
+    pub(crate) fn read_cell(self, stored: &ProgramValue) -> Option<ProgramValue> {
         if self.accepts(stored) {
             return Some(stored.clone());
         }
@@ -4182,72 +4182,76 @@ impl CType {
             MachineTerm::machine_integer_cast(source, destination, term.clone())
         };
         match (self, stored) {
-            (Self::UInt8, CValue::Int8(term)) => Some(CValue::UInt8(reinterpret(
+            (Self::UInt8, ProgramValue::Int8(term)) => Some(ProgramValue::UInt8(reinterpret(
                 MachineIntegerType::Int8,
                 MachineIntegerType::UInt8,
                 term,
             ))),
-            (Self::Int8, CValue::UInt8(term)) => Some(CValue::Int8(reinterpret(
+            (Self::Int8, ProgramValue::UInt8(term)) => Some(ProgramValue::Int8(reinterpret(
                 MachineIntegerType::UInt8,
                 MachineIntegerType::Int8,
                 term,
             ))),
-            (Self::UInt16, CValue::Int16(term)) => Some(CValue::UInt16(reinterpret(
+            (Self::UInt16, ProgramValue::Int16(term)) => Some(ProgramValue::UInt16(reinterpret(
                 MachineIntegerType::Int16,
                 MachineIntegerType::UInt16,
                 term,
             ))),
-            (Self::Int16, CValue::UInt16(term)) => Some(CValue::Int16(reinterpret(
+            (Self::Int16, ProgramValue::UInt16(term)) => Some(ProgramValue::Int16(reinterpret(
                 MachineIntegerType::UInt16,
                 MachineIntegerType::Int16,
                 term,
             ))),
             // Rule K5: the four bytes read in the other signedness are the
             // stored word under the sign cast σ.
-            (Self::UInt32, CValue::Int32(term)) => Some(CValue::UInt32(MachineTerm::sign_cast32(
-                MachineIntegerType::Int32,
-                MachineIntegerType::UInt32,
-                term.clone(),
-            ))),
-            (Self::Int32, CValue::UInt32(term)) => Some(CValue::Int32(MachineTerm::sign_cast32(
-                MachineIntegerType::UInt32,
-                MachineIntegerType::Int32,
-                term.clone(),
-            ))),
-            (Self::UInt64, CValue::Int64(term)) => {
-                Some(CValue::UInt64(MachineTerm::uint64_from_int64(term.clone())))
+            (Self::UInt32, ProgramValue::Int32(term)) => {
+                Some(ProgramValue::UInt32(MachineTerm::sign_cast32(
+                    MachineIntegerType::Int32,
+                    MachineIntegerType::UInt32,
+                    term.clone(),
+                )))
             }
-            (Self::Int64, CValue::UInt64(term)) => Some(CValue::Int64(
+            (Self::Int32, ProgramValue::UInt32(term)) => {
+                Some(ProgramValue::Int32(MachineTerm::sign_cast32(
+                    MachineIntegerType::UInt32,
+                    MachineIntegerType::Int32,
+                    term.clone(),
+                )))
+            }
+            (Self::UInt64, ProgramValue::Int64(term)) => Some(ProgramValue::UInt64(
+                MachineTerm::uint64_from_int64(term.clone()),
+            )),
+            (Self::Int64, ProgramValue::UInt64(term)) => Some(ProgramValue::Int64(
                 MachineTerm::int64_from_uint64_bits(term.clone()),
             )),
             _ => None,
         }
     }
 
-    pub(crate) fn accepts(self, value: &CValue) -> bool {
+    pub(crate) fn accepts(self, value: &ProgramValue) -> bool {
         match (self, value.numeric_value()) {
-            (Self::Int128, CValue::Int128(term)) => {
+            (Self::Int128, ProgramValue::Int128(term)) => {
                 MachineIntegerType::Int128.accepts_wide_term(term)
             }
-            (Self::UInt128, CValue::UInt128(term)) => {
+            (Self::UInt128, ProgramValue::UInt128(term)) => {
                 MachineIntegerType::UInt128.accepts_wide_term(term)
             }
-            (Self::Int8, CValue::Int8(_)) => true,
-            (Self::Parameter(name), CValue::Parameter(term)) => {
+            (Self::Int8, ProgramValue::Int8(_)) => true,
+            (Self::Parameter(name), ProgramValue::Parameter(term)) => {
                 term.algebraic_type == name.algebraic_type()
             }
-            (Self::Void, CValue::Void)
-            | (Self::Bool, CValue::Bool(_))
-            | (Self::Int16, CValue::Int16(_))
-            | (Self::Int32, CValue::Int32(_))
-            | (Self::UInt8, CValue::UInt8(_))
-            | (Self::UInt16, CValue::UInt16(_))
-            | (Self::Int64, CValue::Int64(_))
-            | (Self::UInt64, CValue::UInt64(_))
-            | (Self::Float32, CValue::Float32(_))
-            | (Self::Float64, CValue::Float64(_))
-            | (Self::UInt32, CValue::UInt32(_)) => true,
-            (target, CValue::Pointer(pointer)) if target.is_pointer() => {
+            (Self::Void, ProgramValue::Void)
+            | (Self::Bool, ProgramValue::Bool(_))
+            | (Self::Int16, ProgramValue::Int16(_))
+            | (Self::Int32, ProgramValue::Int32(_))
+            | (Self::UInt8, ProgramValue::UInt8(_))
+            | (Self::UInt16, ProgramValue::UInt16(_))
+            | (Self::Int64, ProgramValue::Int64(_))
+            | (Self::UInt64, ProgramValue::UInt64(_))
+            | (Self::Float32, ProgramValue::Float32(_))
+            | (Self::Float64, ProgramValue::Float64(_))
+            | (Self::UInt32, ProgramValue::UInt32(_)) => true,
+            (target, ProgramValue::Pointer(pointer)) if target.is_pointer() => {
                 pointer.is_null()
                     || (pointer.c_type().pointer_types_compatible(target)
                         && if target.is_function_pointer() {
@@ -4376,22 +4380,22 @@ impl CType {
 
 /// The variable a scalar C value is, when it is exactly one: a symbolic
 /// binder's or a call result's value, not an expression over one.
-pub(crate) fn single_variable_of_c_value(value: &CValue) -> Option<Variable> {
+pub(crate) fn single_variable_of_c_value(value: &ProgramValue) -> Option<Variable> {
     match value.numeric_value() {
-        CValue::Bool(MachineTerm::Variable(variable))
-        | CValue::Int8(MachineTerm::Variable(variable))
-        | CValue::Int16(MachineTerm::Variable(variable))
-        | CValue::Int32(MachineTerm::Variable(variable))
-        | CValue::UInt8(MachineTerm::Variable(variable))
-        | CValue::UInt16(MachineTerm::Variable(variable))
-        | CValue::UInt32(MachineTerm::Variable(variable))
-        | CValue::Int64(MachineTerm::Variable(variable))
-        | CValue::UInt64(MachineTerm::Variable(variable)) => Some(*variable),
+        ProgramValue::Bool(MachineTerm::Variable(variable))
+        | ProgramValue::Int8(MachineTerm::Variable(variable))
+        | ProgramValue::Int16(MachineTerm::Variable(variable))
+        | ProgramValue::Int32(MachineTerm::Variable(variable))
+        | ProgramValue::UInt8(MachineTerm::Variable(variable))
+        | ProgramValue::UInt16(MachineTerm::Variable(variable))
+        | ProgramValue::UInt32(MachineTerm::Variable(variable))
+        | ProgramValue::Int64(MachineTerm::Variable(variable))
+        | ProgramValue::UInt64(MachineTerm::Variable(variable)) => Some(*variable),
         _ => None,
     }
 }
 
-impl CValue {
+impl ProgramValue {
     /// An unconstrained complete C word has identity but no pointer authority.
     pub(crate) fn complete_word(self, identity: Pointer) -> Self {
         if !matches!(self, Self::Int64(_) | Self::UInt64(_)) {
@@ -4399,7 +4403,7 @@ impl CValue {
         }
         Self::PointerInteger(PointerIntegerValue {
             numeric: Box::new(self),
-            pointer: Box::new(CPointerValue::new(identity, CType::VoidPointer)),
+            pointer: Box::new(PointerValue::new(identity, ProgramType::VoidPointer)),
             kind: PointerIntegerKind::Word { changed_bits: 0 },
         })
     }
@@ -4413,22 +4417,22 @@ impl CValue {
     }
 
     pub(crate) fn pointer(pointer: Pointer) -> Self {
-        Self::typed_pointer(pointer, CType::Int32Pointer)
+        Self::typed_pointer(pointer, ProgramType::Int32Pointer)
     }
 
-    pub(crate) fn typed_pointer(pointer: Pointer, c_type: CType) -> Self {
-        Self::Pointer(CPointerValue::new(pointer, c_type))
+    pub(crate) fn typed_pointer(pointer: Pointer, c_type: ProgramType) -> Self {
+        Self::Pointer(PointerValue::new(pointer, c_type))
     }
 
     pub(crate) fn typed_pointer_with_pointee_constant(
         pointer: Pointer,
-        c_type: CType,
+        c_type: ProgramType,
         pointee_constant: bool,
     ) -> Self {
-        Self::Pointer(CPointerValue::new(pointer, c_type).with_pointee_constant(pointee_constant))
+        Self::Pointer(PointerValue::new(pointer, c_type).with_pointee_constant(pointee_constant))
     }
 
-    pub(crate) fn retag_pointer(self, c_type: CType) -> Self {
+    pub(crate) fn retag_pointer(self, c_type: ProgramType) -> Self {
         match self {
             Self::Pointer(pointer) => Self::Pointer(pointer.with_type(c_type)),
             value => value,
@@ -4445,7 +4449,7 @@ impl CValue {
     }
 
     /// Records the class of the object a pointer value designates; see
-    /// [`CPointerValue::with_object_class`].
+    /// [`PointerValue::with_object_class`].
     pub(crate) fn with_pointer_object_class(
         self,
         object_class: Option<crate::kernel::effective_type::CAccessClass>,
@@ -4502,24 +4506,26 @@ impl CValue {
         }
     }
 
-    pub(crate) fn c_type(&self) -> CType {
+    pub(crate) fn c_type(&self) -> ProgramType {
         match self {
             Self::PointerInteger(record) => record.numeric.c_type(),
-            Self::Parameter(term) => CType::Parameter(TypeParameterName::of(&term.algebraic_type)),
-            Self::Void => CType::Void,
-            Self::Bool(_) => CType::Bool,
-            Self::Int8(_) => CType::Int8,
-            Self::Int16(_) => CType::Int16,
-            Self::Int32(_) => CType::Int32,
-            Self::UInt8(_) => CType::UInt8,
-            Self::UInt16(_) => CType::UInt16,
-            Self::UInt32(_) => CType::UInt32,
-            Self::Int64(_) => CType::Int64,
-            Self::UInt64(_) => CType::UInt64,
-            Self::Int128(_) => CType::Int128,
-            Self::UInt128(_) => CType::UInt128,
-            Self::Float32(_) => CType::Float32,
-            Self::Float64(_) => CType::Float64,
+            Self::Parameter(term) => {
+                ProgramType::Parameter(TypeParameterName::of(&term.algebraic_type))
+            }
+            Self::Void => ProgramType::Void,
+            Self::Bool(_) => ProgramType::Bool,
+            Self::Int8(_) => ProgramType::Int8,
+            Self::Int16(_) => ProgramType::Int16,
+            Self::Int32(_) => ProgramType::Int32,
+            Self::UInt8(_) => ProgramType::UInt8,
+            Self::UInt16(_) => ProgramType::UInt16,
+            Self::UInt32(_) => ProgramType::UInt32,
+            Self::Int64(_) => ProgramType::Int64,
+            Self::UInt64(_) => ProgramType::UInt64,
+            Self::Int128(_) => ProgramType::Int128,
+            Self::UInt128(_) => ProgramType::UInt128,
+            Self::Float32(_) => ProgramType::Float32,
+            Self::Float64(_) => ProgramType::Float64,
             Self::Pointer(pointer) => pointer.c_type(),
         }
     }
@@ -4546,20 +4552,20 @@ impl CValue {
     }
 }
 
-impl CLValue {
-    pub(in crate::kernel) fn local(name: impl Into<String>, value_type: CType) -> Self {
+impl LValue {
+    pub(in crate::kernel) fn local(name: impl Into<String>, value_type: ProgramType) -> Self {
         Self::local_with_qualifiers(name, value_type, false, false)
     }
 
     pub(in crate::kernel) fn local_with_qualifiers(
         name: impl Into<String>,
-        value_type: CType,
+        value_type: ProgramType,
         volatile: bool,
         pointee_volatile: bool,
     ) -> Self {
         Self {
             local_reference: None,
-            storage: CLValueStorage::Local { name: name.into() },
+            storage: LValueStorage::Local { name: name.into() },
             value_type,
             volatile,
             pointee_volatile,
@@ -4576,7 +4582,7 @@ impl CLValue {
 
     pub(in crate::kernel) fn memory_with_volatile(
         pointer: Pointer,
-        value_type: CType,
+        value_type: ProgramType,
         volatile: bool,
     ) -> Self {
         Self::memory_with_qualifiers(pointer, value_type, volatile, false)
@@ -4584,13 +4590,13 @@ impl CLValue {
 
     pub(in crate::kernel) fn memory_with_qualifiers(
         pointer: Pointer,
-        value_type: CType,
+        value_type: ProgramType,
         volatile: bool,
         pointee_volatile: bool,
     ) -> Self {
         Self {
             local_reference: None,
-            storage: CLValueStorage::Memory { pointer },
+            storage: LValueStorage::Memory { pointer },
             value_type,
             volatile,
             pointee_volatile,
@@ -4625,7 +4631,7 @@ impl CLValue {
 
     /// The lvalue reached through `pointer`, which keeps its extent and the
     /// class of the object it designates.
-    pub(in crate::kernel) fn with_extent_of(mut self, pointer: &CPointerValue) -> Self {
+    pub(in crate::kernel) fn with_extent_of(mut self, pointer: &PointerValue) -> Self {
         self.extent = pointer.extent().cloned().map(std::sync::Arc::new);
         self.designation = Some(std::sync::Arc::new(pointer.designation().clone()));
         self.extent_known = pointer.extent_is_known();
@@ -4672,7 +4678,7 @@ impl CLValue {
         self.extent.as_deref()
     }
 
-    pub fn value_type(&self) -> CType {
+    pub fn value_type(&self) -> ProgramType {
         self.value_type
     }
 
@@ -4692,13 +4698,13 @@ impl CLValue {
         self.pointee_constant
     }
 
-    pub(in crate::kernel) fn pointer(&self, state: &CState) -> Option<Pointer> {
+    pub(in crate::kernel) fn pointer(&self, state: &ExecutionState) -> Option<Pointer> {
         match &self.storage {
-            CLValueStorage::Local { name } => {
+            LValueStorage::Local { name } => {
                 let pointer = state.locals.slot(name)?.clone();
                 state.memory.has_block(&pointer.block).then_some(pointer)
             }
-            CLValueStorage::Memory { pointer } => Some(pointer.clone()),
+            LValueStorage::Memory { pointer } => Some(pointer.clone()),
         }
     }
 }
@@ -4706,7 +4712,7 @@ impl CLValue {
 impl SharedPureApplication {
     pub(in crate::kernel) fn integer_address_bits(&self) -> Option<&MachineTerm> {
         if self.name() == "$integer-address"
-            && let [PureFunctionArgument::Value(CValue::UInt64(bits))] = self.arguments()
+            && let [PureFunctionArgument::Value(ProgramValue::UInt64(bits))] = self.arguments()
         {
             Some(bits)
         } else {
@@ -4813,7 +4819,7 @@ impl Pointer {
         Self {
             block: PointerBlock::PureFunctionApplication(SharedPureApplication::intern(
                 "$integer-address".into(),
-                vec![PureFunctionArgument::Value(CValue::UInt64(bits))],
+                vec![PureFunctionArgument::Value(ProgramValue::UInt64(bits))],
             )),
             offset: PointerOffsetTerm::Constant(0),
         }
@@ -4840,7 +4846,7 @@ impl Pointer {
     /// Name an eight-byte pointer read as a typed graph application. The
     /// caller supplies the assumption-free defining snapshot and address.
     /// Access observations are retained separately from this identity.
-    pub(crate) fn loaded_value(memory: &SharedCMemory, address: &Pointer) -> Self {
+    pub(crate) fn loaded_value(memory: &SharedMemory, address: &Pointer) -> Self {
         Self {
             block: PointerBlock::LoadedPointer(crate::kernel::eval::pointer_load_identity(
                 memory, address,
@@ -4851,9 +4857,9 @@ impl Pointer {
 
     /// The pointer read of `address` in `memory`, named at the canonical
     /// read of that cell, as a direct lowering of the same place names it.
-    pub(crate) fn canonical_loaded_value(memory: &SharedCMemory, address: &Pointer) -> Self {
+    pub(crate) fn canonical_loaded_value(memory: &SharedMemory, address: &Pointer) -> Self {
         // A cell holding a complete stored pointer reads as that pointer.
-        if let Some(CValue::Pointer(stored)) = memory.memory().known_value(address) {
+        if let Some(ProgramValue::Pointer(stored)) = memory.memory().known_value(address) {
             return stored.pointer().clone();
         }
         let read =
@@ -4905,7 +4911,7 @@ impl Pointer {
     /// holds, which the read-over-write authority relates to the read
     /// (`eval::pointer_read_over_write_value`). A cell holding its own read
     /// is that read.
-    pub(crate) fn version_read(memory: &SharedCMemory, address: &Pointer) -> Self {
+    pub(crate) fn version_read(memory: &SharedMemory, address: &Pointer) -> Self {
         match Self::version_read_value(memory, address) {
             Ok(held) => held.pointer().clone(),
             Err(read) => read,
@@ -4917,9 +4923,9 @@ impl Pointer {
     /// read, or static storage's symbolic initial contents), designation and
     /// extent included; otherwise the named read, as `Err`.
     pub(crate) fn version_read_value(
-        memory: &SharedCMemory,
+        memory: &SharedMemory,
         address: &Pointer,
-    ) -> Result<CPointerValue, Self> {
+    ) -> Result<PointerValue, Self> {
         let source = memory.unchanged_bytes_source();
         let canonical = crate::kernel::memory_provenance::canonical_value_load_memory(
             &source,
@@ -4928,8 +4934,8 @@ impl Pointer {
         );
         // A cell holding its own read (a materialization), as a named read or
         // as the load variable of its word, reads as that read.
-        let own_read = |held: &SharedCMemory| match held.memory().known_value(address) {
-            Some(CValue::Pointer(stored))
+        let own_read = |held: &SharedMemory| match held.memory().known_value(address) {
+            Some(ProgramValue::Pointer(stored))
                 if stored.pointer().as_loaded_value().is_some_and(|read| {
                     read.defining_address == *address
                         && read.displacement == PointerOffsetTerm::Constant(0)
@@ -4966,12 +4972,13 @@ impl Pointer {
                 .is_some_and(|block| block.size().as_const().is_some())
             && !canonical.memory().blocks.contains_key(&address.block)
             && canonical.memory().known_value(address).is_none()
-            && let Some(CValue::Pointer(initial)) = crate::kernel::eval::symbolic_storage_cell_value(
-                &crate::kernel::functions::symbolic_memory_base(source.memory(), address),
-                address,
-                CType::VoidPointerPointer,
-                false,
-            )
+            && let Some(ProgramValue::Pointer(initial)) =
+                crate::kernel::eval::symbolic_storage_cell_value(
+                    &crate::kernel::functions::symbolic_memory_base(source.memory(), address),
+                    address,
+                    ProgramType::VoidPointerPointer,
+                    false,
+                )
         {
             return Ok(initial);
         }

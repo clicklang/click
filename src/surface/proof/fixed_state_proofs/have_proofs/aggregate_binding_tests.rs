@@ -4,7 +4,7 @@ use crate::kernel::{
     c_parameter_with_aggregate_layout, c_return, c_void_value,
 };
 
-fn aggregate_entry(count: u32) -> (CState, BTreeMap<String, CValue>) {
+fn aggregate_entry(count: u32) -> (ExecutionState, BTreeMap<String, ProgramValue>) {
     let source = Pointer {
         block: "local:caller_packet".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
@@ -12,26 +12,28 @@ fn aggregate_entry(count: u32) -> (CState, BTreeMap<String, CValue>) {
     let layout = CAggregateLayout::new(
         8,
         8,
-        vec![CAggregateField::new("data", 0, CType::Int32Pointer)],
+        vec![CAggregateField::new("data", 0, ProgramType::Int32Pointer)],
     );
-    let value = CValue::pointer(source.clone());
+    let value = ProgramValue::pointer(source.clone());
     let values = (0..count)
         .map(|index| (format!("input_{index}"), value.clone()))
         .collect::<BTreeMap<_, _>>();
     let function = c_function(
-        CType::Void,
+        ProgramType::Void,
         "aggregate_binding",
         values
             .keys()
-            .map(|name| c_parameter_with_aggregate_layout(name, CType::VoidPointer, layout.clone()))
+            .map(|name| {
+                c_parameter_with_aggregate_layout(name, ProgramType::VoidPointer, layout.clone())
+            })
             .collect(),
         c_return(c_void_value()),
     );
-    let caller = CState::new().with_memory(CMemory::new().with_block(source.block, 8));
+    let caller = ExecutionState::new().with_memory(CMemory::new().with_block(source.block, 8));
     let arguments = values
         .values()
         .cloned()
-        .map(CExpression::Value)
+        .map(ProgramExpression::Value)
         .collect::<Vec<_>>();
     (
         c_function_entry_state(&caller, &function, &arguments).unwrap(),
@@ -39,7 +41,11 @@ fn aggregate_entry(count: u32) -> (CState, BTreeMap<String, CValue>) {
     )
 }
 
-fn assert_selected_copy(selected: &FixedStateLowering, entry: &CState, current: &CState) {
+fn assert_selected_copy(
+    selected: &FixedStateLowering,
+    entry: &ExecutionState,
+    current: &ExecutionState,
+) {
     for name in ["input_0", "input_1"] {
         assert_eq!(
             selected.entry_state.locals().aggregate_object_pointer(name),
@@ -65,14 +71,14 @@ fn proof_lowering_retains_each_selected_aggregate_copy() {
     // pair must preserve each frame independently, not use one for both.
     let source = values.values().next().unwrap().clone();
     let function = c_function(
-        CType::Void,
+        ProgramType::Void,
         "nested",
         ["input_0", "input_1"]
             .into_iter()
             .map(|name| {
                 c_parameter_with_aggregate_layout(
                     name,
-                    CType::VoidPointer,
+                    ProgramType::VoidPointer,
                     entry.locals().aggregate_layout(name).unwrap().clone(),
                 )
             })
@@ -83,8 +89,8 @@ fn proof_lowering_retains_each_selected_aggregate_copy() {
         &entry,
         &function,
         &[
-            CExpression::Value(source.clone()),
-            CExpression::Value(source),
+            ProgramExpression::Value(source.clone()),
+            ProgramExpression::Value(source),
         ],
     )
     .unwrap();
@@ -151,7 +157,7 @@ fn returned_proof_uses_argument_image_even_with_retained_private_storage() {
     let _session = crate::kernel::VerificationSession::enter();
     let (entry, values) = aggregate_entry(1);
     let arrays = ClickArrayRefs::new();
-    for result in [CValue::Void, crate::kernel::int32(0)] {
+    for result in [ProgramValue::Void, crate::kernel::int32(0)] {
         let selected = FixedStateLowering::for_names(
             values.keys().cloned().collect(),
             ContractEnvironment::new(&values, &arrays),

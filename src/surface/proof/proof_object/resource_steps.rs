@@ -431,7 +431,8 @@ impl<'a> Proof<'a> {
                 None
             }
         };
-        let before: &CState = outcome.map_or(&*execution.core.state, |goal| &*goal.data.core.state);
+        let before: &ExecutionState =
+            outcome.map_or(&*execution.core.state, |goal| &*goal.data.core.state);
         let pre_state = context.old_reference_state(&execution.core.frontier, before);
         let constructed;
         let instance = if let Some(fields) = &binding.fold_fields {
@@ -742,7 +743,7 @@ impl<'a> Proof<'a> {
                     ..
                 } => {
                     let term = |value: &AlgebraicValue| match value {
-                        AlgebraicValue::C(value) => Term::CValue(value.clone()),
+                        AlgebraicValue::C(value) => Term::ProgramValue(value.clone()),
                         AlgebraicValue::Integer(value) => Term::Integer(value.clone()),
                         AlgebraicValue::Algebraic(value) => Term::Algebraic(value.clone()),
                     };
@@ -1121,7 +1122,7 @@ impl<'a> Proof<'a> {
     /// completed map and checks it exactly as a written one.
     fn fold_children_with_defaults(
         &self,
-        before: &CState,
+        before: &ExecutionState,
         instance: &crate::kernel::ResourceInstance,
         definition: &crate::kernel::CCompositeResourceDefinition,
         definitions: &[crate::kernel::CCompositeResourceDefinition],
@@ -1205,7 +1206,7 @@ impl<'a> Proof<'a> {
                 AlgebraicValue::C(value) => {
                     locals.values = locals.values.with_inserted(
                         name.clone(),
-                        ContractExpression::CFragment(CExpression::Value(value.clone())),
+                        ContractExpression::CFragment(ProgramExpression::Value(value.clone())),
                     );
                 }
                 // Declaration expansion admits only C-typed field binders.
@@ -1265,7 +1266,8 @@ impl<'a> Proof<'a> {
                         integer_values = integer_values.with_inserted(name.clone(), value.clone());
                     }
                 }
-                let state = CState::new().with_memory(context.theorem_context.memory.clone());
+                let state =
+                    ExecutionState::new().with_memory(context.theorem_context.memory.clone());
                 self.apply_function_unfold_in_state(
                     application,
                     premises,
@@ -1374,7 +1376,7 @@ impl<'a> Proof<'a> {
         &self,
         application: &ClickFunctionApplication,
         premises: Option<&[ClickProposition]>,
-        values: BTreeMap<String, CValue>,
+        values: BTreeMap<String, ProgramValue>,
         array_refs: ClickArrayRefs,
         algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
         integer_values: &crate::persistent::PersistentMap<
@@ -1784,7 +1786,7 @@ impl<'a> Proof<'a> {
         definition: &ClickFunctionDefinition,
         premises: &[ClickProposition],
         equality: &Proposition,
-        values: &BTreeMap<String, CValue>,
+        values: &BTreeMap<String, ProgramValue>,
         array_refs: &ClickArrayRefs,
         algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
         integer_values: &crate::persistent::PersistentMap<
@@ -2461,7 +2463,7 @@ impl<'a> Proof<'a> {
                                 context.spec_definitions,
                                 &BTreeSet::new(),
                             )
-                            .map(CExpression::Value)
+                            .map(ProgramExpression::Value)
                             .map_err(|message| {
                                 self.step_error(format!("`{name}` operand: {message}"))
                             })
@@ -2684,7 +2686,7 @@ impl<'a> Proof<'a> {
             }
             transition.locals.values = transition.locals.values.with_inserted(
                 name.clone(),
-                ContractExpression::CFragment(CExpression::Value(value.clone())),
+                ContractExpression::CFragment(ProgramExpression::Value(value.clone())),
             );
         }
         Ok(transition)
@@ -2797,7 +2799,7 @@ impl<'a> Proof<'a> {
                 .values
                 .iter()
                 .filter_map(|(name, value)| match value {
-                    ContractExpression::CFragment(CExpression::Value(value)) => {
+                    ContractExpression::CFragment(ProgramExpression::Value(value)) => {
                         Some((value.clone(), name.clone()))
                     }
                     _ => None,
@@ -2952,7 +2954,9 @@ impl<'a> Proof<'a> {
             resource,
             &BTreeMap::from([(
                 "result".to_string(),
-                ContractExpression::CFragment(CExpression::Value((*goal.data.core.result).clone())),
+                ContractExpression::CFragment(ProgramExpression::Value(
+                    (*goal.data.core.result).clone(),
+                )),
             )]),
         )
         .map_err(|message| self.step_error(message))?;
@@ -3307,7 +3311,7 @@ fn fold_end_parameter_name(end: &ContractExpression) -> Option<&String> {
     match end {
         ContractExpression::Binding(binding)
         | ContractExpression::CBinding(binding)
-        | ContractExpression::CFragment(CExpression::Variable(binding)) => Some(binding),
+        | ContractExpression::CFragment(ProgramExpression::Variable(binding)) => Some(binding),
         _ => None,
     }
 }

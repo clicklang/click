@@ -15,19 +15,19 @@ fn valid_layout(layout: &CAggregateLayout) -> bool {
         let scalar = ty.is_pointer()
             || matches!(
                 ty,
-                CType::Bool
-                    | CType::Int8
-                    | CType::UInt8
-                    | CType::Int16
-                    | CType::UInt16
-                    | CType::Int32
-                    | CType::UInt32
-                    | CType::Int64
-                    | CType::UInt64
-                    | CType::Int128
-                    | CType::UInt128
-                    | CType::Float32
-                    | CType::Float64
+                ProgramType::Bool
+                    | ProgramType::Int8
+                    | ProgramType::UInt8
+                    | ProgramType::Int16
+                    | ProgramType::UInt16
+                    | ProgramType::Int32
+                    | ProgramType::UInt32
+                    | ProgramType::Int64
+                    | ProgramType::UInt64
+                    | ProgramType::Int128
+                    | ProgramType::UInt128
+                    | ProgramType::Float32
+                    | ProgramType::Float64
             );
         if !scalar
             || field.offset_bytes() < end
@@ -48,13 +48,13 @@ fn valid_layout(layout: &CAggregateLayout) -> bool {
 }
 
 fn destination<'a>(
-    state: &'a CState,
+    state: &'a ExecutionState,
     interface: &CFunctionContractInterface,
 ) -> Option<&'a CAggregateDestination> {
     let selected = state.aggregate_destination.as_deref()?;
     let layout = if let Some((_, layout)) = interface.construction_parameter() {
         if interface.aggregate_return_mode() != CAggregateReturnMode::Copy
-            || interface.return_type() != CType::Void
+            || interface.return_type() != ProgramType::Void
             || interface.return_aggregate_layout().is_some()
         {
             return None;
@@ -123,9 +123,9 @@ fn destination<'a>(
 }
 
 pub(super) fn bind(
-    caller: &CState,
+    caller: &ExecutionState,
     interface: &CFunctionContractInterface,
-    callee: &mut CState,
+    callee: &mut ExecutionState,
 ) -> Option<()> {
     let parameter_destination;
     let selected_state = if let Some((index, layout)) = interface.construction_parameter() {
@@ -192,12 +192,12 @@ pub(super) fn bind(
 }
 
 pub(super) fn complete(
-    state: &CState,
+    state: &ExecutionState,
     interface: &CFunctionContractInterface,
-    value: CValue,
-) -> Result<CValue, AggregateReturnRefusal> {
+    value: ProgramValue,
+) -> Result<ProgramValue, AggregateReturnRefusal> {
     let selected = destination(state, interface).ok_or(AggregateReturnRefusal::InvalidValue)?;
-    let CValue::Pointer(pointer) = &value else {
+    let ProgramValue::Pointer(pointer) = &value else {
         return Err(AggregateReturnRefusal::InvalidValue);
     };
     if pointer.pointer() != &selected.pointer
@@ -216,7 +216,7 @@ pub(super) fn complete(
 
 /// Check the entry-bound destination, even if the body reassigns its parameter.
 pub(super) fn complete_parameter(
-    state: &CState,
+    state: &ExecutionState,
     interface: &CFunctionContractInterface,
 ) -> Option<CRuntimeError> {
     interface.construction_parameter()?;
@@ -231,11 +231,11 @@ pub(super) fn complete_parameter(
 }
 
 pub(super) fn summary_result(
-    state: &CState,
+    state: &ExecutionState,
     interface: &CFunctionContractInterface,
-) -> Option<CValue> {
+) -> Option<ProgramValue> {
     let selected = destination(state, interface)?;
-    Some(CValue::typed_pointer(
+    Some(ProgramValue::typed_pointer(
         selected.pointer.clone(),
         interface.return_type(),
     ))
@@ -244,7 +244,7 @@ pub(super) fn summary_result(
 /// A certified construction rule, or an explicit external construction-return
 /// assumption, justifies these initialized fields. Ordinary owns clauses do not.
 /// The call's existing effect transition forgets their old values first.
-pub(super) fn initialize_summary(state: &mut CState, entry: &CState) {
+pub(super) fn initialize_summary(state: &mut ExecutionState, entry: &ExecutionState) {
     let selected = entry
         .aggregate_destination
         .as_ref()

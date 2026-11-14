@@ -20,7 +20,14 @@ fn materialized_run_adjacency_preserves_holes_and_scales() {
             if let Some(index) = missing {
                 holes.insert(index);
             }
-            let run = CellRun::new(base.clone(), 1, CType::UInt8, size, source.clone(), holes);
+            let run = CellRun::new(
+                base.clone(),
+                1,
+                ProgramType::UInt8,
+                size,
+                source.clone(),
+                holes,
+            );
             let mut memory = CMemory::new();
             std::sync::Arc::make_mut(&mut memory.cells).add_run(run);
             let memory = memory.store(base.offset_by_bytes(size), crate::kernel::uint8(7));

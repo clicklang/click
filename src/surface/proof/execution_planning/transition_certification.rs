@@ -160,7 +160,7 @@ pub(in crate::surface) fn refuse_or_record_open_obligation(
 fn missing_condition_prerequisite_error(
     context_label: &str,
     obligation: &ProofObligation,
-    state: &CState,
+    state: &ExecutionState,
 ) -> ClickError {
     missing_prerequisite_error(
         format!(
@@ -180,7 +180,7 @@ fn missing_condition_prerequisite_error(
 fn proof_condition_runtime_error(
     context_label: &str,
     error: &crate::kernel::CRuntimeError,
-    state: &CState,
+    state: &ExecutionState,
     function: Option<&syntax::C0Function>,
 ) -> ClickError {
     let (parameters, arguments) =
@@ -229,25 +229,25 @@ pub(in crate::surface::proof) struct CertifiedProofConditionTransition {
 /// kernel-issued path facts, appended persistently to the shared ancestor.
 #[cfg(test)]
 pub(in crate::surface::proof) fn certified_proof_condition_transitions(
-    state: &CState,
+    state: &ExecutionState,
     pure_facts: &ProofFacts,
-    condition: &CExpression,
+    condition: &ProgramExpression,
     context_label: &str,
 ) -> Result<Vec<CertifiedProofConditionTransition>, ClickError> {
-    let branch = CStatement::If {
+    let branch = ProgramStatement::If {
         condition: condition.clone(),
-        then_branch: Box::new(CStatement::Skip),
-        else_branch: Box::new(CStatement::Skip),
+        then_branch: Box::new(ProgramStatement::Skip),
+        else_branch: Box::new(ProgramStatement::Skip),
     };
     certified_proof_condition_split(state, pure_facts, &branch, None, context_label, None)
         .map(|(_, transitions)| transitions)
 }
 
 pub(in crate::surface::proof) fn certified_proof_condition_split(
-    state: &CState,
+    state: &ExecutionState,
     pure_facts: &ProofFacts,
-    branch_statement: &CStatement,
-    continuation: Option<&CStatement>,
+    branch_statement: &ProgramStatement,
+    continuation: Option<&ProgramStatement>,
     context_label: &str,
     function: Option<&syntax::C0Function>,
 ) -> Result<(CheckedBranchSplit, Vec<CertifiedProofConditionTransition>), ClickError> {
@@ -328,9 +328,9 @@ pub(in crate::surface::proof) fn certified_proof_condition_split(
 }
 
 pub(in crate::surface::proof) fn certified_condition_transitions(
-    state: &CState,
+    state: &ExecutionState,
     pure_facts: &PureFactList,
-    condition: &CExpression,
+    condition: &ProgramExpression,
     context_label: &str,
     prerequisite_policy: StatementPrerequisitePolicy,
     context: Option<&PureFactContext>,
@@ -476,9 +476,9 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
 }
 
 pub(in crate::surface) fn certified_statement_transitions(
-    state: &CState,
+    state: &ExecutionState,
     pure_facts: &PureFactList,
-    statement: &CStatement,
+    statement: &ProgramStatement,
     function_environment: &CExecutionEnvironment,
     predicate_environment: Option<&PredicateEnvironment>,
     execution_semantics: CExecutionSemantics,
@@ -537,9 +537,9 @@ pub(in crate::surface) fn certified_statement_transitions(
 }
 
 pub(in crate::surface::proof) fn certified_loop_exit_transitions_with_proven_phases(
-    state: &CState,
+    state: &ExecutionState,
     pure_facts: &PureFactList,
-    statement: &CStatement,
+    statement: &ProgramStatement,
     function_environment: &CExecutionEnvironment,
     predicate_environment: Option<&PredicateEnvironment>,
     context_label: &str,
@@ -589,56 +589,56 @@ pub(in crate::surface::proof) fn certified_loop_exit_transitions_with_proven_pha
     )
 }
 
-pub(in crate::surface::proof) fn statement_contains_call(statement: &CStatement) -> bool {
+pub(in crate::surface::proof) fn statement_contains_call(statement: &ProgramStatement) -> bool {
     match statement {
-        CStatement::CallAssign { .. } | CStatement::Call { .. } | CStatement::CallResult { .. } => {
-            true
-        }
-        CStatement::Seq(statements) => statements
+        ProgramStatement::CallAssign { .. }
+        | ProgramStatement::Call { .. }
+        | ProgramStatement::CallResult { .. } => true,
+        ProgramStatement::Seq(statements) => statements
             .iter()
             .any(|statement| statement_contains_call(statement)),
-        CStatement::TryCatchInt32 {
+        ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
         } => statement_contains_call(try_body) || statement_contains_call(handler),
-        CStatement::If {
+        ProgramStatement::If {
             then_branch,
             else_branch,
             ..
         } => statement_contains_call(then_branch) || statement_contains_call(else_branch),
-        CStatement::While { body, .. } => statement_contains_call(body),
-        CStatement::Switch { cases, .. } => {
+        ProgramStatement::While { body, .. } => statement_contains_call(body),
+        ProgramStatement::Switch { cases, .. } => {
             cases.iter().any(|case| statement_contains_call(&case.body))
         }
-        CStatement::ForStep { step, .. } => statement_contains_call(step),
-        CStatement::Skip
-        | CStatement::EndScalarReference(_)
-        | CStatement::ScalarReferenceScope(_)
-        | CStatement::Break
-        | CStatement::Continue
-        | CStatement::Goto { .. }
-        | CStatement::Declare { .. }
-        | CStatement::DeclareAggregate { .. }
-        | CStatement::Assign { .. }
-        | CStatement::Assert { .. }
-        | CStatement::LoopTest { .. }
-        | CStatement::Throw(_)
-        | CStatement::Return(_)
-        | CStatement::Store { .. }
-        | CStatement::TypedStore { .. }
-        | CStatement::Update { .. } => false,
-        CStatement::HeapAllocate { .. }
-        | CStatement::HeapFree { .. }
-        | CStatement::CopyAggregate { .. }
-        | CStatement::InitializeScalarArray { .. }
-        | CStatement::EndAutomaticLifetimes { .. } => false,
+        ProgramStatement::ForStep { step, .. } => statement_contains_call(step),
+        ProgramStatement::Skip
+        | ProgramStatement::EndScalarReference(_)
+        | ProgramStatement::ScalarReferenceScope(_)
+        | ProgramStatement::Break
+        | ProgramStatement::Continue
+        | ProgramStatement::Goto { .. }
+        | ProgramStatement::Declare { .. }
+        | ProgramStatement::DeclareAggregate { .. }
+        | ProgramStatement::Assign { .. }
+        | ProgramStatement::Assert { .. }
+        | ProgramStatement::LoopTest { .. }
+        | ProgramStatement::Throw(_)
+        | ProgramStatement::Return(_)
+        | ProgramStatement::Store { .. }
+        | ProgramStatement::TypedStore { .. }
+        | ProgramStatement::Update { .. } => false,
+        ProgramStatement::HeapAllocate { .. }
+        | ProgramStatement::HeapFree { .. }
+        | ProgramStatement::CopyAggregate { .. }
+        | ProgramStatement::InitializeScalarArray { .. }
+        | ProgramStatement::EndAutomaticLifetimes { .. } => false,
     }
 }
 
 #[allow(clippy::too_many_arguments)]
 fn certified_transitions_from_execution(
     execution: SymbolicCExecution,
-    state: &CState,
-    statement: &CStatement,
+    state: &ExecutionState,
+    statement: &ProgramStatement,
     loop_rule: Option<CVerifiedLoopRule>,
     pure_facts: &PureFactList,
     environment: &CExecutionEnvironment,
@@ -1075,9 +1075,9 @@ mod condition_transition_tests {
 
     #[test]
     fn condition_transition_still_checks_execution_obligations() {
-        let state = CState::new().with_local(
+        let state = ExecutionState::new().with_local(
             "p",
-            CValue::pointer(Pointer {
+            ProgramValue::pointer(Pointer {
                 block: "havoc:condition-obligation".into(),
                 offset: PointerOffsetTerm::Constant(0),
             }),
@@ -1168,8 +1168,8 @@ mod condition_transition_tests {
         )
         .expect("field getter should parse with source identity");
         let statement = parsed[0].body_kernel_statement();
-        let state = CState::new()
-            .with_local("owner", CValue::pointer(pointer.clone()))
+        let state = ExecutionState::new()
+            .with_local("owner", ProgramValue::pointer(pointer.clone()))
             .with_resource_context(ResourceContext::new().unchecked_with_fact(
                 CResourceFact::own_memory(CMemoryRange::new(
                     pointer.clone(),
@@ -1200,7 +1200,7 @@ mod condition_transition_tests {
         assert!(transition.generated_load_source_events.is_empty());
         assert!(matches!(&transition.outcome,
             CStatementOutcome::Return { value, .. }
-                if matches!(value.native().as_ref(), CValue::Int32(MachineTerm::MemoryLoad(_, at, crate::kernel::LoadKind::Int32)) if **at == pointer)));
+                if matches!(value.native().as_ref(), ProgramValue::Int32(MachineTerm::MemoryLoad(_, at, crate::kernel::LoadKind::Int32)) if **at == pointer)));
 
         // Feed the producer-issued transition metadata through the same
         // persistent presentation store used by the execution cursor. This
@@ -1251,8 +1251,8 @@ mod condition_transition_tests {
         )
         .expect("compound field update should parse with source identity");
         let statement = parsed[0].body_kernel_statement();
-        let state = CState::new()
-            .with_local("counter", CValue::pointer(pointer.clone()))
+        let state = ExecutionState::new()
+            .with_local("counter", ProgramValue::pointer(pointer.clone()))
             .with_resource_context(ResourceContext::new().unchecked_with_fact(
                 CResourceFact::own_memory(CMemoryRange::new(
                     pointer.clone(),
@@ -1286,7 +1286,8 @@ mod condition_transition_tests {
             }
             other => panic!("completed update: {other:?}"),
         };
-        let CExpressionOutcome::Value(CValue::UInt32(value)) = after.memory().load(&pointer) else {
+        let CExpressionOutcome::Value(ProgramValue::UInt32(value)) = after.memory().load(&pointer)
+        else {
             panic!("unsigned field");
         };
         assert!(crate::kernel::proposition_mentions_scalar_read(
@@ -1304,9 +1305,11 @@ mod condition_transition_tests {
 
     #[test]
     fn failed_typed_load_publishes_no_source_event() {
-        let statement = CStatement::Return(CExpression::TypedLoad {
-            pointer: Box::new(CExpression::Value(CValue::Int32(MachineTerm::constant(7)))),
-            value_type: CType::Int32,
+        let statement = ProgramStatement::Return(ProgramExpression::TypedLoad {
+            pointer: Box::new(ProgramExpression::Value(ProgramValue::Int32(
+                MachineTerm::constant(7),
+            ))),
+            value_type: ProgramType::Int32,
             volatile: false,
             pointee_constant: false,
             access_class: None,
@@ -1322,7 +1325,7 @@ mod condition_transition_tests {
         let mut next_opaque_call = 0;
         let mut next_kernel_variable = 0;
         let (transitions, _) = certified_statement_transitions(
-            &CState::new(),
+            &ExecutionState::new(),
             &PureFactList::default(),
             &statement,
             &CExecutionEnvironment::new(),
@@ -1348,7 +1351,7 @@ mod condition_transition_tests {
     #[test]
     fn typed_load_source_metadata_is_semantically_neutral() {
         use std::collections::HashSet;
-        let pointer = CExpression::Value(CValue::pointer(Pointer {
+        let pointer = ProgramExpression::Value(ProgramValue::pointer(Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(8),
         }));
@@ -1362,17 +1365,17 @@ mod condition_transition_tests {
                 reference_access: None,
             })
         };
-        let first = CExpression::TypedLoad {
+        let first = ProgramExpression::TypedLoad {
             pointer: Box::new(pointer.clone()),
-            value_type: CType::Int32,
+            value_type: ProgramType::Int32,
             volatile: false,
             pointee_constant: false,
             access_class: None,
             source: source(0),
         };
-        let second = CExpression::TypedLoad {
+        let second = ProgramExpression::TypedLoad {
             pointer: Box::new(pointer),
-            value_type: CType::Int32,
+            value_type: ProgramType::Int32,
             volatile: false,
             pointee_constant: false,
             access_class: None,

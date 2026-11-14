@@ -18,7 +18,7 @@ fn scalar_declaration_and_retirement_do_not_reindex_heap_blocks() {
                         let declared = memory.clone().with_declared_scalar_block(
                             scalar.clone(),
                             4,
-                            CType::Int32,
+                            ProgramType::Int32,
                         );
                         let retired = declared.without_local_block(&scalar);
                         (declared, retired)

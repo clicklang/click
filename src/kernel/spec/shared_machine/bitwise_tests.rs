@@ -167,13 +167,13 @@ fn shared_bitwise_smart_constructors_preserve_native_component_normalization() {
     }
     let format = MachineIntegerType::UInt64;
     let mask = |n| {
-        Box::new(SpecExpression::Value(CValue::UInt64(
+        Box::new(SpecExpression::Value(ProgramValue::UInt64(
             MachineTerm::uint64_constant(n),
         )))
     };
     for operand in [
         value(format, 993452),
-        SpecExpression::Value(CValue::UInt64(MachineTerm::opaque_conversion(
+        SpecExpression::Value(ProgramValue::UInt64(MachineTerm::opaque_conversion(
             "opaque_bits",
             MachineTerm::Variable(Variable(993453)),
         ))),
@@ -229,8 +229,8 @@ fn retained_tag_side_facts_use_exact_bounds_without_changing_the_word() {
     .enumerate()
     {
         let expression = SpecExpression::BitwiseAnd(
-            Box::new(SpecExpression::Value(CValue::UInt64(inner))),
-            Box::new(SpecExpression::Value(CValue::UInt64(
+            Box::new(SpecExpression::Value(ProgramValue::UInt64(inner))),
+            Box::new(SpecExpression::Value(ProgramValue::UInt64(
                 MachineTerm::uint64_constant(!3),
             ))),
         );
@@ -256,10 +256,10 @@ fn retained_tag_addition_selects_only_a_true_exact_clear_guard() {
     let word = MachineTerm::Variable(Variable(993462));
     let low = MachineTerm::uint64_bitwise_and(word.clone(), MachineTerm::uint64_constant(1));
     let expression = SpecExpression::BitwiseAnd(
-        Box::new(SpecExpression::Value(CValue::UInt64(
+        Box::new(SpecExpression::Value(ProgramValue::UInt64(
             MachineTerm::uint64_add(word, MachineTerm::uint64_constant(1)),
         ))),
-        Box::new(SpecExpression::Value(CValue::UInt64(
+        Box::new(SpecExpression::Value(ProgramValue::UInt64(
             MachineTerm::uint64_constant(!3),
         ))),
     );
@@ -311,7 +311,7 @@ fn nested_bitwise_evaluator_retains_values_and_unsupported_widths_decline() {
         let mut execution = ExecutionBudget::new();
         let exports = KernelTermExport::machine_export_count();
         let actual = evaluate_spec_expression_paths_with_algebraic_bindings_in(
-            SpecScope::unbound(&CState::new(), None),
+            SpecScope::unbound(&ExecutionState::new(), None),
             &expression,
             &PureFactContext::new(),
             &mut SpecEvaluation::logical(&mut execution),

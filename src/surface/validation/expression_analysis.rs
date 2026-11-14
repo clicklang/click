@@ -4,27 +4,29 @@ use crate::surface::PredicateEnvironment;
 use std::collections::BTreeSet;
 
 pub(in crate::surface) fn c_expression_uses_variable(
-    expression: &CExpression,
+    expression: &ProgramExpression,
     variable: &str,
 ) -> bool {
     match expression {
-        CExpression::Value(_)
-        | CExpression::FunctionAddress(_)
-        | CExpression::CallResult { .. } => false,
-        CExpression::Variable(name) => name == variable,
-        CExpression::Cast { expression, .. } => c_expression_uses_variable(expression, variable),
-        CExpression::FloatNegate(expression)
-        | CExpression::FloatClassification { expression, .. }
-        | CExpression::EnumField {
+        ProgramExpression::Value(_)
+        | ProgramExpression::FunctionAddress(_)
+        | ProgramExpression::CallResult { .. } => false,
+        ProgramExpression::Variable(name) => name == variable,
+        ProgramExpression::Cast { expression, .. } => {
+            c_expression_uses_variable(expression, variable)
+        }
+        ProgramExpression::FloatNegate(expression)
+        | ProgramExpression::FloatClassification { expression, .. }
+        | ProgramExpression::EnumField {
             value: expression, ..
         }
-        | CExpression::EnumIs {
+        | ProgramExpression::EnumIs {
             value: expression, ..
         } => c_expression_uses_variable(expression, variable),
-        CExpression::EnumConstruct { fields, .. } => fields
+        ProgramExpression::EnumConstruct { fields, .. } => fields
             .iter()
             .any(|field| c_expression_uses_variable(field, variable)),
-        CExpression::Conditional {
+        ProgramExpression::Conditional {
             condition,
             then_branch,
             else_branch,
@@ -33,20 +35,20 @@ pub(in crate::surface) fn c_expression_uses_variable(
                 || c_expression_uses_variable(then_branch, variable)
                 || c_expression_uses_variable(else_branch, variable)
         }
-        CExpression::AddressOf(expression)
-        | CExpression::CheckedObjectAddress(expression)
-        | CExpression::Not(expression)
-        | CExpression::BitwiseNot(expression)
-        | CExpression::Load(expression)
-        | CExpression::TypedLoad {
+        ProgramExpression::AddressOf(expression)
+        | ProgramExpression::CheckedObjectAddress(expression)
+        | ProgramExpression::Not(expression)
+        | ProgramExpression::BitwiseNot(expression)
+        | ProgramExpression::Load(expression)
+        | ProgramExpression::TypedLoad {
             pointer: expression,
             ..
         }
-        | CExpression::PointerOffsetBytes {
+        | ProgramExpression::PointerOffsetBytes {
             pointer: expression,
             ..
         }
-        | CExpression::Subobject {
+        | ProgramExpression::Subobject {
             pointer: expression,
             ..
         } => c_expression_uses_variable(expression, variable),
@@ -257,7 +259,7 @@ pub(in crate::surface) fn proposition_contains_resource_count(
 /// directly or through a called predicate's body.
 pub(in crate::surface) fn proposition_contains_liveness_claim(
     proposition: &ClickProposition,
-    owned_bases: &[&CExpression],
+    owned_bases: &[&ProgramExpression],
     predicate_environment: &PredicateEnvironment,
     visited_predicates: &mut BTreeSet<String>,
 ) -> bool {
@@ -1170,14 +1172,14 @@ fn contract_expression_variable(expression: &ContractExpression) -> Option<&str>
     match expression {
         ContractExpression::Binding(name)
         | ContractExpression::AlgebraicVariable { name, .. }
-        | ContractExpression::CFragment(CExpression::Variable(name))
+        | ContractExpression::CFragment(ProgramExpression::Variable(name))
         | ContractExpression::CBinding(name) => Some(name),
         _ => None,
     }
 }
 
 fn contract_expression_int32_constant(expression: &ContractExpression) -> Option<i64> {
-    let CExpression::Value(CValue::Int32(bits32_constant!(value))) =
+    let ProgramExpression::Value(ProgramValue::Int32(bits32_constant!(value))) =
         contract_expression_as_c_fragment(expression)?
     else {
         return None;

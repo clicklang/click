@@ -67,18 +67,24 @@ fn owned_entry_footprint_names_memory_owners_and_refuses_unnameable_ones() {
 #[test]
 fn restoring_a_loop_frame_retains_complete_pointer_reads_but_not_written_cells() {
     let _session = crate::kernel::VerificationSession::enter();
-    let field = CPointerValue::new(Pointer::symbolic(Variable(916_200)), CType::Int32Pointer);
-    let data = CPointerValue::new(Pointer::symbolic(Variable(916_201)), CType::Int32Pointer);
+    let field = PointerValue::new(
+        Pointer::symbolic(Variable(916_200)),
+        ProgramType::Int32Pointer,
+    );
+    let data = PointerValue::new(
+        Pointer::symbolic(Variable(916_201)),
+        ProgramType::Int32Pointer,
+    );
     let field_range = CMemoryRange::from_pointer_value(&field, 0u32.into(), 2u32.into(), 4);
     let data_range = CMemoryRange::from_pointer_value(&data, 0u32.into(), 4u32.into(), 4);
     let initial = CMemory::new();
     // Restore scalar cache cells covering one complete pointer.
     let memory = initial
-        .materialize_symbolic_cell(field.pointer().clone(), CType::Int32)
-        .materialize_symbolic_cell(field.pointer().offset_by_bytes(4), CType::Int32);
-    let state = CState::new()
-        .with_local("field", CValue::Pointer(field.clone()))
-        .with_local("data", CValue::Pointer(data))
+        .materialize_symbolic_cell(field.pointer().clone(), ProgramType::Int32)
+        .materialize_symbolic_cell(field.pointer().offset_by_bytes(4), ProgramType::Int32);
+    let state = ExecutionState::new()
+        .with_local("field", ProgramValue::Pointer(field.clone()))
+        .with_local("data", ProgramValue::Pointer(data))
         .with_memory(memory)
         .with_resource_context(
             ResourceContext::new()
@@ -94,10 +100,10 @@ fn restoring_a_loop_frame_retains_complete_pointer_reads_but_not_written_cells()
             crate::kernel::region_footprint::byte_resource(&CResource::Memory(data_range)).unwrap(),
         ),
     });
-    let scalar = |value: u32| CExpression::Value(CValue::Int32(value.into()));
+    let scalar = |value: u32| ProgramExpression::Value(ProgramValue::Int32(value.into()));
     for (name, length, kept) in [("data", 4, true), ("field", 2, false)] {
         let spec = CResourceSpec::owned_memory(CMemorySegment::new(
-            CExpression::Variable(name.into()),
+            ProgramExpression::Variable(name.into()),
             scalar(0),
             scalar(length),
         ));
@@ -107,8 +113,8 @@ fn restoring_a_loop_frame_retains_complete_pointer_reads_but_not_written_cells()
             CLoopEffectOrigin::DeclaredResource,
             None,
         );
-        let body = CStatement::Store {
-            pointer: CExpression::Variable(name.into()),
+        let body = ProgramStatement::Store {
+            pointer: ProgramExpression::Variable(name.into()),
             value: scalar(1),
         };
         let head = prepare_loop_top_state(
@@ -128,7 +134,7 @@ fn restoring_a_loop_frame_retains_complete_pointer_reads_but_not_written_cells()
             state.memory(),
             head.top.memory(),
             field.pointer(),
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
             &head.summaries,
             &assumptions,
         );
@@ -138,7 +144,8 @@ fn restoring_a_loop_frame_retains_complete_pointer_reads_but_not_written_cells()
             "only a field outside the loop's explicit write footprint is preserved"
         );
         if let Some((before, after, equality)) = preservation {
-            let (CValue::Pointer(before), CValue::Pointer(after)) = (before, after) else {
+            let (ProgramValue::Pointer(before), ProgramValue::Pointer(after)) = (before, after)
+            else {
                 panic!("complete pointer observations");
             };
             assert!(

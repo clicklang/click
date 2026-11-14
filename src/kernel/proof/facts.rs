@@ -155,11 +155,11 @@ mod disjunction_projection_tests {
         };
         let before = CMemory::new().with_block("projection-cell", 4).store(
             pointer.clone(),
-            CValue::Int32(MachineTerm::Variable(Variable(10))),
+            ProgramValue::Int32(MachineTerm::Variable(Variable(10))),
         );
         let after = before.clone().store(
             pointer.clone(),
-            CValue::Int32(MachineTerm::Variable(Variable(11))),
+            ProgramValue::Int32(MachineTerm::Variable(Variable(11))),
         );
         let read = |memory| {
             Proposition::ConditionIs(
@@ -1614,7 +1614,7 @@ impl ProofFacts {
     pub(crate) fn freshen_pointer_forall_body(
         &self,
         binder: Variable,
-        c_type: CType,
+        c_type: ProgramType,
         body: &Proposition,
     ) -> Option<(Variable, Proposition)> {
         if !self.reserved_variables.contains(&binder) {
@@ -1622,7 +1622,7 @@ impl ProofFacts {
         }
         let body_variables = crate::kernel::proposition_variables(body);
         let fresh = self.fresh_universal_witness(&body_variables)?;
-        let pointer = if matches!(c_type, CType::FunctionPointer(_)) {
+        let pointer = if matches!(c_type, ProgramType::FunctionPointer(_)) {
             Pointer::symbolic_function(fresh)
         } else {
             Pointer::symbolic(fresh)
@@ -1672,7 +1672,7 @@ impl ProofFacts {
     pub(crate) fn with_selected_held_resource_separation(
         &self,
         goal: &Proposition,
-        state: &crate::kernel::CState,
+        state: &crate::kernel::ExecutionState,
     ) -> Self {
         let Proposition::CResourceSeparate { left, right } = goal else {
             return self.clone();
@@ -3888,8 +3888,8 @@ fn collect_owned_atomic_conjuncts(fact: &Proposition, output: &mut Vec<Propositi
 mod integer_equality_fact_index_tests {
     use super::*;
     use crate::kernel::{
-        CMemory, CValue, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType, MachineTerm,
-        Pointer, PointerOffsetTerm, SharedIntegerRangeEndpoint, SharedIntegerTerm,
+        CMemory, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType, MachineTerm, Pointer,
+        PointerOffsetTerm, ProgramValue, SharedIntegerRangeEndpoint, SharedIntegerTerm,
         SharedMachineIntegerTerm, Sort, Variable,
     };
 
@@ -3977,7 +3977,7 @@ mod integer_equality_fact_index_tests {
     }
 
     fn explicit_load_fold(
-        memory: &crate::kernel::SharedCMemory,
+        memory: &crate::kernel::SharedMemory,
         accumulator: Variable,
         item: Variable,
     ) -> IntegerTerm {
@@ -4257,7 +4257,7 @@ mod integer_equality_fact_index_tests {
                 block: "snapshot-alpha-facts".into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(MachineTerm::constant(7)),
         ));
         let source_fact = less_equal(
             IntegerTerm::constant_i64(9),
@@ -4291,14 +4291,14 @@ mod integer_equality_fact_index_tests {
                 block: "quantified-viewable".into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::Int32(MachineTerm::Variable(Variable(207_000))),
+            ProgramValue::Int32(MachineTerm::Variable(Variable(207_000))),
         );
         let changed_memory = memory.clone().store(
             Pointer {
                 block: "quantified-viewable".into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(MachineTerm::constant(7)),
         );
         let source = loadable_forall(
             &memory,
@@ -4398,27 +4398,28 @@ mod integer_equality_fact_index_tests {
 
     #[test]
     fn quantified_predicate_alpha_lookup_checks_state_after_memory_bucket() {
-        let predicate = |name: &str, binder: Variable, state: CState| Proposition::Exists {
+        let predicate = |name: &str, binder: Variable, state: ExecutionState| Proposition::Exists {
             name: name.to_string(),
             var: binder,
             sort: Sort::CInt32,
             body: Box::new(Proposition::Predicate {
                 name: "sample".to_string(),
                 arguments: vec![
-                    Term::CState(Box::new(state)),
-                    Term::CValue(CValue::Int32(MachineTerm::Variable(binder))),
+                    Term::ExecutionState(Box::new(state)),
+                    Term::ProgramValue(ProgramValue::Int32(MachineTerm::Variable(binder))),
                 ],
             }),
         };
-        let state = CState::new().with_local("x", CValue::Int32(MachineTerm::constant(7)));
+        let state =
+            ExecutionState::new().with_local("x", ProgramValue::Int32(MachineTerm::constant(7)));
         let available = predicate("first", Variable(300_001), state.clone());
         let renamed = predicate("second", Variable(300_002), state.clone());
-        let independently_empty = predicate("second", Variable(300_002), CState::new());
-        let empty = predicate("first", Variable(300_001), CState::new());
+        let independently_empty = predicate("second", Variable(300_002), ExecutionState::new());
+        let empty = predicate("first", Variable(300_001), ExecutionState::new());
         let changed_state = predicate(
             "second",
             Variable(300_002),
-            state.with_local("x", CValue::Int32(MachineTerm::constant(8))),
+            state.with_local("x", ProgramValue::Int32(MachineTerm::constant(8))),
         );
         assert_eq!(
             quantified_equivalence_index_key(&available),
@@ -4446,7 +4447,7 @@ mod integer_equality_fact_index_tests {
                 block: block.into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::Int32(MachineTerm::constant(1)),
+            ProgramValue::Int32(MachineTerm::constant(1)),
         );
         let consequent = loadable_exists(&memory, "callee", Variable(207_700), block, None, 4);
         let renamed = loadable_exists(&memory, "caller", Variable(207_800), block, None, 4);
@@ -4747,7 +4748,7 @@ mod integer_equality_fact_index_tests {
                 block: "snapshot-alpha-facts".into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(MachineTerm::constant(7)),
         ));
         let source_fact = equality(
             IntegerTerm::constant_i64(9),
@@ -5013,7 +5014,7 @@ mod held_separation_tests {
                 CResourceFact::own(range(0, 0, 6, 4)),
                 CResourceFact::own(range(1, 0, 3, 8)),
             ]);
-        let state = CState::new().with_resource_context(resources);
+        let state = ExecutionState::new().with_resource_context(resources);
         let goal = separation(range(3, 1, 2, 8), range(1, 0, 1, 8));
         assert!(
             facts
@@ -5045,11 +5046,12 @@ mod held_separation_tests {
 
     #[test]
     fn held_separation_covers_wide_fields_and_explicit_aliases() {
-        let state =
-            CState::new().with_resource_context(ResourceContext::new().unchecked_with_facts([
+        let state = ExecutionState::new().with_resource_context(
+            ResourceContext::new().unchecked_with_facts([
                 CResourceFact::own(range(0, 0, 6, 4)),
                 CResourceFact::own(range(1, 0, 3, 8)),
-            ]));
+            ]),
+        );
         let (CResource::Memory(alias), CResource::Memory(owner)) = (cell(2), cell(0)) else {
             unreachable!()
         };
@@ -5072,12 +5074,13 @@ mod held_separation_tests {
 
     #[test]
     fn held_field_separation_requires_complete_distinct_owners() {
-        let state =
-            CState::new().with_resource_context(ResourceContext::new().unchecked_with_facts([
+        let state = ExecutionState::new().with_resource_context(
+            ResourceContext::new().unchecked_with_facts([
                 CResourceFact::own(range(0, 0, 6, 4)),
                 CResourceFact::own(range(1, 0, 1, 4)),
                 CResourceFact::View(range(2, 0, 6, 4)),
-            ]));
+            ]),
+        );
         for goal in [
             separation(range(0, 0, 1, 8), range(0, 1, 2, 8)),
             separation(range(0, 0, 1, 8), range(0, 0, 2, 8)),
@@ -5106,11 +5109,12 @@ mod held_separation_tests {
             ),
             true,
         )]);
-        let state =
-            CState::new().with_resource_context(ResourceContext::new().unchecked_with_facts([
+        let state = ExecutionState::new().with_resource_context(
+            ResourceContext::new().unchecked_with_facts([
                 CResourceFact::own(range(0, 0, 6, 4)),
                 CResourceFact::own(range(1, 0, 6, 4)),
-            ]));
+            ]),
+        );
         // Even disjoint selected fields must not turn aliased, overlapping
         // owners into a valid partition.
         let goal = separation(range(0, 0, 1, 8), range(1, 1, 2, 8));
@@ -5125,7 +5129,7 @@ mod held_separation_tests {
     /// cannot manufacture separation from the live ownership partition.
     #[test]
     fn held_separation_requires_two_distinct_current_owners() {
-        let state = CState::new().with_resource_context(
+        let state = ExecutionState::new().with_resource_context(
             ResourceContext::new()
                 .unchecked_with_facts([CResourceFact::own(cell(0)), CResourceFact::View(cell(1))]),
         );
@@ -5159,11 +5163,12 @@ mod held_separation_tests {
         );
         // Deliberately assemble a stale partition: the explicit equality
         // must prevent using it as fresh evidence of separation.
-        let state =
-            CState::new().with_resource_context(ResourceContext::new().unchecked_with_facts([
+        let state = ExecutionState::new().with_resource_context(
+            ResourceContext::new().unchecked_with_facts([
                 CResourceFact::own(left.clone()),
                 CResourceFact::own(right.clone()),
-            ]));
+            ]),
+        );
         let goal = separation(left, right);
         let facts = ProofFacts::from_ordered(&[alias]);
         assert!(

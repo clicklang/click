@@ -859,7 +859,7 @@ mod tests {
 
     #[test]
     fn common_call_exact_rewriting_preserves_common_results_and_noops() {
-        use crate::kernel::{CValue, PureFunctionArgument, SharedPureApplication};
+        use crate::kernel::{ProgramValue, PureFunctionArgument, SharedPureApplication};
         let _session = VerificationSession::enter();
         let from = MachineTerm::Variable(Variable(995880));
         let to = MachineTerm::Variable(Variable(995881));
@@ -867,7 +867,9 @@ mod tests {
         for format in crate::kernel::machine_integer::FORMATS {
             let application = SharedPureApplication::intern(
                 "exact_call".into(),
-                vec![PureFunctionArgument::Value(CValue::Int32(from.clone()))],
+                vec![PureFunctionArgument::Value(ProgramValue::Int32(
+                    from.clone(),
+                ))],
             );
             let root = KernelTermImport::default().machine_call(format, &application);
             let native = KernelTermExport::machine(&root).unwrap();
@@ -1051,9 +1053,9 @@ mod tests {
         let pointer = CMemory::global_pointer("opaque-canonical");
         let later = intern_c_memory(memory.memory().clone().store(
             pointer.clone(),
-            CValue::Int32(MachineTerm::Variable(Variable(1006433))),
+            ProgramValue::Int32(MachineTerm::Variable(Variable(1006433))),
         ));
-        let sum = |memory: SharedCMemory, literal| MachineTerm::Binary {
+        let sum = |memory: SharedMemory, literal| MachineTerm::Binary {
             format: T::Int32,
             op: O::Add,
             left: MachineTerm::If {

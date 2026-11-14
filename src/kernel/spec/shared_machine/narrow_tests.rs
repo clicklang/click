@@ -13,7 +13,7 @@ const OPS: [MachineBinaryOp; 3] = [
     MachineBinaryOp::Multiply,
 ];
 
-fn input(value: &CValue, shared: bool) -> SpecValue {
+fn input(value: &ProgramValue, shared: bool) -> SpecValue {
     if shared {
         let root =
             KernelTermImport::default().argument(&PureFunctionArgument::Value(value.clone()));
@@ -47,7 +47,7 @@ fn annotated_narrow_results_match_native_modular_arithmetic() {
             operands.push(format.value_from_term(
                 crate::kernel::machine_integer::range::constant_word(format, &n).unwrap(),
             ));
-            operands.push(CValue::Int32(
+            operands.push(ProgramValue::Int32(
                 crate::kernel::machine_integer::range::constant_word(MachineIntegerType::Int32, &n)
                     .unwrap(),
             ));
@@ -76,14 +76,14 @@ fn annotated_narrow_results_match_native_modular_arithmetic() {
         let native =
             SpecValue::Native(format.value_from_term(MachineTerm::Variable(Variable(995462))));
         for n in [low - 1u8, high + 1u8] {
-            let outside = CValue::Int32(
+            let outside = ProgramValue::Int32(
                 crate::kernel::machine_integer::range::constant_word(MachineIntegerType::Int32, &n)
                     .unwrap(),
             )
             .into();
             assert!(narrow::apply(format, MachineBinaryOp::Add, &native, &outside).is_none());
         }
-        let different = SpecValue::Native(CValue::Int32(MachineTerm::Variable(Variable(995463))));
+        let different = SpecValue::Native(ProgramValue::Int32(MachineTerm::Variable(Variable(995463))));
         assert!(narrow::apply(format, MachineBinaryOp::Add, &native, &different).is_none());
         assert!(narrow::apply(format, MachineBinaryOp::Divide, &native, &native).is_none());
     }
@@ -106,7 +106,7 @@ fn annotated_narrow_evaluator_retains_nested_results() {
             let mut execution = ExecutionBudget::new();
             let exports = KernelTermExport::machine_export_count();
             let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                SpecScope::unbound(&CState::new(), None),
+                SpecScope::unbound(&ExecutionState::new(), None),
                 &outer,
                 &PureFactContext::new(),
                 &mut SpecEvaluation::logical(&mut execution),

@@ -38,7 +38,7 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
         // Its unknown value is retained as the initial opaque read.
         let before = before.store(
             field.clone(),
-            CValue::Pointer(CPointerValue::new(source.clone(), CType::Int32Pointer)),
+            ProgramValue::Pointer(PointerValue::new(source.clone(), ProgramType::Int32Pointer)),
         );
         let count = MachineTerm::Variable(Variable(999_321));
         let range =
@@ -75,8 +75,8 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
         let after = before
             .clone()
             .with_block(local.block.clone(), 4)
-            .store(source.offset_by_bytes(4), CValue::Int32(7u32.into()))
-            .store(local, CValue::Int32(8u32.into()));
+            .store(source.offset_by_bytes(4), ProgramValue::Int32(7u32.into()))
+            .store(local, ProgramValue::Int32(8u32.into()));
         let current = read(&context, &after, &field);
         let required = CResourceFact::own_memory(range(current.clone()));
         let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -113,7 +113,7 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
                 .directly_supporting_fact(&required, &context)
                 .is_none()
         );
-        let partial = after.store(field.offset_by_bytes(4), CValue::Int32(9u32.into()));
+        let partial = after.store(field.offset_by_bytes(4), ProgramValue::Int32(9u32.into()));
         let changed = CResourceFact::own_memory(range(read(&context, &partial, &field)));
         assert!(
             resources
@@ -323,10 +323,14 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
             true,
             true,
         );
-        let bytes_value =
-            crate::kernel::CPointerValue::new(bytes.clone(), crate::kernel::CType::UInt8Pointer);
-        let cursor_value =
-            crate::kernel::CPointerValue::new(cursor.clone(), crate::kernel::CType::UInt8Pointer);
+        let bytes_value = crate::kernel::PointerValue::new(
+            bytes.clone(),
+            crate::kernel::ProgramType::UInt8Pointer,
+        );
+        let cursor_value = crate::kernel::PointerValue::new(
+            cursor.clone(),
+            crate::kernel::ProgramType::UInt8Pointer,
+        );
         let aliases = PureFactContext::new()
             .assume_condition(
                 ConditionTerm::pointer_value_equal(

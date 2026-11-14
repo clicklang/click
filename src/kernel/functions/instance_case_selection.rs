@@ -12,7 +12,7 @@ use super::*;
 /// no ambient resource or premise scan is needed.  Any mismatch or unsupported
 /// body shape fails closed by publishing no facts.
 pub(in crate::kernel) fn matched_resource_instance_case_clauses(
-    state: &CState,
+    state: &ExecutionState,
     projection: &ResourceFieldProjection,
     model: &AlgebraicTerm,
     constructor: &AlgebraicTerm,
@@ -31,7 +31,7 @@ pub(in crate::kernel) fn matched_resource_instance_case_clauses(
 }
 
 pub(super) fn matched_resource_instance_case_read_projection(
-    state: &CState,
+    state: &ExecutionState,
     projection: &ResourceFieldProjection,
     model: &AlgebraicTerm,
     constructor: &AlgebraicTerm,
@@ -216,7 +216,7 @@ pub(super) fn matched_resource_instance_case_read_projection(
 pub(super) fn checked_returned_instance_body_facts(
     outputs: &ResourceContext,
     interface: &CFunctionContractInterface,
-    state: &CState,
+    state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> Vec<Proposition> {
     let mut publication_state = state.clone().with_resource_context(outputs.clone());
@@ -294,7 +294,7 @@ pub(super) fn checked_returned_instance_body_facts(
 }
 
 pub(super) fn selected_resource_instance_case_facts(
-    state: &CState,
+    state: &ExecutionState,
     bound_instances: Option<&BTreeMap<Variable, Variable>>,
     definitions: &[CCompositeResourceDefinition],
     assumptions: &PureFactContext,
@@ -365,10 +365,10 @@ pub(super) fn selected_resource_instance_case_facts(
 /// bytes. The ordinary resource transfer still has to find the requested
 /// resource unit after the argument is resolved.
 pub(super) fn selected_instance_resource_load_values(
-    state: &CState,
+    state: &ExecutionState,
     definitions: &[CCompositeResourceDefinition],
     assumptions: &PureFactContext,
-) -> BTreeMap<(Pointer, CType), CValue> {
+) -> BTreeMap<(Pointer, ProgramType), ProgramValue> {
     let Some(bindings) = state.resource_bindings.as_ref() else {
         return BTreeMap::new();
     };
@@ -401,7 +401,7 @@ pub(super) fn selected_instance_resource_load_values(
             if definition.parameters.len() != instance.arguments().len() {
                 return None;
             }
-            let mut evaluation = CState::new().with_memory(state.memory().clone());
+            let mut evaluation = ExecutionState::new().with_memory(state.memory().clone());
             for (parameter, argument) in definition.parameters.iter().zip(instance.arguments()) {
                 let value = argument.as_c_value()?;
                 if value.c_type() != parameter.c_type() {
@@ -457,7 +457,9 @@ pub(super) fn selected_instance_resource_load_values(
                     else {
                         return None;
                     };
-                    let SpecExpression::CExpression(CExpression::Variable(name)) = value else {
+                    let SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) =
+                        value
+                    else {
                         return None;
                     };
                     if !arm.bindings.contains(name) {
@@ -483,7 +485,7 @@ pub(super) fn selected_instance_resource_load_values(
                         return None;
                     }
                     let native = path.value.native();
-                    let CValue::Pointer(address) = native.as_ref() else {
+                    let ProgramValue::Pointer(address) = native.as_ref() else {
                         return None;
                     };
                     resource_context_has_read(
@@ -901,10 +903,10 @@ pub fn select_resource_model_arm(
 }
 
 pub(in crate::kernel) fn instance_body_evaluation(
-    state: &CState,
+    state: &ExecutionState,
     instance: &ResourceInstance,
     definition: &CCompositeResourceDefinition,
-) -> Result<CState, &'static str> {
+) -> Result<ExecutionState, &'static str> {
     let mut evaluation = state.clone();
     {
         // A local interpretation of proposed fields, never ownership or a

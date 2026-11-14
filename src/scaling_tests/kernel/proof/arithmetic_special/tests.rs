@@ -629,7 +629,7 @@ fn signed_defined_certificates_keep_shared_operands_and_source_bounds() {
 
 #[test]
 fn arithmetic_read_atoms_keep_snapshot_identity_without_scanning_storage() {
-    use crate::kernel::{CMemory, CValue, LoadKind, Variable, intern_c_memory};
+    use crate::kernel::{CMemory, LoadKind, ProgramValue, Variable, intern_c_memory};
     let mut samples = Vec::new();
     for size in [8, 64, 512] {
         let _session = crate::kernel::VerificationSession::enter();
@@ -638,7 +638,7 @@ fn arithmetic_read_atoms_keep_snapshot_identity_without_scanning_storage() {
         for index in 0..size {
             memory = memory.store(
                 Pointer::symbolic(Variable(895_000 + index)),
-                CValue::Int32(MachineTerm::constant(7)),
+                ProgramValue::Int32(MachineTerm::constant(7)),
             );
         }
         let memory = intern_c_memory(memory);
@@ -653,7 +653,7 @@ fn arithmetic_read_atoms_keep_snapshot_identity_without_scanning_storage() {
         });
         let changed = intern_c_memory(memory.memory().clone().store(
             address.clone(),
-            CValue::UInt64(MachineTerm::uint64_constant(9)),
+            ProgramValue::UInt64(MachineTerm::uint64_constant(9)),
         ));
         let different =
             MachineTerm::MemoryLoad(changed, Box::new(address.clone()), LoadKind::Bits64);

@@ -10,7 +10,7 @@ fn selected_call_domain_recovery_ignores_unrelated_context() {
         for index in 0..count {
             context = context.assume_proposition(Proposition::Predicate {
                 name: format!("unrelated_{index}"),
-                arguments: vec![Term::CValue(value(946_000 + index))],
+                arguments: vec![Term::ProgramValue(value(946_000 + index))],
             });
         }
         let (paths, work) =
@@ -36,7 +36,7 @@ fn selected_constructor_domain_recovery_ignores_growing_context() {
         for index in 0..count {
             context = context.assume_proposition(Proposition::Predicate {
                 name: format!("unrelated_{index}"),
-                arguments: vec![Term::CValue(value(946_000 + index))],
+                arguments: vec![Term::ProgramValue(value(946_000 + index))],
             });
             // Many other nominal classes on the queried pointer must not
             // turn the exact class lookup into an object-bucket scan.

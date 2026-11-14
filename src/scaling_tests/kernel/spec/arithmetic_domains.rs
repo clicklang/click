@@ -3,8 +3,8 @@ fn division_paths(context: &PureFactContext) -> Vec<CExpressionPath> {
     apply_spec_arithmetic_with(
         crate::kernel::MachineBinaryOp::Divide,
         SpecDivision::CDefined,
-        CValue::UInt32(MachineTerm::uint32_constant(7)),
-        CValue::UInt32(MachineTerm::Variable(Variable(690_000))),
+        ProgramValue::UInt32(MachineTerm::uint32_constant(7)),
+        ProgramValue::UInt32(MachineTerm::Variable(Variable(690_000))),
         ExecutionFacts::default(),
         Vec::new(),
         context,
@@ -87,8 +87,9 @@ fn native_existential_domains_scale_with_claims_not_ambient_facts() {
             );
         }
         let claim = |i| {
-            let value =
-                SpecExpression::Value(CValue::Int32(MachineTerm::Variable(Variable(694_000 + i))));
+            let value = SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(
+                Variable(694_000 + i),
+            )));
             SpecProposition::ExistsInt32 {
                 name: "k".into(),
                 variable: Variable(694_000 + i),
@@ -108,7 +109,7 @@ fn native_existential_domains_scale_with_claims_not_ambient_facts() {
             .unwrap();
         let (lowered, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::c_lower_spec_proposition_with_checked_obligations(
-                &CState::new(),
+                &ExecutionState::new(),
                 &proposition,
                 None,
                 &context,
@@ -163,7 +164,7 @@ fn structural_signed_addition_keeps_its_debt_independent_of_ambient_facts() {
                     &context,
                     |left, right, facts, obligations, context| {
                         apply_c_add(
-                            &CState::new(),
+                            &ExecutionState::new(),
                             left,
                             right,
                             None,
@@ -213,8 +214,8 @@ fn logical_shift_shape_and_work_ignore_ambient_count_facts() {
     let lower = |context: &PureFactContext| {
         apply_spec_arithmetic(
             crate::kernel::MachineBinaryOp::ShiftRight,
-            CValue::UInt32(MachineTerm::Variable(Variable(696_001))),
-            CValue::UInt64(count.clone()),
+            ProgramValue::UInt32(MachineTerm::Variable(Variable(696_001))),
+            ProgramValue::UInt64(count.clone()),
             ExecutionFacts::default(),
             Vec::new(),
             context,
@@ -266,8 +267,8 @@ fn wide_logical_product_keeps_operands_when_equalities_grow() {
     let lower = |context: &PureFactContext| {
         apply_spec_arithmetic(
             crate::kernel::MachineBinaryOp::Multiply,
-            CValue::Int128(MachineTerm::Variable(Variable(698_001))),
-            CValue::Int64(operand.clone()),
+            ProgramValue::Int128(MachineTerm::Variable(Variable(698_001))),
+            ProgramValue::Int64(operand.clone()),
             ExecutionFacts::default(),
             Vec::new(),
             context,

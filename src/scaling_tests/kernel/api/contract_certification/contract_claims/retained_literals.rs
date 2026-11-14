@@ -16,13 +16,13 @@ fn retained_literal_completion_keys_keep_exact_literals_and_skip_compound_prefix
         }
         let outcome = |root| CFunctionOutcome::Return {
             value: ExecutionValue::from(root).into(),
-            state: Box::new(CState::new()),
+            state: Box::new(ExecutionState::new()),
         };
         let compound = outcome(root);
         let retained = outcome(literal);
         let native = CFunctionOutcome::Return {
-            value: CValue::UInt32(MachineTerm::uint32_constant(3)).into(),
-            state: Box::new(CState::new()),
+            value: ProgramValue::UInt32(MachineTerm::uint32_constant(3)).into(),
+            state: Box::new(ExecutionState::new()),
         };
         let exports = KernelTermExport::machine_export_count();
         assert_eq!(

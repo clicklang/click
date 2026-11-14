@@ -11,7 +11,7 @@ fn imported_addressability_work_scales_with_body_size() {
         for index in 0..count {
             body = c_seq(
                 body,
-                c_declare(format!("capture_{index}"), CType::Int32Pointer),
+                c_declare(format!("capture_{index}"), ProgramType::Int32Pointer),
             );
         }
         let function = imported(body);

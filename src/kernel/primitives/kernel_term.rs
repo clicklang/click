@@ -25,9 +25,9 @@ use std::sync::{Mutex, Weak};
 pub enum KernelType {
     Bool,
     Integer,
-    C(CType),
+    C(ProgramType),
     Algebraic(AlgebraicType),
-    ArrayRef(CType),
+    ArrayRef(ProgramType),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
@@ -87,7 +87,7 @@ pub enum KernelTermNode {
     /// observation origins and access evidence are not part of this node.
     /// Native addresses remain an explicit input boundary during migration.
     MemoryLoad {
-        memory: SharedCMemory,
+        memory: SharedMemory,
         address: Pointer,
         kind: LoadKind,
     },
@@ -866,7 +866,7 @@ impl KernelTerm {
             KernelType::Bool,
             KernelTermNode::LegacyBool(KernelLegacyTerm {
                 identity: LegacyIdentity::MachineObservation(identity),
-                value: PureFunctionArgument::Value(CValue::Bool(MachineTerm::BoolCast {
+                value: PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::BoolCast {
                     to: MachineIntegerType::UInt8,
                     value: Box::new(condition),
                 })),
@@ -1118,7 +1118,7 @@ mod tests {
         let format = MachineIntegerType::Int32;
         let value = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
             "opaque_argument".into(),
-            vec![PureFunctionArgument::Value(CValue::Int32(
+            vec![PureFunctionArgument::Value(ProgramValue::Int32(
                 MachineTerm::MemoryLoad(
                     crate::kernel::intern_c_memory(CMemory::new()),
                     Box::new(Pointer::symbolic(Variable(87654328))),
@@ -1157,7 +1157,7 @@ mod tests {
         assert_eq!(observation.id(), shared.id());
         assert_eq!(observation.value(), &cast);
         assert!(observation.value_reading().is_some());
-        let opaque = KernelTerm::legacy(PureFunctionArgument::Value(CValue::Int32(
+        let opaque = KernelTerm::legacy(PureFunctionArgument::Value(ProgramValue::Int32(
             MachineTerm::Variable(Variable(87654327)),
         )));
         let parent =
@@ -1199,7 +1199,7 @@ mod tests {
     #[test]
     fn checker_bridge_preserves_calls_and_machine_types() {
         let input =
-            PureFunctionArgument::Value(CValue::UInt32(MachineTerm::Variable(Variable(70))));
+            PureFunctionArgument::Value(ProgramValue::UInt32(MachineTerm::Variable(Variable(70))));
         let call = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
             "foo".into(),
             vec![input],
@@ -1214,7 +1214,7 @@ mod tests {
         ));
         assert_eq!(
             common.children()[1].children()[0].ty(),
-            &KernelType::C(CType::UInt32)
+            &KernelType::C(ProgramType::UInt32)
         );
         assert_eq!(
             KernelTermExport::default().integer(&common).unwrap(),
@@ -1244,22 +1244,24 @@ mod tests {
 
     #[test]
     fn legacy_pointer_equality_does_not_discard_auxiliary_qualifiers() {
-        let pointer = CPointerValue::new(Pointer::symbolic(Variable(76)), CType::Int32Pointer);
+        let pointer = PointerValue::new(Pointer::symbolic(Variable(76)), ProgramType::Int32Pointer);
         let constant = pointer.clone().with_pointee_constant(true);
         assert_eq!(
             pointer, constant,
             "const is auxiliary, not pointer identity"
         );
         let mut import = KernelTermImport::default();
-        let plain = import.argument(&PureFunctionArgument::Value(CValue::Pointer(pointer)));
-        let qualified = import.argument(&PureFunctionArgument::Value(CValue::Pointer(constant)));
-        let PureFunctionArgument::Value(CValue::Pointer(restored)) =
+        let plain = import.argument(&PureFunctionArgument::Value(ProgramValue::Pointer(pointer)));
+        let qualified = import.argument(&PureFunctionArgument::Value(ProgramValue::Pointer(
+            constant,
+        )));
+        let PureFunctionArgument::Value(ProgramValue::Pointer(restored)) =
             KernelTermExport::default().argument(&qualified).unwrap()
         else {
             panic!("pointer")
         };
         assert!(restored.pointee_constant());
-        let PureFunctionArgument::Value(CValue::Pointer(restored)) =
+        let PureFunctionArgument::Value(ProgramValue::Pointer(restored)) =
             KernelTermExport::default().argument(&plain).unwrap()
         else {
             panic!("pointer")
@@ -1270,14 +1272,14 @@ mod tests {
     #[test]
     fn legacy_adapter_keeps_complete_pointers_and_scoped_integer_nodes() {
         let base = Pointer::symbolic(Variable(75));
-        let root = CPointerValue::new(base.clone(), CType::Int32Pointer);
+        let root = PointerValue::new(base.clone(), ProgramType::Int32Pointer);
         let member = root.clone().with_extent(Some(SubobjectExtent {
             start: base,
             width: 4u32.into(),
         }));
         let mut import = KernelTermImport::default();
-        let root = PureFunctionArgument::Value(CValue::Pointer(root));
-        let member = PureFunctionArgument::Value(CValue::Pointer(member));
+        let root = PureFunctionArgument::Value(ProgramValue::Pointer(root));
+        let member = PureFunctionArgument::Value(ProgramValue::Pointer(member));
         let root_term = import.argument(&root);
         let member_term = import.argument(&member);
         assert_ne!(root_term, member_term);
@@ -1312,7 +1314,7 @@ mod tests {
         );
         assert_ne!(
             b,
-            KernelTerm::variable(KernelType::C(CType::Int32), Variable(72))
+            KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(72))
         );
         let one = KernelTerm::integer_literal(1.into());
         assert_ne!(
@@ -1324,7 +1326,7 @@ mod tests {
             KernelTerm::integer_operation(
                 KernelIntegerOperator::Negate,
                 vec![KernelTerm::variable(
-                    KernelType::C(CType::Int32),
+                    KernelType::C(ProgramType::Int32),
                     Variable(72)
                 )]
             )

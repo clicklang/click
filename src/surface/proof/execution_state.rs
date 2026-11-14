@@ -770,7 +770,10 @@ fn match_arm_selection(
                 arms: selector_arms,
             },
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(int32_constant!(1,)))),
+        right:
+            ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::Int32(
+                int32_constant!(1,),
+            ))),
     } = condition
     else {
         return None;
@@ -782,7 +785,7 @@ fn match_arm_selection(
         .iter()
         .zip(selector_arms)
         .map(|(arm, selector)| {
-            let ContractExpression::CFragment(CExpression::Value(CValue::Int32(
+            let ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::Int32(
                 int32_constant!(value),
             ))) = &selector.body
             else {
@@ -1639,9 +1642,9 @@ mod proof_fact_store_tests {
     #[test]
     fn execution_frontier_forks_share_remaining_c_and_continuation_history() {
         for size in [16_u32, 64, 256, 1024, 4096] {
-            let mut statement = CStatement::Skip;
+            let mut statement = ProgramStatement::Skip;
             for _ in 0..size {
-                statement = c_seq(CStatement::Skip, statement);
+                statement = c_seq(ProgramStatement::Skip, statement);
             }
             let remaining = Arc::new(statement);
             let mut frontier = ExecutionFrontier {
@@ -1810,7 +1813,7 @@ pub(super) struct ExecutionView<'a> {
     pub(super) recorded_snapshots: &'a RecordedSnapshots,
     pub(super) surface_propositions: &'a SurfacePropositionMap,
     pub(super) effect_facts: &'a ExecutionFacts,
-    function_entry_state: Option<&'a CState>,
+    function_entry_state: Option<&'a ExecutionState>,
     /// Lexical names available where this certificate is emitted. They are
     /// presentation hints, never proof authority.
     pub(super) proof_bindings: Option<&'a PersistentMap<String, ContractExpression>>,
@@ -1819,7 +1822,10 @@ pub(super) struct ExecutionView<'a> {
 impl<'a> ExecutionView<'a> {
     /// The state the current region started from, or the current state
     /// when no region is open.
-    pub(super) fn execution_start_state<'s>(&self, current_state: &'s CState) -> &'s CState
+    pub(super) fn execution_start_state<'s>(
+        &self,
+        current_state: &'s ExecutionState,
+    ) -> &'s ExecutionState
     where
         'a: 's,
     {
@@ -1831,7 +1837,10 @@ impl<'a> ExecutionView<'a> {
 
     /// The state that `old(...)` and `at(function.entry, ...)` resolve to when
     /// a contract clause is lowered here.
-    pub(super) fn old_reference_state<'s>(&self, current_state: &'s CState) -> &'s CState
+    pub(super) fn old_reference_state<'s>(
+        &self,
+        current_state: &'s ExecutionState,
+    ) -> &'s ExecutionState
     where
         'a: 's,
     {
@@ -1848,7 +1857,7 @@ impl<'a> ExecutionView<'a> {
         effect_facts: &'a ExecutionFacts,
         recorded_snapshots: &'a RecordedSnapshots,
         surface_propositions: &'a SurfacePropositionMap,
-        function_entry_state: Option<&'a CState>,
+        function_entry_state: Option<&'a ExecutionState>,
     ) -> Self {
         ExecutionView {
             frontier,

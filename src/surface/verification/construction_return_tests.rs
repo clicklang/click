@@ -22,12 +22,12 @@ fn context_with_member_view(
     let destination = c_variable(C_CONTRACT_RESULT_NAME);
     let field = c_cast(
         c_pointer_offset_bytes(destination.clone(), member.offset_bytes()),
-        CType::Int32Pointer,
+        ProgramType::Int32Pointer,
     );
     // Model &result.value, including its selected member bounds. A raw
     // offset has the same address but retains the enclosing object's view.
     let field = if select_member {
-        CExpression::Subobject {
+        ProgramExpression::Subobject {
             pointer: Box::new(field),
             width: member.byte_width(),
         }
@@ -35,14 +35,18 @@ fn context_with_member_view(
         field
     };
     let factory = c_function(
-        CType::Int32Pointer,
+        ProgramType::Int32Pointer,
         "factory",
-        vec![c_parameter("input", CType::Int32)],
+        vec![c_parameter("input", ProgramType::Int32)],
         c_seq(
-            c_typed_store(destination.clone(), field.clone(), CType::Int32Pointer),
+            c_typed_store(
+                destination.clone(),
+                field.clone(),
+                ProgramType::Int32Pointer,
+            ),
             c_seq(
                 if initialize_value {
-                    c_typed_store(field, c_variable("input"), CType::Int32)
+                    c_typed_store(field, c_variable("input"), ProgramType::Int32)
                 } else {
                     c_skip()
                 },
@@ -52,9 +56,9 @@ fn context_with_member_view(
     )
     .with_construction_return(layout.clone());
     let forward = c_function(
-        CType::Int32Pointer,
+        ProgramType::Int32Pointer,
         "forward",
-        vec![c_parameter("input", CType::Int32)],
+        vec![c_parameter("input", ProgramType::Int32)],
         c_seq(
             c_call_assign(C_CONTRACT_RESULT_NAME, "factory", vec![c_variable("input")]),
             c_return(destination),
@@ -62,16 +66,16 @@ fn context_with_member_view(
     )
     .with_construction_return(layout.clone());
     let caller = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "probe",
-        vec![c_parameter("input", CType::Int32)],
+        vec![c_parameter("input", ProgramType::Int32)],
         c_seq(
             c_allocate_aggregate_destination("node", layout),
             c_seq(
                 c_call_assign("node", "forward", vec![c_variable("input")]),
                 c_return(c_load(c_typed_load(
                     c_variable("node"),
-                    CType::Int32Pointer,
+                    ProgramType::Int32Pointer,
                 ))),
             ),
         ),

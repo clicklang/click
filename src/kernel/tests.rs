@@ -28,13 +28,13 @@ fn checked_memory_load_equality(
 /// Instantiate the explicit elements law and discharge its written premise.
 pub(in crate::kernel) fn explicit_signed_elements(
     base: Pointer,
-    ty: CType,
+    ty: ProgramType,
     i: MachineTerm,
     j: MachineTerm,
     facts: PureFactContext,
 ) -> PureFactContext {
     let law = crate::kernel::prove_separation_elements(
-        CPointerValue::new(base, ty.pointer_to().unwrap()),
+        PointerValue::new(base, ty.pointer_to().unwrap()),
         ty.byte_width(),
         MachineIntegerType::Int32,
         i,
@@ -60,13 +60,13 @@ pub(in crate::kernel) fn explicit_frame(
     before: &CMemory,
     after: &CMemory,
     address: &Pointer,
-    ty: CType,
+    ty: ProgramType,
     effects: &[Proposition],
     facts: &PureFactContext,
-) -> Option<(CValue, CValue, Proposition)> {
+) -> Option<(ProgramValue, ProgramValue, Proposition)> {
     use crate::kernel::eval::typed_reads::ReadScope;
     use crate::kernel::proof::transport_certificate::{TransportCertificate, TransportNode};
-    let entry = CState::new().with_memory(before.clone());
+    let entry = ExecutionState::new().with_memory(before.clone());
     let exit = entry.clone().with_memory(after.clone());
     let effects = effects
         .iter()
@@ -130,20 +130,24 @@ pub(in crate::kernel) fn explicit_frame(
     let old = observe(before);
     let new = observe(after);
     let condition = match (new.numeric_value(), old.numeric_value()) {
-        (CValue::Parameter(a), CValue::Parameter(b)) => {
+        (ProgramValue::Parameter(a), ProgramValue::Parameter(b)) => {
             ConditionTerm::AlgebraicEqual(a.clone(), b.clone())
         }
-        (CValue::Pointer(a), CValue::Pointer(b)) => {
+        (ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
             ConditionTerm::pointer_value_equal(a.clone(), b.clone())
         }
-        (CValue::Int32(a), CValue::Int32(b)) => ConditionTerm::equal(a.clone(), b.clone()),
-        (CValue::UInt8(a), CValue::UInt8(b)) => ConditionTerm::machine_compare(
+        (ProgramValue::Int32(a), ProgramValue::Int32(b)) => {
+            ConditionTerm::equal(a.clone(), b.clone())
+        }
+        (ProgramValue::UInt8(a), ProgramValue::UInt8(b)) => ConditionTerm::machine_compare(
             MachineIntegerType::UInt8,
             CompareRelation::Equal,
             a.clone(),
             b.clone(),
         ),
-        (CValue::UInt64(a), CValue::UInt64(b)) => ConditionTerm::uint64_equal(a.clone(), b.clone()),
+        (ProgramValue::UInt64(a), ProgramValue::UInt64(b)) => {
+            ConditionTerm::uint64_equal(a.clone(), b.clone())
+        }
         other => panic!("unsupported test observation: {other:?}"),
     };
     let result = Proposition::ConditionIs(condition, true);
@@ -195,9 +199,9 @@ mod wide_storage_tests;
 /// lowering. This helper does not establish that they represent the complete
 /// input domain needed when packaging a reusable function rule.
 fn certify_contract_with_kernel_artifacts(
-    state: CState,
-    function: CFunction,
-    arguments: Vec<CExpression>,
+    state: ExecutionState,
+    function: ProgramFunction,
+    arguments: Vec<ProgramExpression>,
     derived_entry_facts: Vec<Proposition>,
     environment: CExecutionEnvironment,
     execution_semantics: CExecutionSemantics,

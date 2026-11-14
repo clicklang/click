@@ -29,7 +29,7 @@ fn old_collect_spec_expression_bitvector_variables(
                 old_collect_spec_expression_bitvector_variables(&arm.body, variables);
             }
         }
-        SpecExpression::CExpression(expression) => {
+        SpecExpression::ProgramExpression(expression) => {
             collect_c_expression_bitvector_variables(expression, variables);
         }
         SpecExpression::CountedResourceCount { arguments, .. } => {
@@ -416,7 +416,7 @@ fn old_collect_spec_integer_bound_expression(
                 old_collect_spec_integer_bound_expression(&arm.body, variables, integer_seen);
             }
         }
-        SpecExpression::CExpression(expression) => {
+        SpecExpression::ProgramExpression(expression) => {
             collect_c_expression_bound_identities(expression, variables, integer_seen);
         }
         SpecExpression::CountedResourceCount { arguments, .. } => {
@@ -499,7 +499,7 @@ fn old_collect_spec_algebraic_bound_identities(
         }
         SpecAlgebraicExpressionNode::Binding(_) | SpecAlgebraicExpressionNode::ResourceField(_) => {
         }
-        SpecAlgebraicExpressionNode::CValue(value) => {
+        SpecAlgebraicExpressionNode::ProgramValue(value) => {
             old_collect_spec_integer_bound_expression(value, variables, integer_seen);
         }
         SpecAlgebraicExpressionNode::Constructor { fields, .. } => {
@@ -706,7 +706,7 @@ fn old_collect_spec_algebraic_expression_bitvector_variables(
     match &expression.node {
         SpecAlgebraicExpressionNode::ResourceField(_) => {}
         SpecAlgebraicExpressionNode::Variable(_) | SpecAlgebraicExpressionNode::Binding(_) => {}
-        SpecAlgebraicExpressionNode::CValue(value) => {
+        SpecAlgebraicExpressionNode::ProgramValue(value) => {
             old_collect_spec_expression_bitvector_variables(value, variables)
         }
         SpecAlgebraicExpressionNode::Constructor { fields, .. } => {

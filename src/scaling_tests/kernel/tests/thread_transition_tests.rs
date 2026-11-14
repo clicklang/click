@@ -24,7 +24,7 @@ fn pending_status_resolution_scales_with_explicit_intervening_work() {
         let mut pending = PendingThreadCreate::new(
             status.clone(),
             Pointer::null(),
-            CValue::UInt64(MachineTerm::uint64_constant(0)),
+            ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
             &base,
             &base,
         );
@@ -106,9 +106,9 @@ fn thread_recovery_work_depends_on_one_child_not_the_outstanding_registry() {
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn joining_one_of_many_shared_readers_touches_only_its_share_branch() {
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "thread_reader",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         c_return(c_load(c_variable("p"))),
     )
     .with_resource_summary(

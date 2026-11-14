@@ -75,8 +75,8 @@ pub(super) fn library_path_modules(source: &str) -> Result<BTreeSet<&'static str
 
 #[derive(Clone, Debug)]
 pub(super) struct QualifiedCObject {
-    pub expression: CExpression,
-    pub address: Option<CExpression>,
+    pub expression: ProgramExpression,
+    pub address: Option<ProgramExpression>,
     pub struct_name: Option<String>,
     pub array_shape: Option<Vec<u32>>,
     pub ambiguous: bool,
@@ -137,7 +137,7 @@ const RETIRED_SPECIAL_CERTIFICATE: &str =
 #[derive(Clone, Debug)]
 pub(super) struct GlobalArrayShape {
     pub(super) shape: Vec<u32>,
-    pub(super) element_type: CType,
+    pub(super) element_type: ProgramType,
 }
 
 /// The output pattern a call step may bind. The single-name form is kept as a
@@ -1029,7 +1029,7 @@ struct Parser {
     /// `uint64` address. Arithmetic on them is
     /// pointer-word arithmetic, such as a tag added to an aligned address,
     /// and keeps its C meaning as a pointer operand does.
-    address_casts: std::collections::HashSet<CExpression>,
+    address_casts: std::collections::HashSet<ProgramExpression>,
     /// The pointer parameters of the theorem being parsed. Arithmetic on one
     /// is pointer arithmetic and keeps its C meaning, as it does on a C
     /// function's pointer parameter.
@@ -1886,7 +1886,7 @@ impl Parser {
             return None;
         };
         match inner.as_ref() {
-            ContractExpression::CFragment(CExpression::Variable(slice))
+            ContractExpression::CFragment(ProgramExpression::Variable(slice))
                 if self.rust_slice_params.contains(slice) =>
             {
                 Some(slice)
@@ -1946,20 +1946,22 @@ impl Parser {
                         .expect("matched above")
                         .to_string();
                     spread.push(argument);
-                    spread.push(ContractExpression::CFragment(CExpression::Variable(
+                    spread.push(ContractExpression::CFragment(ProgramExpression::Variable(
                         format!("{slice}_len"),
                     )));
                 }
-                ContractExpression::CFragment(CExpression::Variable(slice))
+                ContractExpression::CFragment(ProgramExpression::Variable(slice))
                     if self.rust_slice_params.contains(&slice) =>
                 {
-                    let length = ContractExpression::CFragment(CExpression::Variable(format!(
-                        "{slice}_len"
+                    let length = ContractExpression::CFragment(ProgramExpression::Variable(
+                        format!("{slice}_len"),
+                    ));
+                    spread.push(ContractExpression::CFragment(ProgramExpression::Variable(
+                        slice,
                     )));
-                    spread.push(ContractExpression::CFragment(CExpression::Variable(slice)));
                     spread.push(length);
                 }
-                ContractExpression::CFragment(CExpression::Variable(slice)) => {
+                ContractExpression::CFragment(ProgramExpression::Variable(slice)) => {
                     return Err(self.error(format!(
                         "argument {} of `{name}` is a slice, but `{slice}` is not a slice parameter; pass one, or `slice::from_raw_parts(p, n)` for a pointer and a length",
                         index + 1
@@ -2905,7 +2907,7 @@ impl Parser {
                 .is_some_and(|name| self.source_aliases.contains_key(name))
     }
 
-    fn parse_qualified_c_name(&mut self) -> Result<(String, CExpression), ClickError> {
+    fn parse_qualified_c_name(&mut self) -> Result<(String, ProgramExpression), ClickError> {
         let written = self.expect_c_declaration_ident("C source alias")?;
         let (alias, mut name) = match written.split_once("::") {
             Some((alias, name)) => (alias.to_string(), name.to_string()),
@@ -2925,7 +2927,7 @@ impl Parser {
             .get(&alias)
             .ok_or_else(|| self.error(format!("unknown C source alias `{alias}`")))?;
         let expression = match &self.qualified_objects {
-            None => CExpression::Variable(qualified.clone()),
+            None => ProgramExpression::Variable(qualified.clone()),
             Some(objects) => objects
                 .get(source)
                 .and_then(|objects| objects.get(&name))
@@ -2953,11 +2955,13 @@ impl Parser {
             .get(name)
     }
 
-    fn parse_segment_primary(&mut self) -> Result<(ContractExpression, CExpression), ClickError> {
+    fn parse_segment_primary(
+        &mut self,
+    ) -> Result<(ContractExpression, ProgramExpression), ClickError> {
         if self.peek_next() == Some(&Token::ColonColon) {
             let (name, expression) = self.parse_qualified_c_name()?;
             return Ok((
-                ContractExpression::CFragment(CExpression::Variable(name)),
+                ContractExpression::CFragment(ProgramExpression::Variable(name)),
                 expression,
             ));
         }
@@ -2975,8 +2979,8 @@ impl Parser {
     /// Wraps a bare global-array name in a cast to its element pointer type.
     /// A parameter shadowing the global is not in the per-function shape map,
     /// so it keeps the parameter's own type.
-    fn retype_global_array_pointer(&self, expression: &CExpression) -> CExpression {
-        let CExpression::Variable(name) = expression else {
+    fn retype_global_array_pointer(&self, expression: &ProgramExpression) -> ProgramExpression {
+        let ProgramExpression::Variable(name) = expression else {
             return expression.clone();
         };
         match self
@@ -2985,7 +2989,7 @@ impl Parser {
             .get(name)
             .and_then(|array| array.element_type.pointer_to())
         {
-            Some(target_type) => CExpression::Cast {
+            Some(target_type) => ProgramExpression::Cast {
                 expression: Box::new(expression.clone()),
                 target_type,
                 integer_mode: crate::kernel::CIntegerCastMode::Standard,
@@ -5746,7 +5750,9 @@ impl Parser {
             return Ok(expression);
         }
         let name = self.take_rust_slice_len(&name).unwrap_or(name);
-        Ok(ContractExpression::CFragment(CExpression::Variable(name)))
+        Ok(ContractExpression::CFragment(ProgramExpression::Variable(
+            name,
+        )))
     }
 
     fn parse_parameters(&mut self) -> Result<ParsedParameters, ClickError> {
@@ -6582,7 +6588,7 @@ impl Parser {
                 )
             })
             .collect::<Vec<_>>();
-        let signature = crate::kernel::CType::qualified_function_pointer_signature(
+        let signature = crate::kernel::ProgramType::qualified_function_pointer_signature(
             return_type.c_type.to_kernel_type(),
             return_type.pointee_constant,
             &parameter_types,
@@ -7574,9 +7580,9 @@ impl Parser {
                         access: ResourceAccessMode::Own,
                         kind: ResourceKind::Token,
                         name: family.to_string(),
-                        arguments: vec![ContractExpression::CFragment(CExpression::Variable(
-                            "mutex".to_string(),
-                        ))],
+                        arguments: vec![ContractExpression::CFragment(
+                            ProgramExpression::Variable("mutex".to_string()),
+                        )],
                         parameter_types: vec![C0Type::VoidPointer],
                     }),
                 });
@@ -8933,7 +8939,7 @@ impl Parser {
         self.expect(Token::RBracket)?;
         let literal = |bound: &Option<ContractExpression>| match bound {
             Some(ContractExpression::IntegerLiteral(text)) => text.parse::<u64>().ok(),
-            Some(bound @ ContractExpression::CFragment(CExpression::Value(_))) => {
+            Some(bound @ ContractExpression::CFragment(ProgramExpression::Value(_))) => {
                 crate::surface::diagnostics::describe_contract_expression(bound)
                     .strip_suffix("u64")?
                     .parse::<u64>()
@@ -9004,7 +9010,7 @@ impl Parser {
     /// point, `old(bytes)` or `at(point, bytes)`.
     fn rust_slice_parameter_read<'a>(&self, expression: &'a ContractExpression) -> Option<&'a str> {
         match expression {
-            ContractExpression::CFragment(CExpression::Variable(slice))
+            ContractExpression::CFragment(ProgramExpression::Variable(slice))
                 if self.rust_slice_params.contains(slice) =>
             {
                 Some(slice)
@@ -9028,7 +9034,9 @@ impl Parser {
             variant: "Slice".to_string(),
             arguments: vec![
                 expression.clone(),
-                ContractExpression::CFragment(CExpression::Variable(format!("{parameter}_len"))),
+                ContractExpression::CFragment(ProgramExpression::Variable(format!(
+                    "{parameter}_len"
+                ))),
             ],
         })
     }
@@ -11356,7 +11364,7 @@ impl Parser {
         self.expect(Token::RParen)?;
         let mut resource_arguments = Vec::new();
         let first_reference = arguments.iter().position(|argument| {
-            matches!(argument, ContractExpression::CFragment(CExpression::Variable(name)) | ContractExpression::Binding(name)
+            matches!(argument, ContractExpression::CFragment(ProgramExpression::Variable(name)) | ContractExpression::Binding(name)
                 if self.names.resource_bindings.contains_key(name))
                 || matches!(argument, ContractExpression::Resource(subject)
                     if matches!(subject.as_ref(), ResourceSubject::Instance { .. }))
@@ -11365,7 +11373,7 @@ impl Parser {
             for argument in arguments.drain(first..) {
                 let reference =
                     match argument {
-                        ContractExpression::CFragment(CExpression::Variable(name))
+                        ContractExpression::CFragment(ProgramExpression::Variable(name))
                         | ContractExpression::Binding(name) => name,
                         ContractExpression::Resource(subject) => match *subject {
                             ResourceSubject::Instance { name, at: None, .. } => name,
@@ -12763,7 +12771,7 @@ impl Parser {
         };
         let mut struct_name = match &surface_base {
             ContractExpression::Binding(name)
-            | ContractExpression::CFragment(CExpression::Variable(name)) => self
+            | ContractExpression::CFragment(ProgramExpression::Variable(name)) => self
                 .names
                 .struct_params
                 .get(name)
@@ -12774,16 +12782,16 @@ impl Parser {
                 })
                 .cloned(),
             ContractExpression::CUnary {
-                lowered: CExpression::Cast { pointee_struct, .. },
+                lowered: ProgramExpression::Cast { pointee_struct, .. },
                 ..
             }
-            | ContractExpression::CFragment(CExpression::Cast { pointee_struct, .. }) => {
+            | ContractExpression::CFragment(ProgramExpression::Cast { pointee_struct, .. }) => {
                 pointee_struct.clone()
             }
             _ => None,
         };
         if let ContractExpression::Binding(name)
-        | ContractExpression::CFragment(CExpression::Variable(name)) = &surface_base
+        | ContractExpression::CFragment(ProgramExpression::Variable(name)) = &surface_base
             && self
                 .names
                 .struct_params
@@ -12793,7 +12801,7 @@ impl Parser {
         }
         let names_aggregate_object = match &surface_base {
             ContractExpression::Binding(name)
-            | ContractExpression::CFragment(CExpression::Variable(name)) => {
+            | ContractExpression::CFragment(ProgramExpression::Variable(name)) => {
                 self.names.aggregate_objects.contains_key(name)
                     || self.names.global_array_shapes.contains_key(name)
                     || self.qualified_object(name).is_some()
@@ -12804,7 +12812,7 @@ impl Parser {
         let mut union_name: Option<String> = None;
         let mut struct_array_element_width = match &surface_base {
             ContractExpression::Binding(name)
-            | ContractExpression::CFragment(CExpression::Variable(name))
+            | ContractExpression::CFragment(ProgramExpression::Variable(name))
                 if self.names.contains(NameKind::StructArrayParameter, name) =>
             {
                 struct_name
@@ -12812,7 +12820,7 @@ impl Parser {
                     .and_then(|name| self.struct_layouts.get(name))
                     .map(|layout| layout.size_bytes())
             }
-            ContractExpression::CFragment(CExpression::Variable(name)) => self
+            ContractExpression::CFragment(ProgramExpression::Variable(name)) => self
                 .qualified_object(name)
                 .filter(|object| object.struct_name.is_some() && object.array_shape.is_some())
                 .and_then(|object| object.struct_name.as_ref())
@@ -12821,7 +12829,7 @@ impl Parser {
             _ => None,
         };
         let mut struct_array_shape = match &surface_base {
-            ContractExpression::CFragment(CExpression::Variable(name)) => self
+            ContractExpression::CFragment(ProgramExpression::Variable(name)) => self
                 .qualified_object(name)
                 .filter(|object| object.struct_name.is_some())
                 .and_then(|object| object.array_shape.clone()),
@@ -12829,7 +12837,7 @@ impl Parser {
         };
         let mut scalar_array_shape = match &surface_base {
             ContractExpression::Binding(name)
-            | ContractExpression::CFragment(CExpression::Variable(name)) => self
+            | ContractExpression::CFragment(ProgramExpression::Variable(name)) => self
                 .names
                 .global_array_shapes
                 .get(name)
@@ -12840,7 +12848,7 @@ impl Parser {
                 }),
             _ => None,
         };
-        let mut indexed_scalar_field: Option<CType> = None;
+        let mut indexed_scalar_field: Option<ProgramType> = None;
         let mut scalar_range_offset = None;
         let mut postfixes = 0;
         while matches!(self.peek(), Some(Token::Arrow | Token::Dot))
@@ -12875,7 +12883,7 @@ impl Parser {
                             Some(Token::Arrow | Token::Dot | Token::LBracket)
                         )
                     {
-                        base = CExpression::Index(Box::new(base), Box::new(index.clone()));
+                        base = ProgramExpression::Index(Box::new(base), Box::new(index.clone()));
                         surface_base = ContractExpression::Index(
                             Box::new(surface_base_before_index),
                             Box::new(ContractExpression::CFragment(index)),
@@ -12911,7 +12919,8 @@ impl Parser {
                         index
                     };
                     let stride = struct_byte_stride(offset, element_width);
-                    base = CExpression::Add(Box::new(struct_byte_base(base)), Box::new(stride));
+                    base =
+                        ProgramExpression::Add(Box::new(struct_byte_base(base)), Box::new(stride));
                     surface_base = surface_indexes
                         .into_iter()
                         .fold(surface_base_before_index, |base, index| {
@@ -12942,7 +12951,7 @@ impl Parser {
                         )));
                     }
                     let offset = flatten_array_indices(indexes, &shape);
-                    base = CExpression::Add(Box::new(base), Box::new(offset));
+                    base = ProgramExpression::Add(Box::new(base), Box::new(offset));
                     surface_base = surface_indexes
                         .into_iter()
                         .fold(surface_base_before_index, |base, index| {
@@ -12980,7 +12989,7 @@ impl Parser {
                         scalar_range_offset = Some(offset);
                         base
                     } else {
-                        CExpression::Index(Box::new(base), Box::new(offset))
+                        ProgramExpression::Index(Box::new(base), Box::new(offset))
                     };
                     surface_base = surface_indexes
                         .into_iter()
@@ -12992,7 +13001,7 @@ impl Parser {
                     struct_array_element_width = None;
                 } else {
                     let surface_index = ContractExpression::CFragment(index.clone());
-                    base = CExpression::Index(Box::new(base), Box::new(index));
+                    base = ProgramExpression::Index(Box::new(base), Box::new(index));
                     surface_base = ContractExpression::Index(
                         Box::new(surface_base_before_index),
                         Box::new(surface_index),
@@ -13180,21 +13189,21 @@ impl Parser {
                     // carries its element type; unwrapping it to the raw byte
                     // pointer would index the range in four-byte cells. Keep
                     // the typed base so the slice keeps the element width.
-                    CExpression::TypedLoad {
+                    ProgramExpression::TypedLoad {
                         value_type:
-                            CType::Int32Array(_)
-                            | CType::UInt8Array(_)
-                            | CType::Int8Array(_)
-                            | CType::Int16Array(_)
-                            | CType::UInt16Array(_)
-                            | CType::UInt32Array(_)
-                            | CType::Int128Array(_)
-                            | CType::Int64Array(_)
-                            | CType::UInt128Array(_)
-                            | CType::UInt64Array(_),
+                            ProgramType::Int32Array(_)
+                            | ProgramType::UInt8Array(_)
+                            | ProgramType::Int8Array(_)
+                            | ProgramType::Int16Array(_)
+                            | ProgramType::UInt16Array(_)
+                            | ProgramType::UInt32Array(_)
+                            | ProgramType::Int128Array(_)
+                            | ProgramType::Int64Array(_)
+                            | ProgramType::UInt128Array(_)
+                            | ProgramType::UInt64Array(_),
                         ..
                     } => None,
-                    CExpression::TypedLoad { pointer, .. } => Some((**pointer).clone()),
+                    ProgramExpression::TypedLoad { pointer, .. } => Some((**pointer).clone()),
                     _ => None,
                 }
             } else {
@@ -13217,7 +13226,7 @@ impl Parser {
             // The lowered base already addresses the selected scalar element.
             // Retain the complete written place, including every subscript,
             // instead of losing it in the field's byte-address arithmetic.
-            let address = CExpression::AddressOf(Box::new(CExpression::TypedLoad {
+            let address = ProgramExpression::AddressOf(Box::new(ProgramExpression::TypedLoad {
                 pointer: Box::new(base.clone()),
                 value_type: element_type,
                 volatile: false,
@@ -13229,15 +13238,15 @@ impl Parser {
                 uninitialized: false,
                 state: ContractSegmentState::Current,
                 base,
-                start: CExpression::Value(int32(0)),
-                end: CExpression::Value(int32(1)),
+                start: ProgramExpression::Value(int32(0)),
+                end: ProgramExpression::Value(int32(1)),
                 surface: ContractSegmentSurface::Range {
                     base: ContractExpression::CUnary {
                         operand: Box::new(surface_base),
                         lowered: address,
                     },
-                    start: ContractExpression::CFragment(CExpression::Value(int32(0))),
-                    end: ContractExpression::CFragment(CExpression::Value(int32(1))),
+                    start: ContractExpression::CFragment(ProgramExpression::Value(int32(0))),
+                    end: ContractExpression::CFragment(ProgramExpression::Value(int32(1))),
                 },
             }]);
         }
@@ -13248,13 +13257,15 @@ impl Parser {
         };
         let names_reference = match &surface_base {
             ContractExpression::Binding(name)
-            | ContractExpression::CFragment(CExpression::Variable(name)) => carries_reference(name),
+            | ContractExpression::CFragment(ProgramExpression::Variable(name)) => {
+                carries_reference(name)
+            }
             _ => false,
         };
         let names_scalar_referent = matches!(
             &surface_base,
-            ContractExpression::CFragment(CExpression::Index(carrier, _))
-                if matches!(carrier.as_ref(), CExpression::Variable(name) if carries_reference(name))
+            ContractExpression::CFragment(ProgramExpression::Index(carrier, _))
+                if matches!(carrier.as_ref(), ProgramExpression::Variable(name) if carries_reference(name))
         );
         if dereference && (names_reference || names_scalar_referent) {
             return Err(self.error(
@@ -13265,9 +13276,12 @@ impl Parser {
         // carrier, typed and sized by the carrier.
         if names_scalar_referent
             && self.peek() != Some(&Token::LBracket)
-            && let CExpression::Index(carrier, _) = &base
+            && let ProgramExpression::Index(carrier, _) = &base
         {
-            let (start, end) = (CExpression::Value(int32(0)), CExpression::Value(int32(1)));
+            let (start, end) = (
+                ProgramExpression::Value(int32(0)),
+                ProgramExpression::Value(int32(1)),
+            );
             return Ok(vec![ContractSegment {
                 uninitialized: false,
                 state: ContractSegmentState::Current,
@@ -13284,7 +13298,7 @@ impl Parser {
         // Written alone, a struct reference is the object it refers to.
         let dereference = dereference
             || (names_reference
-                && matches!(base, CExpression::Variable(_))
+                && matches!(base, ProgramExpression::Variable(_))
                 && self.peek() != Some(&Token::LBracket));
         if dereference {
             if self.peek() == Some(&Token::LBracket) {
@@ -13297,15 +13311,16 @@ impl Parser {
             }
             // `*bytes` on a slice parameter is the whole slice, as `*value`
             // is the one object a reference refers to.
-            if let CExpression::Variable(name) = &base
+            if let ProgramExpression::Variable(name) = &base
                 && self.rust_slice_params.contains(name)
             {
-                let length =
-                    ContractExpression::CFragment(CExpression::Variable(format!("{name}_len")));
+                let length = ContractExpression::CFragment(ProgramExpression::Variable(format!(
+                    "{name}_len"
+                )));
                 let end_expression = length;
                 let end = contract_expression_as_c_fragment(&end_expression)
                     .expect("a slice length is a C expression");
-                let start = CExpression::Value(int32(0));
+                let start = ProgramExpression::Value(int32(0));
                 return Ok(vec![ContractSegment {
                     uninitialized: false,
                     state: ContractSegmentState::Current,
@@ -13319,7 +13334,10 @@ impl Parser {
                     },
                 }]);
             }
-            let (start, end) = (CExpression::Value(int32(0)), CExpression::Value(int32(1)));
+            let (start, end) = (
+                ProgramExpression::Value(int32(0)),
+                ProgramExpression::Value(int32(1)),
+            );
             let Some(struct_name) = struct_name else {
                 return Ok(vec![ContractSegment {
                     uninitialized: false,
@@ -13341,13 +13359,16 @@ impl Parser {
         // imported ABI so input cells use the actual field types.
         if postfixes == 0
             && self.peek() != Some(&Token::LBracket)
-            && let ContractExpression::CFragment(CExpression::Variable(name)) = &surface_base
+            && let ContractExpression::CFragment(ProgramExpression::Variable(name)) = &surface_base
         {
             let object = if !self.names.c_parameter_types.contains_key(name)
                 && !self.names.contains(NameKind::StructArrayParameter, name)
                 && let Some(struct_name) = self.names.aggregate_objects.get(name)
             {
-                Some((struct_name, CExpression::AddressOf(Box::new(base.clone()))))
+                Some((
+                    struct_name,
+                    ProgramExpression::AddressOf(Box::new(base.clone())),
+                ))
             } else {
                 self.qualified_object(name)
                     .filter(|object| object.address.is_none() && object.array_shape.is_none())
@@ -13370,7 +13391,7 @@ impl Parser {
         // A place written alone is its own storage: one element at its
         // address.
         if self.peek() != Some(&Token::LBracket) {
-            if let CExpression::Variable(name) = &base
+            if let ProgramExpression::Variable(name) = &base
                 && self.names.struct_params.contains_key(name)
                 && !names_aggregate_object
             {
@@ -13379,9 +13400,10 @@ impl Parser {
                 )));
             }
             let base = match base {
-                CExpression::TypedLoad { pointer, .. } => *pointer,
-                CExpression::Value(CValue::Pointer(_)) => {
-                    let ContractExpression::CFragment(CExpression::Variable(name)) = &surface_base
+                ProgramExpression::TypedLoad { pointer, .. } => *pointer,
+                ProgramExpression::Value(ProgramValue::Pointer(_)) => {
+                    let ContractExpression::CFragment(ProgramExpression::Variable(name)) =
+                        &surface_base
                     else {
                         return Err(self.error("this C expression has no storage to own"));
                     };
@@ -13389,21 +13411,21 @@ impl Parser {
                         .and_then(|object| object.address.clone())
                         .ok_or_else(|| self.error("this C expression has no storage to own"))?
                 }
-                expression => CExpression::AddressOf(Box::new(expression)),
+                expression => ProgramExpression::AddressOf(Box::new(expression)),
             };
-            let surface_base = ContractExpression::CFragment(CExpression::AddressOf(Box::new(
-                contract_expression_as_c_fragment(&surface_base).expect("C segment base"),
-            )));
+            let surface_base = ContractExpression::CFragment(ProgramExpression::AddressOf(
+                Box::new(contract_expression_as_c_fragment(&surface_base).expect("C segment base")),
+            ));
             return Ok(vec![ContractSegment {
                 uninitialized: false,
                 state: ContractSegmentState::Current,
                 base,
-                start: CExpression::Value(int32(0)),
-                end: CExpression::Value(int32(1)),
+                start: ProgramExpression::Value(int32(0)),
+                end: ProgramExpression::Value(int32(1)),
                 surface: ContractSegmentSurface::Range {
                     base: surface_base,
-                    start: ContractExpression::CFragment(CExpression::Value(int32(0))),
-                    end: ContractExpression::CFragment(CExpression::Value(int32(1))),
+                    start: ContractExpression::CFragment(ProgramExpression::Value(int32(0))),
+                    end: ContractExpression::CFragment(ProgramExpression::Value(int32(1))),
                 },
             }]);
         }
@@ -13440,8 +13462,8 @@ impl Parser {
         })?;
         self.expect(Token::RBracket)?;
         if let Some(offset) = scalar_range_offset {
-            start = CExpression::Add(Box::new(offset.clone()), Box::new(start));
-            end = CExpression::Add(Box::new(offset), Box::new(end));
+            start = ProgramExpression::Add(Box::new(offset.clone()), Box::new(start));
+            end = ProgramExpression::Add(Box::new(offset), Box::new(end));
         }
         Ok(vec![ContractSegment {
             uninitialized: false,
@@ -13468,7 +13490,7 @@ impl Parser {
     /// One complete struct object at `base`.
     fn object_segment(
         &self,
-        base: CExpression,
+        base: ProgramExpression,
         struct_name: String,
     ) -> Result<ContractSegment, ClickError> {
         let layout = self.struct_layouts.get(&struct_name).ok_or_else(|| {
@@ -13486,15 +13508,15 @@ impl Parser {
             uninitialized: false,
             state: ContractSegmentState::Current,
             base,
-            start: CExpression::Value(int32(0)),
-            end: CExpression::Value(int32(layout.size_bytes() / 4)),
+            start: ProgramExpression::Value(int32(0)),
+            end: ProgramExpression::Value(int32(layout.size_bytes() / 4)),
             surface: ContractSegmentSurface::Object(struct_name),
         })
     }
 
     fn aggregate_field_segments(
         &self,
-        base: CExpression,
+        base: ProgramExpression,
         surface_base: ContractExpression,
         field_name: &str,
         field: &ResolvedField,
@@ -13556,7 +13578,7 @@ impl Parser {
     fn append_aggregate_leaf_segments(
         &self,
         segments: &mut Vec<ContractSegment>,
-        base: CExpression,
+        base: ProgramExpression,
         struct_name: &str,
         base_offset: u32,
         name_prefix: &str,
@@ -13629,7 +13651,7 @@ impl Parser {
     fn append_aggregate_array_leaf_segments(
         &self,
         segments: &mut Vec<ContractSegment>,
-        base: CExpression,
+        base: ProgramExpression,
         base_offset: u32,
         field: &ResolvedField,
         struct_name: &str,
@@ -13672,7 +13694,7 @@ impl Parser {
 
     fn resolve_field_segment(
         &self,
-        base: CExpression,
+        base: ProgramExpression,
         surface_base: Option<ContractExpression>,
         field_name: &str,
     ) -> Result<ContractSegment, ClickError> {
@@ -13683,8 +13705,8 @@ impl Parser {
                 uninitialized: false,
                 state: ContractSegmentState::Current,
                 base,
-                start: CExpression::Value(int32(0)),
-                end: CExpression::Value(int32(1)),
+                start: ProgramExpression::Value(int32(0)),
+                end: ProgramExpression::Value(int32(1)),
                 surface: ContractSegmentSurface::Field {
                     value_bytes: None,
                     base: surface_base.map(Box::new),
@@ -13704,21 +13726,21 @@ impl Parser {
     }
 
     fn field_segment_from_metadata(
-        base: CExpression,
+        base: ProgramExpression,
         surface_base: Option<ContractExpression>,
         field_name: &str,
         field: &ResolvedField,
     ) -> ContractSegment {
         let array = match field.c_type {
-            C0Type::Int32Array(length) => Some((length, 4, CType::Int32)),
-            C0Type::Int64Array(_, length) => Some((length, 8, CType::Int64)),
-            C0Type::Int128Array(length) => Some((length, 16, CType::Int128)),
-            C0Type::UInt64Array(_, length) => Some((length, 8, CType::UInt64)),
-            C0Type::UInt128Array(length) => Some((length, 16, CType::UInt128)),
+            C0Type::Int32Array(length) => Some((length, 4, ProgramType::Int32)),
+            C0Type::Int64Array(_, length) => Some((length, 8, ProgramType::Int64)),
+            C0Type::Int128Array(length) => Some((length, 16, ProgramType::Int128)),
+            C0Type::UInt64Array(_, length) => Some((length, 8, ProgramType::UInt64)),
+            C0Type::UInt128Array(length) => Some((length, 16, ProgramType::UInt128)),
             C0Type::CharArray(crate::languages::c::syntax::PlainChar::Unsigned, length)
-            | C0Type::UInt8Array(length) => Some((length, 1, CType::UInt8)),
+            | C0Type::UInt8Array(length) => Some((length, 1, ProgramType::UInt8)),
             C0Type::CharArray(crate::languages::c::syntax::PlainChar::Signed, length)
-            | C0Type::Int8Array(length) => Some((length, 1, CType::Int8)),
+            | C0Type::Int8Array(length) => Some((length, 1, ProgramType::Int8)),
             _ => None,
         };
         if let Some((length, element_width, element_type)) = array {
@@ -13726,7 +13748,7 @@ impl Parser {
             return ContractSegment {
                 uninitialized: false,
                 state: ContractSegmentState::Current,
-                base: CExpression::TypedLoad {
+                base: ProgramExpression::TypedLoad {
                     pointer: Box::new(field_base),
                     value_type: field.c_type.to_kernel_type(),
                     volatile: false,
@@ -13734,8 +13756,8 @@ impl Parser {
                     access_class: None,
                     source: Default::default(),
                 },
-                start: CExpression::Value(int32(0)),
-                end: CExpression::Value(int32(length)),
+                start: ProgramExpression::Value(int32(0)),
+                end: ProgramExpression::Value(int32(length)),
                 surface: ContractSegmentSurface::Field {
                     value_bytes: None,
                     base: surface_base.map(Box::new),
@@ -13761,8 +13783,8 @@ impl Parser {
             uninitialized: false,
             state: ContractSegmentState::Current,
             base,
-            start: CExpression::Value(int32(start)),
-            end: CExpression::Value(int32(end)),
+            start: ProgramExpression::Value(int32(start)),
+            end: ProgramExpression::Value(int32(end)),
             surface: ContractSegmentSurface::Field {
                 base: surface_base.map(Box::new),
                 name: field_name.to_string(),
@@ -13778,14 +13800,14 @@ impl Parser {
 
     fn resolve_field_load(
         &self,
-        base: CExpression,
+        base: ProgramExpression,
         field_name: &str,
-    ) -> Result<CExpression, ClickError> {
+    ) -> Result<ProgramExpression, ClickError> {
         self.refuse_trait_receiver_field(named_place_base(&base).map(String::as_str))?;
         let Some(field) = self.resolve_field_metadata(&base, field_name)? else {
-            return Ok(CExpression::Load(Box::new(base)));
+            return Ok(ProgramExpression::Load(Box::new(base)));
         };
-        Ok(CExpression::TypedLoad {
+        Ok(ProgramExpression::TypedLoad {
             pointer: Box::new(self.member_field_pointer(base, &field)),
             value_type: field.c_type.to_kernel_type(),
             volatile: false,
@@ -13881,7 +13903,7 @@ impl Parser {
 
     fn resolve_field_metadata(
         &self,
-        base: &CExpression,
+        base: &ProgramExpression,
         field_name: &str,
     ) -> Result<Option<ResolvedField>, ClickError> {
         let Some(base_name) = named_place_base(base) else {
@@ -13910,17 +13932,17 @@ impl Parser {
     fn contract_expression_struct_name(&self, expression: &ContractExpression) -> Option<String> {
         match expression {
             ContractExpression::CUnary {
-                lowered: CExpression::Cast { pointee_struct, .. },
+                lowered: ProgramExpression::Cast { pointee_struct, .. },
                 ..
             }
-            | ContractExpression::CFragment(CExpression::Cast { pointee_struct, .. }) => {
+            | ContractExpression::CFragment(ProgramExpression::Cast { pointee_struct, .. }) => {
                 pointee_struct.clone()
             }
             ContractExpression::QualifiedC { name, .. } => self
                 .qualified_object(name)
                 .and_then(|object| object.struct_name.clone()),
             ContractExpression::Binding(name)
-            | ContractExpression::CFragment(CExpression::Variable(name)) => self
+            | ContractExpression::CFragment(ProgramExpression::Variable(name)) => self
                 .names
                 .struct_params
                 .get(name)
@@ -14107,18 +14129,26 @@ impl Parser {
         Ok(())
     }
 
-    fn member_field_pointer(&self, base: CExpression, field: &ResolvedField) -> CExpression {
+    fn member_field_pointer(
+        &self,
+        base: ProgramExpression,
+        field: &ResolvedField,
+    ) -> ProgramExpression {
         let pointer = self.offset_field_pointer(base, field.offset_bytes);
         if field.byte_width == 0 {
             return pointer;
         }
-        CExpression::Subobject {
+        ProgramExpression::Subobject {
             pointer: Box::new(pointer),
             width: field.byte_width,
         }
     }
 
-    fn offset_field_pointer(&self, base: CExpression, offset_bytes: u32) -> CExpression {
+    fn offset_field_pointer(
+        &self,
+        base: ProgramExpression,
+        offset_bytes: u32,
+    ) -> ProgramExpression {
         crate::kernel::c_pointer_offset_bytes(base, offset_bytes)
     }
 
@@ -14190,7 +14220,7 @@ impl Parser {
     /// synthesized proof text reads the parameter with a single layout.
     fn record_parameter_struct_cast(
         &mut self,
-        operand: &CExpression,
+        operand: &ProgramExpression,
         struct_name: &str,
     ) -> Result<(), ClickError> {
         // Integer casts name the complete word's reconstructed pointer.
@@ -14208,15 +14238,15 @@ impl Parser {
         // the expression. It does not assign a layout to the source parameter.
         if matches!(
             operand,
-            CExpression::Cast {
-                target_type: CType::VoidPointer,
+            ProgramExpression::Cast {
+                target_type: ProgramType::VoidPointer,
                 ..
             }
         ) {
             return Ok(());
         }
         let name = match operand {
-            CExpression::Variable(name) => Some(name.as_str()),
+            ProgramExpression::Variable(name) => Some(name.as_str()),
             _ => None,
         };
         let Some(name) =
@@ -14267,7 +14297,7 @@ impl Parser {
     /// The target of a Click cast at the cursor, after its `(` or inside the
     /// parentheses of a pointer target: an integer type, `void *`, or an
     /// integer pointer type such as `uint8 *`, unqualified.
-    fn parse_click_cast_type(&mut self) -> Result<CType, ClickError> {
+    fn parse_click_cast_type(&mut self) -> Result<ProgramType, ClickError> {
         let parsed_type = self.parse_type()?;
         let target_type = parsed_type.c_type.to_kernel_type();
         if parsed_type.reference
@@ -14300,9 +14330,9 @@ impl Parser {
         }
         Ok(crate::surface::lowering::contract_c_unary(
             source_operand,
-            CExpression::Cast {
+            ProgramExpression::Cast {
                 expression: Box::new(operand),
-                target_type: CType::Int32Pointer,
+                target_type: ProgramType::Int32Pointer,
                 integer_mode: crate::kernel::CIntegerCastMode::Standard,
                 pointee_struct: Some(cast.struct_name),
                 pointee_volatile: false,
@@ -14316,7 +14346,7 @@ impl Parser {
     /// `x as uint32` or `p as (uint8 *)`.
     fn lower_click_cast(
         &mut self,
-        target_type: CType,
+        target_type: ProgramType,
         operand: ContractExpression,
     ) -> Result<ContractExpression, ClickError> {
         let historical = crate::surface::validation::contains_old_expression(&operand)
@@ -14325,23 +14355,23 @@ impl Parser {
         // Other cast families retain their current-expression validation.
         let integer_target = matches!(
             target_type,
-            CType::Int8
-                | CType::Int16
-                | CType::Int32
-                | CType::UInt8
-                | CType::UInt16
-                | CType::UInt32
-                | CType::Int64
-                | CType::UInt64
-                | CType::Int128
-                | CType::UInt128
+            ProgramType::Int8
+                | ProgramType::Int16
+                | ProgramType::Int32
+                | ProgramType::UInt8
+                | ProgramType::UInt16
+                | ProgramType::UInt32
+                | ProgramType::Int64
+                | ProgramType::UInt64
+                | ProgramType::Int128
+                | ProgramType::UInt128
         );
         if historical && !integer_target {
             return Err(self.error("scalar cast expects a current expression; put old(...) around the whole cast for an entry-state value"));
         }
-        let expression =
-            contract_expression_as_c_fragment(&operand).unwrap_or(CExpression::Value(int32(0)));
-        if target_type == CType::VoidPointer {
+        let expression = contract_expression_as_c_fragment(&operand)
+            .unwrap_or(ProgramExpression::Value(int32(0)));
+        if target_type == ProgramType::VoidPointer {
             crate::surface::validation::validate_void_pointer_cast_source(
                 &expression,
                 &self.names.c_parameter_types,
@@ -14350,7 +14380,7 @@ impl Parser {
         }
         Ok(ContractExpression::CUnary {
             operand: Box::new(operand),
-            lowered: CExpression::Cast {
+            lowered: ProgramExpression::Cast {
                 expression: Box::new(expression),
                 target_type,
                 // This cast was written in the contract. Pointer targets
@@ -14408,8 +14438,8 @@ impl Parser {
             }
             if self.peek_next() == Some(&Token::Int64MinimumMagnitude) {
                 self.position += 2;
-                return Ok(ContractExpression::CFragment(CExpression::Value(
-                    CValue::Int64(MachineTerm::int64_constant(i64::MIN)),
+                return Ok(ContractExpression::CFragment(ProgramExpression::Value(
+                    ProgramValue::Int64(MachineTerm::int64_constant(i64::MIN)),
                 )));
             }
             self.position += 1;
@@ -14436,7 +14466,7 @@ impl Parser {
             };
             return Ok(crate::surface::lowering::contract_c_unary(
                 source_pointer,
-                CExpression::Load(Box::new(pointer)),
+                ProgramExpression::Load(Box::new(pointer)),
             ));
         }
         if self.peek() == Some(&Token::Amp) && self.at_reference_parameter_address() {
@@ -14460,12 +14490,14 @@ impl Parser {
                 // `&p->f` (`design/pointer-subobject-extents.md`), so a
                 // contract's `&pair->second` is the program's pointer value
                 // and is not equal to `&pair->first + 1`.
-                if let CExpression::TypedLoad { value_type, .. } = lowered
+                if let ProgramExpression::TypedLoad { value_type, .. } = lowered
                     && value_type.pointer_to().is_some()
                 {
                     return Ok(ContractExpression::CUnary {
                         operand: Box::new(expression.clone()),
-                        lowered: CExpression::AddressOf(Box::new(contract_member_lvalue(lowered))),
+                        lowered: ProgramExpression::AddressOf(Box::new(contract_member_lvalue(
+                            lowered,
+                        ))),
                     });
                 }
                 let source_base = (**base).clone();
@@ -14474,7 +14506,7 @@ impl Parser {
                 };
                 return Ok(crate::surface::lowering::contract_c_unary(
                     source_base,
-                    CExpression::PointerOffsetBytes {
+                    ProgramExpression::PointerOffsetBytes {
                         pointer: Box::new(base),
                         bytes: *offset_bytes,
                     },
@@ -14486,7 +14518,7 @@ impl Parser {
             };
             return Ok(crate::surface::lowering::contract_c_unary(
                 source_expression,
-                CExpression::AddressOf(Box::new(expression)),
+                ProgramExpression::AddressOf(Box::new(expression)),
             ));
         }
 
@@ -14531,7 +14563,7 @@ impl Parser {
         };
         let carrier = self.reference_binding_carrier(name);
         self.position += 2;
-        Ok(ContractExpression::CFragment(CExpression::Variable(
+        Ok(ContractExpression::CFragment(ProgramExpression::Variable(
             carrier,
         )))
     }
@@ -14547,7 +14579,7 @@ impl Parser {
         mut expression: ContractExpression,
     ) -> Result<ContractExpression, ClickError> {
         if let ContractExpression::Binding(name)
-        | ContractExpression::CFragment(CExpression::Variable(name)) = &expression
+        | ContractExpression::CFragment(ProgramExpression::Variable(name)) = &expression
             && self.is_reference_binding(name)
         {
             let name = name.clone();
@@ -14558,7 +14590,7 @@ impl Parser {
                     "`{name}` is a struct reference; name a field as `{name}.field`, or its address as `&{name}`"
                 )));
             }
-            expression = ContractExpression::CFragment(CExpression::Variable(carrier));
+            expression = ContractExpression::CFragment(ProgramExpression::Variable(carrier));
             if !is_struct {
                 if self.peek() == Some(&Token::LBracket) {
                     return Err(self.error(format!(
@@ -14588,17 +14620,17 @@ impl Parser {
         expression = self.resolve_reference_parameter(expression)?;
         let mut struct_name = match &expression {
             ContractExpression::CUnary {
-                lowered: CExpression::Cast { pointee_struct, .. },
+                lowered: ProgramExpression::Cast { pointee_struct, .. },
                 ..
             }
-            | ContractExpression::CFragment(CExpression::Cast { pointee_struct, .. }) => {
+            | ContractExpression::CFragment(ProgramExpression::Cast { pointee_struct, .. }) => {
                 pointee_struct.clone()
             }
             ContractExpression::QualifiedC { name, .. } => self
                 .qualified_object(name)
                 .and_then(|object| object.struct_name.clone()),
             ContractExpression::Binding(name)
-            | ContractExpression::CFragment(CExpression::Variable(name)) => self
+            | ContractExpression::CFragment(ProgramExpression::Variable(name)) => self
                 .names
                 .struct_params
                 .get(name)
@@ -14612,7 +14644,7 @@ impl Parser {
         };
         // A struct double pointer indexes pointer slots, not struct objects.
         if let ContractExpression::Binding(name)
-        | ContractExpression::CFragment(CExpression::Variable(name)) = &expression
+        | ContractExpression::CFragment(ProgramExpression::Variable(name)) = &expression
             && self
                 .names
                 .struct_params
@@ -14623,7 +14655,7 @@ impl Parser {
         let mut union_name: Option<String> = None;
         let mut struct_array_element_width = match &expression {
             ContractExpression::Binding(name)
-            | ContractExpression::CFragment(CExpression::Variable(name)) => self
+            | ContractExpression::CFragment(ProgramExpression::Variable(name)) => self
                 .names
                 .contains(NameKind::StructArrayParameter, name)
                 .then(|| {
@@ -14653,7 +14685,7 @@ impl Parser {
                 .qualified_object(name)
                 .and_then(|object| object.array_shape.clone()),
             ContractExpression::Binding(name)
-            | ContractExpression::CFragment(CExpression::Variable(name)) => self
+            | ContractExpression::CFragment(ProgramExpression::Variable(name)) => self
                 .names
                 .global_array_shapes
                 .get(name)
@@ -14748,7 +14780,7 @@ impl Parser {
                             indexes,
                             dimensions,
                             lowered: {
-                                let address = CExpression::Add(
+                                let address = ProgramExpression::Add(
                                     Box::new(struct_byte_base(base)),
                                     Box::new(stride),
                                 );
@@ -14758,9 +14790,9 @@ impl Parser {
                                     // A bare struct subscript retains the legacy
                                     // first-word read; a following field uses the
                                     // byte-scaled address of the whole element.
-                                    CExpression::TypedLoad {
+                                    ProgramExpression::TypedLoad {
                                         pointer: Box::new(address),
-                                        value_type: crate::kernel::CType::Int32,
+                                        value_type: crate::kernel::ProgramType::Int32,
                                         volatile: false,
                                         pointee_constant: false,
                                         access_class: None,
@@ -14813,7 +14845,7 @@ impl Parser {
                                     base: Box::new(expression),
                                     indexes,
                                     dimensions: shape.clone(),
-                                    lowered: CExpression::Index(
+                                    lowered: ProgramExpression::Index(
                                         Box::new(lowered_base),
                                         Box::new(offset),
                                     ),
@@ -14838,7 +14870,7 @@ impl Parser {
                                             ContractExpression::Multiply(
                                                 Box::new(expression),
                                                 Box::new(ContractExpression::CFragment(
-                                                    CExpression::Value(int32(stride)),
+                                                    ProgramExpression::Value(int32(stride)),
                                                 )),
                                             )
                                         }
@@ -14894,7 +14926,10 @@ impl Parser {
                             base: Box::new(expression),
                             indexes,
                             dimensions: shape.clone(),
-                            lowered: CExpression::Index(Box::new(lowered_base), Box::new(offset)),
+                            lowered: ProgramExpression::Index(
+                                Box::new(lowered_base),
+                                Box::new(offset),
+                            ),
                         };
                         struct_name = None;
                         union_name = None;
@@ -14922,14 +14957,16 @@ impl Parser {
                         access.click_type = None;
                         continue;
                     }
-                    if let ContractExpression::CFragment(CExpression::Variable(owner)) = &expression
+                    if let ContractExpression::CFragment(ProgramExpression::Variable(owner)) =
+                        &expression
                         && self.peek() == Some(&Token::Dot)
                         && self.names.ended_instance_names.contains(owner)
                         && !self.names.is_bound(owner)
                     {
                         return Err(self.unknown_instance(owner, "resource instance"));
                     }
-                    if let ContractExpression::CFragment(CExpression::Variable(owner)) = &expression
+                    if let ContractExpression::CFragment(ProgramExpression::Variable(owner)) =
+                        &expression
                         && let Some((identity, resource_name)) =
                             self.names.resource_bindings.get(owner).cloned()
                     {
@@ -15056,7 +15093,7 @@ impl Parser {
         mut expression: ContractExpression,
     ) -> Result<ContractExpression, ClickError> {
         let unresolved = |expression: &ContractExpression| {
-            CExpression::Variable(format!(
+            ProgramExpression::Variable(format!(
                 "<{} read at its call>",
                 crate::surface::diagnostics::describe_contract_expression(expression)
             ))
@@ -15244,7 +15281,7 @@ impl Parser {
             }
             if let Some(name) = self.peek_ident().map(str::to_string) {
                 self.position += 1;
-                return Ok(ContractExpression::CFragment(CExpression::Variable(
+                return Ok(ContractExpression::CFragment(ProgramExpression::Variable(
                     format!("{}{}", "outer.".repeat(depth), name),
                 )));
             }
@@ -15380,9 +15417,9 @@ impl Parser {
                     _ => parsed_type.c_type.abi_size_bytes(),
                 }
             };
-            return Ok(ContractExpression::CFragment(CExpression::Value(int32(
-                bytes,
-            ))));
+            return Ok(ContractExpression::CFragment(ProgramExpression::Value(
+                int32(bytes),
+            )));
         }
         if self.peek_ident() == Some("let") {
             if self.contract_expression_nesting >= CONTRACT_LET_RECURSION_LIMIT {
@@ -15455,9 +15492,9 @@ impl Parser {
                 return Err(self.error("address expects a current C pointer expression"));
             };
             self.expect(Token::RParen)?;
-            let cast = CExpression::Cast {
+            let cast = ProgramExpression::Cast {
                 expression: Box::new(pointer),
-                target_type: CType::UInt64,
+                target_type: ProgramType::UInt64,
                 integer_mode: crate::kernel::CIntegerCastMode::Standard,
                 pointee_struct: None,
                 pointee_volatile: false,
@@ -15494,7 +15531,7 @@ impl Parser {
             self.expect(Token::RParen)?;
             return Ok(crate::surface::lowering::contract_c_unary(
                 source_pointer,
-                CExpression::PointerOffsetBytes {
+                ProgramExpression::PointerOffsetBytes {
                     pointer: Box::new(pointer),
                     bytes,
                 },
@@ -15512,7 +15549,7 @@ impl Parser {
             if let Some(pointer) = contract_expression_as_c_fragment(&pointer) {
                 return Ok(crate::surface::lowering::contract_c_unary(
                     source_pointer,
-                    CExpression::TypedLoad {
+                    ProgramExpression::TypedLoad {
                         pointer: Box::new(pointer),
                         value_type,
                         volatile: false,
@@ -15525,10 +15562,10 @@ impl Parser {
             // The operand remains authoritative during spec lowering. A
             // historical pointer selects an address, while this load uses
             // the surrounding clause's memory snapshot.
-            let pointer = CExpression::Value(int32(0));
+            let pointer = ProgramExpression::Value(int32(0));
             return Ok(ContractExpression::CUnary {
                 operand: Box::new(source_pointer),
-                lowered: CExpression::TypedLoad {
+                lowered: ProgramExpression::TypedLoad {
                     pointer: Box::new(pointer),
                     value_type,
                     volatile: false,
@@ -15642,22 +15679,22 @@ impl Parser {
                 Ok(ContractExpression::IntegerLiteral(value.to_string()))
             }
             Some(Token::UInt8Number(value)) => Ok(ContractExpression::CFragment(
-                CExpression::Value(crate::kernel::uint8(u32::from(value))),
+                ProgramExpression::Value(crate::kernel::uint8(u32::from(value))),
             )),
             Some(Token::UInt32Number(value)) => Ok(ContractExpression::CFragment(
-                CExpression::Value(CValue::UInt32(MachineTerm::uint32_constant(value))),
+                ProgramExpression::Value(ProgramValue::UInt32(MachineTerm::uint32_constant(value))),
             )),
             Some(Token::Int64MinimumMagnitude) => Err(self.error(
                 "positive int64 literal `9223372036854775808i64` is outside 0..9223372036854775807; this magnitude is allowed only after unary minus",
             )),
             Some(Token::Int64Number(value)) => Ok(ContractExpression::CFragment(
-                CExpression::Value(CValue::Int64(MachineTerm::int64_constant(value))),
+                ProgramExpression::Value(ProgramValue::Int64(MachineTerm::int64_constant(value))),
             )),
             Some(Token::UInt64Number(value)) => Ok(ContractExpression::CFragment(
-                CExpression::Value(CValue::UInt64(MachineTerm::uint64_constant(value))),
+                ProgramExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(value))),
             )),
             Some(Token::CharLiteral(value)) => Ok(ContractExpression::CFragment(
-                CExpression::Value(self.character_constant_value(value)?),
+                ProgramExpression::Value(self.character_constant_value(value)?),
             )),
             Some(Token::LParen) => {
                 let start = self.position;
@@ -16414,7 +16451,7 @@ impl Parser {
             Some(Token::UInt64Number(value)) => Ok(C0Expression::UInt64Literal(value)),
             Some(Token::CharLiteral(value)) => Ok(
                 match self.character_constant_value(value)? {
-                    CValue::Int32(bits32_constant!(bits)) => C0Expression::Int32Literal(constant_u32(bits)),
+                    ProgramValue::Int32(bits32_constant!(bits)) => C0Expression::Int32Literal(constant_u32(bits)),
                     _ => C0Expression::UInt8Literal(value),
                 },
             ),
@@ -16806,7 +16843,7 @@ impl Parser {
     /// 6.4.4.4p10): the `int` value of a plain `char` holding the byte. A
     /// byte below 0x80 means the same under every target and stays an
     /// unsigned byte; a higher byte needs the target's plain `char`.
-    fn character_constant_value(&self, byte: u8) -> Result<CValue, ClickError> {
+    fn character_constant_value(&self, byte: u8) -> Result<ProgramValue, ClickError> {
         if byte < 0x80 {
             return Ok(crate::kernel::uint8(u32::from(byte)));
         }
@@ -16814,7 +16851,7 @@ impl Parser {
             Some(syntax::PlainChar::Unsigned) => {
                 Ok(crate::kernel::uint8(u32::from(byte)))
             }
-            Some(plain @ syntax::PlainChar::Signed) => Ok(CValue::Int32(MachineTerm::constant(
+            Some(plain @ syntax::PlainChar::Signed) => Ok(ProgramValue::Int32(MachineTerm::constant(
                 plain.character_value(byte) as i32 as u32,
             ))),
             None => Err(self.error(format!(
@@ -16838,20 +16875,20 @@ fn loop_clause_description(label: Option<&str>) -> String {
     }
 }
 
-fn typed_load_type_from_name(name: Option<&str>) -> Option<CType> {
+fn typed_load_type_from_name(name: Option<&str>) -> Option<ProgramType> {
     match name {
-        Some("load_int32") => Some(CType::Int32),
-        Some("load_uint8") => Some(CType::UInt8),
-        Some("load_uint16") => Some(CType::UInt16),
-        Some("load_uint32") => Some(CType::UInt32),
-        Some("load_int64") => Some(CType::Int64),
-        Some("load_uint64") => Some(CType::UInt64),
-        Some("load_int32_pointer") => Some(CType::Int32Pointer),
-        Some("load_uint8_pointer") => Some(CType::UInt8Pointer),
-        Some("load_uint16_pointer") => Some(CType::UInt16Pointer),
-        Some("load_int32_pointer_pointer") => Some(CType::Int32PointerPointer),
-        Some("load_uint8_pointer_pointer") => Some(CType::UInt8PointerPointer),
-        Some("load_uint16_pointer_pointer") => Some(CType::UInt16PointerPointer),
+        Some("load_int32") => Some(ProgramType::Int32),
+        Some("load_uint8") => Some(ProgramType::UInt8),
+        Some("load_uint16") => Some(ProgramType::UInt16),
+        Some("load_uint32") => Some(ProgramType::UInt32),
+        Some("load_int64") => Some(ProgramType::Int64),
+        Some("load_uint64") => Some(ProgramType::UInt64),
+        Some("load_int32_pointer") => Some(ProgramType::Int32Pointer),
+        Some("load_uint8_pointer") => Some(ProgramType::UInt8Pointer),
+        Some("load_uint16_pointer") => Some(ProgramType::UInt16Pointer),
+        Some("load_int32_pointer_pointer") => Some(ProgramType::Int32PointerPointer),
+        Some("load_uint8_pointer_pointer") => Some(ProgramType::UInt8PointerPointer),
+        Some("load_uint16_pointer_pointer") => Some(ProgramType::UInt16PointerPointer),
         _ => None,
     }
 }
@@ -16954,11 +16991,11 @@ fn negatable_int32_magnitude(token: &Token) -> Option<u32> {
     }
 }
 
-fn named_place_base(expression: &CExpression) -> Option<&String> {
+fn named_place_base(expression: &ProgramExpression) -> Option<&String> {
     match expression {
-        CExpression::Variable(name) => Some(name),
-        CExpression::AddressOf(inner) => match inner.as_ref() {
-            CExpression::Variable(name) => Some(name),
+        ProgramExpression::Variable(name) => Some(name),
+        ProgramExpression::AddressOf(inner) => match inner.as_ref() {
+            ProgramExpression::Variable(name) => Some(name),
             _ => None,
         },
         _ => None,
@@ -16966,9 +17003,9 @@ fn named_place_base(expression: &CExpression) -> Option<&String> {
 }
 
 pub(in crate::surface) fn flatten_array_indices(
-    indexes: Vec<CExpression>,
+    indexes: Vec<ProgramExpression>,
     dimensions: &[u32],
-) -> CExpression {
+) -> ProgramExpression {
     let mut terms = Vec::with_capacity(indexes.len());
     for (index, expression) in indexes.into_iter().enumerate() {
         let stride = dimensions[index + 1..]
@@ -16982,9 +17019,9 @@ pub(in crate::surface) fn flatten_array_indices(
         terms.push(if stride == 1 {
             expression
         } else {
-            CExpression::Multiply(
+            ProgramExpression::Multiply(
                 Box::new(expression),
-                Box::new(CExpression::Value(int32(stride))),
+                Box::new(ProgramExpression::Value(int32(stride))),
             )
         });
     }
@@ -16993,7 +17030,7 @@ pub(in crate::surface) fn flatten_array_indices(
         .next()
         .expect("a multidimensional access has at least one index");
     for term in terms {
-        offset = CExpression::Add(Box::new(offset), Box::new(term));
+        offset = ProgramExpression::Add(Box::new(offset), Box::new(term));
     }
     offset
 }
@@ -17015,9 +17052,9 @@ fn row_major_index_path(flat_index: u32, shape: &[u32]) -> String {
 /// contract's `&p->f`: the address keeps the member's extent as the C
 /// frontend's member address does. The specification lowers the address as
 /// one C fragment, so the kernel evaluates the narrowing.
-fn contract_member_lvalue(load: &CExpression) -> CExpression {
+fn contract_member_lvalue(load: &ProgramExpression) -> ProgramExpression {
     let mut load = load.clone();
-    if let CExpression::TypedLoad {
+    if let ProgramExpression::TypedLoad {
         pointer,
         value_type,
         ..
@@ -17025,8 +17062,9 @@ fn contract_member_lvalue(load: &CExpression) -> CExpression {
     {
         let width = value_type.byte_width();
         if width != 0 {
-            let member = std::mem::replace(pointer.as_mut(), CExpression::Variable(String::new()));
-            **pointer = CExpression::Subobject {
+            let member =
+                std::mem::replace(pointer.as_mut(), ProgramExpression::Variable(String::new()));
+            **pointer = ProgramExpression::Subobject {
                 pointer: Box::new(member),
                 width,
             };
@@ -17035,12 +17073,15 @@ fn contract_member_lvalue(load: &CExpression) -> CExpression {
     load
 }
 
-fn lowered_field_expression(pointer: CExpression, field: &ResolvedField) -> CExpression {
+fn lowered_field_expression(
+    pointer: ProgramExpression,
+    field: &ResolvedField,
+) -> ProgramExpression {
     if field.c_type == C0Type::Int32 && (field.struct_name.is_some() || field.union_name.is_some())
     {
         pointer
     } else {
-        CExpression::TypedLoad {
+        ProgramExpression::TypedLoad {
             pointer: Box::new(pointer),
             value_type: field.c_type.to_kernel_type(),
             volatile: false,
@@ -17082,18 +17123,18 @@ fn field_has_direct_memory_place(field: &ResolvedField) -> bool {
     )
 }
 
-fn scalar_array_field_element(field: &ResolvedField) -> Option<(u32, CType)> {
+fn scalar_array_field_element(field: &ResolvedField) -> Option<(u32, ProgramType)> {
     if field.struct_name.is_some() || field.union_name.is_some() || field.array_shape.is_none() {
         return None;
     }
     match field.c_type {
-        C0Type::Int32Array(_) => Some((4, CType::Int32)),
-        C0Type::Int64Array(_, _) => Some((8, CType::Int64)),
-        C0Type::Int128Array(_) => Some((16, CType::Int128)),
-        C0Type::UInt64Array(_, _) => Some((8, CType::UInt64)),
-        C0Type::UInt128Array(_) => Some((16, CType::UInt128)),
+        C0Type::Int32Array(_) => Some((4, ProgramType::Int32)),
+        C0Type::Int64Array(_, _) => Some((8, ProgramType::Int64)),
+        C0Type::Int128Array(_) => Some((16, ProgramType::Int128)),
+        C0Type::UInt64Array(_, _) => Some((8, ProgramType::UInt64)),
+        C0Type::UInt128Array(_) => Some((16, ProgramType::UInt128)),
         C0Type::CharArray(plain, _) => Some((1, plain.byte_type().to_kernel_type())),
-        C0Type::UInt8Array(_) => Some((1, CType::UInt8)),
+        C0Type::UInt8Array(_) => Some((1, ProgramType::UInt8)),
         _ => None,
     }
 }
@@ -17252,17 +17293,17 @@ fn source_nesting_error_message(
 
 /// `aligned(p, n)` is sugar for `address(p) & (n - 1) == 0`; the kernel
 /// decides that shape from the pointer's formation.
-fn aligned_proposition(pointer: CExpression, alignment: u64) -> ClickProposition {
+fn aligned_proposition(pointer: ProgramExpression, alignment: u64) -> ClickProposition {
     let uint64 = |value: u64| {
-        ContractExpression::CFragment(CExpression::Value(CValue::UInt64(
+        ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::UInt64(
             MachineTerm::uint64_constant(value),
         )))
     };
     ClickProposition::Comparison {
         left: ContractExpression::BitwiseAnd(
-            Box::new(ContractExpression::CFragment(CExpression::Cast {
+            Box::new(ContractExpression::CFragment(ProgramExpression::Cast {
                 expression: Box::new(pointer),
-                target_type: CType::UInt64,
+                target_type: ProgramType::UInt64,
                 integer_mode: crate::kernel::CIntegerCastMode::Standard,
                 pointee_struct: None,
                 pointee_volatile: false,
@@ -17534,7 +17575,7 @@ mod integer_quantifier_parser_tests {
         };
         assert!(matches!(
             left,
-            ContractExpression::CFragment(CExpression::Variable(name)) if name == "saved"
+            ContractExpression::CFragment(ProgramExpression::Variable(name)) if name == "saved"
         ));
     }
 
@@ -17557,27 +17598,27 @@ mod integer_quantifier_parser_tests {
 }
 
 /// Preserve the C parser's exact, widened struct byte stride in sidecars.
-fn struct_byte_stride(index: CExpression, width: u32) -> CExpression {
-    CExpression::Multiply(
-        Box::new(CExpression::Cast {
+fn struct_byte_stride(index: ProgramExpression, width: u32) -> ProgramExpression {
+    ProgramExpression::Multiply(
+        Box::new(ProgramExpression::Cast {
             expression: Box::new(index),
-            target_type: crate::kernel::CType::Int64,
+            target_type: crate::kernel::ProgramType::Int64,
             integer_mode: crate::kernel::CIntegerCastMode::Standard,
             pointee_struct: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,
         }),
-        Box::new(CExpression::Value(crate::kernel::int64(
+        Box::new(ProgramExpression::Value(crate::kernel::int64(
             crate::kernel::MachineTerm::int64_constant(i64::from(width)),
         ))),
     )
 }
 
-fn struct_byte_base(base: CExpression) -> CExpression {
-    CExpression::Cast {
+fn struct_byte_base(base: ProgramExpression) -> ProgramExpression {
+    ProgramExpression::Cast {
         expression: Box::new(base),
-        target_type: crate::kernel::CType::UInt8Pointer,
+        target_type: crate::kernel::ProgramType::UInt8Pointer,
         integer_mode: crate::kernel::CIntegerCastMode::Standard,
         pointee_struct: None,
         pointee_volatile: false,

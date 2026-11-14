@@ -13,7 +13,7 @@ const FORMATS: [MachineIntegerType; 8] = [
 fn call(format: MachineIntegerType, name: &str) -> KernelTerm {
     let application = SharedPureApplication::intern(
         name.into(),
-        vec![PureFunctionArgument::Value(CValue::Int32(
+        vec![PureFunctionArgument::Value(ProgramValue::Int32(
             MachineTerm::Variable(Variable(995810)),
         ))],
     );
@@ -236,7 +236,7 @@ fn common_call_root_readings_keep_wide_refusals_and_borrow_arguments() {
             format.format().bits() != 128
         );
         if format.format().bits() == 128 {
-            assert!(cast(&root.clone().into(), CType::Int32).is_none());
+            assert!(cast(&root.clone().into(), ProgramType::Int32).is_none());
             let mut execution = ExecutionBudget::new();
             let budget = SpecEvaluation::logical(&mut execution);
             assert!(
@@ -261,16 +261,16 @@ mod scaling_tests {
 fn wide_call_identity_casts_keep_the_native_type_refusal() {
     let _session = VerificationSession::enter();
     for source in [MachineIntegerType::Int128, MachineIntegerType::UInt128] {
-        for target in [CType::Int128, CType::UInt128, CType::Int32] {
+        for target in [ProgramType::Int128, ProgramType::UInt128, ProgramType::Int32] {
             for count in [1, 3] {
                 let root = call(source, "wide_call");
                 let native = SpecValue::Shared(root.clone()).into_native();
-                let state = CState::new();
+                let state = ExecutionState::new();
                 let mut values = crate::persistent::PersistentMap::default();
                 values.insert("x".to_string(), root);
                 for shared in [false, true] {
                     let mut expression = if shared {
-                        SpecExpression::CExpression(CExpression::Variable("x".into()))
+                        SpecExpression::ProgramExpression(ProgramExpression::Variable("x".into()))
                     } else {
                         SpecExpression::Value(native.clone())
                     };
@@ -325,7 +325,7 @@ fn produced_paths(expression: &SpecExpression, legacy: bool) -> Vec<SpecExpressi
     budget.machine_preparation_disabled = legacy;
     budget.machine_result_production_disabled = legacy;
     evaluate_spec_expression_paths_with_algebraic_bindings_in(
-        SpecScope::unbound(&CState::new(), None),
+        SpecScope::unbound(&ExecutionState::new(), None),
         expression,
         &PureFactContext::new(),
         &mut budget,
@@ -336,7 +336,7 @@ fn produced_paths(expression: &SpecExpression, legacy: bool) -> Vec<SpecExpressi
 #[test]
 fn actual_call_producers_keep_all_integer_types_and_nested_arguments() {
     let _session = VerificationSession::enter();
-    let input = SpecExpression::Value(CValue::Int32(MachineTerm::Variable(Variable(995830))));
+    let input = SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(995830))));
     for format in FORMATS
         .into_iter()
         .chain([MachineIntegerType::Int128, MachineIntegerType::UInt128])
@@ -378,7 +378,7 @@ fn actual_call_results_keep_deferred_bindings_and_wide_cast_refusals() {
         let bound = SpecExpression::Let {
             name: "result".into(),
             value: Box::new(call.clone()),
-            body: Box::new(SpecExpression::CExpression(CExpression::Variable(
+            body: Box::new(SpecExpression::ProgramExpression(ProgramExpression::Variable(
                 "result".into(),
             ))),
         };
@@ -386,14 +386,14 @@ fn actual_call_results_keep_deferred_bindings_and_wide_cast_refusals() {
         assert_eq!(produced_paths(&bound, false), produced_paths(&call, false));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         if format.format().bits() == 128 {
-            for target in [CType::Int128, CType::UInt128, CType::Int32] {
+            for target in [ProgramType::Int128, ProgramType::UInt128, ProgramType::Int32] {
                 let cast = SpecExpression::Cast(Box::new(call.clone()), target);
                 for legacy in [false, true] {
                     let mut execution = ExecutionBudget::new();
                     let mut budget = SpecEvaluation::logical(&mut execution);
                     budget.machine_result_production_disabled = legacy;
                     let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                        SpecScope::unbound(&CState::new(), None),
+                        SpecScope::unbound(&ExecutionState::new(), None),
                         &cast,
                         &PureFactContext::new(),
                         &mut budget,
@@ -424,7 +424,7 @@ fn actual_call_native_handoff_retains_nested_call_arguments() {
     let child = root.children()[0].clone();
     let exports = KernelTermExport::machine_export_count();
     let native = paths.pop().unwrap().value.into_native();
-    let CValue::Int32(MachineTerm::ClickFunctionApplication { arguments, .. }) = native else {
+    let ProgramValue::Int32(MachineTerm::ClickFunctionApplication { arguments, .. }) = native else {
         panic!()
     };
     let [PureFunctionArgument::SharedMachine(value)] = arguments.as_slice() else {
@@ -438,11 +438,11 @@ fn actual_call_native_handoff_retains_nested_call_arguments() {
 fn actual_call_arithmetic_keeps_native_values_and_definedness() {
     let _session = VerificationSession::enter();
     let call = call_expression(MachineIntegerType::Int32, vec![]);
-    let one = SpecExpression::Value(CValue::Int32(MachineTerm::constant(1)));
+    let one = SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(1)));
     for expression in [
         SpecExpression::Add(Box::new(call.clone()), Box::new(one.clone())),
         SpecExpression::Divide(Box::new(one.clone()), Box::new(call.clone())),
-        SpecExpression::Cast(Box::new(call.clone()), CType::UInt64),
+        SpecExpression::Cast(Box::new(call.clone()), ProgramType::UInt64),
         call_expression(
             MachineIntegerType::Int32,
             vec![SpecExpression::Add(Box::new(call), Box::new(one))],
@@ -456,7 +456,7 @@ fn actual_call_arithmetic_keeps_native_values_and_definedness() {
                 budget.machine_result_production_disabled = legacy;
                 budget.c_definedness = defined;
                 evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                    SpecScope::unbound(&CState::new(), None),
+                    SpecScope::unbound(&ExecutionState::new(), None),
                     &expression,
                     &PureFactContext::new(),
                     &mut budget,

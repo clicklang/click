@@ -582,7 +582,7 @@ fn integer_expression_kind(
         ContractExpression::Binding(name) => {
             (locals.contains(name) || integer_bindings.contains(name)).then_some(true)
         }
-        ContractExpression::CFragment(CExpression::Variable(name))
+        ContractExpression::CFragment(ProgramExpression::Variable(name))
         | ContractExpression::CBinding(name) => {
             (locals.contains(name) || integer_bindings.contains(name)).then_some(true)
         }
@@ -862,7 +862,7 @@ fn contains_integer_expression_signal(
         ContractExpression::Binding(name) => {
             locals.contains(name) || integer_bindings.contains(name)
         }
-        ContractExpression::CFragment(CExpression::Variable(name))
+        ContractExpression::CFragment(ProgramExpression::Variable(name))
         | ContractExpression::CBinding(name) => {
             locals.contains(name) || integer_bindings.contains(name)
         }
@@ -1082,7 +1082,7 @@ pub(super) fn infer_scoped_spec_value_type(
         ContractExpression::Binding(name) if integer_bindings.contains(name) => {
             Ok(SpecValueType::Integer)
         }
-        ContractExpression::CFragment(CExpression::Variable(name))
+        ContractExpression::CFragment(ProgramExpression::Variable(name))
         | ContractExpression::CBinding(name)
             if integer_bindings.contains(name) =>
         {
@@ -1622,7 +1622,7 @@ pub(super) fn infer_scoped_range_fold_bindings(
         let literal = |expression: &ContractExpression| {
             matches!(
                 contract_expression_as_c_fragment(expression),
-                Some(CExpression::Value(CValue::Int32(value)))
+                Some(ProgramExpression::Value(ProgramValue::Int32(value)))
                     if value.as_const().is_some_and(|value| value <= i32::MAX as u32)
             )
         };
@@ -2903,14 +2903,14 @@ pub(in crate::surface) fn describe_click_type(click_type: &ClickType) -> String 
 /// whose one-byte cells the kernel reads through either signedness as the
 /// same eight bits.
 pub(crate) fn array_ref_elements_compatible(
-    actual: crate::kernel::CType,
-    expected: crate::kernel::CType,
+    actual: crate::kernel::ProgramType,
+    expected: crate::kernel::ProgramType,
 ) -> bool {
-    use crate::kernel::CType;
+    use crate::kernel::ProgramType;
     actual == expected
         || matches!(
             (actual, expected),
-            (CType::Int8, CType::UInt8) | (CType::UInt8, CType::Int8)
+            (ProgramType::Int8, ProgramType::UInt8) | (ProgramType::UInt8, ProgramType::Int8)
         )
 }
 
@@ -2943,24 +2943,25 @@ pub(in crate::surface) fn click_argument_types_compatible(
 /// a change of sign and a float's integer part must be written. C source
 /// keeps C's own conversions; this is the rule for Click's typed positions.
 pub(in crate::surface) fn implicitly_converts(actual: C0Type, expected: C0Type) -> bool {
-    use crate::kernel::{CType, MachineIntegerType};
+    use crate::kernel::{MachineIntegerType, ProgramType};
     let (actual, expected) = (actual.to_kernel_type(), expected.to_kernel_type());
     if actual == expected {
         return true;
     }
-    let integer = |ty: CType| MachineIntegerType::from_c_type(ty).map(MachineIntegerType::format);
+    let integer =
+        |ty: ProgramType| MachineIntegerType::from_c_type(ty).map(MachineIntegerType::format);
     // A float holds an integer exactly when its significand covers the
     // integer's magnitude bits: 24 for `float`, 53 for `double`.
-    let significand = |ty: CType| match ty {
-        CType::Float32 => Some(24),
-        CType::Float64 => Some(53),
+    let significand = |ty: ProgramType| match ty {
+        ProgramType::Float32 => Some(24),
+        ProgramType::Float64 => Some(53),
         _ => None,
     };
     match (integer(actual), integer(expected)) {
         (Some(from), Some(to)) => to.contains(from),
         (Some(from), None) => significand(expected)
             .is_some_and(|digits| from.bits() - u32::from(from.is_signed()) <= digits),
-        (None, None) => actual == CType::Float32 && expected == CType::Float64,
+        (None, None) => actual == ProgramType::Float32 && expected == ProgramType::Float64,
         (None, Some(_)) => false,
     }
 }
@@ -3457,14 +3458,14 @@ pub(super) fn infer_contract_expression_type(
 /// Native byte-view casts retag scalar object pointers without changing
 /// allocation identity, permissions, or initialized storage.
 pub(in crate::surface) fn validate_void_pointer_cast_source(
-    operand: &CExpression,
+    operand: &ProgramExpression,
     variables: &BTreeMap<String, C0Type>,
     context: &str,
 ) -> Result<(), ClickError> {
     let actual = infer_c_expression_type(operand, variables);
     if actual.is_some_and(|ty| {
         !ty.is_object_pointer() && !matches!(ty, C0Type::Int64(_) | C0Type::UInt64(_))
-    }) || matches!(operand, CExpression::FunctionAddress(_))
+    }) || matches!(operand, ProgramExpression::FunctionAddress(_))
     {
         return Err(ClickError::new(format!(
             "contract void-pointer cast in {context} expects an object pointer operand, got {actual:?}"
@@ -3474,19 +3475,19 @@ pub(in crate::surface) fn validate_void_pointer_cast_source(
 }
 
 fn validate_pointer_cast_operands(
-    expression: &CExpression,
+    expression: &ProgramExpression,
     variables: &BTreeMap<String, C0Type>,
     context: &str,
 ) -> Result<(), ClickError> {
     match expression {
-        CExpression::Cast {
+        ProgramExpression::Cast {
             expression: operand,
             target_type,
             pointee_struct,
             ..
         } => {
             if target_type.is_pointer() {
-                if !matches!(target_type, CType::FunctionPointer(_))
+                if !matches!(target_type, ProgramType::FunctionPointer(_))
                     && matches!(
                         infer_c_expression_type(operand, variables),
                         Some(C0Type::Int64(_) | C0Type::UInt64(_))
@@ -3494,11 +3495,11 @@ fn validate_pointer_cast_operands(
                 {
                     return validate_pointer_cast_operands(operand, variables, context);
                 }
-                if *target_type == CType::VoidPointer {
+                if *target_type == ProgramType::VoidPointer {
                     validate_void_pointer_cast_source(operand, variables, context)?;
                     return validate_pointer_cast_operands(operand, variables, context);
                 }
-                if *target_type == CType::UInt8Pointer && pointee_struct.is_none() {
+                if *target_type == ProgramType::UInt8Pointer && pointee_struct.is_none() {
                     let actual = infer_c_expression_type(operand, variables);
                     if actual.is_some()
                         && !actual.is_some_and(|ty| {
@@ -3524,30 +3525,30 @@ fn validate_pointer_cast_operands(
             }
             validate_pointer_cast_operands(operand, variables, context)
         }
-        CExpression::Value(_)
-        | CExpression::FunctionAddress(_)
-        | CExpression::Variable(_)
-        | CExpression::CallResult { .. } => Ok(()),
-        CExpression::FloatNegate(inner)
-        | CExpression::FloatClassification {
+        ProgramExpression::Value(_)
+        | ProgramExpression::FunctionAddress(_)
+        | ProgramExpression::Variable(_)
+        | ProgramExpression::CallResult { .. } => Ok(()),
+        ProgramExpression::FloatNegate(inner)
+        | ProgramExpression::FloatClassification {
             expression: inner, ..
         }
-        | CExpression::AddressOf(inner)
-        | CExpression::CheckedObjectAddress(inner)
-        | CExpression::Not(inner)
-        | CExpression::BitwiseNot(inner)
-        | CExpression::Load(inner)
-        | CExpression::TypedLoad { pointer: inner, .. }
-        | CExpression::PointerOffsetBytes { pointer: inner, .. }
-        | CExpression::Subobject { pointer: inner, .. }
-        | CExpression::EnumField { value: inner, .. }
-        | CExpression::EnumIs { value: inner, .. } => {
+        | ProgramExpression::AddressOf(inner)
+        | ProgramExpression::CheckedObjectAddress(inner)
+        | ProgramExpression::Not(inner)
+        | ProgramExpression::BitwiseNot(inner)
+        | ProgramExpression::Load(inner)
+        | ProgramExpression::TypedLoad { pointer: inner, .. }
+        | ProgramExpression::PointerOffsetBytes { pointer: inner, .. }
+        | ProgramExpression::Subobject { pointer: inner, .. }
+        | ProgramExpression::EnumField { value: inner, .. }
+        | ProgramExpression::EnumIs { value: inner, .. } => {
             validate_pointer_cast_operands(inner, variables, context)
         }
-        CExpression::EnumConstruct { fields, .. } => fields
+        ProgramExpression::EnumConstruct { fields, .. } => fields
             .iter()
             .try_for_each(|field| validate_pointer_cast_operands(field, variables, context)),
-        CExpression::Conditional {
+        ProgramExpression::Conditional {
             condition,
             then_branch,
             else_branch,
@@ -3564,99 +3565,99 @@ fn validate_pointer_cast_operands(
 }
 
 pub(in crate::surface) fn infer_c_expression_type(
-    expression: &CExpression,
+    expression: &ProgramExpression,
     variables: &BTreeMap<String, C0Type>,
 ) -> Option<C0Type> {
     match expression {
-        CExpression::Value(CValue::PointerInteger(_)) => infer_c_expression_type(
-            &CExpression::Value(match expression {
-                CExpression::Value(v) => v.numeric_value().clone(),
+        ProgramExpression::Value(ProgramValue::PointerInteger(_)) => infer_c_expression_type(
+            &ProgramExpression::Value(match expression {
+                ProgramExpression::Value(v) => v.numeric_value().clone(),
                 _ => unreachable!(),
             }),
             variables,
         ),
-        CExpression::Value(CValue::Int128(_)) => Some(C0Type::Int128),
-        CExpression::Value(CValue::UInt128(_)) => Some(C0Type::UInt128),
+        ProgramExpression::Value(ProgramValue::Int128(_)) => Some(C0Type::Int128),
+        ProgramExpression::Value(ProgramValue::UInt128(_)) => Some(C0Type::UInt128),
 
-        CExpression::Value(CValue::Void) => Some(C0Type::Void),
-        CExpression::Value(CValue::Bool(_)) => Some(C0Type::Bool),
-        CExpression::Value(CValue::Int8(_)) => Some(C0Type::Int8),
-        CExpression::Value(CValue::Int16(_)) => Some(C0Type::Int16),
-        CExpression::Value(CValue::Int32(_)) => Some(C0Type::Int32),
-        CExpression::Value(CValue::UInt8(_)) => Some(C0Type::UInt8),
-        CExpression::Value(CValue::UInt16(_)) => Some(C0Type::UInt16),
-        CExpression::Value(CValue::UInt32(_)) => Some(C0Type::UInt32),
-        CExpression::Value(CValue::Int64(_)) => Some(C0Type::Int64(LongRank::Long)),
-        CExpression::Value(CValue::UInt64(_)) => Some(C0Type::UInt64(LongRank::Long)),
-        CExpression::Value(CValue::Float32(_)) => Some(C0Type::Float32),
-        CExpression::Value(CValue::Float64(_)) => Some(C0Type::Float64),
-        CExpression::Value(CValue::Parameter(term)) => Some(C0Type::Parameter(
+        ProgramExpression::Value(ProgramValue::Void) => Some(C0Type::Void),
+        ProgramExpression::Value(ProgramValue::Bool(_)) => Some(C0Type::Bool),
+        ProgramExpression::Value(ProgramValue::Int8(_)) => Some(C0Type::Int8),
+        ProgramExpression::Value(ProgramValue::Int16(_)) => Some(C0Type::Int16),
+        ProgramExpression::Value(ProgramValue::Int32(_)) => Some(C0Type::Int32),
+        ProgramExpression::Value(ProgramValue::UInt8(_)) => Some(C0Type::UInt8),
+        ProgramExpression::Value(ProgramValue::UInt16(_)) => Some(C0Type::UInt16),
+        ProgramExpression::Value(ProgramValue::UInt32(_)) => Some(C0Type::UInt32),
+        ProgramExpression::Value(ProgramValue::Int64(_)) => Some(C0Type::Int64(LongRank::Long)),
+        ProgramExpression::Value(ProgramValue::UInt64(_)) => Some(C0Type::UInt64(LongRank::Long)),
+        ProgramExpression::Value(ProgramValue::Float32(_)) => Some(C0Type::Float32),
+        ProgramExpression::Value(ProgramValue::Float64(_)) => Some(C0Type::Float64),
+        ProgramExpression::Value(ProgramValue::Parameter(term)) => Some(C0Type::Parameter(
             crate::kernel::TypeParameterName::of(&term.algebraic_type),
         )),
-        CExpression::Value(CValue::Pointer(_)) => None,
-        CExpression::Variable(name) => variables.get(name).copied(),
-        CExpression::Cast {
+        ProgramExpression::Value(ProgramValue::Pointer(_)) => None,
+        ProgramExpression::Variable(name) => variables.get(name).copied(),
+        ProgramExpression::Cast {
             expression: _,
             target_type,
             ..
         } => match target_type {
-            CType::Parameter(name) => Some(C0Type::Parameter(*name)),
-            CType::ParameterPointer(name) => Some(C0Type::ParameterPointer(*name)),
-            CType::Int128 => Some(C0Type::Int128),
-            CType::UInt128 => Some(C0Type::UInt128),
+            ProgramType::Parameter(name) => Some(C0Type::Parameter(*name)),
+            ProgramType::ParameterPointer(name) => Some(C0Type::ParameterPointer(*name)),
+            ProgramType::Int128 => Some(C0Type::Int128),
+            ProgramType::UInt128 => Some(C0Type::UInt128),
 
-            CType::Bool => Some(C0Type::Bool),
-            CType::Int8 => Some(C0Type::Int8),
-            CType::Int16 => Some(C0Type::Int16),
-            CType::Int32 => Some(C0Type::Int32),
-            CType::UInt8 => Some(C0Type::UInt8),
-            CType::UInt16 => Some(C0Type::UInt16),
-            CType::UInt32 => Some(C0Type::UInt32),
-            CType::Int32Pointer => Some(C0Type::Int32Pointer),
-            CType::UInt8Pointer => Some(C0Type::UInt8Pointer),
-            CType::Int32PointerPointer => Some(C0Type::Int32PointerPointer),
-            CType::UInt8PointerPointer => Some(C0Type::UInt8PointerPointer),
-            CType::FunctionPointer(signature) => Some(C0Type::FunctionPointer(*signature)),
-            CType::Void | CType::Int32Array(_) | CType::UInt8Array(_) => None,
-            CType::Int64 => Some(C0Type::Int64(LongRank::Long)),
-            CType::UInt64 => Some(C0Type::UInt64(LongRank::Long)),
-            CType::Float32 => Some(C0Type::Float32),
-            CType::Float64 => Some(C0Type::Float64),
-            CType::VoidPointer => Some(C0Type::VoidPointer),
-            CType::VoidPointerPointer => Some(C0Type::VoidPointerPointer),
-            CType::Int8Pointer => Some(C0Type::Int8Pointer),
-            CType::Int16Pointer => Some(C0Type::Int16Pointer),
-            CType::UInt16Pointer => Some(C0Type::UInt16Pointer),
-            CType::UInt32Pointer => Some(C0Type::UInt32Pointer),
-            CType::Int64Pointer => Some(C0Type::Int64Pointer(LongRank::Long)),
-            CType::Int128Pointer => Some(C0Type::Int128Pointer),
-            CType::UInt64Pointer => Some(C0Type::UInt64Pointer(LongRank::Long)),
-            CType::UInt128Pointer => Some(C0Type::UInt128Pointer),
-            CType::Int8PointerPointer => Some(C0Type::Int8PointerPointer),
-            CType::Int16PointerPointer => Some(C0Type::Int16PointerPointer),
-            CType::UInt16PointerPointer => Some(C0Type::UInt16PointerPointer),
-            CType::UInt32PointerPointer => Some(C0Type::UInt32PointerPointer),
-            CType::Int64PointerPointer => Some(C0Type::Int64PointerPointer(LongRank::Long)),
-            CType::Int128PointerPointer => Some(C0Type::Int128PointerPointer),
-            CType::UInt64PointerPointer => Some(C0Type::UInt64PointerPointer(LongRank::Long)),
-            CType::UInt128PointerPointer => Some(C0Type::UInt128PointerPointer),
-            CType::Float32Pointer => Some(C0Type::Float32Pointer),
-            CType::Float64Pointer => Some(C0Type::Float64Pointer),
-            CType::Float32PointerPointer => Some(C0Type::Float32PointerPointer),
-            CType::Float64PointerPointer => Some(C0Type::Float64PointerPointer),
-            CType::Int8Array(_) => None,
-            CType::Int16Array(_)
-            | CType::UInt16Array(_)
-            | CType::UInt32Array(_)
-            | CType::Int128Array(_)
-            | CType::Int64Array(_)
-            | CType::UInt128Array(_)
-            | CType::UInt64Array(_)
-            | CType::Float32Array(_)
-            | CType::Float64Array(_)
-            | CType::PointerArray(_, _) => None,
+            ProgramType::Bool => Some(C0Type::Bool),
+            ProgramType::Int8 => Some(C0Type::Int8),
+            ProgramType::Int16 => Some(C0Type::Int16),
+            ProgramType::Int32 => Some(C0Type::Int32),
+            ProgramType::UInt8 => Some(C0Type::UInt8),
+            ProgramType::UInt16 => Some(C0Type::UInt16),
+            ProgramType::UInt32 => Some(C0Type::UInt32),
+            ProgramType::Int32Pointer => Some(C0Type::Int32Pointer),
+            ProgramType::UInt8Pointer => Some(C0Type::UInt8Pointer),
+            ProgramType::Int32PointerPointer => Some(C0Type::Int32PointerPointer),
+            ProgramType::UInt8PointerPointer => Some(C0Type::UInt8PointerPointer),
+            ProgramType::FunctionPointer(signature) => Some(C0Type::FunctionPointer(*signature)),
+            ProgramType::Void | ProgramType::Int32Array(_) | ProgramType::UInt8Array(_) => None,
+            ProgramType::Int64 => Some(C0Type::Int64(LongRank::Long)),
+            ProgramType::UInt64 => Some(C0Type::UInt64(LongRank::Long)),
+            ProgramType::Float32 => Some(C0Type::Float32),
+            ProgramType::Float64 => Some(C0Type::Float64),
+            ProgramType::VoidPointer => Some(C0Type::VoidPointer),
+            ProgramType::VoidPointerPointer => Some(C0Type::VoidPointerPointer),
+            ProgramType::Int8Pointer => Some(C0Type::Int8Pointer),
+            ProgramType::Int16Pointer => Some(C0Type::Int16Pointer),
+            ProgramType::UInt16Pointer => Some(C0Type::UInt16Pointer),
+            ProgramType::UInt32Pointer => Some(C0Type::UInt32Pointer),
+            ProgramType::Int64Pointer => Some(C0Type::Int64Pointer(LongRank::Long)),
+            ProgramType::Int128Pointer => Some(C0Type::Int128Pointer),
+            ProgramType::UInt64Pointer => Some(C0Type::UInt64Pointer(LongRank::Long)),
+            ProgramType::UInt128Pointer => Some(C0Type::UInt128Pointer),
+            ProgramType::Int8PointerPointer => Some(C0Type::Int8PointerPointer),
+            ProgramType::Int16PointerPointer => Some(C0Type::Int16PointerPointer),
+            ProgramType::UInt16PointerPointer => Some(C0Type::UInt16PointerPointer),
+            ProgramType::UInt32PointerPointer => Some(C0Type::UInt32PointerPointer),
+            ProgramType::Int64PointerPointer => Some(C0Type::Int64PointerPointer(LongRank::Long)),
+            ProgramType::Int128PointerPointer => Some(C0Type::Int128PointerPointer),
+            ProgramType::UInt64PointerPointer => Some(C0Type::UInt64PointerPointer(LongRank::Long)),
+            ProgramType::UInt128PointerPointer => Some(C0Type::UInt128PointerPointer),
+            ProgramType::Float32Pointer => Some(C0Type::Float32Pointer),
+            ProgramType::Float64Pointer => Some(C0Type::Float64Pointer),
+            ProgramType::Float32PointerPointer => Some(C0Type::Float32PointerPointer),
+            ProgramType::Float64PointerPointer => Some(C0Type::Float64PointerPointer),
+            ProgramType::Int8Array(_) => None,
+            ProgramType::Int16Array(_)
+            | ProgramType::UInt16Array(_)
+            | ProgramType::UInt32Array(_)
+            | ProgramType::Int128Array(_)
+            | ProgramType::Int64Array(_)
+            | ProgramType::UInt128Array(_)
+            | ProgramType::UInt64Array(_)
+            | ProgramType::Float32Array(_)
+            | ProgramType::Float64Array(_)
+            | ProgramType::PointerArray(_, _) => None,
         },
-        CExpression::Conditional {
+        ProgramExpression::Conditional {
             condition,
             then_branch,
             else_branch,
@@ -3669,9 +3670,9 @@ pub(in crate::surface) fn infer_c_expression_type(
                 _ => None,
             }
         }
-        CExpression::EnumConstruct { enum_type, .. } => Some(C0Type::Parameter(*enum_type)),
+        ProgramExpression::EnumConstruct { enum_type, .. } => Some(C0Type::Parameter(*enum_type)),
         // A field's type is its variant's declared field type.
-        CExpression::EnumField {
+        ProgramExpression::EnumField {
             value,
             variant,
             index,
@@ -3690,45 +3691,47 @@ pub(in crate::surface) fn infer_c_expression_type(
                 }),
             _ => None,
         },
-        CExpression::EnumIs { value, .. } => matches!(
+        ProgramExpression::EnumIs { value, .. } => matches!(
             infer_c_expression_type(value, variables),
             Some(C0Type::Parameter(_))
         )
         .then_some(C0Type::Bool),
-        CExpression::FloatNegate(expression) => {
+        ProgramExpression::FloatNegate(expression) => {
             infer_c_expression_type(expression, variables).filter(|c_type| type_is_float(*c_type))
         }
-        CExpression::FloatClassification { expression, .. } => matches!(
+        ProgramExpression::FloatClassification { expression, .. } => matches!(
             infer_c_expression_type(expression, variables),
             Some(C0Type::Float32 | C0Type::Float64)
         )
         .then_some(C0Type::Int32),
-        CExpression::AddressOf(_)
-        | CExpression::CheckedObjectAddress(_)
-        | CExpression::FunctionAddress(_)
-        | CExpression::CallResult { .. } => None,
-        CExpression::PointerOffsetBytes { pointer, .. }
-        | CExpression::Subobject { pointer, .. } => infer_c_expression_type(pointer, variables),
-        CExpression::LessThan(_, _)
-        | CExpression::LessEqual(_, _)
-        | CExpression::GreaterThan(_, _)
-        | CExpression::GreaterEqual(_, _)
-        | CExpression::Equal(_, _)
-        | CExpression::NotEqual(_, _)
-        | CExpression::Not(_)
-        | CExpression::And(_, _)
-        | CExpression::Or(_, _) => Some(C0Type::Int32),
-        CExpression::Add(left, right) => infer_c_add_type(left, right, variables),
-        CExpression::Subtract(left, right) => infer_c_subtract_type(left, right, variables),
-        CExpression::Multiply(left, right) | CExpression::Divide(left, right) => {
+        ProgramExpression::AddressOf(_)
+        | ProgramExpression::CheckedObjectAddress(_)
+        | ProgramExpression::FunctionAddress(_)
+        | ProgramExpression::CallResult { .. } => None,
+        ProgramExpression::PointerOffsetBytes { pointer, .. }
+        | ProgramExpression::Subobject { pointer, .. } => {
+            infer_c_expression_type(pointer, variables)
+        }
+        ProgramExpression::LessThan(_, _)
+        | ProgramExpression::LessEqual(_, _)
+        | ProgramExpression::GreaterThan(_, _)
+        | ProgramExpression::GreaterEqual(_, _)
+        | ProgramExpression::Equal(_, _)
+        | ProgramExpression::NotEqual(_, _)
+        | ProgramExpression::Not(_)
+        | ProgramExpression::And(_, _)
+        | ProgramExpression::Or(_, _) => Some(C0Type::Int32),
+        ProgramExpression::Add(left, right) => infer_c_add_type(left, right, variables),
+        ProgramExpression::Subtract(left, right) => infer_c_subtract_type(left, right, variables),
+        ProgramExpression::Multiply(left, right) | ProgramExpression::Divide(left, right) => {
             let left = infer_c_expression_type(left, variables);
             let right = infer_c_expression_type(right, variables);
             arithmetic_result_type(left, right)
         }
-        CExpression::Remainder(left, right)
-        | CExpression::BitwiseAnd(left, right)
-        | CExpression::BitwiseOr(left, right)
-        | CExpression::BitwiseXor(left, right) => {
+        ProgramExpression::Remainder(left, right)
+        | ProgramExpression::BitwiseAnd(left, right)
+        | ProgramExpression::BitwiseOr(left, right)
+        | ProgramExpression::BitwiseXor(left, right) => {
             let left = infer_c_expression_type(left, variables);
             let right = infer_c_expression_type(right, variables);
             match (left, right) {
@@ -3738,81 +3741,82 @@ pub(in crate::surface) fn infer_c_expression_type(
                 _ => None,
             }
         }
-        CExpression::ShiftLeft(left, right) | CExpression::ShiftRight(left, right) => {
+        ProgramExpression::ShiftLeft(left, right) | ProgramExpression::ShiftRight(left, right) => {
             infer_c_shift_type(left, right, variables)
         }
-        CExpression::RustShiftLeft(left, right) | CExpression::RustShiftRight(left, right) => {
+        ProgramExpression::RustShiftLeft(left, right)
+        | ProgramExpression::RustShiftRight(left, right) => {
             let left = infer_c_expression_type(left, variables)?;
             let right = infer_c_expression_type(right, variables)?;
             (type_is_scalar(left) && type_is_scalar(right)).then_some(left)
         }
-        CExpression::BitwiseNot(expression) => infer_c_expression_type(expression, variables)
+        ProgramExpression::BitwiseNot(expression) => infer_c_expression_type(expression, variables)
             .filter(|c_type| type_is_scalar(*c_type))
             .map(|c_type| scalar_arithmetic_result_type(c_type, c_type)),
-        CExpression::Load(pointer) => {
+        ProgramExpression::Load(pointer) => {
             infer_c_expression_type(pointer, variables).and_then(pointer_element_type)
         }
-        CExpression::TypedLoad { value_type, .. } => Some(match value_type {
-            CType::Parameter(name) => C0Type::Parameter(*name),
-            CType::ParameterPointer(name) => C0Type::ParameterPointer(*name),
-            CType::Void => return None,
-            CType::Bool => C0Type::Bool,
-            CType::VoidPointer => C0Type::VoidPointer,
-            CType::VoidPointerPointer => C0Type::VoidPointerPointer,
-            CType::Int8 => C0Type::Int8,
-            CType::Int16 => C0Type::Int16,
-            CType::Int32 => C0Type::Int32,
-            CType::UInt8 => C0Type::UInt8,
-            CType::UInt16 => C0Type::UInt16,
-            CType::UInt32 => C0Type::UInt32,
-            CType::Int64 => C0Type::Int64(LongRank::Long),
-            CType::UInt64 => C0Type::UInt64(LongRank::Long),
-            CType::Int128 => C0Type::Int128,
-            CType::UInt128 => C0Type::UInt128,
-            CType::Float32 => C0Type::Float32,
-            CType::Float64 => C0Type::Float64,
-            CType::Int32Pointer => C0Type::Int32Pointer,
-            CType::UInt8Pointer => C0Type::UInt8Pointer,
-            CType::Int8Pointer => C0Type::Int8Pointer,
-            CType::Int16Pointer => C0Type::Int16Pointer,
-            CType::UInt16Pointer => C0Type::UInt16Pointer,
-            CType::UInt32Pointer => C0Type::UInt32Pointer,
-            CType::Int64Pointer => C0Type::Int64Pointer(LongRank::Long),
-            CType::Int128Pointer => C0Type::Int128Pointer,
-            CType::UInt64Pointer => C0Type::UInt64Pointer(LongRank::Long),
-            CType::UInt128Pointer => C0Type::UInt128Pointer,
-            CType::Int8PointerPointer => C0Type::Int8PointerPointer,
-            CType::Int16PointerPointer => C0Type::Int16PointerPointer,
-            CType::UInt16PointerPointer => C0Type::UInt16PointerPointer,
-            CType::Int32PointerPointer => C0Type::Int32PointerPointer,
-            CType::UInt8PointerPointer => C0Type::UInt8PointerPointer,
-            CType::UInt32PointerPointer => C0Type::UInt32PointerPointer,
-            CType::Int64PointerPointer => C0Type::Int64PointerPointer(LongRank::Long),
-            CType::Int128PointerPointer => C0Type::Int128PointerPointer,
-            CType::UInt64PointerPointer => C0Type::UInt64PointerPointer(LongRank::Long),
-            CType::UInt128PointerPointer => C0Type::UInt128PointerPointer,
-            CType::Float32Pointer => C0Type::Float32Pointer,
-            CType::Float64Pointer => C0Type::Float64Pointer,
-            CType::Float32PointerPointer => C0Type::Float32PointerPointer,
-            CType::Float64PointerPointer => C0Type::Float64PointerPointer,
-            CType::FunctionPointer(signature) => C0Type::FunctionPointer(*signature),
-            CType::Int32Array(length) => C0Type::Int32Array(*length),
-            CType::UInt8Array(length) => C0Type::UInt8Array(*length),
-            CType::Int8Array(length) => C0Type::Int8Array(*length),
-            CType::Int16Array(length) => C0Type::Int16Array(*length),
-            CType::UInt16Array(length) => C0Type::UInt16Array(*length),
-            CType::UInt32Array(length) => C0Type::UInt32Array(*length),
-            CType::Int64Array(length) => C0Type::Int64Array(LongRank::Long, *length),
-            CType::Int128Array(length) => C0Type::Int128Array(*length),
-            CType::UInt64Array(length) => C0Type::UInt64Array(LongRank::Long, *length),
-            CType::UInt128Array(length) => C0Type::UInt128Array(*length),
-            CType::Float32Array(length) => C0Type::Float32Array(*length),
-            CType::Float64Array(length) => C0Type::Float64Array(*length),
-            CType::PointerArray(element, length) => {
+        ProgramExpression::TypedLoad { value_type, .. } => Some(match value_type {
+            ProgramType::Parameter(name) => C0Type::Parameter(*name),
+            ProgramType::ParameterPointer(name) => C0Type::ParameterPointer(*name),
+            ProgramType::Void => return None,
+            ProgramType::Bool => C0Type::Bool,
+            ProgramType::VoidPointer => C0Type::VoidPointer,
+            ProgramType::VoidPointerPointer => C0Type::VoidPointerPointer,
+            ProgramType::Int8 => C0Type::Int8,
+            ProgramType::Int16 => C0Type::Int16,
+            ProgramType::Int32 => C0Type::Int32,
+            ProgramType::UInt8 => C0Type::UInt8,
+            ProgramType::UInt16 => C0Type::UInt16,
+            ProgramType::UInt32 => C0Type::UInt32,
+            ProgramType::Int64 => C0Type::Int64(LongRank::Long),
+            ProgramType::UInt64 => C0Type::UInt64(LongRank::Long),
+            ProgramType::Int128 => C0Type::Int128,
+            ProgramType::UInt128 => C0Type::UInt128,
+            ProgramType::Float32 => C0Type::Float32,
+            ProgramType::Float64 => C0Type::Float64,
+            ProgramType::Int32Pointer => C0Type::Int32Pointer,
+            ProgramType::UInt8Pointer => C0Type::UInt8Pointer,
+            ProgramType::Int8Pointer => C0Type::Int8Pointer,
+            ProgramType::Int16Pointer => C0Type::Int16Pointer,
+            ProgramType::UInt16Pointer => C0Type::UInt16Pointer,
+            ProgramType::UInt32Pointer => C0Type::UInt32Pointer,
+            ProgramType::Int64Pointer => C0Type::Int64Pointer(LongRank::Long),
+            ProgramType::Int128Pointer => C0Type::Int128Pointer,
+            ProgramType::UInt64Pointer => C0Type::UInt64Pointer(LongRank::Long),
+            ProgramType::UInt128Pointer => C0Type::UInt128Pointer,
+            ProgramType::Int8PointerPointer => C0Type::Int8PointerPointer,
+            ProgramType::Int16PointerPointer => C0Type::Int16PointerPointer,
+            ProgramType::UInt16PointerPointer => C0Type::UInt16PointerPointer,
+            ProgramType::Int32PointerPointer => C0Type::Int32PointerPointer,
+            ProgramType::UInt8PointerPointer => C0Type::UInt8PointerPointer,
+            ProgramType::UInt32PointerPointer => C0Type::UInt32PointerPointer,
+            ProgramType::Int64PointerPointer => C0Type::Int64PointerPointer(LongRank::Long),
+            ProgramType::Int128PointerPointer => C0Type::Int128PointerPointer,
+            ProgramType::UInt64PointerPointer => C0Type::UInt64PointerPointer(LongRank::Long),
+            ProgramType::UInt128PointerPointer => C0Type::UInt128PointerPointer,
+            ProgramType::Float32Pointer => C0Type::Float32Pointer,
+            ProgramType::Float64Pointer => C0Type::Float64Pointer,
+            ProgramType::Float32PointerPointer => C0Type::Float32PointerPointer,
+            ProgramType::Float64PointerPointer => C0Type::Float64PointerPointer,
+            ProgramType::FunctionPointer(signature) => C0Type::FunctionPointer(*signature),
+            ProgramType::Int32Array(length) => C0Type::Int32Array(*length),
+            ProgramType::UInt8Array(length) => C0Type::UInt8Array(*length),
+            ProgramType::Int8Array(length) => C0Type::Int8Array(*length),
+            ProgramType::Int16Array(length) => C0Type::Int16Array(*length),
+            ProgramType::UInt16Array(length) => C0Type::UInt16Array(*length),
+            ProgramType::UInt32Array(length) => C0Type::UInt32Array(*length),
+            ProgramType::Int64Array(length) => C0Type::Int64Array(LongRank::Long, *length),
+            ProgramType::Int128Array(length) => C0Type::Int128Array(*length),
+            ProgramType::UInt64Array(length) => C0Type::UInt64Array(LongRank::Long, *length),
+            ProgramType::UInt128Array(length) => C0Type::UInt128Array(*length),
+            ProgramType::Float32Array(length) => C0Type::Float32Array(*length),
+            ProgramType::Float64Array(length) => C0Type::Float64Array(*length),
+            ProgramType::PointerArray(element, length) => {
                 C0Type::PointerArray(*element, LongRank::Long, *length)
             }
         }),
-        CExpression::Index(base, _) => {
+        ProgramExpression::Index(base, _) => {
             infer_c_expression_type(base, variables).and_then(pointer_element_type)
         }
     }
@@ -3858,8 +3862,8 @@ fn infer_subtract_expression_type(
 }
 
 fn infer_c_add_type(
-    left: &CExpression,
-    right: &CExpression,
+    left: &ProgramExpression,
+    right: &ProgramExpression,
     variables: &BTreeMap<String, C0Type>,
 ) -> Option<C0Type> {
     let left = infer_c_expression_type(left, variables);
@@ -3868,8 +3872,8 @@ fn infer_c_add_type(
 }
 
 fn infer_c_subtract_type(
-    left: &CExpression,
-    right: &CExpression,
+    left: &ProgramExpression,
+    right: &ProgramExpression,
     variables: &BTreeMap<String, C0Type>,
 ) -> Option<C0Type> {
     let left = infer_c_expression_type(left, variables);
@@ -3914,8 +3918,8 @@ fn arithmetic_result_type(left: Option<C0Type>, right: Option<C0Type>) -> Option
 }
 
 fn infer_c_shift_type(
-    left: &CExpression,
-    right: &CExpression,
+    left: &ProgramExpression,
+    right: &ProgramExpression,
     variables: &BTreeMap<String, C0Type>,
 ) -> Option<C0Type> {
     let left_type = infer_c_expression_type(left, variables)?;

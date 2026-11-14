@@ -14,7 +14,10 @@ fn subrange_law_does_not_enumerate_the_interval() {
             let _session = crate::kernel::VerificationSession::enter();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 crate::kernel::prove_separation_subrange(
-                    CPointerValue::new(Pointer::symbolic(Variable(8_390_000)), CType::Int64Pointer),
+                    PointerValue::new(
+                        Pointer::symbolic(Variable(8_390_000)),
+                        ProgramType::Int64Pointer,
+                    ),
                     8,
                     format,
                     constant(0),
@@ -47,8 +50,10 @@ fn elements_laws_do_not_walk_the_index_distance() {
                     MachineIntegerType::Int32 => MachineTerm::constant(n as u32),
                     _ => MachineTerm::int64_constant(i64::from(n)),
                 };
-                let base =
-                    CPointerValue::new(Pointer::symbolic(Variable(8_390_001)), CType::Int64Pointer);
+                let base = PointerValue::new(
+                    Pointer::symbolic(Variable(8_390_001)),
+                    ProgramType::Int64Pointer,
+                );
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                     crate::kernel::prove_separation_elements(
                         base.clone(),
@@ -140,7 +145,7 @@ fn conjunction_lowering_visits_written_operands_not_ambient_facts() {
         };
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::spec::lower_spec_proposition_at_state_with_loop_entry(
-                &CState::new(),
+                &ExecutionState::new(),
                 &proposition,
                 None,
                 &assumptions,
@@ -203,7 +208,10 @@ fn element_containment_does_not_enumerate_its_interval() {
             let _session = crate::kernel::VerificationSession::enter();
             crate::instrumentation::measure_deterministic_work(|| {
                 crate::kernel::prove_separation_contains_element(
-                    CPointerValue::new(Pointer::symbolic(Variable(8_390_002)), CType::Int64Pointer),
+                    PointerValue::new(
+                        Pointer::symbolic(Variable(8_390_002)),
+                        ProgramType::Int64Pointer,
+                    ),
                     8,
                     format,
                     constant(0),

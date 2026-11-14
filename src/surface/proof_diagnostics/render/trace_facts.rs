@@ -135,7 +135,7 @@ impl Renderer<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{AlgebraicType, CMemoryRange, CValue, LoadKind, ResourceContext};
+    use crate::kernel::{AlgebraicType, CMemoryRange, LoadKind, ProgramValue, ResourceContext};
 
     fn render(fact: &Proposition) -> String {
         render_trace_fact_labeled(fact, &mut SnapshotLabels::default())
@@ -158,7 +158,7 @@ mod tests {
         ));
         let composite = CResource::Composite {
             name: "rb_child_links".into(),
-            arguments: std::sync::Arc::from([AlgebraicValue::C(CValue::Int32(
+            arguments: std::sync::Arc::from([AlgebraicValue::C(ProgramValue::Int32(
                 MachineTerm::constant(7),
             ))]),
         };
@@ -244,9 +244,9 @@ mod tests {
             (
                 Proposition::Predicate {
                     name: "__click_volatile_write_123".into(),
-                    arguments: vec![Term::CValue(CValue::UInt64(MachineTerm::uint64_constant(
-                        1,
-                    )))],
+                    arguments: vec![Term::ProgramValue(ProgramValue::UInt64(
+                        MachineTerm::uint64_constant(1),
+                    ))],
                 },
                 "volatile-write-event#123(uint64(1u64))",
             ),

@@ -1092,7 +1092,7 @@ connected by the memory derivation DAG.
 ### Symbolic state
 
 The modeled C state on one execution path: local values, memory, resource
-facts, and the population authority ledger. `CState` is the kernel representation;
+facts, and the population authority ledger. `ExecutionState` is the kernel representation;
 logical proposition facts and execution-control data live alongside it.
 
 ### Symbolic value

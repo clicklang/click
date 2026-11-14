@@ -41,7 +41,7 @@ fn common_match_alpha_identity_keeps_shared_arm_body() {
         )
         .unwrap();
         for (matched, id) in [(&mut left, 100), (&mut right, 200)] {
-            let mut body = KernelTerm::variable(KernelType::C(CType::Int32), Variable(id));
+            let mut body = KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(id));
             for _ in 0..size {
                 body = KernelTerm::machine_binary_shared(
                     MachineIntegerType::Int32,

@@ -1,8 +1,8 @@
 //! Clone statement trees without recursing through nested branch bodies.
 
-use super::{CStatement, CSwitchCase};
+use super::{CSwitchCase, ProgramStatement};
 
-impl Clone for CStatement {
+impl Clone for ProgramStatement {
     fn clone(&self) -> Self {
         let mut result = Self::Skip;
         let mut pending = vec![(self, &mut result)];
@@ -54,7 +54,7 @@ impl Clone for CStatement {
     }
 }
 
-impl CStatement {
+impl ProgramStatement {
     // Sequence roots are persistent. Only the directly boxed children need
     // placeholders for the visitor; all other fields retain ordinary clone
     // semantics, including source provenance, loop contracts and call data.

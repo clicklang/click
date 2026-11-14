@@ -15,7 +15,7 @@ struct ContractClosingInput {
 fn contract_closing_input(
     root: Option<&Proof<'_>>,
     execution: &CCheckedFunctionExecution,
-    function: &CFunction,
+    function: &ProgramFunction,
     path_index: usize,
     certified_path_index: usize,
     has_return_resource_rewrite: bool,
@@ -79,7 +79,7 @@ fn prove_next_contract_closing_goal<'a>(
     outcome_proof: &mut Option<Proof<'a>>,
     input: &mut Option<ContractClosingInput>,
     execution: &CCheckedFunctionExecution,
-    function: &CFunction,
+    function: &ProgramFunction,
     path_index: usize,
     certified_path_index: usize,
     has_return_resource_rewrite: bool,
@@ -1132,10 +1132,10 @@ use exit_claim::{ClaimCertificate, ClaimClosure, ClosedClaim};
 /// at the checked outcome. Its evaluation requirements are ordinary proof
 /// obligations, and its completion retains the clause it establishes.
 fn contract_closing_goal<'a>(
-    function: &'a CFunction,
+    function: &'a ProgramFunction,
     target: Option<&CFunctionContractClaimTarget>,
-    pre_state: &CState,
-    arguments: &[CExpression],
+    pre_state: &ExecutionState,
+    arguments: &[ProgramExpression],
     outcome: &CFunctionOutcome,
     assumptions: &PureFactContext,
     unfolded_predicates: &[String],
@@ -1221,10 +1221,10 @@ fn contract_closing_goal<'a>(
 /// unfolded that predicate. A closer step is exact, so the closer tries each
 /// form; two forms at most.
 fn contract_closing_goal_forms<'a>(
-    function: &'a CFunction,
+    function: &'a ProgramFunction,
     target: Option<&CFunctionContractClaimTarget>,
-    pre_state: &CState,
-    arguments: &[CExpression],
+    pre_state: &ExecutionState,
+    arguments: &[ProgramExpression],
     outcome: &CFunctionOutcome,
     assumptions: &PureFactContext,
     unfolded_predicates: &[String],
@@ -1377,9 +1377,9 @@ fn apply_claim_step<'a>(
 /// but every operation advances this retained Proof directly.
 fn begin_outcome_existence_proof<'a>(
     outcome_root: &Proof<'a>,
-    function: &CFunction,
-    pre_state: &CState,
-    arguments: &[CExpression],
+    function: &ProgramFunction,
+    pre_state: &ExecutionState,
+    arguments: &[ProgramExpression],
     outcome: &CFunctionOutcome,
     claims: &[FunctionClaimRef<'_>],
     closures: &[ClaimClosure],
@@ -1474,9 +1474,9 @@ enum ClaimClosureSearch<'p> {
 
 fn close_claim_directly_from_outcome<'a>(
     outcome_root: &Proof<'a>,
-    function: &CFunction,
+    function: &ProgramFunction,
     claim: &FunctionClaimRef<'_>,
-    pre_state: &CState,
+    pre_state: &ExecutionState,
     outcome: &CFunctionOutcome,
     surface_goal: &ClickProposition,
     rewrite_equalities: &[ClickProposition],
@@ -1735,7 +1735,7 @@ fn close_claim_directly_from_outcome<'a>(
                             // rather than points on the memory history, so the
                             // tracker is asked about the two states this claim
                             // compares.
-                            let model_field = |value: &CValue, role: &str| {
+                            let model_field = |value: &ProgramValue, role: &str| {
                                 describe_model_field_mismatch(
                                     value,
                                     state,
@@ -2132,13 +2132,13 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
     require_explicit_closers: bool,
     function_block: &std::sync::Arc<FunctionBlock>,
     parsed_function: &syntax::C0Function,
-    function: &CFunction,
-    arguments: &[CExpression],
+    function: &ProgramFunction,
+    arguments: &[ProgramExpression],
     claims: &[FunctionClaimRef<'_>],
     spec_definitions: SpecDefinitions<'_>,
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    contract_pre_state: &CState,
+    pre_state: &ExecutionState,
+    contract_pre_state: &ExecutionState,
     proof_context: &ExecutionProofContext<'_>,
     execution: &CFunctionExecutionCandidates,
     completed_execution: &'e CCheckedFunctionExecution,
@@ -3141,8 +3141,8 @@ pub(super) fn finish_ordered_proof<'a>(
     resource_environment: &ResourceEnvironment,
     _theorem_environment: &TheoremEnvironment,
     function_environment: &CExecutionEnvironment,
-    function: &CFunction,
-    arguments: &[CExpression],
+    function: &ProgramFunction,
+    arguments: &[ProgramExpression],
     certificate_tactics: &std::sync::Arc<[ProofTactic]>,
     claim_surface_builders: &mut Vec<(VerifiedClaim, std::sync::Arc<ProofCertificateBuilder>)>,
 ) -> Result<Vec<VerifiedCTheorem>, ClickError> {
@@ -6288,9 +6288,9 @@ mod evidence_tests {
 fn contract_entry_view(
     surface_facts: PureFactList,
     surface_origins: Vec<EntryFactOrigin>,
-    state: &CState,
-    function: &CFunction,
-    arguments: &[CExpression],
+    state: &ExecutionState,
+    function: &ProgramFunction,
+    arguments: &[ProgramExpression],
 ) -> (PureFactList, Vec<EntryFactOrigin>) {
     let Ok(entry) = crate::kernel::c_function_contract_entry(state, function, arguments) else {
         return (surface_facts, surface_origins);
@@ -6379,19 +6379,19 @@ mod contract_closing_tests {
     #[test]
     fn missing_kernel_claim_is_refused_during_contract_closing() {
         let function = crate::kernel::c_function(
-            CType::Int32,
+            ProgramType::Int32,
             "missing",
             vec![],
             crate::kernel::c_return(crate::kernel::c_int32_literal(0)),
         );
         let outcome = CFunctionOutcome::Return {
             value: crate::kernel::int32(0).into(),
-            state: Box::new(CState::new()),
+            state: Box::new(ExecutionState::new()),
         };
         let error = contract_closing_goal(
             &function,
             Some(&CFunctionContractClaimTarget::EnsureProposition(0)),
-            &CState::new(),
+            &ExecutionState::new(),
             &[],
             &outcome,
             &PureFactContext::new(),

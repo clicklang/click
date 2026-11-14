@@ -219,7 +219,7 @@ pub(super) fn population_member_requirement(member: &CResourceSpec) -> String {
     let arguments = arguments
         .iter()
         .map(|argument| match argument {
-            CExpression::Variable(name) => name.as_str(),
+            ProgramExpression::Variable(name) => name.as_str(),
             _ => "...",
         })
         .collect::<Vec<_>>()
@@ -256,7 +256,7 @@ pub(super) fn checked_consumed_population_member<'a>(
 pub(super) fn locked_helper_population(
     interface: &CFunctionContractInterface,
     transfer: &CFunctionResourceTransfer,
-    callee_entry: &CState,
+    callee_entry: &ExecutionState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<Vec<ResourceDescription>, CRuntimeError>> {
@@ -388,7 +388,7 @@ pub(super) fn authority_exchange_effects(
     if inputs.len() != outputs.len() || !matches!(inputs.len(), 1 | 2) {
         return None;
     }
-    fn parts(spec: &CResourceSpec) -> Option<(&str, &[CExpression])> {
+    fn parts(spec: &CResourceSpec) -> Option<(&str, &[ProgramExpression])> {
         match spec.term() {
             CResourceTerm::Composite {
                 name, arguments, ..
@@ -461,7 +461,7 @@ pub(super) fn authority_exchange_effects(
                     && matches!(child.term(), CResourceTerm::PopulationAuthority { protected, population_arity, .. }
                         if population_arity.map_or(arguments.len() == 1, |arity| arity == arguments.len())
                         && matches!(protected.resource.term(), CResourceTerm::Composite { name, arguments: anchor, .. }
-                            if name == family && matches!(anchor.as_slice(), [CExpression::Variable(parameter)] if parameter == definition.parameters()[0].name())))
+                            if name == family && matches!(anchor.as_slice(), [ProgramExpression::Variable(parameter)] if parameter == definition.parameters()[0].name())))
             })
         }) { return None; }
         }
@@ -1067,8 +1067,8 @@ pub(super) fn authority_consumes_member_contract(interface: &CFunctionContractIn
 /// when its only output claim is the borrowed authority. Merely retaining
 /// that output does not establish the consumed member's ledger transition.
 pub(in crate::kernel) fn check_wildcard_consumption_at_return(
-    entry: &CState,
-    exit: &CState,
+    entry: &ExecutionState,
+    exit: &ExecutionState,
     interface: &CFunctionContractInterface,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -1196,8 +1196,8 @@ pub(in crate::kernel) fn check_wildcard_consumption_at_return(
 /// partitions are checked separately; this compares only the authenticated
 /// ledger delta and never turns a population count into owned members.
 pub(super) fn check_quantity_exchange_at_return(
-    entry: &CState,
-    exit: &CState,
+    entry: &ExecutionState,
+    exit: &ExecutionState,
     interface: &CFunctionContractInterface,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -1337,8 +1337,8 @@ pub(super) fn authority_conditional_release_contract(
 }
 
 pub(super) fn authority_release_retires_control(
-    entry: &CState,
-    post: &CState,
+    entry: &ExecutionState,
+    post: &ExecutionState,
     interface: &CFunctionContractInterface,
     checked_control: Option<&CResourceFact>,
     assumptions: &PureFactContext,

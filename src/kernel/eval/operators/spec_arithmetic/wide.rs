@@ -2,9 +2,9 @@
 //! and domain. Operand equalities cannot replace that source during lowering.
 use super::*;
 
-fn observe(value: &CValue) -> Option<IntegerTerm> {
+fn observe(value: &ProgramValue) -> Option<IntegerTerm> {
     let ty = match value.c_type() {
-        CType::Bool => MachineIntegerType::UInt8,
+        ProgramType::Bool => MachineIntegerType::UInt8,
         ty => MachineIntegerType::from_c_type(ty)?,
     };
     IntegerTerm::from_machine(ty, crate::kernel::spec::c_value_bitvector_term(value)?)
@@ -13,22 +13,23 @@ fn observe(value: &CValue) -> Option<IntegerTerm> {
 pub(super) fn apply(
     op: MachineBinaryOp,
     division: SpecDivision,
-    left: &CValue,
-    right: &CValue,
+    left: &ProgramValue,
+    right: &ProgramValue,
     facts: &ExecutionFacts,
     inherited: &[ProofObligation],
 ) -> Option<CExpressionPath> {
     let destination = match op {
         MachineBinaryOp::Multiply
-            if (matches!(left, CValue::Int128(_)) || matches!(right, CValue::Int128(_)))
-                && !matches!(left, CValue::UInt128(_))
-                && !matches!(right, CValue::UInt128(_)) =>
+            if (matches!(left, ProgramValue::Int128(_))
+                || matches!(right, ProgramValue::Int128(_)))
+                && !matches!(left, ProgramValue::UInt128(_))
+                && !matches!(right, ProgramValue::UInt128(_)) =>
         {
             MachineIntegerType::Int128
         }
         MachineBinaryOp::Divide | MachineBinaryOp::Remainder => match (left, right) {
-            (CValue::Int128(_), CValue::Int128(_)) => MachineIntegerType::Int128,
-            (CValue::UInt128(_), CValue::UInt128(_)) => MachineIntegerType::UInt128,
+            (ProgramValue::Int128(_), ProgramValue::Int128(_)) => MachineIntegerType::Int128,
+            (ProgramValue::UInt128(_), ProgramValue::UInt128(_)) => MachineIntegerType::UInt128,
             _ => return None,
         },
         _ => return None,
@@ -101,8 +102,8 @@ pub(super) fn apply(
         });
     Some(CExpressionPath {
         outcome: CExpressionOutcome::Value(match destination {
-            MachineIntegerType::Int128 => CValue::Int128(term),
-            MachineIntegerType::UInt128 => CValue::UInt128(term),
+            MachineIntegerType::Int128 => ProgramValue::Int128(term),
+            MachineIntegerType::UInt128 => ProgramValue::UInt128(term),
             _ => unreachable!(),
         }),
         facts: facts.clone(),
@@ -114,12 +115,12 @@ pub(super) fn apply(
 mod tests {
     use super::*;
 
-    fn value(format: MachineIntegerType, constant: i128) -> CValue {
+    fn value(format: MachineIntegerType, constant: i128) -> ProgramValue {
         let term =
             crate::kernel::machine_integer::range::constant_word(format, &constant.into()).unwrap();
         match format {
-            MachineIntegerType::Int128 => CValue::Int128(term),
-            MachineIntegerType::UInt128 => CValue::UInt128(term),
+            MachineIntegerType::Int128 => ProgramValue::Int128(term),
+            MachineIntegerType::UInt128 => ProgramValue::UInt128(term),
             _ => unreachable!(),
         }
     }
@@ -142,7 +143,7 @@ mod tests {
             .unwrap();
             assert!(matches!(
                 path.outcome,
-                CExpressionOutcome::Value(CValue::Int128(_))
+                CExpressionOutcome::Value(ProgramValue::Int128(_))
             ));
             assert!(path.facts.is_empty());
             assert!(
@@ -173,8 +174,9 @@ mod tests {
                 )
                 .unwrap();
                 // The value is the opaque quotient, never a chosen constant.
-                let CExpressionOutcome::Value(CValue::Int128(term) | CValue::UInt128(term)) =
-                    &total.outcome
+                let CExpressionOutcome::Value(
+                    ProgramValue::Int128(term) | ProgramValue::UInt128(term),
+                ) = &total.outcome
                 else {
                     panic!("a wide quotient has a wide value");
                 };

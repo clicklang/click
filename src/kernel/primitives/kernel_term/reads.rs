@@ -40,7 +40,7 @@ impl KernelTerm {
 
     pub(crate) fn scalar_read_descriptor(
         format: MachineIntegerType,
-        memory: &SharedCMemory,
+        memory: &SharedMemory,
         address: &Pointer,
         kind: LoadKind,
     ) -> Option<Self> {
@@ -92,9 +92,10 @@ mod tests {
     fn scalar_reads_retain_exact_descriptors_and_survive_registry_reset() {
         let _session = VerificationSession::enter();
         let address = Pointer::symbolic(Variable(993100));
-        let memory = intern_c_memory(
-            CMemory::new().store(address.clone(), CValue::Int32(MachineTerm::constant(7))),
-        );
+        let memory = intern_c_memory(CMemory::new().store(
+            address.clone(),
+            ProgramValue::Int32(MachineTerm::constant(7)),
+        ));
         for (kind, format) in [
             (LoadKind::Int8, MachineIntegerType::Int8),
             (LoadKind::UInt8, MachineIntegerType::UInt8),
@@ -129,9 +130,10 @@ mod tests {
         let _session = VerificationSession::enter();
         let address = Pointer::symbolic(Variable(993110));
         let memory = intern_c_memory(CMemory::new());
-        let written = intern_c_memory(
-            CMemory::new().store(address.clone(), CValue::Int32(MachineTerm::constant(7))),
-        );
+        let written = intern_c_memory(CMemory::new().store(
+            address.clone(),
+            ProgramValue::Int32(MachineTerm::constant(7)),
+        ));
         let load = |memory, address, kind| {
             KernelTermImport::default().machine(
                 MachineIntegerType::Int32,
@@ -223,9 +225,9 @@ mod tests {
         let p = Pointer::symbolic(Variable(993140));
         let before = intern_c_memory(CMemory::new());
         let after = intern_c_memory(
-            CMemory::new().store(p.clone(), CValue::Int32(MachineTerm::constant(1))),
+            CMemory::new().store(p.clone(), ProgramValue::Int32(MachineTerm::constant(1))),
         );
-        let nested = |inner: SharedCMemory, outer: SharedCMemory, kind| {
+        let nested = |inner: SharedMemory, outer: SharedMemory, kind| {
             MachineTerm::MemoryLoad(
                 outer,
                 Box::new(Pointer {
@@ -367,7 +369,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let p = Pointer::symbolic(Variable(993162));
         let memory = intern_c_memory(
-            CMemory::new().store(p.clone(), CValue::Int32(MachineTerm::constant(3))),
+            CMemory::new().store(p.clone(), ProgramValue::Int32(MachineTerm::constant(3))),
         );
         let index = crate::kernel::eval::canonical_form_of_load(memory.clone(), p, LoadKind::Int32);
         let address = Pointer {

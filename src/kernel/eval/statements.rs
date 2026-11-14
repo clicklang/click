@@ -5,8 +5,8 @@ mod scalar_arrays;
 
 #[cfg(test)]
 pub(in crate::kernel) fn execute_c_statement(
-    state: &CState,
-    statement: &CStatement,
+    state: &ExecutionState,
+    statement: &ProgramStatement,
     assumptions: &PureFactContext,
 ) -> Option<CStatementOutcome> {
     let paths = execute_c_statement_paths(
@@ -26,9 +26,9 @@ pub(in crate::kernel) fn execute_c_statement(
 }
 
 pub(in crate::kernel) fn execute_c_lvalue_assignment_paths(
-    state: &CState,
-    target: &CExpression,
-    value: &CExpression,
+    state: &ExecutionState,
+    target: &ProgramExpression,
+    value: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
@@ -43,9 +43,9 @@ pub(in crate::kernel) fn execute_c_lvalue_assignment_paths(
 }
 
 fn execute_c_lvalue_assignment_paths_with_source(
-    state: &CState,
-    target: &CExpression,
-    value: &CExpression,
+    state: &ExecutionState,
+    target: &ProgramExpression,
+    value: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
     store_source: CStatementStoreSource,
@@ -128,15 +128,15 @@ fn execute_c_lvalue_assignment_paths_with_source(
 }
 
 fn execute_c_lvalue_update_paths(
-    state: &CState,
-    target: &CExpression,
+    state: &ExecutionState,
+    target: &ProgramExpression,
     operator: CUpdateOperator,
-    operand: &CExpression,
+    operand: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     let source = match target {
-        CExpression::TypedLoad { source, .. } => source.as_ref(),
+        ProgramExpression::TypedLoad { source, .. } => source.as_ref(),
         _ => None,
     };
     let mut paths = Vec::new();
@@ -159,21 +159,30 @@ fn execute_c_lvalue_update_paths(
         };
         let supported_integer_update = matches!(
             lvalue.value_type,
-            CType::Int8
-                | CType::Int16
-                | CType::Int32
-                | CType::UInt8
-                | CType::UInt16
-                | CType::UInt32
-                | CType::Int64
-                | CType::UInt64
+            ProgramType::Int8
+                | ProgramType::Int16
+                | ProgramType::Int32
+                | ProgramType::UInt8
+                | ProgramType::UInt16
+                | ProgramType::UInt32
+                | ProgramType::Int64
+                | ProgramType::UInt64
         );
         let supported_float_update = matches!(
             (lvalue.value_type, operator),
-            (CType::Float32 | CType::Float64, CUpdateOperator::Add)
-                | (CType::Float32 | CType::Float64, CUpdateOperator::Subtract)
-                | (CType::Float32 | CType::Float64, CUpdateOperator::Multiply)
-                | (CType::Float32 | CType::Float64, CUpdateOperator::Divide)
+            (
+                ProgramType::Float32 | ProgramType::Float64,
+                CUpdateOperator::Add
+            ) | (
+                ProgramType::Float32 | ProgramType::Float64,
+                CUpdateOperator::Subtract
+            ) | (
+                ProgramType::Float32 | ProgramType::Float64,
+                CUpdateOperator::Multiply
+            ) | (
+                ProgramType::Float32 | ProgramType::Float64,
+                CUpdateOperator::Divide
+            )
         );
         if !supported_integer_update && !supported_float_update {
             paths.push(CStatementExecutionPath::new(
@@ -251,8 +260,8 @@ fn execute_c_lvalue_update_paths(
 
                 let update_expression = c_update_expression(
                     operator,
-                    CExpression::Value(current.clone()),
-                    CExpression::Value(operand_value),
+                    ProgramExpression::Value(current.clone()),
+                    ProgramExpression::Value(operand_value),
                 );
                 let update_assumptions =
                     assumptions_with_path_context(assumptions, &facts, &obligations);
@@ -312,27 +321,27 @@ fn execute_c_lvalue_update_paths(
 
 fn c_update_expression(
     operator: CUpdateOperator,
-    left: CExpression,
-    right: CExpression,
-) -> CExpression {
+    left: ProgramExpression,
+    right: ProgramExpression,
+) -> ProgramExpression {
     let left = Box::new(left);
     let right = Box::new(right);
     match operator {
-        CUpdateOperator::Add => CExpression::Add(left, right),
-        CUpdateOperator::Subtract => CExpression::Subtract(left, right),
-        CUpdateOperator::Multiply => CExpression::Multiply(left, right),
-        CUpdateOperator::Divide => CExpression::Divide(left, right),
-        CUpdateOperator::Remainder => CExpression::Remainder(left, right),
-        CUpdateOperator::ShiftLeft => CExpression::ShiftLeft(left, right),
-        CUpdateOperator::ShiftRight => CExpression::ShiftRight(left, right),
-        CUpdateOperator::BitwiseAnd => CExpression::BitwiseAnd(left, right),
-        CUpdateOperator::BitwiseOr => CExpression::BitwiseOr(left, right),
-        CUpdateOperator::BitwiseXor => CExpression::BitwiseXor(left, right),
+        CUpdateOperator::Add => ProgramExpression::Add(left, right),
+        CUpdateOperator::Subtract => ProgramExpression::Subtract(left, right),
+        CUpdateOperator::Multiply => ProgramExpression::Multiply(left, right),
+        CUpdateOperator::Divide => ProgramExpression::Divide(left, right),
+        CUpdateOperator::Remainder => ProgramExpression::Remainder(left, right),
+        CUpdateOperator::ShiftLeft => ProgramExpression::ShiftLeft(left, right),
+        CUpdateOperator::ShiftRight => ProgramExpression::ShiftRight(left, right),
+        CUpdateOperator::BitwiseAnd => ProgramExpression::BitwiseAnd(left, right),
+        CUpdateOperator::BitwiseOr => ProgramExpression::BitwiseOr(left, right),
+        CUpdateOperator::BitwiseXor => ProgramExpression::BitwiseXor(left, right),
     }
 }
 
 pub(in crate::kernel) fn memory_write_permission_outcome(
-    state: &CState,
+    state: &ExecutionState,
     pointer: &Pointer,
     bytes: u32,
     assumptions: &PureFactContext,
@@ -341,7 +350,7 @@ pub(in crate::kernel) fn memory_write_permission_outcome(
 }
 
 fn memory_write_permission_outcome_for_local(
-    state: &CState,
+    state: &ExecutionState,
     pointer: &Pointer,
     bytes: u32,
     assumptions: &PureFactContext,
@@ -365,7 +374,7 @@ fn memory_write_permission_outcome_for_local(
 /// Pointee stores report loan separation as an obligation. The driver chooses
 /// its explicit proof or ordinary solve; this operation never searches loans.
 fn memory_write_obligation_outcome(
-    state: &CState,
+    state: &ExecutionState,
     range: CMemoryRange,
     storage_pointer: &Pointer,
     assumptions: &PureFactContext,
@@ -387,7 +396,7 @@ fn memory_write_obligation_outcome(
 }
 
 fn memory_write_ownership_outcome(
-    state: &CState,
+    state: &ExecutionState,
     range: CMemoryRange,
     assumptions: &PureFactContext,
     private_local: bool,
@@ -411,7 +420,7 @@ fn memory_write_ownership_outcome(
 }
 
 fn stable_loan_memory_range_outcome(
-    state: &CState,
+    state: &ExecutionState,
     range: &CMemoryRange,
     assumptions: &PureFactContext,
 ) -> Option<CStatementOutcome> {
@@ -427,7 +436,7 @@ fn stable_loan_memory_range_outcome(
 }
 
 fn allocation_retirement_outcome(
-    state: &CState,
+    state: &ExecutionState,
     range: &CMemoryRange,
     assumptions: &PureFactContext,
 ) -> Option<CStatementOutcome> {
@@ -440,9 +449,9 @@ fn allocation_retirement_outcome(
 }
 
 pub(in crate::kernel) fn write_c_lvalue_paths(
-    state: &CState,
-    lvalue: CLValue,
-    value: CValue,
+    state: &ExecutionState,
+    lvalue: LValue,
+    value: ProgramValue,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
@@ -463,8 +472,8 @@ pub(in crate::kernel) fn write_c_lvalue_paths(
 }
 
 fn write_c_lvalue_paths_for_initialization(
-    state: &CState,
-    lvalue: CLValue,
+    state: &ExecutionState,
+    lvalue: LValue,
     value: ExecutionValue,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
@@ -478,7 +487,7 @@ fn write_c_lvalue_paths_for_initialization(
     if value
         .pointer()
         .is_some_and(|pointer| pointer.local_reference().is_some())
-        && !matches!(&lvalue.storage, CLValueStorage::Local { name }
+        && !matches!(&lvalue.storage, LValueStorage::Local { name }
             if state.locals.slot(name).is_none_or(|pointer|
                 crate::kernel::block_is_never_address_taken_local(&pointer.block)))
     {
@@ -556,8 +565,8 @@ fn write_c_lvalue_paths_for_initialization(
 }
 
 fn write_c_lvalue_paths_without_local_reference(
-    state: &CState,
-    lvalue: CLValue,
+    state: &ExecutionState,
+    lvalue: LValue,
     value: ExecutionValue,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
@@ -584,7 +593,7 @@ fn write_c_lvalue_paths_without_local_reference(
     // cell, if any, is private. Copying a pointer does not access its pointee;
     // all qualifier, ownership, and loan checks below still run.
     let direct_local_copy = value.c_type() == lvalue.value_type
-        && matches!(&lvalue.storage, CLValueStorage::Local { name }
+        && matches!(&lvalue.storage, LValueStorage::Local { name }
             if state.locals.slot(name).is_none_or(|pointer|
                 crate::kernel::block_is_never_address_taken_local(&pointer.block)));
     let effective_assumptions = if direct_local_copy {
@@ -627,14 +636,14 @@ fn write_c_lvalue_paths_without_local_reference(
         && value.c_type() == lvalue.value_type
         && matches!(
             value.c_type(),
-            CType::Int8
-                | CType::UInt8
-                | CType::Int16
-                | CType::UInt16
-                | CType::Int32
-                | CType::UInt32
-                | CType::Int64
-                | CType::UInt64
+            ProgramType::Int8
+                | ProgramType::UInt8
+                | ProgramType::Int16
+                | ProgramType::UInt16
+                | ProgramType::Int32
+                | ProgramType::UInt32
+                | ProgramType::Int64
+                | ProgramType::UInt64
         ) {
         value
     } else {
@@ -672,7 +681,7 @@ fn write_c_lvalue_paths_without_local_reference(
     match lvalue.storage {
         // A local of an abstract type holds its value in its binding: its
         // object has no addressable bytes to store to.
-        CLValueStorage::Local { name } if matches!(lvalue_value_type, CType::Parameter(_)) => {
+        LValueStorage::Local { name } if matches!(lvalue_value_type, ProgramType::Parameter(_)) => {
             let mut state = state.clone();
             state
                 .locals
@@ -683,7 +692,7 @@ fn write_c_lvalue_paths_without_local_reference(
                 obligations,
             )])
         }
-        CLValueStorage::Local { name } => {
+        LValueStorage::Local { name } => {
             if let Some(pointer) = state.locals.slot(&name)
                 && let Some(refusal) = subobject_access_refusal(
                     pointer,
@@ -784,7 +793,7 @@ fn write_c_lvalue_paths_without_local_reference(
                 obligations,
             )])
         }
-        CLValueStorage::Memory { pointer } => {
+        LValueStorage::Memory { pointer } => {
             // Memory cells retain their explicit native storage boundary.
             let value = value.into_native();
             // The loan obligation names the evaluated source lvalue. Keep its
@@ -1092,7 +1101,7 @@ fn write_c_lvalue_paths_without_local_reference(
             // this exact snapshot. Retain its read equation so congruence
             // can use a different, proven-equal address spelling without
             // re-running store resolution at the subsequent read.
-            if let CValue::Pointer(stored) = &written_value {
+            if let ProgramValue::Pointer(stored) = &written_value {
                 facts.push(ExecutionPureFact::logical_read_equation(
                     stored.clone(),
                     Pointer::loaded_value(
@@ -1122,9 +1131,9 @@ fn write_c_lvalue_paths_without_local_reference(
 }
 
 fn execute_c_aggregate_copy_paths(
-    state: &CState,
-    target: &CExpression,
-    source: &CExpression,
+    state: &ExecutionState,
+    target: &ProgramExpression,
+    source: &ProgramExpression,
     layout: &CAggregateLayout,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -1136,7 +1145,8 @@ fn execute_c_aggregate_copy_paths(
             facts: target_facts,
             obligations: target_obligations,
         } = target_path;
-        let CExpressionOutcome::Value(CValue::Pointer(target_pointer)) = target_outcome else {
+        let CExpressionOutcome::Value(ProgramValue::Pointer(target_pointer)) = target_outcome
+        else {
             continue;
         };
         if target_pointer.is_null() {
@@ -1159,7 +1169,8 @@ fn execute_c_aggregate_copy_paths(
             ) else {
                 continue;
             };
-            let CExpressionOutcome::Value(CValue::Pointer(source_pointer)) = source_outcome else {
+            let CExpressionOutcome::Value(ProgramValue::Pointer(source_pointer)) = source_outcome
+            else {
                 continue;
             };
             if source_pointer.is_null() {
@@ -1259,8 +1270,8 @@ fn execute_c_aggregate_copy_paths(
 }
 
 fn missing_aggregate_copy_write_resource(
-    state: &CState,
-    target: &CPointerValue,
+    state: &ExecutionState,
+    target: &PointerValue,
     layout: &CAggregateLayout,
     assumptions: &PureFactContext,
 ) -> Option<CResourceFact> {
@@ -1306,8 +1317,8 @@ fn missing_aggregate_copy_write_resource(
 }
 
 pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
-    state: &CState,
-    source: &CPointerValue,
+    state: &ExecutionState,
+    source: &PointerValue,
     layout: &CAggregateLayout,
     assumptions: &PureFactContext,
 ) -> Option<CResourceFact> {
@@ -1365,9 +1376,9 @@ pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
 }
 
 pub(super) fn execute_c_heap_allocate_paths(
-    state: &CState,
+    state: &ExecutionState,
     target: &str,
-    bytes_expression: &CExpression,
+    bytes_expression: &ProgramExpression,
     zeroed: bool,
     object_type: Option<&(crate::kernel::effective_type::CAccessClass, u32, u32)>,
     ends_program_on_failure: bool,
@@ -1375,24 +1386,24 @@ pub(super) fn execute_c_heap_allocate_paths(
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     let Some(
-        target_type @ (CType::Int32Pointer
-        | CType::UInt8Pointer
-        | CType::Int16Pointer
-        | CType::UInt16Pointer
-        | CType::UInt32Pointer
-        | CType::Int128Pointer
-        | CType::Int64Pointer
-        | CType::UInt128Pointer
-        | CType::UInt64Pointer
-        | CType::Int32PointerPointer
-        | CType::UInt8PointerPointer
-        | CType::Int16PointerPointer
-        | CType::UInt16PointerPointer
-        | CType::UInt32PointerPointer
-        | CType::Int128PointerPointer
-        | CType::Int64PointerPointer
-        | CType::UInt128PointerPointer
-        | CType::UInt64PointerPointer),
+        target_type @ (ProgramType::Int32Pointer
+        | ProgramType::UInt8Pointer
+        | ProgramType::Int16Pointer
+        | ProgramType::UInt16Pointer
+        | ProgramType::UInt32Pointer
+        | ProgramType::Int128Pointer
+        | ProgramType::Int64Pointer
+        | ProgramType::UInt128Pointer
+        | ProgramType::UInt64Pointer
+        | ProgramType::Int32PointerPointer
+        | ProgramType::UInt8PointerPointer
+        | ProgramType::Int16PointerPointer
+        | ProgramType::UInt16PointerPointer
+        | ProgramType::UInt32PointerPointer
+        | ProgramType::Int128PointerPointer
+        | ProgramType::Int64PointerPointer
+        | ProgramType::UInt128PointerPointer
+        | ProgramType::UInt64PointerPointer),
     ) = state.local_object_type(target)
     else {
         return Ok(vec![CStatementExecutionPath::new(
@@ -1539,8 +1550,9 @@ pub(super) fn execute_c_heap_allocate_paths(
         let assigned = execute_c_lvalue_assignment_paths(
             &success_state,
             &c_variable(target.to_string()),
-            &CExpression::Value(
-                CValue::typed_pointer(pointer, target_type).with_pointer_object_class(object_class),
+            &ProgramExpression::Value(
+                ProgramValue::typed_pointer(pointer, target_type)
+                    .with_pointer_object_class(object_class),
             ),
             &effective_assumptions,
             budget,
@@ -1582,7 +1594,7 @@ pub(super) fn execute_c_heap_allocate_paths(
     Ok(paths)
 }
 
-fn heap_allocation_element_width(state: &CState, base: &Pointer) -> u32 {
+fn heap_allocation_element_width(state: &ExecutionState, base: &Pointer) -> u32 {
     state
         .locals
         .bindings
@@ -1593,10 +1605,10 @@ fn heap_allocation_element_width(state: &CState, base: &Pointer) -> u32 {
             };
             let pointer = value.pointer()?;
             (pointer.pointer() == base)
-                .then(|| c_type.pointee_type().map(CType::byte_width))
+                .then(|| c_type.pointee_type().map(ProgramType::byte_width))
                 .flatten()
         })
-        .unwrap_or(CType::Int32.byte_width())
+        .unwrap_or(ProgramType::Int32.byte_width())
 }
 
 /// Heap ownership is expressed in the narrowest logical unit that exactly
@@ -1607,7 +1619,7 @@ fn heap_range_element_width(extent: &HeapExtent, requested_width: u32) -> u32 {
     extent
         .element_count(requested_width)
         .map(|_| requested_width)
-        .unwrap_or(CType::UInt8.byte_width())
+        .unwrap_or(ProgramType::UInt8.byte_width())
 }
 
 /// The owned range of a whole heap block, `base[0..count]` in the extent's
@@ -1802,9 +1814,9 @@ fn realloc_zeroed_prefix(
 /// The refusal for a size [`allocation_size_value`] does not accept, or
 /// `realloc` does not resize to: a 64-bit size is named as such, not as a
 /// type error.
-fn allocation_size_refusal(value: &CValue) -> CRuntimeError {
+fn allocation_size_refusal(value: &ProgramValue) -> CRuntimeError {
     match value.numeric_value() {
-        CValue::Int64(_) | CValue::UInt64(_) => CRuntimeError::HeapAllocationSize,
+        ProgramValue::Int64(_) | ProgramValue::UInt64(_) => CRuntimeError::HeapAllocationSize,
         _ => CRuntimeError::TypeMismatch,
     }
 }
@@ -1816,31 +1828,34 @@ fn allocation_size_refusal(value: &CValue) -> CRuntimeError {
 /// `size_t` argument (a `long` converted). A `uint32` size is admitted here
 /// and must still be bounded by `INT32_MAX`, and a 64-bit one by
 /// `PTRDIFF_MAX` ([`allocation_size_validity_refusal`]).
-fn allocation_size_value(value: CValue, assumptions: &PureFactContext) -> Option<AllocationSize> {
+fn allocation_size_value(
+    value: ProgramValue,
+    assumptions: &PureFactContext,
+) -> Option<AllocationSize> {
     match value.numeric_value().clone() {
-        CValue::PointerInteger(_) => unreachable!("numeric projection"),
-        CValue::Bool(term) => Some(AllocationSize::int32(term, true, false)),
-        CValue::Int8(term) => Some(AllocationSize::int32(term, false, false)),
-        CValue::Int16(term) | CValue::UInt8(term) | CValue::UInt16(term) => {
+        ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
+        ProgramValue::Bool(term) => Some(AllocationSize::int32(term, true, false)),
+        ProgramValue::Int8(term) => Some(AllocationSize::int32(term, false, false)),
+        ProgramValue::Int16(term) | ProgramValue::UInt8(term) | ProgramValue::UInt16(term) => {
             Some(AllocationSize::int32(term, false, false))
         }
-        CValue::Int32(term) => Some(AllocationSize::int32(term, false, false)),
-        CValue::UInt32(term) => Some(AllocationSize::int32(term, true, true)),
-        CValue::Int64(term) => Some(match exact_signed_size_value(&term, assumptions) {
+        ProgramValue::Int32(term) => Some(AllocationSize::int32(term, false, false)),
+        ProgramValue::UInt32(term) => Some(AllocationSize::int32(term, true, true)),
+        ProgramValue::Int64(term) => Some(match exact_signed_size_value(&term, assumptions) {
             Some(value) => match u32::try_from(value) {
                 Ok(value) => AllocationSize::int32(MachineTerm::constant(value), false, false),
                 Err(_) => AllocationSize::uint64(MachineTerm::uint64_constant(value as u64), false),
             },
             None => AllocationSize::uint64(MachineTerm::uint64_from_int64(term), false),
         }),
-        CValue::UInt64(term) => Some(uint64_size_value(term, true, assumptions)),
-        CValue::Int128(_)
-        | CValue::UInt128(_)
-        | CValue::Void
-        | CValue::Pointer(_)
-        | CValue::Parameter(_)
-        | CValue::Float32(_)
-        | CValue::Float64(_) => None,
+        ProgramValue::UInt64(term) => Some(uint64_size_value(term, true, assumptions)),
+        ProgramValue::Int128(_)
+        | ProgramValue::UInt128(_)
+        | ProgramValue::Void
+        | ProgramValue::Pointer(_)
+        | ProgramValue::Parameter(_)
+        | ProgramValue::Float32(_)
+        | ProgramValue::Float64(_) => None,
     }
 }
 
@@ -1862,34 +1877,34 @@ fn uint64_size_value(
 
 /// `calloc(n, w)`'s count `n` and constant element size `w`: the C front end
 /// lowers the call to `n * w` with `w` the target's element or struct size.
-fn calloc_operands(bytes_expression: &CExpression) -> Option<(&CExpression, u32)> {
-    let CExpression::Multiply(count, width) = bytes_expression else {
+fn calloc_operands(bytes_expression: &ProgramExpression) -> Option<(&ProgramExpression, u32)> {
+    let ProgramExpression::Multiply(count, width) = bytes_expression else {
         return None;
     };
-    let CExpression::Value(width) = width.as_ref() else {
+    let ProgramExpression::Value(width) = width.as_ref() else {
         return None;
     };
     let width = match width {
-        CValue::Int32(width) => width.as_const()?,
-        CValue::UInt64(width) => u32::try_from(width.uint64_as_const()?).ok()?,
+        ProgramValue::Int32(width) => width.as_const()?,
+        ProgramValue::UInt64(width) => u32::try_from(width.uint64_as_const()?).ok()?,
         _ => return None,
     };
     (width > 0).then_some((count.as_ref(), width))
 }
 
 fn heap_element_count_expression(
-    bytes_expression: &CExpression,
+    bytes_expression: &ProgramExpression,
     element_width: u32,
-) -> Option<&CExpression> {
-    let is_element_width_expression = |expression: &CExpression| {
-        expression == &CExpression::Value(int32(element_width))
+) -> Option<&ProgramExpression> {
+    let is_element_width_expression = |expression: &ProgramExpression| {
+        expression == &ProgramExpression::Value(int32(element_width))
             || expression == &crate::kernel::c_uint64_literal(u64::from(element_width))
     };
     match bytes_expression {
-        CExpression::Multiply(left, right) if is_element_width_expression(right) => {
+        ProgramExpression::Multiply(left, right) if is_element_width_expression(right) => {
             Some(left.as_ref())
         }
-        CExpression::Multiply(left, right) if is_element_width_expression(left) => {
+        ProgramExpression::Multiply(left, right) if is_element_width_expression(left) => {
             Some(right.as_ref())
         }
         _ => None,
@@ -2108,9 +2123,9 @@ fn allocation_size_validity_refusal(
 }
 
 pub(crate) fn execute_c_realloc_assign_paths(
-    state: &CState,
+    state: &ExecutionState,
     target: &str,
-    arguments: &[CExpression],
+    arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
@@ -2125,24 +2140,24 @@ pub(crate) fn execute_c_realloc_assign_paths(
         )]);
     };
     let Some(
-        target_type @ (CType::Int32Pointer
-        | CType::UInt8Pointer
-        | CType::Int16Pointer
-        | CType::UInt16Pointer
-        | CType::UInt32Pointer
-        | CType::Int128Pointer
-        | CType::Int64Pointer
-        | CType::UInt128Pointer
-        | CType::UInt64Pointer
-        | CType::Int32PointerPointer
-        | CType::UInt8PointerPointer
-        | CType::Int16PointerPointer
-        | CType::UInt16PointerPointer
-        | CType::UInt32PointerPointer
-        | CType::Int128PointerPointer
-        | CType::Int64PointerPointer
-        | CType::UInt128PointerPointer
-        | CType::UInt64PointerPointer),
+        target_type @ (ProgramType::Int32Pointer
+        | ProgramType::UInt8Pointer
+        | ProgramType::Int16Pointer
+        | ProgramType::UInt16Pointer
+        | ProgramType::UInt32Pointer
+        | ProgramType::Int128Pointer
+        | ProgramType::Int64Pointer
+        | ProgramType::UInt128Pointer
+        | ProgramType::UInt64Pointer
+        | ProgramType::Int32PointerPointer
+        | ProgramType::UInt8PointerPointer
+        | ProgramType::Int16PointerPointer
+        | ProgramType::UInt16PointerPointer
+        | ProgramType::UInt32PointerPointer
+        | ProgramType::Int128PointerPointer
+        | ProgramType::Int64PointerPointer
+        | ProgramType::UInt128PointerPointer
+        | ProgramType::UInt64PointerPointer),
     ) = state.local_object_type(target)
     else {
         return Ok(vec![CStatementExecutionPath::new(
@@ -2179,8 +2194,8 @@ pub(crate) fn execute_c_realloc_assign_paths(
         let effective_assumptions =
             assumptions_with_path_context(assumptions, &facts, &obligations);
         let old_pointer = match old_value {
-            CValue::Pointer(pointer) => pointer.into_pointer(),
-            CValue::Int32(bits) if bits.as_const() == Some(0) => Pointer::null(),
+            ProgramValue::Pointer(pointer) => pointer.into_pointer(),
+            ProgramValue::Int32(bits) if bits.as_const() == Some(0) => Pointer::null(),
             _ => {
                 paths.push(CStatementExecutionPath::new(
                     CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
@@ -2551,7 +2566,10 @@ pub(crate) fn execute_c_realloc_assign_paths(
             let assigned = execute_c_lvalue_assignment_paths(
                 &pending_state,
                 &c_variable(target.to_string()),
-                &CExpression::Value(CValue::typed_pointer(pending_pointer, target_type)),
+                &ProgramExpression::Value(ProgramValue::typed_pointer(
+                    pending_pointer,
+                    target_type,
+                )),
                 &effective_assumptions,
                 budget,
             )?;
@@ -2580,8 +2598,8 @@ pub(crate) fn execute_c_realloc_assign_paths(
 }
 
 fn execute_c_heap_free_paths(
-    state: &CState,
-    expression: &CExpression,
+    state: &ExecutionState,
+    expression: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
@@ -2593,15 +2611,15 @@ fn execute_c_heap_free_paths(
             obligations,
         } = path;
         let outcome = match outcome {
-            CExpressionOutcome::Value(CValue::Int32(bits)) if bits.as_const() == Some(0) => {
-                CExpressionOutcome::Value(CValue::typed_pointer(
+            CExpressionOutcome::Value(ProgramValue::Int32(bits)) if bits.as_const() == Some(0) => {
+                CExpressionOutcome::Value(ProgramValue::typed_pointer(
                     Pointer::null(),
-                    CType::Int32Pointer,
+                    ProgramType::Int32Pointer,
                 ))
             }
             outcome => outcome,
         };
-        let CExpressionOutcome::Value(CValue::Pointer(pointer)) = outcome else {
+        let CExpressionOutcome::Value(ProgramValue::Pointer(pointer)) = outcome else {
             let outcome = match outcome {
                 CExpressionOutcome::UndefinedBehavior(error) => {
                     CStatementOutcome::UndefinedBehavior(error)
@@ -2642,8 +2660,10 @@ fn execute_c_heap_free_paths(
             .filter_map(CResourceFact::allocation_extent)
             .find(|(base, _)| {
                 crate::kernel::resource_arguments_proven_equal(
-                    &CValue::Pointer((*base).clone().with_type(CType::Int32Pointer)).into(),
-                    &CValue::Pointer(pointer.clone().with_type(CType::Int32Pointer)).into(),
+                    &ProgramValue::Pointer((*base).clone().with_type(ProgramType::Int32Pointer))
+                        .into(),
+                    &ProgramValue::Pointer(pointer.clone().with_type(ProgramType::Int32Pointer))
+                        .into(),
                     &effective_assumptions,
                 )
             });
@@ -2669,8 +2689,8 @@ fn execute_c_heap_free_paths(
         let element_width = pointer
             .c_type()
             .pointee_type()
-            .map(CType::byte_width)
-            .unwrap_or(CType::Int32.byte_width());
+            .map(ProgramType::byte_width)
+            .unwrap_or(ProgramType::Int32.byte_width());
         let before_free = state.memory.clone();
         let mut working_memory = state.memory.clone();
         let bytes = if let Some(bytes) = working_memory.live_heap_block_extent(pointer.pointer()) {
@@ -2828,12 +2848,13 @@ fn execute_c_heap_free_paths(
             )
             .expect("validated live heap base should free");
         for (address, value_type) in pointer_frames {
-            let CValue::Pointer(before) =
+            let ProgramValue::Pointer(before) =
                 before_free.symbolic_pointer_version_load(&address, value_type)
             else {
                 unreachable!("a pointer version read has pointer type");
             };
-            let CValue::Pointer(after) = memory.symbolic_pointer_version_load(&address, value_type)
+            let ProgramValue::Pointer(after) =
+                memory.symbolic_pointer_version_load(&address, value_type)
             else {
                 unreachable!("a pointer version read has pointer type");
             };
@@ -2875,9 +2896,9 @@ fn execute_c_heap_free_paths(
 }
 
 pub(crate) fn resolve_pending_heap_allocations(
-    state: &CState,
+    state: &ExecutionState,
     assumptions: &PureFactContext,
-) -> CState {
+) -> ExecutionState {
     let pending = state
         .memory
         .heap
@@ -2917,12 +2938,15 @@ pub(crate) fn resolve_pending_heap_allocations(
                         return None;
                     }
                     let native = value.native();
-                    let CValue::Pointer(pointer) = native.as_ref() else {
+                    let ProgramValue::Pointer(pointer) = native.as_ref() else {
                         unreachable!()
                     };
-                    *value =
-                        CValue::Pointer(rebase_resolved_allocation(pointer, &base, &resolved_base))
-                            .into();
+                    *value = ProgramValue::Pointer(rebase_resolved_allocation(
+                        pointer,
+                        &base,
+                        &resolved_base,
+                    ))
+                    .into();
                     Some((name.clone(), binding))
                 })
                 .collect::<Vec<_>>();
@@ -2982,12 +3006,15 @@ pub(crate) fn resolve_pending_heap_allocations(
                     return None;
                 }
                 let native = value.native();
-                let CValue::Pointer(pointer) = native.as_ref() else {
+                let ProgramValue::Pointer(pointer) = native.as_ref() else {
                     unreachable!()
                 };
-                *value =
-                    CValue::Pointer(rebase_resolved_allocation(pointer, &base, &resolved_base))
-                        .into();
+                *value = ProgramValue::Pointer(rebase_resolved_allocation(
+                    pointer,
+                    &base,
+                    &resolved_base,
+                ))
+                .into();
                 Some((name.clone(), binding))
             })
             .collect::<Vec<_>>();
@@ -3009,7 +3036,7 @@ pub(crate) fn resolve_pending_heap_allocations(
     state
 }
 
-fn has_live_thread_completion(state: &CState) -> bool {
+fn has_live_thread_completion(state: &ExecutionState) -> bool {
     state.pending_thread_create.is_some()
         || state
             .thread_ledger
@@ -3023,7 +3050,7 @@ fn live_thread_return_refusal() -> CStatementOutcome {
     ))
 }
 
-fn has_live_mutex(state: &CState) -> bool {
+fn has_live_mutex(state: &ExecutionState) -> bool {
     state
         .opaque_mutex_acquisitions
         .as_ref()
@@ -3043,7 +3070,9 @@ fn live_mutex_return_refusal() -> CStatementOutcome {
 }
 
 /// The same authority obligations apply to explicit returns and void fallthrough.
-pub(in crate::kernel) fn return_authority_refusal(state: &CState) -> Option<CStatementOutcome> {
+pub(in crate::kernel) fn return_authority_refusal(
+    state: &ExecutionState,
+) -> Option<CStatementOutcome> {
     if state.has_local_scalar_references() || state.has_local_reference_scope() {
         Some(CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(
             Box::new(
@@ -3061,8 +3090,8 @@ pub(in crate::kernel) fn return_authority_refusal(state: &CState) -> Option<CSta
 }
 
 fn execute_c_return_expression_paths(
-    state: &CState,
-    expression: &CExpression,
+    state: &ExecutionState,
+    expression: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
@@ -3075,7 +3104,7 @@ fn execute_c_return_expression_paths(
             obligations,
         } = expression_path;
         match outcome {
-            CExpressionOutcome::Value(ExecutionValue::Native(CValue::Pointer(pointer)))
+            CExpressionOutcome::Value(ExecutionValue::Native(ProgramValue::Pointer(pointer)))
                 if state.memory.heap.pending_allocations.contains_key(&pointer) =>
             {
                 for truthiness_path in pending_allocation_outcome_paths(
@@ -3107,7 +3136,7 @@ fn execute_c_return_expression_paths(
                         CStatementOutcome::RuntimeError(CRuntimeError::UnresolvedAllocationOutcome)
                     } else {
                         CStatementOutcome::Return {
-                            value: CValue::typed_pointer(resolved_pointer, pointer.c_type())
+                            value: ProgramValue::typed_pointer(resolved_pointer, pointer.c_type())
                                 .with_pointer_object_type_evidence(
                                     pointer.object_type_evidence().cloned(),
                                 )
@@ -3216,50 +3245,50 @@ fn pending_allocation_outcome_paths(
 ///
 /// Bounded by the scope's own spine: the `Seq` nodes above its declarations,
 /// which a source block has one of per statement it holds.
-fn collect_scope_declared_names(statement: &CStatement, names: &mut Vec<String>) {
+fn collect_scope_declared_names(statement: &ProgramStatement, names: &mut Vec<String>) {
     match statement {
-        CStatement::Declare { name, .. } | CStatement::DeclareAggregate { name, .. } => {
+        ProgramStatement::Declare { name, .. } | ProgramStatement::DeclareAggregate { name, .. } => {
             names.push(name.clone());
         }
-        CStatement::Seq(statements) => {
+        ProgramStatement::Seq(statements) => {
             for statement in statements.iter() {
                 collect_scope_declared_names(statement, names);
             }
         }
         // Nested scopes retire their own declarations.
-        CStatement::If { .. }
-        | CStatement::While { .. }
-        | CStatement::Switch { .. }
-        | CStatement::TryCatchInt32 { .. }
+        ProgramStatement::If { .. }
+        | ProgramStatement::While { .. }
+        | ProgramStatement::Switch { .. }
+        | ProgramStatement::TryCatchInt32 { .. }
         // Everything else declares nothing.
-        | CStatement::Skip
-        | CStatement::EndScalarReference(_)
-        | CStatement::ScalarReferenceScope(_)
-        | CStatement::Break
-        | CStatement::Continue
-        | CStatement::Goto { .. }
-        | CStatement::ForStep { .. }
-        | CStatement::EndAutomaticLifetimes { .. }
-        | CStatement::CopyAggregate { .. }
-        | CStatement::InitializeScalarArray { .. }
-        | CStatement::Assign { .. }
-        | CStatement::CallAssign { .. }
-        | CStatement::Call { .. }
-        | CStatement::CallResult { .. }
-        | CStatement::HeapAllocate { .. }
-        | CStatement::HeapFree { .. }
-        | CStatement::Assert { .. }
-        | CStatement::LoopTest { .. }
-        | CStatement::Return(_)
-        | CStatement::Throw(_)
-        | CStatement::Store { .. }
-        | CStatement::TypedStore { .. }
-        | CStatement::Update { .. } => {}
+        | ProgramStatement::Skip
+        | ProgramStatement::EndScalarReference(_)
+        | ProgramStatement::ScalarReferenceScope(_)
+        | ProgramStatement::Break
+        | ProgramStatement::Continue
+        | ProgramStatement::Goto { .. }
+        | ProgramStatement::ForStep { .. }
+        | ProgramStatement::EndAutomaticLifetimes { .. }
+        | ProgramStatement::CopyAggregate { .. }
+        | ProgramStatement::InitializeScalarArray { .. }
+        | ProgramStatement::Assign { .. }
+        | ProgramStatement::CallAssign { .. }
+        | ProgramStatement::Call { .. }
+        | ProgramStatement::CallResult { .. }
+        | ProgramStatement::HeapAllocate { .. }
+        | ProgramStatement::HeapFree { .. }
+        | ProgramStatement::Assert { .. }
+        | ProgramStatement::LoopTest { .. }
+        | ProgramStatement::Return(_)
+        | ProgramStatement::Throw(_)
+        | ProgramStatement::Store { .. }
+        | ProgramStatement::TypedStore { .. }
+        | ProgramStatement::Update { .. } => {}
     }
 }
 
 /// The names a scope declares, in the order it declares them.
-pub(in crate::kernel) fn scope_declared_names(statement: &CStatement) -> Vec<String> {
+pub(in crate::kernel) fn scope_declared_names(statement: &ProgramStatement) -> Vec<String> {
     let mut names = Vec::new();
     collect_scope_declared_names(statement, &mut names);
     names
@@ -3280,9 +3309,9 @@ pub(in crate::kernel) fn scope_declared_names(statement: &CStatement) -> Vec<Str
 /// Bounded by the declarations of the exiting scope; it reads no other local
 /// and no other block.
 pub(in crate::kernel) fn end_scope_automatic_lifetimes(
-    state: &CState,
+    state: &ExecutionState,
     declared: &[String],
-) -> Result<CState, CRuntimeError> {
+) -> Result<ExecutionState, CRuntimeError> {
     let mut state = state.clone();
     let mut memory = state.memory.clone();
     let mut retired = false;
@@ -3410,8 +3439,8 @@ pub(in crate::kernel) enum StatementJudgment<'generator, 'scope> {
 
 /// `CStatementExecutes` for `statement`.
 pub(in crate::kernel) fn execute_c_statement_paths(
-    state: &CState,
-    statement: &CStatement,
+    state: &ExecutionState,
+    statement: &ProgramStatement,
     assumptions: &PureFactContext,
     execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
@@ -3430,8 +3459,8 @@ pub(in crate::kernel) fn execute_c_statement_paths(
 /// contains, in a sequence, a branch, a loop body, a switch case or a
 /// handler, is stepped under the same judgment.
 pub(in crate::kernel) fn execute_statement_paths(
-    state: &CState,
-    statement: &CStatement,
+    state: &ExecutionState,
+    statement: &ProgramStatement,
     assumptions: &PureFactContext,
     execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
@@ -3439,7 +3468,7 @@ pub(in crate::kernel) fn execute_statement_paths(
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     // Keep a source block's sequence spine out of the large leaf-operation
     // frame. Adding a fact index must not multiply stack use per statement.
-    if let CStatement::Seq(statements) = statement {
+    if let ProgramStatement::Seq(statements) = statement {
         let second = statements.rest();
         let mut paths = Vec::new();
         for first_path in execute_statement_paths(
@@ -3501,7 +3530,8 @@ pub(in crate::kernel) fn execute_statement_paths(
         // statements; a branch and an abstracted loop are attributed to the
         // statements they step.
         StatementJudgment::Verifies(_)
-            if !matches!(statement, CStatement::If { .. }) && !is_annotated_loop(statement) =>
+            if !matches!(statement, ProgramStatement::If { .. })
+                && !is_annotated_loop(statement) =>
         {
             crate::instrumentation::measure_operation(
                 "kernel",
@@ -3533,8 +3563,8 @@ pub(in crate::kernel) fn execute_statement_paths(
 /// `statement` under `judgment`, after a prefix whose facts, obligations and
 /// loan evidence its paths carry first.
 pub(in crate::kernel) fn execute_statement_paths_with_prefix(
-    state: &CState,
-    statement: &CStatement,
+    state: &ExecutionState,
+    statement: &ProgramStatement,
     assumptions: &PureFactContext,
     execution_context: CExecutionContext<'_>,
     prefix_facts: &(impl ExecutionFactSource + ?Sized),
@@ -3582,10 +3612,10 @@ pub(in crate::kernel) fn execute_statement_paths_with_prefix(
 
 /// A loop with invariant, effect or termination checks: the verification
 /// judgment steps it as its checked abstraction.
-fn is_annotated_loop(statement: &CStatement) -> bool {
+fn is_annotated_loop(statement: &ProgramStatement) -> bool {
     matches!(
         statement,
-        CStatement::While {
+        ProgramStatement::While {
             invariant_checks,
             effect_checks,
             ranking_measures,
@@ -3598,47 +3628,49 @@ fn is_annotated_loop(statement: &CStatement) -> bool {
     )
 }
 
-fn verification_operation_name(statement: &CStatement) -> &'static str {
+fn verification_operation_name(statement: &ProgramStatement) -> &'static str {
     match statement {
-        CStatement::EndScalarReference(_) => "verification statement: borrow end",
-        CStatement::ScalarReferenceScope(_) => "verification statement: borrow scope",
-        CStatement::Skip => "verification statement: skip",
-        CStatement::Break => "verification statement: break",
-        CStatement::LoopTest { .. } => "verification statement: loop test",
-        CStatement::Continue => "verification statement: continue",
-        CStatement::Goto { .. } => "verification statement: goto",
-        CStatement::ForStep { .. } => "verification statement: continue with for step",
-        CStatement::EndAutomaticLifetimes { .. } => {
+        ProgramStatement::EndScalarReference(_) => "verification statement: borrow end",
+        ProgramStatement::ScalarReferenceScope(_) => "verification statement: borrow scope",
+        ProgramStatement::Skip => "verification statement: skip",
+        ProgramStatement::Break => "verification statement: break",
+        ProgramStatement::LoopTest { .. } => "verification statement: loop test",
+        ProgramStatement::Continue => "verification statement: continue",
+        ProgramStatement::Goto { .. } => "verification statement: goto",
+        ProgramStatement::ForStep { .. } => "verification statement: continue with for step",
+        ProgramStatement::EndAutomaticLifetimes { .. } => {
             "verification statement: automatic lifetime end"
         }
-        CStatement::Declare { .. } => "verification statement: declare",
-        CStatement::DeclareAggregate { .. } => "verification statement: declare aggregate",
-        CStatement::CopyAggregate { .. } => "verification statement: aggregate copy",
-        CStatement::InitializeScalarArray { .. } => {
+        ProgramStatement::Declare { .. } => "verification statement: declare",
+        ProgramStatement::DeclareAggregate { .. } => "verification statement: declare aggregate",
+        ProgramStatement::CopyAggregate { .. } => "verification statement: aggregate copy",
+        ProgramStatement::InitializeScalarArray { .. } => {
             "verification statement: scalar array initialization"
         }
-        CStatement::Assign { .. } => "verification statement: assign",
-        CStatement::CallAssign { .. } => "verification statement: call assign",
-        CStatement::Call { .. } | CStatement::CallResult { .. } => "verification statement: call",
-        CStatement::HeapAllocate { .. } => "verification statement: heap allocate",
-        CStatement::HeapFree { .. } => "verification statement: heap free",
-        CStatement::Assert { .. } => "verification statement: assert",
-        CStatement::Return(_) => "verification statement: return",
-        CStatement::Throw(_) => "verification statement: throw",
-        CStatement::TryCatchInt32 { .. } => "verification statement: int32 handler",
-        CStatement::Store { .. } => "verification statement: store",
-        CStatement::TypedStore { .. } => "verification statement: typed store",
-        CStatement::Update { .. } => "verification statement: update",
-        CStatement::While { .. } => "verification statement: while",
-        CStatement::Switch { .. } => "verification statement: switch",
-        CStatement::If { .. } => "verification statement: if",
-        CStatement::Seq(_) => "verification statement: sequence",
+        ProgramStatement::Assign { .. } => "verification statement: assign",
+        ProgramStatement::CallAssign { .. } => "verification statement: call assign",
+        ProgramStatement::Call { .. } | ProgramStatement::CallResult { .. } => {
+            "verification statement: call"
+        }
+        ProgramStatement::HeapAllocate { .. } => "verification statement: heap allocate",
+        ProgramStatement::HeapFree { .. } => "verification statement: heap free",
+        ProgramStatement::Assert { .. } => "verification statement: assert",
+        ProgramStatement::Return(_) => "verification statement: return",
+        ProgramStatement::Throw(_) => "verification statement: throw",
+        ProgramStatement::TryCatchInt32 { .. } => "verification statement: int32 handler",
+        ProgramStatement::Store { .. } => "verification statement: store",
+        ProgramStatement::TypedStore { .. } => "verification statement: typed store",
+        ProgramStatement::Update { .. } => "verification statement: update",
+        ProgramStatement::While { .. } => "verification statement: while",
+        ProgramStatement::Switch { .. } => "verification statement: switch",
+        ProgramStatement::If { .. } => "verification statement: if",
+        ProgramStatement::Seq(_) => "verification statement: sequence",
     }
 }
 
 fn execute_c_statement_leaf_paths(
-    state: &CState,
-    statement: &CStatement,
+    state: &ExecutionState,
+    statement: &ProgramStatement,
     assumptions: &PureFactContext,
     execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
@@ -3657,18 +3689,18 @@ fn execute_c_statement_leaf_paths(
             );
         }
         match statement {
-            CStatement::Declare {
+            ProgramStatement::Declare {
                 name,
                 initializer: None,
                 c_type:
-                    CType::Int8
-                    | CType::Int16
-                    | CType::Int32
-                    | CType::Int64
-                    | CType::UInt8
-                    | CType::UInt16
-                    | CType::UInt32
-                    | CType::UInt64,
+                    ProgramType::Int8
+                    | ProgramType::Int16
+                    | ProgramType::Int32
+                    | ProgramType::Int64
+                    | ProgramType::UInt8
+                    | ProgramType::UInt16
+                    | ProgramType::UInt32
+                    | ProgramType::UInt64,
                 ..
             } if !pending.protects_local(state, name) => {
                 let mut bare = state.clone();
@@ -3706,10 +3738,12 @@ fn execute_c_statement_leaf_paths(
                 }
                 return Ok(paths);
             }
-            CStatement::Assign {
+            ProgramStatement::Assign {
                 name, expression, ..
-            } if matches!(expression, CExpression::Value(_) | CExpression::Variable(_))
-                && state.locals.slot(name).is_some()
+            } if matches!(
+                expression,
+                ProgramExpression::Value(_) | ProgramExpression::Variable(_)
+            ) && state.locals.slot(name).is_some()
                 && !pending.protects_local(state, name) =>
             {
                 let mut bare = state.clone();
@@ -3744,9 +3778,9 @@ fn execute_c_statement_leaf_paths(
                 }
                 return Ok(paths);
             }
-            CStatement::TypedStore { .. } if pending.has_local_handle_slot(state) => {}
-            CStatement::Skip | CStatement::Seq(_) => {}
-            CStatement::If { condition, .. }
+            ProgramStatement::TypedStore { .. } if pending.has_local_handle_slot(state) => {}
+            ProgramStatement::Skip | ProgramStatement::Seq(_) => {}
+            ProgramStatement::If { condition, .. }
                 if super::super::functions::c_expression_is_state_independent(condition) => {}
             _ => {
                 budget.consume_statement_step()?;
@@ -3764,7 +3798,7 @@ fn execute_c_statement_leaf_paths(
     // `Seq` is the tree representation of a source block, not an executed C
     // statement. Charging it made the statement budget depend on tree shape
     // and counted every straight-line source statement twice.
-    if !matches!(statement, CStatement::Seq(_)) {
+    if !matches!(statement, ProgramStatement::Seq(_)) {
         budget.consume_statement_step()?;
     }
     // The private scalar lease adapter supports direct scalar execution only.
@@ -3773,17 +3807,17 @@ fn execute_c_statement_leaf_paths(
     if (state.has_local_scalar_references() || state.has_local_reference_scope())
         && matches!(
             statement,
-            CStatement::Call { .. }
-                | CStatement::CallAssign { .. }
-                | CStatement::CallResult { .. }
-                | CStatement::While { .. }
-                | CStatement::ForStep { .. }
-                | CStatement::CopyAggregate { .. }
-                | CStatement::InitializeScalarArray { .. }
-                | CStatement::DeclareAggregate { .. }
-                | CStatement::HeapAllocate { .. }
-                | CStatement::HeapFree { .. }
-                | CStatement::EndAutomaticLifetimes { .. }
+            ProgramStatement::Call { .. }
+                | ProgramStatement::CallAssign { .. }
+                | ProgramStatement::CallResult { .. }
+                | ProgramStatement::While { .. }
+                | ProgramStatement::ForStep { .. }
+                | ProgramStatement::CopyAggregate { .. }
+                | ProgramStatement::InitializeScalarArray { .. }
+                | ProgramStatement::DeclareAggregate { .. }
+                | ProgramStatement::HeapAllocate { .. }
+                | ProgramStatement::HeapFree { .. }
+                | ProgramStatement::EndAutomaticLifetimes { .. }
         )
     {
         return Ok(vec![CStatementExecutionPath::new(
@@ -3796,7 +3830,7 @@ fn execute_c_statement_leaf_paths(
         )]);
     }
     let valid_source_operation = match statement {
-        CStatement::Assign {
+        ProgramStatement::Assign {
             name,
             expression,
             source,
@@ -3815,7 +3849,7 @@ fn execute_c_statement_leaf_paths(
         )]);
     }
     let paths = match statement {
-        CStatement::ScalarReferenceScope(source) => vec![CStatementExecutionPath::new(
+        ProgramStatement::ScalarReferenceScope(source) => vec![CStatementExecutionPath::new(
             match source.execute(state) {
                 Ok(next) => CStatementOutcome::Normal(Box::new(next)),
                 Err(error) => CStatementOutcome::RuntimeError(
@@ -3825,7 +3859,7 @@ fn execute_c_statement_leaf_paths(
             Vec::new().into(),
             Vec::new(),
         )],
-        CStatement::EndScalarReference(source) => vec![CStatementExecutionPath::new(
+        ProgramStatement::EndScalarReference(source) => vec![CStatementExecutionPath::new(
             match source.execute(state, assumptions) {
                 Ok(next) => CStatementOutcome::Normal(Box::new(next)),
                 Err(error) => CStatementOutcome::RuntimeError(
@@ -3835,12 +3869,12 @@ fn execute_c_statement_leaf_paths(
             Vec::new().into(),
             Vec::new(),
         )],
-        CStatement::Skip => vec![CStatementExecutionPath::new(
+        ProgramStatement::Skip => vec![CStatementExecutionPath::new(
             CStatementOutcome::Normal(Box::new(state.clone())),
             Vec::new().into(),
             Vec::new(),
         )],
-        CStatement::Break => vec![CStatementExecutionPath::new(
+        ProgramStatement::Break => vec![CStatementExecutionPath::new(
             CStatementOutcome::Break(Box::new(state.clone())),
             Vec::new().into(),
             Vec::new(),
@@ -3848,24 +3882,24 @@ fn execute_c_statement_leaf_paths(
         // A loop's test continues the pass when its condition holds and
         // leaves the loop when it does not. Leaving is the loop's exit, the
         // outcome a `break` also has; the frontier records which one it was.
-        CStatement::LoopTest { condition } => execute_c_statement_leaf_paths(
+        ProgramStatement::LoopTest { condition } => execute_c_statement_leaf_paths(
             state,
-            &CStatement::If {
+            &ProgramStatement::If {
                 condition: condition.clone(),
-                then_branch: Box::new(CStatement::Skip),
-                else_branch: Box::new(CStatement::Break),
+                then_branch: Box::new(ProgramStatement::Skip),
+                else_branch: Box::new(ProgramStatement::Break),
             },
             assumptions,
             execution_context,
             budget,
             judgment,
         )?,
-        CStatement::Continue => vec![CStatementExecutionPath::new(
+        ProgramStatement::Continue => vec![CStatementExecutionPath::new(
             CStatementOutcome::Continue(Box::new(state.clone())),
             Vec::new().into(),
             Vec::new(),
         )],
-        CStatement::Goto { target } => vec![CStatementExecutionPath::new(
+        ProgramStatement::Goto { target } => vec![CStatementExecutionPath::new(
             CStatementOutcome::Jump {
                 target: *target,
                 state: Box::new(state.clone()),
@@ -3873,7 +3907,7 @@ fn execute_c_statement_leaf_paths(
             Vec::new().into(),
             Vec::new(),
         )],
-        CStatement::EndAutomaticLifetimes { names } => vec![CStatementExecutionPath::new(
+        ProgramStatement::EndAutomaticLifetimes { names } => vec![CStatementExecutionPath::new(
             match end_scope_automatic_lifetimes(state, names) {
                 Ok(state) => CStatementOutcome::Normal(Box::new(state)),
                 Err(refusal) => CStatementOutcome::RuntimeError(refusal),
@@ -3881,7 +3915,7 @@ fn execute_c_statement_leaf_paths(
             Vec::new().into(),
             Vec::new(),
         )],
-        CStatement::ForStep {
+        ProgramStatement::ForStep {
             step,
             exited_locals,
             continue_after,
@@ -3919,7 +3953,7 @@ fn execute_c_statement_leaf_paths(
             }
             paths
         }
-        CStatement::Declare {
+        ProgramStatement::Declare {
             name,
             c_type,
             volatile,
@@ -3930,7 +3964,7 @@ fn execute_c_statement_leaf_paths(
             zero_fill,
             declared_class,
         } => {
-            let outcome = if *c_type == CType::Void {
+            let outcome = if *c_type == ProgramType::Void {
                 CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch)
             } else {
                 match declare_local(
@@ -3958,19 +3992,19 @@ fn execute_c_statement_leaf_paths(
                 if zero_fill.is_some()
                     || matches!(
                         c_type,
-                        CType::Int8Array(_)
-                            | CType::Int16Array(_)
-                            | CType::UInt16Array(_)
-                            | CType::Int32Array(_)
-                            | CType::UInt8Array(_)
-                            | CType::UInt32Array(_)
-                            | CType::Int64Array(_)
-                            | CType::Int128Array(_)
-                            | CType::UInt128Array(_)
-                            | CType::UInt64Array(_)
-                            | CType::Float32Array(_)
-                            | CType::Float64Array(_)
-                            | CType::PointerArray(_, _)
+                        ProgramType::Int8Array(_)
+                            | ProgramType::Int16Array(_)
+                            | ProgramType::UInt16Array(_)
+                            | ProgramType::Int32Array(_)
+                            | ProgramType::UInt8Array(_)
+                            | ProgramType::UInt32Array(_)
+                            | ProgramType::Int64Array(_)
+                            | ProgramType::Int128Array(_)
+                            | ProgramType::UInt128Array(_)
+                            | ProgramType::UInt64Array(_)
+                            | ProgramType::Float32Array(_)
+                            | ProgramType::Float64Array(_)
+                            | ProgramType::PointerArray(_, _)
                     )
                 {
                     return Ok(vec![CStatementExecutionPath::new(
@@ -3985,7 +4019,7 @@ fn execute_c_statement_leaf_paths(
                 {
                     match path.outcome {
                         CExpressionOutcome::Value(value) => {
-                            let lvalue = CLValue::local_with_qualifiers(
+                            let lvalue = LValue::local_with_qualifiers(
                                 name.clone(),
                                 *c_type,
                                 *volatile,
@@ -4061,7 +4095,7 @@ fn execute_c_statement_leaf_paths(
                 )]
             }
         }
-        CStatement::DeclareAggregate {
+        ProgramStatement::DeclareAggregate {
             name,
             layout,
             kind,
@@ -4088,12 +4122,12 @@ fn execute_c_statement_leaf_paths(
                 Vec::new(),
             )]
         }
-        CStatement::CopyAggregate {
+        ProgramStatement::CopyAggregate {
             target,
             source,
             layout,
         } => execute_c_aggregate_copy_paths(state, target, source, layout, assumptions, budget)?,
-        CStatement::InitializeScalarArray {
+        ProgramStatement::InitializeScalarArray {
             target,
             source,
             element_type,
@@ -4111,7 +4145,7 @@ fn execute_c_statement_leaf_paths(
             assumptions,
             budget,
         )?,
-        CStatement::Assign {
+        ProgramStatement::Assign {
             name,
             expression,
             source,
@@ -4149,7 +4183,7 @@ fn execute_c_statement_leaf_paths(
             }
             paths
         }
-        CStatement::CallAssign {
+        ProgramStatement::CallAssign {
             target,
             function_name,
             arguments,
@@ -4162,7 +4196,7 @@ fn execute_c_statement_leaf_paths(
             execution_context,
             budget,
         )?,
-        CStatement::Call {
+        ProgramStatement::Call {
             function_name,
             arguments,
         } => execute_c_call_paths(
@@ -4176,7 +4210,7 @@ fn execute_c_statement_leaf_paths(
         )?,
         // A call inside the expression of the statement that follows: the
         // term it returned is that statement's `CallResult { call }`.
-        CStatement::CallResult {
+        ProgramStatement::CallResult {
             call,
             function_name,
             arguments,
@@ -4227,7 +4261,7 @@ fn execute_c_statement_leaf_paths(
             }
             paths
         }
-        CStatement::HeapAllocate {
+        ProgramStatement::HeapAllocate {
             target,
             bytes,
             zeroed,
@@ -4243,21 +4277,21 @@ fn execute_c_statement_leaf_paths(
             assumptions,
             budget,
         )?,
-        CStatement::HeapFree { pointer } => {
+        ProgramStatement::HeapFree { pointer } => {
             execute_c_heap_free_paths(state, pointer, assumptions, budget)?
         }
-        CStatement::Assert { condition, label } => {
+        ProgramStatement::Assert { condition, label } => {
             execute_c_assert_paths(state, condition, label.as_deref(), assumptions, budget)?
         }
-        CStatement::Seq(_) => unreachable!("sequences dispatch before leaf execution"),
-        CStatement::Return(CExpression::Value(CValue::Void)) => {
+        ProgramStatement::Seq(_) => unreachable!("sequences dispatch before leaf execution"),
+        ProgramStatement::Return(ProgramExpression::Value(ProgramValue::Void)) => {
             let outcome = if let Some(refusal) = return_authority_refusal(state) {
                 refusal
             } else if state.memory.has_pending_heap_allocation() {
                 CStatementOutcome::RuntimeError(CRuntimeError::UnresolvedAllocationOutcome)
             } else {
                 CStatementOutcome::Return {
-                    value: CValue::Void.into(),
+                    value: ProgramValue::Void.into(),
                     state: Box::new(state.clone()),
                 }
             };
@@ -4267,14 +4301,14 @@ fn execute_c_statement_leaf_paths(
                 Vec::new(),
             )]
         }
-        CStatement::Return(expression) => {
+        ProgramStatement::Return(expression) => {
             execute_c_return_expression_paths(state, expression, assumptions, budget)?
         }
-        CStatement::Throw(expression) => {
+        ProgramStatement::Throw(expression) => {
             let mut paths = Vec::new();
             for path in evaluate_expression_value_paths(state, expression, assumptions, budget)? {
                 let outcome = match path.outcome {
-                    CExpressionOutcome::Value(value) if value.c_type() == CType::Int32 => {
+                    CExpressionOutcome::Value(value) if value.c_type() == ProgramType::Int32 => {
                         if let Some(refusal) = return_authority_refusal(state) {
                             refusal
                         } else {
@@ -4302,7 +4336,7 @@ fn execute_c_statement_leaf_paths(
             }
             paths
         }
-        CStatement::TryCatchInt32 {
+        ProgramStatement::TryCatchInt32 {
             try_body,
             binding,
             handler,
@@ -4321,7 +4355,7 @@ fn execute_c_statement_leaf_paths(
                     value,
                     state: thrown_state,
                 } = &try_path.outcome
-                    && value.c_type() == CType::Int32
+                    && value.c_type() == ProgramType::Int32
                 {
                     if thrown_state.locals.bindings.contains_key(binding) {
                         paths.push(CStatementExecutionPath {
@@ -4340,11 +4374,11 @@ fn execute_c_statement_leaf_paths(
                         continue;
                     }
                     let bound_handler = c_seq(
-                        c_declare(binding.clone(), CType::Int32),
+                        c_declare(binding.clone(), ProgramType::Int32),
                         c_seq(
                             c_assign(
                                 binding.clone(),
-                                CExpression::Value(value.clone().into_native()),
+                                ProgramExpression::Value(value.clone().into_native()),
                             ),
                             (**handler).clone(),
                         ),
@@ -4366,14 +4400,14 @@ fn execute_c_statement_leaf_paths(
             }
             paths
         }
-        CStatement::Store { pointer, value } => execute_c_lvalue_assignment_paths(
+        ProgramStatement::Store { pointer, value } => execute_c_lvalue_assignment_paths(
             state,
-            &CExpression::Load(Box::new(pointer.clone())),
+            &ProgramExpression::Load(Box::new(pointer.clone())),
             value,
             assumptions,
             budget,
         )?,
-        CStatement::TypedStore {
+        ProgramStatement::TypedStore {
             pointer,
             value,
             value_type,
@@ -4383,7 +4417,7 @@ fn execute_c_statement_leaf_paths(
             source,
         } => execute_c_lvalue_assignment_paths_with_source(
             state,
-            &CExpression::TypedLoad {
+            &ProgramExpression::TypedLoad {
                 pointer: Box::new(pointer.clone()),
                 value_type: *value_type,
                 volatile: *volatile,
@@ -4396,12 +4430,12 @@ fn execute_c_statement_leaf_paths(
             budget,
             source.clone(),
         )?,
-        CStatement::Update {
+        ProgramStatement::Update {
             target,
             operator,
             operand,
         } => execute_c_lvalue_update_paths(state, target, *operator, operand, assumptions, budget)?,
-        CStatement::If {
+        ProgramStatement::If {
             condition,
             then_branch,
             else_branch,
@@ -4490,7 +4524,7 @@ fn execute_c_statement_leaf_paths(
             }
             paths
         }
-        CStatement::While {
+        ProgramStatement::While {
             condition,
             invariant,
             invariant_checks: _,
@@ -4534,7 +4568,7 @@ fn execute_c_statement_leaf_paths(
                 )?,
             }
         }
-        CStatement::Switch { expression, cases } => execute_c_switch_paths(
+        ProgramStatement::Switch { expression, cases } => execute_c_switch_paths(
             state,
             expression,
             cases,
@@ -4549,7 +4583,7 @@ fn execute_c_statement_leaf_paths(
     // head or a join.
     let mut paths = paths;
     if state.call_results.is_some()
-        && !matches!(statement, CStatement::CallResult { .. })
+        && !matches!(statement, ProgramStatement::CallResult { .. })
         && statement_reads_call_result(statement)
     {
         for path in &mut paths {
@@ -4564,9 +4598,9 @@ fn execute_c_statement_leaf_paths(
 
 /// `state` past a condition that read its call results, which end with it.
 pub(in crate::kernel) fn without_read_call_results(
-    mut state: CState,
-    condition: &CExpression,
-) -> CState {
+    mut state: ExecutionState,
+    condition: &ProgramExpression,
+) -> ExecutionState {
     if state.call_results.is_some() && condition.reads_call_result() {
         state.call_results = None;
     }
@@ -4574,7 +4608,7 @@ pub(in crate::kernel) fn without_read_call_results(
 }
 
 /// Whether `statement` itself reads a call's result.
-fn statement_reads_call_result(statement: &CStatement) -> bool {
+fn statement_reads_call_result(statement: &ProgramStatement) -> bool {
     let mut expressions = Vec::new();
     super::undefined_site::statement_expressions(statement, &mut expressions);
     expressions
@@ -4583,7 +4617,7 @@ fn statement_reads_call_result(statement: &CStatement) -> bool {
 }
 
 /// The state an outcome continues in, when it has one.
-fn c_statement_outcome_state_mut(outcome: &mut CStatementOutcome) -> Option<&mut CState> {
+fn c_statement_outcome_state_mut(outcome: &mut CStatementOutcome) -> Option<&mut ExecutionState> {
     match outcome {
         CStatementOutcome::Normal(state)
         | CStatementOutcome::Break(state)
@@ -4596,8 +4630,8 @@ fn c_statement_outcome_state_mut(outcome: &mut CStatementOutcome) -> Option<&mut
 }
 
 fn execute_c_switch_paths(
-    state: &CState,
-    expression: &CExpression,
+    state: &ExecutionState,
+    expression: &ProgramExpression,
     cases: &[CSwitchCase],
     assumptions: &PureFactContext,
     execution_context: CExecutionContext<'_>,
@@ -4659,7 +4693,7 @@ fn execute_c_switch_paths(
 }
 
 fn execute_c_switch_dispatch_paths(
-    state: &CState,
+    state: &ExecutionState,
     selector: &MachineTerm,
     cases: &[CSwitchCase],
     case_index: usize,
@@ -4715,7 +4749,7 @@ fn execute_c_switch_dispatch_paths(
             facts,
             obligations,
         } = condition_path;
-        let CExpressionOutcome::Value(CValue::Int32(result)) = outcome else {
+        let CExpressionOutcome::Value(ProgramValue::Int32(result)) = outcome else {
             unreachable!("switch case conditions produce promoted int32 values");
         };
         if result.as_const() == Some(1) {
@@ -4749,7 +4783,7 @@ fn execute_c_switch_dispatch_paths(
 }
 
 fn execute_c_switch_suffix_paths(
-    state: &CState,
+    state: &ExecutionState,
     cases: &[CSwitchCase],
     case_index: usize,
     facts: ExecutionFacts,
@@ -4819,8 +4853,8 @@ fn execute_c_switch_suffix_paths(
 }
 
 pub(in crate::kernel) fn execute_c_assert_paths(
-    state: &CState,
-    condition: &CExpression,
+    state: &ExecutionState,
+    condition: &ProgramExpression,
     label: Option<&str>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -4867,12 +4901,12 @@ pub(in crate::kernel) fn execute_c_assert_paths(
 }
 
 pub(in crate::kernel) fn assertion_truthiness_obligation(
-    value: &CValue,
+    value: &ProgramValue,
     label: Option<&str>,
 ) -> ProofObligation {
     let obligation = ProofObligation::verification_condition(Proposition::Equal(
-        Term::CValue(value.clone()),
-        Term::CValue(int32(1)),
+        Term::ProgramValue(value.clone()),
+        Term::ProgramValue(int32(1)),
     ))
     .with_assertion_failure();
     match label {
@@ -4882,18 +4916,18 @@ pub(in crate::kernel) fn assertion_truthiness_obligation(
 }
 
 pub(in crate::kernel) fn execute_c_while_paths(
-    state: &CState,
-    condition: &CExpression,
+    state: &ExecutionState,
+    condition: &ProgramExpression,
     invariant: &[Proposition],
     do_while: bool,
-    body: &CStatement,
+    body: &ProgramStatement,
     assumptions: &PureFactContext,
     execution_context: CExecutionContext<'_>,
     budget: &mut ExecutionBudget,
     judgment: &mut StatementJudgment<'_, '_>,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     struct PendingLoopPath {
-        state: CState,
+        state: ExecutionState,
         facts: ExecutionFacts,
         obligations: Vec<ProofObligation>,
         check_condition: bool,
@@ -4944,7 +4978,7 @@ pub(in crate::kernel) fn execute_c_while_paths(
             evaluate_c_condition_paths(&current_state, condition, &loop_assumptions, budget)?
         } else {
             vec![CExpressionPath {
-                outcome: CExpressionOutcome::Value(CValue::Int32(MachineTerm::constant(1))),
+                outcome: CExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::constant(1))),
                 facts: Vec::new().into(),
                 obligations: Vec::new(),
             }]
@@ -5152,7 +5186,10 @@ pub(in crate::kernel) fn execute_c_while_paths(
 /// so it hands out each generation once. The mint checks that against memory
 /// regardless, because this is the place the uniqueness invariant is
 /// established rather than assumed.
-fn local_declaration_pointer(state: &mut CState, name: &str) -> Result<Pointer, CRuntimeError> {
+fn local_declaration_pointer(
+    state: &mut ExecutionState,
+    name: &str,
+) -> Result<Pointer, CRuntimeError> {
     let previous = state.locals.slot(name).cloned();
     if let Some(previous) = previous
         && previous.block.is_local_block()
@@ -5197,7 +5234,10 @@ fn local_declaration_pointer(state: &mut CState, name: &str) -> Result<Pointer, 
 /// Consume its complete byte owner through the indexed supplier frontier;
 /// ordinary locals with implicit authority have no such fact to consume.
 /// Live loans and protocol reservations must be checked before calling this.
-pub(in crate::kernel) fn retire_automatic_storage_owner(state: &mut CState, range: &CMemoryRange) {
+pub(in crate::kernel) fn retire_automatic_storage_owner(
+    state: &mut ExecutionState,
+    range: &CMemoryRange,
+) {
     let owner = CResourceFact::own_memory(range.clone());
     let assumptions = PureFactContext::default();
     let resources = if state.resources.exact_count(&owner) != 0 {
@@ -5222,7 +5262,7 @@ pub(in crate::kernel) fn retire_automatic_storage_owner(state: &mut CState, rang
 /// counter is monotone and every generation it hands out is declared, so the
 /// first candidate is free; checking it is what makes the uniqueness
 /// invariant enforced at the one place it is created.
-fn fresh_local_object_identity(state: &mut CState, name: &str) -> Pointer {
+fn fresh_local_object_identity(state: &mut ExecutionState, name: &str) -> Pointer {
     loop {
         let lifetime = state.next_local_lifetime();
         assert!(
@@ -5246,7 +5286,7 @@ fn fresh_local_object_identity(state: &mut CState, name: &str) -> Pointer {
 
 /// The declaration, rather than a later memory claim or address lookup, is
 /// the trusted creation event for an automatic object.
-fn note_declared_population_storage(mut state: CState, name: &str) -> CState {
+fn note_declared_population_storage(mut state: ExecutionState, name: &str) -> ExecutionState {
     if let Some(slot) = state.locals.slot(name).cloned()
         && slot.block.is_local_block()
         && state.memory.has_block(&slot.block)
@@ -5266,10 +5306,10 @@ fn note_declared_population_storage(mut state: CState, name: &str) -> CState {
 /// array's length. Where the memory refuses runs the cells are stored one by
 /// one, which leaves the same cells.
 fn zero_fill_declared_array(
-    mut state: CState,
+    mut state: ExecutionState,
     name: &str,
     zero_fill: &CZeroFill,
-) -> Result<CState, CRuntimeError> {
+) -> Result<ExecutionState, CRuntimeError> {
     let slot = state
         .locals
         .slot(name)
@@ -5343,7 +5383,7 @@ fn zero_fill_declared_array(
 /// A local array's frame owns its bytes, as a declared scalar's does, so the
 /// function can lend them to a callee that owns its buffer, such as
 /// `snprintf(tmp, sizeof(tmp), ...)`.
-fn own_local_array(state: &mut CState, pointer: &Pointer, bytes: u32) {
+fn own_local_array(state: &mut ExecutionState, pointer: &Pointer, bytes: u32) {
     state.resources = state
         .resources
         .clone()
@@ -5358,15 +5398,15 @@ fn own_local_array(state: &mut CState, pointer: &Pointer, bytes: u32) {
 }
 
 pub(in crate::kernel) fn declare_local(
-    state: &CState,
+    state: &ExecutionState,
     name: &str,
-    c_type: CType,
+    c_type: ProgramType,
     volatile: bool,
     pointee_volatile: bool,
     constant: bool,
     pointee_constant: bool,
     declared_class: Option<crate::kernel::effective_type::CAccessClass>,
-) -> Result<CState, CRuntimeError> {
+) -> Result<ExecutionState, CRuntimeError> {
     let mut state = state.clone();
     let pointer = local_declaration_pointer(&mut state, name)?;
     // A declared local's block is placed at its type's alignment; record it
@@ -5374,45 +5414,45 @@ pub(in crate::kernel) fn declare_local(
     // and file-scope blocks, rather than a path fact at each address-of.
     register_block_alignment(&pointer.block, c_type.abi_alignment());
     let byte_width = match c_type {
-        CType::Int128 | CType::UInt128 => 16,
+        ProgramType::Int128 | ProgramType::UInt128 => 16,
         // An abstract value's object holds its value in its binding; its
         // bytes are the model width it takes in memory.
-        CType::Parameter(_) => crate::kernel::ABSTRACT_VALUE_WIDTH,
-        CType::Void => unreachable!("void local objects are not supported"),
-        CType::Bool => 1,
-        CType::VoidPointer | CType::VoidPointerPointer => C_POINTER_BYTE_WIDTH,
-        CType::Int8 => 1,
-        CType::Int16 | CType::UInt16 => 2,
-        CType::Int32 => 4,
-        CType::Int64 | CType::UInt64 | CType::Float64 => 8,
-        CType::UInt8 => 1,
-        CType::UInt32 | CType::Float32 => 4,
-        CType::Int8Pointer | CType::Int8PointerPointer => C_POINTER_BYTE_WIDTH,
-        CType::ParameterPointer(_)
-        | CType::Int16Pointer
-        | CType::UInt16Pointer
-        | CType::Int32Pointer
-        | CType::UInt8Pointer
-        | CType::UInt32Pointer
-        | CType::Int128Pointer
-        | CType::Int64Pointer
-        | CType::UInt128Pointer
-        | CType::UInt64Pointer
-        | CType::Int16PointerPointer
-        | CType::UInt16PointerPointer
-        | CType::Int32PointerPointer
-        | CType::UInt8PointerPointer
-        | CType::UInt32PointerPointer
-        | CType::Int128PointerPointer
-        | CType::Int64PointerPointer
-        | CType::UInt128PointerPointer
-        | CType::UInt64PointerPointer
-        | CType::Float32Pointer
-        | CType::Float64Pointer
-        | CType::Float32PointerPointer
-        | CType::Float64PointerPointer
-        | CType::FunctionPointer(_) => C_POINTER_BYTE_WIDTH,
-        CType::Int32Array(length) => {
+        ProgramType::Parameter(_) => crate::kernel::ABSTRACT_VALUE_WIDTH,
+        ProgramType::Void => unreachable!("void local objects are not supported"),
+        ProgramType::Bool => 1,
+        ProgramType::VoidPointer | ProgramType::VoidPointerPointer => C_POINTER_BYTE_WIDTH,
+        ProgramType::Int8 => 1,
+        ProgramType::Int16 | ProgramType::UInt16 => 2,
+        ProgramType::Int32 => 4,
+        ProgramType::Int64 | ProgramType::UInt64 | ProgramType::Float64 => 8,
+        ProgramType::UInt8 => 1,
+        ProgramType::UInt32 | ProgramType::Float32 => 4,
+        ProgramType::Int8Pointer | ProgramType::Int8PointerPointer => C_POINTER_BYTE_WIDTH,
+        ProgramType::ParameterPointer(_)
+        | ProgramType::Int16Pointer
+        | ProgramType::UInt16Pointer
+        | ProgramType::Int32Pointer
+        | ProgramType::UInt8Pointer
+        | ProgramType::UInt32Pointer
+        | ProgramType::Int128Pointer
+        | ProgramType::Int64Pointer
+        | ProgramType::UInt128Pointer
+        | ProgramType::UInt64Pointer
+        | ProgramType::Int16PointerPointer
+        | ProgramType::UInt16PointerPointer
+        | ProgramType::Int32PointerPointer
+        | ProgramType::UInt8PointerPointer
+        | ProgramType::UInt32PointerPointer
+        | ProgramType::Int128PointerPointer
+        | ProgramType::Int64PointerPointer
+        | ProgramType::UInt128PointerPointer
+        | ProgramType::UInt64PointerPointer
+        | ProgramType::Float32Pointer
+        | ProgramType::Float64Pointer
+        | ProgramType::Float32PointerPointer
+        | ProgramType::Float64PointerPointer
+        | ProgramType::FunctionPointer(_) => C_POINTER_BYTE_WIDTH,
+        ProgramType::Int32Array(length) => {
             state.set_memory(state.memory.clone().with_classed_block(
                 pointer.block.clone(),
                 declared_class,
@@ -5421,14 +5461,14 @@ pub(in crate::kernel) fn declare_local(
             own_local_array(&mut state, &pointer, length.saturating_mul(4));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
-                CType::Int32,
+                ProgramType::Int32,
                 length,
                 pointer,
                 constant,
             );
             return Ok(state);
         }
-        CType::UInt8Array(length) => {
+        ProgramType::UInt8Array(length) => {
             state.set_memory(state.memory.clone().with_classed_block(
                 pointer.block.clone(),
                 declared_class,
@@ -5437,14 +5477,14 @@ pub(in crate::kernel) fn declare_local(
             own_local_array(&mut state, &pointer, length);
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
-                CType::UInt8,
+                ProgramType::UInt8,
                 length,
                 pointer,
                 constant,
             );
             return Ok(state);
         }
-        CType::Int8Array(length) => {
+        ProgramType::Int8Array(length) => {
             state.set_memory(state.memory.clone().with_classed_block(
                 pointer.block.clone(),
                 declared_class,
@@ -5453,14 +5493,14 @@ pub(in crate::kernel) fn declare_local(
             own_local_array(&mut state, &pointer, length);
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
-                CType::Int8,
+                ProgramType::Int8,
                 length,
                 pointer,
                 constant,
             );
             return Ok(state);
         }
-        CType::Int16Array(length) => {
+        ProgramType::Int16Array(length) => {
             state.set_memory(state.memory.clone().with_classed_block(
                 pointer.block.clone(),
                 declared_class,
@@ -5469,14 +5509,14 @@ pub(in crate::kernel) fn declare_local(
             own_local_array(&mut state, &pointer, length.saturating_mul(2));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
-                CType::Int16,
+                ProgramType::Int16,
                 length,
                 pointer,
                 constant,
             );
             return Ok(state);
         }
-        CType::UInt16Array(length) => {
+        ProgramType::UInt16Array(length) => {
             state.set_memory(state.memory.clone().with_classed_block(
                 pointer.block.clone(),
                 declared_class,
@@ -5485,14 +5525,14 @@ pub(in crate::kernel) fn declare_local(
             own_local_array(&mut state, &pointer, length.saturating_mul(2));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
-                CType::UInt16,
+                ProgramType::UInt16,
                 length,
                 pointer,
                 constant,
             );
             return Ok(state);
         }
-        CType::UInt32Array(length) => {
+        ProgramType::UInt32Array(length) => {
             state.set_memory(state.memory.clone().with_classed_block(
                 pointer.block.clone(),
                 declared_class,
@@ -5501,14 +5541,14 @@ pub(in crate::kernel) fn declare_local(
             own_local_array(&mut state, &pointer, length.saturating_mul(4));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
-                CType::UInt32,
+                ProgramType::UInt32,
                 length,
                 pointer,
                 constant,
             );
             return Ok(state);
         }
-        CType::Int64Array(length) => {
+        ProgramType::Int64Array(length) => {
             state.set_memory(state.memory.clone().with_classed_block(
                 pointer.block.clone(),
                 declared_class,
@@ -5517,14 +5557,14 @@ pub(in crate::kernel) fn declare_local(
             own_local_array(&mut state, &pointer, length.saturating_mul(8));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
-                CType::Int64,
+                ProgramType::Int64,
                 length,
                 pointer,
                 constant,
             );
             return Ok(state);
         }
-        CType::Int128Array(length) => {
+        ProgramType::Int128Array(length) => {
             state.set_memory(state.memory.clone().with_classed_block(
                 pointer.block.clone(),
                 declared_class,
@@ -5533,14 +5573,14 @@ pub(in crate::kernel) fn declare_local(
             own_local_array(&mut state, &pointer, length.saturating_mul(16));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
-                CType::Int128,
+                ProgramType::Int128,
                 length,
                 pointer,
                 constant,
             );
             return Ok(state);
         }
-        CType::UInt64Array(length) => {
+        ProgramType::UInt64Array(length) => {
             state.set_memory(state.memory.clone().with_classed_block(
                 pointer.block.clone(),
                 declared_class,
@@ -5549,14 +5589,14 @@ pub(in crate::kernel) fn declare_local(
             own_local_array(&mut state, &pointer, length.saturating_mul(8));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
-                CType::UInt64,
+                ProgramType::UInt64,
                 length,
                 pointer,
                 constant,
             );
             return Ok(state);
         }
-        CType::UInt128Array(length) => {
+        ProgramType::UInt128Array(length) => {
             state.set_memory(state.memory.clone().with_classed_block(
                 pointer.block.clone(),
                 declared_class,
@@ -5565,14 +5605,14 @@ pub(in crate::kernel) fn declare_local(
             own_local_array(&mut state, &pointer, length.saturating_mul(16));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
-                CType::UInt128,
+                ProgramType::UInt128,
                 length,
                 pointer,
                 constant,
             );
             return Ok(state);
         }
-        CType::Float32Array(length) => {
+        ProgramType::Float32Array(length) => {
             state.set_memory(state.memory.clone().with_classed_block(
                 pointer.block.clone(),
                 declared_class,
@@ -5581,14 +5621,14 @@ pub(in crate::kernel) fn declare_local(
             own_local_array(&mut state, &pointer, length.saturating_mul(4));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
-                CType::Float32,
+                ProgramType::Float32,
                 length,
                 pointer,
                 constant,
             );
             return Ok(state);
         }
-        CType::Float64Array(length) => {
+        ProgramType::Float64Array(length) => {
             state.set_memory(state.memory.clone().with_classed_block(
                 pointer.block.clone(),
                 declared_class,
@@ -5597,14 +5637,14 @@ pub(in crate::kernel) fn declare_local(
             own_local_array(&mut state, &pointer, length.saturating_mul(8));
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
-                CType::Float64,
+                ProgramType::Float64,
                 length,
                 pointer,
                 constant,
             );
             return Ok(state);
         }
-        CType::PointerArray(element, length) => {
+        ProgramType::PointerArray(element, length) => {
             state.set_memory(state.memory.clone().with_classed_block(
                 pointer.block.clone(),
                 declared_class,
@@ -5667,11 +5707,11 @@ pub(in crate::kernel) fn declare_local(
 }
 
 pub(in crate::kernel) fn declare_aggregate_local(
-    state: &CState,
+    state: &ExecutionState,
     name: &str,
     layout: &CAggregateLayout,
     declared_class: Option<crate::kernel::effective_type::CAccessClass>,
-) -> Result<CState, CRuntimeError> {
+) -> Result<ExecutionState, CRuntimeError> {
     let mut state = state.clone();
     let pointer = local_declaration_pointer(&mut state, name)?;
     register_block_alignment(&pointer.block, layout.alignment_bytes());
@@ -5714,11 +5754,11 @@ pub(in crate::kernel) fn declare_aggregate_local(
 }
 
 fn begin_aggregate_construction(
-    state: &CState,
+    state: &ExecutionState,
     name: &str,
     layout: &CAggregateLayout,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<CState, CRuntimeError>> {
+) -> ExecutionResult<Result<ExecutionState, CRuntimeError>> {
     let mut state = match declare_aggregate_local(state, name, layout, None) {
         Ok(state) => state,
         Err(refusal) => return Ok(Err(refusal)),
@@ -5733,7 +5773,7 @@ fn begin_aggregate_construction(
         // constructor writes establish initialization before the value is live.
         if matches!(
             field.c_type(),
-            CType::Int32Array(_) | CType::UInt8Array(_) | CType::UInt32Array(_)
+            ProgramType::Int32Array(_) | ProgramType::UInt8Array(_) | ProgramType::UInt32Array(_)
         ) {
             continue;
         }
@@ -5771,9 +5811,9 @@ fn begin_aggregate_construction(
 /// Bounded: one slot lookup keyed by the written block, then the shared byte
 /// comparison against that one object. No scan of the frame.
 pub(in crate::kernel) fn refresh_scalar_local_after_memory_store(
-    state: &mut CState,
+    state: &mut ExecutionState,
     pointer: &Pointer,
-    value: &CValue,
+    value: &ProgramValue,
     assumptions: &PureFactContext,
 ) {
     let slot = Pointer {
@@ -5802,7 +5842,7 @@ pub(in crate::kernel) fn refresh_scalar_local_after_memory_store(
 /// Reconcile one address-backed scalar after a checked call effect. Memory
 /// decides its current value and initialization; a postcondition is not a store.
 pub(in crate::kernel) fn refresh_scalar_local_from_memory(
-    state: &mut CState,
+    state: &mut ExecutionState,
     slot: &Pointer,
     assumptions: &PureFactContext,
 ) {
@@ -5816,10 +5856,10 @@ pub(in crate::kernel) fn refresh_scalar_local_from_memory(
 }
 
 fn refresh_scalar_local_binding(
-    state: &mut CState,
+    state: &mut ExecutionState,
     name: String,
     slot: Pointer,
-    c_type: CType,
+    c_type: ProgramType,
     assumptions: &PureFactContext,
 ) {
     // A store through a pointer to the other signedness of the object's
@@ -5881,7 +5921,11 @@ fn refresh_scalar_local_binding(
     }
 }
 
-pub(in crate::kernel) fn sync_stack_local(state: &mut CState, name: &str, value: &CValue) {
+pub(in crate::kernel) fn sync_stack_local(
+    state: &mut ExecutionState,
+    name: &str,
+    value: &ProgramValue,
+) {
     let Some(pointer) = state.locals.slot(name).cloned() else {
         return;
     };
@@ -5892,7 +5936,7 @@ pub(in crate::kernel) fn sync_stack_local(state: &mut CState, name: &str, value:
 
 /// Retain logical locals; memory-resident slots cross the current native cell boundary.
 pub(in crate::kernel) fn sync_retained_stack_local(
-    state: &mut CState,
+    state: &mut ExecutionState,
     name: &str,
     value: &ExecutionValue,
 ) {
@@ -5912,10 +5956,10 @@ pub(in crate::kernel) fn sync_retained_stack_local(
 /// A pointer value moved from a pending allocation's base to its resolved
 /// block. Its subobject extent, which names the same block, moves with it.
 pub(in crate::kernel) fn rebase_resolved_allocation(
-    value: &CPointerValue,
+    value: &PointerValue,
     base: &Pointer,
     resolved: &Pointer,
-) -> CPointerValue {
+) -> PointerValue {
     let resolved_value = value
         .map_pointers(|address| {
             if address == base {

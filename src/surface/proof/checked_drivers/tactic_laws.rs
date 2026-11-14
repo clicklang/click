@@ -4,11 +4,11 @@ use crate::surface::proof::proof_object::ExecutionProofState;
 /// `statement` with its next source operation, the one
 /// `split_next_source_operation` takes first, replaced by `replacement`.
 fn with_next_source_operation_replaced(
-    statement: &CStatement,
-    replacement: CStatement,
-) -> CStatement {
+    statement: &ProgramStatement,
+    replacement: ProgramStatement,
+) -> ProgramStatement {
     match statement {
-        CStatement::Seq(statements) => CStatement::Seq(statements.with_statement(
+        ProgramStatement::Seq(statements) => ProgramStatement::Seq(statements.with_statement(
             0,
             Arc::new(with_next_source_operation_replaced(
                 statements.first(),
@@ -45,7 +45,7 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
     let claim_label = proof_context.claim_label;
     let tactic_index = proof_context.tactic_index;
 
-    let state: &mut CState = &mut execution.core.state;
+    let state: &mut ExecutionState = &mut execution.core.state;
 
     if execution.core.frontier.is_at_function_exit() {
         return Err(ClickError::new(format!(
@@ -387,7 +387,7 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
         execution.core.frontier_loop_rules.push(rule);
     }
     let loop_exit_condition = match &current_loop {
-        CStatement::While { condition, .. } => Some(ClickProposition::Not(Box::new(
+        ProgramStatement::While { condition, .. } => Some(ClickProposition::Not(Box::new(
             surface_c_condition(condition, &execution.core.state)?,
         ))),
         _ => None,
@@ -486,7 +486,7 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
                 ClickError::new(format!("`{claim_label}` tactic {tactic_index}: {message}"))
             })?;
     }
-    let state: &mut CState = &mut execution.core.state;
+    let state: &mut ExecutionState = &mut execution.core.state;
     if let Some(exit_condition) = loop_exit_condition.filter(|_| {
         execution
             .presentation

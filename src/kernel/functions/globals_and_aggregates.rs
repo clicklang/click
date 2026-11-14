@@ -3,10 +3,10 @@
 use super::*;
 
 pub(super) fn initialize_c_function_globals_owned(
-    mut state: CState,
-    function: &CFunction,
+    mut state: ExecutionState,
+    function: &ProgramFunction,
     initialize_missing_storage: bool,
-) -> CState {
+) -> ExecutionState {
     for literal in function.string_literals() {
         let slot =
             CMemory::string_literal_pointer(function.name(), literal.name(), literal.bytes());
@@ -250,7 +250,7 @@ pub(super) fn initialize_c_function_globals_owned(
         }
         state.locals.set_array_object_at_with_constant(
             global_aggregate_array.kernel_name().to_string(),
-            CType::UInt8,
+            ProgramType::UInt8,
             bytes,
             slot.clone(),
             global_aggregate_array.is_constant(),
@@ -262,7 +262,7 @@ pub(super) fn initialize_c_function_globals_owned(
         {
             state.locals.set_array_object_at_with_constant(
                 global_aggregate_array.source_name().to_string(),
-                CType::UInt8,
+                ProgramType::UInt8,
                 bytes,
                 slot,
                 global_aggregate_array.is_constant(),
@@ -473,7 +473,7 @@ pub(super) fn initialize_c_function_globals_owned(
         }
         state.locals.set_array_object_at_with_constant(
             static_aggregate_array.kernel_name().to_string(),
-            CType::UInt8,
+            ProgramType::UInt8,
             bytes,
             slot.clone(),
             static_aggregate_array.is_constant(),
@@ -485,7 +485,7 @@ pub(super) fn initialize_c_function_globals_owned(
         {
             state.locals.set_array_object_at_with_constant(
                 static_aggregate_array.source_name().to_string(),
-                CType::UInt8,
+                ProgramType::UInt8,
                 bytes,
                 slot,
                 static_aggregate_array.is_constant(),
@@ -498,7 +498,7 @@ pub(super) fn initialize_c_function_globals_owned(
 pub(super) fn materialize_symbolic_cell(
     memory: CMemory,
     pointer: &Pointer,
-    c_type: CType,
+    c_type: ProgramType,
 ) -> CMemory {
     let symbolic_base = symbolic_memory_base(&memory, pointer);
     if let Some(value) =
@@ -510,8 +510,8 @@ pub(super) fn materialize_symbolic_cell(
     }
 }
 
-pub(super) fn symbolic_pointer_placeholder(value: &CValue, storage: &Pointer) -> bool {
-    let CValue::Pointer(value) = value else {
+pub(super) fn symbolic_pointer_placeholder(value: &ProgramValue, storage: &Pointer) -> bool {
+    let ProgramValue::Pointer(value) = value else {
         return false;
     };
     value.pointer().block == storage.block
@@ -548,7 +548,7 @@ pub(in crate::kernel) fn symbolic_memory_base(memory: &CMemory, pointer: &Pointe
 pub(super) fn store_array_contents(
     mut memory: CMemory,
     base: &Pointer,
-    element_type: CType,
+    element_type: ProgramType,
     contents: &crate::kernel::CArrayContents,
 ) -> CMemory {
     let element =
@@ -595,7 +595,7 @@ pub(super) fn store_array_contents(
 pub(super) fn materialize_symbolic_array(
     mut memory: CMemory,
     base: &Pointer,
-    element_type: CType,
+    element_type: ProgramType,
     length: u32,
 ) -> CMemory {
     // Only an element type with an entry value is a run's: the others leave
@@ -603,19 +603,19 @@ pub(super) fn materialize_symbolic_array(
     let has_value = element_type.is_pointer()
         || matches!(
             element_type,
-            CType::Bool
-                | CType::Int8
-                | CType::Int16
-                | CType::Int32
-                | CType::UInt8
-                | CType::UInt16
-                | CType::UInt32
-                | CType::Int64
-                | CType::Int128
-                | CType::UInt64
-                | CType::UInt128
-                | CType::Float32
-                | CType::Float64
+            ProgramType::Bool
+                | ProgramType::Int8
+                | ProgramType::Int16
+                | ProgramType::Int32
+                | ProgramType::UInt8
+                | ProgramType::UInt16
+                | ProgramType::UInt32
+                | ProgramType::Int64
+                | ProgramType::Int128
+                | ProgramType::UInt64
+                | ProgramType::UInt128
+                | ProgramType::Float32
+                | ProgramType::Float64
         );
     if length > 0 && has_value {
         let source = crate::kernel::intern_c_memory(symbolic_memory_base(&memory, base));
@@ -655,29 +655,37 @@ pub(super) fn materialize_symbolic_aggregate_fields(
     for field in layout.fields() {
         let field_base = base.offset_by_bytes(field.offset_bytes());
         match field.c_type() {
-            CType::Int32Array(length) => {
-                memory = materialize_symbolic_array(memory, &field_base, CType::Int32, length);
+            ProgramType::Int32Array(length) => {
+                memory =
+                    materialize_symbolic_array(memory, &field_base, ProgramType::Int32, length);
             }
-            CType::Int64Array(length) => {
-                memory = materialize_symbolic_array(memory, &field_base, CType::Int64, length);
+            ProgramType::Int64Array(length) => {
+                memory =
+                    materialize_symbolic_array(memory, &field_base, ProgramType::Int64, length);
             }
-            CType::Int128Array(length) => {
-                memory = materialize_symbolic_array(memory, &field_base, CType::Int128, length);
+            ProgramType::Int128Array(length) => {
+                memory =
+                    materialize_symbolic_array(memory, &field_base, ProgramType::Int128, length);
             }
-            CType::UInt64Array(length) => {
-                memory = materialize_symbolic_array(memory, &field_base, CType::UInt64, length);
+            ProgramType::UInt64Array(length) => {
+                memory =
+                    materialize_symbolic_array(memory, &field_base, ProgramType::UInt64, length);
             }
-            CType::UInt128Array(length) => {
-                memory = materialize_symbolic_array(memory, &field_base, CType::UInt128, length);
+            ProgramType::UInt128Array(length) => {
+                memory =
+                    materialize_symbolic_array(memory, &field_base, ProgramType::UInt128, length);
             }
-            CType::UInt8Array(length) => {
-                memory = materialize_symbolic_array(memory, &field_base, CType::UInt8, length);
+            ProgramType::UInt8Array(length) => {
+                memory =
+                    materialize_symbolic_array(memory, &field_base, ProgramType::UInt8, length);
             }
-            CType::Float32Array(length) => {
-                memory = materialize_symbolic_array(memory, &field_base, CType::Float32, length);
+            ProgramType::Float32Array(length) => {
+                memory =
+                    materialize_symbolic_array(memory, &field_base, ProgramType::Float32, length);
             }
-            CType::Float64Array(length) => {
-                memory = materialize_symbolic_array(memory, &field_base, CType::Float64, length);
+            ProgramType::Float64Array(length) => {
+                memory =
+                    materialize_symbolic_array(memory, &field_base, ProgramType::Float64, length);
             }
             _ => {
                 memory = materialize_symbolic_cell(memory, &field_base, field.c_type());
@@ -703,23 +711,23 @@ pub(super) fn materialize_symbolic_aggregate_fields(
 
 /// Whether a symbolic static-storage cell of `c_type` holds an entry value:
 /// the element types [`materialize_symbolic_array`] makes a run of.
-pub(super) fn symbolic_storage_has_value(c_type: CType) -> bool {
+pub(super) fn symbolic_storage_has_value(c_type: ProgramType) -> bool {
     c_type.is_pointer()
         || matches!(
             c_type,
-            CType::Bool
-                | CType::Int8
-                | CType::Int16
-                | CType::Int32
-                | CType::UInt8
-                | CType::UInt16
-                | CType::UInt32
-                | CType::Int64
-                | CType::Int128
-                | CType::UInt64
-                | CType::UInt128
-                | CType::Float32
-                | CType::Float64
+            ProgramType::Bool
+                | ProgramType::Int8
+                | ProgramType::Int16
+                | ProgramType::Int32
+                | ProgramType::UInt8
+                | ProgramType::UInt16
+                | ProgramType::UInt32
+                | ProgramType::Int64
+                | ProgramType::Int128
+                | ProgramType::UInt64
+                | ProgramType::UInt128
+                | ProgramType::Float32
+                | ProgramType::Float64
         )
 }
 
@@ -727,21 +735,23 @@ pub(super) fn symbolic_storage_has_value(c_type: CType) -> bool {
 /// of `layout`, as `(offset, type)` ascending: each scalar field, and each
 /// element of an inline scalar array field. `None` for a layout with unions
 /// or with a field kind that routine does not name this way.
-pub(super) fn symbolic_aggregate_cells(layout: &CAggregateLayout) -> Option<Vec<(u32, CType)>> {
+pub(super) fn symbolic_aggregate_cells(
+    layout: &CAggregateLayout,
+) -> Option<Vec<(u32, ProgramType)>> {
     if !layout.unions().is_empty() {
         return None;
     }
     let mut cells = Vec::new();
     for field in layout.fields() {
         let (element_type, length) = match field.c_type() {
-            CType::Int32Array(length) => (CType::Int32, length),
-            CType::Int64Array(length) => (CType::Int64, length),
-            CType::Int128Array(length) => (CType::Int128, length),
-            CType::UInt64Array(length) => (CType::UInt64, length),
-            CType::UInt128Array(length) => (CType::UInt128, length),
-            CType::UInt8Array(length) => (CType::UInt8, length),
-            CType::Float32Array(length) => (CType::Float32, length),
-            CType::Float64Array(length) => (CType::Float64, length),
+            ProgramType::Int32Array(length) => (ProgramType::Int32, length),
+            ProgramType::Int64Array(length) => (ProgramType::Int64, length),
+            ProgramType::Int128Array(length) => (ProgramType::Int128, length),
+            ProgramType::UInt64Array(length) => (ProgramType::UInt64, length),
+            ProgramType::UInt128Array(length) => (ProgramType::UInt128, length),
+            ProgramType::UInt8Array(length) => (ProgramType::UInt8, length),
+            ProgramType::Float32Array(length) => (ProgramType::Float32, length),
+            ProgramType::Float64Array(length) => (ProgramType::Float64, length),
             c_type if symbolic_storage_has_value(c_type) => (c_type, 1),
             _ => return None,
         };
@@ -830,77 +840,79 @@ pub(super) fn materialize_symbolic_aggregate_array(
 /// it holds (one, or an inline array's length), each element's width, and
 /// the zero every element holds. A field kind with no modeled zero is left
 /// out, as it is left without a cell. Unions are not included.
-pub(super) fn aggregate_zero_fields(layout: &CAggregateLayout) -> Vec<(u32, u32, u32, CValue)> {
+pub(super) fn aggregate_zero_fields(
+    layout: &CAggregateLayout,
+) -> Vec<(u32, u32, u32, ProgramValue)> {
     let mut zero_fields = Vec::with_capacity(layout.fields().len());
     for field in layout.fields() {
         let (element_type, element_count) = match field.c_type() {
-            CType::Int8 => (field.c_type(), 1),
-            CType::Int16
-            | CType::Int32
-            | CType::UInt8
-            | CType::UInt16
-            | CType::UInt32
-            | CType::Int64
-                | CType::Int128
-            | CType::UInt64
-                | CType::UInt128
-            | CType::Float32
-            | CType::Float64
-            | CType::VoidPointer
-            | CType::Int128Pointer
-            | CType::UInt128Pointer
-            | CType::Int128PointerPointer
-            | CType::UInt128PointerPointer
-            | CType::Int32Pointer
-            | CType::UInt8Pointer
+            ProgramType::Int8 => (field.c_type(), 1),
+            ProgramType::Int16
+            | ProgramType::Int32
+            | ProgramType::UInt8
+            | ProgramType::UInt16
+            | ProgramType::UInt32
+            | ProgramType::Int64
+                | ProgramType::Int128
+            | ProgramType::UInt64
+                | ProgramType::UInt128
+            | ProgramType::Float32
+            | ProgramType::Float64
+            | ProgramType::VoidPointer
+            | ProgramType::Int128Pointer
+            | ProgramType::UInt128Pointer
+            | ProgramType::Int128PointerPointer
+            | ProgramType::UInt128PointerPointer
+            | ProgramType::Int32Pointer
+            | ProgramType::UInt8Pointer
             // A signed plain `char` pointer field is an `int8*` cell.
-            | CType::Int8Pointer
-            | CType::Float32Pointer
-            | CType::Float64Pointer
-            | CType::Int32PointerPointer
-            | CType::UInt8PointerPointer
-            | CType::Int8PointerPointer
-            | CType::Float32PointerPointer
-            | CType::Float64PointerPointer
+            | ProgramType::Int8Pointer
+            | ProgramType::Float32Pointer
+            | ProgramType::Float64Pointer
+            | ProgramType::Int32PointerPointer
+            | ProgramType::UInt8PointerPointer
+            | ProgramType::Int8PointerPointer
+            | ProgramType::Float32PointerPointer
+            | ProgramType::Float64PointerPointer
             // Static storage zero-initializes a callback field to a null
             // function pointer, just like a data-pointer field.
-            | CType::FunctionPointer(_) => (field.c_type(), 1),
-            CType::Int32Array(length) => (CType::Int32, length),
+            | ProgramType::FunctionPointer(_) => (field.c_type(), 1),
+            ProgramType::Int32Array(length) => (ProgramType::Int32, length),
             // A signed plain `char` array field holds `int8` cells.
-            CType::Int8Array(length) => (CType::Int8, length),
-            CType::Int64Array(length) => (CType::Int64, length),
-            CType::Int128Array(length) => (CType::Int128, length),
-            CType::UInt64Array(length) => (CType::UInt64, length),
-            CType::UInt128Array(length) => (CType::UInt128, length),
-            CType::UInt8Array(length) => (CType::UInt8, length),
-            CType::Float32Array(length) => (CType::Float32, length),
-            CType::Float64Array(length) => (CType::Float64, length),
-            CType::PointerArray(element, length) => (element.pointer_type(), length),
+            ProgramType::Int8Array(length) => (ProgramType::Int8, length),
+            ProgramType::Int64Array(length) => (ProgramType::Int64, length),
+            ProgramType::Int128Array(length) => (ProgramType::Int128, length),
+            ProgramType::UInt64Array(length) => (ProgramType::UInt64, length),
+            ProgramType::UInt128Array(length) => (ProgramType::UInt128, length),
+            ProgramType::UInt8Array(length) => (ProgramType::UInt8, length),
+            ProgramType::Float32Array(length) => (ProgramType::Float32, length),
+            ProgramType::Float64Array(length) => (ProgramType::Float64, length),
+            ProgramType::PointerArray(element, length) => (element.pointer_type(), length),
             _ => continue,
         };
-        let zero = if matches!(field.c_type(), CType::PointerArray(_, _)) {
-            CValue::typed_pointer(Pointer::null(), element_type)
+        let zero = if matches!(field.c_type(), ProgramType::PointerArray(_, _)) {
+            ProgramValue::typed_pointer(Pointer::null(), element_type)
         } else {
             match element_type {
-                CType::Parameter(_) | CType::ParameterPointer(_) => {
+                ProgramType::Parameter(_) | ProgramType::ParameterPointer(_) => {
                     unreachable!("an array element is a machine type")
                 }
-                CType::Bool => CValue::bool_constant(false),
-                CType::Int8 => int8(0),
-                CType::Int16 => int16(0),
-                CType::Int32 => int32(0),
-                CType::UInt8 => uint8(0),
-                CType::UInt16 => uint16(0),
-                CType::UInt32 => uint32(0),
-                CType::Int64 => CValue::Int64(MachineTerm::int64_constant(0)),
-                CType::UInt64 => CValue::UInt64(MachineTerm::uint64_constant(0)),
-                CType::Int128 => MachineIntegerType::Int128
+                ProgramType::Bool => ProgramValue::bool_constant(false),
+                ProgramType::Int8 => int8(0),
+                ProgramType::Int16 => int16(0),
+                ProgramType::Int32 => int32(0),
+                ProgramType::UInt8 => uint8(0),
+                ProgramType::UInt16 => uint16(0),
+                ProgramType::UInt32 => uint32(0),
+                ProgramType::Int64 => ProgramValue::Int64(MachineTerm::int64_constant(0)),
+                ProgramType::UInt64 => ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
+                ProgramType::Int128 => MachineIntegerType::Int128
                     .constant_value(
                         MachineIntegerConstant::from_signed(MachineIntegerType::Int128.format(), 0)
                             .unwrap(),
                     )
                     .unwrap(),
-                CType::UInt128 => MachineIntegerType::UInt128
+                ProgramType::UInt128 => MachineIntegerType::UInt128
                     .constant_value(
                         MachineIntegerConstant::from_unsigned(
                             MachineIntegerType::UInt128.format(),
@@ -909,53 +921,55 @@ pub(super) fn aggregate_zero_fields(layout: &CAggregateLayout) -> Vec<(u32, u32,
                         .unwrap(),
                     )
                     .unwrap(),
-                CType::Float32 => CValue::Float32(MachineTerm::constant(0)),
-                CType::Float64 => CValue::Float64(MachineTerm::uint64_constant(0)),
-                CType::Int128Pointer
-                | CType::UInt128Pointer
-                | CType::Int128PointerPointer
-                | CType::UInt128PointerPointer
-                | CType::Int32Pointer
-                | CType::UInt8Pointer
-                | CType::Int8Pointer
-                | CType::Float32Pointer
-                | CType::Float64Pointer
-                | CType::Int32PointerPointer
-                | CType::UInt8PointerPointer
-                | CType::Int8PointerPointer
-                | CType::Float32PointerPointer
-                | CType::Float64PointerPointer
-                | CType::FunctionPointer(_) => CValue::typed_pointer(Pointer::null(), element_type),
-                CType::Int8Array(_) => {
+                ProgramType::Float32 => ProgramValue::Float32(MachineTerm::constant(0)),
+                ProgramType::Float64 => ProgramValue::Float64(MachineTerm::uint64_constant(0)),
+                ProgramType::Int128Pointer
+                | ProgramType::UInt128Pointer
+                | ProgramType::Int128PointerPointer
+                | ProgramType::UInt128PointerPointer
+                | ProgramType::Int32Pointer
+                | ProgramType::UInt8Pointer
+                | ProgramType::Int8Pointer
+                | ProgramType::Float32Pointer
+                | ProgramType::Float64Pointer
+                | ProgramType::Int32PointerPointer
+                | ProgramType::UInt8PointerPointer
+                | ProgramType::Int8PointerPointer
+                | ProgramType::Float32PointerPointer
+                | ProgramType::Float64PointerPointer
+                | ProgramType::FunctionPointer(_) => {
+                    ProgramValue::typed_pointer(Pointer::null(), element_type)
+                }
+                ProgramType::Int8Array(_) => {
                     continue;
                 }
-                CType::PointerArray(_, _) => continue,
-                CType::Int16Array(_)
-                | CType::Int32Array(_)
-                | CType::UInt8Array(_)
-                | CType::UInt16Array(_)
-                | CType::UInt32Array(_)
-                | CType::Int128Array(_)
-                | CType::Int64Array(_)
-                | CType::UInt128Array(_)
-                | CType::UInt64Array(_)
-                | CType::Float32Array(_)
-                | CType::Float64Array(_)
-                | CType::Void
-                | CType::VoidPointer
-                | CType::VoidPointerPointer => {
+                ProgramType::PointerArray(_, _) => continue,
+                ProgramType::Int16Array(_)
+                | ProgramType::Int32Array(_)
+                | ProgramType::UInt8Array(_)
+                | ProgramType::UInt16Array(_)
+                | ProgramType::UInt32Array(_)
+                | ProgramType::Int128Array(_)
+                | ProgramType::Int64Array(_)
+                | ProgramType::UInt128Array(_)
+                | ProgramType::UInt64Array(_)
+                | ProgramType::Float32Array(_)
+                | ProgramType::Float64Array(_)
+                | ProgramType::Void
+                | ProgramType::VoidPointer
+                | ProgramType::VoidPointerPointer => {
                     continue;
                 }
-                CType::Int16Pointer
-                | CType::UInt16Pointer
-                | CType::UInt32Pointer
-                | CType::Int64Pointer
-                | CType::UInt64Pointer
-                | CType::Int16PointerPointer
-                | CType::UInt16PointerPointer
-                | CType::UInt32PointerPointer
-                | CType::Int64PointerPointer
-                | CType::UInt64PointerPointer => continue,
+                ProgramType::Int16Pointer
+                | ProgramType::UInt16Pointer
+                | ProgramType::UInt32Pointer
+                | ProgramType::Int64Pointer
+                | ProgramType::UInt64Pointer
+                | ProgramType::Int16PointerPointer
+                | ProgramType::UInt16PointerPointer
+                | ProgramType::UInt32PointerPointer
+                | ProgramType::Int64PointerPointer
+                | ProgramType::UInt64PointerPointer => continue,
             }
         };
         zero_fields.push((
@@ -1008,15 +1022,15 @@ pub(super) fn zero_aggregate_fields(
     memory
 }
 
-pub(super) fn zero_union_member_value(c_type: CType) -> Option<CValue> {
+pub(super) fn zero_union_member_value(c_type: ProgramType) -> Option<ProgramValue> {
     Some(match c_type {
-        CType::Int32 => int32(0),
-        CType::UInt8 => uint8(0),
-        CType::Int32Pointer
-        | CType::UInt8Pointer
-        | CType::Int32PointerPointer
-        | CType::UInt8PointerPointer
-        | CType::FunctionPointer(_) => CValue::typed_pointer(Pointer::null(), c_type),
+        ProgramType::Int32 => int32(0),
+        ProgramType::UInt8 => uint8(0),
+        ProgramType::Int32Pointer
+        | ProgramType::UInt8Pointer
+        | ProgramType::Int32PointerPointer
+        | ProgramType::UInt8PointerPointer
+        | ProgramType::FunctionPointer(_) => ProgramValue::typed_pointer(Pointer::null(), c_type),
         _ => return None,
     })
 }
@@ -1152,16 +1166,16 @@ pub(super) fn local_view_range_within_block(range: &CMemoryRange, memory: &CMemo
 
 /// Check actual argument reads before allocating the callee's private copy.
 pub(super) fn aggregate_argument_read_refusal(
-    state: &CState,
-    parameters: &[CParameter],
-    values: &[CValue],
+    state: &ExecutionState,
+    parameters: &[ProgramParameter],
+    values: &[ProgramValue],
     assumptions: &PureFactContext,
 ) -> Option<CFunctionOutcome> {
     for (parameter, value) in parameters.iter().zip(values) {
         let Some(layout) = parameter.aggregate_layout() else {
             continue;
         };
-        let CValue::Pointer(source) = value else {
+        let ProgramValue::Pointer(source) = value else {
             continue;
         };
         if let Some(refusal) = crate::kernel::eval::subobject_access_refusal(
@@ -1213,7 +1227,7 @@ pub(super) fn aggregate_copy_reads_uninitialized(
     // field type this copy cannot carry drops the destination cells instead
     // of leaving them readable, so it cannot go stale here.
     for field in layout.fields() {
-        if let CType::UInt32Array(count) = field.c_type() {
+        if let ProgramType::UInt32Array(count) = field.c_type() {
             let source_field = source.offset_by_bytes(field.offset_bytes());
             let Some(bytes) = count.checked_mul(4) else {
                 return true;
@@ -1238,30 +1252,30 @@ pub(super) fn aggregate_copy_reads_uninitialized(
         }
 
         let (element_type, element_count) = match field.c_type() {
-            CType::Int8 => (field.c_type(), 1),
-            CType::Int16
-            | CType::Int32
-            | CType::UInt8
-            | CType::UInt16
-            | CType::UInt32
-            | CType::Int64
-            | CType::Int128
-            | CType::UInt64
-            | CType::UInt128
-            | CType::Float32
-            | CType::Float64 => (field.c_type(), 1),
-            CType::Int32Array(length) => (CType::Int32, length),
-            CType::UInt32Array(length) => (CType::UInt32, length),
-            CType::Int64Array(length) => (CType::Int64, length),
-            CType::Int128Array(length) => (CType::Int128, length),
-            CType::UInt64Array(length) => (CType::UInt64, length),
-            CType::UInt128Array(length) => (CType::UInt128, length),
-            CType::UInt8Array(length) => (CType::UInt8, length),
-            CType::Int32Pointer
-            | CType::UInt8Pointer
-            | CType::Int32PointerPointer
-            | CType::UInt8PointerPointer
-            | CType::FunctionPointer(_) => (field.c_type(), 1),
+            ProgramType::Int8 => (field.c_type(), 1),
+            ProgramType::Int16
+            | ProgramType::Int32
+            | ProgramType::UInt8
+            | ProgramType::UInt16
+            | ProgramType::UInt32
+            | ProgramType::Int64
+            | ProgramType::Int128
+            | ProgramType::UInt64
+            | ProgramType::UInt128
+            | ProgramType::Float32
+            | ProgramType::Float64 => (field.c_type(), 1),
+            ProgramType::Int32Array(length) => (ProgramType::Int32, length),
+            ProgramType::UInt32Array(length) => (ProgramType::UInt32, length),
+            ProgramType::Int64Array(length) => (ProgramType::Int64, length),
+            ProgramType::Int128Array(length) => (ProgramType::Int128, length),
+            ProgramType::UInt64Array(length) => (ProgramType::UInt64, length),
+            ProgramType::UInt128Array(length) => (ProgramType::UInt128, length),
+            ProgramType::UInt8Array(length) => (ProgramType::UInt8, length),
+            ProgramType::Int32Pointer
+            | ProgramType::UInt8Pointer
+            | ProgramType::Int32PointerPointer
+            | ProgramType::UInt8PointerPointer
+            | ProgramType::FunctionPointer(_) => (field.c_type(), 1),
             _ => continue,
         };
         for index in 0..element_count {
@@ -1324,7 +1338,7 @@ pub(super) fn aggregate_copy_reads_uninitialized(
 pub(super) fn uninitialized_aggregate_copy_source_cell(
     memory: &CMemory,
     source_field: &Pointer,
-    element_type: CType,
+    element_type: ProgramType,
 ) -> bool {
     if memory.known_value(source_field).is_some()
         || memory.has_initialized_bytes_at(source_field, element_type.byte_width())
@@ -1361,7 +1375,7 @@ pub(super) fn uninitialized_aggregate_copy_source_cell(
 pub(super) fn aggregate_copy_source_holds_nothing(
     memory: &CMemory,
     source_field: &Pointer,
-    element_type: CType,
+    element_type: ProgramType,
 ) -> bool {
     memory.has_block(&source_field.block)
         && !matches!(
@@ -1400,14 +1414,14 @@ pub(super) fn copy_aggregate_fields(
     layout: &CAggregateLayout,
 ) -> CMemory {
     for field in layout.fields() {
-        if let CType::UInt32Array(count) = field.c_type() {
+        if let ProgramType::UInt32Array(count) = field.c_type() {
             let source_field = source.offset_by_bytes(field.offset_bytes());
             let target_field = destination.offset_by_bytes(field.offset_bytes());
             if let Ok(copied) = memory.clone().write_scalar_array_region(
                 &target_field,
-                CType::UInt32,
+                ProgramType::UInt32,
                 count,
-                CValue::typed_pointer(source_field, CType::UInt32Pointer),
+                ProgramValue::typed_pointer(source_field, ProgramType::UInt32Pointer),
                 true,
                 false,
                 &PureFactContext::new(),
@@ -1419,11 +1433,11 @@ pub(super) fn copy_aggregate_fields(
             // without generating one load for each element of the field.
             if let Ok(copied) = memory.clone().write_scalar_array_snapshot(
                 &target_field,
-                CType::UInt32,
+                ProgramType::UInt32,
                 count,
-                CValue::typed_pointer(
+                ProgramValue::typed_pointer(
                     source.offset_by_bytes(field.offset_bytes()),
-                    CType::UInt32Pointer,
+                    ProgramType::UInt32Pointer,
                 ),
                 true,
                 false,
@@ -1435,34 +1449,34 @@ pub(super) fn copy_aggregate_fields(
         }
 
         let (element_type, element_count) = match field.c_type() {
-            CType::Int8 => (field.c_type(), 1),
-            CType::Int16
-            | CType::Int32
-            | CType::UInt8
-            | CType::UInt16
-            | CType::UInt32
-            | CType::Int64
-                | CType::Int128
-            | CType::UInt64
-                | CType::UInt128
-            | CType::Float32
-            | CType::Float64
+            ProgramType::Int8 => (field.c_type(), 1),
+            ProgramType::Int16
+            | ProgramType::Int32
+            | ProgramType::UInt8
+            | ProgramType::UInt16
+            | ProgramType::UInt32
+            | ProgramType::Int64
+                | ProgramType::Int128
+            | ProgramType::UInt64
+                | ProgramType::UInt128
+            | ProgramType::Float32
+            | ProgramType::Float64
             // A generic struct's field of an abstract type parameter.
-            | CType::Parameter(_) => (field.c_type(), 1),
-            CType::Int32Array(length) => (CType::Int32, length),
-            CType::UInt32Array(length) => (CType::UInt32, length),
-            CType::Int64Array(length) => (CType::Int64, length),
-            CType::Int128Array(length) => (CType::Int128, length),
-            CType::UInt64Array(length) => (CType::UInt64, length),
-            CType::UInt128Array(length) => (CType::UInt128, length),
-            CType::UInt8Array(length) => (CType::UInt8, length),
-            CType::Int32Pointer
-            | CType::UInt8Pointer
-            | CType::Int32PointerPointer
-            | CType::UInt8PointerPointer
+            | ProgramType::Parameter(_) => (field.c_type(), 1),
+            ProgramType::Int32Array(length) => (ProgramType::Int32, length),
+            ProgramType::UInt32Array(length) => (ProgramType::UInt32, length),
+            ProgramType::Int64Array(length) => (ProgramType::Int64, length),
+            ProgramType::Int128Array(length) => (ProgramType::Int128, length),
+            ProgramType::UInt64Array(length) => (ProgramType::UInt64, length),
+            ProgramType::UInt128Array(length) => (ProgramType::UInt128, length),
+            ProgramType::UInt8Array(length) => (ProgramType::UInt8, length),
+            ProgramType::Int32Pointer
+            | ProgramType::UInt8Pointer
+            | ProgramType::Int32PointerPointer
+            | ProgramType::UInt8PointerPointer
             // A callback field is an eight-byte pointer value; carry it so a
             // copied table still dispatches to the same concrete target.
-            | CType::FunctionPointer(_) => (field.c_type(), 1),
+            | ProgramType::FunctionPointer(_) => (field.c_type(), 1),
             // A field this copy cannot carry must not leave the destination's
             // previous value in place: C copies every member, so a stale cell
             // would be readable as the destination's old contents. Drop those
@@ -1490,22 +1504,30 @@ pub(super) fn copy_aggregate_fields(
                     &PureFactContext::new(),
                 ) {
                     return match element_type {
-                        CType::Int8 => Some(int8(0)),
-                        CType::Int16 => Some(int16(0)),
-                        CType::Int32 => Some(int32(0)),
-                        CType::UInt8 => Some(uint8(0)),
-                        CType::Int32Pointer
-                        | CType::UInt8Pointer
-                        | CType::Int32PointerPointer
-                        | CType::UInt8PointerPointer => {
-                            Some(CValue::typed_pointer(Pointer::null(), element_type))
+                        ProgramType::Int8 => Some(int8(0)),
+                        ProgramType::Int16 => Some(int16(0)),
+                        ProgramType::Int32 => Some(int32(0)),
+                        ProgramType::UInt8 => Some(uint8(0)),
+                        ProgramType::Int32Pointer
+                        | ProgramType::UInt8Pointer
+                        | ProgramType::Int32PointerPointer
+                        | ProgramType::UInt8PointerPointer => {
+                            Some(ProgramValue::typed_pointer(Pointer::null(), element_type))
                         }
-                        CType::UInt16 => Some(uint16(0)),
-                        CType::UInt32 => Some(uint32(0)),
-                        CType::Int64 => Some(CValue::Int64(MachineTerm::int64_constant(0))),
-                        CType::UInt64 => Some(CValue::UInt64(MachineTerm::uint64_constant(0))),
-                        CType::Float32 => Some(CValue::Float32(MachineTerm::constant(0))),
-                        CType::Float64 => Some(CValue::Float64(MachineTerm::uint64_constant(0))),
+                        ProgramType::UInt16 => Some(uint16(0)),
+                        ProgramType::UInt32 => Some(uint32(0)),
+                        ProgramType::Int64 => {
+                            Some(ProgramValue::Int64(MachineTerm::int64_constant(0)))
+                        }
+                        ProgramType::UInt64 => {
+                            Some(ProgramValue::UInt64(MachineTerm::uint64_constant(0)))
+                        }
+                        ProgramType::Float32 => {
+                            Some(ProgramValue::Float32(MachineTerm::constant(0)))
+                        }
+                        ProgramType::Float64 => {
+                            Some(ProgramValue::Float64(MachineTerm::uint64_constant(0)))
+                        }
                         _ => None,
                     };
                 }
@@ -1513,30 +1535,38 @@ pub(super) fn copy_aggregate_fields(
                     return None;
                 }
                 match element_type {
-                    CType::Int8 => Some(CValue::Int8(crate::kernel::canonical_form_of_load(
-                        crate::kernel::intern_c_memory(memory.clone()),
-                        source_field,
-                        LoadKind::of_type(element_type)?,
-                    ))),
-                    CType::Int16 => Some(CValue::Int16(crate::kernel::canonical_form_of_load(
-                        crate::kernel::intern_c_memory(memory.clone()),
-                        source_field,
-                        LoadKind::of_type(element_type)?,
-                    ))),
-                    CType::Int32 => Some(CValue::Int32(crate::kernel::canonical_form_of_load(
-                        crate::kernel::intern_c_memory(memory.clone()),
-                        source_field,
-                        LoadKind::of_type(element_type)?,
-                    ))),
-                    CType::UInt8 => Some(CValue::UInt8(crate::kernel::canonical_form_of_load(
-                        crate::kernel::intern_c_memory(memory.clone()),
-                        source_field,
-                        LoadKind::of_type(element_type)?,
-                    ))),
-                    CType::Int32Pointer
-                    | CType::UInt8Pointer
-                    | CType::Int32PointerPointer
-                    | CType::UInt8PointerPointer => {
+                    ProgramType::Int8 => {
+                        Some(ProgramValue::Int8(crate::kernel::canonical_form_of_load(
+                            crate::kernel::intern_c_memory(memory.clone()),
+                            source_field,
+                            LoadKind::of_type(element_type)?,
+                        )))
+                    }
+                    ProgramType::Int16 => {
+                        Some(ProgramValue::Int16(crate::kernel::canonical_form_of_load(
+                            crate::kernel::intern_c_memory(memory.clone()),
+                            source_field,
+                            LoadKind::of_type(element_type)?,
+                        )))
+                    }
+                    ProgramType::Int32 => {
+                        Some(ProgramValue::Int32(crate::kernel::canonical_form_of_load(
+                            crate::kernel::intern_c_memory(memory.clone()),
+                            source_field,
+                            LoadKind::of_type(element_type)?,
+                        )))
+                    }
+                    ProgramType::UInt8 => {
+                        Some(ProgramValue::UInt8(crate::kernel::canonical_form_of_load(
+                            crate::kernel::intern_c_memory(memory.clone()),
+                            source_field,
+                            LoadKind::of_type(element_type)?,
+                        )))
+                    }
+                    ProgramType::Int32Pointer
+                    | ProgramType::UInt8Pointer
+                    | ProgramType::Int32PointerPointer
+                    | ProgramType::UInt8PointerPointer => {
                         // An unknown pointer is the value read from this cell,
                         // not an offset in the object holding it. Use the same
                         // canonical typed read as ordinary pointer loads so a
@@ -1548,41 +1578,55 @@ pub(super) fn copy_aggregate_fields(
                             true,
                         )
                     }
-                    CType::UInt16 => Some(CValue::UInt16(crate::kernel::canonical_form_of_load(
-                        crate::kernel::intern_c_memory(memory.clone()),
-                        source_field,
-                        LoadKind::of_type(element_type)?,
-                    ))),
-                    CType::UInt32 => Some(CValue::UInt32(crate::kernel::canonical_form_of_load(
-                        crate::kernel::intern_c_memory(memory.clone()),
-                        source_field,
-                        LoadKind::of_type(element_type)?,
-                    ))),
-                    CType::Int64 => Some(CValue::Int64(crate::kernel::canonical_form_of_load(
-                        crate::kernel::intern_c_memory(memory.clone()),
-                        source_field,
-                        LoadKind::of_type(element_type)?,
-                    ))),
-                    CType::UInt64 => Some(CValue::UInt64(crate::kernel::canonical_form_of_load(
-                        crate::kernel::intern_c_memory(memory.clone()),
-                        source_field,
-                        LoadKind::of_type(element_type)?,
-                    ))),
-                    CType::Float32 => Some(CValue::Float32(crate::kernel::canonical_form_of_load(
-                        crate::kernel::intern_c_memory(memory.clone()),
-                        source_field,
-                        LoadKind::of_type(element_type)?,
-                    ))),
-                    CType::Float64 => Some(CValue::Float64(crate::kernel::canonical_form_of_load(
-                        crate::kernel::intern_c_memory(memory.clone()),
-                        source_field,
-                        LoadKind::of_type(element_type)?,
-                    ))),
-                    CType::Parameter(_) => crate::kernel::eval::symbolic_load_value_unrecorded(
-                        &memory,
-                        &source_field,
-                        element_type,
-                    ),
+                    ProgramType::UInt16 => {
+                        Some(ProgramValue::UInt16(crate::kernel::canonical_form_of_load(
+                            crate::kernel::intern_c_memory(memory.clone()),
+                            source_field,
+                            LoadKind::of_type(element_type)?,
+                        )))
+                    }
+                    ProgramType::UInt32 => {
+                        Some(ProgramValue::UInt32(crate::kernel::canonical_form_of_load(
+                            crate::kernel::intern_c_memory(memory.clone()),
+                            source_field,
+                            LoadKind::of_type(element_type)?,
+                        )))
+                    }
+                    ProgramType::Int64 => {
+                        Some(ProgramValue::Int64(crate::kernel::canonical_form_of_load(
+                            crate::kernel::intern_c_memory(memory.clone()),
+                            source_field,
+                            LoadKind::of_type(element_type)?,
+                        )))
+                    }
+                    ProgramType::UInt64 => {
+                        Some(ProgramValue::UInt64(crate::kernel::canonical_form_of_load(
+                            crate::kernel::intern_c_memory(memory.clone()),
+                            source_field,
+                            LoadKind::of_type(element_type)?,
+                        )))
+                    }
+                    ProgramType::Float32 => Some(ProgramValue::Float32(
+                        crate::kernel::canonical_form_of_load(
+                            crate::kernel::intern_c_memory(memory.clone()),
+                            source_field,
+                            LoadKind::of_type(element_type)?,
+                        ),
+                    )),
+                    ProgramType::Float64 => Some(ProgramValue::Float64(
+                        crate::kernel::canonical_form_of_load(
+                            crate::kernel::intern_c_memory(memory.clone()),
+                            source_field,
+                            LoadKind::of_type(element_type)?,
+                        ),
+                    )),
+                    ProgramType::Parameter(_) => {
+                        crate::kernel::eval::symbolic_load_value_unrecorded(
+                            &memory,
+                            &source_field,
+                            element_type,
+                        )
+                    }
                     _ => None,
                 }
             });
@@ -1616,8 +1660,8 @@ pub(super) fn copy_aggregate_fields(
 pub(super) fn copy_aggregate_union_member(
     memory: &CMemory,
     source_field: &Pointer,
-    element_type: CType,
-) -> Option<CValue> {
+    element_type: ProgramType,
+) -> Option<ProgramValue> {
     if let Some(value) = memory.known_union_value(source_field, element_type) {
         return Some(value);
     }
@@ -1652,14 +1696,14 @@ pub(super) fn copy_aggregate_union_member(
         LoadKind::of_type(element_type)?,
     );
     Some(match element_type {
-        CType::Int32 => CValue::Int32(load),
-        CType::UInt8 => CValue::UInt8(load),
-        CType::Int32Pointer
-        | CType::UInt8Pointer
-        | CType::Int32PointerPointer
-        | CType::UInt8PointerPointer
-        | CType::FunctionPointer(_) => {
-            let pointer = if matches!(element_type, CType::FunctionPointer(_)) {
+        ProgramType::Int32 => ProgramValue::Int32(load),
+        ProgramType::UInt8 => ProgramValue::UInt8(load),
+        ProgramType::Int32Pointer
+        | ProgramType::UInt8Pointer
+        | ProgramType::Int32PointerPointer
+        | ProgramType::UInt8PointerPointer
+        | ProgramType::FunctionPointer(_) => {
+            let pointer = if matches!(element_type, ProgramType::FunctionPointer(_)) {
                 match load {
                     MachineTerm::Variable(variable) => Pointer::symbolic_function(variable),
                     load => Pointer {
@@ -1677,7 +1721,7 @@ pub(super) fn copy_aggregate_union_member(
                     ),
                 }
             };
-            CValue::typed_pointer(pointer, element_type)
+            ProgramValue::typed_pointer(pointer, element_type)
         }
         _ => return None,
     })

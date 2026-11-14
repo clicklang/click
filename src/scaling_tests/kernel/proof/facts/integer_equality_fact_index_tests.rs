@@ -102,7 +102,7 @@ fn quantified_loadable_alpha_query_ignores_unrelated_snapshot_size() {
                 block: "quantified-viewable-work-0".into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::Int32(MachineTerm::Variable(Variable(209_000))),
+            ProgramValue::Int32(MachineTerm::Variable(Variable(209_000))),
         );
         let source = loadable_forall(
             &source_memory,
@@ -248,11 +248,11 @@ fn snapshot_blind_same_bucket_lookup_scales_without_deep_dedup() {
                 },
                 // Distinct snapshots without contradictory literal
                 // premises: each read may consistently equal zero.
-                CValue::Int32(MachineTerm::Variable(Variable(986_000 + value as u64))),
+                ProgramValue::Int32(MachineTerm::Variable(Variable(986_000 + value as u64))),
             );
             memories.push(crate::kernel::intern_c_memory(memory));
         }
-        let load = |memory: &crate::kernel::SharedCMemory| {
+        let load = |memory: &crate::kernel::SharedMemory| {
             MachineTerm::MemoryLoad(
                 memory.clone(),
                 Box::new(Pointer {
@@ -377,7 +377,7 @@ fn retained_call_atom_keys_own_their_observation_identities() {
             .map(|index| {
                 SharedPureApplication::intern(
                     "unrelated_call_key".into(),
-                    vec![PureFunctionArgument::Value(CValue::Int32(
+                    vec![PureFunctionArgument::Value(ProgramValue::Int32(
                         MachineTerm::Variable(Variable(998_800 + index)),
                     ))],
                 )
@@ -396,7 +396,7 @@ fn exact_call_lookup_retains_shared_argument_prefixes() {
     for depth in [16, 64, 256] {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::C(CType::Int32), Variable(998_900));
+        let mut root = KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(998_900));
         for _ in 0..depth {
             root = KernelTerm::machine_binary_shared(
                 format,
@@ -422,7 +422,9 @@ fn exact_call_lookup_retains_shared_argument_prefixes() {
         let fact = |term| {
             Proposition::ConditionIs(ConditionTerm::equal(term, MachineTerm::constant(0)), true)
         };
-        let source = fact(call(PureFunctionArgument::Value(CValue::Int32(inner))));
+        let source = fact(call(PureFunctionArgument::Value(ProgramValue::Int32(
+            inner,
+        ))));
         let requested = fact(call(PureFunctionArgument::SharedMachine(retained)));
         assert_ne!(source, requested);
         let facts = ProofFacts::from_ordered(&[source]);

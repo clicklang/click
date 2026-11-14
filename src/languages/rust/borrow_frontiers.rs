@@ -1189,15 +1189,15 @@ mod tests {
         let memory = CMemory::new()
             .with_block(pointer.block.clone(), if owned { 4 } else { 0 })
             .store(pointer.clone(), int32(4));
-        let state = CState::new()
+        let state = ExecutionState::new()
             .with_memory(memory)
             .with_local(
                 "parent",
-                CValue::typed_pointer(pointer.clone(), CType::Int32Pointer),
+                ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer),
             )
             .with_local(
                 "other",
-                CValue::typed_pointer(pointer.clone(), CType::Int32Pointer),
+                ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer),
             );
         let state = if owned {
             state.with_resource_context(ResourceContext::new().unchecked_with_fact(
@@ -1212,13 +1212,15 @@ mod tests {
             state
         };
         let body = functions[0].to_kernel_function().body().clone();
-        fn fragment(body: &CStatement, remove_declarations: bool) -> CStatement {
+        fn fragment(body: &ProgramStatement, remove_declarations: bool) -> ProgramStatement {
             match body {
-                CStatement::Seq(statements) => CStatement::Seq(statements.map(|statement| {
-                    std::sync::Arc::new(fragment(statement, remove_declarations))
-                })),
-                CStatement::Return(_) => c_skip(),
-                CStatement::Declare { .. } if remove_declarations => c_skip(),
+                ProgramStatement::Seq(statements) => {
+                    ProgramStatement::Seq(statements.map(|statement| {
+                        std::sync::Arc::new(fragment(statement, remove_declarations))
+                    }))
+                }
+                ProgramStatement::Return(_) => c_skip(),
+                ProgramStatement::Declare { .. } if remove_declarations => c_skip(),
                 other => other.clone(),
             }
         }

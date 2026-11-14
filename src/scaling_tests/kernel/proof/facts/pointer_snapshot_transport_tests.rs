@@ -8,15 +8,18 @@ fn full_pointer_fact_transport_checks_designations_and_the_whole_read() {
     };
     let before = intern_c_memory(CMemory::new().with_block(cell.block.clone(), 8));
     let after = intern_c_memory(before.memory().clone().with_block("other-local", 4));
-    let pointer = |memory: &SharedCMemory| {
-        CPointerValue::from_read(
+    let pointer = |memory: &SharedMemory| {
+        PointerValue::from_read(
             Pointer::loaded_value(memory, &cell),
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
             memory,
             &cell,
         )
     };
-    let rhs = CPointerValue::new(Pointer::symbolic(Variable(991_100)), CType::Int32Pointer);
+    let rhs = PointerValue::new(
+        Pointer::symbolic(Variable(991_100)),
+        ProgramType::Int32Pointer,
+    );
     let fact = |pointer| {
         Proposition::ConditionIs(
             ConditionTerm::PointerValueEqual(Box::new(pointer), Box::new(rhs.clone())),
@@ -31,12 +34,10 @@ fn full_pointer_fact_transport_checks_designations_and_the_whole_read() {
             .with_designation(origin.clone())
             .with_opaque_extent(Some(origin)),
     );
-    let overwritten = intern_c_memory(
-        after
-            .memory()
-            .clone()
-            .store(cell.clone().offset_by_bytes(4), CValue::UInt32(0u32.into())),
-    );
+    let overwritten = intern_c_memory(after.memory().clone().store(
+        cell.clone().offset_by_bytes(4),
+        ProgramValue::UInt32(0u32.into()),
+    ));
     let wrong_snapshot = fact(pointer(&overwritten));
     let mut samples = Vec::new();
     for size in [4u64, 16, 64, 256] {

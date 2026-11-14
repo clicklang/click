@@ -459,7 +459,7 @@ fn migrated_negative_loop_fixtures_reach_the_decrease_check() {
             "diagnostic exceeded report cap"
         );
         assert!(!error.message().contains("CMemory {"));
-        assert!(!error.message().contains("CState {"));
+        assert!(!error.message().contains("ExecutionState {"));
         if error.message().contains("goal:") {
             assert!(error.message().contains("recent premises"));
         }
@@ -1323,7 +1323,7 @@ fn frontier_loop_binding_replaces_scope_without_merging_declarations() {
     else {
         panic!("expected the loop template");
     };
-    let value = |n| ContractExpression::CFragment(CExpression::Value(int32(n)));
+    let value = |n| ContractExpression::CFragment(ProgramExpression::Value(int32(n)));
     let outer = template.with_scope(BTreeMap::from([("bound".to_string(), value(0))]));
     let inner = template.with_scope(BTreeMap::from([("bound".to_string(), value(1))]));
     let initial = function
@@ -2295,7 +2295,7 @@ fn conditional_loop_resources_parse_print_and_resolve_scope() {
     );
     let scoped = clause.with_scope(BTreeMap::from([(
         "bound".to_string(),
-        ContractExpression::CFragment(CExpression::Value(int32(4))),
+        ContractExpression::CFragment(ProgramExpression::Value(int32(4))),
     )]));
     let resolved = scoped.resolved().unwrap();
     assert_ne!(resolved.resources(), clause.resources());
@@ -2637,7 +2637,7 @@ fn a_loop_snapshot_is_one_entry_under_every_spelling() {
         region,
         kind: ProgramPointKind::Exit,
     };
-    let state = CState::new();
+    let state = ExecutionState::new();
     let mut snapshots = RecordedSnapshots::new();
     // Recorded before the proof labels the loop: the label adopts the entry.
     snapshots.insert(exit(CodeRegionRef::Loop(0)), state.clone());
@@ -2676,11 +2676,12 @@ fn recorded_snapshots_find_the_point_reading_a_memory() {
     let memory = |index: u32| {
         let pointer = Pointer::symbolic(Variable(97_400 + u64::from(index)));
         crate::kernel::intern_c_memory(
-            CMemory::new().store(pointer, CValue::Int32(MachineTerm::constant(index))),
+            CMemory::new().store(pointer, ProgramValue::Int32(MachineTerm::constant(index))),
         )
     };
-    let state =
-        |memory: &crate::kernel::SharedCMemory| CState::new().with_memory(memory.memory().clone());
+    let state = |memory: &crate::kernel::SharedMemory| {
+        ExecutionState::new().with_memory(memory.memory().clone())
+    };
     let mut snapshots = RecordedSnapshots::new();
     let memories = (0..8).map(memory).collect::<Vec<_>>();
     for (index, memory) in memories.iter().enumerate() {
@@ -2739,7 +2740,7 @@ fn indexed_structural_clauses_agree_with_the_clause_list_walks() {
             _ => panic!("expected loop templates"),
         })
         .collect::<Vec<_>>();
-    let value = |n| ContractExpression::CFragment(CExpression::Value(int32(n)));
+    let value = |n| ContractExpression::CFragment(ProgramExpression::Value(int32(n)));
     let scoped = templates[2].with_scope(BTreeMap::from([("bound".to_string(), value(0))]));
     let choices = [&templates[0], &templates[1], &templates[2], &scoped];
     // The fold `with_bound_frontier_loop_clauses` made over a `Vec`.

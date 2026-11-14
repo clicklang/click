@@ -14,7 +14,8 @@ fn token_discovery_follows_a_producer_defined_pointer_read() {
     facts
         .equality_graph
         .register_pointer_read_definition(&value, &memory, &field);
-    let wrap = |pointer| CPointerValue::from_read(pointer, CType::Int32Pointer, &memory, &field);
+    let wrap =
+        |pointer| PointerValue::from_read(pointer, ProgramType::Int32Pointer, &memory, &field);
     let held = CResourceFact::own_designated_allocation(wrap(read), &HeapExtent::int32(4));
     let required = CResourceFact::own_designated_allocation(wrap(value), &HeapExtent::int32(4));
     assert!(
@@ -41,8 +42,8 @@ fn class_candidates_follow_merges_and_removals_without_leaking_to_siblings() {
     resources.synchronize_memory_equalities(&facts);
     let extended = facts.clone().assume_proposition(Proposition::ConditionIs(
         ConditionTerm::pointer_value_equal(
-            CPointerValue::new(base, CType::Int32Pointer),
-            CPointerValue::new(alias, CType::Int32Pointer),
+            PointerValue::new(base, ProgramType::Int32Pointer),
+            PointerValue::new(alias, ProgramType::Int32Pointer),
         ),
         true,
     ));
@@ -79,7 +80,7 @@ fn definitions_registered_after_publication_select_existing_payloads() {
     };
     let value = Pointer::symbolic(Variable(976_200));
     let read = Pointer::loaded_value(&memory, &field);
-    let wrap = |p| CPointerValue::from_read(p, CType::Int32Pointer, &memory, &field);
+    let wrap = |p| PointerValue::from_read(p, ProgramType::Int32Pointer, &memory, &field);
     let held = CResourceFact::own_designated_allocation(wrap(read), &HeapExtent::int32(4));
     let required =
         CResourceFact::own_designated_allocation(wrap(value.clone()), &HeapExtent::int32(4));

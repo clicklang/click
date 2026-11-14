@@ -11,7 +11,10 @@ fn call(name: &str, arguments: Vec<PureFunctionArgument>) -> Pointer {
     }
 }
 fn argument(pointer: Pointer) -> PureFunctionArgument {
-    PureFunctionArgument::Value(CValue::typed_pointer(pointer, CType::Int32Pointer))
+    PureFunctionArgument::Value(ProgramValue::typed_pointer(
+        pointer,
+        ProgramType::Int32Pointer,
+    ))
 }
 
 #[test]
@@ -55,7 +58,7 @@ fn pure_pointer_arguments_respect_match_binders_and_avoid_capture() {
     let free = Variable(501);
     let variants: std::sync::Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
         name: "Node".into(),
-        fields: vec![AlgebraicValueType::C(CType::Int32Pointer)],
+        fields: vec![AlgebraicValueType::C(ProgramType::Int32Pointer)],
     }]
     .into();
     let algebraic_type = AlgebraicType {
@@ -79,9 +82,9 @@ fn pure_pointer_arguments_respect_match_binders_and_avoid_capture() {
         arms: vec![AlgebraicBitvectorMatchArm {
             binding_names: Default::default(),
             variant: "Node".into(),
-            bindings: vec![AlgebraicValue::C(CValue::typed_pointer(
+            bindings: vec![AlgebraicValue::C(ProgramValue::typed_pointer(
                 Pointer::symbolic(bound),
-                CType::Int32Pointer,
+                ProgramType::Int32Pointer,
             ))],
             body: MachineTerm::ClickFunctionApplication {
                 name: "observe".into(),
@@ -101,7 +104,7 @@ fn pure_pointer_arguments_respect_match_binders_and_avoid_capture() {
         panic!("lost match")
     };
     assert_eq!(rewrite.refusal(), None);
-    let AlgebraicValue::C(CValue::Pointer(renamed)) = &arms[0].bindings[0] else {
+    let AlgebraicValue::C(ProgramValue::Pointer(renamed)) = &arms[0].bindings[0] else {
         panic!("lost binder")
     };
     assert_ne!(renamed.pointer(), &Pointer::symbolic(bound));
@@ -132,7 +135,7 @@ fn pure_pointer_capture_cache_does_not_hide_a_free_occurrence_after_a_fold() {
     let item = Variable(610);
     let application = call(
         "select",
-        vec![PureFunctionArgument::Value(CValue::Int32(
+        vec![PureFunctionArgument::Value(ProgramValue::Int32(
             MachineTerm::Variable(item),
         ))],
     );
@@ -177,7 +180,7 @@ fn numeric_pointer_rewrites_preserve_origin_and_selected_extent() {
         block: "target".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let original = CPointerValue::new(source.clone(), CType::Int32Pointer).with_extent(Some(
+    let original = PointerValue::new(source.clone(), ProgramType::Int32Pointer).with_extent(Some(
         SubobjectExtent {
             start: source.clone(),
             width: 4u32.into(),
@@ -187,7 +190,8 @@ fn numeric_pointer_rewrites_preserve_origin_and_selected_extent() {
         TermRewrite::for_pointer_address_variable(Variable(420), &target),
         TermRewrite::for_pointer_exact(&source, &target),
     ] {
-        let CValue::Pointer(result) = rewrite.value(&CValue::Pointer(original.clone())) else {
+        let ProgramValue::Pointer(result) = rewrite.value(&ProgramValue::Pointer(original.clone()))
+        else {
             panic!("pointer rewrite changed the value's type")
         };
         assert_eq!(result.pointer(), &target);
@@ -197,7 +201,7 @@ fn numeric_pointer_rewrites_preserve_origin_and_selected_extent() {
         assert_eq!(result.extent().unwrap().start, target);
         assert_ne!(
             result,
-            CPointerValue::new(target.clone(), CType::Int32Pointer)
+            PointerValue::new(target.clone(), ProgramType::Int32Pointer)
         );
     }
 }
@@ -206,12 +210,17 @@ fn numeric_pointer_rewrites_preserve_origin_and_selected_extent() {
 fn full_pointer_rewrite_changes_read_storage_without_inventing_its_origin() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = intern_c_memory(CMemory::new());
-    let p = CPointerValue::new(Pointer::symbolic(Variable(421)), CType::Int32Pointer);
-    let q = CPointerValue::new(Pointer::symbolic(Variable(422)), CType::Int32Pointer);
+    let p = PointerValue::new(Pointer::symbolic(Variable(421)), ProgramType::Int32Pointer);
+    let q = PointerValue::new(Pointer::symbolic(Variable(422)), ProgramType::Int32Pointer);
     let other = Pointer::symbolic(Variable(423));
-    let read = CPointerValue::from_read(other.clone(), CType::Int32Pointer, &memory, p.pointer());
+    let read = PointerValue::from_read(
+        other.clone(),
+        ProgramType::Int32Pointer,
+        &memory,
+        p.pointer(),
+    );
     let mut rewrite = TermRewrite::for_pointer_value_exact(&p, &q);
-    let CValue::Pointer(changed) = rewrite.value(&CValue::Pointer(read.clone())) else {
+    let ProgramValue::Pointer(changed) = rewrite.value(&ProgramValue::Pointer(read.clone())) else {
         panic!("read changed type")
     };
     let expected_origin = Pointer::loaded_value(&memory, q.pointer());
@@ -221,15 +230,20 @@ fn full_pointer_rewrite_changes_read_storage_without_inventing_its_origin() {
     // The same address-only rewrite cannot substitute a read's full value.
     let mut numeric = TermRewrite::for_pointer_exact(p.pointer(), q.pointer());
     assert_eq!(
-        numeric.value(&CValue::Pointer(read.clone())),
-        CValue::Pointer(read)
+        numeric.value(&ProgramValue::Pointer(read.clone())),
+        ProgramValue::Pointer(read)
     );
     // Matching the pointee address does not match the read's storage cell.
-    let read = CPointerValue::from_read(p.pointer().clone(), CType::Int32Pointer, &memory, &other);
+    let read = PointerValue::from_read(
+        p.pointer().clone(),
+        ProgramType::Int32Pointer,
+        &memory,
+        &other,
+    );
     let mut rewrite = TermRewrite::for_pointer_value_exact(&p, &q);
     assert_eq!(
-        rewrite.value(&CValue::Pointer(read.clone())),
-        CValue::Pointer(read.with_address(q.pointer().clone())),
+        rewrite.value(&ProgramValue::Pointer(read.clone())),
+        ProgramValue::Pointer(read.with_address(q.pointer().clone())),
     );
 }
 
@@ -238,9 +252,9 @@ fn memory_relationship_rewrite_transports_only_a_complete_pointer_carrier() {
     let _session = crate::kernel::VerificationSession::enter();
     let snapshot = intern_c_memory(CMemory::new());
     let storage = Pointer::symbolic(Variable(424_100));
-    let source = CPointerValue::from_read(
+    let source = PointerValue::from_read(
         Pointer::symbolic(Variable(424_101)),
-        CType::Int32Pointer,
+        ProgramType::Int32Pointer,
         &snapshot,
         &storage,
     );
@@ -248,16 +262,16 @@ fn memory_relationship_rewrite_transports_only_a_complete_pointer_carrier() {
         block: PointerBlock::Heap(424_102),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let target = CPointerValue::new(target_base.clone(), CType::Int32Pointer).with_extent(Some(
-        SubobjectExtent {
+    let target = PointerValue::new(target_base.clone(), ProgramType::Int32Pointer).with_extent(
+        Some(SubobjectExtent {
             start: target_base,
             width: 4u32.into(),
-        },
-    ));
-    let relationship = |value: &CPointerValue| Proposition::CResourceContains {
+        }),
+    );
+    let relationship = |value: &PointerValue| Proposition::CResourceContains {
         parent: Box::new(CResource::Composite {
             name: "holder".into(),
-            arguments: vec![AlgebraicValue::C(CValue::Pointer(value.clone()))].into(),
+            arguments: vec![AlgebraicValue::C(ProgramValue::Pointer(value.clone()))].into(),
         }),
         child: Box::new(CResource::Memory(CMemoryRange::from_pointer_value(
             value,
@@ -289,24 +303,24 @@ fn a_full_pointer_rewrite_does_not_adopt_another_read_carrier_at_the_same_addres
     let _session = crate::kernel::VerificationSession::enter();
     let snapshot = intern_c_memory(CMemory::new());
     let raw = Pointer::symbolic(Variable(424_110));
-    let source = CPointerValue::from_read(
+    let source = PointerValue::from_read(
         raw.clone(),
-        CType::Int32Pointer,
+        ProgramType::Int32Pointer,
         &snapshot,
         &Pointer::symbolic(Variable(424_111)),
     );
-    let unrelated = CPointerValue::from_read(
+    let unrelated = PointerValue::from_read(
         raw,
-        CType::Int32Pointer,
+        ProgramType::Int32Pointer,
         &snapshot,
         &Pointer::symbolic(Variable(424_112)),
     );
-    let target = CPointerValue::new(
+    let target = PointerValue::new(
         Pointer {
             block: PointerBlock::Heap(424_113),
             offset: PointerOffsetTerm::Constant(0),
         },
-        CType::Int32Pointer,
+        ProgramType::Int32Pointer,
     );
     let input = Proposition::CResourceSeparate {
         left: Box::new(CResource::Memory(CMemoryRange::from_pointer_value(
@@ -337,12 +351,12 @@ fn a_full_pointer_rewrite_does_not_adopt_another_read_carrier_at_the_same_addres
 #[test]
 fn full_c_argument_pointer_rewrite_reaches_a_displaced_copy() {
     let parameter = |id| {
-        CPointerValue::new(
+        PointerValue::new(
             Pointer {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(id)), 1),
             },
-            CType::UInt8Pointer,
+            ProgramType::UInt8Pointer,
         )
     };
     let base = parameter(916_201);
@@ -352,7 +366,7 @@ fn full_c_argument_pointer_rewrite_reaches_a_displaced_copy() {
         .clone()
         .with_address(middle.pointer().offset_by_bytes(3));
     let mut rewrite = TermRewrite::for_pointer_value_exact(&middle, &replacement);
-    let CValue::Pointer(actual) = rewrite.value(&CValue::Pointer(displaced)) else {
+    let ProgramValue::Pointer(actual) = rewrite.value(&ProgramValue::Pointer(displaced)) else {
         panic!("pointer rewrite changed type")
     };
     let expected = base.pointer().offset_by_bytes(5);
@@ -365,7 +379,8 @@ fn full_c_argument_pointer_rewrite_reaches_a_displaced_copy() {
     assert_eq!(actual.opaque_extent(), base.opaque_extent());
 
     let mut numeric = TermRewrite::for_pointer_exact(middle.pointer(), replacement.pointer());
-    let CValue::Pointer(address_only) = numeric.value(&CValue::Pointer(middle.clone())) else {
+    let ProgramValue::Pointer(address_only) = numeric.value(&ProgramValue::Pointer(middle.clone()))
+    else {
         panic!("address rewrite changed type")
     };
     assert_eq!(address_only.designation(), middle.designation());
@@ -374,19 +389,22 @@ fn full_c_argument_pointer_rewrite_reaches_a_displaced_copy() {
 
 #[test]
 fn displaced_symbolic_pointer_rewrite_keeps_selected_bounds() {
-    let source = CPointerValue::new(Pointer::symbolic(Variable(916_211)), CType::UInt8Pointer);
+    let source = PointerValue::new(
+        Pointer::symbolic(Variable(916_211)),
+        ProgramType::UInt8Pointer,
+    );
     let target_address = Pointer::symbolic(Variable(916_212));
-    let target = CPointerValue::new(target_address.clone(), CType::UInt8Pointer).with_extent(Some(
-        SubobjectExtent {
+    let target = PointerValue::new(target_address.clone(), ProgramType::UInt8Pointer).with_extent(
+        Some(SubobjectExtent {
             start: target_address.clone(),
             width: 4u32.into(),
-        },
-    ));
+        }),
+    );
     let shifted = source
         .clone()
         .with_address(source.pointer().offset_by_bytes(1));
-    let CValue::Pointer(actual) =
-        TermRewrite::for_pointer_value_exact(&source, &target).value(&CValue::Pointer(shifted))
+    let ProgramValue::Pointer(actual) = TermRewrite::for_pointer_value_exact(&source, &target)
+        .value(&ProgramValue::Pointer(shifted))
     else {
         panic!("pointer type")
     };
@@ -402,8 +420,8 @@ fn displaced_symbolic_pointer_rewrite_keeps_selected_bounds() {
             width: 1u32.into(),
         }))
         .with_address(source.pointer().offset_by_bytes(1));
-    let CValue::Pointer(narrowed) =
-        TermRewrite::for_pointer_value_exact(&source, &target).value(&CValue::Pointer(selected))
+    let ProgramValue::Pointer(narrowed) = TermRewrite::for_pointer_value_exact(&source, &target)
+        .value(&ProgramValue::Pointer(selected))
     else {
         panic!("selected pointer type")
     };
@@ -415,9 +433,9 @@ fn displaced_symbolic_pointer_rewrite_keeps_selected_bounds() {
         })
     );
 
-    let CValue::Pointer(numeric) =
+    let ProgramValue::Pointer(numeric) =
         TermRewrite::for_pointer_exact(source.pointer(), target.pointer())
-            .value(&CValue::Pointer(source.clone()))
+            .value(&ProgramValue::Pointer(source.clone()))
     else {
         panic!("numeric pointer type")
     };
@@ -429,12 +447,12 @@ fn displaced_symbolic_pointer_rewrite_keeps_selected_bounds() {
 #[test]
 fn displaced_c_argument_rewrite_inherits_known_replacement_bounds() {
     let parameter = |id| {
-        CPointerValue::new(
+        PointerValue::new(
             Pointer {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(id)), 1),
             },
-            CType::UInt8Pointer,
+            ProgramType::UInt8Pointer,
         )
     };
     let source = parameter(916_241);
@@ -446,8 +464,8 @@ fn displaced_c_argument_rewrite_inherits_known_replacement_bounds() {
     let input = source
         .clone()
         .with_address(source.pointer().offset_by_bytes(1));
-    let CValue::Pointer(actual) =
-        TermRewrite::for_pointer_value_exact(&source, &target).value(&CValue::Pointer(input))
+    let ProgramValue::Pointer(actual) =
+        TermRewrite::for_pointer_value_exact(&source, &target).value(&ProgramValue::Pointer(input))
     else {
         panic!("pointer type")
     };
@@ -458,21 +476,28 @@ fn displaced_c_argument_rewrite_inherits_known_replacement_bounds() {
 
 #[test]
 fn displaced_original_pointer_keeps_its_bounds_beside_a_view_equality() {
-    let original = CPointerValue::new(Pointer::symbolic(Variable(916_251)), CType::UInt8Pointer);
-    let other = CPointerValue::new(Pointer::symbolic(Variable(916_252)), CType::UInt8Pointer);
+    let original = PointerValue::new(
+        Pointer::symbolic(Variable(916_251)),
+        ProgramType::UInt8Pointer,
+    );
+    let other = PointerValue::new(
+        Pointer::symbolic(Variable(916_252)),
+        ProgramType::UInt8Pointer,
+    );
     let source_view = original
         .clone()
-        .with_type(CType::VoidPointer)
+        .with_type(ProgramType::VoidPointer)
         .with_opaque_extent(None);
     let target_view = other
         .clone()
-        .with_type(CType::VoidPointer)
+        .with_type(ProgramType::VoidPointer)
         .with_opaque_extent(None);
     let input = original
         .clone()
         .with_address(original.pointer().offset_by_bytes(3));
-    let CValue::Pointer(actual) = TermRewrite::for_pointer_value_exact(&source_view, &target_view)
-        .value(&CValue::Pointer(input))
+    let ProgramValue::Pointer(actual) =
+        TermRewrite::for_pointer_value_exact(&source_view, &target_view)
+            .value(&ProgramValue::Pointer(input))
     else {
         panic!("pointer type")
     };
@@ -485,23 +510,26 @@ fn displaced_original_pointer_keeps_its_bounds_beside_a_view_equality() {
 #[test]
 fn displaced_copy_keeps_a_domain_not_named_by_the_full_equality() {
     let numeric = Pointer::symbolic(Variable(916_261));
-    let original = CPointerValue::new(numeric.clone(), CType::UInt8Pointer).with_extent(Some(
+    let original = PointerValue::new(numeric.clone(), ProgramType::UInt8Pointer).with_extent(Some(
         SubobjectExtent {
             start: numeric.clone(),
             width: 4u32.into(),
         },
     ));
     let memory = intern_c_memory(CMemory::new());
-    let source = CPointerValue::from_read(
+    let source = PointerValue::from_read(
         numeric.clone(),
-        CType::UInt8Pointer,
+        ProgramType::UInt8Pointer,
         &memory,
         &Pointer::symbolic(Variable(916_263)),
     );
-    let target = CPointerValue::new(Pointer::symbolic(Variable(916_262)), CType::UInt8Pointer);
+    let target = PointerValue::new(
+        Pointer::symbolic(Variable(916_262)),
+        ProgramType::UInt8Pointer,
+    );
     let input = original.clone().with_address(numeric.offset_by_bytes(1));
-    let CValue::Pointer(actual) =
-        TermRewrite::for_pointer_value_exact(&source, &target).value(&CValue::Pointer(input))
+    let ProgramValue::Pointer(actual) =
+        TermRewrite::for_pointer_value_exact(&source, &target).value(&ProgramValue::Pointer(input))
     else {
         panic!("pointer type")
     };

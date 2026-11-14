@@ -5,10 +5,10 @@ use super::*;
 pub(super) fn compatible_resource_and_effect_interfaces(
     contract: &CFunctionContractInterface,
     function: &CFunctionContractInterface,
-    contract_entry: &CState,
-    function_entry: &CState,
-    contract_post: &CState,
-    function_post: &CState,
+    contract_entry: &ExecutionState,
+    function_entry: &ExecutionState,
+    contract_post: &ExecutionState,
+    function_post: &ExecutionState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<bool> {
@@ -47,9 +47,9 @@ pub(super) fn compatible_resource_and_effect_interfaces(
 pub(super) fn checked_access_mode_refinement_adapter(
     contract: &CFunctionContractInterface,
     function: &CFunctionContractInterface,
-    contract_entry: &CState,
-    function_entry: &CState,
-    function_post: &CState,
+    contract_entry: &ExecutionState,
+    function_entry: &ExecutionState,
+    function_post: &ExecutionState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Option<bool>> {
@@ -179,10 +179,10 @@ pub(super) fn checked_access_mode_refinement_adapter(
 pub(super) fn resource_transition_is_compatible(
     contract: &CFunctionContractInterface,
     function: &CFunctionContractInterface,
-    contract_entry: &CState,
-    function_entry: &CState,
-    contract_post: &CState,
-    function_post: &CState,
+    contract_entry: &ExecutionState,
+    function_entry: &ExecutionState,
+    contract_post: &ExecutionState,
+    function_post: &ExecutionState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<bool> {
@@ -214,10 +214,10 @@ pub(super) fn resource_transition_is_compatible(
 pub(super) fn exact_resource_interfaces_match(
     contract: &CFunctionContractInterface,
     function: &CFunctionContractInterface,
-    contract_entry: &CState,
-    function_entry: &CState,
-    contract_post: &CState,
-    function_post: &CState,
+    contract_entry: &ExecutionState,
+    function_entry: &ExecutionState,
+    contract_post: &ExecutionState,
+    function_post: &ExecutionState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<bool> {
@@ -326,7 +326,7 @@ pub(super) fn resource_spec_supports_framed_refinement(resource: &CResourceSpec)
 }
 
 pub(super) fn evaluate_refinement_resource_context(
-    state: &CState,
+    state: &ExecutionState,
     resources: &[CResourceSpec],
     definitions: &[CCompositeResourceDefinition],
     assumptions: &PureFactContext,
@@ -349,10 +349,10 @@ pub(super) fn evaluate_refinement_resource_context(
 pub(super) fn framed_resource_transition_refines(
     contract: &CFunctionContractInterface,
     function: &CFunctionContractInterface,
-    contract_entry: &CState,
-    function_entry: &CState,
-    contract_post: &CState,
-    function_post: &CState,
+    contract_entry: &ExecutionState,
+    function_entry: &ExecutionState,
+    contract_post: &ExecutionState,
+    function_post: &ExecutionState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<bool> {
@@ -466,8 +466,8 @@ pub(super) fn framed_resource_transition_refines(
 pub(super) fn mutable_footprint_is_compatible_for_interfaces(
     contract: &CFunctionContractInterface,
     function: &CFunctionContractInterface,
-    contract_entry: &CState,
-    function_entry: &CState,
+    contract_entry: &ExecutionState,
+    function_entry: &ExecutionState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<bool> {
@@ -552,8 +552,8 @@ pub(super) fn mutable_footprint_is_compatible_for_interfaces(
 pub(super) fn explicit_refinement_effects_are_compatible(
     contract: &CFunctionContractInterface,
     function: &CFunctionContractInterface,
-    contract_entry: &CState,
-    function_entry: &CState,
+    contract_entry: &ExecutionState,
+    function_entry: &ExecutionState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<bool> {
@@ -641,7 +641,7 @@ pub(super) fn explicit_refinement_effects_are_compatible(
 
 pub(super) fn project_refinement_effects(
     interface: &CFunctionContractInterface,
-    entry: &CState,
+    entry: &ExecutionState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<CFunctionMemoryEffectProjection, String>> {
@@ -712,10 +712,10 @@ pub(super) fn project_refinement_effects(
 
 #[cfg(test)]
 pub(super) fn mutable_footprint_is_compatible(
-    contract: &CFunction,
-    function: &CFunction,
-    contract_entry: &CState,
-    function_entry: &CState,
+    contract: &ProgramFunction,
+    function: &ProgramFunction,
+    contract_entry: &ExecutionState,
+    function_entry: &ExecutionState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<bool> {
@@ -731,7 +731,7 @@ pub(super) fn mutable_footprint_is_compatible(
 
 pub(super) fn lower_refinement_mutable_guards_for_interface(
     interface: &CFunctionContractInterface,
-    entry: &CState,
+    entry: &ExecutionState,
     assumptions: &mut PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Option<Vec<Option<Proposition>>>> {

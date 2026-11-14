@@ -16,7 +16,7 @@ fn stored_pointer_block_queries_scale_with_new_read_definitions() {
         for index in 0..unrelated {
             memory = memory.store(
                 Pointer::symbolic(Variable(990_000 + index)),
-                CValue::Int32(0u32.into()),
+                ProgramValue::Int32(0u32.into()),
             );
         }
         let mut pointer = target;
@@ -24,7 +24,7 @@ fn stored_pointer_block_queries_scale_with_new_read_definitions() {
         for _ in 0..steps {
             memory = memory.clone().store(
                 slot.clone(),
-                CValue::typed_pointer(pointer, CType::Int32Pointer),
+                ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer),
             );
             pointer = Pointer::loaded_value(&intern_c_memory_ref(&memory), &slot);
             reads.push(pointer.clone());
@@ -58,7 +58,7 @@ fn structural_read_comparison_forms_scale_with_selected_observations() {
         };
         let mut memory = CMemory::new();
         for index in 0..selected + unrelated {
-            memory = memory.store(address(index), CValue::Int32(37u32.into()));
+            memory = memory.store(address(index), ProgramValue::Int32(37u32.into()));
         }
         let memory = intern_c_memory(memory);
         let goals: Vec<_> = (0..selected)
@@ -119,7 +119,10 @@ fn algebraic_read_comparison_forms_scale_with_selected_observations() {
         };
         let mut memory = CMemory::new();
         for index in 0..selected + unrelated {
-            memory = memory.store(address(index), CValue::Parameter(Box::new(stored(index))));
+            memory = memory.store(
+                address(index),
+                ProgramValue::Parameter(Box::new(stored(index))),
+            );
         }
         let memory = intern_c_memory(memory);
         let goals: Vec<_> = (0..selected)

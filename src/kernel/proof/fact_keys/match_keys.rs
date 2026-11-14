@@ -159,7 +159,7 @@ pub(crate) fn retained_alpha_equivalent(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{AlgebraicBitvectorMatchArm, AlgebraicValue, CValue};
+    use crate::kernel::{AlgebraicBitvectorMatchArm, AlgebraicValue, ProgramValue};
 
     fn selected_match(bound: u64, count: usize) -> MachineTerm {
         MachineTerm::AlgebraicMatch {
@@ -170,9 +170,9 @@ mod tests {
             arms: (0..count)
                 .map(|index| AlgebraicBitvectorMatchArm {
                     variant: format!("Arm{index}"),
-                    bindings: vec![AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(
-                        Variable(bound),
-                    )))],
+                    bindings: vec![AlgebraicValue::C(ProgramValue::Int32(
+                        MachineTerm::Variable(Variable(bound)),
+                    ))],
                     body: MachineTerm::Variable(Variable(bound)),
                     binding_names: Default::default(),
                 })

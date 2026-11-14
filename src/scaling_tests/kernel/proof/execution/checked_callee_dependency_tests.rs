@@ -10,9 +10,9 @@ use super::*;
 fn checked_callee_summary_reuse_scales_with_input_not_product() {
     let mut previous = None;
     for size in [16, 64, 256, 1024] {
-        let mut body = CStatement::Skip;
+        let mut body = ProgramStatement::Skip;
         for index in 0..size {
-            body = CStatement::seq(
+            body = ProgramStatement::seq(
                 Arc::new(body),
                 Arc::new(crate::kernel::c_call(format!("callee_{index}"), vec![])),
             );
@@ -21,9 +21,9 @@ fn checked_callee_summary_reuse_scales_with_input_not_product() {
         let events = (0..size)
             .map(|_| {
                 CheckedExecutionEvent::Statement(Theorem::new(Proposition::CStatementVerifies {
-                    state: Box::new(CState::new()),
+                    state: Box::new(ExecutionState::new()),
                     statement: Box::new(summary.clone()),
-                    outcome: CStatementOutcome::Normal(Box::new(CState::new())),
+                    outcome: CStatementOutcome::Normal(Box::new(ExecutionState::new())),
                 }))
             })
             .collect::<Vec<_>>();

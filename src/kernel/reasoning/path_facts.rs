@@ -274,7 +274,7 @@ pub(in crate::kernel) fn disprove_builtin_prop(proposition: &Proposition) -> boo
         Proposition::Equal(Term::Sequence(left), Term::Sequence(right)) => {
             sequence_terms_definitely_distinct(left, right)
         }
-        Proposition::Equal(Term::CValue(left), Term::CValue(right)) => {
+        Proposition::Equal(Term::ProgramValue(left), Term::ProgramValue(right)) => {
             c_values_definitely_distinct(left, right)
         }
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => {
@@ -390,7 +390,7 @@ fn sequence_terms_definitely_distinct(left: &SequenceTerm, right: &SequenceTerm)
     }
 }
 
-fn c_values_definitely_distinct(left: &CValue, right: &CValue) -> bool {
+fn c_values_definitely_distinct(left: &ProgramValue, right: &ProgramValue) -> bool {
     fn constant(bits: &MachineTerm) -> Option<u64> {
         match bits {
             bits32_constant!(value) => Some(u64::from(constant_u32(*value))),
@@ -401,16 +401,16 @@ fn c_values_definitely_distinct(left: &CValue, right: &CValue) -> bool {
     }
 
     match (left, right) {
-        (CValue::Int8(left), CValue::Int8(right)) => {
+        (ProgramValue::Int8(left), ProgramValue::Int8(right)) => {
             matches!((constant(left), constant(right)), (Some(left), Some(right)) if left != right)
         }
-        (CValue::Int16(left), CValue::Int16(right))
-        | (CValue::Int32(left), CValue::Int32(right))
-        | (CValue::UInt8(left), CValue::UInt8(right))
-        | (CValue::UInt16(left), CValue::UInt16(right))
-        | (CValue::UInt32(left), CValue::UInt32(right))
-        | (CValue::Int64(left), CValue::Int64(right))
-        | (CValue::UInt64(left), CValue::UInt64(right)) => {
+        (ProgramValue::Int16(left), ProgramValue::Int16(right))
+        | (ProgramValue::Int32(left), ProgramValue::Int32(right))
+        | (ProgramValue::UInt8(left), ProgramValue::UInt8(right))
+        | (ProgramValue::UInt16(left), ProgramValue::UInt16(right))
+        | (ProgramValue::UInt32(left), ProgramValue::UInt32(right))
+        | (ProgramValue::Int64(left), ProgramValue::Int64(right))
+        | (ProgramValue::UInt64(left), ProgramValue::UInt64(right)) => {
             matches!((constant(left), constant(right)), (Some(left), Some(right)) if left != right)
         }
         _ => false,
@@ -2320,7 +2320,7 @@ mod sequence_equality_tests {
 
     fn singleton(value: u32) -> SequenceTerm {
         SequenceTerm {
-            element_type: Some(CType::Int32),
+            element_type: Some(ProgramType::Int32),
             node: std::sync::Arc::new(SequenceTermNode::Literal(
                 vec![crate::kernel::api::int32(value)].into(),
             )),
@@ -2329,7 +2329,7 @@ mod sequence_equality_tests {
 
     fn concatenate(left: SequenceTerm, right: SequenceTerm) -> SequenceTerm {
         SequenceTerm {
-            element_type: Some(CType::Int32),
+            element_type: Some(ProgramType::Int32),
             node: std::sync::Arc::new(SequenceTermNode::Concat(left, right)),
         }
     }

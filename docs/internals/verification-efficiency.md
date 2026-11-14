@@ -400,7 +400,7 @@ The complexity contract implies several design constraints:
   logarithmic in the shared structure. Memory snapshots are persistent
   B-trees with cached content hashes ([Memory derivation DAG](memory-dag.md));
   a fact context's stated propositions are a persistent ordered set; a kernel
-  statement sequence is a persistent indexed `CStatementSequence` that stands
+  statement sequence is a persistent indexed `ProgramStatementSequence` that stands
   for exactly the `Seq(first, rest)` pair tree it replaced; a resource
   context's facts are a hash-consed canonical multiset (`CanonicalFactSet`),
   so equal contexts share one root and compare by pointer.
@@ -740,7 +740,7 @@ A `loop` tactic at the k-th of N sequential loops pays for its own loop:
 - Structural clauses are a persistent `StructuralClauses` indexed by loop and
   label, so binding a clause and finding a loop's clause cost the clause.
 - A lowered loop is put in place by following its path from the body's root
-  (`KernelLoopPaths`) through `CStatementSequence`, logarithmic in the block
+  (`KernelLoopPaths`) through `ProgramStatementSequence`, logarithmic in the block
   (`putting_a_lowered_loop_in_place_reads_its_path_not_the_loops_before_it`).
 
 `sequential_loops_build_the_same_context_entries_each` requires the same

@@ -188,8 +188,8 @@ fn resource_object_provenance_does_not_scan_same_raw_block() {
         resources = resources.unchecked_with_fact(CResourceFact::view_memory(
             CMemoryRange::new_with_element_width(target.clone(), 0u32.into(), 4u32.into(), 1),
         ));
-        let state = CState::new()
-            .with_local("pointer", CValue::pointer(target.clone()))
+        let state = ExecutionState::new()
+            .with_local("pointer", ProgramValue::pointer(target.clone()))
             .with_resource_context(resources);
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
             let mut budget = ExecutionBudget::for_c_expression(&expression);
@@ -214,10 +214,10 @@ fn stored_pointer_bounds_ignore_unrelated_numeric_classes() {
         let _session = crate::kernel::VerificationSession::enter();
         let field = Pointer::symbolic(Variable(96_311));
         let stored = subobject_pointer(0, 0, 4);
-        let memory = CMemory::new().store(field.clone(), CValue::Pointer(stored.clone()));
-        let read = CPointerValue::from_read(
+        let memory = CMemory::new().store(field.clone(), ProgramValue::Pointer(stored.clone()));
+        let read = PointerValue::from_read(
             stored.pointer().clone(),
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
             &crate::kernel::intern_c_memory_ref(&memory),
             &field,
         );
@@ -241,8 +241,8 @@ fn stored_pointer_bounds_ignore_unrelated_numeric_classes() {
 
 #[test]
 fn narrow_value_range_construction_ignores_unrelated_order_facts() {
-    let value = CValue::UInt8(MachineTerm::Variable(Variable(986_000)));
-    let state = CState::new().with_local("byte", value);
+    let value = ProgramValue::UInt8(MachineTerm::Variable(Variable(986_000)));
+    let state = ExecutionState::new().with_local("byte", value);
     let expression = c_variable("byte");
     for size in [4u64, 16, 64, 256] {
         let mut assumptions = PureFactContext::new();
@@ -294,7 +294,7 @@ fn rust_bool_values_do_not_split_paths() {
     let mut previous = None;
     for size in [4usize, 8, 16, 32] {
         let mut state =
-            CState::new().with_local("limit", int32(MachineTerm::Variable(Variable(50))));
+            ExecutionState::new().with_local("limit", int32(MachineTerm::Variable(Variable(50))));
         let mut statement = c_skip();
         for index in 0..size {
             state = state
@@ -302,7 +302,7 @@ fn rust_bool_values_do_not_split_paths() {
                     format!("a_{index}"),
                     int32(MachineTerm::Variable(Variable(100 + index as u64))),
                 )
-                .with_local(format!("c_{index}"), CValue::bool_constant(false));
+                .with_local(format!("c_{index}"), ProgramValue::bool_constant(false));
             statement = c_seq(
                 statement,
                 c_assign(
@@ -329,7 +329,7 @@ fn rust_bool_values_do_not_split_paths() {
             panic!("{size}: {:?}", paths[0].outcome);
         };
         let local_native_output_324 = state.locals.get_native("c_0");
-        let Some(CValue::Bool(word)) = local_native_output_324.as_deref() else {
+        let Some(ProgramValue::Bool(word)) = local_native_output_324.as_deref() else {
             panic!("{size}: `c_0` is a `Bool`");
         };
         assert!(word.bool_cast_operand().is_some(), "{size}: {word:?}");
@@ -361,8 +361,8 @@ fn unsigned_division_domain_generation_ignores_ambient_facts() {
         for _ in 0..3 {
             let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
                 crate::kernel::eval::apply_c_divide(
-                    CValue::UInt32(MachineTerm::Variable(Variable(992_001))),
-                    CValue::UInt32(MachineTerm::Variable(Variable(992_002))),
+                    ProgramValue::UInt32(MachineTerm::Variable(Variable(992_001))),
+                    ProgramValue::UInt32(MachineTerm::Variable(Variable(992_002))),
                     vec![].into(),
                     vec![],
                     &assumptions,

@@ -247,11 +247,11 @@ fn automatic_scalar_ownership_work_is_independent_of_unrelated_storage() {
                 CMemoryRange::new_with_element_width(pointer, 0.into(), 4.into(), 1),
             ));
         }
-        let state = CState::new()
+        let state = ExecutionState::new()
             .with_memory(memory)
             .with_resource_context(resources);
         let statement = c_seq(
-            c_declare("word", CType::UInt32),
+            c_declare("word", ProgramType::UInt32),
             c_seq(
                 c_assign("word", c_uint32_literal(7)),
                 c_return(c_variable("word")),
@@ -268,7 +268,7 @@ fn automatic_scalar_ownership_work_is_independent_of_unrelated_storage() {
             .unwrap()
         });
         assert!(
-            matches!(&paths[0].outcome, CStatementOutcome::Return { value, .. } if *value.native() == CValue::UInt32(MachineTerm::uint32_constant(7)))
+            matches!(&paths[0].outcome, CStatementOutcome::Return { value, .. } if *value.native() == ProgramValue::UInt32(MachineTerm::uint32_constant(7)))
         );
         measurements.push(work);
     }

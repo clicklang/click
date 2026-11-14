@@ -1222,7 +1222,7 @@ pub fn verify_project_functions(
         for name in &functions {
             if !file.function_is_selected(name)
                 && let Some(owner) = file
-                    .declaration_owner(&DeclarationIdentity::CFunction(name.clone()))
+                    .declaration_owner(&DeclarationIdentity::ProgramFunction(name.clone()))
                     .or_else(|| file.declaration_owner(&DeclarationIdentity::Tactic(name.clone())))
             {
                 return Err(ClickError::new(format!(
@@ -2720,9 +2720,9 @@ fn verify_c0_sources_in_context(
             proof_bindings: Vec::new(),
             name: None,
             ensure: Ensure::Proposition(ClickProposition::Comparison {
-                left: ContractExpression::CFragment(CExpression::Value(int32(0))),
+                left: ContractExpression::CFragment(ProgramExpression::Value(int32(0))),
                 operator: ComparisonOperator::Equal,
-                right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+                right: ContractExpression::CFragment(ProgramExpression::Value(int32(0))),
             }),
             proof: SourceProof::Tactic(SmartTactic::ImplicitTail),
             borrowed: false,
@@ -3012,7 +3012,7 @@ fn verify_c0_sources_in_context(
                 .parameters()
                 .iter()
                 .position(|parameter| parameter.name() == name);
-            let Some(CExpression::Value(CValue::Pointer(base))) =
+            let Some(ProgramExpression::Value(ProgramValue::Pointer(base))) =
                 position.and_then(|index| certification_arguments.get(index))
             else {
                 continue;
@@ -4652,7 +4652,7 @@ fn describe_unauthorized_entry_premise(
     entry_resources: &[CResourceFact],
     context_facts: &[Proposition],
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
 ) -> String {
     use crate::surface::diagnostics::{describe_click_proposition, describe_pure_fact_spelled};
     use crate::surface::proof_diagnostics::render::render_resource_facts_diagnostic;
@@ -4791,7 +4791,7 @@ pub(in crate::surface) fn termination_measure_name(
 ) -> Result<String, ClickError> {
     match expression {
         ContractExpression::Binding(name)
-        | ContractExpression::CFragment(CExpression::Variable(name))
+        | ContractExpression::CFragment(ProgramExpression::Variable(name))
         | ContractExpression::CBinding(name) => Ok(name.clone()),
         _ => Err(ClickError::new(format!(
             "{context} must name one int32 C variable; compound ranking expressions are not yet supported"
@@ -4815,7 +4815,7 @@ pub(in crate::surface) fn termination_measure_keys(
         .iter()
         .map(
             |expression| match resource_argument_to_c_expression(expression) {
-                Ok(expression) => crate::kernel::CRankingMeasureKey::CExpression(expression),
+                Ok(expression) => crate::kernel::CRankingMeasureKey::ProgramExpression(expression),
                 Err(_) => {
                     crate::kernel::CRankingMeasureKey::Pure(termination_measure_source(expression))
                 }
@@ -4844,7 +4844,7 @@ pub(in crate::surface) fn termination_measure_source(expression: &ContractExpres
         | ContractExpression::CBinding(name)
         | ContractExpression::QualifiedC { name, .. } => name.clone(),
         ContractExpression::CFragment(expression) => crate::kernel::c_ranking_measure_identity(
-            &crate::kernel::CRankingComponent::CExpression(expression.clone()),
+            &crate::kernel::CRankingComponent::ProgramExpression(expression.clone()),
         ),
         ContractExpression::Field { base, field, .. } => {
             format!("{}.{field}", termination_measure_source(base))
@@ -4914,7 +4914,7 @@ fn termination_measure_binder_name(measure: &TerminationMeasure) -> Option<&str>
     match component {
         ContractExpression::Binding(name)
         | ContractExpression::CBinding(name)
-        | ContractExpression::CFragment(CExpression::Variable(name)) => Some(name),
+        | ContractExpression::CFragment(ProgramExpression::Variable(name)) => Some(name),
         _ => None,
     }
 }
@@ -5972,7 +5972,7 @@ pub(in crate::surface) fn build_function_environment(
         let argument_values = arguments
             .iter()
             .map(|argument| match argument {
-                CExpression::Value(value) => Some(value.clone()),
+                ProgramExpression::Value(value) => Some(value.clone()),
                 _ => None,
             })
             .collect::<Option<Vec<_>>>()
@@ -6395,7 +6395,7 @@ fn closure_instance_names(
 /// the value is answered by contract-to-contract refinement.
 fn with_closure_instance(
     environment: CExecutionEnvironment,
-    closure: &CFunction,
+    closure: &ProgramFunction,
     captures: usize,
 ) -> Result<CExecutionEnvironment, ClickError> {
     let contract = CFunctionContract::new(closure.name(), closure.clone())
@@ -6407,19 +6407,21 @@ fn with_closure_instance(
             ))
         })?;
     let parameters = contract.interface().value_parameters().to_vec();
-    let mut arguments = vec![SpecPredicateArgument::Value(SpecExpression::CExpression(
-        crate::kernel::c_variable(crate::kernel::C_CONTRACT_RESULT_NAME),
-    ))];
+    let mut arguments = vec![SpecPredicateArgument::Value(
+        SpecExpression::ProgramExpression(crate::kernel::c_variable(
+            crate::kernel::C_CONTRACT_RESULT_NAME,
+        )),
+    )];
     arguments.extend(parameters.iter().map(|parameter| {
-        SpecPredicateArgument::Value(SpecExpression::CExpression(crate::kernel::c_variable(
-            parameter.name(),
-        )))
+        SpecPredicateArgument::Value(SpecExpression::ProgramExpression(
+            crate::kernel::c_variable(parameter.name()),
+        ))
     }));
     let instance = crate::kernel::c_function(
         contract.function_pointer_type(),
         crate::languages::rust::names::closure_instance_name(closure.name()),
         parameters,
-        CStatement::Skip,
+        ProgramStatement::Skip,
     )
     .with_contract(
         vec![],
@@ -6554,7 +6556,7 @@ pub(in crate::surface) fn function_resource_summary(
         };
         let result_binding = BTreeMap::from([(
             "result".to_string(),
-            ContractExpression::CFragment(CExpression::Variable(
+            ContractExpression::CFragment(ProgramExpression::Variable(
                 crate::kernel::C_CONTRACT_RESULT_NAME.to_string(),
             )),
         )]);
@@ -6589,7 +6591,7 @@ pub(in crate::surface) fn function_resource_summary(
                     ParameterBinding::new(parsed_function.parameters(), &[]),
                     guard_entry_state.get_or_init(|| {
                         crate::kernel::initialize_c_function_globals(
-                            &CState::new(),
+                            &ExecutionState::new(),
                             &parsed_function.to_kernel_function(),
                         )
                     }),
@@ -6647,7 +6649,7 @@ pub(in crate::surface) fn function_resource_constructors(
         .map(|resource| {
             let result_binding = BTreeMap::from([(
                 "result".to_string(),
-                ContractExpression::CFragment(CExpression::Variable(
+                ContractExpression::CFragment(ProgramExpression::Variable(
                     crate::kernel::C_CONTRACT_RESULT_NAME.to_string(),
                 )),
             )]);
@@ -6762,7 +6764,7 @@ pub(in crate::surface) fn composite_resource_definitions(
             .parameters()
             .iter()
             .map(|parameter| {
-                crate::kernel::CParameter::new(
+                crate::kernel::ProgramParameter::new(
                     parameter.name(),
                     parameter.c_type().to_kernel_type(),
                 )
@@ -6786,7 +6788,10 @@ pub(in crate::surface) fn composite_resource_definitions(
             .witnesses()
             .iter()
             .map(|witness| {
-                crate::kernel::CParameter::new(witness.name(), witness.c_type().to_kernel_type())
+                crate::kernel::ProgramParameter::new(
+                    witness.name(),
+                    witness.c_type().to_kernel_type(),
+                )
             })
             .collect();
         let facts_read_counts = body.facts().iter().any(proposition_contains_resource_count);
@@ -7006,7 +7011,7 @@ pub(in crate::surface) fn append_entry_resource_specs(
 pub(in crate::surface) fn append_entry_resource_specs_with_pointer_types(
     resource: &ResourceClause,
     parameters: &[syntax::C0Parameter],
-    pointer_element_types: &BTreeMap<String, crate::kernel::CType>,
+    pointer_element_types: &BTreeMap<String, crate::kernel::ProgramType>,
     specs: &mut Vec<CResourceSpec>,
 ) -> Result<(), ClickError> {
     specs.extend(resource_clause_to_resource_specs_with_metadata(
@@ -7023,10 +7028,10 @@ pub(in crate::surface) fn append_entry_resource_specs_with_pointer_types(
 fn resource_clause_to_resource_specs_with_metadata(
     resource: &ResourceClause,
     parameters: &[syntax::C0Parameter],
-    result_type: Option<crate::kernel::CType>,
+    result_type: Option<crate::kernel::ProgramType>,
     role: crate::kernel::CResourceTransferRole,
     snapshot: crate::kernel::CResourceSnapshot,
-    pointer_element_types: Option<&BTreeMap<String, crate::kernel::CType>>,
+    pointer_element_types: Option<&BTreeMap<String, crate::kernel::ProgramType>>,
 ) -> Result<Vec<CResourceSpec>, ClickError> {
     if let ResourceClause::MemoryAggregate { access, segments } = resource {
         return segments
@@ -7077,7 +7082,7 @@ fn resource_clause_to_resource_specs_with_metadata(
 fn resource_clause_to_resource_spec_with_parameters(
     resource: &ResourceClause,
     parameters: &[syntax::C0Parameter],
-    result_type: Option<crate::kernel::CType>,
+    result_type: Option<crate::kernel::ProgramType>,
 ) -> Result<CResourceSpec, ClickError> {
     resource_clause_to_resource_spec_with_metadata(
         resource,
@@ -7092,7 +7097,7 @@ fn resource_clause_to_resource_spec_with_parameters(
 fn resource_clause_to_resource_spec_for_body(
     resource: &ResourceClause,
     parameters: &[syntax::C0Parameter],
-    result_type: Option<crate::kernel::CType>,
+    result_type: Option<crate::kernel::ProgramType>,
 ) -> Result<CResourceSpec, ClickError> {
     // Scalar model fields are bound by the instance-body evaluator, just as
     // they are for memory endpoints and child arguments. Keep this spelling
@@ -7149,10 +7154,10 @@ fn resource_clause_to_resource_spec_for_body(
 fn resource_clause_to_resource_spec_with_metadata(
     resource: &ResourceClause,
     parameters: &[syntax::C0Parameter],
-    result_type: Option<crate::kernel::CType>,
+    result_type: Option<crate::kernel::ProgramType>,
     role: crate::kernel::CResourceTransferRole,
     snapshot: crate::kernel::CResourceSnapshot,
-    pointer_element_types: Option<&BTreeMap<String, crate::kernel::CType>>,
+    pointer_element_types: Option<&BTreeMap<String, crate::kernel::ProgramType>>,
 ) -> Result<CResourceSpec, ClickError> {
     match resource {
         ResourceClause::Conditional { .. } => Err(ClickError::new(
@@ -7640,7 +7645,7 @@ pub(in crate::surface) fn substitute_contract_segment(
             base, start, end, ..
         } = &surface
     {
-        let lower = |original: &CExpression, source: &ContractExpression| {
+        let lower = |original: &ProgramExpression, source: &ContractExpression| {
             let rewritten = substitute_c_fragment_in(original, substitutions)?;
             if rewritten == *original {
                 return Ok(original.clone());
@@ -7739,7 +7744,7 @@ pub(in crate::surface) fn assumptions_from_propositions(
 /// `parsed_function` with the block's contract value parameters after its C
 /// parameters, as the block's signature has them. Lowering the contract
 /// reads them as it reads the C parameters; the lowered function moves them
-/// back out ([`crate::kernel::CFunction::with_trailing_value_parameters`]).
+/// back out ([`crate::kernel::ProgramFunction::with_trailing_value_parameters`]).
 pub(in crate::surface) fn witnessed_function<'a>(
     parsed_function: &'a syntax::C0Function,
     function_block: &FunctionBlock,
@@ -9171,7 +9176,7 @@ fn rust_enum_type_name(enum_type: crate::kernel::TypeParameterName) -> String {
     let spelling = |argument: &crate::kernel::AlgebraicValueType| -> String {
         match argument {
             // A value of a Rust type parameter is a C value of that type.
-            crate::kernel::AlgebraicValueType::C(crate::kernel::CType::Parameter(name)) => {
+            crate::kernel::AlgebraicValueType::C(crate::kernel::ProgramType::Parameter(name)) => {
                 name.name().to_string()
             }
             // The library's `Slice<T>` is Rust's shared slice: the chunk of
@@ -9182,14 +9187,14 @@ fn rust_enum_type_name(enum_type: crate::kernel::TypeParameterName) -> String {
                         arguments.as_slice() =>
             {
                 let element = match element {
-                    crate::kernel::CType::Int8 => "i8",
-                    crate::kernel::CType::Int16 => "i16",
-                    crate::kernel::CType::Int32 => "i32",
-                    crate::kernel::CType::Int64 => "i64",
-                    crate::kernel::CType::UInt8 => "u8",
-                    crate::kernel::CType::UInt16 => "u16",
-                    crate::kernel::CType::UInt32 => "u32",
-                    crate::kernel::CType::UInt64 => "usize",
+                    crate::kernel::ProgramType::Int8 => "i8",
+                    crate::kernel::ProgramType::Int16 => "i16",
+                    crate::kernel::ProgramType::Int32 => "i32",
+                    crate::kernel::ProgramType::Int64 => "i64",
+                    crate::kernel::ProgramType::UInt8 => "u8",
+                    crate::kernel::ProgramType::UInt16 => "u16",
+                    crate::kernel::ProgramType::UInt32 => "u32",
+                    crate::kernel::ProgramType::UInt64 => "usize",
                     _ => "?",
                 };
                 format!("&[{element}]")
@@ -9197,25 +9202,25 @@ fn rust_enum_type_name(enum_type: crate::kernel::TypeParameterName) -> String {
             // A crate enum payload is spelled by its name.
             crate::kernel::AlgebraicValueType::Algebraic { name, .. } => name.clone(),
             crate::kernel::AlgebraicValueType::C(c_type) => match c_type {
-                crate::kernel::CType::Int8 => "i8",
-                crate::kernel::CType::Int16 => "i16",
-                crate::kernel::CType::Int32 => "i32",
-                crate::kernel::CType::Int64 => "i64",
-                crate::kernel::CType::UInt8 => "u8",
-                crate::kernel::CType::UInt16 => "u16",
-                crate::kernel::CType::UInt32 => "u32",
-                crate::kernel::CType::UInt64 => "usize",
-                crate::kernel::CType::Bool => "bool",
+                crate::kernel::ProgramType::Int8 => "i8",
+                crate::kernel::ProgramType::Int16 => "i16",
+                crate::kernel::ProgramType::Int32 => "i32",
+                crate::kernel::ProgramType::Int64 => "i64",
+                crate::kernel::ProgramType::UInt8 => "u8",
+                crate::kernel::ProgramType::UInt16 => "u16",
+                crate::kernel::ProgramType::UInt32 => "u32",
+                crate::kernel::ProgramType::UInt64 => "usize",
+                crate::kernel::ProgramType::Bool => "bool",
                 // A shared reference to a scalar, the item of a slice
                 // iterator: `Option<&u8>`.
-                crate::kernel::CType::Int8Pointer => "&i8",
-                crate::kernel::CType::Int16Pointer => "&i16",
-                crate::kernel::CType::Int32Pointer => "&i32",
-                crate::kernel::CType::Int64Pointer => "&i64",
-                crate::kernel::CType::UInt8Pointer => "&u8",
-                crate::kernel::CType::UInt16Pointer => "&u16",
-                crate::kernel::CType::UInt32Pointer => "&u32",
-                crate::kernel::CType::UInt64Pointer => "&usize",
+                crate::kernel::ProgramType::Int8Pointer => "&i8",
+                crate::kernel::ProgramType::Int16Pointer => "&i16",
+                crate::kernel::ProgramType::Int32Pointer => "&i32",
+                crate::kernel::ProgramType::Int64Pointer => "&i64",
+                crate::kernel::ProgramType::UInt8Pointer => "&u8",
+                crate::kernel::ProgramType::UInt16Pointer => "&u16",
+                crate::kernel::ProgramType::UInt32Pointer => "&u32",
+                crate::kernel::ProgramType::UInt64Pointer => "&usize",
                 _ => "?",
             }
             .into(),

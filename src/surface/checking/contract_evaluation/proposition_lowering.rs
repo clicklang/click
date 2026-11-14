@@ -2,9 +2,9 @@ use super::*;
 
 pub(in crate::surface) fn lower_outcome_proposition(
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    post_state: &CState,
-    result: &CValue,
+    pre_state: &ExecutionState,
+    post_state: &ExecutionState,
+    result: &ProgramValue,
     available_pure_facts: &(impl PropositionSource + ?Sized),
     proposition: &ClickProposition,
     spec_definitions: SpecDefinitions<'_>,
@@ -25,9 +25,9 @@ pub(in crate::surface) fn lower_outcome_proposition(
 /// Retains the kernel's checked auxiliary facts beside a resource body fact.
 pub(in crate::surface) fn lower_outcome_proposition_with_auxiliary_facts(
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    post_state: &CState,
-    result: &CValue,
+    pre_state: &ExecutionState,
+    post_state: &ExecutionState,
+    result: &ProgramValue,
     assumptions: &PureFactContext,
     proposition: &ClickProposition,
     spec_definitions: SpecDefinitions<'_>,
@@ -60,9 +60,9 @@ pub(in crate::surface) fn lower_outcome_proposition_with_auxiliary_facts(
 /// explicit surface proposition.
 pub(in crate::surface) fn lower_outcome_proposition_with_assumptions(
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    post_state: &CState,
-    result: &CValue,
+    pre_state: &ExecutionState,
+    post_state: &ExecutionState,
+    result: &ProgramValue,
     assumptions: &PureFactContext,
     proposition: &ClickProposition,
     spec_definitions: SpecDefinitions<'_>,
@@ -93,9 +93,9 @@ pub(in crate::surface) fn lower_outcome_proposition_with_assumptions(
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface) fn lower_outcome_proposition_with_recorded_snapshots(
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    post_state: &CState,
-    result: &CValue,
+    pre_state: &ExecutionState,
+    post_state: &ExecutionState,
+    result: &ProgramValue,
     available_pure_facts: &(impl PropositionSource + ?Sized),
     proposition: &ClickProposition,
     spec_definitions: SpecDefinitions<'_>,

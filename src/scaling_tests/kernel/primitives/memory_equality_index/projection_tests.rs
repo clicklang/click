@@ -66,7 +66,7 @@ fn owned_frontier_attachment_ignores_unrelated_facts_and_caller_resources() {
                 MachineTerm::constant(1),
             )));
         }
-        let state = CState::new()
+        let state = ExecutionState::new()
             .with_memory(memory)
             .with_resource_context(ambient);
         let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
@@ -209,7 +209,7 @@ fn fresh_and_framing_publication_do_not_scan_ambient_inputs() {
             .clone()
             .try_compose_with_facts((0..size).map(|i| coverage_piece(895_000 + i, 0, 1)), &facts)
             .unwrap();
-        let state = CState::new()
+        let state = ExecutionState::new()
             .with_memory(memory)
             .with_resource_context(ambient);
         let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {

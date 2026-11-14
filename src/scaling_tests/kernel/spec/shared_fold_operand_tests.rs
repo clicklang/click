@@ -4,7 +4,7 @@ fn conservative_carrier_queries_do_not_rewalk_growing_prefixes() {
     for size in [16u64, 64, 256] {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::C(CType::Int32), Variable(998100));
+        let mut root = KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(998100));
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 0..size {
@@ -13,7 +13,10 @@ fn conservative_carrier_queries_do_not_rewalk_growing_prefixes() {
                     MachineBinaryOp::Add,
                     [
                         root.clone(),
-                        KernelTerm::variable(KernelType::C(CType::Int32), Variable(998101 + index)),
+                        KernelTerm::variable(
+                            KernelType::C(ProgramType::Int32),
+                            Variable(998101 + index),
+                        ),
                     ],
                 );
                 let term = IntegerTerm::Machine(

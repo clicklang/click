@@ -1,8 +1,8 @@
 use super::*;
 use num_bigint::BigInt;
 
-fn evaluated(expression: CExpression) -> CExpressionOutcome {
-    let theorem = prove_c_expression_evaluation(CState::new(), expression).unwrap();
+fn evaluated(expression: ProgramExpression) -> CExpressionOutcome {
+    let theorem = prove_c_expression_evaluation(ExecutionState::new(), expression).unwrap();
     let Proposition::CExpressionEvaluates { outcome, .. } = theorem.proposition() else {
         unreachable!()
     };
@@ -58,7 +58,7 @@ fn wide_multiply_constants_match_exact_oracle_at_signed_boundaries() {
                 let CExpressionOutcome::Value(value) = outcome else {
                     panic!("{left} * {right}: {outcome:?}")
                 };
-                assert_eq!(value.c_type(), CType::Int128);
+                assert_eq!(value.c_type(), ProgramType::Int128);
                 assert_eq!(
                     MachineIntegerType::Int128
                         .constant_from_value(&value)
@@ -80,7 +80,7 @@ fn wide_multiply_promotes_narrow_operands_before_multiplying() {
             BigInt::from(u64::MAX) * 2,
         ),
         (
-            c_cast(c_int64_literal(i64::MIN), CType::Int128),
+            c_cast(c_int64_literal(i64::MIN), ProgramType::Int128),
             c_int32_literal(i32::MIN as u32),
             BigInt::from(i64::MIN) * BigInt::from(i32::MIN),
         ),
@@ -90,7 +90,7 @@ fn wide_multiply_promotes_narrow_operands_before_multiplying() {
             -BigInt::from(i128::MIN + 1),
         ),
         (
-            CExpression::Value(CValue::bool_constant(true)),
+            ProgramExpression::Value(ProgramValue::bool_constant(true)),
             c_int128_literal(i128::MIN),
             BigInt::from(i128::MIN),
         ),
@@ -110,7 +110,7 @@ fn wide_multiply_promotes_narrow_operands_before_multiplying() {
     assert_eq!(
         evaluated(c_cast(
             c_multiply(c_int64_literal(i64::MAX), c_int32_literal(2)),
-            CType::Int128
+            ProgramType::Int128
         )),
         CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::SignedOverflow)
     );
@@ -132,8 +132,8 @@ fn wide_multiply_unknown_bounds_retain_normal_and_both_overflow_paths() {
             assumptions = assumptions.assume_condition(bound.clone(), true);
         }
         let paths = crate::kernel::eval::apply_c_multiply(
-            CValue::Int128(MachineTerm::Variable(Variable(150_001))),
-            CValue::Int128(MachineTerm::Variable(Variable(150_002))),
+            ProgramValue::Int128(MachineTerm::Variable(Variable(150_001))),
+            ProgramValue::Int128(MachineTerm::Variable(Variable(150_002))),
             Vec::new().into(),
             Vec::new(),
             &assumptions,
@@ -151,7 +151,7 @@ fn wide_multiply_unknown_bounds_retain_normal_and_both_overflow_paths() {
         let observed = IntegerTerm::from_machine(
             MachineIntegerType::Int128,
             match value {
-                CValue::Int128(term) => term.clone(),
+                ProgramValue::Int128(term) => term.clone(),
                 _ => panic!("typed wide result"),
             },
         )
@@ -194,10 +194,14 @@ fn wide_multiply_unknown_bounds_retain_normal_and_both_overflow_paths() {
         );
     }
     let expression = c_multiply(
-        CExpression::Value(CValue::Int128(MachineTerm::Variable(Variable(150_001)))),
-        CExpression::Value(CValue::Int128(MachineTerm::Variable(Variable(150_002)))),
+        ProgramExpression::Value(ProgramValue::Int128(MachineTerm::Variable(Variable(
+            150_001,
+        )))),
+        ProgramExpression::Value(ProgramValue::Int128(MachineTerm::Variable(Variable(
+            150_002,
+        )))),
     );
-    assert!(prove_c_expression_evaluation(CState::new(), expression).is_none());
+    assert!(prove_c_expression_evaluation(ExecutionState::new(), expression).is_none());
 }
 
 #[test]
@@ -243,17 +247,17 @@ fn wide_multiply_checked_product_bounds_certificate_discharges_native_guards() {
         };
         assumptions = assumptions.assume_condition(condition, true);
     }
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_local(
             "left",
-            CValue::Int64(MachineTerm::Variable(Variable(150_001))),
+            ProgramValue::Int64(MachineTerm::Variable(Variable(150_001))),
         )
         .with_local(
             "right",
-            CValue::Int32(MachineTerm::Variable(Variable(150_002))),
+            ProgramValue::Int32(MachineTerm::Variable(Variable(150_002))),
         );
     let expression = c_multiply(
-        c_cast(c_variable("left"), CType::Int128),
+        c_cast(c_variable("left"), ProgramType::Int128),
         c_variable("right"),
     );
     let paths = evaluate_c_expression_paths(
@@ -267,7 +271,7 @@ fn wide_multiply_checked_product_bounds_certificate_discharges_native_guards() {
     assert!(paths[0].obligations.is_empty());
     // The product keeps the operands' widenings to `int128` as written; it
     // reads (rule W) as the product of the operands' own observations.
-    let CExpressionOutcome::Value(CValue::Int128(MachineTerm::IntegerToMachine {
+    let CExpressionOutcome::Value(ProgramValue::Int128(MachineTerm::IntegerToMachine {
         value,
         destination: MachineIntegerType::Int128,
     })) = &paths[0].outcome
@@ -298,15 +302,15 @@ fn wide_multiply_unsupported_unsigned_and_noninteger_operands_stay_refused() {
 #[test]
 fn wide_multiply_calls_keep_wide_result_and_caller_storage() {
     let function = c_function(
-        CType::Int128,
+        ProgramType::Int128,
         "wide_product",
         vec![
-            c_parameter("left", CType::Int128),
-            c_parameter("right", CType::Int128),
+            c_parameter("left", ProgramType::Int128),
+            c_parameter("right", ProgramType::Int128),
         ],
         c_return(c_multiply(c_variable("left"), c_variable("right"))),
     );
-    let state = CState::new().with_local("caller", int32(77));
+    let state = ExecutionState::new().with_local("caller", int32(77));
     let theorem = prove_symbolic_c_function_execution(
         state.clone(),
         function,

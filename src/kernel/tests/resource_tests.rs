@@ -9,7 +9,7 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 /// A fold publishes read authority for the cells it consumed, attached to
 /// the folded instance. Folding what an unfold opened returns the state the
 /// unfold started from, apart from that observation.
-fn folded_without_read_views(state: CState) -> CState {
+fn folded_without_read_views(state: ExecutionState) -> ExecutionState {
     let resources = state
         .resources()
         .clone()
@@ -86,7 +86,7 @@ fn separation_candidates_preserve_derived_aliases_and_loaded_bases() {
     // No condition names `a`: the owner's loaded base must remain a
     // candidate because the memory edge itself resolves it to `a`.
     let slot = Pointer::symbolic(Variable(989_799));
-    let snapshot = CMemory::new().store(slot.clone(), CValue::Int32(a.clone()));
+    let snapshot = CMemory::new().store(slot.clone(), ProgramValue::Int32(a.clone()));
     let loaded = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory(snapshot),
         Box::new(slot),
@@ -290,13 +290,13 @@ fn normalized_resource_specs_validate_families_and_preserve_transfer_metadata() 
 #[test]
 fn validated_resource_rebuilds_preserve_metadata_and_instance_bodies() {
     let variable = Variable(77_700);
-    let quantity = CExpression::Value(int32(MachineTerm::Variable(variable)));
+    let quantity = ProgramExpression::Value(int32(MachineTerm::Variable(variable)));
     let spec = CResourceSpec::new(
         CResourceTerm::Token {
             name: "permit".into(),
             arguments: vec![quantity.clone()],
             argument_snapshots: vec![CResourceSnapshot::Current],
-            parameter_types: vec![CType::Int32],
+            parameter_types: vec![ProgramType::Int32],
         },
         CResourceAccessMode::Own,
         CResourceQuantity::Count(quantity),
@@ -314,12 +314,14 @@ fn validated_resource_rebuilds_preserve_metadata_and_instance_bodies() {
     assert_eq!(substituted.snapshot(), CResourceSnapshot::Entry);
     assert!(matches!(
         substituted.quantity(),
-        CResourceQuantity::Count(CExpression::Value(CValue::Int32(int32_constant!(3))))
+        CResourceQuantity::Count(ProgramExpression::Value(ProgramValue::Int32(
+            int32_constant!(3)
+        )))
     ));
     assert!(matches!(
         substituted.term(),
         CResourceTerm::Token { arguments, .. }
-            if matches!(arguments.as_slice(), [CExpression::Value(CValue::Int32(int32_constant!(3)))])
+            if matches!(arguments.as_slice(), [ProgramExpression::Value(ProgramValue::Int32(int32_constant!(3)))])
     ));
 
     let schema = ResourceFieldSchema::new(vec![]).unwrap();
@@ -821,10 +823,16 @@ fn owned_fragment_reservation_joins_mixed_width_fields_at_symbolic_bases() {
     }
 }
 
-fn instance_memory_fixture() -> (ResourceInstance, CCompositeResourceDefinition, CState) {
-    let schema =
-        ResourceFieldSchema::new(vec![("value".into(), ResourceFieldType::C(CType::Int32))])
-            .unwrap();
+fn instance_memory_fixture() -> (
+    ResourceInstance,
+    CCompositeResourceDefinition,
+    ExecutionState,
+) {
+    let schema = ResourceFieldSchema::new(vec![(
+        "value".into(),
+        ResourceFieldType::C(ProgramType::Int32),
+    )])
+    .unwrap();
     let pointer = Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(100)), 4),
@@ -832,14 +840,14 @@ fn instance_memory_fixture() -> (ResourceInstance, CCompositeResourceDefinition,
     let instance = ResourceInstance::new(
         Variable(1),
         "cell".into(),
-        vec![CValue::pointer(pointer).into()].into(),
+        vec![ProgramValue::pointer(pointer).into()].into(),
         schema.clone(),
         vec![int32(7).into()].into(),
     )
     .unwrap();
     let definition = CCompositeResourceDefinition::new(
         "cell",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![CResourceSpec::owned_memory(CMemorySegment {
@@ -854,7 +862,7 @@ fn instance_memory_fixture() -> (ResourceInstance, CCompositeResourceDefinition,
         vec![],
     )
     .with_instance_schema(Some(schema));
-    let state = CState::new().with_resource_context(
+    let state = ExecutionState::new().with_resource_context(
         ResourceContext::new()
             .unchecked_with_fact(CResourceFact::own(CResource::Instance(instance.clone()))),
     );
@@ -884,15 +892,20 @@ fn inactive_instance_quantity_does_not_imply_nonnegativity() {
         )
         .unwrap()
         .with_guard(SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_int32_literal(0)),
+            left: SpecExpression::ProgramExpression(c_int32_literal(0)),
             operator: CComparisonOperator::Equal,
-            right: SpecExpression::CExpression(c_int32_literal(1)),
+            right: SpecExpression::ProgramExpression(c_int32_literal(1)),
         }),
     ];
     let assumptions = PureFactContext::new();
-    let (folded, _) =
-        rewrite_resource_instance(&CState::new(), &instance, &definition, &assumptions, false)
-            .unwrap();
+    let (folded, _) = rewrite_resource_instance(
+        &ExecutionState::new(),
+        &instance,
+        &definition,
+        &assumptions,
+        false,
+    )
+    .unwrap();
     let (opened, facts) =
         rewrite_resource_instance(&folded, &instance, &definition, &assumptions, true).unwrap();
     assert!(opened.resources().is_empty());
@@ -907,7 +920,11 @@ fn inactive_instance_quantity_does_not_imply_nonnegativity() {
     )));
 }
 
-fn recursive_child_fixture() -> (ResourceInstance, CCompositeResourceDefinition, CState) {
+fn recursive_child_fixture() -> (
+    ResourceInstance,
+    CCompositeResourceDefinition,
+    ExecutionState,
+) {
     let (mut instance, mut definition, _) = instance_memory_fixture();
     let tree = AlgebraicValueType::Algebraic {
         name: "Tree".into(),
@@ -916,9 +933,9 @@ fn recursive_child_fixture() -> (ResourceInstance, CCompositeResourceDefinition,
     let ty = resource_index_type(
         "Tree",
         vec![
-            AlgebraicValueType::C(CType::Int32Pointer),
+            AlgebraicValueType::C(ProgramType::Int32Pointer),
             tree.clone(),
-            AlgebraicValueType::C(CType::Int32Pointer),
+            AlgebraicValueType::C(ProgramType::Int32Pointer),
             tree,
         ],
     );
@@ -939,9 +956,9 @@ fn recursive_child_fixture() -> (ResourceInstance, CCompositeResourceDefinition,
         node: AlgebraicTermNode::Constructor {
             variant: "Set".into(),
             fields: vec![
-                CValue::pointer(Pointer::null()).into(),
+                ProgramValue::pointer(Pointer::null()).into(),
                 AlgebraicValue::Algebraic(empty.clone()),
-                CValue::pointer(Pointer::null()).into(),
+                ProgramValue::pointer(Pointer::null()).into(),
                 AlgebraicValue::Algebraic(empty),
             ],
         },
@@ -973,21 +990,21 @@ fn recursive_child_fixture() -> (ResourceInstance, CCompositeResourceDefinition,
                         name: "left".into(),
                         resource: "cell".into(),
                         binding: Variable(90),
-                        arguments: vec![SpecExpression::CExpression(c_variable("lp"))],
+                        arguments: vec![SpecExpression::ProgramExpression(c_variable("lp"))],
                         field_bindings: vec![CResourceChildField::Constructor(1)],
                     },
                     CResourceChildSpec {
                         name: "right".into(),
                         resource: "cell".into(),
                         binding: Variable(91),
-                        arguments: vec![SpecExpression::CExpression(c_variable("rp"))],
+                        arguments: vec![SpecExpression::ProgramExpression(c_variable("rp"))],
                         field_bindings: vec![CResourceChildField::Constructor(3)],
                     },
                 ],
             },
         ],
     });
-    let state = CState::new().with_resource_context(
+    let state = ExecutionState::new().with_resource_context(
         ResourceContext::new()
             .unchecked_with_fact(CResourceFact::own(CResource::Instance(instance.clone()))),
     );
@@ -1002,18 +1019,20 @@ fn independent_children_kernel_consumes_names_and_accepts_replacements() {
         ("left".into(), Variable(501)),
         ("right".into(), Variable(502)),
     ];
-    let rewrite =
-        |state: &CState, instance: &ResourceInstance, unfold, children: &[(String, Variable)]| {
-            crate::kernel::rewrite_resource_instance_selecting_children(
-                state,
-                instance,
-                &definition,
-                std::slice::from_ref(&definition),
-                &assumptions,
-                unfold,
-                Some(children),
-            )
-        };
+    let rewrite = |state: &ExecutionState,
+                   instance: &ResourceInstance,
+                   unfold,
+                   children: &[(String, Variable)]| {
+        crate::kernel::rewrite_resource_instance_selecting_children(
+            state,
+            instance,
+            &definition,
+            std::slice::from_ref(&definition),
+            &assumptions,
+            unfold,
+            Some(children),
+        )
+    };
     let open = rewrite(&state, &instance, true, &children).unwrap().state;
     assert!(matches!(
         open.resources().instance_consumption(instance.identity()),
@@ -1098,21 +1117,24 @@ fn unfolding_a_child_retains_its_checked_pointer_read_in_the_callers_graph() {
     let (instance, mut definition, state) = recursive_child_fixture();
     let arm = &mut definition.matched.as_mut().unwrap().arms[1];
     arm.contains[0].memory_segment_mut().unwrap().end = c_int32_literal(2);
-    arm.children[0].arguments = vec![SpecExpression::CExpression(CExpression::TypedLoad {
-        pointer: Box::new(c_variable("p")),
-        value_type: CType::Int32Pointer,
-        volatile: false,
-        pointee_constant: false,
-        access_class: None,
-        source: Default::default(),
-    })];
-    let AlgebraicValue::C(CValue::Pointer(parent)) = &instance.arguments()[0] else {
+    arm.children[0].arguments = vec![SpecExpression::ProgramExpression(
+        ProgramExpression::TypedLoad {
+            pointer: Box::new(c_variable("p")),
+            value_type: ProgramType::Int32Pointer,
+            volatile: false,
+            pointee_constant: false,
+            access_class: None,
+            source: Default::default(),
+        },
+    )];
+    let AlgebraicValue::C(ProgramValue::Pointer(parent)) = &instance.arguments()[0] else {
         unreachable!()
     };
-    let stored = CPointerValue::new(Pointer::symbolic(Variable(559)), CType::Int32Pointer);
-    let state = state.with_memory(
-        CMemory::new().store(parent.pointer().clone(), CValue::Pointer(stored.clone())),
-    );
+    let stored = PointerValue::new(Pointer::symbolic(Variable(559)), ProgramType::Int32Pointer);
+    let state = state.with_memory(CMemory::new().store(
+        parent.pointer().clone(),
+        ProgramValue::Pointer(stored.clone()),
+    ));
     let observed =
         Pointer::loaded_value(&intern_c_memory(state.memory().clone()), parent.pointer());
     let equation = ExecutionPureFact::logical_read_equation(stored, observed)
@@ -1239,12 +1261,12 @@ fn recursive_child_kernel_keeps_unknown_submodels_folded() {
     let AlgebraicTermNode::Constructor { fields, .. } = &mut model.node else {
         unreachable!()
     };
-    fields[0] = CValue::pointer(Pointer::symbolic(Variable(556))).into();
+    fields[0] = ProgramValue::pointer(Pointer::symbolic(Variable(556))).into();
     fields[1] = AlgebraicValue::Algebraic(unknown.clone());
     // Rebuild the outer argument list after updating only its immediate fields.
     let model = model.clone();
     instance.fields = vec![AlgebraicValue::Algebraic(model)].into();
-    let state = CState::new().with_resource_context(
+    let state = ExecutionState::new().with_resource_context(
         ResourceContext::new()
             .unchecked_with_fact(CResourceFact::own(CResource::Instance(instance.clone()))),
     );
@@ -1291,11 +1313,11 @@ fn recursive_child_kernel_keeps_unknown_submodels_folded() {
 fn instance_memory_guard_requires_a_proved_case_and_exposes_only_that_case() {
     let (instance, mut definition, state) = instance_memory_fixture();
     definition.condition = Some(SpecProposition::Comparison {
-        left: SpecExpression::CExpression(c_variable("p")),
+        left: SpecExpression::ProgramExpression(c_variable("p")),
         operator: CComparisonOperator::NotEqual,
-        right: SpecExpression::CExpression(c_int32_literal(0)),
+        right: SpecExpression::ProgramExpression(c_int32_literal(0)),
     });
-    let CValue::Pointer(pointer) = instance.arguments()[0].as_c_value().unwrap() else {
+    let ProgramValue::Pointer(pointer) = instance.arguments()[0].as_c_value().unwrap() else {
         panic!("fixture pointer");
     };
     let guard = ConditionTerm::pointer_equal(pointer.pointer().clone(), Pointer::null());
@@ -1318,7 +1340,7 @@ fn instance_memory_guard_requires_a_proved_case_and_exposes_only_that_case() {
         let (closed, _) =
             rewrite_resource_instance(&open, &instance, &definition, &assumptions, false).unwrap();
         assert_eq!(folded_without_read_views(closed), state);
-        let raw = CState::new().with_resource_context(open.resources().clone());
+        let raw = ExecutionState::new().with_resource_context(open.resources().clone());
         let mut fresh = instance.clone();
         fresh.identity = Variable(999);
         let (constructed, _) =
@@ -1380,7 +1402,7 @@ fn resource_match_kernel_checks_schema_case_and_ownership() {
             },
         ],
     });
-    let state = CState::new().with_resource_context(
+    let state = ExecutionState::new().with_resource_context(
         ResourceContext::new()
             .unchecked_with_fact(CResourceFact::own(CResource::Instance(instance.clone()))),
     );
@@ -1410,7 +1432,7 @@ fn resource_match_kernel_checks_schema_case_and_ownership() {
     let mut fresh = instance.clone();
     fresh.identity = Variable(999);
     fresh.fields = vec![AlgebraicValue::Algebraic(constructor("Set"))].into();
-    let raw = CState::new().with_resource_context(open.resources().clone());
+    let raw = ExecutionState::new().with_resource_context(open.resources().clone());
     let (constructed, _) =
         rewrite_resource_instance(&raw, &fresh, &definition, &unknown, false).unwrap();
     assert_eq!(
@@ -1419,7 +1441,8 @@ fn resource_match_kernel_checks_schema_case_and_ownership() {
     );
     assert!(constructed.instance_field_scope.is_empty());
     assert!(
-        rewrite_resource_instance(&CState::new(), &fresh, &definition, &unknown, false).is_err()
+        rewrite_resource_instance(&ExecutionState::new(), &fresh, &definition, &unknown, false)
+            .is_err()
     );
     assert_eq!(
         folded_without_read_views(
@@ -1449,7 +1472,7 @@ fn resource_match_kernel_checks_schema_case_and_ownership() {
             _ => {
                 body.arms[1]
                     .binding_types
-                    .push(AlgebraicValueType::C(CType::Int32));
+                    .push(AlgebraicValueType::C(ProgramType::Int32));
             }
         }
         assert!(rewrite_resource_instance(&state, &instance, &invalid, &set, true).is_err());
@@ -1493,7 +1516,7 @@ fn instance_memory_fold_requires_body_ownership_not_an_open_handle() {
         rewrite_resource_instance(&missing_body, &instance, &definition, &assumptions, false)
             .is_err()
     );
-    let raw = CState::new().with_resource_context(opened.resources.clone());
+    let raw = ExecutionState::new().with_resource_context(opened.resources.clone());
     let mut constructed = instance.clone();
     constructed.identity = Variable(2);
     // This fixture's field is unconstrained by its body. Any well-typed value
@@ -1514,7 +1537,7 @@ fn field_instance(identity: u64, model: AlgebraicTerm, revision: u32) -> Resourc
             "model".into(),
             ResourceFieldType::Algebraic(model.algebraic_type.clone()),
         ),
-        ("revision".into(), ResourceFieldType::C(CType::Int32)),
+        ("revision".into(), ResourceFieldType::C(ProgramType::Int32)),
     ])
     .unwrap();
     ResourceInstance::new(
@@ -1692,7 +1715,7 @@ fn resource_instance_projections_use_owned_current_or_explicit_entry_state() {
     let m = resource_index_variable(&ty, 1);
     let n = resource_index_variable(&ty, 2);
     let state = |model, revision| {
-        CState::new().with_resource_context(ResourceContext::new().unchecked_with_fact(
+        ExecutionState::new().with_resource_context(ResourceContext::new().unchecked_with_fact(
             CResourceFact::own(CResource::Instance(field_instance(10, model, revision))),
         ))
     };
@@ -1707,7 +1730,7 @@ fn resource_instance_projections_use_owned_current_or_explicit_entry_state() {
                 field_index: 1,
                 at_entry,
             },
-            c_type: CType::Int32,
+            c_type: ProgramType::Int32,
         };
         let paths = crate::kernel::spec::evaluate_spec_expression_paths_with_loop_entry(
             &current,
@@ -1755,7 +1778,7 @@ fn resource_instance_projections_use_owned_current_or_explicit_entry_state() {
         &(equal),
         &paths[0].proposition
     ));
-    let missing = CState::new();
+    let missing = ExecutionState::new();
     let application = |at_entry| SpecAlgebraicExpression {
         algebraic_type: ty.clone(),
         node: SpecAlgebraicExpressionNode::PureFunctionApplication {
@@ -1808,10 +1831,10 @@ fn resource_instance_projections_use_owned_current_or_explicit_entry_state() {
         );
     }
     for (identity, field_index, c_type) in [
-        (99, 1, CType::Int32),
-        (10, 2, CType::Int32),
-        (10, 0, CType::Int32),
-        (10, 1, CType::UInt32),
+        (99, 1, ProgramType::Int32),
+        (10, 2, ProgramType::Int32),
+        (10, 0, ProgramType::Int32),
+        (10, 1, ProgramType::UInt32),
     ] {
         let expression = SpecExpression::ResourceField {
             projection: ResourceFieldProjection {
@@ -1847,8 +1870,8 @@ fn resource_instance_contract_selects_current_fields_without_promising_preservat
         CResourceSpec::composite(
             CResourceAccessMode::Own,
             "marked_cell".into(),
-            vec![CExpression::Value(int32(7))],
-            vec![CType::Int32],
+            vec![ProgramExpression::Value(int32(7))],
+            vec![ProgramType::Int32],
         ),
         CResourceTransferRole::Borrow,
         CResourceSnapshot::Current,
@@ -1856,7 +1879,7 @@ fn resource_instance_contract_selects_current_fields_without_promising_preservat
     .unwrap();
     for instance in [before, after] {
         let fact = CResourceFact::own(CResource::Instance(instance));
-        let state = CState::new()
+        let state = ExecutionState::new()
             .with_resource_context(ResourceContext::new().unchecked_with_fact(fact.clone()));
         let selected = crate::kernel::functions::evaluate_function_resource_spec(
             &state,
@@ -1870,7 +1893,7 @@ fn resource_instance_contract_selects_current_fields_without_promising_preservat
     }
     assert!(
         crate::kernel::functions::evaluate_function_resource_spec(
-            &CState::new(),
+            &ExecutionState::new(),
             &requirement,
             &PureFactContext::new(),
             &mut ExecutionBudget::default(),
@@ -1890,8 +1913,8 @@ fn resource_instance_substitution_preserves_identity_without_memory_authority() 
     let ty = resource_index_type(
         "Payload",
         vec![
-            AlgebraicValueType::C(CValue::pointer(pointer.clone()).c_type()),
-            AlgebraicValueType::C(CType::Int32),
+            AlgebraicValueType::C(ProgramValue::pointer(pointer.clone()).c_type()),
+            AlgebraicValueType::C(ProgramType::Int32),
         ],
     );
     let make = |p: Pointer, value: MachineTerm| {
@@ -1899,11 +1922,11 @@ fn resource_instance_substitution_preserves_identity_without_memory_authority() 
             algebraic_type: ty.clone(),
             node: AlgebraicTermNode::Constructor {
                 variant: "Set".into(),
-                fields: vec![CValue::pointer(p.clone()).into(), int32(value).into()],
+                fields: vec![ProgramValue::pointer(p.clone()).into(), int32(value).into()],
             },
         };
         let mut instance = field_instance(10, model, 0);
-        instance.arguments = vec![CValue::pointer(p).into()].into();
+        instance.arguments = vec![ProgramValue::pointer(p).into()].into();
         CResource::Instance(instance)
     };
     let source = make(pointer.clone(), MachineTerm::Variable(Variable(11)));
@@ -1944,7 +1967,7 @@ fn resource_field_schemas_are_typed_shared_and_non_countable() {
             "model".into(),
             ResourceFieldType::Algebraic(resource_index_type("Mark", vec![])),
         ),
-        ("revision".into(), ResourceFieldType::C(CType::Int32)),
+        ("revision".into(), ResourceFieldType::C(ProgramType::Int32)),
     ];
     let schema = ResourceFieldSchema::new(fields.clone()).unwrap();
     assert_eq!(schema.fields(), fields);
@@ -1957,12 +1980,13 @@ fn resource_field_schemas_are_typed_shared_and_non_countable() {
     assert!(ResourceFieldSchema::new(vec![]).unwrap().is_fieldless());
     assert!(ResourceFieldSchema::new(vec![fields[0].clone(), fields[0].clone()]).is_none());
     assert!(
-        ResourceFieldSchema::new(vec![("".into(), ResourceFieldType::C(CType::Int32))]).is_none()
+        ResourceFieldSchema::new(vec![("".into(), ResourceFieldType::C(ProgramType::Int32))])
+            .is_none()
     );
     for ty in [
-        CType::Void,
-        CType::Int32Array(3),
-        CType::FunctionPointer(CallbackSignature::from_encoded(1)),
+        ProgramType::Void,
+        ProgramType::Int32Array(3),
+        ProgramType::FunctionPointer(CallbackSignature::from_encoded(1)),
     ] {
         assert!(ResourceFieldSchema::new(vec![("bad".into(), ResourceFieldType::C(ty))]).is_none());
     }
@@ -1982,7 +2006,12 @@ fn resource_field_schema_clones_share_storage_at_multiple_sizes() {
     for size in [16, 32, 64, 128] {
         let schema = ResourceFieldSchema::new(
             (0..size)
-                .map(|i| (format!("field_{i}"), ResourceFieldType::C(CType::Int32)))
+                .map(|i| {
+                    (
+                        format!("field_{i}"),
+                        ResourceFieldType::C(ProgramType::Int32),
+                    )
+                })
                 .collect(),
         )
         .unwrap();
@@ -2126,8 +2155,8 @@ fn symbolic_resource_indices_substitute_nested_payloads_without_memory_authority
     let ty = resource_index_type(
         "Payload",
         vec![
-            AlgebraicValueType::C(CValue::pointer(pointer.clone()).c_type()),
-            AlgebraicValueType::C(CType::Int32),
+            AlgebraicValueType::C(ProgramValue::pointer(pointer.clone()).c_type()),
+            AlgebraicValueType::C(ProgramType::Int32),
         ],
     );
     let model = |p: Pointer, value: MachineTerm| AlgebraicTerm {
@@ -2135,7 +2164,7 @@ fn symbolic_resource_indices_substitute_nested_payloads_without_memory_authority
         node: AlgebraicTermNode::Constructor {
             variant: "Set".into(),
             fields: vec![
-                AlgebraicValue::C(CValue::pointer(p)),
+                AlgebraicValue::C(ProgramValue::pointer(p)),
                 AlgebraicValue::C(int32(value)),
             ],
         },
@@ -2620,7 +2649,7 @@ fn cached_projection_finds_the_owned_resource_that_packages_a_fact() {
     let allocation = CResourceFact::own_token(
         CResourceFact::ALLOCATION_RESOURCE_NAME.to_string(),
         vec![
-            CValue::pointer(Pointer {
+            ProgramValue::pointer(Pointer {
                 block: "allocation".into(),
                 offset: PointerOffsetTerm::Constant(0),
             }),
@@ -3280,7 +3309,7 @@ fn definitional_equality_reassembles_a_composite_only_where_its_facts_hold() {
     };
     let definition = CCompositeResourceDefinition::new(
         "zero_cell",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![CResourceSpec::owned_memory(CMemorySegment::new(
@@ -3289,14 +3318,17 @@ fn definitional_equality_reassembles_a_composite_only_where_its_facts_hold() {
             c_int32_literal(1),
         ))],
         vec![SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_index(c_variable("p"), c_int32_literal(0))),
+            left: SpecExpression::ProgramExpression(c_index(c_variable("p"), c_int32_literal(0))),
             operator: CComparisonOperator::Equal,
             right: SpecExpression::Value(int32(0)),
         }],
     );
     let folded = ResourceContext::new().unchecked_with_fact(CResourceFact::own_composite(
         "zero_cell".into(),
-        vec![CValue::typed_pointer(pointer.clone(), CType::Int32Pointer)],
+        vec![ProgramValue::typed_pointer(
+            pointer.clone(),
+            ProgramType::Int32Pointer,
+        )],
     ));
     let pieces = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
         CMemoryRange::new(pointer.clone(), 0.into(), 1.into()),
@@ -3552,16 +3584,16 @@ fn composite_resource_arguments_respect_proven_pointer_equality() {
     };
     let left = CResourceFact::own(CResource::Composite {
         name: "list".to_string(),
-        arguments: vec![CValue::pointer(left_pointer.clone()).into()].into(),
+        arguments: vec![ProgramValue::pointer(left_pointer.clone()).into()].into(),
     });
     let right = CResourceFact::own(CResource::Composite {
         name: "list".to_string(),
-        arguments: vec![CValue::pointer(right_pointer.clone()).into()].into(),
+        arguments: vec![ProgramValue::pointer(right_pointer.clone()).into()].into(),
     });
     let assumptions = PureFactContext::new().assume_condition(
         ConditionTerm::PointerValueEqual(
-            Box::new(CPointerValue::new(left_pointer, CType::Int32Pointer)),
-            Box::new(CPointerValue::new(right_pointer, CType::Int32Pointer)),
+            Box::new(PointerValue::new(left_pointer, ProgramType::Int32Pointer)),
+            Box::new(PointerValue::new(right_pointer, ProgramType::Int32Pointer)),
         ),
         true,
     );
@@ -3892,7 +3924,7 @@ fn matched_resource_integer_binding_is_checked_and_substituted() {
             },
         ],
     });
-    let state = CState::new().with_resource_context(
+    let state = ExecutionState::new().with_resource_context(
         ResourceContext::new()
             .unchecked_with_fact(CResourceFact::own(CResource::Instance(instance.clone()))),
     );
@@ -4030,7 +4062,7 @@ fn matched_resource_integer_binding_does_not_capture_free_integer_field() {
             },
         ],
     });
-    let state = CState::new().with_resource_context(
+    let state = ExecutionState::new().with_resource_context(
         ResourceContext::new()
             .unchecked_with_fact(CResourceFact::own(CResource::Instance(instance.clone()))),
     );
@@ -4054,7 +4086,7 @@ fn matched_resource_integer_binding_does_not_capture_free_integer_field() {
         "the free field term must survive arm binding substitution: {unfolded_facts:?}"
     );
 
-    let fold_state = CState::new();
+    let fold_state = ExecutionState::new();
     assert!(
         rewrite_resource_instance(&fold_state, &instance, &definition, &assumptions, false)
             .is_err(),
@@ -4105,13 +4137,17 @@ fn unrelated_order_fact_context(size: usize) -> PureFactContext {
     assumptions
 }
 
-fn dependent_pair_entry_fixture() -> (CState, CCompositeResourceDefinition, Vec<CResourceSpec>) {
-    let next = |pointer: CExpression| CExpression::TypedLoad {
-        pointer: Box::new(CExpression::Subobject {
+fn dependent_pair_entry_fixture() -> (
+    ExecutionState,
+    CCompositeResourceDefinition,
+    Vec<CResourceSpec>,
+) {
+    let next = |pointer: ProgramExpression| ProgramExpression::TypedLoad {
+        pointer: Box::new(ProgramExpression::Subobject {
             pointer: Box::new(pointer),
             width: 8,
         }),
-        value_type: CType::Int32Pointer,
+        value_type: ProgramType::Int32Pointer,
         volatile: false,
         pointee_constant: false,
         access_class: None,
@@ -4126,7 +4162,7 @@ fn dependent_pair_entry_fixture() -> (CState, CCompositeResourceDefinition, Vec<
     };
     let definition = CCompositeResourceDefinition::new(
         "dependent_pair",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![cell(c_variable("p")), cell(next(c_variable("p")))],
@@ -4136,14 +4172,14 @@ fn dependent_pair_entry_fixture() -> (CState, CCompositeResourceDefinition, Vec<
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(910_000)), 4),
     };
-    let state = CState::new().with_local("node", CValue::pointer(pointer));
+    let state = ExecutionState::new().with_local("node", ProgramValue::pointer(pointer));
     let clause = |argument| {
         CResourceSpec::declared(
             ResourceFamily::Composite,
             CResourceAccessMode::Own,
             "dependent_pair".into(),
             vec![argument],
-            vec![CType::Int32Pointer],
+            vec![ProgramType::Int32Pointer],
             CResourceTransferRole::Borrow,
             CResourceSnapshot::Entry,
         )
@@ -4224,13 +4260,15 @@ fn resource_clauses_with_no_evaluable_order_name_two_positions() {
     let unowned = |variable| {
         CResourceSpec::owned_memory(CMemorySegment {
             value_runs: Default::default(),
-            base: CExpression::Load(Box::new(CExpression::Value(CValue::pointer(Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::scale_int32(
-                    MachineTerm::Variable(Variable(variable)),
-                    4,
-                ),
-            })))),
+            base: ProgramExpression::Load(Box::new(ProgramExpression::Value(
+                ProgramValue::pointer(Pointer {
+                    block: PointerBlock::ExternalArgument,
+                    offset: PointerOffsetTerm::scale_int32(
+                        MachineTerm::Variable(Variable(variable)),
+                        4,
+                    ),
+                }),
+            ))),
             start: c_int32_literal(0),
             end: c_int32_literal(1),
             element_width: 4,
@@ -4240,7 +4278,7 @@ fn resource_clauses_with_no_evaluable_order_name_two_positions() {
     };
     let evaluate = |clauses: &[CResourceSpec]| {
         let error = crate::kernel::functions::evaluate_function_resource_context(
-            &CState::new(),
+            &ExecutionState::new(),
             clauses,
             &[],
             &PureFactContext::new(),
@@ -4279,7 +4317,7 @@ fn arm_selection_type(nullary: &[&str], payload: &str) -> AlgebraicType {
         })
         .chain([AlgebraicVariantType {
             name: payload.into(),
-            fields: vec![AlgebraicValueType::C(CType::Int32)],
+            fields: vec![AlgebraicValueType::C(ProgramType::Int32)],
         }])
         .collect::<Vec<_>>()
         .into();
@@ -4321,9 +4359,9 @@ fn resource_model_arm_selection_decides_only_entailed_arms() {
         arm_selection_constructor(
             &ty,
             "Filled",
-            vec![AlgebraicValue::C(CValue::Int32(MachineTerm::constant(
-                value,
-            )))],
+            vec![AlgebraicValue::C(ProgramValue::Int32(
+                MachineTerm::constant(value),
+            ))],
         )
     };
     let equal = |left: &AlgebraicTerm, right: &AlgebraicTerm| {
@@ -4361,9 +4399,9 @@ fn resource_model_arm_selection_decides_only_entailed_arms() {
     let witness = arm_selection_constructor(
         &ty,
         "Filled",
-        vec![AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(
-            Variable(77),
-        )))],
+        vec![AlgebraicValue::C(ProgramValue::Int32(
+            MachineTerm::Variable(Variable(77)),
+        ))],
     );
     let witnessed = PureFactContext::new().assume_proposition(Proposition::Exists {
         name: "v".to_string(),
@@ -4433,13 +4471,15 @@ fn expanded_resource_clause_diagnostics_keep_source_positions() {
     let unowned = |variable| {
         CResourceSpec::owned_memory(CMemorySegment {
             value_runs: Default::default(),
-            base: CExpression::Load(Box::new(CExpression::Value(CValue::pointer(Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::scale_int32(
-                    MachineTerm::Variable(Variable(variable)),
-                    4,
-                ),
-            })))),
+            base: ProgramExpression::Load(Box::new(ProgramExpression::Value(
+                ProgramValue::pointer(Pointer {
+                    block: PointerBlock::ExternalArgument,
+                    offset: PointerOffsetTerm::scale_int32(
+                        MachineTerm::Variable(Variable(variable)),
+                        4,
+                    ),
+                }),
+            ))),
             start: c_int32_literal(0),
             end: c_int32_literal(1),
             element_width: 4,
@@ -4448,7 +4488,7 @@ fn expanded_resource_clause_diagnostics_keep_source_positions() {
         })
     };
     let error = crate::kernel::functions::evaluate_function_resource_context(
-        &CState::new(),
+        &ExecutionState::new(),
         &[
             unowned(100).with_clause_position(0, 2),
             unowned(101).with_clause_position(0, 2),
@@ -4486,15 +4526,15 @@ fn symbolic_supplied_range_wakes_concrete_pending_dependency() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let length = MachineTerm::Variable(Variable(9_903));
-    let load = |pointer: Pointer| CExpression::TypedLoad {
+    let load = |pointer: Pointer| ProgramExpression::TypedLoad {
         pointer: Box::new(c_pointer_value(pointer)),
-        value_type: CType::Int32Pointer,
+        value_type: ProgramType::Int32Pointer,
         volatile: false,
         pointee_constant: false,
         access_class: None,
         source: Default::default(),
     };
-    let owned = |base: CExpression, end: CExpression| {
+    let owned = |base: ProgramExpression, end: ProgramExpression| {
         CResourceSpec::owned_memory(CMemorySegment {
             base,
             start: c_int32_literal(0),
@@ -4511,20 +4551,20 @@ fn symbolic_supplied_range_wakes_concrete_pending_dependency() {
         // B is the symbolic provider for that cell.  Its base load waits on C.
         owned(
             load(seed.clone()),
-            CExpression::Value(int32(length.clone())),
+            ProgramExpression::Value(int32(length.clone())),
         ),
         // C is the only clause that can evaluate on the first pass.
         owned(c_pointer_value(seed.clone()), c_int32_literal(1)),
     ];
     let memory = CMemory::new()
-        .store(seed, CValue::pointer(intermediate.clone()))
-        .store(intermediate, CValue::pointer(target));
+        .store(seed, ProgramValue::pointer(intermediate.clone()))
+        .store(intermediate, ProgramValue::pointer(target));
     let assumptions = PureFactContext::new().assume_condition(
         ConditionTerm::signed_less_equal(MachineTerm::constant(1), length),
         true,
     );
     let result = crate::kernel::functions::evaluate_function_resource_context(
-        &CState::new().with_memory(memory),
+        &ExecutionState::new().with_memory(memory),
         &clauses,
         &[],
         &assumptions,
@@ -4564,7 +4604,7 @@ fn observed_memory_projection_is_invalidated_by_overlap_but_not_disjoint_store()
         [CResourceFact::view_memory(observed_range.clone())],
         &base,
     );
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_memory(base.clone())
         .with_resource_context(resources);
     let disjoint = state.clone().with_memory(base.clone().store(
@@ -4649,7 +4689,7 @@ fn observed_projection_tracks_loaded_address_prerequisite() {
         [projected.clone(), unrelated.clone()],
         &memory,
     );
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_memory(memory.clone())
         .with_resource_context(resources);
 
@@ -4734,7 +4774,7 @@ fn observed_projection_tracks_loaded_base_and_start_prerequisites() {
         ],
         &memory,
     );
-    let after_selector_write = CState::new()
+    let after_selector_write = ExecutionState::new()
         .with_memory(memory.clone())
         .with_resource_context(resources)
         .with_memory(memory.store(selector, int16(1)));
@@ -4785,7 +4825,7 @@ fn observed_wide_footprint_and_unknown_loop_barrier_are_invalidated() {
         [CResourceFact::view_memory(range.clone())],
         &memory,
     );
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_memory(memory)
         .with_resource_context(resources);
     let barrier = state
@@ -5206,7 +5246,7 @@ fn v11_tampered_cstate_mirror_is_rejected_and_stale_sidecar_is_dropped() {
         viewed: child,
         hold: None,
     };
-    let state = CState::new().with_resource_context_and_loan_dependencies(
+    let state = ExecutionState::new().with_resource_context_and_loan_dependencies(
         resources,
         [(child_occurrence, binding.clone())],
     );
@@ -6154,19 +6194,21 @@ mod residue_bounds {
 
 #[test]
 fn named_population_members_keep_identity_and_fields_independent_of_count() {
-    let schema =
-        ResourceFieldSchema::new(vec![("serial".into(), ResourceFieldType::C(CType::Int32))])
-            .unwrap();
+    let schema = ResourceFieldSchema::new(vec![(
+        "serial".into(),
+        ResourceFieldType::C(ProgramType::Int32),
+    )])
+    .unwrap();
     let block = PointerBlock::Heap(940_501);
     let pointer = Pointer {
         block: block.clone(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let arguments: ResourceArguments = vec![CValue::pointer(pointer.clone()).into()].into();
+    let arguments: ResourceArguments = vec![ProgramValue::pointer(pointer.clone()).into()].into();
     let description =
         crate::kernel::ResourceDescription::new("ticket".into(), arguments.clone(), schema.clone());
     let authority = CResourceFact::own(CResource::PopulationAuthority(description.clone()));
-    let mut created = CState::new()
+    let mut created = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
             CMemory::new()
@@ -6180,7 +6222,7 @@ fn named_population_members_keep_identity_and_fields_independent_of_count() {
         .unwrap();
     let definition = CCompositeResourceDefinition::new(
         "ticket",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![],
@@ -6199,11 +6241,11 @@ fn named_population_members_keep_identity_and_fields_independent_of_count() {
     };
     let first = member(1);
     let second = member(2);
-    let rewrite = |state: &CState, instance: &ResourceInstance, unfold| {
+    let rewrite = |state: &ExecutionState, instance: &ResourceInstance, unfold| {
         rewrite_resource_instance(state, instance, &definition, &assumptions, unfold)
             .map(|(next, _)| next)
     };
-    let count = |state: &CState| {
+    let count = |state: &ExecutionState| {
         state
             .population_effects
             .creation
@@ -6306,7 +6348,7 @@ fn predicate_population_snapshot_reads_saved_count_without_transfer_rights() {
         block: PointerBlock::Heap(940_601),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let arguments: ResourceArguments = vec![CValue::pointer(pointer.clone()).into()].into();
+    let arguments: ResourceArguments = vec![ProgramValue::pointer(pointer.clone()).into()].into();
     let description = crate::kernel::ResourceDescription::new(
         "member".into(),
         arguments.clone(),
@@ -6319,14 +6361,14 @@ fn predicate_population_snapshot_reads_saved_count_without_transfer_rights() {
     });
     let definition = CCompositeResourceDefinition::new(
         "member",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![],
         vec![],
     );
     let assumptions = PureFactContext::new();
-    let mut created = CState::new()
+    let mut created = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
             CMemory::new()
@@ -6346,9 +6388,9 @@ fn predicate_population_snapshot_reads_saved_count_without_transfer_rights() {
         .unwrap();
     let expression = SpecExpression::CountedResourceCount {
         name: "member".into(),
-        arguments: vec![Some(SpecExpression::Value(CValue::pointer(pointer)))],
+        arguments: vec![Some(SpecExpression::Value(ProgramValue::pointer(pointer)))],
     };
-    let read = |state: &CState| {
+    let read = |state: &ExecutionState| {
         c_evaluate_spec_expression_at_state(state, &expression, None, &assumptions)
             .unwrap()
             .0
@@ -6369,8 +6411,11 @@ fn predicate_population_snapshot_reads_saved_count_without_transfer_rights() {
         Variable::allocate_fresh().unwrap(),
         "member".into(),
         arguments,
-        ResourceFieldSchema::new(vec![("serial".into(), ResourceFieldType::C(CType::Int32))])
-            .unwrap(),
+        ResourceFieldSchema::new(vec![(
+            "serial".into(),
+            ResourceFieldType::C(ProgramType::Int32),
+        )])
+        .unwrap(),
         vec![int32(7).into()].into(),
     )
     .unwrap();
@@ -6505,7 +6550,7 @@ fn wide_range_observer_transport_rejects_changed_cells_and_low_word_equalities()
     let pointer = Pointer::symbolic(Variable(983_200));
     let before = CMemory::new().store(
         pointer.clone(),
-        CValue::UInt64(MachineTerm::uint64_constant(3)),
+        ProgramValue::UInt64(MachineTerm::uint64_constant(3)),
     );
     let old = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory(before.clone()),
@@ -6520,7 +6565,7 @@ fn wide_range_observer_transport_rejects_changed_cells_and_low_word_equalities()
     assert!(facts.uint64_values_equal_for_range_resolution(&observer, &old));
     let after = before.store(
         pointer.clone(),
-        CValue::UInt64(MachineTerm::uint64_constant((1u64 << 32) + 3)),
+        ProgramValue::UInt64(MachineTerm::uint64_constant((1u64 << 32) + 3)),
     );
     let changed = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory(after),
@@ -6943,9 +6988,9 @@ fn observable_projection_uses_current_loan_bindings_and_composite_eligibility() 
 #[test]
 fn first_state_difference_names_the_resource_held_on_one_side() {
     let authority = CResourceFact::own_composite("authority".to_string(), Vec::new());
-    let holding = CState::new()
+    let holding = ExecutionState::new()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(authority.clone()));
-    let empty = CState::new();
+    let empty = ExecutionState::new();
     assert_eq!(holding.first_difference(&holding.clone()), None);
     let before = holding.first_difference(&empty).unwrap();
     assert!(

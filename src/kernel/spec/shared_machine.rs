@@ -15,10 +15,10 @@ pub(super) use casts::{cast_narrowing, cast_signedness, cast_widening};
 /// Native wide conversion rejects call roots even for a same-format cast.
 /// Retained identity shortcuts must preserve that refusal without exporting
 /// arguments merely to discover the unsupported root.
-pub(super) fn call_cast_refused(value: &SpecValue, target: CType) -> bool {
+pub(super) fn call_cast_refused(value: &SpecValue, target: ProgramType) -> bool {
     matches!(value, SpecValue::Shared(root)
         if matches!(root.node(), KernelTermNode::Call { .. })
-            && matches!(value.c_type(), CType::Int128 | CType::UInt128)
+            && matches!(value.c_type(), ProgramType::Int128 | ProgramType::UInt128)
             && MachineIntegerType::from_c_type(target).is_some())
 }
 
@@ -217,19 +217,19 @@ pub(super) fn prepare(
                     return Err(ExecutionLimit::Deadline);
                 }
                 match expression {
-                    SpecExpression::Value(CValue::Int32(value)) => {
+                    SpecExpression::Value(ProgramValue::Int32(value)) => {
                         formats.push(MachineIntegerType::Int32);
                         prepared.push(Prepared::Value(MachineIntegerType::Int32, value));
                     }
-                    SpecExpression::Value(CValue::Int64(value)) => {
+                    SpecExpression::Value(ProgramValue::Int64(value)) => {
                         formats.push(MachineIntegerType::Int64);
                         prepared.push(Prepared::Value(MachineIntegerType::Int64, value));
                     }
-                    SpecExpression::Value(CValue::UInt32(value)) => {
+                    SpecExpression::Value(ProgramValue::UInt32(value)) => {
                         formats.push(MachineIntegerType::UInt32);
                         prepared.push(Prepared::Value(MachineIntegerType::UInt32, value));
                     }
-                    SpecExpression::Value(CValue::UInt64(value)) => {
+                    SpecExpression::Value(ProgramValue::UInt64(value)) => {
                         formats.push(MachineIntegerType::UInt64);
                         prepared.push(Prepared::Value(MachineIntegerType::UInt64, value));
                     }
@@ -402,12 +402,12 @@ fn logical_binary(
     }
 }
 
-fn wrap(format: MachineIntegerType, value: MachineTerm) -> CValue {
+fn wrap(format: MachineIntegerType, value: MachineTerm) -> ProgramValue {
     match format {
-        MachineIntegerType::Int32 => CValue::Int32(value),
-        MachineIntegerType::Int64 => CValue::Int64(value),
-        MachineIntegerType::UInt32 => CValue::UInt32(value),
-        MachineIntegerType::UInt64 => CValue::UInt64(value),
+        MachineIntegerType::Int32 => ProgramValue::Int32(value),
+        MachineIntegerType::Int64 => ProgramValue::Int64(value),
+        MachineIntegerType::UInt32 => ProgramValue::UInt32(value),
+        MachineIntegerType::UInt64 => ProgramValue::UInt64(value),
         _ => unreachable!("prepared arithmetic format"),
     }
 }
@@ -471,7 +471,7 @@ mod tests {
         budget.machine_result_production_disabled = legacy;
         native_results(
             evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                SpecScope::unbound(&CState::new(), None),
+                SpecScope::unbound(&ExecutionState::new(), None),
                 expression,
                 assumptions,
                 &mut budget,
@@ -529,7 +529,7 @@ mod tests {
                             budget.machine_result_production_disabled = disabled;
                             native_results(
                                 evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                                    SpecScope::unbound(&CState::new(), None),
+                                    SpecScope::unbound(&ExecutionState::new(), None),
                                     &expression,
                                     &PureFactContext::new(),
                                     &mut budget,
@@ -605,9 +605,9 @@ mod tests {
         for format in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
             let wrap = |bits| {
                 if format == MachineIntegerType::Int32 {
-                    CValue::Int32(bits)
+                    ProgramValue::Int32(bits)
                 } else {
-                    CValue::Int64(bits)
+                    ProgramValue::Int64(bits)
                 }
             };
             let constant = |n: i64| {
@@ -801,9 +801,9 @@ mod tests {
     #[test]
     fn shared_signed_domains_retain_held_resource_metadata() {
         let operand = || {
-            Box::new(SpecExpression::Value(CValue::Int32(MachineTerm::Variable(
-                Variable(990005),
-            ))))
+            Box::new(SpecExpression::Value(ProgramValue::Int32(
+                MachineTerm::Variable(Variable(990005)),
+            )))
         };
         let expression = SpecExpression::Add(operand(), operand());
         for held in [false, true] {
@@ -829,9 +829,9 @@ mod tests {
         for format in [MachineIntegerType::UInt32, MachineIntegerType::UInt64] {
             let wrap = |bits| {
                 if format == MachineIntegerType::UInt32 {
-                    CValue::UInt32(bits)
+                    ProgramValue::UInt32(bits)
                 } else {
-                    CValue::UInt64(bits)
+                    ProgramValue::UInt64(bits)
                 }
             };
             let one = if format == MachineIntegerType::UInt32 {
@@ -976,7 +976,7 @@ mod tests {
                     let mut execution = ExecutionBudget::new();
                     let exports = KernelTermExport::machine_export_count();
                     let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                        SpecScope::unbound(&CState::new(), None),
+                        SpecScope::unbound(&ExecutionState::new(), None),
                         &expression,
                         &assumptions,
                         &mut SpecEvaluation::logical(&mut execution),
@@ -1007,12 +1007,12 @@ mod tests {
     #[test]
     fn partial_and_deferred_arithmetic_keeps_its_obligations() {
         let signed = || {
-            Box::new(SpecExpression::Value(CValue::Int32(MachineTerm::Variable(
-                Variable(990002),
-            ))))
+            Box::new(SpecExpression::Value(ProgramValue::Int32(
+                MachineTerm::Variable(Variable(990002)),
+            )))
         };
         let unsigned = || {
-            Box::new(SpecExpression::Value(CValue::UInt64(
+            Box::new(SpecExpression::Value(ProgramValue::UInt64(
                 MachineTerm::Variable(Variable(990003)),
             )))
         };
@@ -1028,7 +1028,7 @@ mod tests {
         let signed_sum = SpecExpression::Add(signed(), signed());
         assert!(!evaluate(&signed_sum, false)[0].obligations.is_empty());
         let zero = || {
-            Box::new(SpecExpression::Value(CValue::UInt64(
+            Box::new(SpecExpression::Value(ProgramValue::UInt64(
                 MachineTerm::uint64_constant(0),
             )))
         };

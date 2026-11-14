@@ -2,7 +2,7 @@ use super::*;
 
 fn adapter(expression: &SpecExpression) -> Vec<CExpressionPath<SpecValue>> {
     evaluate_resource_child_argument_paths(
-        &CState::new(),
+        &ExecutionState::new(),
         expression,
         &PureFactContext::new(),
         &BTreeMap::new(),
@@ -41,7 +41,7 @@ fn specification_execution_handoff_keeps_the_produced_root_and_debts() {
         let expression = sum(format);
         let mut budget = ExecutionBudget::new();
         let expected = evaluate_spec_expression_paths_with_bindings_in(
-            &CState::new(),
+            &ExecutionState::new(),
             &expression,
             &PureFactContext::new(),
             &BTreeMap::new(),
@@ -68,24 +68,28 @@ fn specification_execution_handoff_keeps_the_produced_root_and_debts() {
 fn c_fragment_handoff_preserves_values_and_errors() {
     let _session = crate::kernel::VerificationSession::enter();
     for expression in [
-        CExpression::Value(CValue::UInt32(MachineTerm::uint32_constant(7))),
-        CExpression::Variable("missing".into()),
-        CExpression::Divide(
-            Box::new(CExpression::Value(CValue::Int32(MachineTerm::constant(1)))),
-            Box::new(CExpression::Value(CValue::Int32(MachineTerm::constant(0)))),
+        ProgramExpression::Value(ProgramValue::UInt32(MachineTerm::uint32_constant(7))),
+        ProgramExpression::Variable("missing".into()),
+        ProgramExpression::Divide(
+            Box::new(ProgramExpression::Value(ProgramValue::Int32(
+                MachineTerm::constant(1),
+            ))),
+            Box::new(ProgramExpression::Value(ProgramValue::Int32(
+                MachineTerm::constant(0),
+            ))),
         ),
     ] {
         let expected = {
             let _scope = crate::kernel::eval::SpecificationReadScope::enter();
             evaluate_c_expression_paths(
-                &CState::new(),
+                &ExecutionState::new(),
                 &expression,
                 &PureFactContext::new(),
                 &mut ExecutionBudget::new(),
             )
             .unwrap()
         };
-        let actual = adapter(&SpecExpression::CExpression(expression));
+        let actual = adapter(&SpecExpression::ProgramExpression(expression));
         assert_eq!(actual.len(), expected.len());
         for (actual, expected) in actual.into_iter().zip(expected) {
             assert_eq!(

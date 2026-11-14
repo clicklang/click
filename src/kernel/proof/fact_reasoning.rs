@@ -967,7 +967,7 @@ pub(crate) enum ForallInstantiationError {
 pub(crate) enum InstanceArgument {
     Machine(MachineTerm),
     Integer(IntegerTerm),
-    Pointer(CPointerValue),
+    Pointer(PointerValue),
 }
 
 pub(crate) fn discharge_instantiated_guards(
@@ -1027,14 +1027,14 @@ pub(crate) fn instantiate_universal(
                 .map_err(|error| ForallInstantiationError::SubstitutionRefused(error.to_string()))
         }
         (Sort::CPointer(c_type), InstanceArgument::Pointer(pointer))
-            if c_type.accepts(&CValue::Pointer(pointer.clone())) =>
+            if c_type.accepts(&ProgramValue::Pointer(pointer.clone())) =>
         {
             crate::kernel::substitute_pointer_value_in_proposition(body, *var, pointer)
                 .map_err(ForallInstantiationError::SubstitutionRefused)
         }
         (Sort::CObjectPointer(c_type, class), InstanceArgument::Pointer(pointer))
             if crate::kernel::AlgebraicValueType::ObjectPointer(*c_type, class.clone())
-                .accepts_c_value(&CValue::Pointer(pointer.clone())) =>
+                .accepts_c_value(&ProgramValue::Pointer(pointer.clone())) =>
         {
             crate::kernel::substitute_pointer_value_in_proposition(body, *var, pointer)
                 .map_err(ForallInstantiationError::SubstitutionRefused)
@@ -2175,7 +2175,7 @@ mod tests {
     use crate::kernel::proof::facts::ProofFacts;
     use crate::kernel::proof::quantified_equivalence_index_key;
     use crate::kernel::{
-        CMemory, CMemoryRange, CResource, CValue, Pointer, PointerBlock, PointerOffsetTerm,
+        CMemory, CMemoryRange, CResource, Pointer, PointerBlock, PointerOffsetTerm, ProgramValue,
         Variable, intern_c_memory, load_variable_for_cell_with_origin,
     };
 
@@ -2292,13 +2292,11 @@ mod tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let before = intern_c_memory(CMemory::new().with_block("p", 4));
-        let after = intern_c_memory(
-            before
-                .as_ref()
-                .clone()
-                .store(pointer.clone(), CValue::Int32(MachineTerm::constant(9))),
-        );
-        let quantified = |memory: SharedCMemory, named: bool| {
+        let after = intern_c_memory(before.as_ref().clone().store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(9)),
+        ));
+        let quantified = |memory: SharedMemory, named: bool| {
             let load = if named {
                 MachineTerm::Variable(load_variable_for_cell_with_origin(
                     &memory,
@@ -2351,10 +2349,11 @@ mod tests {
                 Box::new(PointerOffsetTerm::Constant(4)),
             ),
         };
-        let memory = intern_c_memory(
-            CMemory::new().store(nested_cell.clone(), CValue::Int32(MachineTerm::constant(7))),
-        );
-        let quantified = |snapshot: &crate::kernel::SharedCMemory, binder: Variable| {
+        let memory = intern_c_memory(CMemory::new().store(
+            nested_cell.clone(),
+            ProgramValue::Int32(MachineTerm::constant(7)),
+        ));
+        let quantified = |snapshot: &crate::kernel::SharedMemory, binder: Variable| {
             let pointer = Pointer {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(binder), 4),
@@ -2387,7 +2386,7 @@ mod tests {
             memory
                 .as_ref()
                 .clone()
-                .store(nested_cell, CValue::Int32(MachineTerm::constant(9))),
+                .store(nested_cell, ProgramValue::Int32(MachineTerm::constant(9))),
         );
         assert!(!quantified_binder_equivalent(
             &requested,
@@ -2403,7 +2402,7 @@ mod tests {
         };
         let memory = CMemory::new().with_block("cell", 4).store(
             pointer.clone(),
-            CValue::Int32(MachineTerm::Variable(Variable(11))),
+            ProgramValue::Int32(MachineTerm::Variable(Variable(11))),
         );
         let proposition = |binder| Proposition::ForAll {
             name: Default::default(),
@@ -2443,9 +2442,10 @@ mod tests {
             offset: PointerOffsetTerm::Constant(4),
         };
         let before = CMemory::new();
-        let after = before
-            .clone()
-            .store(written.clone(), CValue::Int32(MachineTerm::constant(1)));
+        let after = before.clone().store(
+            written.clone(),
+            ProgramValue::Int32(MachineTerm::constant(1)),
+        );
         let assumptions =
             PureFactContext::new().assume_proposition(Proposition::CMemoryMutatesOnly {
                 before: before.clone(),
@@ -2484,11 +2484,14 @@ mod tests {
         // The explicit derivation check must reject this pair without entering
         // the global snapshot-comparison planner.
         let loaded = preserved;
-        let changed_before =
-            CMemory::new().store(loaded.clone(), CValue::Int32(MachineTerm::constant(1)));
-        let changed_after = changed_before
-            .clone()
-            .store(loaded.clone(), CValue::Int32(MachineTerm::constant(2)));
+        let changed_before = CMemory::new().store(
+            loaded.clone(),
+            ProgramValue::Int32(MachineTerm::constant(1)),
+        );
+        let changed_after = changed_before.clone().store(
+            loaded.clone(),
+            ProgramValue::Int32(MachineTerm::constant(2)),
+        );
         let changed_left = load_variable_for_cell_with_origin(
             &intern_c_memory(changed_before.clone()),
             &loaded,
@@ -2657,13 +2660,11 @@ mod tests {
             block: "p".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let after = intern_c_memory(
-            before
-                .memory()
-                .clone()
-                .store(pointer.clone(), CValue::Int32(MachineTerm::constant(1))),
-        );
-        let make = |binder, argument, memory: SharedCMemory| Proposition::Exists {
+        let after = intern_c_memory(before.memory().clone().store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(1)),
+        ));
+        let make = |binder, argument, memory: SharedMemory| Proposition::Exists {
             name: "fuel".into(),
             var: Variable(binder),
             sort: Sort::Algebraic(ty.clone()),
@@ -2830,9 +2831,12 @@ mod tests {
             .clone()
             .store(
                 phase_field.clone(),
-                CValue::Int32(load(&empty, &phase_field)),
+                ProgramValue::Int32(load(&empty, &phase_field)),
             )
-            .store(owner_base.clone(), CValue::Int32(load(&empty, &owner_base)));
+            .store(
+                owner_base.clone(),
+                ProgramValue::Int32(load(&empty, &owner_base)),
+            );
         let cell_element_offset =
             |memory: &CMemory| PointerOffsetTerm::scaled_int32_node(load(memory, &cell_field), 4);
         // The fold-state form reads the cell pointer through a memory
@@ -2844,7 +2848,7 @@ mod tests {
                 block: PointerBlock::ExternalArgument,
                 offset: cell_element_offset(&havoc),
             },
-            CValue::Int32(load(&havoc, &owner_base)),
+            ProgramValue::Int32(load(&havoc, &owner_base)),
         );
         let separation = |left_start: u32, left_end: u32, cell_memory: &CMemory| {
             Proposition::CResourceSeparate {
@@ -3427,8 +3431,9 @@ mod integer_reflexivity_tests {
     use super::*;
     use crate::kernel::proof::ProofFacts;
     use crate::kernel::{
-        CMemory, CValue, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType, MachineTerm,
-        Pointer, PointerOffsetTerm, SharedIntegerRangeEndpoint, SharedMachineIntegerTerm, Variable,
+        CMemory, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType, MachineTerm, Pointer,
+        PointerOffsetTerm, ProgramValue, SharedIntegerRangeEndpoint, SharedMachineIntegerTerm,
+        Variable,
     };
 
     #[test]
@@ -3683,9 +3688,9 @@ mod integer_reflexivity_tests {
             before
                 .memory()
                 .clone()
-                .store(a.clone(), CValue::Int32(MachineTerm::constant(7))),
+                .store(a.clone(), ProgramValue::Int32(MachineTerm::constant(7))),
         );
-        let load = |memory: &crate::kernel::SharedCMemory, address: &Pointer| {
+        let load = |memory: &crate::kernel::SharedMemory, address: &Pointer| {
             Pointer::symbolic(crate::kernel::load_variable_for_cell_with_origin(
                 memory,
                 address,
@@ -3713,7 +3718,7 @@ mod integer_reflexivity_tests {
         let quantified = Proposition::ForAll {
             name: Default::default(),
             var: Variable(96_110),
-            sort: Sort::CPointer(CType::Int32Pointer),
+            sort: Sort::CPointer(ProgramType::Int32Pointer),
             body: Box::new(normalization_pointer_equality(&a, &b)),
         };
         assert!(normalize_using_conditions(&quantified, &[], &facts).is_err());
@@ -3765,13 +3770,11 @@ mod integer_reflexivity_tests {
         };
         let before =
             crate::kernel::intern_c_memory(CMemory::new().with_block("normalize-fold-snapshot", 8));
-        let after = crate::kernel::intern_c_memory(
-            before
-                .as_ref()
-                .clone()
-                .store(pointer.clone(), CValue::Int32(MachineTerm::constant(1))),
-        );
-        let load_fold = |memory: &crate::kernel::SharedCMemory, accumulator, item| {
+        let after = crate::kernel::intern_c_memory(before.as_ref().clone().store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(1)),
+        ));
+        let load_fold = |memory: &crate::kernel::SharedMemory, accumulator, item| {
             integer_fold(
                 int32_index(),
                 accumulator,
@@ -4245,15 +4248,15 @@ mod annotated_address_condition_tests {
         let before = intern_c_memory(
             CMemory::new()
                 .with_block("annotated-address-index", 4)
-                .store(cell.clone(), CValue::Int32(MachineTerm::constant(0))),
+                .store(cell.clone(), ProgramValue::Int32(MachineTerm::constant(0))),
         );
         let after = intern_c_memory(
             before
                 .memory()
                 .clone()
-                .store(cell.clone(), CValue::Int32(MachineTerm::constant(1))),
+                .store(cell.clone(), ProgramValue::Int32(MachineTerm::constant(1))),
         );
-        let fact = |memory: SharedCMemory, annotated: bool| {
+        let fact = |memory: SharedMemory, annotated: bool| {
             use crate::kernel::effective_type::{CAccessClass, CScalarClass};
             let pointer = Pointer {
                 block: "annotated-address-target".into(),

@@ -7,7 +7,7 @@ use super::*;
 /// The justification the step rule gives for crossing `edge`'s own derivation
 /// with a `bytes`-wide read at `pointer`, which the edge must not write.
 fn seeded_edge_justification(
-    edge: &SharedCMemory,
+    edge: &SharedMemory,
     pointer: &Pointer,
     bytes: u32,
     assumptions: &PureFactContext,
@@ -103,7 +103,7 @@ fn rewritten_store_witness_work_scales_with_explicit_adjacent_equalities() {
         let value = MachineTerm::constant(17);
         let mut memory = CMemory::new()
             .with_block("arg-memory", 128)
-            .store(arc_pointer(4), CValue::Int32(value.clone()));
+            .store(arc_pointer(4), ProgramValue::Int32(value.clone()));
         let load = |memory: &CMemory| {
             MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory_ref(memory),
@@ -231,7 +231,7 @@ fn memory_dag_walks_follow_chains_of_any_length() {
             for index in 0..size {
                 memory = memory.store(
                     arc_pointer(8 + 4 * index),
-                    CValue::Int32(MachineTerm::constant(index as u32)),
+                    ProgramValue::Int32(MachineTerm::constant(index as u32)),
                 );
             }
             let read = arc_pointer(0);
@@ -260,7 +260,7 @@ fn seeded_pointer_read_evidence_does_not_enumerate_large_runs_or_alias_classes()
             old.memory()
                 .clone()
                 .store(base.offset_by_bytes(size * 4 + 16), int32(1))
-                .with_seeded_cells(base, 4, CType::Int32, 0, size, old.clone()),
+                .with_seeded_cells(base, 4, ProgramType::Int32, 0, size, old.clone()),
         );
         let (mut context, left, right) =
             seeded_pointer_read_context(&old, &current, &address, &alias);
@@ -289,7 +289,7 @@ fn pointer_read_source_registration_does_not_walk_growing_store_histories() {
         let mut memory = old.memory().clone().with_seeded_cells(
             address.clone(),
             4,
-            CType::Int32,
+            ProgramType::Int32,
             0,
             2,
             old.clone(),
@@ -352,7 +352,7 @@ fn pointer_read_cache_forgetting_registration_does_not_search_older_history() {
         for i in 0..size {
             memory = memory.store(
                 address.clone(),
-                CValue::Int64(MachineTerm::int64_constant(i as i64)),
+                ProgramValue::Int64(MachineTerm::int64_constant(i as i64)),
             );
         }
         let before = intern_c_memory(memory.clone());
@@ -388,7 +388,14 @@ fn read_identity_production_is_linear_and_endpoint_queries_do_not_walk_history()
             for _ in 0..size {
                 memory = memory
                     .clone()
-                    .with_seeded_cells(address.clone(), 4, CType::Int32, 0, 2, original.clone())
+                    .with_seeded_cells(
+                        address.clone(),
+                        4,
+                        ProgramType::Int32,
+                        0,
+                        2,
+                        original.clone(),
+                    )
                     .without_possible_aliasing_cells(&unknown, 4, &context);
             }
         });
@@ -573,9 +580,9 @@ fn seeded_scalar_loads_frame_unknown_cells_with_constant_work() {
     let other = Pointer::symbolic(Variable(98_471));
     let assumptions = PureFactContext::new();
     for (element_type, width) in [
-        (CType::Int32, 4),
-        (CType::Int32Pointer, 8),
-        (CType::Int32Pointer, 16),
+        (ProgramType::Int32, 4),
+        (ProgramType::Int32Pointer, 8),
+        (ProgramType::Int32Pointer, 16),
     ] {
         let mut previous_work = None;
         for size in [16, 256, 4096, 65536] {
@@ -645,7 +652,7 @@ fn seeded_scalar_slots_preserve_overlapping_wide_reads() {
         let current = intern_c_memory(original.memory().clone().with_seeded_cells(
             pointer.clone(),
             stride,
-            CType::Int32,
+            ProgramType::Int32,
             0,
             count,
             original.clone(),
@@ -683,7 +690,7 @@ fn seeded_scalar_slots_preserve_overlapping_wide_reads() {
         let cached = intern_c_memory(changed.memory().clone().with_seeded_cells(
             pointer.clone(),
             stride,
-            CType::Int32,
+            ProgramType::Int32,
             0,
             count,
             changed.clone(),
@@ -718,7 +725,10 @@ fn stored_field_value_uses_indexed_base_aliases() {
     };
     let write = left.offset_by_bytes(16);
     let read = right.offset_by_bytes(16);
-    let stored = CValue::typed_pointer(Pointer::symbolic(Variable(105_003)), CType::Int32Pointer);
+    let stored = ProgramValue::typed_pointer(
+        Pointer::symbolic(Variable(105_003)),
+        ProgramType::Int32Pointer,
+    );
     let bare = PureFactContext::new();
     assert!(!write_is_at_read_address(&write, &read, &bare));
     let mut samples = Vec::new();
@@ -751,7 +761,7 @@ fn stored_field_value_uses_indexed_base_aliases() {
         assert!(!write_supplies_read(&write, &stored, &read, 4, &context));
         assert!(!write_supplies_read(
             &write,
-            &CValue::Int32(MachineTerm::constant(0)),
+            &ProgramValue::Int32(MachineTerm::constant(0)),
             &read,
             8,
             &context
@@ -777,7 +787,10 @@ fn aliased_store_byte_frame_checks_width_context_and_scales() {
     let right = base(106_002);
     let bridge = Pointer::symbolic(Variable(106_003));
     let read = right.offset_by_bytes(16);
-    let value = CValue::typed_pointer(Pointer::symbolic(Variable(106_004)), CType::Int32Pointer);
+    let value = ProgramValue::typed_pointer(
+        Pointer::symbolic(Variable(106_004)),
+        ProgramType::Int32Pointer,
+    );
     let memory = intern_c_memory(CMemory::new());
     let classify = |write: Pointer, bytes, context: &PureFactContext| {
         let step = CMemoryDerivation::Store {
@@ -909,7 +922,10 @@ fn graph_aliased_range_membership_checks_complete_access_and_scales() {
     let step = CMemoryDerivation::Store {
         base: intern_c_memory(CMemory::new()),
         pointer: write.clone(),
-        value: CValue::typed_pointer(Pointer::symbolic(Variable(160_007)), CType::Int32Pointer),
+        value: ProgramValue::typed_pointer(
+            Pointer::symbolic(Variable(160_007)),
+            ProgramType::Int32Pointer,
+        ),
     };
     let mut samples = Vec::new();
     for count in [16u64, 64, 256, 1024] {
@@ -1295,12 +1311,12 @@ fn an_unrelated_view_does_not_walk_pointer_read_history() {
         let target = Pointer::symbolic(Variable(995_600));
         let mut memory = CMemory::new().store(
             field.clone(),
-            CValue::typed_pointer(target, CType::Int32Pointer),
+            ProgramValue::typed_pointer(target, ProgramType::Int32Pointer),
         );
         for index in 0..size {
             memory = memory.store(
                 CMemory::local_pointer("empty-frame-counter").offset_by_bytes(index * 4),
-                CValue::Int32(index.into()),
+                ProgramValue::Int32(index.into()),
             );
         }
         let snapshot = crate::kernel::intern_c_memory_ref(&memory);
@@ -1343,13 +1359,20 @@ fn mixed_width_seeded_runs_ignore_other_address_stems() {
             let source = intern_c_memory(CMemory::new());
             let (memory, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let seed_word = |memory: CMemory| {
-                    memory.with_seeded_cells(word.clone(), 8, CType::UInt64, 0, 1, source.clone())
+                    memory.with_seeded_cells(
+                        word.clone(),
+                        8,
+                        ProgramType::UInt64,
+                        0,
+                        1,
+                        source.clone(),
+                    )
                 };
                 let seed_bytes = |memory: CMemory| {
                     memory.with_seeded_cells(
                         bytes.clone(),
                         1,
-                        CType::UInt8,
+                        ProgramType::UInt8,
                         0,
                         length,
                         source.clone(),
@@ -1518,7 +1541,7 @@ fn abstract_read_origin_lookup_ignores_unrelated_definitions() {
             );
         }
         let address = Pointer::symbolic(Variable(992_000));
-        let CValue::Parameter(named) =
+        let ProgramValue::Parameter(named) =
             AlgebraicTermNode::parameter_load(source.clone(), address.clone(), parameter)
         else {
             unreachable!()

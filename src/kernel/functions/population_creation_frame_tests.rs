@@ -2,8 +2,8 @@ use super::*;
 
 #[test]
 fn authority_refuses_calls_that_reach_a_population() {
-    let authority = CState::new().with_population_creation_tracking();
-    let call = |helper: &CFunction| {
+    let authority = ExecutionState::new().with_population_creation_tracking();
+    let call = |helper: &ProgramFunction| {
         execute_c_function_call_paths(
             &authority,
             helper,
@@ -25,34 +25,35 @@ fn authority_refuses_calls_that_reach_a_population() {
     };
 
     // A helper whose contract moves no resource reaches no population.
-    let ordinary = c_function(CType::Void, "helper", vec![], CStatement::Skip);
+    let ordinary = c_function(ProgramType::Void, "helper", vec![], ProgramStatement::Skip);
     assert!(!contract_reaches_population(ordinary.contract_interface()));
     assert!(!refused(&call(&ordinary)));
 
     // An abstract token may be an authorized member, so an unadmitted
     // contract producing one is refused.
-    let minting = c_function(CType::Void, "mint", vec![], CStatement::Skip).with_resource_summary(
-        vec![],
-        vec![CResourceSpec::token(
-            CResourceAccessMode::Own,
-            "ticket".into(),
+    let minting = c_function(ProgramType::Void, "mint", vec![], ProgramStatement::Skip)
+        .with_resource_summary(
             vec![],
-            vec![],
-        )],
-    );
+            vec![CResourceSpec::token(
+                CResourceAccessMode::Own,
+                "ticket".into(),
+                vec![],
+                vec![],
+            )],
+        );
     assert!(contract_reaches_population(minting.contract_interface()));
     assert!(refused(&call(&minting)));
 }
 
 #[test]
 fn unused_creation_ledgers_compare_equal_and_used_ones_do_not() {
-    let left = CState::new().with_population_creation_tracking();
-    let right = CState::new().with_population_creation_tracking();
+    let left = ExecutionState::new().with_population_creation_tracking();
+    let right = ExecutionState::new().with_population_creation_tracking();
     assert_ne!(left, right, "fresh ledgers have distinct identities");
     assert!(left.equal_up_to_unused_creation_ledgers(&right));
-    assert!(!left.equal_up_to_unused_creation_ledgers(&CState::new()));
+    assert!(!left.equal_up_to_unused_creation_ledgers(&ExecutionState::new()));
 
-    let mut base = CState::new().with_local("frame:holder", int32(0));
+    let mut base = ExecutionState::new().with_local("frame:holder", int32(0));
     let block = base.locals.slot("frame:holder").unwrap().block.clone();
     base.set_memory(CMemory::new().with_block(block.clone(), 4));
     let unused = base.clone().with_population_creation_tracking();
@@ -65,9 +66,14 @@ fn unused_creation_ledgers_compare_equal_and_used_ones_do_not() {
 
 #[test]
 fn ended_automatic_storage_retires_creation_evidence() {
-    let function = c_function(CType::Int32, "scope", vec![], c_return(c_int32_literal(0)));
+    let function = c_function(
+        ProgramType::Int32,
+        "scope",
+        vec![],
+        c_return(c_int32_literal(0)),
+    );
     for name in ["frame:holder", "lifetime:holder"] {
-        let mut state = CState::new()
+        let mut state = ExecutionState::new()
             .with_local(name, int32(0))
             .with_population_creation_tracking();
         let block = state.locals.slot(name).unwrap().block.clone();

@@ -72,10 +72,10 @@ use crate::kernel::{MachineCastSpelling, cast_term};
 /// that the execution reached by different routes to the same state are one
 /// point.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct ProgramPoint(SharedCMemory);
+pub(crate) struct ProgramPoint(SharedMemory);
 
 impl ProgramPoint {
-    pub(crate) fn at(snapshot: &SharedCMemory) -> Self {
+    pub(crate) fn at(snapshot: &SharedMemory) -> Self {
         Self(snapshot.clone())
     }
 
@@ -85,7 +85,7 @@ impl ProgramPoint {
         Self(crate::kernel::intern_c_memory(memory.clone()))
     }
 
-    pub(crate) fn snapshot(&self) -> &SharedCMemory {
+    pub(crate) fn snapshot(&self) -> &SharedMemory {
         &self.0
     }
 
@@ -119,15 +119,15 @@ impl ProgramPoint {
 /// serve there.
 #[derive(Clone, Copy)]
 pub(crate) struct StatePoint<'a> {
-    state: &'a CState,
+    state: &'a ExecutionState,
 }
 
 impl<'a> StatePoint<'a> {
-    pub(crate) fn at(state: &'a CState) -> Self {
+    pub(crate) fn at(state: &'a ExecutionState) -> Self {
         Self { state }
     }
 
-    pub(crate) fn state(self) -> &'a CState {
+    pub(crate) fn state(self) -> &'a ExecutionState {
         self.state
     }
 
@@ -972,8 +972,8 @@ thread_local! {
 /// The walk is assumption-free and terminates: snapshot ids strictly decrease
 /// along `base`. It always reports a version, because a subject it can separate
 /// from nothing crosses nothing and so answers `memory` itself.
-fn block_last_same_point(memory: &SharedCMemory, block: &PointerBlock) -> SharedCMemory {
-    let recorded = |key: &(crate::kernel::SharedCMemory, PointerBlock)| {
+fn block_last_same_point(memory: &SharedMemory, block: &PointerBlock) -> SharedMemory {
+    let recorded = |key: &(crate::kernel::SharedMemory, PointerBlock)| {
         BLOCK_VERSION_MEMO.with(|memo| memo.borrow().get(key).cloned())
     };
     let key = (memory.clone(), block.clone());
@@ -1044,8 +1044,8 @@ fn block_last_same_point(memory: &SharedCMemory, block: &PointerBlock) -> Shared
 thread_local! {
     static BLOCK_VERSION_MEMO: std::cell::RefCell<
         std::collections::HashMap<
-            (crate::kernel::SharedCMemory, PointerBlock),
-            crate::kernel::SharedCMemory,
+            (crate::kernel::SharedMemory, PointerBlock),
+            crate::kernel::SharedMemory,
         >,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
 }
@@ -1057,20 +1057,20 @@ pub(crate) fn block_version_memo_len() -> usize {
 
 #[derive(Clone)]
 struct NamedCellVersion {
-    memory: SharedCMemory,
+    memory: SharedMemory,
     reason: StopReason,
 }
 
 pub(super) fn cell_last_same_point(
-    memory: &SharedCMemory,
+    memory: &SharedMemory,
     pointer: &Pointer,
     bytes: u32,
-) -> Option<SharedCMemory> {
+) -> Option<SharedMemory> {
     cell_last_same_version(memory, pointer, bytes).map(|version| version.memory)
 }
 
 fn cell_last_same_version(
-    memory: &SharedCMemory,
+    memory: &SharedMemory,
     pointer: &Pointer,
     bytes: u32,
 ) -> Option<NamedCellVersion> {
@@ -1205,11 +1205,11 @@ fn cell_last_same_version(
 /// separate from the cell, so that is the cell's value at `at` wherever
 /// `assumptions` hold.
 pub(crate) fn cell_value_on_path(
-    at: &SharedCMemory,
+    at: &SharedMemory,
     pointer: &Pointer,
     bytes: u32,
     assumptions: &PureFactContext,
-) -> Option<CValue> {
+) -> Option<ProgramValue> {
     match cell_source::memory_dag_cell_source(at, pointer, bytes, assumptions, false)? {
         cell_source::MemoryDagCell::Stored { value, .. } => Some(value),
         cell_source::MemoryDagCell::Unwritten { node, .. } => node.known_value(pointer),
@@ -1219,7 +1219,7 @@ pub(crate) fn cell_value_on_path(
 thread_local! {
     static CELL_VERSION_MEMO: std::cell::RefCell<
         std::collections::HashMap<
-            (crate::kernel::SharedCMemory, Pointer, u32),
+            (crate::kernel::SharedMemory, Pointer, u32),
             Option<NamedCellVersion>,
         >,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
@@ -1274,7 +1274,7 @@ fn collect_term_reads(term: &Term, reads: &mut Vec<ResourceRead>) {
         Term::Algebraic(term) => {
             term.for_each_machine_operand(|term| collect_operand_reads(term, reads));
         }
-        Term::CValue(value) => collect_value_reads(value, reads),
+        Term::ProgramValue(value) => collect_value_reads(value, reads),
         _ => {}
     }
 }
@@ -1468,9 +1468,9 @@ fn collect_operand_reads(
     }
 }
 
-fn collect_value_reads(value: &CValue, reads: &mut Vec<ResourceRead>) {
+fn collect_value_reads(value: &ProgramValue, reads: &mut Vec<ResourceRead>) {
     match value {
-        CValue::Pointer(pointer) => collect_pointer_reads(pointer.pointer(), reads),
+        ProgramValue::Pointer(pointer) => collect_pointer_reads(pointer.pointer(), reads),
         _ => {
             if let Some(term) = crate::kernel::spec::c_value_bitvector_term(value) {
                 collect_bitvector_reads(&term, reads);
@@ -1546,7 +1546,7 @@ fn collect_argument_reads(argument: &PureFunctionArgument, reads: &mut Vec<Resou
         PureFunctionArgument::ArrayRef {
             memory, pointer, ..
         } => {
-            if let CValue::Pointer(pointer) = pointer {
+            if let ProgramValue::Pointer(pointer) = pointer {
                 push_read(
                     reads,
                     OwnedResource::Block(pointer.pointer().block.clone()),

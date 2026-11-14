@@ -10,7 +10,7 @@ pub(super) fn composite_names_pointer_base(composite: &CResourceFact, pointer: &
         return false;
     };
     arguments.iter().any(|argument| {
-        let AlgebraicValue::C(CValue::Pointer(argument)) = argument else {
+        let AlgebraicValue::C(ProgramValue::Pointer(argument)) = argument else {
             return false;
         };
         argument.pointer() == pointer
@@ -99,7 +99,7 @@ pub(super) fn expand_composite_resource_tree(
 pub(in crate::kernel) fn expand_all_composite_resource_facts_and_propositions_at_state(
     context: &ResourceContext,
     definitions: &[CCompositeResourceDefinition],
-    state: &CState,
+    state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> Option<(ResourceContext, Vec<Proposition>)> {
     expand_all_composite_resource_facts_and_propositions_with_state(
@@ -116,7 +116,7 @@ pub(super) fn expand_all_composite_resource_facts_and_propositions_with_state(
     definitions: &[CCompositeResourceDefinition],
     memory: &CMemory,
     assumptions: &PureFactContext,
-    population_state: Option<&CState>,
+    population_state: Option<&ExecutionState>,
 ) -> Option<(ResourceContext, Vec<Proposition>)> {
     let (prepared, mut controls) = if let Some(state) = population_state {
         expand_checked_authority_controls(context, definitions, state, assumptions)?
@@ -196,7 +196,7 @@ pub(super) fn expand_all_composite_resource_facts_and_propositions_with_state(
 pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
     context: &ResourceContext,
     definitions: &[CCompositeResourceDefinition],
-    state: &CState,
+    state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> Option<Vec<Proposition>> {
     let mut populations = BTreeSet::<(String, ResourceArguments)>::new();
@@ -446,7 +446,7 @@ pub(in crate::kernel) fn evaluate_composite_resource_relation_propositions(
     if definition.parameters().len() != arguments.len() {
         return None;
     }
-    let mut state = CState::new().with_memory(memory.clone());
+    let mut state = ExecutionState::new().with_memory(memory.clone());
     for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
         let argument = argument.as_c_value()?;
         if parameter.c_type() != argument.c_type() {
@@ -535,7 +535,7 @@ pub(in crate::kernel) fn evaluate_composite_resource_memory_ranges(
     if definition.parameters().len() != arguments.len() {
         return None;
     }
-    let mut state = CState::new().with_memory(memory.clone());
+    let mut state = ExecutionState::new().with_memory(memory.clone());
     for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
         let argument = argument.as_c_value()?;
         if parameter.c_type() != argument.c_type() {
@@ -651,7 +651,7 @@ pub(crate) fn instantiate_composite_resource_facts(
 pub(crate) fn instantiate_private_member_body_facts(
     composite: &CResourceFact,
     definition: &CCompositeResourceDefinition,
-    state: &CState,
+    state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> Option<InstantiatedCompositeResourceFacts> {
     let memory = state.memory();
@@ -680,7 +680,7 @@ pub(super) fn instantiate_composite_resource_facts_with_state(
     memory: &CMemory,
     resources: &ResourceContext,
     assumptions: &PureFactContext,
-    population_state: Option<&CState>,
+    population_state: Option<&ExecutionState>,
 ) -> Option<InstantiatedCompositeResourceFacts> {
     let CResource::Composite { name, arguments } = composite.resource() else {
         return None;
@@ -693,7 +693,7 @@ pub(super) fn instantiate_composite_resource_facts_with_state(
     }
     let mut state = population_state
         .cloned()
-        .unwrap_or_else(CState::new)
+        .unwrap_or_else(ExecutionState::new)
         .with_memory(memory.clone())
         .with_resource_context(resources.clone());
     for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {

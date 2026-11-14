@@ -178,7 +178,7 @@ fn algebraic_read_fold_alpha_keys_ignore_unrelated_cells() {
         variants: std::sync::Arc::new([]),
         schemas: std::sync::Arc::new(AlgebraicSchemas::new(BTreeMap::new())),
     };
-    let fold = |memory: &SharedCMemory| {
+    let fold = |memory: &SharedMemory| {
         let read = AlgebraicTerm {
             algebraic_type: algebraic_type.clone(),
             node: AlgebraicTermNode::MemoryLoad {
@@ -213,7 +213,7 @@ fn algebraic_read_fold_alpha_keys_ignore_unrelated_cells() {
                     block: PointerBlock::Heap(993_000 + index),
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                CValue::Int32(0u32.into()),
+                ProgramValue::Int32(0u32.into()),
             );
         }
         let memory = crate::kernel::intern_c_memory(memory);

@@ -5,7 +5,7 @@ fn shared_contract_scope_walk_visits_dag_nodes_once() {
         let _session = crate::kernel::VerificationSession::enter();
         let variable = Variable(1017141);
         let mut root = KernelTerm::variable(
-            crate::kernel::KernelType::C(crate::kernel::CType::Int32),
+            crate::kernel::KernelType::C(crate::kernel::ProgramType::Int32),
             variable,
         );
         for _ in 0..size {
