@@ -214,6 +214,7 @@ pub(crate) use functions::program_type_spelling;
 pub(crate) use functions::publish_instance_arms;
 pub(crate) use functions::select_resource_model_arm;
 pub(crate) use functions::symbolic_call_result;
+pub(crate) use functions::with_static_pointer_read_cached;
 pub(crate) use functions::{
     contract_entry_partition_facts, evaluate_function_resource_context_with_metadata,
     quantified_resource_requirement_assumptions, resource_clause_position_note,

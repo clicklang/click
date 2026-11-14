@@ -111,8 +111,7 @@ pub(crate) use memory_loads::{
     arithmetic_comparison_form, comparison_form, holds_by_read_over_write, read_over_write_value,
 };
 pub(in crate::kernel) use memory_loads::{
-    cached_symbolic_storage_cell_value, declare_symbolic_array_access_widths,
-    declare_symbolic_element_access_widths, symbolic_storage_cell_value,
+    cached_symbolic_storage_cell_value, symbolic_storage_cell_value,
 };
 pub(crate) use memory_loads::{canonical_cell_load, canonical_form_of_load};
 pub(super) use memory_loads::{

@@ -825,10 +825,10 @@ stride; pointer objects and pointer-array slots retain the LP64 8-byte width.
 Address-of preserves the exact pointee type. Automatic array elements retain
 initialization requirements, one-past pointers cannot be dereferenced, and
 pointer-slot authority does not grant authority over the pointee. Static array
-startup preserves full-width initializers; ordinary function entry supplies
-symbolic storage without restoring those initializers or granting resources.
-Symbolic arrays use the shared lazy storage runs, so entry and a selected read
-do not visit unrelated elements. Compact scalar-copy checks include a wide
+startup preserves full-width initializers; ordinary function entry declares
+the storage without contents, restoring no initializer and granting no
+resource. A read of an untouched element is one load at function entry, so
+entry and a selected read do not visit unrelated elements. Compact scalar-copy checks include a wide
 cell overlapping the region's prefix.
 
 Other native wide arithmetic, including unsigned wrapping multiplication,

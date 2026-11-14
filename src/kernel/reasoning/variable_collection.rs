@@ -5668,9 +5668,6 @@ fn run_representative_variables(
     run: &crate::kernel::primitives::CellRun,
 ) -> Option<BTreeSet<Variable>> {
     match run.value_mode() {
-        crate::kernel::primitives::RunValueMode::SymbolicStorage => {
-            return Some(symbolic_storage_run_shared_variables(run));
-        }
         crate::kernel::primitives::RunValueMode::Constant(value) => {
             return Some(constant_run_variables(run, value));
         }

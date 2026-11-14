@@ -4963,27 +4963,6 @@ impl Pointer {
         {
             return Ok(read);
         }
-        // A static-storage cell never written since its block was declared
-        // holds the storage's symbolic initial contents, which function entry
-        // materializes from the storage's symbolic base; it is named there.
-        if address.block.is_static_storage_block()
-            && source
-                .memory()
-                .blocks
-                .get(&address.block)
-                .is_some_and(|block| block.size().as_const().is_some())
-            && !canonical.memory().blocks.contains_key(&address.block)
-            && canonical.memory().known_value(address).is_none()
-            && let Some(ProgramValue::Pointer(initial)) =
-                crate::kernel::eval::symbolic_storage_cell_value(
-                    &crate::kernel::functions::symbolic_memory_base(source.memory(), address),
-                    address,
-                    ProgramType::VoidPointerPointer,
-                    false,
-                )
-        {
-            return Ok(initial);
-        }
         // Pointer values retain the selected read directly. Observation metadata
         // records the live source independently of the term's identity.
         let bits =

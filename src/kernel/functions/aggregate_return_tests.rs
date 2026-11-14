@@ -1123,16 +1123,6 @@ fn construction_initialization_cannot_be_erased_or_seeded_by_a_proof_shortcut() 
     let _session = crate::kernel::VerificationSession::enter();
     let source = Pointer::symbolic(Variable(870_015));
     let raw = Memory::new().with_uninitialized_block(source.block.clone(), 4);
-    assert!(
-        raw.clone()
-            .with_symbolic_storage_run(
-                source.clone(),
-                ProgramType::Int32,
-                1,
-                crate::kernel::intern_memory(raw.clone())
-            )
-            .is_err()
-    );
     let assumptions = PureFactContext::new();
     let mut havoc = raw
         .clone()

@@ -252,15 +252,6 @@ pub(crate) enum RunValueMode {
     /// The value a seeded range stores: [`cell_run_value`] of the element's
     /// canonical load.
     Load,
-    /// The value a symbolic static-storage cell holds at function entry
-    /// ([`crate::kernel::eval::symbolic_storage_cell_value`]): a fresh
-    /// symbolic pointer named by the load for an object pointer, which may
-    /// point into any block, and the typed load otherwise. The run's source
-    /// holds only the storage's block, and every element's access width is
-    /// declared for the whole run
-    /// ([`crate::kernel::eval::declare_symbolic_array_access_widths`]) rather
-    /// than recorded as the element is named.
-    SymbolicStorage,
     /// Every slot holds this one value, whatever the source: the known
     /// initial contents of static storage whose initializer leaves the
     /// elements zero (or another constant), stored as C would store them.
@@ -526,9 +517,7 @@ impl CellRun {
                     source_base.offset_by_bytes(index * self.element_width),
                 ),
                 RunValueMode::Constant(value) => return value.clone(),
-                RunValueMode::Load | RunValueMode::SymbolicStorage => {
-                    (self.source.clone(), pointer)
-                }
+                RunValueMode::Load => (self.source.clone(), pointer),
             };
             return super::AlgebraicTermNode::parameter_load(source, pointer, parameter);
         }
@@ -548,13 +537,6 @@ impl CellRun {
                 );
                 cell_run_value(self.element_type, load)
             }
-            RunValueMode::SymbolicStorage => crate::kernel::eval::symbolic_storage_cell_value(
-                self.source.memory(),
-                &pointer,
-                self.element_type,
-                false,
-            )
-            .expect("a symbolic storage run holds only element types with a value"),
             RunValueMode::Constant(value) => value.clone(),
             RunValueMode::Copy { source_base } => {
                 let source_pointer = source_base.offset_by_bytes(index * self.element_width);
@@ -3421,8 +3403,7 @@ mod tests {
                             )
                         };
                         let seeded = match stream.next(4) {
-                            0 => with_mode(RunValueMode::SymbolicStorage),
-                            1 => {
+                            0 | 1 => {
                                 let constant = MachineTerm::constant(stream.next(2) as u32);
                                 with_mode(RunValueMode::Constant(if width == 1 {
                                     crate::kernel::uint8(constant)
