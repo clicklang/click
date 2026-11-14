@@ -131,6 +131,51 @@ pub(crate) enum TypedCReplacement {
     Pointer(CPointerValue),
 }
 
+type MatchFieldReplacements = (
+    BTreeMap<Variable, TypedCReplacement>,
+    BTreeMap<Variable, IntegerTerm>,
+    BTreeMap<Variable, AlgebraicTerm>,
+);
+
+fn match_field_replacements(
+    bindings: &[AlgebraicValue],
+    fields: &[AlgebraicValue],
+    types: &[AlgebraicValueType],
+) -> Option<MatchFieldReplacements> {
+    let mut c_replacements = BTreeMap::new();
+    let mut integer_replacements = BTreeMap::new();
+    let mut algebraic_replacements = BTreeMap::new();
+    for ((binding, field), expected) in bindings.iter().zip(fields).zip(types) {
+        if !field.has_type(expected) {
+            return None;
+        }
+        let (carrier, variable) = typed_binding_variable(expected, binding)?;
+        let duplicate = match (carrier, field) {
+            (BindingCarrier::C, AlgebraicValue::C(value)) => {
+                let replacement = typed_field_replacement(binding, value)?;
+                c_replacements.insert(variable, replacement).is_some()
+            }
+            (BindingCarrier::Integer, AlgebraicValue::Integer(value)) => integer_replacements
+                .insert(variable, value.clone())
+                .is_some(),
+            (BindingCarrier::Algebraic, AlgebraicValue::Algebraic(value)) => algebraic_replacements
+                .insert(variable, value.clone())
+                .is_some(),
+            // A value of a Rust type parameter is a term of its type.
+            (BindingCarrier::Algebraic, AlgebraicValue::C(CValue::Parameter(value))) => {
+                algebraic_replacements
+                    .insert(variable, (**value).clone())
+                    .is_some()
+            }
+            _ => return None,
+        };
+        if duplicate {
+            return None;
+        }
+    }
+    Some((c_replacements, integer_replacements, algebraic_replacements))
+}
+
 struct TypedVariableReplacements<'a> {
     c: &'a BTreeMap<Variable, TypedCReplacement>,
     integer: &'a BTreeMap<Variable, IntegerTerm>,
@@ -4600,39 +4645,8 @@ impl<'a> TermRewrite<'a> {
         if arm.bindings.len() != fields.len() {
             return None;
         }
-        let mut c_replacements = BTreeMap::new();
-        let mut integer_replacements = BTreeMap::new();
-        let mut algebraic_replacements = BTreeMap::new();
-        for ((binding, field), expected) in arm.bindings.iter().zip(fields).zip(&schema.fields) {
-            if !field.has_type(expected) {
-                return None;
-            }
-            let (carrier, variable) = typed_binding_variable(expected, binding)?;
-            let duplicate = match (carrier, field) {
-                (BindingCarrier::C, AlgebraicValue::C(value)) => {
-                    let replacement = typed_field_replacement(binding, value)?;
-                    c_replacements.insert(variable, replacement).is_some()
-                }
-                (BindingCarrier::Integer, AlgebraicValue::Integer(value)) => integer_replacements
-                    .insert(variable, value.clone())
-                    .is_some(),
-                (BindingCarrier::Algebraic, AlgebraicValue::Algebraic(value)) => {
-                    algebraic_replacements
-                        .insert(variable, value.clone())
-                        .is_some()
-                }
-                // A value of a Rust type parameter is a term of its type.
-                (BindingCarrier::Algebraic, AlgebraicValue::C(CValue::Parameter(value))) => {
-                    algebraic_replacements
-                        .insert(variable, (**value).clone())
-                        .is_some()
-                }
-                _ => return None,
-            };
-            if duplicate {
-                return None;
-            }
-        }
+        let (c_replacements, integer_replacements, algebraic_replacements) =
+            match_field_replacements(&arm.bindings, fields, &schema.fields)?;
         let mut field_rewrite = TermRewrite::for_typed_variables(
             &c_replacements,
             &integer_replacements,
@@ -4672,39 +4686,8 @@ impl<'a> TermRewrite<'a> {
         if arm.bindings.len() != fields.len() {
             return None;
         }
-        let mut c_replacements = BTreeMap::new();
-        let mut integer_replacements = BTreeMap::new();
-        let mut algebraic_replacements = BTreeMap::new();
-        for ((binding, field), expected) in arm.bindings.iter().zip(fields).zip(&schema.fields) {
-            if !field.has_type(expected) {
-                return None;
-            }
-            let (carrier, variable) = typed_binding_variable(expected, binding)?;
-            let duplicate = match (carrier, field) {
-                (BindingCarrier::C, AlgebraicValue::C(value)) => {
-                    let replacement = typed_field_replacement(binding, value)?;
-                    c_replacements.insert(variable, replacement).is_some()
-                }
-                (BindingCarrier::Integer, AlgebraicValue::Integer(value)) => integer_replacements
-                    .insert(variable, value.clone())
-                    .is_some(),
-                (BindingCarrier::Algebraic, AlgebraicValue::Algebraic(value)) => {
-                    algebraic_replacements
-                        .insert(variable, value.clone())
-                        .is_some()
-                }
-                // A value of a Rust type parameter is a term of its type.
-                (BindingCarrier::Algebraic, AlgebraicValue::C(CValue::Parameter(value))) => {
-                    algebraic_replacements
-                        .insert(variable, (**value).clone())
-                        .is_some()
-                }
-                _ => return None,
-            };
-            if duplicate {
-                return None;
-            }
-        }
+        let (c_replacements, integer_replacements, algebraic_replacements) =
+            match_field_replacements(&arm.bindings, fields, &schema.fields)?;
         let mut field_rewrite = TermRewrite::for_typed_variables(
             &c_replacements,
             &integer_replacements,
@@ -4744,39 +4727,8 @@ impl<'a> TermRewrite<'a> {
         if arm.bindings.len() != fields.len() {
             return None;
         }
-        let mut c_replacements = BTreeMap::new();
-        let mut integer_replacements = BTreeMap::new();
-        let mut algebraic_replacements = BTreeMap::new();
-        for ((binding, field), expected) in arm.bindings.iter().zip(fields).zip(&schema.fields) {
-            if !field.has_type(expected) {
-                return None;
-            }
-            let (carrier, variable) = typed_binding_variable(expected, binding)?;
-            let duplicate = match (carrier, field) {
-                (BindingCarrier::C, AlgebraicValue::C(value)) => {
-                    let replacement = typed_field_replacement(binding, value)?;
-                    c_replacements.insert(variable, replacement).is_some()
-                }
-                (BindingCarrier::Integer, AlgebraicValue::Integer(value)) => integer_replacements
-                    .insert(variable, value.clone())
-                    .is_some(),
-                (BindingCarrier::Algebraic, AlgebraicValue::Algebraic(value)) => {
-                    algebraic_replacements
-                        .insert(variable, value.clone())
-                        .is_some()
-                }
-                // A value of a Rust type parameter is a term of its type.
-                (BindingCarrier::Algebraic, AlgebraicValue::C(CValue::Parameter(value))) => {
-                    algebraic_replacements
-                        .insert(variable, (**value).clone())
-                        .is_some()
-                }
-                _ => return None,
-            };
-            if duplicate {
-                return None;
-            }
-        }
+        let (c_replacements, integer_replacements, algebraic_replacements) =
+            match_field_replacements(&arm.bindings, fields, &schema.fields)?;
         let mut field_rewrite = TermRewrite::for_typed_variables(
             &c_replacements,
             &integer_replacements,

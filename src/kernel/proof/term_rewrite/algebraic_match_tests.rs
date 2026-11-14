@@ -265,3 +265,60 @@ fn retained_algebraic_match_transport_preserves_capture_and_arm_order() {
     );
     assert!(new.scope.algebraic.is_empty());
 }
+
+#[test]
+fn common_match_constructor_reduction_preserves_typed_substitution_and_refusals() {
+    let cases = [
+        select(pair(var(2), empty()), 1, 2, pair(var(1), var(2))),
+        select(
+            pair(var(3), empty()),
+            1,
+            2,
+            select(var(8), 3, 4, pair(var(1), var(3))),
+        ),
+        select(var(9), 1, 2, var(1)),
+    ];
+    for native in cases {
+        let common =
+            KernelMatch::import_algebraic(&mut KernelTermImport::default(), &native).unwrap();
+        let AlgebraicTermNode::Match { scrutinee, arms } = &native.node else {
+            unreachable!()
+        };
+        let mut old = TermRewrite::empty();
+        let expected = old.rewrite_algebraic_match_iota(scrutinee, arms);
+        assert_eq!(old.refusal(), None);
+        let mut rewrite = TermRewrite::empty();
+        let actual = rewrite.reduce_retained_match(&common).unwrap();
+        let actual = actual.map(|term| {
+            let PureFunctionArgument::Algebraic(value) =
+                KernelTermExport::default().argument(&term).unwrap()
+            else {
+                panic!("algebraic result")
+            };
+            value
+        });
+        assert_eq!(actual, expected);
+    }
+    let mut invalid = select(pair(var(2), empty()), 1, 1, var(1));
+    let common = KernelMatch::import_algebraic(&mut KernelTermImport::default(), &invalid).unwrap();
+    assert!(
+        TermRewrite::empty()
+            .reduce_retained_match(&common)
+            .unwrap()
+            .is_none()
+    );
+    let AlgebraicTermNode::Match { scrutinee, .. } = &mut invalid.node else {
+        unreachable!()
+    };
+    let AlgebraicTermNode::Constructor { fields, .. } = &mut scrutinee.node else {
+        unreachable!()
+    };
+    fields.pop();
+    let common = KernelMatch::import_algebraic(&mut KernelTermImport::default(), &invalid).unwrap();
+    assert!(
+        TermRewrite::empty()
+            .reduce_retained_match(&common)
+            .unwrap()
+            .is_none()
+    );
+}
