@@ -47,7 +47,7 @@ impl Parser {
         let struct_pointer_name = parsed_type
             .struct_name
             .as_ref()
-            .filter(|_| parsed_type.c_type.is_pointer())
+            .filter(|_| parsed_type.interface_type.is_pointer())
             .cloned();
         if let Some(struct_name) = &struct_pointer_name
             && !self.structs.contains_key(struct_name)
@@ -72,7 +72,7 @@ impl Parser {
                 || parsed_type.enum_name.is_some()
                 || parsed_type.union_name.is_some()
                 || (struct_pointer_name.is_none()
-                    && !parsed_type.c_type.is_supported_static_scalar())
+                    && !parsed_type.interface_type.is_supported_static_scalar())
             {
                 return Err(self.error_here(
                     "file-scope declarations currently support only scalar integer, floating-point, struct-pointer, or supported struct globals",
@@ -207,13 +207,13 @@ impl Parser {
                             .checked_mul(layout.size_bytes())
                             .expect("validated aggregate global array size");
                         self.variable_types
-                            .insert(kernel_name.clone(), C0Type::UInt8Array(bytes));
+                            .insert(kernel_name.clone(), InterfaceType::UInt8Array(bytes));
                         self.variable_array_shapes
                             .insert(kernel_name.clone(), vec![length]);
                         self.incomplete_array_names.remove(&kernel_name);
                     } else {
                         self.variable_types
-                            .insert(kernel_name.clone(), C0Type::UInt8Pointer);
+                            .insert(kernel_name.clone(), InterfaceType::UInt8Pointer);
                         self.variable_array_shapes.remove(&kernel_name);
                         self.incomplete_array_names.insert(kernel_name.clone());
                     }
@@ -267,7 +267,7 @@ impl Parser {
                 self.variable_struct_values
                     .insert(kernel_name.clone(), struct_name.clone());
                 self.variable_types
-                    .insert(name.clone(), struct_value_type(layout));
+                    .insert(name.clone(), record_value_type(layout));
                 self.variable_structs
                     .insert(name.clone(), struct_name.clone());
                 if parsed_type.is_constant {
@@ -275,7 +275,7 @@ impl Parser {
                 }
                 if kernel_name != name {
                     self.variable_types
-                        .insert(kernel_name.clone(), struct_value_type(layout));
+                        .insert(kernel_name.clone(), record_value_type(layout));
                     self.variable_structs
                         .insert(kernel_name, struct_name.clone());
                 }
@@ -302,7 +302,7 @@ impl Parser {
                         self.position += 1;
                         let initializer = self.parse_inferred_global_array_initializer(
                             &name,
-                            parsed_type.c_type,
+                            parsed_type.interface_type,
                             parsed_type.pointee_constant,
                         )?;
                         let length = initializer.length();
@@ -318,7 +318,7 @@ impl Parser {
                         let (shape, initializer) = self
                             .parse_inferred_multidimensional_global_array_initializer(
                                 &name,
-                                parsed_type.c_type,
+                                parsed_type.interface_type,
                                 &incomplete_shape,
                             )?;
                         inferred_initializer = Some(initializer);
@@ -327,7 +327,9 @@ impl Parser {
                 }
                 other => other,
             };
-            if array_length.is_some() && array_type_for_element(parsed_type.c_type, 1).is_none() {
+            if array_length.is_some()
+                && array_type_for_element(parsed_type.interface_type, 1).is_none()
+            {
                 return Err(self.error_here(
                     "file-scope array element type requires a modeled array pointer type",
                 ));
@@ -349,7 +351,7 @@ impl Parser {
                         let length = array_shape_element_count(&shape)
                             .filter(|length| {
                                 length
-                                    .checked_mul(parsed_type.c_type.abi_size_bytes())
+                                    .checked_mul(parsed_type.interface_type.abi_size_bytes())
                                     .is_some()
                             })
                             .ok_or_else(|| {
@@ -371,25 +373,28 @@ impl Parser {
                                 self.position += 1;
                                 Some(self.parse_global_array_initializer(
                                     &name,
-                                    parsed_type.c_type,
+                                    parsed_type.interface_type,
                                     &shape,
                                 )?)
                             }
                         } else if is_extern {
                             None
                         } else {
-                            Some(C0ArrayInitializer::zeroed(length, parsed_type.c_type))
+                            Some(C0ArrayInitializer::zeroed(
+                                length,
+                                parsed_type.interface_type,
+                            ))
                         };
                         let tentative = !has_initializer && !is_extern;
                         self.register_global_array_declaration(
                             name.clone(),
-                            parsed_type.c_type,
+                            parsed_type.interface_type,
                             initializer
                                 .map(|initializer| {
                                     C0GlobalArray::definition(
                                         name.clone(),
                                         kernel_name.clone(),
-                                        parsed_type.c_type,
+                                        parsed_type.interface_type,
                                         shape.clone(),
                                         initializer,
                                         is_file_static,
@@ -401,7 +406,7 @@ impl Parser {
                                     C0GlobalArray::declaration(
                                         name.clone(),
                                         kernel_name.clone(),
-                                        parsed_type.c_type,
+                                        parsed_type.interface_type,
                                         Some(shape.clone()),
                                         None,
                                         is_file_static,
@@ -411,7 +416,7 @@ impl Parser {
                         )?;
                         self.variable_types.insert(
                             kernel_name.clone(),
-                            array_type_for_element(parsed_type.c_type, length)
+                            array_type_for_element(parsed_type.interface_type, length)
                                 .expect("validated global array element type"),
                         );
                         self.variable_array_shapes
@@ -426,11 +431,11 @@ impl Parser {
                         }
                         self.register_global_array_declaration(
                             name.clone(),
-                            parsed_type.c_type,
+                            parsed_type.interface_type,
                             C0GlobalArray::declaration(
                                 name.clone(),
                                 kernel_name.clone(),
-                                parsed_type.c_type,
+                                parsed_type.interface_type,
                                 None,
                                 Some(incomplete_shape),
                                 is_file_static,
@@ -447,7 +452,7 @@ impl Parser {
                                 .expect("validated global array shape");
                             self.variable_types.insert(
                                 kernel_name.clone(),
-                                array_type_for_element(parsed_type.c_type, length)
+                                array_type_for_element(parsed_type.interface_type, length)
                                     .expect("validated global array element type"),
                             );
                             self.variable_array_shapes
@@ -455,7 +460,7 @@ impl Parser {
                             self.incomplete_array_names.remove(&kernel_name);
                         } else {
                             let element_pointer = parsed_type
-                                .c_type
+                                .interface_type
                                 .pointer_type()
                                 .expect("validated incomplete external array element type");
                             self.variable_types
@@ -477,7 +482,7 @@ impl Parser {
                     let initializer = self.parse_expression()?;
                     let initializer = normalize_static_initializer(
                         self,
-                        parsed_type.c_type,
+                        parsed_type.interface_type,
                         parsed_type.pointee_constant,
                         &initializer,
                         "global",
@@ -487,19 +492,19 @@ impl Parser {
                 } else if is_extern {
                     None
                 } else {
-                    Some(zero_initializer(parsed_type.c_type))
+                    Some(zero_initializer(parsed_type.interface_type))
                 };
                 let tentative = !has_initializer && !is_extern;
                 self.register_global_declaration(
                     name.clone(),
-                    parsed_type.c_type,
+                    parsed_type.interface_type,
                     initializer
                         .map(|initializer| {
                             if is_file_static {
                                 C0Global::file_static_definition(
                                     name.clone(),
                                     kernel_name.clone(),
-                                    parsed_type.c_type,
+                                    parsed_type.interface_type,
                                     struct_pointer_name.clone(),
                                     initializer,
                                 )
@@ -511,7 +516,7 @@ impl Parser {
                             } else {
                                 C0Global::definition(
                                     name.clone(),
-                                    parsed_type.c_type,
+                                    parsed_type.interface_type,
                                     struct_pointer_name.clone(),
                                     initializer,
                                 )
@@ -525,7 +530,7 @@ impl Parser {
                         .unwrap_or_else(|| {
                             C0Global::declaration(
                                 name.clone(),
-                                parsed_type.c_type,
+                                parsed_type.interface_type,
                                 struct_pointer_name.clone(),
                             )
                             .with_volatile(parsed_type.object_is_volatile())
@@ -535,7 +540,7 @@ impl Parser {
                         }),
                 )?;
                 self.variable_types
-                    .insert(kernel_name.clone(), parsed_type.c_type);
+                    .insert(kernel_name.clone(), parsed_type.interface_type);
                 if let Some(struct_name) = &struct_pointer_name {
                     self.variable_structs
                         .insert(kernel_name, struct_name.clone());
@@ -557,7 +562,7 @@ impl Parser {
     pub(super) fn parse_inferred_global_array_initializer(
         &mut self,
         name: &str,
-        element_type: C0Type,
+        element_type: InterfaceType,
         pointee_constant: bool,
     ) -> Result<C0ArrayInitializer, C0SyntaxError> {
         self.expect(Token::LBrace)?;
@@ -629,7 +634,7 @@ impl Parser {
     pub(super) fn parse_inferred_multidimensional_global_array_initializer(
         &mut self,
         name: &str,
-        element_type: C0Type,
+        element_type: InterfaceType,
         inner_shape: &[u32],
     ) -> Result<(Vec<u32>, C0ArrayInitializer), C0SyntaxError> {
         self.expect(Token::LBrace)?;
@@ -792,7 +797,7 @@ impl Parser {
     pub(super) fn parse_global_array_initializer(
         &mut self,
         name: &str,
-        element_type: C0Type,
+        element_type: InterfaceType,
         shape: &[u32],
     ) -> Result<C0ArrayInitializer, C0SyntaxError> {
         let length = array_shape_element_count(shape).expect("validated global array shape");
@@ -811,7 +816,7 @@ impl Parser {
     /// static initializer of `storage`.
     pub(super) fn normalized_array_initializer(
         &self,
-        element_type: C0Type,
+        element_type: InterfaceType,
         length: u32,
         values: Vec<(u32, C0Expression)>,
         storage: &str,
@@ -837,7 +842,7 @@ impl Parser {
     pub(super) fn parse_scalar_array_initializer(
         &mut self,
         name: &str,
-        element_type: C0Type,
+        element_type: InterfaceType,
         pointee_constant: bool,
         length: u32,
         static_local: bool,
@@ -967,7 +972,7 @@ impl Parser {
     pub(super) fn register_global_declaration(
         &mut self,
         name: String,
-        c_type: C0Type,
+        interface_type: InterfaceType,
         declaration: C0Global,
     ) -> Result<(), C0SyntaxError> {
         if self.function_declarations.contains_key(&name)
@@ -980,7 +985,9 @@ impl Parser {
             )));
         }
         if let Some(previous) = self.globals.get(&name) {
-            if previous.c_type != c_type || previous.struct_name != declaration.struct_name {
+            if previous.interface_type != interface_type
+                || previous.struct_name != declaration.struct_name
+            {
                 return Err(
                     self.error_here(format!("conflicting declarations for global `{name}`"))
                 );
@@ -1022,7 +1029,7 @@ impl Parser {
     pub(super) fn register_global_array_declaration(
         &mut self,
         name: String,
-        element_type: C0Type,
+        element_type: InterfaceType,
         declaration: C0GlobalArray,
     ) -> Result<(), C0SyntaxError> {
         if self.function_declarations.contains_key(&name)

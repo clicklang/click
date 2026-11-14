@@ -307,7 +307,7 @@ fn machine_root_checking_views_keep_shared_prefixes_unboxed() {
                             .is_some()
                     );
                     let quotient = KernelTerm::intern(
-                        KernelType::Program(format.c_type()),
+                        KernelType::Program(format.program_type()),
                         KernelTermNode::MachineBinary {
                             format,
                             operator: MachineBinaryOp::Divide,

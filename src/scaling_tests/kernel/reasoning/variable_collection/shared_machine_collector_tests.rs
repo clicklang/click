@@ -150,7 +150,7 @@ fn pointer_index_collectors_keep_cold_dags_shared() {
         for depth in [16, 64, 256] {
             let _session = VerificationSession::enter();
             let var = Variable(1007200);
-            let mut root = KernelTerm::variable(KernelType::Program(ty.c_type()), var);
+            let mut root = KernelTerm::variable(KernelType::Program(ty.program_type()), var);
             for _ in 0..depth {
                 root = KernelTerm::machine_binary_shared(
                     ty,

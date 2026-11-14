@@ -3,7 +3,7 @@ use crate::kernel::{ResourceFieldSchema, ResourceTerm};
 use crate::kernel::{bits32_constant, constant_u32, int32_constant};
 
 pub(in crate::surface) fn construction_result_layout(
-    parsed: &syntax::C0Function,
+    parsed: &crate::languages::interface::ImportedFunction,
 ) -> Option<&crate::kernel::AggregateLayout> {
     let interface = parsed.prelowered_kernel_function()?.contract_interface();
     (interface.aggregate_return_mode() == crate::kernel::AggregateReturnMode::Construction)
@@ -14,7 +14,7 @@ pub(in crate::surface) fn construction_result_layout(
 /// The frontend's result object is an implicit in/out resource. Its authority
 /// originates with the caller's storage, not with the destination binding.
 pub(in crate::surface) fn construction_result_resource(
-    parsed: &syntax::C0Function,
+    parsed: &crate::languages::interface::ImportedFunction,
 ) -> Result<Option<ResourceSpec>, ClickError> {
     let Some(layout) = construction_result_layout(parsed) else {
         return Ok(None);
@@ -43,7 +43,7 @@ pub(in crate::surface) struct ConcreteMemoryRangeSeed {
     /// C structs. Those ranges are materialized one typed field at a time
     /// using `struct_layout`.
     pub(in crate::surface) element_type: Option<ProgramType>,
-    pub(in crate::surface) struct_layout: Option<syntax::C0StructLayout>,
+    pub(in crate::surface) struct_layout: Option<crate::languages::interface::RecordLayout>,
 }
 
 impl ConcreteMemoryRangeSeed {
@@ -110,7 +110,9 @@ pub(in crate::surface) fn reset_input_identities() {
 /// Prepares input metadata for all functions before any proof runs, including
 /// selected-unit verification. Names depend only on the function and parameter;
 /// failures remain the responsibility of the function's entry lowering.
-pub(in crate::surface) fn reserve_input_identities(function: &syntax::C0Function) {
+pub(in crate::surface) fn reserve_input_identities(
+    function: &crate::languages::interface::ImportedFunction,
+) {
     let scope = input_scope(function.kernel_name());
     if input_arguments(scope, function.parameters(), |_| None).is_ok()
         && function.returns_by_construction()
@@ -206,14 +208,14 @@ fn input_pointer_identity(pointer: &crate::kernel::PointerValue) -> Option<Varia
 /// information after the callee frame has been popped.
 fn initial_pointer_argument(
     pointer: Pointer,
-    parameter: &syntax::C0Parameter,
+    parameter: &crate::languages::interface::ImportedParameter,
     index: usize,
     scope: u64,
     required: Option<crate::kernel::effective_type::CAccessClass>,
 ) -> ProgramExpression {
     let parameter = parameter.to_kernel_parameter();
     ProgramExpression::Value(
-        ProgramValue::typed_pointer(pointer, parameter.c_type())
+        ProgramValue::typed_pointer(pointer, parameter.program_type())
             .with_contract_pointer_object_class(parameter.pointee_class(), required, index, scope),
     )
 }
@@ -224,7 +226,7 @@ fn initial_pointer_argument(
 /// before any proof runs passes none, since classes do not affect names.
 fn input_arguments(
     scope: u64,
-    parameters: &[syntax::C0Parameter],
+    parameters: &[crate::languages::interface::ImportedParameter],
     required: impl Fn(usize) -> Option<crate::kernel::effective_type::CAccessClass>,
 ) -> Result<Vec<ProgramExpression>, ClickError> {
     let initial_pointer_argument = |pointer, parameter, index, scope| {
@@ -247,8 +249,8 @@ fn input_arguments(
             ));
             continue;
         }
-        match parameter.c_type() {
-            C0Type::Parameter(name) => {
+        match parameter.interface_type() {
+            InterfaceType::Parameter(name) => {
                 arguments.push(ProgramExpression::Value(
                     crate::kernel::symbolic_call_result(
                         crate::kernel::ProgramType::Parameter(name),
@@ -256,32 +258,32 @@ fn input_arguments(
                     ),
                 ));
             }
-            C0Type::Int128 => {
+            InterfaceType::Int128 => {
                 arguments.push(ProgramExpression::Value(ProgramValue::Int128(
                     MachineTerm::Variable(Variable(arguments.len() as u64)),
                 )));
             }
-            C0Type::UInt128 => {
+            InterfaceType::UInt128 => {
                 arguments.push(ProgramExpression::Value(ProgramValue::UInt128(
                     MachineTerm::Variable(Variable(arguments.len() as u64)),
                 )));
             }
 
-            C0Type::Void => {
+            InterfaceType::Void => {
                 return Err(ClickError::new(format!(
                     "parameter `{}` cannot have type void",
                     parameter.name()
                 )));
             }
             // A `Bool` parameter is a binder of the kernel sort (Stage 5).
-            C0Type::Bool => {
+            InterfaceType::Bool => {
                 arguments.push(ProgramExpression::Value(
                     crate::kernel::ProgramValue::of_bool(crate::kernel::ConditionTerm::Variable(
                         Variable(arguments.len() as u64),
                     )),
                 ));
             }
-            C0Type::VoidPointer | C0Type::VoidPointerPointer => {
+            InterfaceType::VoidPointer | InterfaceType::VoidPointerPointer => {
                 arguments.push(initial_pointer_argument(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
@@ -295,7 +297,7 @@ fn input_arguments(
                     scope,
                 ));
             }
-            C0Type::FunctionPointer(_) => {
+            InterfaceType::FunctionPointer(_) => {
                 arguments.push(initial_pointer_argument(
                     Pointer::symbolic_function(input_pointer_variable(scope, index)?),
                     parameter,
@@ -303,8 +305,8 @@ fn input_arguments(
                     scope,
                 ));
             }
-            C0Type::Int8Pointer | C0Type::Int8PointerPointer => {
-                let c_type = parameter.c_type();
+            InterfaceType::Int8Pointer | InterfaceType::Int8PointerPointer => {
+                let interface_type = parameter.interface_type();
                 // Struct array parameters are lowered to byte pointers in the
                 // kernel, so their symbolic external argument address uses
                 // byte-pointer identity. The struct stride is retained only
@@ -312,7 +314,7 @@ fn input_arguments(
                 // clauses.
                 let element_width = parameter.array_element_width().map_or_else(
                     || {
-                        c_type
+                        interface_type
                             .pointee_type()
                             .expect("pointer parameter has a pointee")
                             .to_kernel_type()
@@ -333,32 +335,32 @@ fn input_arguments(
                     scope,
                 ));
             }
-            C0Type::Int16Pointer
-            | C0Type::UInt16Pointer
-            | C0Type::Int32Pointer
-            | C0Type::CharPointer(_)
-            | C0Type::UInt8Pointer
-            | C0Type::UInt32Pointer
-            | C0Type::Int128Pointer
-            | C0Type::Int64Pointer(_)
-            | C0Type::UInt128Pointer
-            | C0Type::UInt64Pointer(_)
-            | C0Type::Int16PointerPointer
-            | C0Type::UInt16PointerPointer
-            | C0Type::Int32PointerPointer
-            | C0Type::CharPointerPointer(_)
-            | C0Type::UInt8PointerPointer
-            | C0Type::UInt32PointerPointer
-            | C0Type::Int128PointerPointer
-            | C0Type::Int64PointerPointer(_)
-            | C0Type::UInt128PointerPointer
-            | C0Type::UInt64PointerPointer(_)
-            | C0Type::Float32Pointer
-            | C0Type::Float64Pointer
-            | C0Type::Float32PointerPointer
-            | C0Type::Float64PointerPointer
-            | C0Type::ParameterPointer(_) => {
-                let c_type = parameter.c_type();
+            InterfaceType::Int16Pointer
+            | InterfaceType::UInt16Pointer
+            | InterfaceType::Int32Pointer
+            | InterfaceType::CharPointer(_)
+            | InterfaceType::UInt8Pointer
+            | InterfaceType::UInt32Pointer
+            | InterfaceType::Int128Pointer
+            | InterfaceType::Int64Pointer(_)
+            | InterfaceType::UInt128Pointer
+            | InterfaceType::UInt64Pointer(_)
+            | InterfaceType::Int16PointerPointer
+            | InterfaceType::UInt16PointerPointer
+            | InterfaceType::Int32PointerPointer
+            | InterfaceType::CharPointerPointer(_)
+            | InterfaceType::UInt8PointerPointer
+            | InterfaceType::UInt32PointerPointer
+            | InterfaceType::Int128PointerPointer
+            | InterfaceType::Int64PointerPointer(_)
+            | InterfaceType::UInt128PointerPointer
+            | InterfaceType::UInt64PointerPointer(_)
+            | InterfaceType::Float32Pointer
+            | InterfaceType::Float64Pointer
+            | InterfaceType::Float32PointerPointer
+            | InterfaceType::Float64PointerPointer
+            | InterfaceType::ParameterPointer(_) => {
+                let interface_type = parameter.interface_type();
                 // Struct array parameters are lowered to byte pointers in the
                 // kernel, so their symbolic external argument address uses
                 // byte-pointer identity. The struct stride is retained only
@@ -366,7 +368,7 @@ fn input_arguments(
                 // clauses.
                 let element_width = parameter.array_element_width().map_or_else(
                     || {
-                        c_type
+                        interface_type
                             .pointee_type()
                             .expect("pointer parameter has a pointee")
                             .to_kernel_type()
@@ -383,87 +385,88 @@ fn input_arguments(
                 };
                 arguments.push(initial_pointer_argument(pointer, parameter, index, scope));
             }
-            C0Type::Int8 => {
+            InterfaceType::Int8 => {
                 arguments.push(ProgramExpression::Value(ProgramValue::Int8(
                     MachineTerm::Variable(Variable(arguments.len() as u64)),
                 )));
             }
-            C0Type::Int16 => {
+            InterfaceType::Int16 => {
                 arguments.push(ProgramExpression::Value(ProgramValue::Int16(
                     MachineTerm::Variable(Variable(arguments.len() as u64)),
                 )));
             }
-            C0Type::Int32 => {
+            InterfaceType::Int32 => {
                 arguments.push(ProgramExpression::Value(ProgramValue::Int32(
                     MachineTerm::Variable(Variable(arguments.len() as u64)),
                 )));
             }
-            C0Type::Char(crate::languages::c::syntax::PlainChar::Signed) => {
+            InterfaceType::Char(crate::languages::c::syntax::PlainChar::Signed) => {
                 arguments.push(ProgramExpression::Value(ProgramValue::Int8(
                     MachineTerm::Variable(Variable(arguments.len() as u64)),
                 )));
             }
-            C0Type::Char(crate::languages::c::syntax::PlainChar::Unsigned) | C0Type::UInt8 => {
+            InterfaceType::Char(crate::languages::c::syntax::PlainChar::Unsigned)
+            | InterfaceType::UInt8 => {
                 arguments.push(ProgramExpression::Value(ProgramValue::UInt8(
                     MachineTerm::Variable(Variable(arguments.len() as u64)),
                 )));
             }
-            C0Type::UInt16 => {
+            InterfaceType::UInt16 => {
                 arguments.push(ProgramExpression::Value(ProgramValue::UInt16(
                     MachineTerm::Variable(Variable(arguments.len() as u64)),
                 )));
             }
-            C0Type::UInt32 => {
+            InterfaceType::UInt32 => {
                 arguments.push(ProgramExpression::Value(ProgramValue::UInt32(
                     MachineTerm::Variable(Variable(arguments.len() as u64)),
                 )));
             }
-            C0Type::Int64(_) => {
+            InterfaceType::Int64(_) => {
                 arguments.push(ProgramExpression::Value(
                     ProgramValue::Int64(MachineTerm::Variable(Variable(arguments.len() as u64)))
                         .complete_word(Pointer::symbolic(input_pointer_variable(scope, index)?)),
                 ));
             }
-            C0Type::UInt64(_) => {
+            InterfaceType::UInt64(_) => {
                 arguments.push(ProgramExpression::Value(
                     ProgramValue::UInt64(MachineTerm::Variable(Variable(arguments.len() as u64)))
                         .complete_word(Pointer::symbolic(input_pointer_variable(scope, index)?)),
                 ));
             }
-            C0Type::Float32 => {
+            InterfaceType::Float32 => {
                 arguments.push(ProgramExpression::Value(ProgramValue::Float32(
                     MachineTerm::Variable(Variable(arguments.len() as u64)),
                 )));
             }
-            C0Type::Float64 => {
+            InterfaceType::Float64 => {
                 arguments.push(ProgramExpression::Value(ProgramValue::Float64(
                     MachineTerm::Variable(Variable(arguments.len() as u64)),
                 )));
             }
-            C0Type::Int8Array(_) => {
+            InterfaceType::Int8Array(_) => {
                 return Err(ClickError::new(format!(
                     "array parameter `{}` should have lowered to a pointer",
                     parameter.name()
                 )));
             }
-            C0Type::Int32Array(_)
-            | C0Type::CharArray(_, _)
-            | C0Type::UInt8Array(_)
-            | C0Type::Int16Array(_)
-            | C0Type::UInt16Array(_)
-            | C0Type::UInt32Array(_)
-            | C0Type::Int128Array(_)
-            | C0Type::Int64Array(_, _)
-            | C0Type::UInt128Array(_)
-            | C0Type::UInt64Array(_, _)
-            | C0Type::Float32Array(_)
-            | C0Type::Float64Array(_) => {
+            InterfaceType::Int32Array(_)
+            | InterfaceType::CharArray(_, _)
+            | InterfaceType::UInt8Array(_)
+            | InterfaceType::Int16Array(_)
+            | InterfaceType::UInt16Array(_)
+            | InterfaceType::UInt32Array(_)
+            | InterfaceType::Int128Array(_)
+            | InterfaceType::Int64Array(_, _)
+            | InterfaceType::UInt128Array(_)
+            | InterfaceType::UInt64Array(_, _)
+            | InterfaceType::Float32Array(_)
+            | InterfaceType::Float64Array(_) => {
                 return Err(ClickError::new(format!(
                     "array parameter `{}` should have lowered to a pointer",
                     parameter.name()
                 )));
             }
-            C0Type::PointerArray(_, _, _) => {
+            InterfaceType::PointerArray(_, _, _) => {
                 return Err(ClickError::new(format!(
                     "array parameter `{}` should have lowered to a pointer",
                     parameter.name()
@@ -476,7 +479,7 @@ fn input_arguments(
 
 pub(in crate::surface) fn initial_call_state(
     requires: &[Requirement],
-    parameters: &[syntax::C0Parameter],
+    parameters: &[crate::languages::interface::ImportedParameter],
     function: &ProgramFunction,
     composite_definitions: &[CompositeResourceDefinition],
     spec_definitions: SpecDefinitions<'_>,
@@ -869,13 +872,13 @@ pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
 }
 
 pub(in crate::surface) fn visit_struct_field_cells(
-    field: &syntax::C0StructField,
+    field: &crate::languages::interface::RecordField,
     element_pointer: &Pointer,
     mut memory: Memory,
     mut visit: impl FnMut(Memory, Pointer, ProgramType) -> Memory,
 ) -> Memory {
     let field_pointer = element_pointer.offset_by_bytes(field.offset_bytes());
-    let field_type = field.c_type().to_kernel_type();
+    let field_type = field.interface_type().to_kernel_type();
     let Some((element_type, length)) = array_field_elements(field_type) else {
         return visit(memory, field_pointer, field_type);
     };
@@ -1989,7 +1992,7 @@ pub(in crate::surface) fn lower_resource_clause_facts_at_state_with_result_and_e
 /// first use. The clauses of one entry share it, so lowering each clause does
 /// not rebuild a map over every parameter.
 struct ClauseParameters<'a> {
-    parameters: &'a [syntax::C0Parameter],
+    parameters: &'a [crate::languages::interface::ImportedParameter],
     values: &'a BTreeMap<String, ProgramValue>,
     memory: &'a Memory,
     index: Option<&'a crate::surface::ParameterIndex>,
@@ -1998,7 +2001,7 @@ struct ClauseParameters<'a> {
 
 impl<'a> ClauseParameters<'a> {
     fn new(
-        parameters: &'a [syntax::C0Parameter],
+        parameters: &'a [crate::languages::interface::ImportedParameter],
         values: &'a BTreeMap<String, ProgramValue>,
         memory: &'a Memory,
     ) -> Self {
@@ -2162,7 +2165,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
             let (quantity, quantity_snapshot) =
                 resource_argument_to_typed_program_expression_with_snapshot(
                     quantity,
-                    syntax::C0Type::Int32,
+                    crate::languages::interface::InterfaceType::Int32,
                 )?;
             let assumptions = if allow_symbolic_resource_arguments {
                 base_assumptions
@@ -2220,7 +2223,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                     parameters,
                     segment,
                     result.and_then(|value| match value {
-                        ProgramValue::Pointer(pointer) => Some(pointer.c_type()),
+                        ProgramValue::Pointer(pointer) => Some(pointer.program_type()),
                         _ => None,
                     }),
                 ),
@@ -2239,7 +2242,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                     parameters,
                     segment,
                     result.and_then(|value| match value {
-                        ProgramValue::Pointer(pointer) => Some(pointer.c_type()),
+                        ProgramValue::Pointer(pointer) => Some(pointer.program_type()),
                         _ => None,
                     }),
                 ),
@@ -2323,8 +2326,8 @@ fn lower_resource_clause_with_values_mode_at_entry(
                             &value,
                             ParameterBinding::new(&naming_parameters, &naming_arguments)
                         ),
-                        crate::kernel::program_type_spelling(value.c_type()),
-                        crate::surface::validation::describe_c0_type(*parameter_type)
+                        crate::kernel::program_type_spelling(value.program_type()),
+                        crate::surface::validation::describe_interface_type(*parameter_type)
                     )));
                 }
                 resource_values.push(value);
@@ -2649,7 +2652,7 @@ fn lower_resource_clause_facts_with_values_mode_at_entry(
             let (quantity, quantity_snapshot) =
                 resource_argument_to_typed_program_expression_with_snapshot(
                     quantity,
-                    syntax::C0Type::Int32,
+                    crate::languages::interface::InterfaceType::Int32,
                 )?;
             let assumptions = if allow_symbolic_resource_arguments {
                 base_assumptions
@@ -2725,7 +2728,7 @@ fn lower_resource_clause_facts_with_values_mode_at_entry(
 /// typing rule rather than new syntax.
 pub(in crate::surface) fn argument_is_null_pointer_constant(
     argument: &ContractExpression,
-    parameter_type: C0Type,
+    parameter_type: InterfaceType,
 ) -> bool {
     parameter_type.is_pointer()
         && matches!(argument, ContractExpression::IntegerLiteral(text) if text == "0")
@@ -2736,7 +2739,7 @@ pub(in crate::surface) fn argument_is_null_pointer_constant(
 /// value instead of an `int32` zero.
 pub(in crate::surface) fn resource_argument_to_typed_program_expression(
     argument: &ContractExpression,
-    parameter_type: C0Type,
+    parameter_type: InterfaceType,
 ) -> Result<ProgramExpression, ClickError> {
     if argument_is_null_pointer_constant(argument, parameter_type) {
         return Ok(crate::kernel::program_expression::typed_pointer_value(
@@ -2753,7 +2756,7 @@ pub(in crate::surface) fn resource_argument_to_typed_program_expression(
 /// the entry state for only this argument.
 pub(in crate::surface) fn resource_argument_to_typed_program_expression_with_snapshot(
     argument: &ContractExpression,
-    parameter_type: C0Type,
+    parameter_type: InterfaceType,
 ) -> Result<(ProgramExpression, crate::kernel::ResourceSnapshot), ClickError> {
     if let ContractExpression::Old(inner) = argument {
         return Ok((
@@ -3452,7 +3455,7 @@ pub(in crate::surface) fn loadable_base_and_bytes(
 /// padding. `None` is every byte, which a range whose length is not a
 /// constant gets.
 pub(in crate::surface) fn contract_segment_value_runs(
-    parameters: &[syntax::C0Parameter],
+    parameters: &[crate::languages::interface::ImportedParameter],
     segment: &ContractSegment,
 ) -> Option<std::sync::Arc<[(u32, u32)]>> {
     const OBJECT_LIMIT: u32 = 4096;
@@ -3492,9 +3495,9 @@ pub(in crate::surface) fn contract_segment_value_runs(
 }
 
 pub(in crate::surface) fn object_segment_layout<'a>(
-    parameters: &'a [syntax::C0Parameter],
+    parameters: &'a [crate::languages::interface::ImportedParameter],
     segment: &'a ContractSegment,
-) -> Option<&'a syntax::C0StructLayout> {
+) -> Option<&'a crate::languages::interface::RecordLayout> {
     if let ContractSegmentSurface::ObjectPlace { layout, .. } = &segment.surface {
         return Some(&layout.layout);
     }
@@ -3509,7 +3512,7 @@ pub(in crate::surface) fn object_segment_layout<'a>(
         && let Some(layout) = parameters
             .iter()
             .find(|parameter| parameter.name() == name)
-            .and_then(syntax::C0Parameter::pointee_struct_layout)
+            .and_then(crate::languages::interface::ImportedParameter::pointee_struct_layout)
     {
         return Some(layout);
     }
@@ -3525,7 +3528,10 @@ pub(in crate::surface) fn object_segment_layout<'a>(
 
 /// One complete struct object as a memory range seed: a single element of
 /// the layout's size, materialized field by field.
-fn object_range_seed(base: Pointer, layout: &syntax::C0StructLayout) -> ConcreteMemoryRangeSeed {
+fn object_range_seed(
+    base: Pointer,
+    layout: &crate::languages::interface::RecordLayout,
+) -> ConcreteMemoryRangeSeed {
     ConcreteMemoryRangeSeed {
         base,
         bytes: layout.size_bytes(),
@@ -3536,14 +3542,14 @@ fn object_range_seed(base: Pointer, layout: &syntax::C0StructLayout) -> Concrete
 }
 
 pub(in crate::surface) fn contract_segment_element_width(
-    parameters: &[syntax::C0Parameter],
+    parameters: &[crate::languages::interface::ImportedParameter],
     segment: &ContractSegment,
 ) -> u32 {
     contract_segment_element_width_for_result_type(parameters, segment, None)
 }
 
 pub(in crate::surface) fn contract_segment_element_width_for_result_type(
-    parameters: &[syntax::C0Parameter],
+    parameters: &[crate::languages::interface::ImportedParameter],
     segment: &ContractSegment,
     result_type: Option<ProgramType>,
 ) -> u32 {
@@ -3570,7 +3576,7 @@ pub(in crate::surface) fn contract_segment_element_width_for_result_type(
 /// Preserve explicit field layouts and parameter ABI widths before consulting
 /// that index. No scalar declaration itself supplies a readable range.
 pub(in crate::surface) fn contract_segment_element_width_with_pointer_types(
-    parameters: &[syntax::C0Parameter],
+    parameters: &[crate::languages::interface::ImportedParameter],
     segment: &ContractSegment,
     result_type: Option<ProgramType>,
     pointer_types: Option<&BTreeMap<String, ProgramType>>,
@@ -3634,7 +3640,7 @@ pub(in crate::surface) fn declared_segment_observation_count(
 }
 
 pub(in crate::surface) fn contract_segment_element_type(
-    parameters: &[syntax::C0Parameter],
+    parameters: &[crate::languages::interface::ImportedParameter],
     segment: &ContractSegment,
 ) -> ProgramType {
     segment
@@ -3644,7 +3650,7 @@ pub(in crate::surface) fn contract_segment_element_type(
 }
 
 fn contract_expression_is_struct_array(
-    parameters: &[syntax::C0Parameter],
+    parameters: &[crate::languages::interface::ImportedParameter],
     expression: &ProgramExpression,
 ) -> bool {
     match expression {
@@ -3664,9 +3670,9 @@ fn contract_expression_is_struct_array(
 }
 
 fn contract_expression_struct_layout<'a>(
-    parameters: &'a [syntax::C0Parameter],
+    parameters: &'a [crate::languages::interface::ImportedParameter],
     expression: &ProgramExpression,
-) -> Option<&'a syntax::C0StructLayout> {
+) -> Option<&'a crate::languages::interface::RecordLayout> {
     match expression {
         ProgramExpression::Variable(name) => parameters
             .iter()
@@ -3684,9 +3690,9 @@ fn contract_expression_struct_layout<'a>(
 }
 
 fn contract_segment_struct_layout<'a>(
-    parameters: &'a [syntax::C0Parameter],
+    parameters: &'a [crate::languages::interface::ImportedParameter],
     segment: &'a ContractSegment,
-) -> Option<&'a syntax::C0StructLayout> {
+) -> Option<&'a crate::languages::interface::RecordLayout> {
     if let ContractSegmentSurface::StructRange { layout, .. } = &segment.surface {
         return Some(&layout.layout);
     }
@@ -3700,7 +3706,7 @@ fn contract_segment_struct_layout<'a>(
 }
 
 fn contract_expression_element_type(
-    parameters: &[syntax::C0Parameter],
+    parameters: &[crate::languages::interface::ImportedParameter],
     expression: &ProgramExpression,
 ) -> Option<ProgramType> {
     match expression {
@@ -3710,13 +3716,13 @@ fn contract_expression_element_type(
             ProgramExpression::Index(base, _) => contract_expression_element_type(parameters, base),
             _ => None,
         },
-        ProgramExpression::Value(value) => value.c_type().pointee_type(),
+        ProgramExpression::Value(value) => value.program_type().pointee_type(),
         ProgramExpression::Cast { target_type, .. } => target_type.pointee_type(),
         ProgramExpression::Variable(name) => parameters
             .iter()
             .find(|parameter| parameter.name() == name)
-            .and_then(|parameter| parameter.c_type().pointee_type())
-            .map(C0Type::to_kernel_type),
+            .and_then(|parameter| parameter.interface_type().pointee_type())
+            .map(InterfaceType::to_kernel_type),
         ProgramExpression::Add(left, right) => contract_expression_element_type(parameters, left)
             .or_else(|| contract_expression_element_type(parameters, right)),
         ProgramExpression::Subtract(left, _) => contract_expression_element_type(parameters, left),
@@ -3738,7 +3744,7 @@ fn contract_expression_element_type(
 }
 
 pub(in crate::surface) fn contract_expression_element_width(
-    parameters: &[syntax::C0Parameter],
+    parameters: &[crate::languages::interface::ImportedParameter],
     expression: &ProgramExpression,
 ) -> Option<u32> {
     match expression {
@@ -3748,9 +3754,10 @@ pub(in crate::surface) fn contract_expression_element_width(
             }
             _ => None,
         },
-        ProgramExpression::Value(value) => {
-            value.c_type().pointee_type().map(ProgramType::byte_width)
-        }
+        ProgramExpression::Value(value) => value
+            .program_type()
+            .pointee_type()
+            .map(ProgramType::byte_width),
         ProgramExpression::Cast { target_type, .. } => {
             target_type.pointee_type().map(ProgramType::byte_width)
         }
@@ -3763,24 +3770,28 @@ pub(in crate::surface) fn contract_expression_element_width(
                 } else {
                     parameter
                         .array_element_width()
-                        .or_else(|| match parameter.c_type() {
-                            c_type if c_type.is_pointer() => c_type
+                        .or_else(|| match parameter.interface_type() {
+                            interface_type if interface_type.is_pointer() => interface_type
                                 .pointee_type()
-                                .map(C0Type::to_kernel_type)
+                                .map(InterfaceType::to_kernel_type)
                                 .map(ProgramType::byte_width),
                             // Abstract values and enums use their model
                             // width, as do the cells that hold them.
-                            C0Type::ParameterPointer(name) => {
+                            InterfaceType::ParameterPointer(name) => {
                                 Some(ProgramType::Parameter(name).byte_width())
                             }
-                            C0Type::Int32Array(_) => Some(4),
-                            C0Type::CharArray(_, _) => Some(1),
-                            C0Type::UInt8Array(_) => Some(1),
-                            C0Type::Int8Array(_) => Some(1),
-                            C0Type::Int16Array(_) | C0Type::UInt16Array(_) => Some(2),
-                            C0Type::UInt32Array(_) => Some(4),
-                            C0Type::Int64Array(_, _) | C0Type::UInt64Array(_, _) => Some(8),
-                            C0Type::Int128Array(_) | C0Type::UInt128Array(_) => Some(16),
+                            InterfaceType::Int32Array(_) => Some(4),
+                            InterfaceType::CharArray(_, _) => Some(1),
+                            InterfaceType::UInt8Array(_) => Some(1),
+                            InterfaceType::Int8Array(_) => Some(1),
+                            InterfaceType::Int16Array(_) | InterfaceType::UInt16Array(_) => Some(2),
+                            InterfaceType::UInt32Array(_) => Some(4),
+                            InterfaceType::Int64Array(_, _) | InterfaceType::UInt64Array(_, _) => {
+                                Some(8)
+                            }
+                            InterfaceType::Int128Array(_) | InterfaceType::UInt128Array(_) => {
+                                Some(16)
+                            }
                             _ => None,
                         })
                 }
@@ -3789,7 +3800,9 @@ pub(in crate::surface) fn contract_expression_element_width(
             .or_else(|| contract_expression_element_width(parameters, right)),
         ProgramExpression::Subtract(left, _) => contract_expression_element_width(parameters, left),
         ProgramExpression::TypedLoad { value_type, .. } => match value_type {
-            c_type if c_type.is_pointer() => c_type.pointee_type().map(ProgramType::byte_width),
+            interface_type if interface_type.is_pointer() => {
+                interface_type.pointee_type().map(ProgramType::byte_width)
+            }
             ProgramType::Int32Array(_) => Some(4),
             ProgramType::UInt8Array(_) => Some(1),
             ProgramType::Int8Array(_) => Some(1),
@@ -3976,7 +3989,7 @@ pub(in crate::surface) fn array_refs_for_values(
         .iter()
         .filter_map(|(name, value)| {
             let parameter = &parameter_binding.parameters[index.position(name)?];
-            let element_type = click_array_element_type(parameter.c_type())?;
+            let element_type = click_array_element_type(parameter.interface_type())?;
             let ProgramValue::Pointer(pointer) = value else {
                 return None;
             };
@@ -4041,7 +4054,7 @@ fn resource_clause_parameter_values(
 }
 
 pub(in crate::surface) fn array_refs_for_parameters(
-    parameters: &[syntax::C0Parameter],
+    parameters: &[crate::languages::interface::ImportedParameter],
     values: &BTreeMap<String, ProgramValue>,
     memory: &Memory,
 ) -> ClickArrayRefs {
@@ -4049,7 +4062,7 @@ pub(in crate::surface) fn array_refs_for_parameters(
     parameters
         .iter()
         .filter_map(|parameter| {
-            let element_type = click_array_element_type(parameter.c_type())?;
+            let element_type = click_array_element_type(parameter.interface_type())?;
             let Some(ProgramValue::Pointer(pointer)) = values.get(parameter.name()) else {
                 return None;
             };

@@ -3998,7 +3998,7 @@ impl PureFactContext {
                 let same = |fact: &crate::kernel::PointerValue,
                             target: &crate::kernel::PointerValue| {
                     fact == target
-                        || fact.c_type() == target.c_type()
+                        || fact.program_type() == target.program_type()
                             && self.pointer_designations_match(fact, target)
                             && (crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
                                 fact.pointer(),
@@ -5630,7 +5630,7 @@ mod shared_domain_evidence_tests {
             let _session = crate::kernel::VerificationSession::enter();
             let ty = MachineIntegerType::Int32;
             let variable =
-                |id| KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(id));
+                |id| KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(id));
             let root = |a, b| {
                 KernelTerm::machine_binary_shared(ty, Op::Multiply, [variable(a), variable(b)])
             };
@@ -5845,11 +5845,11 @@ mod shared_wide_order_evidence_tests {
                             MachineBinaryOp::Multiply,
                             [
                                 KernelTerm::variable(
-                                    KernelType::Program(ty.c_type()),
+                                    KernelType::Program(ty.program_type()),
                                     Variable(id),
                                 ),
                                 KernelTerm::variable(
-                                    KernelType::Program(ty.c_type()),
+                                    KernelType::Program(ty.program_type()),
                                     Variable(987000),
                                 ),
                             ],

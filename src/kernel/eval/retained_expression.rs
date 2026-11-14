@@ -59,7 +59,7 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
         ..
     } = expression
     {
-        MachineIntegerType::from_c_type(*target_type)
+        MachineIntegerType::from_program_type(*target_type)
             .filter(|format| super::operators::is_narrow_format(*format))
             .and_then(|format| {
                 let (op, left, right) = match expression.as_ref() {
@@ -852,7 +852,7 @@ mod tests {
                         )),
                         Box::new(ProgramExpression::Value(right)),
                     ),
-                    format.c_type(),
+                    format.program_type(),
                 );
                 let actual = evaluate(&expression);
                 let expected = super::super::expression::evaluate_native_expression_paths(
@@ -914,7 +914,7 @@ mod tests {
         } else {
             MachineIntegerType::UInt32
         };
-        let c_type = format.c_type();
+        let program_type = format.program_type();
         let three = if rust {
             MachineTerm::narrow_constant(format, 3)
         } else {
@@ -925,7 +925,7 @@ mod tests {
             Box::new(ProgramExpression::Value(format.value_from_term(three))),
         );
         let expression = if rust {
-            narrow_expression(multiply, c_type)
+            narrow_expression(multiply, program_type)
         } else {
             multiply
         };
@@ -935,7 +935,7 @@ mod tests {
         }
         if declared {
             body = program_seq(
-                program_declare("held", c_type),
+                program_declare("held", program_type),
                 program_seq(
                     program_assign("held", crate::kernel::program_expression::variable("x")),
                     body,
@@ -943,11 +943,11 @@ mod tests {
             );
         }
         let helper = program_function(
-            c_type,
+            program_type,
             "machine_handoff",
             vec![program_parameter(
                 if declared { "x" } else { "held" },
-                c_type,
+                program_type,
             )],
             body,
         );
@@ -1192,7 +1192,7 @@ mod tests {
             state.locals.set_retained_typed_with_all_qualifiers(
                 "flag",
                 ExecutionValue::from(root),
-                format.c_type(),
+                format.program_type(),
                 false,
                 false,
                 false,

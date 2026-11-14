@@ -8,7 +8,7 @@ fn arithmetic_guard_classification_keeps_shared_prefixes() {
         for size in [8, 32, 96] {
             let _session = crate::kernel::VerificationSession::enter();
             let mut term =
-                KernelTerm::variable(KernelType::Program(format.c_type()), Variable(982200));
+                KernelTerm::variable(KernelType::Program(format.program_type()), Variable(982200));
             let (minimum, maximum) = range::range(format);
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for _ in 0..size {

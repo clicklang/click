@@ -24,10 +24,10 @@ fn wide_scalar_literals_preserve_full_payload_and_exact_integer_observations() {
     ] {
         let constant = MachineIntegerConstant::from_integer(ty.format(), &integer).unwrap();
         let value = ty.constant_value(constant).unwrap();
-        assert_eq!(value.c_type(), ty.c_type());
+        assert_eq!(value.program_type(), ty.program_type());
         assert_eq!(value.byte_width(), 16);
-        assert_eq!(ty.c_type().byte_width(), 16);
-        assert_eq!(ty.c_type().abi_alignment(), 16);
+        assert_eq!(ty.program_type().byte_width(), 16);
+        assert_eq!(ty.program_type().abi_alignment(), 16);
         assert_eq!(ty.constant_from_value(&value), Some(constant));
         let term = ty.constant_term(constant).unwrap();
         assert_eq!(term.as_const(), None);
@@ -113,7 +113,7 @@ fn wide_scalar_locals_declare_assign_and_return_without_word_truncation() {
 fn wide_scalar_symbolic_identity_substitution_and_observation_preserve_type() {
     for ty in [MachineIntegerType::Int128, MachineIntegerType::UInt128] {
         let variable = Variable(148_001);
-        let value = symbolic_call_result(ty.c_type(), variable);
+        let value = symbolic_call_result(ty.program_type(), variable);
         let state = ExecutionState::new().with_local("wide", value.clone());
         let theorem = prove_program_expression_evaluation(
             state,
@@ -139,7 +139,7 @@ fn wide_scalar_symbolic_identity_substitution_and_observation_preserve_type() {
                 &ty.constant_term(constant).unwrap(),
             );
             assert_eq!(ty.constant_from_value(&substituted), Some(constant));
-            assert_eq!(substituted.c_type(), ty.c_type());
+            assert_eq!(substituted.program_type(), ty.program_type());
         }
     }
 }
@@ -485,7 +485,7 @@ fn wide_cast_specification_signed_narrowing_keeps_both_range_obligations() {
         &PureFactContext::new(),
     )
     .unwrap();
-    assert_eq!(result.c_type(), ProgramType::Int64);
+    assert_eq!(result.program_type(), ProgramType::Int64);
     assert_eq!(obligations.len(), 2);
     for kind in [true, false] {
         assert!(
@@ -519,7 +519,7 @@ fn wide_cast_specification_signed_narrowing_keeps_both_range_obligations() {
             &assumptions,
         )
         .unwrap();
-        assert_eq!(result.c_type(), ProgramType::Int64);
+        assert_eq!(result.program_type(), ProgramType::Int64);
         assert_eq!(remaining.len(), 2 - provided);
     }
     let value = ProgramValue::Int128(MachineTerm::Variable(Variable(149_005)));

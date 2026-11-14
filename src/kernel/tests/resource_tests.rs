@@ -1747,7 +1747,7 @@ fn resource_instance_projections_use_owned_current_or_explicit_entry_state() {
                 field_index: 1,
                 at_entry,
             },
-            c_type: ProgramType::Int32,
+            program_type: ProgramType::Int32,
         };
         let paths = crate::kernel::spec::evaluate_spec_expression_paths_with_loop_entry(
             &current,
@@ -1847,7 +1847,7 @@ fn resource_instance_projections_use_owned_current_or_explicit_entry_state() {
             .is_err()
         );
     }
-    for (identity, field_index, c_type) in [
+    for (identity, field_index, program_type) in [
         (99, 1, ProgramType::Int32),
         (10, 2, ProgramType::Int32),
         (10, 0, ProgramType::Int32),
@@ -1860,7 +1860,7 @@ fn resource_instance_projections_use_owned_current_or_explicit_entry_state() {
                 field_index,
                 at_entry: false,
             },
-            c_type,
+            program_type,
         };
         assert!(
             crate::kernel::spec::evaluate_spec_expression_paths_with_loop_entry(
@@ -1930,7 +1930,7 @@ fn resource_instance_substitution_preserves_identity_without_memory_authority() 
     let ty = resource_index_type(
         "Payload",
         vec![
-            AlgebraicValueType::Program(ProgramValue::pointer(pointer.clone()).c_type()),
+            AlgebraicValueType::Program(ProgramValue::pointer(pointer.clone()).program_type()),
             AlgebraicValueType::Program(ProgramType::Int32),
         ],
     );
@@ -2181,7 +2181,7 @@ fn symbolic_resource_indices_substitute_nested_payloads_without_memory_authority
     let ty = resource_index_type(
         "Payload",
         vec![
-            AlgebraicValueType::Program(ProgramValue::pointer(pointer.clone()).c_type()),
+            AlgebraicValueType::Program(ProgramValue::pointer(pointer.clone()).program_type()),
             AlgebraicValueType::Program(ProgramType::Int32),
         ],
     );

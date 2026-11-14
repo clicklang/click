@@ -3,9 +3,9 @@
 use super::*;
 
 fn observe(value: &ProgramValue) -> Option<IntegerTerm> {
-    let ty = match value.c_type() {
+    let ty = match value.program_type() {
         ProgramType::Bool => MachineIntegerType::UInt8,
-        ty => MachineIntegerType::from_c_type(ty)?,
+        ty => MachineIntegerType::from_program_type(ty)?,
     };
     IntegerTerm::from_machine(
         ty,

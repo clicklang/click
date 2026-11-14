@@ -58,9 +58,9 @@ pub(in crate::kernel) fn algebraic_constructor_case_equations(
         for (index, field_type) in variant.fields.iter().enumerate() {
             let variable = fresh();
             let (sort, field) = match field_type {
-                AlgebraicValueType::Program(c_type)
-                | AlgebraicValueType::ObjectPointer(c_type, _) => {
-                    let sort = match c_type {
+                AlgebraicValueType::Program(program_type)
+                | AlgebraicValueType::ObjectPointer(program_type, _) => {
+                    let sort = match program_type {
                         ProgramType::Int32 => Sort::ProgramInt32,
                         ProgramType::Int64 => Sort::ProgramInt64,
                         ty if ty.is_pointer() => match field_type.object_class() {
@@ -73,7 +73,7 @@ pub(in crate::kernel) fn algebraic_constructor_case_equations(
                         // A value of a Rust type parameter, or of a crate
                         // enum, is a term of its type.
                         ProgramType::Parameter(name) => Sort::Algebraic(name.algebraic_type()),
-                        ty => Sort::ProgramInteger(MachineIntegerType::from_c_type(*ty)?),
+                        ty => Sort::ProgramInteger(MachineIntegerType::from_program_type(*ty)?),
                     };
                     (
                         sort,
@@ -83,7 +83,7 @@ pub(in crate::kernel) fn algebraic_constructor_case_equations(
                                 .symbolic_program_field_value(
                                     &variant.name,
                                     index,
-                                    *c_type,
+                                    *program_type,
                                     variable,
                                 )
                                 .with_pointer_object_class(field_type.object_class()),

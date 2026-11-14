@@ -1144,8 +1144,16 @@ fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
         true,
     );
     let parameters = [
-        syntax::C0Parameter::new(C0Type::Int32Pointer, "owner".to_string(), None),
-        syntax::C0Parameter::new(C0Type::Int32Pointer, "data".to_string(), None),
+        crate::languages::interface::ImportedParameter::new(
+            InterfaceType::Int32Pointer,
+            "owner".to_string(),
+            None,
+        ),
+        crate::languages::interface::ImportedParameter::new(
+            InterfaceType::Int32Pointer,
+            "data".to_string(),
+            None,
+        ),
     ];
     let arguments = [
         ProgramExpression::Value(ProgramValue::pointer(owner)),
@@ -1190,8 +1198,8 @@ fn synthesizes_a_reassigned_pointer_parameter_at_entry() {
         ),
         true,
     );
-    let parameters = [syntax::C0Parameter::new(
-        C0Type::Int32Pointer,
+    let parameters = [crate::languages::interface::ImportedParameter::new(
+        InterfaceType::Int32Pointer,
         "p".to_string(),
         None,
     )];
@@ -1235,9 +1243,21 @@ fn synthesizes_dynamically_indexed_pointer_offset_equality() {
         true,
     );
     let parameters = [
-        syntax::C0Parameter::new(C0Type::Int32Pointer, "owner".to_string(), None),
-        syntax::C0Parameter::new(C0Type::Int32Pointer, "data".to_string(), None),
-        syntax::C0Parameter::new(C0Type::Int32, "index".to_string(), None),
+        crate::languages::interface::ImportedParameter::new(
+            InterfaceType::Int32Pointer,
+            "owner".to_string(),
+            None,
+        ),
+        crate::languages::interface::ImportedParameter::new(
+            InterfaceType::Int32Pointer,
+            "data".to_string(),
+            None,
+        ),
+        crate::languages::interface::ImportedParameter::new(
+            InterfaceType::Int32,
+            "index".to_string(),
+            None,
+        ),
     ];
     let arguments = [
         ProgramExpression::Value(ProgramValue::pointer(Pointer {

@@ -52,7 +52,7 @@ fn identity_casts_preserve_exact_shared_roots_at_every_integer_width() {
             KernelTermImport::default().machine(format, &MachineTerm::Variable(Variable(995410)));
         for count in [1, 3] {
             let exports = KernelTermExport::machine_export_count();
-            let (path, _) = cast_chain(&root, format.c_type(), count);
+            let (path, _) = cast_chain(&root, format.program_type(), count);
             assert_eq!(path.value, SpecValue::Shared(root.clone()), "{format:?}");
             assert!(path.facts.is_empty());
             assert!(path.obligations.is_empty());
@@ -95,7 +95,7 @@ fn changed_type_cast_is_not_an_identity_cast() {
         &MachineTerm::uint64_constant(256),
     );
     let (path, _) = cast_chain(&root, ProgramType::UInt8, 1);
-    assert_eq!(path.value.c_type(), ProgramType::UInt8);
+    assert_eq!(path.value.program_type(), ProgramType::UInt8);
     assert_ne!(path.value, SpecValue::Shared(root));
     assert_eq!(
         path.value.into_native(),

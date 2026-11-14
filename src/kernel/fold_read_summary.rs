@@ -207,9 +207,9 @@ impl CheckedFoldReadSummary {
     pub fn check(definition: &FoldReadDefinition) -> Result<Self, FoldReadDecline> {
         let parameters = &definition.parameters;
         let mut array_parameter = None;
-        for (index, (name, c_type)) in parameters.iter().enumerate() {
+        for (index, (name, program_type)) in parameters.iter().enumerate() {
             crate::instrumentation::record_deterministic_work(1);
-            match c_type {
+            match program_type {
                 ProgramType::Int32Pointer | ProgramType::UInt8Pointer => {
                     if array_parameter.replace(index).is_some() {
                         return Err(FoldReadDecline::UnsupportedParameters(format!(
@@ -273,7 +273,10 @@ impl CheckedFoldReadSummary {
         Ok(Self {
             name: definition.name.clone(),
             fingerprint: definition.fingerprint(),
-            parameter_types: parameters.iter().map(|(_, c_type)| *c_type).collect(),
+            parameter_types: parameters
+                .iter()
+                .map(|(_, program_type)| *program_type)
+                .collect(),
             array_parameter,
             element_width: checker.element_type.byte_width(),
             start,
@@ -304,7 +307,7 @@ impl CheckedFoldReadSummary {
         if application.name() != self.name || arguments.len() != self.parameter_types.len() {
             return None;
         }
-        for (position, (argument, c_type)) in
+        for (position, (argument, program_type)) in
             arguments.iter().zip(&self.parameter_types).enumerate()
         {
             crate::instrumentation::record_deterministic_work(1);
@@ -321,11 +324,11 @@ impl CheckedFoldReadSummary {
                 }
                 PureFunctionArgument::SharedMachine(value) => {
                     position != self.array_parameter
-                        && *c_type == ProgramType::Int32
+                        && *program_type == ProgramType::Int32
                         && value.ty() == MachineIntegerType::Int32
                 }
                 PureFunctionArgument::Value(ProgramValue::Int32(_)) => {
-                    position != self.array_parameter && *c_type == ProgramType::Int32
+                    position != self.array_parameter && *program_type == ProgramType::Int32
                 }
                 _ => false,
             };
@@ -372,7 +375,9 @@ impl BodyChecker<'_> {
     fn scalar_parameter(&self, name: &str) -> Option<usize> {
         self.parameters
             .iter()
-            .position(|(parameter, c_type)| parameter == name && *c_type == ProgramType::Int32)
+            .position(|(parameter, program_type)| {
+                parameter == name && *program_type == ProgramType::Int32
+            })
     }
 
     fn endpoint(&self, endpoint: &SpecExpression) -> Result<FoldEndpointTemplate, FoldReadDecline> {

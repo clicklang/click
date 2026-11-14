@@ -1,6 +1,6 @@
 //! Shared normalization of contiguous standard C integer specifiers.
 
-use super::syntax::{C0Type, LongRank, PlainChar};
+use super::syntax::{InterfaceType, LongRank, PlainChar};
 
 /// The refusal when plain `char` is spelled where no C target fixes its
 /// signedness.
@@ -12,7 +12,7 @@ pub(crate) const PLAIN_CHAR_NEEDS_TARGET: &str = "plain `char` is signed or unsi
 pub(crate) fn parse<'a>(
     words: impl Iterator<Item = &'a str>,
     plain_char: Option<PlainChar>,
-) -> Result<Option<(C0Type, usize)>, &'static str> {
+) -> Result<Option<(InterfaceType, usize)>, &'static str> {
     let (mut chars, mut shorts, mut ints, mut longs, mut signs, mut unsigned) =
         (0, 0, 0, 0, 0, false);
     let mut count = 0;
@@ -51,19 +51,19 @@ pub(crate) fn parse<'a>(
     if count == 0 {
         return Ok(None);
     }
-    let c_type = if chars > 0 {
+    let interface_type = if chars > 0 {
         if unsigned {
-            C0Type::UInt8
+            InterfaceType::UInt8
         } else if signs > 0 {
-            C0Type::Int8
+            InterfaceType::Int8
         } else {
-            C0Type::Char(plain_char.ok_or(PLAIN_CHAR_NEEDS_TARGET)?)
+            InterfaceType::Char(plain_char.ok_or(PLAIN_CHAR_NEEDS_TARGET)?)
         }
     } else if shorts > 0 {
         if unsigned {
-            C0Type::UInt16
+            InterfaceType::UInt16
         } else {
-            C0Type::Int16
+            InterfaceType::Int16
         }
     } else if longs > 0 {
         // `long` and `long long` share a representation but stay distinct.
@@ -73,16 +73,16 @@ pub(crate) fn parse<'a>(
             LongRank::Long
         };
         if unsigned {
-            C0Type::UInt64(rank)
+            InterfaceType::UInt64(rank)
         } else {
-            C0Type::Int64(rank)
+            InterfaceType::Int64(rank)
         }
     } else if unsigned {
-        C0Type::UInt32
+        InterfaceType::UInt32
     } else {
-        C0Type::Int32
+        InterfaceType::Int32
     };
-    Ok(Some((c_type, count)))
+    Ok(Some((interface_type, count)))
 }
 
 #[cfg(test)]
@@ -91,7 +91,7 @@ mod tests {
 
     #[test]
     fn standard_integer_specifiers_accept_every_order() {
-        fn permutations(words: &mut [&str], index: usize, expected: C0Type) {
+        fn permutations(words: &mut [&str], index: usize, expected: InterfaceType) {
             if index == words.len() {
                 assert_eq!(
                     parse(words.iter().copied(), Some(PlainChar::Unsigned)),
@@ -107,20 +107,26 @@ mod tests {
             }
         }
         for (spelling, expected) in [
-            ("char", C0Type::Char(PlainChar::Unsigned)),
-            ("signed char", C0Type::Int8),
-            ("unsigned char", C0Type::UInt8),
-            ("short int", C0Type::Int16),
-            ("signed short int", C0Type::Int16),
-            ("unsigned short int", C0Type::UInt16),
-            ("signed int", C0Type::Int32),
-            ("unsigned int", C0Type::UInt32),
-            ("long int", C0Type::Int64(LongRank::Long)),
-            ("signed long int", C0Type::Int64(LongRank::Long)),
-            ("unsigned long int", C0Type::UInt64(LongRank::Long)),
-            ("long long int", C0Type::Int64(LongRank::LongLong)),
-            ("signed long long int", C0Type::Int64(LongRank::LongLong)),
-            ("unsigned long long int", C0Type::UInt64(LongRank::LongLong)),
+            ("char", InterfaceType::Char(PlainChar::Unsigned)),
+            ("signed char", InterfaceType::Int8),
+            ("unsigned char", InterfaceType::UInt8),
+            ("short int", InterfaceType::Int16),
+            ("signed short int", InterfaceType::Int16),
+            ("unsigned short int", InterfaceType::UInt16),
+            ("signed int", InterfaceType::Int32),
+            ("unsigned int", InterfaceType::UInt32),
+            ("long int", InterfaceType::Int64(LongRank::Long)),
+            ("signed long int", InterfaceType::Int64(LongRank::Long)),
+            ("unsigned long int", InterfaceType::UInt64(LongRank::Long)),
+            ("long long int", InterfaceType::Int64(LongRank::LongLong)),
+            (
+                "signed long long int",
+                InterfaceType::Int64(LongRank::LongLong),
+            ),
+            (
+                "unsigned long long int",
+                InterfaceType::UInt64(LongRank::LongLong),
+            ),
         ] {
             permutations(
                 &mut spelling.split_whitespace().collect::<Vec<_>>(),
@@ -156,7 +162,7 @@ mod tests {
         );
         assert_eq!(
             parse(["long", "value"].into_iter(), Some(PlainChar::Unsigned)),
-            Ok(Some((C0Type::Int64(LongRank::Long), 1)))
+            Ok(Some((InterfaceType::Int64(LongRank::Long), 1)))
         );
     }
 
@@ -165,26 +171,29 @@ mod tests {
         for plain in [PlainChar::Unsigned, PlainChar::Signed] {
             assert_eq!(
                 parse(["char"].into_iter(), Some(plain)),
-                Ok(Some((C0Type::Char(plain), 1)))
+                Ok(Some((InterfaceType::Char(plain), 1)))
             );
             assert_eq!(
                 parse(["signed", "char"].into_iter(), Some(plain)),
-                Ok(Some((C0Type::Int8, 2)))
+                Ok(Some((InterfaceType::Int8, 2)))
             );
             assert_eq!(
                 parse(["unsigned", "char"].into_iter(), Some(plain)),
-                Ok(Some((C0Type::UInt8, 2)))
+                Ok(Some((InterfaceType::UInt8, 2)))
             );
         }
-        assert_ne!(C0Type::Char(PlainChar::Signed), C0Type::Int8);
-        assert_ne!(C0Type::Char(PlainChar::Unsigned), C0Type::UInt8);
+        assert_ne!(InterfaceType::Char(PlainChar::Signed), InterfaceType::Int8);
+        assert_ne!(
+            InterfaceType::Char(PlainChar::Unsigned),
+            InterfaceType::UInt8
+        );
         assert_eq!(
             parse(["char"].into_iter(), None),
             Err(PLAIN_CHAR_NEEDS_TARGET)
         );
         assert_eq!(
             parse(["signed", "char"].into_iter(), None),
-            Ok(Some((C0Type::Int8, 2)))
+            Ok(Some((InterfaceType::Int8, 2)))
         );
     }
 }

@@ -24,7 +24,8 @@ pub(super) fn check_native_parity(root: KernelTerm, destination: MachineIntegerT
         crate::kernel::machine_integer::conversion::convert_value(native, destination).unwrap();
     for count in [1, 3] {
         let exports = KernelTermExport::machine_export_count();
-        let (path, _) = super::identity_cast_tests::cast_chain(&root, destination.c_type(), count);
+        let (path, _) =
+            super::identity_cast_tests::cast_chain(&root, destination.program_type(), count);
         assert!(matches!(path.value, SpecValue::Shared(_)));
         assert!(path.facts.is_empty());
         assert!(path.obligations.is_empty());
@@ -67,9 +68,11 @@ fn retained_signedness_casts_match_native_terms_and_boundary_constants() {
             for leaf in leaves {
                 let root = KernelTerm::retained_native_machine_operand(source, &leaf);
                 check_native_parity(root.clone(), destination);
-                let intermediate =
-                    shared_machine::cast_signedness(&SpecValue::Shared(root), destination.c_type())
-                        .unwrap();
+                let intermediate = shared_machine::cast_signedness(
+                    &SpecValue::Shared(root),
+                    destination.program_type(),
+                )
+                .unwrap();
                 check_native_parity(intermediate, source);
             }
         }
@@ -133,8 +136,9 @@ fn cast_variable_guards_keep_native_spelling_without_exporting_arithmetic() {
     for (source, destination) in [PAIRS[2], (PAIRS[2].1, PAIRS[2].0)] {
         let variable = MachineTerm::Variable(Variable(995427));
         let root = KernelTermImport::default().machine(source, &variable);
-        let cast = shared_machine::cast_signedness(&SpecValue::Shared(root), destination.c_type())
-            .unwrap();
+        let cast =
+            shared_machine::cast_signedness(&SpecValue::Shared(root), destination.program_type())
+                .unwrap();
         let zero =
             crate::kernel::machine_integer::range::constant_word(destination, &0.into()).unwrap();
         let native =

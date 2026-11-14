@@ -2209,7 +2209,7 @@ impl<'a> Proof<'a> {
                 parameters
                     .iter()
                     .find(|parameter| parameter.name() == name)
-                    .map(syntax::C0Parameter::c_type)
+                    .map(crate::languages::interface::ImportedParameter::interface_type)
             })
         });
         unfold_structural_invariant_proposition(

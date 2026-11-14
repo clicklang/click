@@ -1173,7 +1173,7 @@ fn loop_iterator(
     mir: &MirBody,
     header: usize,
     loop_: &flow::While,
-) -> Option<crate::languages::c::syntax::RustLoopIterator> {
+) -> Option<crate::languages::interface::RustLoopIterator> {
     use crate::languages::c::syntax::{RustIteratorKind as K, RustLoopIterator};
     let body = if loop_.body <= header {
         loop_.body..header
@@ -1835,7 +1835,7 @@ mod tests {
                 next_temporary: 0,
                 loop_iterators: Vec::new(),
                 locals: BTreeSet::new(),
-                return_type: C0Type::Void,
+                return_type: InterfaceType::Void,
                 layouts: &layouts,
                 records: &records,
                 functions: &functions,

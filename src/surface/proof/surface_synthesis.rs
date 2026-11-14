@@ -102,8 +102,8 @@ pub(in crate::surface) fn with_synthesis_binder_names<T>(
 
 #[derive(Default)]
 pub(in crate::surface) struct SynthesisStructOwners {
-    locals: BTreeMap<String, syntax::C0StructLayout>,
-    cast_parameters: BTreeMap<String, (String, syntax::C0StructLayout)>,
+    locals: BTreeMap<String, crate::languages::interface::RecordLayout>,
+    cast_parameters: BTreeMap<String, (String, crate::languages::interface::RecordLayout)>,
     callback_sources: std::sync::Arc<BTreeMap<String, syntax::C0Expression>>,
     /// The function's global and static arrays by kernel and source name: the source name and
     /// declared shape an element read is spelled with.
@@ -118,7 +118,10 @@ pub(in crate::surface) struct SynthesisStructOwners {
 pub(in crate::surface) struct LocalStructLayoutScope(Option<std::sync::Arc<SynthesisStructOwners>>);
 
 impl LocalStructLayoutScope {
-    pub(in crate::surface) fn enter(function: &syntax::C0Function, block: &FunctionBlock) -> Self {
+    pub(in crate::surface) fn enter(
+        function: &crate::languages::interface::ImportedFunction,
+        block: &FunctionBlock,
+    ) -> Self {
         let locals = function
             .local_struct_pointers()
             .iter()
@@ -166,13 +169,19 @@ impl LocalStructLayoutScope {
             .map(|global| {
                 (
                     Memory::global_pointer(global.kernel_name()),
-                    (global.name().to_string(), global.c_type().to_kernel_type()),
+                    (
+                        global.name().to_string(),
+                        global.interface_type().to_kernel_type(),
+                    ),
                 )
             })
             .chain(function.static_locals().values().map(|local| {
                 (
                     Memory::static_pointer(function.name(), local.kernel_name()),
-                    (local.name().to_string(), local.c_type().to_kernel_type()),
+                    (
+                        local.name().to_string(),
+                        local.interface_type().to_kernel_type(),
+                    ),
                 )
             }))
             .collect();
@@ -277,7 +286,7 @@ impl Drop for LocalStructLayoutScope {
 struct StructOwner {
     base: ProgramExpression,
     pointer: crate::kernel::PointerValue,
-    layout: syntax::C0StructLayout,
+    layout: crate::languages::interface::RecordLayout,
 }
 
 /// The cast `void *` parameters, with their argument values, and the
@@ -411,7 +420,7 @@ fn synthesize_struct_loadable_segment(
                 .layout
                 .fields()
                 .values()
-                .map(syntax::C0StructField::offset_bytes)
+                .map(crate::languages::interface::RecordField::offset_bytes)
                 .filter(|offset| *offset > field.offset_bytes())
                 .min()
                 .unwrap_or_else(|| owner.layout.size_bytes());
@@ -422,10 +431,10 @@ fn synthesize_struct_loadable_segment(
             {
                 continue;
             }
-            let width = match field.c_type() {
-                C0Type::Char(_) | C0Type::UInt8 | C0Type::Int8 => 1,
-                C0Type::Int16 | C0Type::UInt16 => 2,
-                C0Type::Int64(_) | C0Type::UInt64(_) | C0Type::Float64 => 8,
+            let width = match field.interface_type() {
+                InterfaceType::Char(_) | InterfaceType::UInt8 | InterfaceType::Int8 => 1,
+                InterfaceType::Int16 | InterfaceType::UInt16 => 2,
+                InterfaceType::Int64(_) | InterfaceType::UInt64(_) | InterfaceType::Float64 => 8,
                 _ => 4,
             };
             if !start.is_multiple_of(width) || !end.is_multiple_of(width) {
@@ -443,7 +452,7 @@ fn synthesize_struct_loadable_segment(
                         base: None,
                         name: name.clone(),
                         element_width: Some(width),
-                        element_type: Some(field.c_type().to_kernel_type()),
+                        element_type: Some(field.interface_type().to_kernel_type()),
                     },
                 },
             });
@@ -489,7 +498,7 @@ fn field_pointer_bases(
     let mut bases = Vec::new();
     for owner in owners {
         for (field_name, field) in owner.layout.fields() {
-            let value_type = field.c_type().to_kernel_type();
+            let value_type = field.interface_type().to_kernel_type();
             let Some(width) = value_type.pointee_type().map(ProgramType::byte_width) else {
                 continue;
             };
@@ -754,7 +763,7 @@ fn synthesize_snapshot_local(term: &MachineTerm) -> Option<ContractExpression> {
         let (state, selector) = slot.as_ref()?;
         let name = state.locals().names_holding_integer(term).find(|name| {
             state.locals().get(name).is_some_and(|value| {
-                crate::kernel::MachineIntegerType::from_c_type(value.c_type()).is_some()
+                crate::kernel::MachineIntegerType::from_program_type(value.program_type()).is_some()
             })
         })?;
         if let Some(result) = call_result_expression(name) {
@@ -1573,9 +1582,10 @@ fn synthesize_surface_quantified_proposition(
             var, sort, body, ..
         } => {
             let integer_type = sort.machine_integer_type()?;
-            let click_type = ClickType::Program(crate::surface::generics::c0_type_from_kernel(
-                integer_type.c_type(),
-            ));
+            let click_type =
+                ClickType::Program(crate::surface::generics::interface_type_from_program_type(
+                    integer_type.program_type(),
+                ));
             let conflicts = |candidate: &str| {
                 parameter_binding
                     .parameters
@@ -1760,7 +1770,7 @@ fn synthesize_exact_external_zero_based_byte_range(
         .zip(parameter_binding.arguments)
         .filter_map(|(parameter, argument)| {
             if parameter
-                .c_type()
+                .interface_type()
                 .pointee_type()?
                 .to_kernel_type()
                 .byte_width()
@@ -1773,7 +1783,7 @@ fn synthesize_exact_external_zero_based_byte_range(
                 ProgramExpression::Variable(name) => state.locals().get(name)?.pointer()?,
                 _ => return None,
             };
-            (pointer.pointer() == base && pointer.c_type().pointee_type()?.byte_width() == 1)
+            (pointer.pointer() == base && pointer.program_type().pointee_type()?.byte_width() == 1)
                 .then(|| parameter.name().to_string())
         });
     let Some(name) = matches.next() else {
@@ -1974,12 +1984,12 @@ fn synthesize_external_symbolic_element_range(
                 _ => return None,
             };
             if parameter
-                .c_type()
+                .interface_type()
                 .pointee_type()?
                 .to_kernel_type()
                 .byte_width()
                 != 1
-                || named_base.c_type().pointee_type()?.byte_width() != 1
+                || named_base.program_type().pointee_type()?.byte_width() != 1
                 || named_base.pointer().block != PointerBlock::ExternalArgument
                 || base.block != PointerBlock::ExternalArgument
             {
@@ -2104,7 +2114,7 @@ fn named_pointer_bases<'a>(
                 return None;
             };
             let width = parameter
-                .c_type()
+                .interface_type()
                 .pointee_type()?
                 .to_kernel_type()
                 .byte_width();
@@ -2117,7 +2127,7 @@ fn named_pointer_bases<'a>(
                 let ProgramValue::Pointer(base) = native.as_ref() else {
                     return None;
                 };
-                let width = base.c_type().pointee_type()?.byte_width();
+                let width = base.program_type().pointee_type()?.byte_width();
                 Some((surface_local_name(name).to_string(), base.clone(), width))
             })
         }))
@@ -2290,7 +2300,7 @@ fn names_bool_local(expression: &ContractExpression, state: &ExecutionState) -> 
         | ContractExpression::CBinding(name) => state
             .locals()
             .get(name)
-            .is_some_and(|value| value.c_type() == ProgramType::Bool),
+            .is_some_and(|value| value.program_type() == ProgramType::Bool),
         ContractExpression::At { expression, .. } => names_bool_local(expression, state),
         _ => false,
     }
@@ -2805,16 +2815,17 @@ fn synthesize_surface_atomic_proposition(
             CompareRelation::GreaterThan => ComparisonOperator::GreaterThan,
             CompareRelation::GreaterEqual => ComparisonOperator::GreaterEqual,
         };
-        let raise =
-            |operand: &crate::kernel::machine_integer::comparison::ComparisonOperand<'_>| {
-                let root = crate::kernel::KernelTerm::retained_machine_operand(
-                    view.format,
-                    operand.operand_view(),
-                );
-                raise_kernel_term(&root, parameter_binding, state, bound_variables).and_then(
-                    |expression| synthesize_observation_operand(expression, view.format.c_type()),
-                )
-            };
+        let raise = |operand: &crate::kernel::machine_integer::comparison::ComparisonOperand<
+            '_,
+        >| {
+            let root = crate::kernel::KernelTerm::retained_machine_operand(
+                view.format,
+                operand.operand_view(),
+            );
+            raise_kernel_term(&root, parameter_binding, state, bound_variables).and_then(
+                |expression| synthesize_observation_operand(expression, view.format.program_type()),
+            )
+        };
         let comparison = ClickProposition::Comparison {
             left: raise(&view.operands[0])?,
             operator,
@@ -3163,7 +3174,7 @@ pub(super) fn raise_kernel_term(
             // Native 128-bit calls refuse even identity casts, so their
             // unchanged declaration remains the supported spelling.
             if let KernelType::Program(ty) = term.ty()
-                && MachineIntegerType::from_c_type(*ty)
+                && MachineIntegerType::from_program_type(*ty)
                     .is_some_and(|format| format.format().bits() <= 64)
             {
                 synthesize_observation_operand(call, *ty)?
@@ -3207,7 +3218,8 @@ pub(super) fn raise_kernel_term(
             relation,
             arguments,
         } => {
-            let operand = |term| synthesize_observation_operand(recurse(term)?, format.c_type());
+            let operand =
+                |term| synthesize_observation_operand(recurse(term)?, format.program_type());
             proposition_bool_value(ClickProposition::Comparison {
                 left: operand(&arguments[0])?,
                 operator: match relation {
@@ -3234,7 +3246,7 @@ pub(super) fn raise_kernel_term(
         Node::BoolCast {
             destination,
             operand,
-        } => synthesize_observation_operand(recurse(operand)?, destination.c_type())?,
+        } => synthesize_observation_operand(recurse(operand)?, destination.program_type())?,
         Node::IntegerToMachine {
             destination,
             operand,
@@ -3254,7 +3266,7 @@ pub(super) fn raise_kernel_term(
                     | crate::kernel::MachineIntegerType::UInt8
                     | crate::kernel::MachineIntegerType::Int16
                     | crate::kernel::MachineIntegerType::UInt16 => expression,
-                    _ => synthesize_observation_operand(expression, format.c_type())?,
+                    _ => synthesize_observation_operand(expression, format.program_type())?,
                 }],
             }
         }
@@ -3279,7 +3291,7 @@ pub(super) fn raise_kernel_term(
                 return None;
             };
             SurfaceTerm::ProgramExpression(ProgramExpression::Value(
-                literal.value_at(MachineIntegerType::from_c_type(*ty)?),
+                literal.value_at(MachineIntegerType::from_program_type(*ty)?),
             ))
         }
         Node::MachineBinary {
@@ -3359,7 +3371,7 @@ pub(super) fn raise_kernel_term(
                     operand: Box::new(expression),
                     lowered: ProgramExpression::Cast {
                         expression: Box::new(ProgramExpression::Value(int32(0))),
-                        target_type: destination.c_type(),
+                        target_type: destination.program_type(),
                         integer_mode: if *encoding == MachineCastSpelling::UInt32From64 {
                             crate::kernel::IntegerCastMode::Standard
                         } else {
@@ -3474,7 +3486,7 @@ fn synthesize_unsigned_comparison(
                 *name != "result"
                     && *name != crate::kernel::C_CONTRACT_RESULT_NAME
                     && state.locals().get(name).is_some_and(|value| {
-                        value.c_type() == crate::kernel::ProgramType::UInt32
+                        value.program_type() == crate::kernel::ProgramType::UInt32
                             && value
                                 .native_payload()
                                 .is_none_or(|native| matches!(native, ProgramValue::UInt32(_)))
@@ -3845,7 +3857,7 @@ fn synthesize_parameter_field_pointer_value(
             continue;
         };
         for (field_name, field) in layout.fields() {
-            let value_type = field.c_type().to_kernel_type();
+            let value_type = field.interface_type().to_kernel_type();
             if !value_type.is_pointer() {
                 continue;
             }
@@ -3895,7 +3907,7 @@ fn synthesize_parameter_field_pointer_value(
     // than a registered load, and this is its only spelling.
     for owner in struct_owners(parameter_binding, state) {
         for (field_name, field) in owner.layout.fields() {
-            let value_type = field.c_type().to_kernel_type();
+            let value_type = field.interface_type().to_kernel_type();
             if !value_type.is_pointer() {
                 continue;
             }
@@ -3984,13 +3996,12 @@ fn bitvector_spells_uint32(
         return state
             .locals()
             .get(name)
-            .is_some_and(|value| value.c_type() == ProgramType::UInt32);
+            .is_some_and(|value| value.program_type() == ProgramType::UInt32);
     }
     if let Some(name) = describe_parameter_bitvector(term, parameter_binding) {
-        return parameter_binding
-            .parameters
-            .iter()
-            .any(|parameter| parameter.name() == name && parameter.c_type() == C0Type::UInt32);
+        return parameter_binding.parameters.iter().any(|parameter| {
+            parameter.name() == name && parameter.interface_type() == InterfaceType::UInt32
+        });
     }
     let either = |left: &MachineTerm, right: &MachineTerm| {
         bitvector_spells_uint32(left, parameter_binding, state, bound_variables)
@@ -4237,7 +4248,7 @@ fn synthesize_surface_bitvector(
             Some(ContractExpression::ProgramExpression(
                 ProgramExpression::Cast {
                     expression: Box::new(contract_expression_to_program_expression(&operand)?),
-                    target_type: destination.c_type(),
+                    target_type: destination.program_type(),
                     integer_mode: crate::kernel::IntegerCastMode::CConversion,
                     pointee_struct: None,
                     pointee_volatile: false,
@@ -4460,7 +4471,8 @@ fn synthesize_surface_bitvector(
                         let ProgramExpression::Value(ProgramValue::Pointer(base)) = argument else {
                             return None;
                         };
-                        let element_type = parameter.c_type().pointee_type()?.to_kernel_type();
+                        let element_type =
+                            parameter.interface_type().pointee_type()?.to_kernel_type();
                         if !matches!(element_type, ProgramType::Int64 | ProgramType::UInt64) {
                             return None;
                         }
@@ -4547,7 +4559,7 @@ fn synthesize_surface_bitvector(
                         let ProgramExpression::Value(ProgramValue::Pointer(base)) = argument else {
                             return None;
                         };
-                        let element_type = parameter.c_type().pointee_type()?;
+                        let element_type = parameter.interface_type().pointee_type()?;
                         kernel_pointer.element_index_from_base_with_width(
                             base,
                             element_type.to_kernel_type().byte_width(),
@@ -4962,9 +4974,9 @@ fn synthesize_parameter_field_indexed_int32_load(
         && let ContractExpression::ProgramExpression(ProgramExpression::Variable(owner)) =
             base.as_ref()
     {
-        let has_scalar_stride = |layout: &syntax::C0StructLayout| {
+        let has_scalar_stride = |layout: &crate::languages::interface::RecordLayout| {
             layout.fields().get(name).is_some_and(|declaration| {
-                declaration.c_type().to_kernel_type() == ProgramType::Int32Pointer
+                declaration.interface_type().to_kernel_type() == ProgramType::Int32Pointer
                     && declaration.struct_name().is_none()
                     && declaration.union_name().is_none()
             })
@@ -5036,7 +5048,7 @@ fn synthesize_local_struct_pointer_field(
 ) -> Option<ContractExpression> {
     for owner in struct_owners(parameter_binding, state) {
         for (field_name, field) in owner.layout.fields() {
-            let value_type = field.c_type().to_kernel_type();
+            let value_type = field.interface_type().to_kernel_type();
             if value_type.is_pointer() || value_type.byte_width() == 0 {
                 continue;
             }
@@ -5096,7 +5108,7 @@ fn synthesize_local_aggregate_field(
         .aggregate_object_values()
         .find_map(|(name, layout, slot)| {
             layout.fields().iter().find_map(|field| {
-                let (element_type, element_count) = match field.c_type() {
+                let (element_type, element_count) = match field.program_type() {
                     ProgramType::Int32 => (ProgramType::Int32, 1),
                     ProgramType::UInt8 => (ProgramType::UInt8, 1),
                     ProgramType::Int32Array(length) => (ProgramType::Int32, length),
@@ -5160,7 +5172,7 @@ fn synthesize_local_aggregate_field(
                         field: field.name().to_string(),
                         lowered: ProgramExpression::TypedLoad {
                             pointer: Box::new(lowered_pointer),
-                            value_type: field.c_type(),
+                            value_type: field.program_type(),
                             volatile: false,
                             pointee_constant: false,
                             access_class: None,
@@ -5294,7 +5306,7 @@ fn synthesize_local_indexed_load(
         {
             return None;
         }
-        let element_type = view.c_type().pointee_type()?;
+        let element_type = view.program_type().pointee_type()?;
         if crate::kernel::LoadKind::of_type(element_type) != Some(kind) {
             return None;
         }
@@ -5420,7 +5432,7 @@ fn synthesize_parameter_field_load(
         else {
             continue;
         };
-        if field.c_type().to_kernel_type() != value_type {
+        if field.interface_type().to_kernel_type() != value_type {
             continue;
         }
         let base = ProgramExpression::Variable(parameter.name().to_string());
@@ -5473,7 +5485,7 @@ fn synthesize_local_field_load(
         }) else {
             continue;
         };
-        if field.c_type().to_kernel_type() != value_type {
+        if field.interface_type().to_kernel_type() != value_type {
             continue;
         }
         return Some(ContractExpression::Field {
@@ -5521,7 +5533,7 @@ fn synthesize_owned_field_at_address(
     let slot = state.locals().aggregate_object_pointer(name)?;
     let layout = state.locals().aggregate_layout(name)?;
     let field = layout.fields().iter().find(|field| {
-        field.c_type() == value_type && slot.offset_by_bytes(field.offset_bytes()) == *address
+        field.program_type() == value_type && slot.offset_by_bytes(field.offset_bytes()) == *address
     })?;
     let base = ProgramExpression::Variable(surface_local_name(name).to_string());
     Some(ContractExpression::Field {
@@ -5578,7 +5590,7 @@ fn synthesize_owned_pointer_field(
     let slot = state.locals().aggregate_object_pointer(name)?;
     let layout = state.locals().aggregate_layout(name)?;
     let field = layout.fields().iter().find(|field| {
-        field.c_type().is_pointer() && slot.offset_by_bytes(field.offset_bytes()) == address
+        field.program_type().is_pointer() && slot.offset_by_bytes(field.offset_bytes()) == address
     })?;
     let base = ProgramExpression::Variable(surface_local_name(name).to_string());
     Some(ContractExpression::Field {
@@ -5587,7 +5599,7 @@ fn synthesize_owned_pointer_field(
         field: field.name().to_string(),
         lowered: ProgramExpression::TypedLoad {
             pointer: Box::new(owner_field_pointer(&base, field.offset_bytes())),
-            value_type: field.c_type(),
+            value_type: field.program_type(),
             volatile: false,
             pointee_constant: false,
             access_class: None,
@@ -5683,14 +5695,17 @@ fn synthesize_surface_pointer(
                 return None;
             }
             let element_width = parameter
-                .c_type()
+                .interface_type()
                 .pointee_type()?
                 .to_kernel_type()
                 .byte_width();
             let element_width = parameter
                 .pointee_struct_layout()
                 .or_else(|| parameter.struct_layout())
-                .map_or(element_width, syntax::C0StructLayout::size_bytes);
+                .map_or(
+                    element_width,
+                    crate::languages::interface::RecordLayout::size_bytes,
+                );
             let name = ProgramExpression::Variable(parameter.name().to_string());
             let Some(index) = synthesis_element_index(pointer, base, element_width) else {
                 let bytes = pointer
@@ -5723,13 +5738,13 @@ fn synthesize_surface_pointer(
         .filter(|(name, _)| !crate::surface::diagnostics::is_call_result_temporary(name))
         .find_map(|(name, base)| {
             crate::instrumentation::record_deterministic_work(1);
-            let element_width = base.c_type().pointee_type()?.byte_width();
+            let element_width = base.program_type().pointee_type()?.byte_width();
             let element_width = SYNTHESIS_STRUCT_OWNERS
                 .with(|slot| {
                     slot.borrow()
                         .as_ref()
                         .and_then(|owners| owners.locals.get(name))
-                        .map(syntax::C0StructLayout::size_bytes)
+                        .map(crate::languages::interface::RecordLayout::size_bytes)
                 })
                 .unwrap_or(element_width);
             let name = ProgramExpression::Variable(surface_local_name(name).to_string());
@@ -6049,7 +6064,7 @@ fn synthesize_loaded_pointer_value(
 ) -> Option<ContractExpression> {
     let at_state = |state: &ExecutionState| {
         let address = pointer_read_address_in_state(pointer.pointer(), state)?;
-        synthesize_struct_field_load(&address, pointer.c_type(), parameter_binding, state)
+        synthesize_struct_field_load(&address, pointer.program_type(), parameter_binding, state)
     };
     at_state(state)
         .or_else(|| {
@@ -6124,7 +6139,7 @@ fn synthesize_scalar_model_field(
         )
         .then_some(())?;
         // The field's declared C type, as the parser's elaboration records it.
-        let crate::kernel::ResourceFieldType::Program(c_type) =
+        let crate::kernel::ResourceFieldType::Program(interface_type) =
             instance.schema().fields().get(origin.field_index)?.1
         else {
             return None;
@@ -6137,7 +6152,7 @@ fn synthesize_scalar_model_field(
             field: origin.field.to_string(),
             field_index: origin.field_index,
             click_type: Some(ClickType::Program(
-                crate::surface::generics::c0_type_from_kernel(c_type),
+                crate::surface::generics::interface_type_from_program_type(interface_type),
             )),
         }))
     };
@@ -6379,7 +6394,7 @@ fn synthesize_surface_algebraic(
                             // without widening their views. An explicit cast
                             // is needed only for a checked root view; adding
                             // it to a saved narrow view would change the value.
-                            if pointer.c_type() == ProgramType::VoidPointer
+                            if pointer.program_type() == ProgramType::VoidPointer
                                 && pointer.extent_is_known()
                                 && pointer.extent().is_none()
                             {

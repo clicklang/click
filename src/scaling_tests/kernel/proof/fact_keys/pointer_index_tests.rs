@@ -9,7 +9,7 @@ fn pointer_index_fact_keys_keep_shared_dags_and_linear_work() {
         for size in [16, 64, 256] {
             let _session = VerificationSession::enter();
             let mut root =
-                KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(1019020));
+                KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1019020));
             for _ in 0..size {
                 root = KernelTerm::machine_binary_shared(
                     ty,
@@ -42,7 +42,8 @@ fn snapshot_pointer_index_keys_share_growing_prefixes() {
     for size in [16, 64, 256] {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(1019021));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1019021));
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {

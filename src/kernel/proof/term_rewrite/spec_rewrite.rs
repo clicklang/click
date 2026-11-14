@@ -99,7 +99,7 @@ fn collect_spec_proposition_carriers(
         | SpecProposition::ExistsInt32 { variable, body, .. }
         | SpecProposition::ForAllPointer { variable, body, .. }
         | SpecProposition::ExistsPointer { variable, body, .. } => {
-            variables.c.insert(*variable);
+            variables.program_values.insert(*variable);
             collect_spec_proposition_carriers(body, variables, integer_seen);
         }
         SpecProposition::ForAllInteger { variable, body, .. }
@@ -167,7 +167,7 @@ fn collect_spec_integer_carriers(
     }
     match expression {
         SpecIntegerExpression::ResourceField(projection) => {
-            variables.c.insert(projection.identity);
+            variables.program_values.insert(projection.identity);
         }
         SpecIntegerExpression::Term(term) => {
             collect_integer_carriers(term, variables, integer_seen)
@@ -214,7 +214,7 @@ fn collect_spec_integer_carriers(
                             }
                             AlgebraicValueType::Program(_)
                             | AlgebraicValueType::ObjectPointer(_, _) => {
-                                variables.c.insert(*variable);
+                                variables.program_values.insert(*variable);
                             }
                             AlgebraicValueType::Algebraic { .. }
                             | AlgebraicValueType::Parameter(_) => {
@@ -278,7 +278,7 @@ fn collect_spec_integer_carriers(
             match index {
                 SpecIntegerRangeFoldIndex::Int32 { .. }
                 | SpecIntegerRangeFoldIndex::UInt64 { .. } => {
-                    variables.c.insert(*item);
+                    variables.program_values.insert(*item);
                 }
                 SpecIntegerRangeFoldIndex::Integer { .. } => {
                     variables.integer.insert(*item);
@@ -302,7 +302,7 @@ fn collect_spec_expression_carriers(
             collect_spec_integer_carriers(value, variables, integer_seen)
         }
         SpecExpression::ResourceField { projection, .. } => {
-            variables.c.insert(projection.identity);
+            variables.program_values.insert(projection.identity);
         }
         SpecExpression::AlgebraicMatch { scrutinee, arms } => {
             collect_spec_algebraic_carriers(scrutinee, variables, integer_seen);
@@ -500,7 +500,7 @@ fn collect_spec_algebraic_carriers(
         }
         SpecAlgebraicExpressionNode::Binding(_) => {}
         SpecAlgebraicExpressionNode::ResourceField(projection) => {
-            variables.c.insert(projection.identity);
+            variables.program_values.insert(projection.identity);
         }
         SpecAlgebraicExpressionNode::ProgramValue(value) => {
             collect_spec_expression_carriers(value, variables, integer_seen)
@@ -974,7 +974,7 @@ impl<'a> TermRewrite<'a> {
             SpecProposition::ForAllPointer {
                 name,
                 variable,
-                c_type,
+                program_type,
                 body,
             } => {
                 let (variable, body) =
@@ -984,7 +984,7 @@ impl<'a> TermRewrite<'a> {
                 SpecProposition::ForAllPointer {
                     name: name.clone(),
                     variable,
-                    c_type: *c_type,
+                    program_type: *program_type,
                     body: Box::new(body),
                 }
             }
@@ -1055,7 +1055,7 @@ impl<'a> TermRewrite<'a> {
             SpecProposition::ExistsPointer {
                 name,
                 variable,
-                c_type,
+                program_type,
                 body,
             } => {
                 let (variable, body) =
@@ -1065,7 +1065,7 @@ impl<'a> TermRewrite<'a> {
                 SpecProposition::ExistsPointer {
                     name: name.clone(),
                     variable,
-                    c_type: *c_type,
+                    program_type: *program_type,
                     body: Box::new(body),
                 }
             }
@@ -1133,9 +1133,12 @@ impl<'a> TermRewrite<'a> {
                     destination: *destination,
                 }
             }
-            SpecExpression::ResourceField { projection, c_type } => SpecExpression::ResourceField {
+            SpecExpression::ResourceField {
+                projection,
+                program_type,
+            } => SpecExpression::ResourceField {
                 projection: projection.clone(),
-                c_type: *c_type,
+                program_type: *program_type,
             },
             SpecExpression::AlgebraicMatch { scrutinee, arms } => SpecExpression::AlgebraicMatch {
                 scrutinee: Box::new(self.rewrite_spec_algebraic(scrutinee)?),
@@ -1950,7 +1953,7 @@ impl<'a> TermRewrite<'a> {
             .as_ref()
             .is_some_and(|replacement| replacement.contains(carrier, variable));
         let existing_scope = match carrier {
-            BindingCarrier::Program => self.scope.c.contains_key(&variable),
+            BindingCarrier::Program => self.scope.program_values.contains_key(&variable),
             BindingCarrier::Integer => self.scope.integer.contains_key(&variable),
             BindingCarrier::Algebraic => self.scope.algebraic.contains_key(&variable),
         };
@@ -1992,11 +1995,11 @@ impl<'a> TermRewrite<'a> {
     /// behavior; the Spec resource path must participate in the active
     /// tactic deadline from replacement collection onward.
     pub(crate) fn for_checked_typed_variables(
-        c: &'a BTreeMap<Variable, TypedProgramValueReplacement>,
+        program_values: &'a BTreeMap<Variable, TypedProgramValueReplacement>,
         integer: &'a BTreeMap<Variable, IntegerTerm>,
         algebraic: &'a BTreeMap<Variable, AlgebraicTerm>,
     ) -> Self {
-        let mut rewrite = Self::for_typed_variables(c, integer, algebraic);
+        let mut rewrite = Self::for_typed_variables(program_values, integer, algebraic);
         rewrite.enforce_integer_work_limit = true;
         rewrite.ensure_replacement_carriers();
         rewrite
@@ -2013,11 +2016,11 @@ mod tests {
         replacement: IntegerTerm,
         proposition: &SpecProposition,
     ) -> Result<SpecProposition, SpecRewriteError> {
-        let c_replacements = BTreeMap::new();
+        let program_replacements = BTreeMap::new();
         let integer_replacements = BTreeMap::from([(source, replacement)]);
         let algebraic_replacements = BTreeMap::new();
         let mut rewrite = TermRewrite::for_checked_typed_variables(
-            &c_replacements,
+            &program_replacements,
             &integer_replacements,
             &algebraic_replacements,
         );
@@ -2133,14 +2136,14 @@ mod tests {
                 ))),
             }),
         };
-        let c_replacements = BTreeMap::from([(
+        let program_replacements = BTreeMap::from([(
             source,
             TypedProgramValueReplacement::Bitvector(MachineTerm::Variable(binder)),
         )]);
         let integer_replacements = BTreeMap::new();
         let algebraic_replacements = BTreeMap::new();
         let mut rewrite = TermRewrite::for_checked_typed_variables(
-            &c_replacements,
+            &program_replacements,
             &integer_replacements,
             &algebraic_replacements,
         );
@@ -2178,9 +2181,9 @@ mod tests {
                 4,
             ),
         };
-        // The visible C term contains only the registered load variable.  Its
+        // The visible program term contains only the registered load variable.  Its
         // pointer offset retains the free Integer ID 0, which must still be
-        // reserved before a C binder is freshened.
+        // reserved before a program-value binder is freshened.
         let load = crate::kernel::eval::load_variable_for_cell(
             &memory,
             &pointer,
@@ -2198,14 +2201,14 @@ mod tests {
                 right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(load))),
             }),
         };
-        let c_replacements = BTreeMap::from([(
+        let program_replacements = BTreeMap::from([(
             source,
             TypedProgramValueReplacement::Bitvector(MachineTerm::Variable(binder)),
         )]);
         let integer_replacements = BTreeMap::new();
         let algebraic_replacements = BTreeMap::new();
         let mut rewrite = TermRewrite::for_checked_typed_variables(
-            &c_replacements,
+            &program_replacements,
             &integer_replacements,
             &algebraic_replacements,
         );
@@ -2245,11 +2248,11 @@ mod tests {
                 right: SpecIntegerExpression::Term(IntegerTerm::var(later_free_source)),
             }),
         };
-        let c_replacements = BTreeMap::new();
+        let program_replacements = BTreeMap::new();
         let integer_replacements = BTreeMap::from([(source, IntegerTerm::var(binder))]);
         let algebraic_replacements = BTreeMap::new();
         let mut rewrite = TermRewrite::for_checked_typed_variables(
-            &c_replacements,
+            &program_replacements,
             &integer_replacements,
             &algebraic_replacements,
         );

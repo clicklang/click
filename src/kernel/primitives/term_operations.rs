@@ -3739,8 +3739,8 @@ impl ConditionTerm {
             && left.extent() == right.extent()
             && left.extent_is_known() == right.extent_is_known()
             && (left.extent_is_known() || left.opaque_extent() == right.opaque_extent()))
-            || (matches!(left.c_type(), ProgramType::FunctionPointer(_))
-                && matches!(right.c_type(), ProgramType::FunctionPointer(_)))
+            || (matches!(left.program_type(), ProgramType::FunctionPointer(_))
+                && matches!(right.program_type(), ProgramType::FunctionPointer(_)))
         {
             // With the complete pointer domain already identical, only the
             // numeric coordinates remain. A logical word cast's coordinates
@@ -3961,12 +3961,12 @@ impl ProgramType {
         // bit. The leading one distinguishes arities. Fourteen digits plus
         // the sentinel use fewer than 79 bits, preserving the 13-parameter
         // capacity without truncation or probabilistic identities.
-        fn code(c_type: ProgramType, constant: bool) -> Option<u128> {
-            if constant && !c_type.is_object_pointer() {
+        fn code(program_type: ProgramType, constant: bool) -> Option<u128> {
+            if constant && !program_type.is_object_pointer() {
                 return None;
             }
             Some(
-                match c_type {
+                match program_type {
                     // A function pointer over an abstract type is not encoded.
                     ProgramType::Parameter(_) | ProgramType::ParameterPointer(_) => return None,
                     ProgramType::Void => 0,
@@ -4253,7 +4253,7 @@ impl ProgramType {
             | (Self::UInt32, ProgramValue::UInt32(_)) => true,
             (target, ProgramValue::Pointer(pointer)) if target.is_pointer() => {
                 pointer.is_null()
-                    || (pointer.c_type().pointer_types_compatible(target)
+                    || (pointer.program_type().pointer_types_compatible(target)
                         && if target.is_function_pointer() {
                             pointer.block.is_function()
                                 || pointer.pointer().as_loaded_value().is_some()
@@ -4420,21 +4420,23 @@ impl ProgramValue {
         Self::typed_pointer(pointer, ProgramType::Int32Pointer)
     }
 
-    pub(crate) fn typed_pointer(pointer: Pointer, c_type: ProgramType) -> Self {
-        Self::Pointer(PointerValue::new(pointer, c_type))
+    pub(crate) fn typed_pointer(pointer: Pointer, program_type: ProgramType) -> Self {
+        Self::Pointer(PointerValue::new(pointer, program_type))
     }
 
     pub(crate) fn typed_pointer_with_pointee_constant(
         pointer: Pointer,
-        c_type: ProgramType,
+        program_type: ProgramType,
         pointee_constant: bool,
     ) -> Self {
-        Self::Pointer(PointerValue::new(pointer, c_type).with_pointee_constant(pointee_constant))
+        Self::Pointer(
+            PointerValue::new(pointer, program_type).with_pointee_constant(pointee_constant),
+        )
     }
 
-    pub(crate) fn retag_pointer(self, c_type: ProgramType) -> Self {
+    pub(crate) fn retag_pointer(self, program_type: ProgramType) -> Self {
         match self {
-            Self::Pointer(pointer) => Self::Pointer(pointer.with_type(c_type)),
+            Self::Pointer(pointer) => Self::Pointer(pointer.with_type(program_type)),
             value => value,
         }
     }
@@ -4506,9 +4508,9 @@ impl ProgramValue {
         }
     }
 
-    pub(crate) fn c_type(&self) -> ProgramType {
+    pub(crate) fn program_type(&self) -> ProgramType {
         match self {
-            Self::PointerInteger(record) => record.numeric.c_type(),
+            Self::PointerInteger(record) => record.numeric.program_type(),
             Self::Parameter(term) => {
                 ProgramType::Parameter(TypeParameterName::of(&term.algebraic_type))
             }
@@ -4526,7 +4528,7 @@ impl ProgramValue {
             Self::UInt128(_) => ProgramType::UInt128,
             Self::Float32(_) => ProgramType::Float32,
             Self::Float64(_) => ProgramType::Float64,
-            Self::Pointer(pointer) => pointer.c_type(),
+            Self::Pointer(pointer) => pointer.program_type(),
         }
     }
 
@@ -6289,10 +6291,11 @@ mod format_range_premise_tests {
                     MachineCastSpelling::Generic,
                     source,
                     format,
-                    KernelTerm::variable(KernelType::Program(source.c_type()), variable),
+                    KernelTerm::variable(KernelType::Program(source.program_type()), variable),
                 )
             } else {
-                let leaf = KernelTerm::variable(KernelType::Program(format.c_type()), variable);
+                let leaf =
+                    KernelTerm::variable(KernelType::Program(format.program_type()), variable);
                 KernelTerm::machine_binary_shared(
                     format,
                     MachineBinaryOp::Add,

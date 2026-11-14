@@ -2756,7 +2756,7 @@ fn append_resource_clause_loadable_fact_with_store<F: ResourcePureFacts>(
 
 pub(super) fn append_lowered_resource_clause_loadable_fact(
     resource: &ResourceClause,
-    _parameters: &[syntax::C0Parameter],
+    _parameters: &[crate::languages::interface::ImportedParameter],
     lowered: &ResourceFact,
     state: &ExecutionState,
     propositions: &mut Vec<Proposition>,
@@ -5403,7 +5403,7 @@ pub(super) fn resource_argument_substitutions(
     let expected_types = definition
         .parameters()
         .iter()
-        .map(FunctionParameter::c_type)
+        .map(FunctionParameter::interface_type)
         .collect::<Vec<_>>();
     if parameter_types != &expected_types {
         return Err(ClickError::new(format!(
@@ -5522,7 +5522,7 @@ fn materialize_composite_resource_cells_from_snapshot(
     naming_memory: &Memory,
     resource_clause: &ResourceClause,
     lowered: &ResourceFact,
-    parameters: &[syntax::C0Parameter],
+    parameters: &[crate::languages::interface::ImportedParameter],
 ) -> Memory {
     let Some((segment, range)) = (match resource_clause {
         ResourceClause::Conditional { .. } => None,

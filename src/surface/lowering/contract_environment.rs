@@ -200,28 +200,30 @@ pub(in crate::surface) fn contract_array_ref_element_type(
 
 pub(in crate::surface) fn program_value_matches_click_type(
     value: &ProgramValue,
-    c_type: C0Type,
+    interface_type: InterfaceType,
 ) -> bool {
-    match (value.numeric_value(), c_type) {
+    match (value.numeric_value(), interface_type) {
         (
             ProgramValue::Int8(_),
-            C0Type::Int8 | C0Type::Char(crate::languages::c::syntax::PlainChar::Signed),
+            InterfaceType::Int8
+            | InterfaceType::Char(crate::languages::c::syntax::PlainChar::Signed),
         ) => true,
-        (ProgramValue::Int16(_), C0Type::Int16)
-        | (ProgramValue::Int32(_), C0Type::Int32)
+        (ProgramValue::Int16(_), InterfaceType::Int16)
+        | (ProgramValue::Int32(_), InterfaceType::Int32)
         | (
             ProgramValue::UInt8(_),
-            C0Type::Char(crate::languages::c::syntax::PlainChar::Unsigned) | C0Type::UInt8,
+            InterfaceType::Char(crate::languages::c::syntax::PlainChar::Unsigned)
+            | InterfaceType::UInt8,
         )
-        | (ProgramValue::UInt16(_), C0Type::UInt16)
-        | (ProgramValue::UInt32(_), C0Type::UInt32)
-        | (ProgramValue::Int64(_), C0Type::Int64(_))
-        | (ProgramValue::UInt64(_), C0Type::UInt64(_))
-        | (ProgramValue::Int128(_), C0Type::Int128)
-        | (ProgramValue::UInt128(_), C0Type::UInt128) => true,
-        (ProgramValue::Pointer(pointer), c_type) if c_type.is_pointer() => pointer
-            .c_type()
-            .pointer_types_compatible(c_type.to_kernel_type()),
+        | (ProgramValue::UInt16(_), InterfaceType::UInt16)
+        | (ProgramValue::UInt32(_), InterfaceType::UInt32)
+        | (ProgramValue::Int64(_), InterfaceType::Int64(_))
+        | (ProgramValue::UInt64(_), InterfaceType::UInt64(_))
+        | (ProgramValue::Int128(_), InterfaceType::Int128)
+        | (ProgramValue::UInt128(_), InterfaceType::UInt128) => true,
+        (ProgramValue::Pointer(pointer), interface_type) if interface_type.is_pointer() => pointer
+            .program_type()
+            .pointer_types_compatible(interface_type.to_kernel_type()),
         _ => false,
     }
 }
@@ -233,7 +235,7 @@ pub(in crate::surface) fn program_value_matches_click_type(
 pub(in crate::surface) fn program_value_matches_allocation_pointer(value: &ProgramValue) -> bool {
     matches!(
         value,
-        ProgramValue::Pointer(pointer) if pointer.c_type().pointee_type().is_some()
+        ProgramValue::Pointer(pointer) if pointer.program_type().pointee_type().is_some()
     )
 }
 
@@ -350,8 +352,8 @@ mod tests {
             },
             ProgramType::Int32Pointer,
         );
-        let parameters = [syntax::C0Parameter::new(
-            C0Type::Int32Pointer,
+        let parameters = [crate::languages::interface::ImportedParameter::new(
+            InterfaceType::Int32Pointer,
             "bytes".into(),
             None,
         )];

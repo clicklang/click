@@ -39,14 +39,14 @@ impl Context<'_> {
         {
             return Err("range state identity collision".into());
         }
-        let c_type = scalar_type(element)?.to_kernel_type();
+        let interface_type = scalar_type(element)?.to_kernel_type();
         let mut result = program_skip();
         for bound in ["start", "end"] {
             let local = format!("{name}_{bound}");
             if !self.locals.insert(local.clone()) {
                 return Err("range bound identity collision".into());
             }
-            result = program_seq(result, program_declare(local, c_type));
+            result = program_seq(result, program_declare(local, interface_type));
         }
         if inclusive {
             let done = format!("{name}_done");

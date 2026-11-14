@@ -39,7 +39,8 @@ fn numeric_match_observation_walks_shared_bodies_once() {
     for size in [8, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::UInt64;
-        let mut body = KernelTerm::variable(KernelType::Program(format.c_type()), Variable(991982));
+        let mut body =
+            KernelTerm::variable(KernelType::Program(format.program_type()), Variable(991982));
         for _ in 0..size {
             body = KernelTerm::machine_binary_shared(
                 format,
@@ -48,7 +49,7 @@ fn numeric_match_observation_walks_shared_bodies_once() {
             );
         }
         let root = KernelMatch::new(
-            KernelType::Program(format.c_type()),
+            KernelType::Program(format.program_type()),
             KernelTermImport::default()
                 .argument(&PureFunctionArgument::Algebraic(tests::scrutinee())),
             vec![(
@@ -77,7 +78,8 @@ fn numeric_match_opaque_scrutinee_identity_keeps_exact_roots_and_shared_bodies()
     for size in [8, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let mut body = KernelTerm::variable(KernelType::Program(format.c_type()), Variable(991983));
+        let mut body =
+            KernelTerm::variable(KernelType::Program(format.program_type()), Variable(991983));
         for _ in 0..size {
             body = KernelTerm::machine_binary_shared(
                 format,
@@ -92,7 +94,7 @@ fn numeric_match_opaque_scrutinee_identity_keeps_exact_roots_and_shared_bodies()
         };
         let make = || {
             KernelMatch::new(
-                KernelType::Program(format.c_type()),
+                KernelType::Program(format.program_type()),
                 KernelTermImport::default()
                     .argument(&PureFunctionArgument::Algebraic(scrutinee.clone())),
                 vec![(

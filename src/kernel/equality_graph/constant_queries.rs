@@ -238,7 +238,7 @@ mod tests {
     fn shared_wide_constants_keep_exact_sources_and_branch_scope() {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::UInt64;
-        let var = |id| KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(id));
+        let var = |id| KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(id));
         let root =
             KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [var(995871), var(995871)]);
         let operand = SharedMachineIntegerTerm::from_shared(ty, root.clone()).unwrap();

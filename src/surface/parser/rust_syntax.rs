@@ -172,7 +172,7 @@ impl Parser {
                 // sidecar names the slice once and reads `bytes.len()`.
                 let length = format!("{parameter_name}_len");
                 self.rust_slice_params.insert(parameter_name.clone());
-                if let Some(pointee) = element.c_type.pointee_type() {
+                if let Some(pointee) = element.interface_type.pointee_type() {
                     self.rust_slice_elements
                         .insert(parameter_name.clone(), pointee);
                 }
@@ -183,7 +183,7 @@ impl Parser {
                         .parameter,
                 );
                 let length_type = ParsedType {
-                    c_type: C0Type::UInt64(LongRank::Long),
+                    interface_type: InterfaceType::UInt64(LongRank::Long),
                     struct_name: None,
                     struct_pointer: false,
                     constant: false,
@@ -205,12 +205,12 @@ impl Parser {
                 && matches!(self.tokens.get(self.position + 2), Some(Token::Ident(word)) if word == "Fn");
             // `f: F` of a `<F: Fn(i32) -> i32>` parameter.
             if let Some(word) = self.peek_ident()
-                && let Some((c_type, signature)) = callable_parameters.get(word).cloned()
+                && let Some((interface_type, signature)) = callable_parameters.get(word).cloned()
                 && matches!(self.peek_next(), Some(Token::Comma | Token::RParen))
             {
                 self.position += 1;
                 parameters.push(FunctionParameter {
-                    click_type: ClickType::Program(c_type),
+                    click_type: ClickType::Program(interface_type),
                     name: parameter_name,
                     struct_name: None,
                     function_pointer_signature: Some(signature),
@@ -229,7 +229,7 @@ impl Parser {
                 || impl_fn
                 || (self.peek_ident() == Some("fn") && self.peek_next() == Some(&Token::LParen))
             {
-                let (c_type, signature) = if dyn_fn {
+                let (interface_type, signature) = if dyn_fn {
                     self.parse_rust_dyn_fn_type()?
                 } else if impl_fn {
                     self.parse_rust_impl_fn_type()?
@@ -237,7 +237,7 @@ impl Parser {
                     self.parse_rust_fn_pointer_type()?
                 };
                 parameters.push(FunctionParameter {
-                    click_type: ClickType::Program(c_type),
+                    click_type: ClickType::Program(interface_type),
                     name: parameter_name,
                     struct_name: None,
                     function_pointer_signature: Some(signature),
@@ -252,7 +252,7 @@ impl Parser {
                 continue;
             }
             let parsed_type = self.parse_rust_type()?;
-            self.record_rust_vec_param(&parameter_name, parsed_type.c_type);
+            self.record_rust_vec_param(&parameter_name, parsed_type.interface_type);
             let parsed = self.parse_parameter_array_suffix(parameter_name, parsed_type)?;
             if let Some(struct_name) = parsed.struct_name {
                 struct_params.insert(parsed.parameter.name.clone(), struct_name);
@@ -267,11 +267,11 @@ impl Parser {
         let parsed_return_type = if self.peek() == Some(&Token::Arrow) {
             self.position += 1;
             let parsed = self.parse_rust_type()?;
-            self.record_rust_vec_param("result", parsed.c_type);
+            self.record_rust_vec_param("result", parsed.interface_type);
             parsed
         } else {
             ParsedType {
-                c_type: C0Type::Void,
+                interface_type: InterfaceType::Void,
                 struct_name: None,
                 struct_pointer: false,
                 constant: false,
@@ -284,7 +284,7 @@ impl Parser {
             Some(struct_name) if !parsed_return_type.struct_pointer => {
                 self.scalar_struct_value_type(struct_name)?
             }
-            _ => parsed_return_type.c_type,
+            _ => parsed_return_type.interface_type,
         };
         let diverges = if self.peek_ident() == Some("diverges") {
             self.position += 1;
@@ -856,7 +856,16 @@ impl Parser {
     #[allow(clippy::type_complexity)]
     pub(super) fn parse_rust_generic_parameters(
         &mut self,
-    ) -> Result<BTreeMap<String, (C0Type, syntax::C0FunctionPointerSignature)>, ClickError> {
+    ) -> Result<
+        BTreeMap<
+            String,
+            (
+                InterfaceType,
+                crate::languages::interface::CallbackInterface,
+            ),
+        >,
+        ClickError,
+    > {
         let mut callable = BTreeMap::new();
         if self.peek() != Some(&Token::LessThan) {
             return Ok(callable);
@@ -1029,7 +1038,7 @@ impl Parser {
         }
         self.position += 1;
         Ok(Some(ParsedType {
-            c_type: C0Type::Int32Pointer,
+            interface_type: InterfaceType::Int32Pointer,
             struct_name: Some(impl_type.to_string()),
             struct_pointer: reference,
             constant: false,
@@ -1058,14 +1067,16 @@ impl Parser {
         }
         self.position = bracket + 1;
         let spelling = self.expect_ident("slice element type")?;
-        let Some(c_type) = rust_scalar_type(&spelling).and_then(C0Type::pointer_type) else {
+        let Some(interface_type) =
+            rust_scalar_type(&spelling).and_then(InterfaceType::pointer_type)
+        else {
             return Err(self.error(format!(
                 "a slice of `{spelling}` in a `fn` signature is not supported; the Rust importer reads slices of scalars only"
             )));
         };
         self.expect(Token::RBracket)?;
         Ok(Some(ParsedType {
-            c_type,
+            interface_type,
             struct_name: None,
             struct_pointer: false,
             constant: false,
@@ -1077,10 +1088,12 @@ impl Parser {
     /// `name.len()` where `name` is a slice parameter: consumes `.len()` and
     /// answers the length's own name.
     /// Records `name` as a `Vec` parameter, or `result` as a `Vec` result,
-    /// when `c_type` is the library's `Vec<T>` or a reference to it, and
+    /// when `interface_type` is the library's `Vec<T>` or a reference to it, and
     /// brings in the library module that specifies it.
-    fn record_rust_vec_param(&mut self, name: &str, c_type: C0Type) {
-        let (C0Type::Parameter(value_type) | C0Type::ParameterPointer(value_type)) = c_type else {
+    fn record_rust_vec_param(&mut self, name: &str, interface_type: InterfaceType) {
+        let (InterfaceType::Parameter(value_type) | InterfaceType::ParameterPointer(value_type)) =
+            interface_type
+        else {
             return;
         };
         if !matches!(super::generics::primitive_instance_of(value_type.name()), Some((primitive, _)) if primitive == "Vec")
@@ -1089,7 +1102,7 @@ impl Parser {
         }
         self.rust_vec_params.insert(
             name.to_string(),
-            matches!(c_type, C0Type::ParameterPointer(_)),
+            matches!(interface_type, InterfaceType::ParameterPointer(_)),
         );
         self.implied_library_modules.insert(VEC_MODULE);
     }
@@ -1178,7 +1191,7 @@ impl Parser {
         });
         // A library-valued iterator is a value: `iter` names it, and its
         // methods are resolved by its type.
-        let library = |iterator: &Option<crate::languages::c::syntax::RustLoopIterator>| {
+        let library = |iterator: &Option<crate::languages::interface::RustLoopIterator>| {
             iterator
                 .as_ref()
                 .is_some_and(|iterator| crate::surface::rust_library_iterator(iterator).is_some())
@@ -1265,7 +1278,7 @@ impl Parser {
             let parameter = crate::kernel::TypeParameterName::intern(name);
             self.position += 1;
             return Ok(ParsedType {
-                c_type: C0Type::ParameterPointer(parameter),
+                interface_type: InterfaceType::ParameterPointer(parameter),
                 struct_name: None,
                 struct_pointer: false,
                 constant: false,
@@ -1290,7 +1303,7 @@ impl Parser {
                 self.position += 1;
             }
             return Ok(ParsedType {
-                c_type: C0Type::Int32Pointer,
+                interface_type: InterfaceType::Int32Pointer,
                 struct_name: None,
                 struct_pointer: false,
                 constant: false,
@@ -1322,7 +1335,7 @@ impl Parser {
         // spec value, as a reference to a type parameter's value is.
         if !array && let Some(enum_type) = self.rust_enum_types.get(&spelling).copied() {
             return Ok(ParsedType {
-                c_type: C0Type::ParameterPointer(enum_type),
+                interface_type: InterfaceType::ParameterPointer(enum_type),
                 struct_name: None,
                 struct_pointer: false,
                 constant: false,
@@ -1332,13 +1345,13 @@ impl Parser {
         }
         Ok(match rust_scalar_type(&spelling) {
             Some(scalar) => {
-                let Some(c_type) = scalar.pointer_type() else {
+                let Some(interface_type) = scalar.pointer_type() else {
                     return Err(self.error(format!(
                         "a reference to `{spelling}` is not supported in a `fn` signature"
                     )));
                 };
                 ParsedType {
-                    c_type,
+                    interface_type,
                     struct_name: None,
                     struct_pointer: false,
                     constant: false,
@@ -1347,7 +1360,7 @@ impl Parser {
                 }
             }
             None => ParsedType {
-                c_type: C0Type::Int32Pointer,
+                interface_type: InterfaceType::Int32Pointer,
                 struct_name: Some(spelling),
                 struct_pointer: true,
                 constant: false,
@@ -1365,7 +1378,13 @@ impl Parser {
     /// `fn` pointer of its parameters and result.
     fn parse_rust_dyn_fn_type(
         &mut self,
-    ) -> Result<(C0Type, syntax::C0FunctionPointerSignature), ClickError> {
+    ) -> Result<
+        (
+            InterfaceType,
+            crate::languages::interface::CallbackInterface,
+        ),
+        ClickError,
+    > {
         self.expect(Token::Amp)?;
         self.skip_rust_lifetime();
         self.expect_ident_spelling("dyn")?;
@@ -1379,7 +1398,13 @@ impl Parser {
     /// An `impl Fn(i32) -> i32`, a callable value as `&dyn Fn` is.
     fn parse_rust_impl_fn_type(
         &mut self,
-    ) -> Result<(C0Type, syntax::C0FunctionPointerSignature), ClickError> {
+    ) -> Result<
+        (
+            InterfaceType,
+            crate::languages::interface::CallbackInterface,
+        ),
+        ClickError,
+    > {
         self.expect_ident_spelling("impl")?;
         if self.peek_ident() != Some("Fn") {
             return Err(self.error("an `impl` parameter is supported only for `Fn(...) -> ...`"));
@@ -1390,7 +1415,13 @@ impl Parser {
 
     fn parse_rust_fn_pointer_type(
         &mut self,
-    ) -> Result<(C0Type, syntax::C0FunctionPointerSignature), ClickError> {
+    ) -> Result<
+        (
+            InterfaceType,
+            crate::languages::interface::CallbackInterface,
+        ),
+        ClickError,
+    > {
         self.expect_ident_spelling("fn")?;
         self.parse_rust_callable_signature()
     }
@@ -1398,16 +1429,25 @@ impl Parser {
     /// The parameter list and result of a callable type, after `fn` or `Fn`.
     fn parse_rust_callable_signature(
         &mut self,
-    ) -> Result<(C0Type, syntax::C0FunctionPointerSignature), ClickError> {
+    ) -> Result<
+        (
+            InterfaceType,
+            crate::languages::interface::CallbackInterface,
+        ),
+        ClickError,
+    > {
         self.expect(Token::LParen)?;
         let mut parameters = Vec::new();
         while self.peek() != Some(&Token::RParen) {
             let parsed = self.parse_rust_type()?;
-            if parsed.c_type == C0Type::Void || parsed.c_type.is_pointer() || parsed.reference {
+            if parsed.interface_type == InterfaceType::Void
+                || parsed.interface_type.is_pointer()
+                || parsed.reference
+            {
                 return Err(self.error("a `fn` pointer type takes scalar parameters"));
             }
-            parameters.push(syntax::C0FunctionPointerParameter::new(
-                parsed.c_type,
+            parameters.push(crate::languages::interface::CallbackParameter::new(
+                parsed.interface_type,
                 None,
                 false,
             ));
@@ -1420,20 +1460,21 @@ impl Parser {
         let result = if self.peek() == Some(&Token::Arrow) {
             self.position += 1;
             let parsed = self.parse_rust_type()?;
-            if parsed.c_type.is_pointer() || parsed.reference {
+            if parsed.interface_type.is_pointer() || parsed.reference {
                 return Err(self.error("a `fn` pointer type returns a scalar or `()`"));
             }
-            parsed.c_type
+            parsed.interface_type
         } else {
-            C0Type::Void
+            InterfaceType::Void
         };
-        let signature = syntax::C0FunctionPointerSignature::new(result, None, parameters, false);
+        let signature =
+            crate::languages::interface::CallbackInterface::new(result, None, parameters, false);
         Ok((signature.pointer_type(), signature))
     }
 
     pub(super) fn parse_rust_type(&mut self) -> Result<ParsedType, ClickError> {
-        let scalar = |c_type| ParsedType {
-            c_type,
+        let scalar = |interface_type| ParsedType {
+            interface_type,
             struct_name: None,
             struct_pointer: false,
             constant: false,
@@ -1443,7 +1484,7 @@ impl Parser {
         if self.peek() == Some(&Token::LParen) {
             self.position += 1;
             self.expect(Token::RParen)?;
-            return Ok(scalar(C0Type::Void));
+            return Ok(scalar(InterfaceType::Void));
         }
         if self.peek() == Some(&Token::Amp) {
             return self.parse_rust_reference_type();
@@ -1459,14 +1500,14 @@ impl Parser {
         {
             let parameter = crate::kernel::TypeParameterName::intern(name);
             self.position += 1;
-            return Ok(scalar(C0Type::Parameter(parameter)));
+            return Ok(scalar(InterfaceType::Parameter(parameter)));
         }
         if let Some(name) = self.peek_ident()
             && let Some(enum_type) = self.rust_enum_types.get(name).copied()
             && self.peek_next() != Some(&Token::ColonColon)
         {
             self.position += 1;
-            return Ok(scalar(C0Type::Parameter(enum_type)));
+            return Ok(scalar(InterfaceType::Parameter(enum_type)));
         }
         // A box of a crate struct, `Box<crate::S>`, is its address, and an
         // option of one, `Option<Box<crate::S>>`, the address or null.
@@ -1491,7 +1532,7 @@ impl Parser {
                 }
             }
             return Ok(ParsedType {
-                c_type: C0Type::Int32Pointer,
+                interface_type: InterfaceType::Int32Pointer,
                 struct_name: Some(spelling),
                 struct_pointer: true,
                 constant: false,
@@ -1502,12 +1543,12 @@ impl Parser {
         let spelling = self.expect_rust_type_name("type")?;
         // An instance of a library enum, `Option<u32>`, by its importer name.
         if let Some(enum_type) = self.rust_enum_types.get(&spelling).copied() {
-            return Ok(scalar(C0Type::Parameter(enum_type)));
+            return Ok(scalar(InterfaceType::Parameter(enum_type)));
         }
         Ok(match rust_scalar_type(&spelling) {
-            Some(c_type) => scalar(c_type),
+            Some(interface_type) => scalar(interface_type),
             None => ParsedType {
-                c_type: C0Type::Int32Pointer,
+                interface_type: InterfaceType::Int32Pointer,
                 struct_name: Some(spelling),
                 struct_pointer: false,
                 constant: false,
@@ -1523,7 +1564,9 @@ impl Parser {
     /// `Slice<T>`, one value; the element type is returned. A pure
     /// function's slice parameter is read before this, as its pointer and
     /// its length.
-    pub(super) fn take_rust_slice_value_type(&mut self) -> Result<Option<C0Type>, ClickError> {
+    pub(super) fn take_rust_slice_value_type(
+        &mut self,
+    ) -> Result<Option<InterfaceType>, ClickError> {
         if !self.verifies_rust() || self.peek() != Some(&Token::Amp) {
             return Ok(None);
         }
@@ -1533,7 +1576,7 @@ impl Parser {
             return Ok(None);
         };
         let element = parsed
-            .c_type
+            .interface_type
             .pointee_type()
             .ok_or_else(|| self.error("a slice's element type must be a scalar"))?;
         self.implied_library_modules.insert(super::SLICE_MODULE);
@@ -1557,8 +1600,8 @@ impl Parser {
                 "a pure function, predicate or theorem takes values, not references; write a pointer `*const T` or `*mut T`, or a slice `&[T]`",
             ));
         }
-        let scalar = |c_type, pointee_constant| ParsedType {
-            c_type,
+        let scalar = |interface_type, pointee_constant| ParsedType {
+            interface_type,
             struct_name: None,
             struct_pointer: false,
             constant: false,
@@ -1580,7 +1623,7 @@ impl Parser {
             {
                 let spelling = self.expect_rust_type_name("pointee type")?;
                 return Ok(Some(ParsedType {
-                    c_type: C0Type::Int32Pointer,
+                    interface_type: InterfaceType::Int32Pointer,
                     struct_name: Some(spelling),
                     struct_pointer: true,
                     constant: false,
@@ -1589,15 +1632,15 @@ impl Parser {
                 }));
             }
             let spelling = self.expect_ident("pointee type")?;
-            let Some(c_type) = rust_scalar_type(&spelling)
-                .filter(|pointee| *pointee != C0Type::Bool)
-                .and_then(C0Type::pointer_type)
+            let Some(interface_type) = rust_scalar_type(&spelling)
+                .filter(|pointee| *pointee != InterfaceType::Bool)
+                .and_then(InterfaceType::pointer_type)
             else {
                 return Err(self.error(format!(
                     "a pointer to `{spelling}` is not a Click binder type; a Rust sidecar's binder may point at an integer or float scalar"
                 )));
             };
-            return Ok(Some(scalar(c_type, !mutable)));
+            return Ok(Some(scalar(interface_type, !mutable)));
         }
         // A Rust function's abstract type parameter is the C type its values
         // have in the program, so `Option<T>` names the program's instance.
@@ -1607,13 +1650,13 @@ impl Parser {
         {
             let parameter = crate::kernel::TypeParameterName::intern(name);
             self.position += 1;
-            return Ok(Some(scalar(C0Type::Parameter(parameter), false)));
+            return Ok(Some(scalar(InterfaceType::Parameter(parameter), false)));
         }
-        let Some(c_type) = self.peek_ident().and_then(rust_scalar_type) else {
+        let Some(interface_type) = self.peek_ident().and_then(rust_scalar_type) else {
             return Ok(None);
         };
         self.position += 1;
-        Ok(Some(scalar(c_type, false)))
+        Ok(Some(scalar(interface_type, false)))
     }
 
     /// `expr as T` in a Rust sidecar is the scalar cast `(T)expr`. It binds
@@ -1738,21 +1781,21 @@ pub(super) fn click_integer_cast_type(name: &str) -> Option<ProgramType> {
 /// The C0 type a Rust scalar type name denotes.
 impl Parser {}
 
-pub(super) fn rust_scalar_type(name: &str) -> Option<C0Type> {
+pub(super) fn rust_scalar_type(name: &str) -> Option<InterfaceType> {
     Some(match name {
-        "bool" => C0Type::Bool,
-        "i8" => C0Type::Int8,
-        "i16" => C0Type::Int16,
-        "i32" => C0Type::Int32,
-        "i64" | "isize" => C0Type::Int64(LongRank::Long),
-        "i128" => C0Type::Int128,
-        "u8" => C0Type::UInt8,
-        "u16" => C0Type::UInt16,
-        "u32" => C0Type::UInt32,
-        "u64" | "usize" => C0Type::UInt64(LongRank::Long),
-        "u128" => C0Type::UInt128,
-        "f32" => C0Type::Float32,
-        "f64" => C0Type::Float64,
+        "bool" => InterfaceType::Bool,
+        "i8" => InterfaceType::Int8,
+        "i16" => InterfaceType::Int16,
+        "i32" => InterfaceType::Int32,
+        "i64" | "isize" => InterfaceType::Int64(LongRank::Long),
+        "i128" => InterfaceType::Int128,
+        "u8" => InterfaceType::UInt8,
+        "u16" => InterfaceType::UInt16,
+        "u32" => InterfaceType::UInt32,
+        "u64" | "usize" => InterfaceType::UInt64(LongRank::Long),
+        "u128" => InterfaceType::UInt128,
+        "f32" => InterfaceType::Float32,
+        "f64" => InterfaceType::Float64,
         _ => return None,
     })
 }
@@ -1762,13 +1805,13 @@ pub(super) fn rust_signature_hint(parsed: &ParsedFunctionSignature) -> Option<St
     if !parsed.struct_params.is_empty() || parsed.return_struct_name.is_some() {
         return None;
     }
-    let scalar_name = |c_type| {
+    let scalar_name = |interface_type| {
         [
             "bool", "i8", "i16", "i32", "isize", "i128", "u8", "u16", "u32", "usize", "u128",
             "f32", "f64",
         ]
         .into_iter()
-        .find(|name| rust_scalar_type(name) == Some(c_type))
+        .find(|name| rust_scalar_type(name) == Some(interface_type))
     };
     let name = crate::languages::rust::names::rust_display_name(&signature.name)
         .unwrap_or_else(|| signature.name.clone());
@@ -1780,7 +1823,7 @@ pub(super) fn rust_signature_hint(parsed: &ParsedFunctionSignature) -> Option<St
     let mut parameters = Vec::new();
     let mut index = 0;
     while let Some(parameter) = signature.parameters.get(index) {
-        let spelling = if let Some(pointee) = parameter.c_type().pointee_type() {
+        let spelling = if let Some(pointee) = parameter.interface_type().pointee_type() {
             let reference = if parameter.pointee_constant {
                 "&"
             } else {
@@ -1789,7 +1832,7 @@ pub(super) fn rust_signature_hint(parsed: &ParsedFunctionSignature) -> Option<St
             let base = scalar_name(pointee)?;
             let slice = signature.parameters.get(index + 1).is_some_and(|length| {
                 length.name == format!("{}_len", parameter.name)
-                    && matches!(length.c_type(), C0Type::UInt64(_))
+                    && matches!(length.interface_type(), InterfaceType::UInt64(_))
             });
             if slice {
                 index += 1;
@@ -1798,12 +1841,12 @@ pub(super) fn rust_signature_hint(parsed: &ParsedFunctionSignature) -> Option<St
                 format!("{reference}{base}")
             }
         } else {
-            scalar_name(parameter.c_type())?.to_string()
+            scalar_name(parameter.interface_type())?.to_string()
         };
         parameters.push(format!("{}: {spelling}", parameter.name));
         index += 1;
     }
-    let return_type = if signature.return_type == C0Type::Void {
+    let return_type = if signature.return_type == InterfaceType::Void {
         String::new()
     } else {
         format!(" -> {}", scalar_name(signature.return_type)?)

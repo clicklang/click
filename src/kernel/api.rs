@@ -1767,7 +1767,7 @@ fn abstract_execution_state_for_join_across_with_policy(
     for (name, binding) in visited {
         crate::instrumentation::record_deterministic_work(1);
         if let LocalBinding::Object {
-            c_type,
+            program_type,
             slot,
             volatile,
             pointee_volatile,
@@ -1781,7 +1781,7 @@ fn abstract_execution_state_for_join_across_with_policy(
             // the value this arm stored and its initialization record.
             left_uninitialized.push((
                 name.clone(),
-                *c_type,
+                *program_type,
                 slot.clone(),
                 *volatile,
                 *pointee_volatile,
@@ -1792,7 +1792,7 @@ fn abstract_execution_state_for_join_across_with_policy(
         }
         let LocalBinding::Object {
             value,
-            c_type,
+            program_type,
             slot,
             ..
         } = binding
@@ -1811,7 +1811,7 @@ fn abstract_execution_state_for_join_across_with_policy(
             if stable {
                 value.clone()
             } else {
-                match c_type {
+                match program_type {
                     ProgramType::Void => continue,
                     // A `Bool` the arms disagree on is a fresh `Bool` binder.
                     ProgramType::Bool => ProgramValue::of_bool(ConditionTerm::Variable(
@@ -1855,7 +1855,7 @@ fn abstract_execution_state_for_join_across_with_policy(
                     )),
                     ProgramType::FunctionPointer(_) => ProgramValue::typed_pointer(
                         Pointer::symbolic_function(join_variable(&mut variables, &mut budget)?),
-                        *c_type,
+                        *program_type,
                     ),
                     ProgramType::Int8Array(_) => {
                         unreachable!("array objects use LocalBinding::ArrayObject")
@@ -1875,13 +1875,13 @@ fn abstract_execution_state_for_join_across_with_policy(
                     }
                     _ => ProgramValue::typed_pointer(
                         Pointer::symbolic(join_variable(&mut variables, &mut budget)?),
-                        *c_type,
+                        *program_type,
                     ),
                 }
                 .into()
             };
         preserved_blocks.insert(slot.block.clone());
-        abstract_objects.push((name.clone(), abstract_value, *c_type));
+        abstract_objects.push((name.clone(), abstract_value, *program_type));
     }
 
     let interface_preserved = InterfacePreservedBlocks {
@@ -1943,20 +1943,26 @@ fn abstract_execution_state_for_join_across_with_policy(
             abstract_state.set_memory(memory);
         }
     }
-    for (name, value, c_type) in abstract_objects {
+    for (name, value, program_type) in abstract_objects {
         sync_retained_stack_local(&mut abstract_state, &name, &value);
         abstract_state
             .locals
             .set_retained_typed_with_all_qualifiers(
-                name, value, c_type, false, false, false, false,
+                name,
+                value,
+                program_type,
+                false,
+                false,
+                false,
+                false,
             );
     }
-    for (name, c_type, slot, volatile, pointee_volatile, constant, pointee_constant) in
+    for (name, program_type, slot, volatile, pointee_volatile, constant, pointee_constant) in
         left_uninitialized
     {
         abstract_state.locals.set_uninitialized_with_all_qualifiers(
             name,
-            c_type,
+            program_type,
             slot,
             volatile,
             pointee_volatile,
@@ -2035,14 +2041,14 @@ fn validate_branch_memory_delta_against_loans(
                     .map(|value| value.byte_width())
                     .unwrap_or(0),
             );
-        for (union_pointer, c_type) in base.union_cells.keys() {
+        for (union_pointer, program_type) in base.union_cells.keys() {
             if union_pointer == &pointer {
-                byte_width = byte_width.max(c_type.byte_width());
+                byte_width = byte_width.max(program_type.byte_width());
             }
         }
-        for (union_pointer, c_type) in sibling.union_cells.keys() {
+        for (union_pointer, program_type) in sibling.union_cells.keys() {
             if union_pointer == &pointer {
-                byte_width = byte_width.max(c_type.byte_width());
+                byte_width = byte_width.max(program_type.byte_width());
             }
         }
         if byte_width == 0 {
@@ -2083,12 +2089,12 @@ pub(crate) fn program_expression_has_bool_type(
     expression: &ProgramExpression,
 ) -> bool {
     match expression {
-        ProgramExpression::Value(value) => value.c_type() == ProgramType::Bool,
+        ProgramExpression::Value(value) => value.program_type() == ProgramType::Bool,
         // A variant test is a claim on the enum value, never a number.
         ProgramExpression::EnumIs { .. } => true,
         ProgramExpression::CallResult { call, .. } => state
             .call_result(*call)
-            .is_some_and(|value| value.c_type() == ProgramType::Bool),
+            .is_some_and(|value| value.program_type() == ProgramType::Bool),
         expression => {
             super::eval::program_expression_lvalue_type(state, expression)
                 == Some(ProgramType::Bool)
@@ -2122,7 +2128,7 @@ pub fn composite_resource_witness_values(
         state.locals.set_typed(
             parameter.name().to_string(),
             argument.clone(),
-            parameter.c_type(),
+            parameter.program_type(),
         );
     }
     let assumptions = assumptions
@@ -2200,30 +2206,37 @@ pub fn program_heap_free(pointer: ProgramExpression) -> ProgramStatement {
     ProgramStatement::HeapFree { pointer }
 }
 
-pub fn program_declare(name: impl Into<String>, c_type: ProgramType) -> ProgramStatement {
-    program_declare_volatile(name, c_type, false)
+pub fn program_declare(name: impl Into<String>, program_type: ProgramType) -> ProgramStatement {
+    program_declare_volatile(name, program_type, false)
 }
 
 pub fn program_declare_volatile(
     name: impl Into<String>,
-    c_type: ProgramType,
+    program_type: ProgramType,
     volatile: bool,
 ) -> ProgramStatement {
-    program_declare_qualified(name, c_type, volatile, false)
+    program_declare_qualified(name, program_type, volatile, false)
 }
 
 pub fn program_declare_qualified(
     name: impl Into<String>,
-    c_type: ProgramType,
+    program_type: ProgramType,
     volatile: bool,
     pointee_volatile: bool,
 ) -> ProgramStatement {
-    program_declare_with_all_qualifiers(name, c_type, volatile, pointee_volatile, false, false)
+    program_declare_with_all_qualifiers(
+        name,
+        program_type,
+        volatile,
+        pointee_volatile,
+        false,
+        false,
+    )
 }
 
 pub fn program_declare_with_all_qualifiers(
     name: impl Into<String>,
-    c_type: ProgramType,
+    program_type: ProgramType,
     volatile: bool,
     pointee_volatile: bool,
     constant: bool,
@@ -2231,7 +2244,7 @@ pub fn program_declare_with_all_qualifiers(
 ) -> ProgramStatement {
     ProgramStatement::Declare {
         name: name.into(),
-        c_type,
+        program_type,
         volatile,
         pointee_volatile,
         constant,
@@ -2247,7 +2260,7 @@ pub fn program_declare_with_all_qualifiers(
 /// whose written elements follow as ordinary stores ([`ZeroFill`]).
 pub fn program_declare_with_zero_fill(
     name: impl Into<String>,
-    c_type: ProgramType,
+    program_type: ProgramType,
     volatile: bool,
     pointee_volatile: bool,
     constant: bool,
@@ -2256,7 +2269,7 @@ pub fn program_declare_with_zero_fill(
 ) -> ProgramStatement {
     ProgramStatement::Declare {
         name: name.into(),
-        c_type,
+        program_type,
         volatile,
         pointee_volatile,
         constant,
@@ -2271,7 +2284,7 @@ pub fn program_declare_with_zero_fill(
 /// subject to the object's const qualification after this transition.
 pub fn program_declare_initialized(
     name: impl Into<String>,
-    c_type: ProgramType,
+    program_type: ProgramType,
     expression: ProgramExpression,
     volatile: bool,
     pointee_volatile: bool,
@@ -2280,7 +2293,7 @@ pub fn program_declare_initialized(
 ) -> ProgramStatement {
     ProgramStatement::Declare {
         name: name.into(),
-        c_type,
+        program_type,
         volatile,
         pointee_volatile,
         constant,
@@ -2769,16 +2782,16 @@ pub fn program_for_body_with_step(
     program_seq(rewritten, step)
 }
 
-pub fn program_parameter(name: impl Into<String>, c_type: ProgramType) -> ProgramParameter {
-    ProgramParameter::new(name, c_type)
+pub fn program_parameter(name: impl Into<String>, program_type: ProgramType) -> ProgramParameter {
+    ProgramParameter::new(name, program_type)
 }
 
 pub fn program_parameter_with_aggregate_layout(
     name: impl Into<String>,
-    c_type: ProgramType,
+    program_type: ProgramType,
     layout: AggregateLayout,
 ) -> ProgramParameter {
-    ProgramParameter::new(name, c_type).with_aggregate_layout(layout)
+    ProgramParameter::new(name, program_type).with_aggregate_layout(layout)
 }
 
 pub fn program_function(
@@ -2809,7 +2822,7 @@ pub fn program_check_contract_clauses_lower(
         entry_state.locals.bind_logical_typed(
             parameter.name(),
             argument.clone(),
-            parameter.c_type(),
+            parameter.program_type(),
         );
     }
     let entry_state = &entry_state;
@@ -3420,7 +3433,7 @@ pub(crate) fn bind_contract_value_parameters(
         entry.locals.set_typed_qualified_with_all_qualifiers(
             parameter.name().to_string(),
             value.clone(),
-            parameter.c_type(),
+            parameter.program_type(),
             Memory::value_parameter_pointer(parameter.name()),
             false,
             false,
@@ -8125,8 +8138,8 @@ pub fn contract_refinement_context(
     let ProgramValue::Pointer(pointer) = pointer else {
         return None;
     };
-    if pointer.c_type() != target.function_pointer_type()
-        || pointer.c_type() != source.function_pointer_type()
+    if pointer.program_type() != target.function_pointer_type()
+        || pointer.program_type() != source.function_pointer_type()
         || !matches!(pointer.pointer().block, PointerBlock::FunctionSymbolic(_))
         || pointer.pointer().offset != PointerOffsetTerm::Constant(0)
     {
@@ -8191,7 +8204,7 @@ pub(crate) fn prove_program_function_contract_refinement(
     };
     if name != &context.contract.predicate_name()
         || pointer != &context.pointer
-        || pointer.c_type() != context.contract.function_pointer_type()
+        || pointer.program_type() != context.contract.function_pointer_type()
         || values.len() != context.contract.value_arguments().len()
         || !values
             .iter()
@@ -8237,7 +8250,7 @@ pub(crate) fn prove_program_function_contract_refinement(
             Proposition::ForAll {
                 name: Default::default(),
                 var: *variable,
-                sort: Sort::ProgramPointer(context.pointer.c_type()),
+                sort: Sort::ProgramPointer(context.pointer.program_type()),
                 body: Box::new(Proposition::Implies(
                     Box::new(premise),
                     Box::new(conclusion),
@@ -8270,7 +8283,7 @@ pub(crate) fn prove_executed_contract_refinement(
     let target_values = executed_conclusion_values(&conclusion, target)?;
     let mut function = rule.function.clone();
     let callback = function.pop_parameter()?;
-    if callback.c_type() != target.function_pointer_type() {
+    if callback.program_type() != target.function_pointer_type() {
         return None;
     }
     pop_executed_value_pins(&mut function, &target_values)?;
@@ -8297,7 +8310,7 @@ pub(crate) fn prove_executed_contract_refinement(
     }
     for (source_name, source_values) in sources.iter().rev() {
         let source = environment.get_function_contract(source_name)?;
-        if callback.c_type() != source.function_pointer_type()
+        if callback.program_type() != source.function_pointer_type()
             || source_values.len() != source.interface().value_parameters().len()
         {
             return None;
@@ -8341,7 +8354,7 @@ pub(crate) fn prove_executed_contract_refinement(
         return None;
     };
     if name != &target.predicate_name()
-        || pointer.c_type() != target.function_pointer_type()
+        || pointer.program_type() != target.function_pointer_type()
         || pointer.pointer().offset != PointerOffsetTerm::Constant(0)
     {
         return None;
@@ -8366,7 +8379,7 @@ pub(crate) fn prove_executed_contract_refinement(
         theorem: Theorem::new(Proposition::ForAll {
             name: Default::default(),
             var: variable,
-            sort: Sort::ProgramPointer(pointer.c_type()),
+            sort: Sort::ProgramPointer(pointer.program_type()),
             body: Box::new(implication),
         }),
     })
@@ -8443,7 +8456,7 @@ pub fn program_project_function_signature(
         function
             .parameters()
             .iter()
-            .map(|parameter| parameter.c_type())
+            .map(|parameter| parameter.program_type())
             .collect(),
         function.return_type(),
     ))
@@ -8520,7 +8533,7 @@ pub(crate) fn prove_executed_concrete_contract_refinement(
         return None;
     }
     if name != &target.predicate_name()
-        || pointer.c_type() != target.function_pointer_type()
+        || pointer.program_type() != target.function_pointer_type()
         || pointer.pointer().offset != PointerOffsetTerm::Constant(0)
     {
         return None;

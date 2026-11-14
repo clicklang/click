@@ -3032,7 +3032,7 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
     let lowered = lower_import(&import).expect("lower the predicate directly to the kernel");
     assert_eq!(lowered.kernel_function().return_type(), ProgramType::Bool);
     assert_eq!(
-        lowered.kernel_function().parameters()[0].c_type(),
+        lowered.kernel_function().parameters()[0].program_type(),
         ProgramType::Int64Pointer
     );
     assert!(lowered.kernel_function().parameters()[0].pointee_is_constant());
@@ -3569,7 +3569,7 @@ fn locked_cpp_branch_and_early_return_verify_through_the_shared_sidecar_path() {
 
     let lowered = lower_import(&import).expect("lower the typed branch directly");
     assert_eq!(
-        lowered.kernel_function().parameters()[0].c_type(),
+        lowered.kernel_function().parameters()[0].program_type(),
         ProgramType::Bool
     );
     assert!(contains_if(lowered.kernel_function().body()));
@@ -3673,9 +3673,9 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
 
     let lowered = lower_import(&import).expect("lower both C++ reference qualifiers directly");
     let parameters = lowered.kernel_function().parameters();
-    assert_eq!(parameters[0].c_type(), ProgramType::Int32Pointer);
+    assert_eq!(parameters[0].program_type(), ProgramType::Int32Pointer);
     assert!(!parameters[0].pointee_is_constant());
-    assert_eq!(parameters[1].c_type(), ProgramType::Int32Pointer);
+    assert_eq!(parameters[1].program_type(), ProgramType::Int32Pointer);
     assert!(parameters[1].pointee_is_constant());
 
     project.adopt();
@@ -3887,7 +3887,7 @@ fn contains_scalar_local_pipeline(
         match statement {
             ProgramStatement::Declare {
                 name,
-                c_type: ProgramType::Int32,
+                program_type: ProgramType::Int32,
                 ..
             } if name == call_local => found[0] = true,
             ProgramStatement::CallAssign {
@@ -3897,7 +3897,7 @@ fn contains_scalar_local_pipeline(
             } if target == call_local && function_name == callee => found[1] = true,
             ProgramStatement::Declare {
                 name,
-                c_type: ProgramType::Int32,
+                program_type: ProgramType::Int32,
                 ..
             } if name == value_local => found[2] = true,
             ProgramStatement::Assign { name, .. } if name == value_local => found[3] = true,
@@ -4262,11 +4262,11 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
     let lowered =
         lower_import(&import).expect("lower pointer operations through kernel memory rules");
     assert_eq!(
-        lowered.kernel_function().parameters()[0].c_type(),
+        lowered.kernel_function().parameters()[0].program_type(),
         ProgramType::Int32Pointer
     );
     assert_eq!(
-        lowered.reachable_kernel_functions()[0].parameters()[0].c_type(),
+        lowered.reachable_kernel_functions()[0].parameters()[0].program_type(),
         ProgramType::Int32Pointer
     );
     assert!(!lowered.reachable_kernel_functions()[0].parameters()[0].pointee_is_constant());
@@ -4372,7 +4372,7 @@ fn record_reference_member_loads_and_stores_verify_offline() {
 
     let lowered = lower_import(&import).expect("lower member operations through checked offsets");
     assert_eq!(
-        lowered.kernel_function().parameters()[0].c_type(),
+        lowered.kernel_function().parameters()[0].program_type(),
         ProgramType::Int32Pointer
     );
 
@@ -4611,11 +4611,11 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
         Some(0),
     );
     assert_eq!(
-        lowered.reachable_kernel_functions()[0].parameters()[0].c_type(),
+        lowered.reachable_kernel_functions()[0].parameters()[0].program_type(),
         ProgramType::Int32Pointer
     );
     assert_eq!(
-        lowered.reachable_kernel_functions()[0].parameters()[1].c_type(),
+        lowered.reachable_kernel_functions()[0].parameters()[1].program_type(),
         ProgramType::Int32Pointer
     );
     assert_eq!(
@@ -6144,7 +6144,10 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
     assert_eq!(function.return_type(), ProgramType::Int32);
     assert_eq!(function.parameters().len(), 1);
     assert_eq!(function.parameters()[0].name(), "&value");
-    assert_eq!(function.parameters()[0].c_type(), ProgramType::Int32Pointer);
+    assert_eq!(
+        function.parameters()[0].program_type(),
+        ProgramType::Int32Pointer
+    );
     assert!(matches!(
         function.body(),
         ProgramStatement::Seq(sequence)

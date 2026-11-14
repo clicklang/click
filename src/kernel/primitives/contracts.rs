@@ -6,10 +6,10 @@ use crate::kernel::{MachineCastSpelling, MachineTerm};
 use crate::kernel::{bits32_constant, constant_i64, constant_u32, int32_constant, int64_constant};
 
 impl ProgramParameter {
-    pub fn new(name: impl Into<String>, c_type: ProgramType) -> Self {
+    pub fn new(name: impl Into<String>, program_type: ProgramType) -> Self {
         Self {
             name: name.into(),
-            c_type,
+            program_type,
             aggregate_layout: None,
             volatile: false,
             pointee_volatile: false,
@@ -35,8 +35,8 @@ impl ProgramParameter {
         self
     }
 
-    pub fn c_type(&self) -> ProgramType {
-        self.c_type
+    pub fn program_type(&self) -> ProgramType {
+        self.program_type
     }
 
     pub fn aggregate_layout(&self) -> Option<&AggregateLayout> {
@@ -100,20 +100,24 @@ impl ProgramParameter {
 }
 
 impl Global {
-    pub fn new(name: impl Into<String>, c_type: ProgramType, initial_value: ProgramValue) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        program_type: ProgramType,
+        initial_value: ProgramValue,
+    ) -> Self {
         let name = name.into();
-        Self::new_with_kernel_name(name.clone(), name, c_type, initial_value)
+        Self::new_with_kernel_name(name.clone(), name, program_type, initial_value)
     }
 
     pub fn new_with_kernel_name(
         source_name: impl Into<String>,
         kernel_name: impl Into<String>,
-        c_type: ProgramType,
+        program_type: ProgramType,
         initial_value: ProgramValue,
     ) -> Self {
         assert!(
             matches!(
-                c_type,
+                program_type,
                 ProgramType::Bool
                     | ProgramType::Int8
                     | ProgramType::Int16
@@ -153,14 +157,14 @@ impl Global {
             "C globals currently support scalar integer, floating-point, and pointer types"
         );
         assert_eq!(
-            initial_value.c_type(),
-            c_type,
+            initial_value.program_type(),
+            program_type,
             "C global initializer must match its declared type"
         );
         Self {
             source_name: source_name.into(),
             kernel_name: kernel_name.into(),
-            c_type,
+            program_type,
             initial_value,
             volatile: false,
             pointee_volatile: false,
@@ -178,7 +182,8 @@ impl Global {
         // A class the kernel type already gives is not stored, so a
         // declaration lowered with and without the frontend's knowledge
         // stays one declaration.
-        let derived = crate::kernel::effective_type::CAccessClass::of_kernel_type(self.c_type);
+        let derived =
+            crate::kernel::effective_type::CAccessClass::of_kernel_type(self.program_type);
         self.declared_class = class.filter(|class| derived.as_ref() != Some(class));
         self
     }
@@ -186,9 +191,9 @@ impl Global {
     /// The class the object's block records: the frontend's, or what the
     /// kernel type gives.
     pub fn declared_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
-        self.declared_class
-            .clone()
-            .or_else(|| crate::kernel::effective_type::CAccessClass::of_kernel_type(self.c_type))
+        self.declared_class.clone().or_else(|| {
+            crate::kernel::effective_type::CAccessClass::of_kernel_type(self.program_type)
+        })
     }
 
     pub fn name(&self) -> &str {
@@ -199,8 +204,8 @@ impl Global {
         &self.kernel_name
     }
 
-    pub fn c_type(&self) -> ProgramType {
-        self.c_type
+    pub fn program_type(&self) -> ProgramType {
+        self.program_type
     }
 
     pub fn initial_value(&self) -> &ProgramValue {
@@ -278,7 +283,7 @@ impl GlobalArray {
         assert!(
             initial_values
                 .values()
-                .all(|value| value.c_type() == element_type),
+                .all(|value| value.program_type() == element_type),
             "C global array initializers must match their declared element type"
         );
         Self {
@@ -490,12 +495,12 @@ impl StaticLocal {
     pub fn new(
         source_name: impl Into<String>,
         kernel_name: impl Into<String>,
-        c_type: ProgramType,
+        program_type: ProgramType,
         initial_value: ProgramValue,
     ) -> Self {
         assert!(
             matches!(
-                c_type,
+                program_type,
                 ProgramType::Bool
                     | ProgramType::Int8
                     | ProgramType::Int16
@@ -533,14 +538,14 @@ impl StaticLocal {
             "C static locals currently support scalar integer, floating-point, and pointer types"
         );
         assert_eq!(
-            initial_value.c_type(),
-            c_type,
+            initial_value.program_type(),
+            program_type,
             "C static local initializer must match its declared type"
         );
         Self {
             source_name: source_name.into(),
             kernel_name: kernel_name.into(),
-            c_type,
+            program_type,
             initial_value,
             volatile: false,
             pointee_volatile: false,
@@ -557,8 +562,8 @@ impl StaticLocal {
         &self.kernel_name
     }
 
-    pub fn c_type(&self) -> ProgramType {
-        self.c_type
+    pub fn program_type(&self) -> ProgramType {
+        self.program_type
     }
 
     pub fn initial_value(&self) -> &ProgramValue {
@@ -639,7 +644,7 @@ impl StaticArray {
         assert!(
             initial_values
                 .values()
-                .all(|value| value.c_type() == element_type),
+                .all(|value| value.program_type() == element_type),
             "C static local array initializers must match their declared element type"
         );
         Self {
@@ -1107,7 +1112,7 @@ impl FunctionContractInterface {
             &self
                 .parameters()
                 .iter()
-                .map(|parameter| (parameter.c_type(), parameter.pointee_is_constant()))
+                .map(|parameter| (parameter.program_type(), parameter.pointee_is_constant()))
                 .collect::<Vec<_>>(),
         ))
     }
@@ -1166,7 +1171,7 @@ impl FunctionContractInterface {
                 .iter()
                 .zip(&other.parameters)
                 .all(|(left, right)| {
-                    left.c_type == right.c_type
+                    left.program_type == right.program_type
                         && left.aggregate_layout == right.aggregate_layout
                         && left.volatile == right.volatile
                         && left.pointee_volatile == right.pointee_volatile
@@ -2361,7 +2366,7 @@ impl MemoryRange {
             pointer: self.base.clone(),
             designation: self.designation.clone(),
             opaque_extent: self.opaque_extent.clone(),
-            c_type: ProgramType::VoidPointer,
+            program_type: ProgramType::VoidPointer,
             qualifiers: self.carrier_extent_known.then(|| {
                 std::sync::Arc::new(PointerQualifiers {
                     extent_known: true,
@@ -3511,7 +3516,7 @@ impl FunctionContract {
             || !values
                 .iter()
                 .zip(parameters)
-                .all(|(value, parameter)| value.c_type() == parameter.c_type())
+                .all(|(value, parameter)| value.program_type() == parameter.program_type())
         {
             return None;
         }

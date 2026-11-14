@@ -243,13 +243,13 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
             let mut population_state = state.clone();
             for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
                 let argument = argument.as_program_value()?;
-                if parameter.c_type() != argument.c_type() {
+                if parameter.program_type() != argument.program_type() {
                     return None;
                 }
                 population_state.locals.set_typed(
                     parameter.name().to_string(),
                     argument.clone(),
-                    parameter.c_type(),
+                    parameter.program_type(),
                 );
             }
             bind_composite_witnesses(definition, &arguments, &mut population_state, assumptions)?;
@@ -274,13 +274,13 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
         let mut population_state = state.clone();
         for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
             let argument = argument.as_program_value()?;
-            if parameter.c_type() != argument.c_type() {
+            if parameter.program_type() != argument.program_type() {
                 return None;
             }
             population_state.locals.set_typed(
                 parameter.name().to_string(),
                 argument.clone(),
-                parameter.c_type(),
+                parameter.program_type(),
             );
         }
         bind_composite_witnesses(definition, &arguments, &mut population_state, assumptions)?;
@@ -448,13 +448,13 @@ pub(in crate::kernel) fn evaluate_composite_resource_relation_propositions(
     let mut state = ExecutionState::new().with_memory(memory.clone());
     for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
         let argument = argument.as_program_value()?;
-        if parameter.c_type() != argument.c_type() {
+        if parameter.program_type() != argument.program_type() {
             return None;
         }
         state.locals.set_typed(
             parameter.name().to_string(),
             argument.clone(),
-            parameter.c_type(),
+            parameter.program_type(),
         );
     }
     bind_composite_witnesses(definition, arguments, &mut state, assumptions)?;
@@ -537,13 +537,13 @@ pub(in crate::kernel) fn evaluate_composite_resource_memory_ranges(
     let mut state = ExecutionState::new().with_memory(memory.clone());
     for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
         let argument = argument.as_program_value()?;
-        if parameter.c_type() != argument.c_type() {
+        if parameter.program_type() != argument.program_type() {
             return None;
         }
         state.locals.set_typed(
             parameter.name().to_string(),
             argument.clone(),
-            parameter.c_type(),
+            parameter.program_type(),
         );
     }
     bind_composite_witnesses(definition, arguments, &mut state, assumptions)?;
@@ -697,13 +697,13 @@ pub(super) fn instantiate_composite_resource_facts_with_state(
         .with_resource_context(resources.clone());
     for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
         let argument = argument.as_program_value()?;
-        if parameter.c_type() != argument.c_type() {
+        if parameter.program_type() != argument.program_type() {
             return None;
         }
         state.locals.set_typed(
             parameter.name().to_string(),
             argument.clone(),
-            parameter.c_type(),
+            parameter.program_type(),
         );
     }
     bind_composite_witnesses(definition, arguments, &mut state, assumptions)?;

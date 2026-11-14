@@ -1032,7 +1032,11 @@ fn materialized_load_is_unchanged(
             Pointer {
                 block: PointerBlock::FunctionSymbolic(variable),
                 offset: PointerOffsetTerm::Constant(0),
-            } if matches!(pointer_value.c_type(), ProgramType::FunctionPointer(_)) => {
+            } if matches!(
+                pointer_value.program_type(),
+                ProgramType::FunctionPointer(_)
+            ) =>
+            {
                 load_of(&MachineTerm::Variable(*variable))
             }
             Pointer {
@@ -2818,7 +2822,7 @@ fn literal_completion_key(outcome: &FunctionOutcome) -> Option<(bool, ProgramVal
         return match root.node() {
             KernelTermNode::MachineLiteral(literal) => Some((
                 exceptional,
-                MachineIntegerType::from_c_type(value.c_type())?
+                MachineIntegerType::from_program_type(value.program_type())?
                     .value_from_term(literal.legacy_term()),
             )),
             KernelTermNode::Legacy(payload) => {
@@ -4004,7 +4008,7 @@ mod materialized_function_load_tests {
         };
         let displaced = ProgramValue::typed_pointer(
             pointer_value.pointer().offset_by_bytes(1),
-            pointer_value.c_type(),
+            pointer_value.program_type(),
         );
         assert!(!materialized_load_is_unchanged(
             &displaced, &memory, &address, &facts

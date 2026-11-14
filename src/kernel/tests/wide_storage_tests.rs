@@ -44,7 +44,7 @@ fn wide_storage_exact_typed_store_and_load_preserve_all_bits() {
         )),
         ProgramValue::Int128(MachineTerm::Variable(Variable(152_001))),
     ] {
-        let ty = value.c_type();
+        let ty = value.program_type();
         let state = ExecutionState::new().with_memory(
             Memory::new()
                 .with_block("local:wide-storage", 32)
@@ -102,7 +102,7 @@ fn wide_storage_symbolic_loads_keep_kind_width_and_defining_identity() {
         let ExpressionOutcome::Value(value) = &first[0].outcome else {
             panic!("symbolic load")
         };
-        assert_eq!(value.c_type(), ty);
+        assert_eq!(value.program_type(), ty);
         let term = program_value_bitvector_term(value).unwrap();
         let raw = term;
         assert!(

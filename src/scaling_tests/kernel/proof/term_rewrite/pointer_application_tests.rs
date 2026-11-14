@@ -26,7 +26,7 @@ fn pure_pointer_dag_substitution_and_capture_collection_scale_linearly() {
         let (_, capture_work) = crate::instrumentation::measure_deterministic_work(|| {
             let mut variables = CarrierVariables::for_rewrite(false);
             collect_pointer_carriers(&input, &mut variables);
-            assert_eq!(variables.c, BTreeSet::from([source]));
+            assert_eq!(variables.program_values, BTreeSet::from([source]));
             let mut captured = BTreeSet::new();
             crate::kernel::prelude::collect_proposition_capture_variables(
                 &Proposition::ConditionIs(

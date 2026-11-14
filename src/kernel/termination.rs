@@ -745,20 +745,22 @@ fn call_passes_witness_child(
     let mut parameter_state = ExecutionState::new();
     for (index, parameter) in function.parameters().iter().enumerate() {
         let variable = Variable(PARAMETER_VARIABLE_BASE + index as u64);
-        let value = if parameter.c_type().is_pointer() {
+        let value = if parameter.program_type().is_pointer() {
             ProgramValue::typed_pointer(
                 Pointer {
                     block: PointerBlock::ExternalArgument,
                     offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(variable), 1),
                 },
-                parameter.c_type(),
+                parameter.program_type(),
             )
         } else {
-            symbolic_call_result(parameter.c_type(), variable)
+            symbolic_call_result(parameter.program_type(), variable)
         };
-        parameter_state
-            .locals
-            .set_typed(parameter.name().to_string(), value, parameter.c_type());
+        parameter_state.locals.set_typed(
+            parameter.name().to_string(),
+            value,
+            parameter.program_type(),
+        );
     }
     'children: for child in &arm.witness_children {
         let definition = &child.definition;
@@ -776,19 +778,21 @@ fn call_passes_witness_child(
             ) else {
                 continue 'children;
             };
-            if value.c_type() != parameter.c_type() {
+            if value.program_type() != parameter.program_type() {
                 continue 'children;
             }
-            body_state
-                .locals
-                .set_typed(parameter.name().to_string(), value, parameter.c_type());
+            body_state.locals.set_typed(
+                parameter.name().to_string(),
+                value,
+                parameter.program_type(),
+            );
         }
         for (index, witness) in definition.witnesses().iter().enumerate() {
             let pointer = Pointer::symbolic(Variable(WITNESS_VARIABLE_BASE + index as u64));
             body_state.locals.set_typed(
                 witness.name().to_string(),
-                ProgramValue::typed_pointer(pointer, witness.c_type()),
-                witness.c_type(),
+                ProgramValue::typed_pointer(pointer, witness.program_type()),
+                witness.program_type(),
             );
         }
         for fact in definition.condition().into_iter().chain(definition.facts()) {
@@ -2575,7 +2579,7 @@ impl RankingMachineTerm {
             | ProgramValue::UInt16(term)) => (
                 RankingMachineType::Int32,
                 MachineTerm::machine_integer_cast(
-                    MachineIntegerType::from_c_type(narrow.c_type())?,
+                    MachineIntegerType::from_program_type(narrow.program_type())?,
                     MachineIntegerType::Int32,
                     term.clone(),
                 ),
@@ -5207,7 +5211,7 @@ fn termination_rules_recording_function<'a>(
                                     "termination parameter index is invalid for `{member}`"
                                 ))
                             })?;
-                        if parameter.c_type != ProgramType::Int32 {
+                        if parameter.program_type != ProgramType::Int32 {
                             return Err(error(format!(
                                 "termination parameter `{}` in `{member}` must have type int32",
                                 parameter.name
@@ -5928,9 +5932,11 @@ mod ranking_member_tests {
         );
     }
 
-    fn typed_state(name: &str, value: ProgramValue, c_type: ProgramType) -> ExecutionState {
+    fn typed_state(name: &str, value: ProgramValue, program_type: ProgramType) -> ExecutionState {
         let mut state = ExecutionState::new();
-        state.locals.set_typed(name.to_string(), value, c_type);
+        state
+            .locals
+            .set_typed(name.to_string(), value, program_type);
         state
     }
 

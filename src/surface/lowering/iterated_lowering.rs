@@ -374,7 +374,7 @@ fn iterated_clause_as_proposition(clause: &IteratedResourceClause) -> ClickPropo
         None => ClickProposition::And(Box::new(clause.range.clone()), Box::new(element)),
     };
     ClickProposition::ForAll {
-        click_type: ClickType::Program(C0Type::Int32),
+        click_type: ClickType::Program(InterfaceType::Int32),
         name: clause.binder.clone(),
         written_name: None,
         body: Box::new(body),
@@ -423,7 +423,7 @@ pub(in crate::surface) fn substitute_iterated_clause(
 /// The kernel specification of one iterated clause in a resource body.
 pub(in crate::surface) fn iterated_clause_to_spec(
     clause: &IteratedResourceClause,
-    parameters: &[syntax::C0Parameter],
+    parameters: &[crate::languages::interface::ImportedParameter],
 ) -> Result<crate::kernel::IteratedSpec, ClickError> {
     let shape = iterated_clause_shape(clause).map_err(ClickError::new)?;
     let guard = shape.guard.ok_or_else(|| {
@@ -450,7 +450,7 @@ pub(in crate::surface) fn iterated_clause_to_spec(
 /// read once through the kernel evaluator.
 pub(in crate::surface) fn lower_iterated_clause_with_values(
     clause: &IteratedResourceClause,
-    parameters: &[syntax::C0Parameter],
+    parameters: &[crate::languages::interface::ImportedParameter],
     values: &BTreeMap<String, ProgramValue>,
     state: &ExecutionState,
     result: Option<&ProgramValue>,

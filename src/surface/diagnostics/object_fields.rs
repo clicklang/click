@@ -36,7 +36,7 @@ struct ObjectFields {
     locals: std::collections::HashMap<String, Option<(String, u32, Vec<ObjectField>)>>,
     /// The function's struct layouts by name, for the struct a pointer field
     /// points at.
-    structs: syntax::DeclarationMap<syntax::C0StructLayout>,
+    structs: syntax::DeclarationMap<crate::languages::interface::RecordLayout>,
 }
 
 thread_local! {
@@ -46,7 +46,9 @@ thread_local! {
 
 /// Starts naming the struct-typed globals `function` can reach and the
 /// struct-typed locals it declares.
-pub(crate) fn enter_ambient_object_fields(function: &syntax::C0Function) {
+pub(crate) fn enter_ambient_object_fields(
+    function: &crate::languages::interface::ImportedFunction,
+) {
     let mut objects = ObjectFields {
         structs: function.structs().clone(),
         ..ObjectFields::default()
@@ -137,21 +139,24 @@ const MAX_NESTING: usize = 8;
 
 /// A scalar field's width, when its declared type is one: arrays, embedded
 /// aggregates and `long double` are not single cells a width can match.
-fn scalar_width(c_type: C0Type, byte_width: u32, long_double: bool) -> Option<u32> {
-    let width = match c_type {
-        C0Type::Bool | C0Type::Char(_) | C0Type::Int8 | C0Type::UInt8 => 1,
-        C0Type::Int16 | C0Type::UInt16 => 2,
-        C0Type::Int32 | C0Type::UInt32 | C0Type::Float32 => 4,
-        C0Type::Int64(_) | C0Type::UInt64(_) | C0Type::Float64 => 8,
-        _ if c_type.is_pointer() => 8,
+fn scalar_width(interface_type: InterfaceType, byte_width: u32, long_double: bool) -> Option<u32> {
+    let width = match interface_type {
+        InterfaceType::Bool
+        | InterfaceType::Char(_)
+        | InterfaceType::Int8
+        | InterfaceType::UInt8 => 1,
+        InterfaceType::Int16 | InterfaceType::UInt16 => 2,
+        InterfaceType::Int32 | InterfaceType::UInt32 | InterfaceType::Float32 => 4,
+        InterfaceType::Int64(_) | InterfaceType::UInt64(_) | InterfaceType::Float64 => 8,
+        _ if interface_type.is_pointer() => 8,
         _ => return None,
     };
     (!long_double && width == byte_width).then_some(width)
 }
 
 fn collect_struct_fields(
-    function: &syntax::C0Function,
-    layout: &syntax::C0StructLayout,
+    function: &crate::languages::interface::ImportedFunction,
+    layout: &crate::languages::interface::RecordLayout,
     prefix: &str,
     base: u32,
     out: &mut Vec<ObjectField>,
@@ -183,9 +188,11 @@ fn collect_struct_fields(
             if let Some(union) = function.unions().get(union) {
                 collect_union_fields(function, union, &format!("{path}."), offset, out, depth + 1);
             }
-        } else if let Some(width) =
-            scalar_width(field.c_type(), field.byte_width(), field.is_long_double())
-        {
+        } else if let Some(width) = scalar_width(
+            field.interface_type(),
+            field.byte_width(),
+            field.is_long_double(),
+        ) {
             out.push(ObjectField {
                 offset,
                 width,
@@ -196,7 +203,7 @@ fn collect_struct_fields(
 }
 
 fn collect_union_fields(
-    function: &syntax::C0Function,
+    function: &crate::languages::interface::ImportedFunction,
     layout: &syntax::C0UnionLayout,
     prefix: &str,
     base: u32,
@@ -225,9 +232,11 @@ fn collect_union_fields(
                     depth + 1,
                 );
             }
-        } else if let Some(width) =
-            scalar_width(field.c_type(), field.byte_width(), field.is_long_double())
-        {
+        } else if let Some(width) = scalar_width(
+            field.interface_type(),
+            field.byte_width(),
+            field.is_long_double(),
+        ) {
             out.push(ObjectField {
                 offset,
                 width,
@@ -241,7 +250,9 @@ fn collect_union_fields(
 /// object in `block`, when exactly one scalar field occupies exactly those
 /// bytes.
 /// The layout of the struct named `name` in the function being described.
-pub(super) fn ambient_struct_layout(name: &str) -> Option<syntax::C0StructLayout> {
+pub(super) fn ambient_struct_layout(
+    name: &str,
+) -> Option<crate::languages::interface::RecordLayout> {
     AMBIENT_OBJECT_FIELDS.with(|slot| {
         slot.borrow()
             .as_ref()

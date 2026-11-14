@@ -4453,7 +4453,12 @@ fn source_backed_call_requirement_surface(
                     .collect::<Vec<_>>(),
                 parameters
                     .iter()
-                    .map(|parameter| parameter.click_type().c_type().map(C0Type::to_kernel_type))
+                    .map(|parameter| {
+                        parameter
+                            .click_type()
+                            .interface_type()
+                            .map(InterfaceType::to_kernel_type)
+                    })
                     .collect::<Vec<_>>(),
                 requirement.proposition()?.clone(),
             )
@@ -4484,7 +4489,7 @@ fn source_backed_call_requirement_surface(
                 function
                     .parameters()
                     .iter()
-                    .map(|parameter| Some(parameter.c_type()))
+                    .map(|parameter| Some(parameter.program_type()))
                     .collect::<Vec<_>>(),
                 proposition,
             )
@@ -4589,8 +4594,8 @@ fn source_backed_call_requirement_surface(
                 .iter()
                 .position(|parameter| parameter == name)?;
             match source_parameter_types[slot]? {
-                crate::kernel::ProgramType::Int8Pointer => Some(C0Type::Int8Pointer),
-                crate::kernel::ProgramType::Int8Array(size) => Some(C0Type::Int8Array(size)),
+                crate::kernel::ProgramType::Int8Pointer => Some(InterfaceType::Int8Pointer),
+                crate::kernel::ProgramType::Int8Array(size) => Some(InterfaceType::Int8Array(size)),
                 _ => None,
             }
         },
@@ -4718,8 +4723,8 @@ pub(in crate::surface::proof) fn source_backed_direct_caller_requirement(
         .get(&predicate_name)?
         .parameters()
         .get(*predicate_argument_slot)
-        .and_then(|parameter| parameter.click_type().c_type())
-        .map(C0Type::to_kernel_type);
+        .and_then(|parameter| parameter.click_type().interface_type())
+        .map(InterfaceType::to_kernel_type);
     *substituted_arguments.get_mut(*predicate_argument_slot)? =
         caller_parameter_as_argument(caller_parameter, predicate_parameter_type);
     let entry_state = context.constants.function_entry_state.as_ref()?;
@@ -4750,13 +4755,13 @@ pub(in crate::surface::proof) fn source_backed_direct_caller_requirement(
 /// the parameter itself, or, for a signed character pointer read as
 /// `uint8` bytes, its explicit byte view.
 fn caller_parameter_as_argument(
-    parameter: &syntax::C0Parameter,
+    parameter: &crate::languages::interface::ImportedParameter,
     expected: Option<crate::kernel::ProgramType>,
 ) -> ContractExpression {
     match expected {
         Some(expected)
             if crate::surface::lowering::needs_character_byte_view(
-                parameter.c_type(),
+                parameter.interface_type(),
                 expected,
             ) =>
         {
@@ -4776,7 +4781,7 @@ fn caller_parameter_as_argument(
 /// here too.
 fn caller_parameter_through_identity_cast(
     argument: &ProgramExpression,
-    parameters: &[syntax::C0Parameter],
+    parameters: &[crate::languages::interface::ImportedParameter],
     state: &crate::kernel::ExecutionState,
 ) -> Option<usize> {
     let (name, cast_type) = match argument {
@@ -4812,10 +4817,10 @@ fn caller_parameter_through_identity_cast(
     // one byte has one value, read through either signedness.
     match cast_type {
         Some(target_type)
-            if target_type != parameters[slot].c_type().to_kernel_type()
+            if target_type != parameters[slot].interface_type().to_kernel_type()
                 && !(target_type.is_character_pointer()
                     && parameters[slot]
-                        .c_type()
+                        .interface_type()
                         .to_kernel_type()
                         .is_character_pointer()) =>
         {

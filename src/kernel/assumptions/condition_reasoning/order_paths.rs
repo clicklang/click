@@ -3217,7 +3217,8 @@ mod slice_index_tests {
         let _session = crate::kernel::VerificationSession::enter();
         for ty in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
             let make = |id| {
-                let variable = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(id));
+                let variable =
+                    KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(id));
                 SharedMachineIntegerTerm::from_shared(
                     ty,
                     KernelTerm::machine_binary_shared(

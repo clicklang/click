@@ -73,11 +73,11 @@ fn with_locals<T>(
 #[derive(Clone, Debug, Default)]
 pub(super) struct LetOperands {
     operands: LocalOperands,
-    machine_types: BTreeMap<String, C0Type>,
+    machine_types: BTreeMap<String, InterfaceType>,
 }
 
 /// A `let` binding's previous meaning, restored when its scope ends.
-pub(super) type ShadowedLet = (String, Option<LocalOperand>, Option<C0Type>);
+pub(super) type ShadowedLet = (String, Option<LocalOperand>, Option<InterfaceType>);
 
 impl Parser {
     /// What `name` is as an operand: a binding of the expression being
@@ -100,12 +100,18 @@ impl Parser {
     ) -> ShadowedLet {
         let (operand, machine_type) = match click_type {
             Some(ClickType::Integer) => (LocalOperand::Integer, None),
-            Some(ClickType::Program(c_type))
-                if c_type.is_pointer() || matches!(c_type, C0Type::Float32 | C0Type::Float64) =>
+            Some(ClickType::Program(interface_type))
+                if interface_type.is_pointer()
+                    || matches!(
+                        interface_type,
+                        InterfaceType::Float32 | InterfaceType::Float64
+                    ) =>
             {
                 (LocalOperand::COnly, None)
             }
-            Some(ClickType::Program(c_type)) => (LocalOperand::Machine, Some(*c_type)),
+            Some(ClickType::Program(interface_type)) => {
+                (LocalOperand::Machine, Some(*interface_type))
+            }
             Some(_) => (LocalOperand::Unknown, None),
             None => match value {
                 Some(value) if self.integer_operand(value) => (LocalOperand::Integer, None),
@@ -116,10 +122,10 @@ impl Parser {
         };
         let previous_operand = self.let_operands.operands.insert(name.to_string(), operand);
         let previous_type = match machine_type {
-            Some(c_type) => self
+            Some(interface_type) => self
                 .let_operands
                 .machine_types
-                .insert(name.to_string(), c_type),
+                .insert(name.to_string(), interface_type),
             None => self.let_operands.machine_types.remove(name),
         };
         (name.to_string(), previous_operand, previous_type)
@@ -143,7 +149,9 @@ impl Parser {
                 None => self.let_operands.operands.remove(&name),
             };
             match machine_type {
-                Some(c_type) => self.let_operands.machine_types.insert(name, c_type),
+                Some(interface_type) => {
+                    self.let_operands.machine_types.insert(name, interface_type)
+                }
                 None => self.let_operands.machine_types.remove(&name),
             };
         }
@@ -172,9 +180,15 @@ impl Parser {
             }
             _ => {
                 self.has_c_only_operand(value)
-                    || self.machine_operand_type(value).is_some_and(|c_type| {
-                        c_type.is_pointer() || matches!(c_type, C0Type::Float32 | C0Type::Float64)
-                    })
+                    || self
+                        .machine_operand_type(value)
+                        .is_some_and(|interface_type| {
+                            interface_type.is_pointer()
+                                || matches!(
+                                    interface_type,
+                                    InterfaceType::Float32 | InterfaceType::Float64
+                                )
+                        })
             }
         }
     }
@@ -260,7 +274,7 @@ impl Parser {
         };
         let machine = self
             .machine_operand_type(operand)
-            .map(|c_type| self.machine_type_spelling(c_type))
+            .map(|interface_type| self.machine_type_spelling(interface_type))
             .unwrap_or_else(|| "<machine type>".to_string());
         Err(self.error(format!(
             "untyped `let {name}` does arithmetic on a machine value; arithmetic takes its \
@@ -278,12 +292,15 @@ impl Parser {
     pub(super) fn refuse_mixed_narrow_arithmetic(
         &self,
         name: &str,
-        c_type: C0Type,
+        interface_type: InterfaceType,
         value: &ContractExpression,
     ) -> Result<(), ClickError> {
         if !matches!(
-            c_type,
-            C0Type::Int8 | C0Type::UInt8 | C0Type::Int16 | C0Type::UInt16
+            interface_type,
+            InterfaceType::Int8
+                | InterfaceType::UInt8
+                | InterfaceType::Int16
+                | InterfaceType::UInt16
         ) || !is_narrow_arithmetic(value)
         {
             return Ok(());
@@ -304,12 +321,15 @@ impl Parser {
                 ContractExpression::IntegerLiteral(_) => {}
                 leaf => {
                     if let Some(actual) = self.machine_operand_type(leaf)
-                        && actual != c_type
+                        && actual != interface_type
                     {
                         return Err(self
                             .error(mixed_narrow_arithmetic_message(
-                                &format!("`let {name}: {}`", self.machine_type_spelling(c_type)),
-                                &self.machine_type_spelling(c_type),
+                                &format!(
+                                    "`let {name}: {}`",
+                                    self.machine_type_spelling(interface_type)
+                                ),
+                                &self.machine_type_spelling(interface_type),
                                 &crate::surface::diagnostics::describe_contract_expression(leaf),
                                 &self.machine_type_spelling(actual),
                             ))
@@ -321,9 +341,9 @@ impl Parser {
         Ok(())
     }
 
-    /// `c_type` as the sidecar's language spells it.
-    fn machine_type_spelling(&self, c_type: C0Type) -> String {
-        let name = describe_c0_type(c_type);
+    /// `interface_type` as the sidecar's language spells it.
+    fn machine_type_spelling(&self, interface_type: InterfaceType) -> String {
+        let name = describe_interface_type(interface_type);
         if !self.verifies_rust() {
             return name;
         }
@@ -341,13 +361,13 @@ impl Parser {
         .to_string()
     }
 
-    /// The value of `let name: c_type = value;`: an unsuffixed literal, or
+    /// The value of `let name: interface_type = value;`: an unsuffixed literal, or
     /// the negation of one, takes the declared machine type, and one
     /// outside its range is refused.
     pub(super) fn typed_let_literal(
         &self,
         name: &str,
-        c_type: C0Type,
+        interface_type: InterfaceType,
         value: ContractExpression,
     ) -> Result<ContractExpression, ClickError> {
         let (digits, negative) = match &value {
@@ -358,7 +378,7 @@ impl Parser {
             },
             _ => return Ok(value),
         };
-        let Some(suffix) = rust_literals::IntegerSuffix::of_c_type(c_type) else {
+        let Some(suffix) = rust_literals::IntegerSuffix::of_c_type(interface_type) else {
             return Ok(value);
         };
         let literal = rust_literals::IntegerLiteral {
@@ -371,7 +391,7 @@ impl Parser {
             )),
             Err(_) => {
                 let (least, greatest) = suffix.range();
-                let spelling = self.machine_type_spelling(c_type);
+                let spelling = self.machine_type_spelling(interface_type);
                 Err(self.error(format!(
                     "`let {name}: {spelling}` cannot hold {}{digits}; a `{spelling}` lies in \
                      {least}..={greatest}",
@@ -490,9 +510,12 @@ impl Parser {
             .map(|(index, binding)| {
                 let operand = match fields.map(|fields| &fields[index]) {
                     Some(AlgebraicFieldType::Integer) => LocalOperand::Integer,
-                    Some(AlgebraicFieldType::C { c_type, .. })
-                        if c_type.is_pointer()
-                            || matches!(c_type, C0Type::Float32 | C0Type::Float64) =>
+                    Some(AlgebraicFieldType::C { interface_type, .. })
+                        if interface_type.is_pointer()
+                            || matches!(
+                                interface_type,
+                                InterfaceType::Float32 | InterfaceType::Float64
+                            ) =>
                     {
                         LocalOperand::COnly
                     }
@@ -553,7 +576,7 @@ impl Parser {
             | ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
                 if matches!(
                     self.names.arm_binding_types.get(name),
-                    Some(AlgebraicFieldType::C { c_type, .. }) if c_type.is_pointer()
+                    Some(AlgebraicFieldType::C { interface_type, .. }) if interface_type.is_pointer()
                 ) =>
             {
                 true
@@ -591,15 +614,26 @@ impl Parser {
             ContractExpression::Binding(name)
             | ContractExpression::CBinding(name)
             | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
-                let c_only = |c_type: &C0Type| {
-                    c_type.is_pointer() || matches!(c_type, C0Type::Float32 | C0Type::Float64)
+                let c_only = |interface_type: &InterfaceType| {
+                    interface_type.is_pointer()
+                        || matches!(
+                            interface_type,
+                            InterfaceType::Float32 | InterfaceType::Float64
+                        )
                 };
                 self.theorem_pointer_params.contains(name)
                     || self.current_local_pointers.contains(name)
-                    || self.names.c_parameter_types.get(name).is_some_and(c_only)
+                    || self
+                        .names
+                        .program_parameter_types
+                        .get(name)
+                        .is_some_and(c_only)
                     || (name == "result"
-                        && !self.names.c_parameter_types.contains_key(name)
-                        && self.current_result_c_type.as_ref().is_some_and(c_only))
+                        && !self.names.program_parameter_types.contains_key(name)
+                        && self
+                            .current_result_interface_type
+                            .as_ref()
+                            .is_some_and(c_only))
             }
             ContractExpression::ProgramExpression(ProgramExpression::TypedLoad {
                 value_type,
@@ -775,7 +809,7 @@ impl Parser {
 
     /// The machine type of an arithmetic operand, where its spelling shows
     /// it: a parameter, `result`, a suffixed constant, a load or a cast.
-    fn machine_operand_type(&self, operand: &ContractExpression) -> Option<C0Type> {
+    fn machine_operand_type(&self, operand: &ContractExpression) -> Option<InterfaceType> {
         match operand {
             ContractExpression::Old(inner)
             | ContractExpression::At {
@@ -785,32 +819,38 @@ impl Parser {
             | ContractExpression::CBinding(name)
             | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => self
                 .names
-                .c_parameter_types
+                .program_parameter_types
                 .get(name)
                 .or_else(|| self.spec_parameter_types.get(name))
                 .or_else(|| self.let_operands.machine_types.get(name))
                 .copied()
                 .or_else(|| {
                     (name == "result")
-                        .then_some(self.current_result_c_type)
+                        .then_some(self.current_result_interface_type)
                         .flatten()
                 }),
             ContractExpression::ProgramExpression(lowered)
             | ContractExpression::CUnary { lowered, .. } => match lowered {
-                ProgramExpression::Value(value) => Some(
-                    crate::surface::generics::c0_type_from_kernel(value.c_type()),
-                ),
+                ProgramExpression::Value(value) => {
+                    Some(crate::surface::generics::interface_type_from_program_type(
+                        value.program_type(),
+                    ))
+                }
                 ProgramExpression::TypedLoad { value_type, .. }
                 | ProgramExpression::Cast {
                     target_type: value_type,
                     ..
-                } => Some(crate::surface::generics::c0_type_from_kernel(*value_type)),
+                } => Some(crate::surface::generics::interface_type_from_program_type(
+                    *value_type,
+                )),
                 _ => None,
             },
             ContractExpression::Field {
                 lowered: ProgramExpression::TypedLoad { value_type, .. },
                 ..
-            } => Some(crate::surface::generics::c0_type_from_kernel(*value_type)),
+            } => Some(crate::surface::generics::interface_type_from_program_type(
+                *value_type,
+            )),
             _ => None,
         }
     }

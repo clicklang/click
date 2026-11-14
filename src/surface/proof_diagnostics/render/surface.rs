@@ -115,9 +115,9 @@ enum Hint {
 }
 
 impl Hint {
-    fn of_type(c_type: crate::kernel::ProgramType) -> Option<Self> {
+    fn of_type(interface_type: crate::kernel::ProgramType) -> Option<Self> {
         use crate::kernel::ProgramType;
-        Some(match c_type {
+        Some(match interface_type {
             ProgramType::Int32 => Self::Signed32,
             ProgramType::UInt32 => Self::Unsigned32,
             ProgramType::Int8 | ProgramType::Int16 => Self::Narrow { signed: true },
@@ -1815,7 +1815,7 @@ impl Printer<'_> {
                     crate::kernel::ProgramExpression::Value(
                         crate::kernel::ProgramValue::Pointer(base),
                     ) => base
-                        .c_type()
+                        .program_type()
                         .pointee_type()
                         .and_then(crate::kernel::LoadKind::of_type)
                         .is_some_and(|read| read.reads_word_of(kind)),
@@ -2499,7 +2499,7 @@ impl Printer<'_> {
                 crate::kernel::ProgramExpression::Value(crate::kernel::ProgramValue::Pointer(
                     base,
                 )) if base == pointer
-                    && base.c_type() == pointer.c_type()
+                    && base.program_type() == pointer.program_type()
                     && name.name().len() <= 256 =>
                 {
                     Some(name.name().to_owned())
@@ -2527,7 +2527,7 @@ impl Printer<'_> {
                 element_type,
             } => {
                 if !self.source_mode() {
-                    if pointer.c_type().pointee_type() != Some(*element_type)
+                    if pointer.program_type().pointee_type() != Some(*element_type)
                         || self.mode == Mode::ExactIdentity
                     {
                         return None;
@@ -2950,13 +2950,13 @@ mod tests {
     #[test]
     fn float_diagnostics_keep_names_widths_and_decimal_literals() {
         let parameters = [
-            crate::languages::c::syntax::C0Parameter::new(
-                crate::languages::c::syntax::C0Type::Float64,
+            crate::languages::interface::ImportedParameter::new(
+                crate::languages::interface::InterfaceType::Float64,
                 "d".into(),
                 None,
             ),
-            crate::languages::c::syntax::C0Parameter::new(
-                crate::languages::c::syntax::C0Type::Float32,
+            crate::languages::interface::ImportedParameter::new(
+                crate::languages::interface::InterfaceType::Float32,
                 "f".into(),
                 None,
             ),

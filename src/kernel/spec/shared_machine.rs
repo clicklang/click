@@ -18,8 +18,8 @@ pub(super) use casts::{cast_narrowing, cast_signedness, cast_widening};
 pub(super) fn call_cast_refused(value: &SpecValue, target: ProgramType) -> bool {
     matches!(value, SpecValue::Shared(root)
         if matches!(root.node(), KernelTermNode::Call { .. })
-            && matches!(value.c_type(), ProgramType::Int128 | ProgramType::UInt128)
-            && MachineIntegerType::from_c_type(target).is_some())
+            && matches!(value.program_type(), ProgramType::Int128 | ProgramType::UInt128)
+            && MachineIntegerType::from_program_type(target).is_some())
 }
 
 pub(super) struct PreparedExpression {
@@ -125,7 +125,7 @@ pub(super) fn apply_values(
         if source == format {
             Some(root)
         } else {
-            cast(&SpecValue::Shared(root), format.c_type())
+            cast(&SpecValue::Shared(root), format.program_type())
         }
     };
     Some(apply(
@@ -524,7 +524,7 @@ mod tests {
                         let run = |disabled| {
                             let mut execution = ExecutionBudget::new();
                             let mut budget = SpecEvaluation::logical(&mut execution);
-                            budget.c_definedness = defined;
+                            budget.program_definedness = defined;
                             budget.machine_preparation_disabled = disabled;
                             budget.machine_result_production_disabled = disabled;
                             native_results(

@@ -116,7 +116,7 @@ fn held_composite_resource_clause(
     let parameter_types = definition
         .parameters()
         .iter()
-        .map(|parameter| parameter.click_type().c_type())
+        .map(|parameter| parameter.click_type().interface_type())
         .collect::<Option<Vec<_>>>()?;
     Some(ResourceClause::Declared {
         access: ResourceAccessMode::Own,

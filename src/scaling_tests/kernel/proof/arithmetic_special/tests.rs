@@ -554,7 +554,7 @@ fn signed_defined_certificates_keep_shared_operands_and_source_bounds() {
         for size in [8, 32, 96] {
             let _session = crate::kernel::VerificationSession::enter();
             let mut term =
-                KernelTerm::variable(KernelType::Program(format.c_type()), Variable(982600));
+                KernelTerm::variable(KernelType::Program(format.program_type()), Variable(982600));
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for _ in 0..size {
                     term = KernelTerm::machine_binary_shared(

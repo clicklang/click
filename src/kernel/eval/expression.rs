@@ -133,7 +133,7 @@ fn integer_constant_as_sign_magnitude(value: &ProgramValue) -> Option<(bool, u12
         | ProgramValue::UInt8(_)
         | ProgramValue::Int16(_)
         | ProgramValue::UInt16(_)) => {
-            let value = MachineIntegerType::from_c_type(narrow.c_type())?
+            let value = MachineIntegerType::from_program_type(narrow.program_type())?
                 .constant_from_value(narrow)?
                 .to_i128()?;
             Some((value < 0, value.unsigned_abs()))
@@ -654,7 +654,7 @@ pub(in crate::kernel) fn promote_program_path_value(
     if let ProgramValue::Bool(word) = value {
         return matches!(to.bits(), 32 | 64).then(|| MachineTerm::bool_word_as(destination, &word));
     }
-    let source = MachineIntegerType::from_c_type(value.c_type())?;
+    let source = MachineIntegerType::from_program_type(value.program_type())?;
     let from = source.format();
     if from.bits() > 64 || !(to.contains(from) || (!to.is_signed() && from.bits() <= to.bits())) {
         return None;
@@ -683,8 +683,8 @@ fn convert_program_integer(
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Option<ProgramValue> {
-    let source = MachineIntegerType::from_c_type(value.c_type())?;
-    let destination = MachineIntegerType::from_c_type(target)?;
+    let source = MachineIntegerType::from_program_type(value.program_type())?;
+    let destination = MachineIntegerType::from_program_type(target)?;
     let (from, to) = (source.format(), destination.format());
     let sign_cast = from.bits() == 32 && to.bits() == 32;
     if !to.contains(from) && (to.bits() < 32 || (to.is_signed() && !sign_cast)) {
@@ -754,30 +754,35 @@ pub(in crate::kernel) fn coerce_program_value_to_type_as(
 ) -> Option<ProgramValue> {
     // Assignment and argument binding preserve complete, unchanged words.
     // Every other numeric conversion starts from a mathematical observation.
-    if matches!(value, ProgramValue::PointerInteger(_)) && value.c_type() == target_type {
+    if matches!(value, ProgramValue::PointerInteger(_)) && value.program_type() == target_type {
         return Some(value);
     }
     let value = value.numeric_value().clone();
     // Integer to `Bool` (Stage 5) is the test `value != 0`, exact at every
     // width: no value is reduced before it is tested.
     if target_type == ProgramType::Bool
-        && matches!(value.c_type(), ProgramType::Int128 | ProgramType::UInt128)
+        && matches!(
+            value.program_type(),
+            ProgramType::Int128 | ProgramType::UInt128
+        )
     {
         return ConditionTerm::nonzero_test(&value).map(ProgramValue::of_bool);
     }
-    if matches!(value.c_type(), ProgramType::Int128 | ProgramType::UInt128)
-        || matches!(target_type, ProgramType::Int128 | ProgramType::UInt128)
+    if matches!(
+        value.program_type(),
+        ProgramType::Int128 | ProgramType::UInt128
+    ) || matches!(target_type, ProgramType::Int128 | ProgramType::UInt128)
     {
-        let destination = MachineIntegerType::from_c_type(target_type)?;
+        let destination = MachineIntegerType::from_program_type(target_type)?;
         // Rule C1: a `Bool` widened to 128 bits is its cast, 1 or 0.
         if let ProgramValue::Bool(word) = &value {
-            let destination = MachineIntegerType::from_c_type(target_type)?;
+            let destination = MachineIntegerType::from_program_type(target_type)?;
             return ProgramValue::from_bitvector_term(
                 target_type,
                 MachineTerm::bool_word_as(destination, word),
             );
         }
-        let source = MachineIntegerType::from_c_type(value.c_type())?;
+        let source = MachineIntegerType::from_program_type(value.program_type())?;
         // C's conversion is modulo 2^N for a signed destination too; a
         // specification's owes the signed range. An unsigned destination is
         // modulo 2^N under both (the conversion table's policy column).
@@ -818,7 +823,7 @@ pub(in crate::kernel) fn coerce_program_value_to_type_as(
 
     if matches!(target_type, ProgramType::FunctionPointer(_))
         && let ProgramValue::Pointer(pointer) = &value
-        && pointer.c_type() == target_type
+        && pointer.program_type() == target_type
     {
         return Some(value);
     }
@@ -831,7 +836,7 @@ pub(in crate::kernel) fn coerce_program_value_to_type_as(
     if let (ProgramType::FunctionPointer(signature), ProgramValue::Pointer(pointer)) =
         (target_type, &value)
         && pointer.block.is_function()
-        && pointer.c_type() == ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED)
+        && pointer.program_type() == ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED)
     {
         return Some(ProgramValue::typed_pointer(
             pointer.pointer().clone(),
@@ -861,7 +866,7 @@ pub(in crate::kernel) fn coerce_program_value_to_type_as(
             ProgramValue::Bool(word),
         ) => ProgramValue::from_bitvector_term(
             target,
-            MachineTerm::bool_word_as(MachineIntegerType::from_c_type(target)?, &word),
+            MachineTerm::bool_word_as(MachineIntegerType::from_program_type(target)?, &word),
         ),
         // C's widening between narrow formats is a conversion node of the
         // destination's width, as the source writes it.
@@ -995,8 +1000,8 @@ fn narrow_integer(
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Option<ProgramValue> {
-    let source = MachineIntegerType::from_c_type(value.c_type())?;
-    let destination = MachineIntegerType::from_c_type(target)?;
+    let source = MachineIntegerType::from_program_type(value.program_type())?;
+    let destination = MachineIntegerType::from_program_type(target)?;
     let term = match value {
         crate::kernel::integer_c_value!(term) => term,
         _ => return None,
@@ -1125,7 +1130,7 @@ fn checked_narrowing_identity_readings(
     source: &ProgramValue,
     converted: &ProgramValue,
 ) -> Option<Vec<Proposition>> {
-    let source_type = MachineIntegerType::from_c_type(source.c_type())?;
+    let source_type = MachineIntegerType::from_program_type(source.program_type())?;
     let operand = match source.numeric_value() {
         crate::kernel::integer_c_value!(term) => term,
         _ => return None,
@@ -1297,7 +1302,7 @@ fn cast_program_value_to_type_with_integer_origin(
                 // Character-to-character casts retain the selected byte view.
                 // Other casts to bytes, and every void cast, widen that view.
                 let byte_to_byte = matches!(
-                    pointer.c_type(),
+                    pointer.program_type(),
                     ProgramType::UInt8Pointer | ProgramType::Int8Pointer
                 ) && matches!(
                     target_type,
@@ -1382,7 +1387,7 @@ fn cast_program_value_to_type_with_integer_origin(
             ));
         }
         if pointer.block.is_function()
-            || matches!(pointer.c_type(), ProgramType::FunctionPointer(_))
+            || matches!(pointer.program_type(), ProgramType::FunctionPointer(_))
         {
             return Err(RuntimeError::PointerConversion(
                 "function addresses do not convert to integers".to_string(),
@@ -2018,7 +2023,7 @@ pub(super) fn evaluate_native_expression_paths(
         if let ExpressionOutcome::Value(
             value @ (ProgramValue::Int128(_) | ProgramValue::UInt128(_)),
         ) = &path.outcome
-            && !value.c_type().accepts(value)
+            && !value.program_type().accepts(value)
         {
             path.outcome = ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch);
         }
@@ -2104,7 +2109,7 @@ fn evaluate_narrow_arithmetic_paths(
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<ExpressionPath>> {
     use crate::kernel::MachineBinaryOp as Op;
-    let format = MachineIntegerType::from_c_type(target_type)
+    let format = MachineIntegerType::from_program_type(target_type)
         .filter(|format| super::operators::is_narrow_format(*format));
     let outcome = |value: Option<ProgramValue>| match value {
         Some(value) => ExpressionOutcome::Value(value),
@@ -2280,14 +2285,14 @@ fn evaluate_program_cast_paths(
                             if target_type.is_pointer()
                                 && (integer_mode != IntegerCastMode::PointerCoercion
                                     || target_type != ProgramType::VoidPointer
-                                    || pointer.c_type().is_object_pointer()) =>
+                                    || pointer.program_type().is_object_pointer()) =>
                         {
                             Ok(ProgramValue::Pointer(pointer.with_type(target_type)))
                         }
                         _ => Err(RuntimeError::TypeMismatch),
                     }
                 } else if integer_mode == IntegerCastMode::Modulo {
-                    MachineIntegerType::from_c_type(target_type)
+                    MachineIntegerType::from_program_type(target_type)
                         .and_then(|destination| {
                             crate::kernel::machine_integer::conversion::convert_value(
                                 value,
@@ -2963,7 +2968,7 @@ pub(in crate::kernel) fn evaluate_program_lvalue_paths(
         ProgramExpression::Variable(name) => vec![LValuePath {
             outcome: match state.locals.binding(name) {
                 Some(LocalBinding::Object {
-                    c_type,
+                    program_type,
                     volatile,
                     pointee_volatile,
                     constant,
@@ -2971,7 +2976,7 @@ pub(in crate::kernel) fn evaluate_program_lvalue_paths(
                     ..
                 })
                 | Some(LocalBinding::UninitializedObject {
-                    c_type,
+                    program_type,
                     volatile,
                     pointee_volatile,
                     constant,
@@ -2980,7 +2985,7 @@ pub(in crate::kernel) fn evaluate_program_lvalue_paths(
                 }) => {
                     let lvalue = LValue::local_with_qualifiers(
                         name.clone(),
-                        *c_type,
+                        *program_type,
                         *volatile,
                         *pointee_volatile,
                     )
@@ -2989,7 +2994,7 @@ pub(in crate::kernel) fn evaluate_program_lvalue_paths(
                     LValueOutcome::LValue(lvalue)
                 }
                 Some(LocalBinding::GlobalObject {
-                    c_type,
+                    program_type,
                     slot,
                     volatile,
                     pointee_volatile,
@@ -2998,7 +3003,7 @@ pub(in crate::kernel) fn evaluate_program_lvalue_paths(
                 }) => LValueOutcome::LValue(
                     LValue::memory_with_qualifiers(
                         slot.clone(),
-                        *c_type,
+                        *program_type,
                         *volatile,
                         *pointee_volatile,
                     )
@@ -3213,7 +3218,7 @@ pub(in crate::kernel) fn read_program_lvalue_paths(
 fn retained_value_accepted(ty: ProgramType, value: &ExecutionValue) -> bool {
     if value.shared().is_some()
         && matches!(
-            value.c_type(),
+            value.program_type(),
             ProgramType::Int8
                 | ProgramType::Int16
                 | ProgramType::Int32
@@ -3224,7 +3229,7 @@ fn retained_value_accepted(ty: ProgramType, value: &ExecutionValue) -> bool {
                 | ProgramType::UInt64
         )
     {
-        return value.c_type() == ty;
+        return value.program_type() == ty;
     }
     ty.accepts(&value.native())
 }
@@ -3387,16 +3392,20 @@ fn read_retained_lvalue_paths_without_ranges(
     if let LValueOutcome::LValue(lvalue) = &outcome
         && let LValueStorage::Local { name } = &lvalue.storage
         && let Some(LocalBinding::UninitializedObject {
-            c_type,
+            program_type,
             slot,
             volatile,
             pointee_volatile,
             ..
         }) = state.locals.binding(name)
-        && assumptions.has_memory_read_defined_evidence(&state.memory, slot, *c_type)
+        && assumptions.has_memory_read_defined_evidence(&state.memory, slot, *program_type)
     {
-        let memory =
-            LValue::memory_with_qualifiers(slot.clone(), *c_type, *volatile, *pointee_volatile);
+        let memory = LValue::memory_with_qualifiers(
+            slot.clone(),
+            *program_type,
+            *volatile,
+            *pointee_volatile,
+        );
         return read_retained_lvalue_paths_without_ranges(
             state,
             LValueOutcome::LValue(memory),
@@ -3490,25 +3499,26 @@ fn read_retained_lvalue_paths_without_ranges(
                 }
                 let outcome = match state.locals.get(name) {
                     Some(value) if retained_value_accepted(lvalue.value_type, value) => {
-                        let value = if value.shared().is_some() && !value.c_type().is_pointer() {
-                            value.clone().into_value()
-                        } else {
-                            let native = value.native();
-                            let native = match native.as_ref() {
-                                ProgramValue::Pointer(pointer)
-                                    if !SpecificationReadScope::is_active() =>
-                                {
-                                    ProgramValue::Pointer(
-                                        local_assumptions.pointer_value_at_entry(pointer),
-                                    )
-                                }
-                                value => value.clone(),
+                        let value =
+                            if value.shared().is_some() && !value.program_type().is_pointer() {
+                                value.clone().into_value()
+                            } else {
+                                let native = value.native();
+                                let native = match native.as_ref() {
+                                    ProgramValue::Pointer(pointer)
+                                        if !SpecificationReadScope::is_active() =>
+                                    {
+                                        ProgramValue::Pointer(
+                                            local_assumptions.pointer_value_at_entry(pointer),
+                                        )
+                                    }
+                                    value => value.clone(),
+                                };
+                                native
+                                    .with_pointer_pointee_volatile(lvalue.pointee_is_volatile())
+                                    .with_pointer_pointee_constant(lvalue.pointee_is_constant())
+                                    .into()
                             };
-                            native
-                                .with_pointer_pointee_volatile(lvalue.pointee_is_volatile())
-                                .with_pointer_pointee_constant(lvalue.pointee_is_constant())
-                                .into()
-                        };
                         ExpressionOutcome::Value(value)
                     }
                     Some(_) => ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch),
@@ -3844,18 +3854,20 @@ pub(in crate::kernel) fn program_expression_pointee_type(
     expression: &ProgramExpression,
 ) -> Option<ProgramType> {
     match expression {
-        ProgramExpression::Value(value) => value.c_type().pointee_type(),
+        ProgramExpression::Value(value) => value.program_type().pointee_type(),
         ProgramExpression::Variable(name) => match state.locals.binding(name) {
-            Some(LocalBinding::Object { c_type, .. }) => c_type.pointee_type(),
-            Some(LocalBinding::UninitializedObject { c_type, .. }) => c_type.pointee_type(),
-            Some(LocalBinding::GlobalObject { c_type, .. }) => c_type.pointee_type(),
+            Some(LocalBinding::Object { program_type, .. }) => program_type.pointee_type(),
+            Some(LocalBinding::UninitializedObject { program_type, .. }) => {
+                program_type.pointee_type()
+            }
+            Some(LocalBinding::GlobalObject { program_type, .. }) => program_type.pointee_type(),
             Some(LocalBinding::ArrayObject { element_type, .. }) => Some(*element_type),
             Some(LocalBinding::AggregateObject { .. }) => Some(ProgramType::UInt8),
             None => None,
         },
         // A call's result has the callee's declared type.
         ProgramExpression::CallResult { call, .. } => {
-            state.call_result(*call)?.c_type().pointee_type()
+            state.call_result(*call)?.program_type().pointee_type()
         }
         ProgramExpression::Cast { target_type, .. } => target_type.pointee_type(),
         ProgramExpression::AddressOf(target) | ProgramExpression::CheckedObjectAddress(target) => {
@@ -4180,7 +4192,8 @@ pub(in crate::kernel) fn program_truthiness_paths(
             }
         }
         value @ (ProgramValue::Int128(_) | ProgramValue::UInt128(_)) => {
-            let ty = MachineIntegerType::from_c_type(value.c_type()).expect("wide integer");
+            let ty =
+                MachineIntegerType::from_program_type(value.program_type()).expect("wide integer");
             let bits = match value {
                 ProgramValue::Int128(bits) | ProgramValue::UInt128(bits) => bits,
                 _ => unreachable!(),

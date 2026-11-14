@@ -690,7 +690,7 @@ impl<'a> MachineOperandView<'a> {
             if ty.format().bits() == 128
                 && let Some((_, _, kind)) = self.read()
             {
-                return LoadKind::of_type(ty.c_type()) == Some(kind);
+                return LoadKind::of_type(ty.program_type()) == Some(kind);
             }
             if let Self::Legacy(value) = self {
                 return ty.accepts_cast_operand(value);
@@ -1018,7 +1018,7 @@ impl<'a> MachineOperandView<'a> {
                 if ty.format().bits() == 128
                     && !matches!(term.node(), KernelTermNode::Variable(_))
                     && !matches!(self.read(), Some((_, _, kind))
-                        if LoadKind::of_type(ty.c_type()) == Some(kind))
+                        if LoadKind::of_type(ty.program_type()) == Some(kind))
                     && !matches!(self.cast(), Some((MachineCastSpelling::Generic, source, destination, operand))
                         if destination == ty && operand.accepts_cast_operand(source)) =>
             {
@@ -1379,7 +1379,7 @@ mod cast_tests {
         use crate::kernel::{KernelType, MachineCastSpelling as E};
         let _session = crate::kernel::VerificationSession::enter();
         let mut root = KernelTerm::variable(
-            KernelType::Program(MachineIntegerType::Int32.c_type()),
+            KernelType::Program(MachineIntegerType::Int32.program_type()),
             Variable(985004),
         );
         for _ in 0..96 {
@@ -1453,7 +1453,7 @@ mod cast_tests {
     fn checking_cast_cache_survives_restore_but_not_a_new_verification() {
         use crate::kernel::{KernelType, MachineCastSpelling as E};
         let mut term = KernelTerm::variable(
-            KernelType::Program(MachineIntegerType::Int32.c_type()),
+            KernelType::Program(MachineIntegerType::Int32.program_type()),
             Variable(985003),
         );
         {

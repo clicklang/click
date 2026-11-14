@@ -41,8 +41,8 @@ fn wide_address_symbolic_array_runs_keep_typed_loads_and_bounded_work() {
             let (loaded, read_work) = crate::instrumentation::measure_deterministic_work(|| {
                 memory.known_value(&at(count - 1)).unwrap()
             });
-            assert_eq!(loaded.c_type(), ty);
-            let machine = MachineIntegerType::from_c_type(ty).unwrap();
+            assert_eq!(loaded.program_type(), ty);
+            let machine = MachineIntegerType::from_program_type(ty).unwrap();
             assert!(machine.accepts_wide_term(&program_value_bitvector_term(&loaded).unwrap()));
             assert_eq!(loaded, memory.known_value(&at(count - 1)).unwrap());
             let state = ExecutionState::new()

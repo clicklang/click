@@ -340,11 +340,11 @@ impl Comparison {
                 a.ty() == b.ty() && self.machine(a.operand_view(), b.operand_view())
             }
             (A::SharedMachine(a), A::Value(b)) | (A::Value(b), A::SharedMachine(a)) => {
-                a.ty().c_type() == b.c_type()
+                a.ty().program_type() == b.program_type()
                     && scalar(b).is_some_and(|b| self.machine(a.operand_view(), Operand::Legacy(b)))
             }
             (A::Value(a), A::Value(b)) => {
-                if a.c_type() != b.c_type() {
+                if a.program_type() != b.program_type() {
                     return false;
                 }
                 match (scalar(a), scalar(b)) {

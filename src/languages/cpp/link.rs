@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use super::PreparedCppImport;
-use crate::languages::c::syntax::C0Function;
+use crate::languages::interface::ImportedFunction;
 use crate::languages::{ExecutionCache, PreparedExecution};
 
 /// Several sources of one C++ unit, verified together by one sidecar.
@@ -102,7 +102,7 @@ impl LinkedCppProgram {
 /// Joins the lowered programs of `parts`, each named by its source. Work is
 /// linear in the functions, layouts and contracts the parts hold.
 fn link(parts: &[(&str, &PreparedExecution)]) -> Result<PreparedExecution, String> {
-    let mut functions = Vec::<C0Function>::new();
+    let mut functions = Vec::<ImportedFunction>::new();
     let mut by_name = BTreeMap::<String, (usize, &str)>::new();
     let mut layouts = BTreeMap::new();
     let mut layout_sources = BTreeMap::<&str, &str>::new();

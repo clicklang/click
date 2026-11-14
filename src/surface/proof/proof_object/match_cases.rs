@@ -1177,15 +1177,17 @@ impl<'a> Proof<'a> {
                     );
                     ContractExpression::Binding(name.clone())
                 }
-                Sort::ProgramObjectPointer(c_type, class) => {
+                Sort::ProgramObjectPointer(interface_type, class) => {
                     ContractExpression::ProgramExpression(ProgramExpression::Value(
-                        crate::kernel::symbolic_call_result(c_type, variable)
+                        crate::kernel::symbolic_call_result(interface_type, variable)
                             .with_pointer_object_class(Some(class)),
                     ))
                 }
-                Sort::ProgramPointer(c_type) => ContractExpression::ProgramExpression(
-                    ProgramExpression::Value(crate::kernel::symbolic_call_result(c_type, variable)),
-                ),
+                Sort::ProgramPointer(interface_type) => {
+                    ContractExpression::ProgramExpression(ProgramExpression::Value(
+                        crate::kernel::symbolic_call_result(interface_type, variable),
+                    ))
+                }
                 Sort::ProgramInt32 => {
                     ContractExpression::ProgramExpression(ProgramExpression::Value(
                         crate::kernel::symbolic_call_result(ProgramType::Int32, variable),

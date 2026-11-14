@@ -121,7 +121,7 @@ impl ScalarReferenceSourcePlan {
         else {
             return Err(loans::LoanRefusal::InvalidEvidence);
         };
-        if parent.pointer() != child.pointer() || parent.c_type() != child.c_type() {
+        if parent.pointer() != child.pointer() || parent.program_type() != child.program_type() {
             return Err(loans::LoanRefusal::InvalidEvidence);
         }
         let mut state = after.clone();

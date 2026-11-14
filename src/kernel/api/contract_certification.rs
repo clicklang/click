@@ -64,13 +64,13 @@ pub(crate) fn contract_resource_condition_cases(
             .zip(resource_arguments.iter())
         {
             let value = value.as_program_value()?;
-            if parameter.c_type() != value.c_type() {
+            if parameter.program_type() != value.program_type() {
                 return None;
             }
             condition_state.locals.set_typed(
                 parameter.name().to_string(),
                 value.clone(),
-                parameter.c_type(),
+                parameter.program_type(),
             );
         }
         let lowering_assumptions = assumptions
@@ -1378,7 +1378,7 @@ fn program_function_contract_entry_facts(
                 return Err("slice entry length is not a native unsigned value".into());
             };
             let width = parameter
-                .c_type()
+                .program_type()
                 .pointee_type()
                 .expect("slice pointer")
                 .byte_width();

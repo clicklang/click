@@ -2258,7 +2258,7 @@ fn current_index(base: &str, index: u32) -> ContractExpression {
 #[test]
 fn contract_substitution_renames_colliding_logical_binders() {
     let proposition = ClickProposition::ForAll {
-        click_type: ClickType::Program(C0Type::Int32),
+        click_type: ClickType::Program(InterfaceType::Int32),
         name: "i".to_string(),
         written_name: None,
         body: Box::new(ClickProposition::Comparison {
@@ -2308,7 +2308,7 @@ fn contract_substitution_renames_colliding_range_fold_and_let_binders() {
     };
     let let_expression = ContractExpression::Let {
         name: "i".to_string(),
-        click_type: Some(ClickType::Program(C0Type::Int32)),
+        click_type: Some(ClickType::Program(InterfaceType::Int32)),
         value: Box::new(current_int(0)),
         body: Box::new(ContractExpression::Add(
             Box::new(current_var("argument")),

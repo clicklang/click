@@ -11,7 +11,7 @@ fn shared_scalar_sources_keep_identity_and_branch_locality() {
     let mut query_work = None;
     for size in [8, 32, 96] {
         let mut root = KernelTerm::variable(
-            KernelType::Program(MachineIntegerType::Int32.c_type()),
+            KernelType::Program(MachineIntegerType::Int32.program_type()),
             Variable(991701),
         );
         for _ in 0..size {

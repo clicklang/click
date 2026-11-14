@@ -107,7 +107,7 @@ pub(super) fn matched_resource_instance_case_read_projection(
                 None,
                 AlgebraicValue::Program(value),
             ) => {
-                let ty = value.c_type();
+                let ty = value.program_type();
                 evaluation.locals.set_typed(name.clone(), value.clone(), ty);
             }
             (AlgebraicValueType::Integer, Some(variable), AlgebraicValue::Integer(value)) => {
@@ -404,13 +404,13 @@ pub(super) fn selected_instance_resource_load_values(
             let mut evaluation = ExecutionState::new().with_memory(state.memory().clone());
             for (parameter, argument) in definition.parameters.iter().zip(instance.arguments()) {
                 let value = argument.as_program_value()?;
-                if value.c_type() != parameter.c_type() {
+                if value.program_type() != parameter.program_type() {
                     return None;
                 }
                 evaluation.locals.set_typed(
                     parameter.name().to_owned(),
                     value.clone(),
-                    parameter.c_type(),
+                    parameter.program_type(),
                 );
             }
             Some(evaluation)
@@ -424,7 +424,7 @@ pub(super) fn selected_instance_resource_load_values(
             if let AlgebraicValue::Program(value) = field {
                 evaluation
                     .locals
-                    .set_typed(name.clone(), value.clone(), value.c_type());
+                    .set_typed(name.clone(), value.clone(), value.program_type());
             }
         }
         let mut budget = ExecutionBudget::beside_live_state();
@@ -939,20 +939,20 @@ pub(in crate::kernel) fn instance_body_evaluation(
         if let AlgebraicValue::Program(value) = value {
             evaluation
                 .locals
-                .bind_logical_typed(name.clone(), value.clone(), value.c_type());
+                .bind_logical_typed(name.clone(), value.clone(), value.program_type());
         }
     }
     for (parameter, value) in definition.parameters.iter().zip(instance.arguments.iter()) {
         let value = value
             .as_program_value()
             .ok_or("resource argument is not a C value")?;
-        if value.c_type() != parameter.c_type() {
+        if value.program_type() != parameter.program_type() {
             return Err("resource argument type mismatch");
         }
         evaluation.locals.bind_logical_typed(
             parameter.name().to_owned(),
             value.clone(),
-            parameter.c_type(),
+            parameter.program_type(),
         );
     }
     Ok(evaluation)

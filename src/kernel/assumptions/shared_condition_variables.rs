@@ -62,7 +62,7 @@ impl Index {
                         }
                         MachineOperandView::Legacy(MachineTerm::Variable(variable)) => {
                             KernelTerm::variable(
-                                KernelType::Program(value.ty().c_type()),
+                                KernelType::Program(value.ty().program_type()),
                                 *variable,
                             )
                         }

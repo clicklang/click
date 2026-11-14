@@ -110,7 +110,8 @@ fn mixed_read_mismatch_keeps_large_shared_operands_unexported() {
     for depth in [16, 64, 256] {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(1007350));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1007350));
         for _ in 0..depth {
             root =
                 KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [root.clone(), root]);

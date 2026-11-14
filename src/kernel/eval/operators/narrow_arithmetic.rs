@@ -33,7 +33,8 @@ pub(in crate::kernel) fn narrow_operand(
         | ProgramValue::UInt8(term)
         | ProgramValue::Int16(term)
         | ProgramValue::UInt16(term) => {
-            (MachineIntegerType::from_c_type(value.c_type()) == Some(format)).then(|| term.clone())
+            (MachineIntegerType::from_program_type(value.program_type()) == Some(format))
+                .then(|| term.clone())
         }
         ProgramValue::Int32(int32_constant!(bits)) => {
             let value = num_bigint::BigInt::from(constant_u32(*bits) as i32);

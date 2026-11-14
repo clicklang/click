@@ -20,7 +20,8 @@ pub(in crate::surface::proof) fn explicit_loop_preservation_tactics(
 pub(in crate::surface::proof) struct ExecutionProofEnvironment<'a> {
     pub(in crate::surface::proof) initial_state: &'a ExecutionState,
     pub(in crate::surface::proof) function_block: &'a FunctionBlock,
-    pub(in crate::surface::proof) parsed_function: &'a syntax::C0Function,
+    pub(in crate::surface::proof) parsed_function:
+        &'a crate::languages::interface::ImportedFunction,
     pub(in crate::surface::proof) function_environment: &'a ExecutionEnvironment,
     pub(in crate::surface::proof) spec_definitions: SpecDefinitions<'a>,
     pub(in crate::surface::proof) resource_environment: &'a ResourceEnvironment,

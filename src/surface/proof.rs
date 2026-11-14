@@ -641,7 +641,7 @@ mod certificate_tests {
         )
         .expect("theorem should parse");
         let predicate_environment = PredicateEnvironment::new(file.predicate_definitions())
-            .with_contracts(file.contract_definitions(), &file.c_function_names);
+            .with_contracts(file.contract_definitions(), &file.program_function_names);
         let click_function_environment =
             ClickFunctionEnvironment::new(file.click_function_definitions());
         let spec_definitions =
@@ -748,7 +748,7 @@ mod certificate_tests {
         )
         .expect("theorems should parse");
         let predicate_environment = PredicateEnvironment::new(file.predicate_definitions())
-            .with_contracts(file.contract_definitions(), &file.c_function_names);
+            .with_contracts(file.contract_definitions(), &file.program_function_names);
         let click_function_environment =
             ClickFunctionEnvironment::new(file.click_function_definitions());
 
@@ -1861,7 +1861,7 @@ pub(super) struct InitialClaimContext {
 
 pub(super) fn initial_claim_context(
     function_block: &FunctionBlock,
-    parsed_function: &syntax::C0Function,
+    parsed_function: &crate::languages::interface::ImportedFunction,
     resource_environment: &ResourceEnvironment,
     spec_definitions: SpecDefinitions<'_>,
     claim_label: &str,
@@ -1915,7 +1915,7 @@ fn bool_range_surface(name: &str) -> ClickProposition {
 
 pub(super) fn initial_claim_context_with_caller_owner(
     function_block: &FunctionBlock,
-    parsed_function: &syntax::C0Function,
+    parsed_function: &crate::languages::interface::ImportedFunction,
     resource_environment: &ResourceEnvironment,
     spec_definitions: SpecDefinitions<'_>,
     claim_label: &str,
@@ -2106,7 +2106,12 @@ pub(super) fn initial_claim_context_with_caller_owner(
         .parameters()
         .iter()
         .zip(&arguments)
-        .filter(|(parameter, _)| matches!(parameter.c_type(), syntax::C0Type::Bool))
+        .filter(|(parameter, _)| {
+            matches!(
+                parameter.interface_type(),
+                crate::languages::interface::InterfaceType::Bool
+            )
+        })
         .filter_map(|(parameter, argument)| match argument {
             ProgramExpression::Value(value) => crate::kernel::program_bool_cast_range_facts(value)
                 .and_then(|facts| facts.last().cloned())
@@ -2480,7 +2485,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
 /// memory the function may change can differ between the two.
 fn refuse_overlapping_returned_places(
     function_block: &FunctionBlock,
-    parsed_function: &syntax::C0Function,
+    parsed_function: &crate::languages::interface::ImportedFunction,
     state: &ExecutionState,
     arguments: &[ProgramExpression],
     assumptions: &crate::kernel::PureFactContext,
@@ -2620,7 +2625,7 @@ fn collect_conjunctive_loadability_segments(
 
 fn explicit_entry_loadability_facts(
     function_block: &FunctionBlock,
-    parsed_function: &syntax::C0Function,
+    parsed_function: &crate::languages::interface::ImportedFunction,
     arguments: &[ProgramExpression],
     state: &ExecutionState,
     spec_definitions: SpecDefinitions<'_>,
@@ -2683,7 +2688,7 @@ fn explicit_entry_loadability_facts(
 #[allow(clippy::too_many_arguments)]
 fn evaluate_entry_resource_context(
     function_block: &FunctionBlock,
-    parsed_function: &syntax::C0Function,
+    parsed_function: &crate::languages::interface::ImportedFunction,
     resource_environment: &ResourceEnvironment,
     spec_definitions: SpecDefinitions<'_>,
     state: ExecutionState,
@@ -2993,7 +2998,7 @@ pub(super) fn prove_claim_by_implicit_tail(
     expansion_capture: Option<&mut ExpansionCapture>,
     source_path: &str,
     function_block: &FunctionBlock,
-    parsed_function: &syntax::C0Function,
+    parsed_function: &crate::languages::interface::ImportedFunction,
     claim: &FunctionClaimRef<'_>,
     claim_label: &str,
     function_environment: &ExecutionEnvironment,
@@ -3031,7 +3036,7 @@ pub(super) fn prove_claim_by_solve(
     expansion_capture: Option<&mut ExpansionCapture>,
     source_path: &str,
     function_block: &FunctionBlock,
-    parsed_function: &syntax::C0Function,
+    parsed_function: &crate::languages::interface::ImportedFunction,
     claim: &FunctionClaimRef<'_>,
     claim_label: &str,
     function_environment: &ExecutionEnvironment,
@@ -3075,7 +3080,7 @@ pub(super) fn prove_claim_by_script(
     expansion_capture: Option<&mut ExpansionCapture>,
     source_path: &str,
     function_block: &FunctionBlock,
-    parsed_function: &syntax::C0Function,
+    parsed_function: &crate::languages::interface::ImportedFunction,
     claim: &FunctionClaimRef<'_>,
     claim_label: &str,
     function_environment: &ExecutionEnvironment,

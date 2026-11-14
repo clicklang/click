@@ -16,7 +16,7 @@ fn bits(value: &KernelTerm) -> Option<u64> {
     let KernelType::Program(ty) = value.ty() else {
         return None;
     };
-    let format = MachineIntegerType::from_c_type(*ty)?;
+    let format = MachineIntegerType::from_program_type(*ty)?;
     let view = MachineOperandView::Shared(value);
     if format.format().bits() == 32 {
         view.literal()?.constant32().map(u64::from)
@@ -64,7 +64,7 @@ fn promote(
     if source == target {
         Some(root)
     } else {
-        cast(&root.into(), target.c_type())
+        cast(&root.into(), target.program_type())
     }
 }
 

@@ -407,7 +407,7 @@ fn checked_surface_comparison_fact_in_state_with_availability(
     let parameter_names = parameter_binding
         .parameters
         .iter()
-        .map(syntax::C0Parameter::name)
+        .map(crate::languages::interface::ImportedParameter::name)
         .collect::<BTreeSet<_>>();
     for surface in &recorded_surfaces {
         if matches!(

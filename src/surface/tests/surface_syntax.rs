@@ -4,7 +4,7 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_00")]
 fn integer_parameter_preserves_machine_literal_and_cast_behavior() {
-    for (c_type, expression) in [
+    for (interface_type, expression) in [
         ("int32", "-2147483648"),
         ("int64", "2147483648"),
         ("int64", "-2147483649"),
@@ -15,7 +15,7 @@ fn integer_parameter_preserves_machine_literal_and_cast_behavior() {
     ] {
         for extra in ["", ", unused: Integer"] {
             let source = format!(
-                "theorem compatibility(x: {c_type}{extra}) {{
+                "theorem compatibility(x: {interface_type}{extra}) {{
                     requires x == {expression};
                     ensures x == {expression} by {{ assumption(); }}
                 }}"
@@ -215,7 +215,11 @@ fn parser_deep_const_preserves_supported_pointer_qualifier_levels() {
         let function =
             syntax::parse_function(&c_source).expect("C must accept the same qualifiers");
         let program_parameter = &function.parameters()[0];
-        assert_eq!(parameter.c_type(), program_parameter.c_type(), "{spelling}");
+        assert_eq!(
+            parameter.interface_type(),
+            program_parameter.interface_type(),
+            "{spelling}"
+        );
         assert_eq!(
             parameter.is_constant(),
             program_parameter.is_constant(),
@@ -265,8 +269,8 @@ fn plain_char_needs_a_c_target_and_takes_its_signedness() {
         )
         .unwrap();
         assert_eq!(
-            file.function_blocks()[0].signature().parameters()[0].c_type(),
-            C0Type::Char(plain)
+            file.function_blocks()[0].signature().parameters()[0].interface_type(),
+            InterfaceType::Char(plain)
         );
     }
     // A character constant at 0x80 or above is the target's plain `char`
@@ -288,31 +292,31 @@ fn parser_plain_char_sidecars_preserve_source_compatibility() {
     let signature = file.function_blocks()[0].signature();
     // A sidecar's plain `char` takes the default target's signedness.
     let plain = crate::languages::c::target::CTarget::SUPPORTED.plain_char();
-    assert_eq!(signature.return_type(), C0Type::CharPointer(plain));
+    assert_eq!(signature.return_type(), InterfaceType::CharPointer(plain));
     assert_eq!(
         signature
             .parameters()
             .iter()
-            .map(FunctionParameter::c_type)
+            .map(FunctionParameter::interface_type)
             .collect::<Vec<_>>(),
         vec![
-            C0Type::CharPointer(plain),
-            C0Type::UInt8Pointer,
-            C0Type::CharPointer(plain),
-            C0Type::CharPointerPointer(plain)
+            InterfaceType::CharPointer(plain),
+            InterfaceType::UInt8Pointer,
+            InterfaceType::CharPointer(plain),
+            InterfaceType::CharPointerPointer(plain)
         ]
     );
     assert!(!click_types_compatible(
-        C0Type::CharPointer(plain),
-        C0Type::UInt8Pointer
+        InterfaceType::CharPointer(plain),
+        InterfaceType::UInt8Pointer
     ));
     assert!(!click_types_compatible(
-        C0Type::CharPointerPointer(plain),
-        C0Type::UInt8PointerPointer
+        InterfaceType::CharPointerPointer(plain),
+        InterfaceType::UInt8PointerPointer
     ));
     assert!(click_types_compatible(
-        C0Type::CharArray(plain, 2),
-        C0Type::CharPointer(plain)
+        InterfaceType::CharArray(plain, 2),
+        InterfaceType::CharPointer(plain)
     ));
 }
 
@@ -364,20 +368,20 @@ fn parser_accepts_standard_c_type_spellings_in_sidecars() {
 
     assert_eq!(
         file.function_blocks()[0].signature().return_type(),
-        C0Type::Int32
+        InterfaceType::Int32
     );
     assert_eq!(
         file.function_blocks()[0]
             .signature()
             .parameters()
             .iter()
-            .map(FunctionParameter::c_type)
+            .map(FunctionParameter::interface_type)
             .collect::<Vec<_>>(),
         vec![
-            C0Type::Int32Pointer,
-            C0Type::UInt8,
-            C0Type::Int32,
-            C0Type::UInt8,
+            InterfaceType::Int32Pointer,
+            InterfaceType::UInt8,
+            InterfaceType::Int32,
+            InterfaceType::UInt8,
         ]
     );
 }
@@ -888,12 +892,12 @@ fn parses_checked_signature_and_contract_clauses() {
     assert_eq!(file.verifying_sources(), &["fill3.c".to_string()]);
     assert_eq!(file.function_blocks().len(), 1);
     let function = &file.function_blocks()[0];
-    assert_eq!(function.signature().return_type(), C0Type::Int32);
+    assert_eq!(function.signature().return_type(), InterfaceType::Int32);
     assert_eq!(function.signature().name(), "fill3");
     assert_eq!(
         function.signature().parameters(),
         &[FunctionParameter {
-            click_type: ClickType::Program(C0Type::Int32Pointer),
+            click_type: ClickType::Program(InterfaceType::Int32Pointer),
             name: "p".to_string(),
             struct_name: None,
             function_pointer_signature: None,
@@ -960,7 +964,7 @@ fn parses_void_c_function_contracts_without_a_result_binding() {
     let file = parse(source).expect("void C contracts should parse");
     assert_eq!(
         file.function_blocks()[0].signature().return_type(),
-        C0Type::Void
+        InterfaceType::Void
     );
 
     let error = verify_c_sources(
@@ -997,7 +1001,7 @@ fn parses_pure_theorem_definition() {
     assert_eq!(
         theorem.parameters(),
         &[FunctionParameter {
-            click_type: ClickType::Program(C0Type::Int32),
+            click_type: ClickType::Program(InterfaceType::Int32),
             name: "x".to_string(),
             struct_name: None,
             function_pointer_signature: None,
@@ -1052,14 +1056,23 @@ fn parses_c_function_pointer_type_in_pure_theorem_parameter() {
 
     let file = parse(source).expect("function-pointer theorem parameter should parse");
     let parameter = &file.theorem_definitions()[0].parameters()[0];
-    assert!(matches!(parameter.c_type(), C0Type::FunctionPointer(_)));
+    assert!(matches!(
+        parameter.interface_type(),
+        InterfaceType::FunctionPointer(_)
+    ));
     let signature = parameter
         .function_pointer_signature()
         .expect("the parameter should retain its nominal signature");
-    assert_eq!(signature.return_type(), C0Type::Int32);
+    assert_eq!(signature.return_type(), InterfaceType::Int32);
     assert_eq!(signature.parameters().len(), 2);
-    assert_eq!(signature.parameters()[0].c_type(), C0Type::Int32);
-    assert_eq!(signature.parameters()[1].c_type(), C0Type::Int32Pointer);
+    assert_eq!(
+        signature.parameters()[0].interface_type(),
+        InterfaceType::Int32
+    );
+    assert_eq!(
+        signature.parameters()[1].interface_type(),
+        InterfaceType::Int32Pointer
+    );
     assert_eq!(signature.parameters()[1].struct_name(), Some("item"));
 }
 
@@ -2805,7 +2818,7 @@ fn proof_source_printing_preserves_proposition_precedence() {
     );
 
     let quantified = ClickProposition::ForAll {
-        click_type: ClickType::Program(C0Type::Int32),
+        click_type: ClickType::Program(InterfaceType::Int32),
         name: "k".to_string(),
         written_name: None,
         body: Box::new(ClickProposition::Implies(
@@ -3397,7 +3410,7 @@ fn parses_resource_relation_propositions() {
             kind: ResourceKind::Composite,
             parameter_types,
             ..
-        } if parameter_types == &[C0Type::Int32Pointer, C0Type::Int32]
+        } if parameter_types == &[InterfaceType::Int32Pointer, InterfaceType::Int32]
     ));
 }
 
@@ -3456,7 +3469,7 @@ fn restricted_solve_premises_retain_declared_resource_argument_types() {
         ClickProposition::Separate {
             left: ResourceSubject::Declared { parameter_types, .. },
             ..
-        } if parameter_types == &[C0Type::Int32Pointer]
+        } if parameter_types == &[InterfaceType::Int32Pointer]
     ));
 }
 
@@ -3505,7 +3518,7 @@ fn transport_using_retains_declared_resource_argument_types() {
             ClickProposition::Contains {
                 parent: ResourceSubject::Declared { parameter_types, .. },
                 ..
-            } if parameter_types == &[C0Type::Int32Pointer]
+            } if parameter_types == &[InterfaceType::Int32Pointer]
         ));
     }
 }
@@ -3549,7 +3562,7 @@ fn parses_array_parameter_signature_as_pointer() {
     assert_eq!(
         function.signature().parameters(),
         &[FunctionParameter {
-            click_type: ClickType::Program(C0Type::Int32Pointer),
+            click_type: ClickType::Program(InterfaceType::Int32Pointer),
             name: "p".to_string(),
             struct_name: None,
             function_pointer_signature: None,
@@ -3574,11 +3587,11 @@ fn parses_pilot_struct_pointer_signature_and_field_load() {
     let file = parse(source).expect("pilot struct pointer signature should parse");
     let function = &file.function_blocks()[0];
 
-    assert_eq!(function.signature().return_type(), C0Type::Int32);
+    assert_eq!(function.signature().return_type(), InterfaceType::Int32);
     assert_eq!(
         function.signature().parameters(),
         &[FunctionParameter {
-            click_type: ClickType::Program(C0Type::Int32Pointer),
+            click_type: ClickType::Program(InterfaceType::Int32Pointer),
             name: "obj".to_string(),
             struct_name: Some("json_object".to_string()),
             function_pointer_signature: None,
@@ -5321,7 +5334,7 @@ fn inline_callback_identity_rejects_ambiguous_translation_units() {
         ("beta.c", "static inline int callback(void) { return 2; }"),
     ];
     let file = parse_click_file_with_c_sources(source, &inputs).unwrap();
-    assert!(!file.c_function_names.contains_key("callback"));
+    assert!(!file.program_function_names.contains_key("callback"));
     let error = verify_c_sources(source, &inputs).unwrap_err();
     assert!(
         error
@@ -5579,7 +5592,9 @@ trait shapes::Scale<i32> { fn scale(&self, x: i32) -> i32 { requires 0 <= x; ens
     assert!(generic.signature().has_abstract_types());
     assert_eq!(
         generic.signature().return_type(),
-        syntax::C0Type::Parameter(crate::kernel::TypeParameterName::intern("T"))
+        crate::languages::interface::InterfaceType::Parameter(
+            crate::kernel::TypeParameterName::intern("T")
+        )
     );
     let unused = parser::parse(
         "verifying \"shapes.rs\"; trait shapes::Scale<T> { fn scale(&self, x: T) -> T { ensures result != x; } }",
@@ -5667,10 +5682,10 @@ fn a_rust_trait_function_is_its_object_field() {
             parser::ProgramLayouts {
                 struct_layouts: [(
                     "__rust_q_I6_shapes_I6_Square".to_string(),
-                    crate::languages::c::syntax::C0StructLayout::from_explicit_fields(
+                    crate::languages::interface::RecordLayout::from_explicit_fields(
                         vec![(
                             "side".into(),
-                            crate::languages::c::syntax::C0Type::Int32,
+                            crate::languages::interface::InterfaceType::Int32,
                             0,
                             4,
                         )],
@@ -5755,8 +5770,9 @@ fn a_cpp_class_function_is_its_object_field() {
         extern int Shape::area(int scale) const { ensures result == size(this) + scale; } \
         int total(const Shape& shape, int scale) { ensures result == size(shape) + scale; } \
         class Square : Shape { function size(this) -> int32 { this->side } }";
-    use crate::languages::c::syntax::{C0StructLayout, C0Type};
-    let layout = |fields, size| C0StructLayout::from_explicit_fields(fields, size, 8).unwrap();
+    use crate::languages::interface::{InterfaceType, RecordLayout};
+
+    let layout = |fields, size| RecordLayout::from_explicit_fields(fields, size, 8).unwrap();
     let parse = |source: &str| {
         parser::parse_with_layouts_and_aggregate_objects(
             source,
@@ -5768,7 +5784,7 @@ fn a_cpp_class_function_is_its_object_field() {
                     ("Shape".to_string(), layout(vec![], 8)),
                     (
                         "Square".to_string(),
-                        layout(vec![("side".into(), C0Type::Int32, 8, 4)], 16),
+                        layout(vec![("side".into(), InterfaceType::Int32, 8, 4)], 16),
                     ),
                 ]
                 .into(),
@@ -6212,7 +6228,7 @@ fn local_storage_and_resource_stars_have_round_tripping_spellings() {
         ExecutionState::new(),
         crate::kernel::ProgramStatement::Declare {
             name: "i".into(),
-            c_type: ProgramType::Int32,
+            program_type: ProgramType::Int32,
             volatile: false,
             pointee_volatile: false,
             constant: false,

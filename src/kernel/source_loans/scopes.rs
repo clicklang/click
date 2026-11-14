@@ -104,19 +104,19 @@ impl ScalarReferenceScope {
             let (ty, slot) = match binding {
                 LocalBinding::Object {
                     storage_declared: true,
-                    c_type,
+                    program_type,
                     slot,
                     volatile: false,
                     constant: false,
                     ..
                 }
                 | LocalBinding::UninitializedObject {
-                    c_type,
+                    program_type,
                     slot,
                     volatile: false,
                     constant: false,
                     ..
-                } => (*c_type, slot.clone()),
+                } => (*program_type, slot.clone()),
                 _ => return Err(loans::LoanRefusal::UnsupportedResource),
             };
             if !ty.is_pointer()

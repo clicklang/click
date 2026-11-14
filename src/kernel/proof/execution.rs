@@ -1400,7 +1400,7 @@ fn cell_value_is_exactly_load(value: &ProgramValue, load: &MachineTerm) -> bool 
             )
         }
         ProgramValue::Pointer(pointer) => {
-            value == &crate::kernel::cell_run_value(pointer.c_type(), load.clone())
+            value == &crate::kernel::cell_run_value(pointer.program_type(), load.clone())
         }
         _ => false,
     }
@@ -1685,13 +1685,13 @@ impl CheckedResourceRewrite {
             let value = argument
                 .as_program_value()
                 .ok_or("authority control requires C arguments")?;
-            if value.c_type() != parameter.c_type() {
+            if value.program_type() != parameter.program_type() {
                 return Err("authority control argument type mismatch".into());
             }
             evaluation.locals.set_typed(
                 parameter.name().to_string(),
                 value.clone(),
-                parameter.c_type(),
+                parameter.program_type(),
             );
         }
         let mut evaluation_assumptions = assumptions.clone();

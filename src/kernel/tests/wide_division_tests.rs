@@ -111,7 +111,7 @@ fn wide_division_signed_constants_match_exact_oracle_and_native_failures() {
                     let ExpressionOutcome::Value(value) = outcome else {
                         panic!("{outcome:?}")
                     };
-                    assert_eq!(value.c_type(), ProgramType::Int128);
+                    assert_eq!(value.program_type(), ProgramType::Int128);
                     assert_eq!(
                         MachineIntegerType::Int128
                             .constant_from_value(&value)
@@ -144,7 +144,7 @@ fn wide_division_unsigned_preserves_high_bits_and_format() {
                     let ExpressionOutcome::Value(value) = outcome else {
                         panic!("{outcome:?}")
                     };
-                    assert_eq!(value.c_type(), ProgramType::UInt128);
+                    assert_eq!(value.program_type(), ProgramType::UInt128);
                     assert_eq!(
                         MachineIntegerType::UInt128
                             .constant_from_value(&value)

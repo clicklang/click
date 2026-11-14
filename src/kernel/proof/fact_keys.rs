@@ -114,7 +114,7 @@ pub(crate) fn clear_snapshot_operand_keys() {
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) struct SnapshotBlindPointerValueKey {
-    c_type: ProgramType,
+    program_type: ProgramType,
     address: SnapshotBlindPointerKey,
     designation: SnapshotBlindPointerKey,
     opaque_extent: Option<SnapshotBlindPointerKey>,
@@ -138,7 +138,7 @@ impl SnapshotBlindPointerValueKey {
 
 fn snapshot_blind_pointer_value_key(pointer: &PointerValue) -> SnapshotBlindPointerValueKey {
     SnapshotBlindPointerValueKey {
-        c_type: pointer.c_type(),
+        program_type: pointer.program_type(),
         address: snapshot_blind_pointer_key(pointer.pointer()),
         designation: snapshot_blind_pointer_key(pointer.designation()),
         opaque_extent: if pointer.extent_is_known() {
@@ -627,7 +627,7 @@ pub(in crate::kernel) fn pointer_predicate_selector(proposition: &Proposition) -
         .iter()
         .map(|argument| match argument {
             Term::ProgramValue(ProgramValue::Pointer(pointer)) => Term::ProgramValue(
-                ProgramValue::typed_pointer(crate::kernel::Pointer::null(), pointer.c_type()),
+                ProgramValue::typed_pointer(crate::kernel::Pointer::null(), pointer.program_type()),
             ),
             other => other.clone(),
         })
@@ -868,7 +868,7 @@ enum AlphaProgramValueKey {
     Parameter(Box<AlphaAlgebraicKey>),
     Scalar(ProgramType, AlphaMachineKey),
     Pointer {
-        c_type: ProgramType,
+        program_type: ProgramType,
         pointee_volatile: bool,
         pointee_constant: bool,
         pointer: AlphaPointerKey,
@@ -2158,7 +2158,7 @@ fn alpha_program_value_key_with_bindings<const ALLOW_LOADS: bool>(
             >(term, bindings, next_binder)?))
         }
         ProgramValue::Pointer(pointer) => AlphaProgramValueKey::Pointer {
-            c_type: pointer.c_type(),
+            program_type: pointer.program_type(),
             pointee_volatile: pointer.pointee_volatile(),
             pointee_constant: pointer.pointee_constant(),
             pointer: alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
@@ -2315,7 +2315,7 @@ fn alpha_pure_function_argument_key_with_bindings<const ALLOW_LOADS: bool>(
     Some(match argument {
         PureFunctionArgument::SharedMachine(value) => {
             AlphaPureFunctionArgumentKey::Value(AlphaProgramValueKey::Scalar(
-                value.ty().c_type(),
+                value.ty().program_type(),
                 alpha_machine_key::<ALLOW_LOADS>(value.operand_view(), bindings, next_binder)?,
             ))
         }

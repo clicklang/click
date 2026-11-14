@@ -388,7 +388,7 @@ fn explicit_native_rewrite_equality(
             operand: Box::new(operand.clone()),
             lowered: ProgramExpression::Cast {
                 expression: Box::new(ProgramExpression::Value(int32(0))),
-                target_type: format.c_type(),
+                target_type: format.program_type(),
                 integer_mode: crate::kernel::IntegerCastMode::CConversion,
                 pointee_struct: None,
                 pointee_volatile: false,
@@ -621,7 +621,10 @@ mod tests {
                 IntegerTerm::Machine(
                     SharedMachineIntegerTerm::from_shared(
                         format,
-                        KernelTerm::variable(KernelType::Program(format.c_type()), Variable(id)),
+                        KernelTerm::variable(
+                            KernelType::Program(format.program_type()),
+                            Variable(id),
+                        ),
                     )
                     .unwrap(),
                 )

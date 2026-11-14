@@ -2573,7 +2573,7 @@ fn typed_intro_records_bound_spellings_without_scanning_ambient_facts() {
                 body: Box::new(truth.clone()),
             },
             ClickProposition::ForAll {
-                click_type: ClickType::Program(syntax::C0Type::UInt8),
+                click_type: ClickType::Program(crate::languages::interface::InterfaceType::UInt8),
                 name: "byte".into(),
                 written_name: None,
                 body: Box::new(surface_truth.clone()),
@@ -2877,7 +2877,7 @@ fn cold_theorem_application_ignores_declaration_proof_length() {
         // this same input, while complete explicit application must stay flat.
         let substitution = std::collections::BTreeMap::from([(
             "T".into(),
-            ClickType::Program(syntax::C0Type::Int32).into(),
+            ClickType::Program(crate::languages::interface::InterfaceType::Int32).into(),
         )]);
         let (declaration, proof_work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::surface::generics::instantiate_theorem(

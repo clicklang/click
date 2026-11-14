@@ -167,12 +167,12 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
             )?),
         )),
         ClickProposition::ForAll {
-            click_type: c_type,
+            click_type: interface_type,
             name,
             written_name,
             body,
         } => Ok(ClickProposition::ForAll {
-            click_type: c_type.clone(),
+            click_type: interface_type.clone(),
             name: name.clone(),
             written_name: written_name.clone(),
             body: Box::new(unfold_selected_predicates_in_proposition(
@@ -183,12 +183,12 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
             )?),
         }),
         ClickProposition::Exists {
-            click_type: c_type,
+            click_type: interface_type,
             name,
             written_name,
             body,
         } => Ok(ClickProposition::Exists {
-            click_type: c_type.clone(),
+            click_type: interface_type.clone(),
             name: name.clone(),
             written_name: written_name.clone(),
             body: Box::new(unfold_selected_predicates_in_proposition(
@@ -414,7 +414,7 @@ fn substitute_click_proposition_nonlogical(
             expression: substitute_contract_expression_in(expression, substitutions)?,
         }),
         ClickProposition::ForAll {
-            click_type: c_type,
+            click_type: interface_type,
             name,
             written_name,
             body,
@@ -423,7 +423,7 @@ fn substitute_click_proposition_nonlogical(
             let original_name = name.clone();
             let (name, body) = prepare_click_proposition_binding_body(name, body, &scoped)?;
             Ok(ClickProposition::ForAll {
-                click_type: c_type.clone(),
+                click_type: interface_type.clone(),
                 written_name: written_name
                     .clone()
                     .or_else(|| (name != original_name).then_some(original_name)),
@@ -432,7 +432,7 @@ fn substitute_click_proposition_nonlogical(
             })
         }
         ClickProposition::Exists {
-            click_type: c_type,
+            click_type: interface_type,
             name,
             written_name,
             body,
@@ -441,7 +441,7 @@ fn substitute_click_proposition_nonlogical(
             let original_name = name.clone();
             let (name, body) = prepare_click_proposition_binding_body(name, body, &scoped)?;
             Ok(ClickProposition::Exists {
-                click_type: c_type.clone(),
+                click_type: interface_type.clone(),
                 written_name: written_name
                     .clone()
                     .or_else(|| (name != original_name).then_some(original_name)),
@@ -1289,13 +1289,13 @@ fn rewrite_click_proposition_expression(
             (ClickProposition::Not(Box::new(body)), changed)
         }
         ClickProposition::ForAll {
-            click_type: c_type,
+            click_type: interface_type,
             name,
             body,
             ..
         }
         | ClickProposition::Exists {
-            click_type: c_type,
+            click_type: interface_type,
             name,
             body,
             ..
@@ -1303,13 +1303,13 @@ fn rewrite_click_proposition_expression(
             let (body, changed) = rewrite_proposition(body);
             let rewritten = match proposition {
                 ClickProposition::ForAll { .. } => ClickProposition::ForAll {
-                    click_type: c_type.clone(),
+                    click_type: interface_type.clone(),
                     name: name.clone(),
                     written_name: proposition.written_quantifier_name().map(str::to_string),
                     body: Box::new(body),
                 },
                 ClickProposition::Exists { .. } => ClickProposition::Exists {
-                    click_type: c_type.clone(),
+                    click_type: interface_type.clone(),
                     name: name.clone(),
                     written_name: proposition.written_quantifier_name().map(str::to_string),
                     body: Box::new(body),
@@ -2439,7 +2439,7 @@ fn apply_contract_let_expressions_inner(
             )?),
         )),
         ClickProposition::ForAll {
-            click_type: c_type,
+            click_type: interface_type,
             name,
             written_name,
             body,
@@ -2451,12 +2451,12 @@ fn apply_contract_let_expressions_inner(
                 *body,
                 &scoped,
                 capture_names,
-                c_type == ClickType::Integer,
+                interface_type == ClickType::Integer,
             )?;
             let written_name =
                 written_name.or_else(|| (name != original_name).then_some(original_name));
             Ok(ClickProposition::ForAll {
-                click_type: c_type,
+                click_type: interface_type,
                 name,
                 written_name,
                 body: Box::new(apply_contract_let_expressions_inner(
@@ -2467,7 +2467,7 @@ fn apply_contract_let_expressions_inner(
             })
         }
         ClickProposition::Exists {
-            click_type: c_type,
+            click_type: interface_type,
             name,
             written_name,
             body,
@@ -2479,12 +2479,12 @@ fn apply_contract_let_expressions_inner(
                 *body,
                 &scoped,
                 capture_names,
-                c_type == ClickType::Integer,
+                interface_type == ClickType::Integer,
             )?;
             let written_name =
                 written_name.or_else(|| (name != original_name).then_some(original_name));
             Ok(ClickProposition::Exists {
-                click_type: c_type,
+                click_type: interface_type,
                 name,
                 written_name,
                 body: Box::new(apply_contract_let_expressions_inner(
@@ -2612,14 +2612,14 @@ pub(in crate::surface) fn wrap_contract_where_lets_proposition(
                 binding.name
             ));
         };
-        let ClickType::Program(c_type) = click_type else {
+        let ClickType::Program(interface_type) = click_type else {
             return Err(format!(
                 "`let ... where` `{}` requires a C type annotation",
                 binding.name
             ));
         };
         proposition = ClickProposition::Exists {
-            click_type: ClickType::Program(*c_type),
+            click_type: ClickType::Program(*interface_type),
             name: binding.name.clone(),
             written_name: None,
             body: Box::new(ClickProposition::And(
@@ -3087,7 +3087,10 @@ pub(in crate::surface) fn narrow_typed_arithmetic(
     matches!(
         click_type,
         Some(ClickType::Program(
-            C0Type::Int8 | C0Type::UInt8 | C0Type::Int16 | C0Type::UInt16
+            InterfaceType::Int8
+                | InterfaceType::UInt8
+                | InterfaceType::Int16
+                | InterfaceType::UInt16
         ))
     ) && matches!(
         value,
@@ -3134,10 +3137,10 @@ pub(in crate::surface) struct ContractSubstitutions<'a> {
     instance_renames: Cow<'a, BTreeMap<String, InstanceRename>>,
     /// Whether a scalar field of the resource body being defined is replaced
     /// by the C name the kernel binds it to (see `resource_body_program_expression`).
-    body_fields_as_c_names: bool,
+    body_fields_as_program_names: bool,
     body_field_values: Option<&'a BTreeMap<String, ContractExpression>>,
     contract_result_only: bool,
-    current_c_values: bool,
+    current_program_values: bool,
     // Only the marker finalizer enables this. Its globally fresh targets
     // cannot capture existing names; markers deliberately remain in scope
     // while their binder declarations and occurrences are renamed together.
@@ -3150,10 +3153,10 @@ impl<'a> ContractSubstitutions<'a> {
         Self {
             values: Cow::Borrowed(values),
             instance_renames: Cow::Borrowed(&NO_INSTANCE_RENAMES),
-            body_fields_as_c_names: false,
+            body_fields_as_program_names: false,
             body_field_values: None,
             contract_result_only: false,
-            current_c_values: false,
+            current_program_values: false,
             fresh_synthesis_binders: false,
         }
     }
@@ -3179,7 +3182,7 @@ impl<'a> ContractSubstitutions<'a> {
         values: &'a BTreeMap<String, ContractExpression>,
     ) -> Self {
         Self {
-            current_c_values: true,
+            current_program_values: true,
             ..Self::new(values)
         }
     }
@@ -3192,7 +3195,7 @@ impl<'a> ContractSubstitutions<'a> {
         values: &'a BTreeMap<String, ContractExpression>,
     ) -> Self {
         Self {
-            body_fields_as_c_names: true,
+            body_fields_as_program_names: true,
             ..Self::new(values)
         }
     }
@@ -3206,10 +3209,10 @@ impl<'a> ContractSubstitutions<'a> {
         Self {
             values: Cow::Borrowed(values),
             instance_renames: Cow::Borrowed(instance_renames),
-            body_fields_as_c_names: false,
+            body_fields_as_program_names: false,
             body_field_values: None,
             contract_result_only: false,
-            current_c_values: false,
+            current_program_values: false,
             fresh_synthesis_binders: false,
         }
     }
@@ -3289,10 +3292,10 @@ impl<'a> ContractSubstitutions<'a> {
         ContractSubstitutions {
             values: Cow::Owned(values),
             instance_renames,
-            body_fields_as_c_names: self.body_fields_as_c_names,
+            body_fields_as_program_names: self.body_fields_as_program_names,
             body_field_values: self.body_field_values,
             contract_result_only: self.contract_result_only,
-            current_c_values: self.current_c_values,
+            current_program_values: self.current_program_values,
             fresh_synthesis_binders: self.fresh_synthesis_binders,
         }
     }
@@ -3346,8 +3349,8 @@ pub(in crate::surface) fn pure_function_parameter_scalar_type(
 }
 
 fn pure_function_scalar_type(click_type: &ClickType) -> Option<ProgramType> {
-    let c_type = click_type.c_type()?;
-    let target_type = c_type.to_kernel_type();
+    let interface_type = click_type.interface_type()?;
+    let target_type = interface_type.to_kernel_type();
     if !matches!(
         target_type,
         ProgramType::Bool
@@ -3437,8 +3440,10 @@ pub(in crate::surface) fn pure_function_parameter_argument(
     if target_type == ProgramType::VoidPointer
         && parameter
             .click_type()
-            .c_type()
-            .is_some_and(|c_type| argument_is_null_pointer_constant(argument, c_type))
+            .interface_type()
+            .is_some_and(|interface_type| {
+                argument_is_null_pointer_constant(argument, interface_type)
+            })
     {
         return ContractExpression::ProgramExpression(ProgramExpression::Value(
             ProgramValue::typed_pointer(Pointer::null(), target_type),
@@ -3469,7 +3474,7 @@ pub(in crate::surface) fn pure_function_parameter_argument(
 pub(in crate::surface) fn pure_function_parameter_conversion(
     parameter: &FunctionParameter,
 ) -> Option<(ProgramType, crate::kernel::IntegerCastMode)> {
-    if parameter.click_type().c_type()?.to_kernel_type() == ProgramType::VoidPointer {
+    if parameter.click_type().interface_type()?.to_kernel_type() == ProgramType::VoidPointer {
         Some((
             ProgramType::VoidPointer,
             crate::kernel::IntegerCastMode::PointerCoercion,
@@ -3530,7 +3535,7 @@ pub(in crate::surface) fn character_byte_view_name(
 /// is read needs the explicit [`character_byte_view`]: `expected` is
 /// `uint8` bytes and `actual` is a signed character pointer or array.
 pub(in crate::surface) fn needs_character_byte_view(
-    actual: C0Type,
+    actual: InterfaceType,
     expected: crate::kernel::ProgramType,
 ) -> bool {
     use crate::languages::c::syntax::PlainChar;
@@ -3539,10 +3544,10 @@ pub(in crate::surface) fn needs_character_byte_view(
         crate::kernel::ProgramType::UInt8Pointer | crate::kernel::ProgramType::UInt8Array(_)
     ) && matches!(
         actual,
-        C0Type::CharPointer(PlainChar::Signed)
-            | C0Type::CharArray(PlainChar::Signed, _)
-            | C0Type::Int8Pointer
-            | C0Type::Int8Array(_)
+        InterfaceType::CharPointer(PlainChar::Signed)
+            | InterfaceType::CharArray(PlainChar::Signed, _)
+            | InterfaceType::Int8Pointer
+            | InterfaceType::Int8Array(_)
     )
 }
 
@@ -3555,7 +3560,7 @@ pub(in crate::surface) fn needs_character_byte_view(
 pub(in crate::surface) fn elaborate_character_byte_views(
     proposition: &ClickProposition,
     predicates: &PredicateEnvironment,
-    type_of: &dyn Fn(&str) -> Option<C0Type>,
+    type_of: &dyn Fn(&str) -> Option<InterfaceType>,
 ) -> Option<ClickProposition> {
     match proposition {
         ClickProposition::PredicateCall { name, arguments } => {
@@ -3698,12 +3703,12 @@ fn substitute_contract_expression_node(
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. } => Ok(expression.clone()),
         ContractExpression::Old(_) | ContractExpression::At { .. }
-            if substitutions.current_c_values =>
+            if substitutions.current_program_values =>
         {
             Ok(expression.clone())
         }
         ContractExpression::CUnary { operand, lowered }
-            if substitutions.current_c_values
+            if substitutions.current_program_values
                 && matches!(
                     lowered,
                     ProgramExpression::AddressOf(_) | ProgramExpression::CheckedObjectAddress(_)
@@ -3749,7 +3754,7 @@ fn substitute_contract_expression_node(
             })
         }
         ContractExpression::ResourceField(_)
-            if substitutions.body_fields_as_c_names
+            if substitutions.body_fields_as_program_names
                 && let Some(name) = resource_body_program_expression(expression) =>
         {
             Ok(ContractExpression::ProgramExpression(name))
@@ -4440,7 +4445,7 @@ pub(in crate::surface) fn substitute_program_expression_in(
             )?),
         }),
         ProgramExpression::AddressOf(body) | ProgramExpression::CheckedObjectAddress(body)
-            if substitutions.current_c_values
+            if substitutions.current_program_values
                 && matches!(body.as_ref(), ProgramExpression::Variable(_)) =>
         {
             Ok(expression.clone())
@@ -4723,7 +4728,7 @@ pub(in crate::surface) fn resource_body_program_expression(
             && access
                 .click_type
                 .as_ref()
-                .is_some_and(|click_type| click_type.c_type().is_some()))
+                .is_some_and(|click_type| click_type.interface_type().is_some()))
         .then(|| ProgramExpression::Variable(access.field.clone()))
     })
 }

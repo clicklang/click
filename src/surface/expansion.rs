@@ -4557,10 +4557,9 @@ fn source_tactic_entries(
         }
         let source = declarations.theorem(theorem)?;
         let kernel_axiom_name = proof::is_kernel_standard_theorem_name(theorem.name())
-            && theorem
-                .parameters()
-                .iter()
-                .all(|parameter| parameter.click_type() == &ClickType::Program(C0Type::Int32));
+            && theorem.parameters().iter().all(|parameter| {
+                parameter.click_type() == &ClickType::Program(InterfaceType::Int32)
+            });
         for (ensure_index, ensure) in theorem.ensures().iter().enumerate() {
             if kernel_axiom_name
                 && !matches!(

@@ -181,7 +181,7 @@ fn proof_condition_runtime_error(
     context_label: &str,
     error: &crate::kernel::RuntimeError,
     state: &ExecutionState,
-    function: Option<&syntax::C0Function>,
+    function: Option<&crate::languages::interface::ImportedFunction>,
 ) -> ClickError {
     let (parameters, arguments) =
         crate::surface::diagnostics::local_naming_tables_with_source(state, function);
@@ -249,7 +249,7 @@ pub(in crate::surface::proof) fn certified_proof_condition_split(
     branch_statement: &ProgramStatement,
     continuation: Option<&ProgramStatement>,
     context_label: &str,
-    function: Option<&syntax::C0Function>,
+    function: Option<&crate::languages::interface::ImportedFunction>,
 ) -> Result<(CheckedBranchSplit, Vec<CertifiedProofConditionTransition>), ClickError> {
     let split = CheckedBranchSplit::check(
         state.clone(),

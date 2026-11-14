@@ -8,7 +8,7 @@ mod tests;
 struct DeclaredResourceInfo {
     fields: std::sync::Arc<BTreeMap<String, (usize, ClickType)>>,
     field_schema: Option<crate::kernel::ResourceFieldSchema>,
-    parameter_types: Vec<C0Type>,
+    parameter_types: Vec<InterfaceType>,
     resource_parameter_families: Vec<String>,
     kind: ResourceKind,
     has_fields: bool,
@@ -78,7 +78,7 @@ impl DeclaredResourceScope {
     fn expand_arguments(
         &self,
         arguments: Vec<ContractExpression>,
-        parameter_types: &[C0Type],
+        parameter_types: &[InterfaceType],
     ) -> Result<Vec<ContractExpression>, ClickError> {
         let character_parameters = self.character_parameters.borrow();
         arguments
@@ -92,9 +92,10 @@ impl DeclaredResourceScope {
                     _ => None,
                 };
                 match (named, parameter_types.get(index)) {
-                    (Some(name), Some(C0Type::UInt8Pointer | C0Type::UInt8Array(_)))
-                        if character_parameters.contains(name) =>
-                    {
+                    (
+                        Some(name),
+                        Some(InterfaceType::UInt8Pointer | InterfaceType::UInt8Array(_)),
+                    ) if character_parameters.contains(name) => {
                         Ok(crate::surface::lowering::character_byte_view(name))
                     }
                     _ => expand_declared_resource_expression(argument, self),
@@ -767,9 +768,9 @@ fn load_standard_library(modules: &[(&str, &str)]) -> Result<ClickFile, ClickErr
 /// Appends one library module's declarations after the earlier modules', so
 /// the library keeps one declaration order across its files.
 fn append_library_module(file: &mut ClickFile, module: ClickFile) {
-    std::sync::Arc::make_mut(&mut file.c_function_names).extend(
+    std::sync::Arc::make_mut(&mut file.program_function_names).extend(
         module
-            .c_function_names
+            .program_function_names
             .iter()
             .map(|(spelling, name)| (spelling.clone(), name.clone())),
     );
@@ -895,7 +896,7 @@ fn expand_declared_resource_clauses_with_rules(
                         .parameters()
                         .iter()
                         .map(|parameter| {
-                            parameter.click_type().c_type().ok_or_else(|| {
+                            parameter.click_type().interface_type().ok_or_else(|| {
                                 ClickError::new(format!(
                                     "resource `{}` parameter `{}` uses an algebraic type; algebraic resource arguments are not supported yet",
                                     definition.name(),
@@ -932,7 +933,7 @@ fn expand_declared_resource_clauses_with_rules(
             has_fields: false,
             authorized: false,
             resource_parameter_families: Vec::new(),
-            parameter_types: vec![C0Type::Int32Pointer, C0Type::Int32],
+            parameter_types: vec![InterfaceType::Int32Pointer, InterfaceType::Int32],
             kind: ResourceKind::Token,
             child_slots: Default::default(),
             arm_child_slots: Default::default(),
@@ -945,7 +946,7 @@ fn expand_declared_resource_clauses_with_rules(
             has_fields: false,
             authorized: false,
             resource_parameter_families: Vec::new(),
-            parameter_types: vec![C0Type::VoidPointer],
+            parameter_types: vec![InterfaceType::VoidPointer],
             kind: ResourceKind::Token,
             child_slots: Default::default(),
             arm_child_slots: Default::default(),
@@ -959,7 +960,7 @@ fn expand_declared_resource_clauses_with_rules(
             has_fields: false,
             authorized: false,
             resource_parameter_families: Vec::new(),
-            parameter_types: vec![C0Type::VoidPointer],
+            parameter_types: vec![InterfaceType::VoidPointer],
             kind: ResourceKind::Token,
             child_slots: Default::default(),
             arm_child_slots: Default::default(),
@@ -973,7 +974,7 @@ fn expand_declared_resource_clauses_with_rules(
             has_fields: false,
             authorized: false,
             resource_parameter_families: Vec::new(),
-            parameter_types: vec![C0Type::VoidPointer],
+            parameter_types: vec![InterfaceType::VoidPointer],
             kind: ResourceKind::Token,
             child_slots: Default::default(),
             arm_child_slots: Default::default(),
@@ -988,7 +989,7 @@ fn expand_declared_resource_clauses_with_rules(
                 has_fields: false,
                 authorized: false,
                 resource_parameter_families: Vec::new(),
-                parameter_types: vec![C0Type::VoidPointer],
+                parameter_types: vec![InterfaceType::VoidPointer],
                 kind: ResourceKind::Token,
                 child_slots: Default::default(),
                 arm_child_slots: Default::default(),
@@ -1195,7 +1196,7 @@ fn expand_declared_resources_in_function_block(
     resource_definitions.constructors.enter_declaration(
         declaration_parameter_types(function.signature().parameters())
             .chain(
-                (function.signature().return_type() != C0Type::Void).then(|| {
+                (function.signature().return_type() != InterfaceType::Void).then(|| {
                     (
                         "result".to_string(),
                         ClickType::Program(function.signature().return_type()),
@@ -1211,7 +1212,7 @@ fn expand_declared_resources_in_function_block(
         .iter()
         .filter(|parameter| {
             crate::surface::lowering::needs_character_byte_view(
-                parameter.c_type(),
+                parameter.interface_type(),
                 crate::kernel::ProgramType::UInt8Pointer,
             )
         })
@@ -2947,9 +2948,10 @@ fn declared_resource_type_schema(
         .iter()
         .map(|(name, (index, ty))| {
             let ty = match ty {
-                ClickType::Program(ty) | ClickType::CObjectPointer { c_type: ty, .. } => {
-                    crate::kernel::ResourceFieldType::Program(ty.to_kernel_type())
-                }
+                ClickType::Program(ty)
+                | ClickType::CObjectPointer {
+                    interface_type: ty, ..
+                } => crate::kernel::ResourceFieldType::Program(ty.to_kernel_type()),
                 ClickType::Integer => crate::kernel::ResourceFieldType::Integer,
                 _ => {
                     return Err(ClickError::new(
@@ -3427,12 +3429,12 @@ fn expand_declared_resource_proposition_one(
             )?),
         }),
         ClickProposition::ForAll {
-            click_type: c_type,
+            click_type: interface_type,
             name,
             written_name,
             body,
         } => Ok(ClickProposition::ForAll {
-            click_type: c_type,
+            click_type: interface_type,
             name,
             written_name,
             body: Box::new(expand_declared_resource_proposition(
@@ -3441,12 +3443,12 @@ fn expand_declared_resource_proposition_one(
             )?),
         }),
         ClickProposition::Exists {
-            click_type: c_type,
+            click_type: interface_type,
             name,
             written_name,
             body,
         } => Ok(ClickProposition::Exists {
-            click_type: c_type,
+            click_type: interface_type,
             name,
             written_name,
             body: Box::new(expand_declared_resource_proposition(

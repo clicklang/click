@@ -6289,7 +6289,7 @@ mod shared_range_index_tests {
 
     fn retained_index() -> SharedMachineIntegerTerm {
         let x = KernelTerm::variable(
-            KernelType::Program(MachineIntegerType::Int32.c_type()),
+            KernelType::Program(MachineIntegerType::Int32.program_type()),
             Variable(1018301),
         );
         let one =

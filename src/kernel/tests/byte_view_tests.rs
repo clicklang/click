@@ -448,14 +448,14 @@ fn a_32_bit_read_of_the_other_signedness_is_the_sign_cast_of_the_word() {
                 }
             };
             assert_eq!(
-                read.c_type().read_cell(&cell),
+                read.program_type().read_cell(&cell),
                 Some(read.value_from_term(expected.clone())),
                 "{stored:?} cell read at {read:?}"
             );
             // A load term answered from the cell is the same value: σ of
             // the stored word at the other signedness (R-mem), never the
             // stored word itself.
-            let kind = LoadKind::of_type(read.c_type()).unwrap();
+            let kind = LoadKind::of_type(read.program_type()).unwrap();
             assert_eq!(
                 kind.reads_value(&cell),
                 cast.is_none(),

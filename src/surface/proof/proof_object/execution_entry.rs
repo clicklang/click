@@ -17,7 +17,7 @@ impl<'a> Proof<'a> {
         constants: ExecutionProofConstants,
         function_block: &'a FunctionBlock,
         function: &'a ProgramFunction,
-        parsed_function: &'a syntax::C0Function,
+        parsed_function: &'a crate::languages::interface::ImportedFunction,
         arguments: &'a [ProgramExpression],
         function_environment: &'a ExecutionEnvironment,
         resource_environment: &'a ResourceEnvironment,

@@ -76,7 +76,7 @@ impl ProgramStatement {
             Self::Declare {
                 initializer,
                 name,
-                c_type,
+                program_type,
                 volatile,
                 pointee_volatile,
                 constant,
@@ -86,7 +86,7 @@ impl ProgramStatement {
             } => Self::Declare {
                 initializer: initializer.clone(),
                 name: name.clone(),
-                c_type: *c_type,
+                program_type: *program_type,
                 volatile: *volatile,
                 pointee_volatile: *pointee_volatile,
                 constant: *constant,

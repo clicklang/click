@@ -487,8 +487,8 @@ impl MachineIntegerType {
         }
     }
 
-    pub fn from_c_type(c_type: ProgramType) -> Option<Self> {
-        Some(match c_type {
+    pub fn from_program_type(program_type: ProgramType) -> Option<Self> {
+        Some(match program_type {
             ProgramType::Int8 => Self::Int8,
             ProgramType::Int16 => Self::Int16,
             ProgramType::Int32 => Self::Int32,
@@ -503,7 +503,7 @@ impl MachineIntegerType {
         })
     }
 
-    pub fn c_type(self) -> ProgramType {
+    pub fn program_type(self) -> ProgramType {
         match self {
             Self::Int8 => ProgramType::Int8,
             Self::Int16 => ProgramType::Int16,
@@ -840,7 +840,8 @@ impl SharedMachineIntegerTerm {
 
     /// Retain exact operand identity, including producer and read metadata.
     pub(crate) fn from_shared(ty: MachineIntegerType, term: KernelTerm) -> Option<Self> {
-        if term.ty() != &KernelType::Program(ty.c_type()) || !term.is_shared_machine_operand() {
+        if term.ty() != &KernelType::Program(ty.program_type()) || !term.is_shared_machine_operand()
+        {
             return None;
         }
         crate::instrumentation::record_deterministic_work(1);

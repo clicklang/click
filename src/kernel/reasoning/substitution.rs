@@ -795,7 +795,7 @@ fn walk_execution_state<S: VariableSubstitution + ?Sized>(
                 LocalBinding::Object {
                     storage_declared,
                     value,
-                    c_type,
+                    program_type,
                     slot,
                     volatile,
                     pointee_volatile,
@@ -804,7 +804,7 @@ fn walk_execution_state<S: VariableSubstitution + ?Sized>(
                 } => LocalBinding::Object {
                     storage_declared: *storage_declared,
                     value: s.expression_value(value).into(),
-                    c_type: *c_type,
+                    program_type: *program_type,
                     slot: s.local_slot(slot),
                     volatile: *volatile,
                     pointee_volatile: *pointee_volatile,
@@ -812,14 +812,14 @@ fn walk_execution_state<S: VariableSubstitution + ?Sized>(
                     pointee_constant: *pointee_constant,
                 },
                 LocalBinding::UninitializedObject {
-                    c_type,
+                    program_type,
                     slot,
                     volatile,
                     pointee_volatile,
                     constant,
                     pointee_constant,
                 } => LocalBinding::UninitializedObject {
-                    c_type: *c_type,
+                    program_type: *program_type,
                     slot: s.local_slot(slot),
                     volatile: *volatile,
                     pointee_volatile: *pointee_volatile,
@@ -827,14 +827,14 @@ fn walk_execution_state<S: VariableSubstitution + ?Sized>(
                     pointee_constant: *pointee_constant,
                 },
                 LocalBinding::GlobalObject {
-                    c_type,
+                    program_type,
                     slot,
                     volatile,
                     pointee_volatile,
                     constant,
                     pointee_constant,
                 } => LocalBinding::GlobalObject {
-                    c_type: *c_type,
+                    program_type: *program_type,
                     slot: s.local_slot(slot),
                     volatile: *volatile,
                     pointee_volatile: *pointee_volatile,
@@ -6047,11 +6047,11 @@ fn substitute_bitvector_variable_in_memory_contents(
             memory
                 .union_cells
                 .iter()
-                .map(|((pointer, c_type), value)| {
+                .map(|((pointer, program_type), value)| {
                     (
                         (
                             substitute_bitvector_variable_in_pointer(pointer, from, to),
-                            *c_type,
+                            *program_type,
                         ),
                         substitute_bitvector_variable_in_program_value(value, from, to),
                     )
@@ -6738,11 +6738,11 @@ pub(crate) fn substitute_pointer_variable_in_memory(
             memory
                 .union_cells
                 .iter()
-                .map(|((pointer, c_type), value)| {
+                .map(|((pointer, program_type), value)| {
                     (
                         (
                             substitute_pointer_variable_in_pointer(pointer, from, to),
-                            *c_type,
+                            *program_type,
                         ),
                         substitute_pointer_variable_in_program_value(value, from, to),
                     )
@@ -7570,12 +7570,12 @@ fn substitute_pointer_variable_in_spec_proposition(
         SpecProposition::ForAllPointer {
             name,
             variable,
-            c_type,
+            program_type,
             body,
         } => SpecProposition::ForAllPointer {
             name: name.clone(),
             variable: *variable,
-            c_type: *c_type,
+            program_type: *program_type,
             body: Box::new(substitute_pointer_variable_in_spec_proposition(
                 body, from, to,
             )),
@@ -7631,12 +7631,12 @@ fn substitute_pointer_variable_in_spec_proposition(
         SpecProposition::ExistsPointer {
             name,
             variable,
-            c_type,
+            program_type,
             body,
         } => SpecProposition::ExistsPointer {
             name: name.clone(),
             variable: *variable,
-            c_type: *c_type,
+            program_type: *program_type,
             body: Box::new(substitute_pointer_variable_in_spec_proposition(
                 body, from, to,
             )),

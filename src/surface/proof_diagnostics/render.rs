@@ -112,14 +112,18 @@ fn value_binder(term: &MachineTerm) -> Option<Variable> {
 }
 
 impl SnapshotLabels {
-    pub(crate) fn source_type(&mut self, variable: Variable, c_type: crate::kernel::ProgramType) {
-        self.source_types.insert(variable, c_type);
+    pub(crate) fn source_type(
+        &mut self,
+        variable: Variable,
+        interface_type: crate::kernel::ProgramType,
+    ) {
+        self.source_types.insert(variable, interface_type);
     }
     pub(crate) fn source_value_type(&mut self, value: &crate::kernel::ProgramValue) {
         if let crate::kernel::arithmetic_c_value!(term) = value
             && let MachineTerm::Variable(variable) = widened_word(term)
         {
-            self.source_type(*variable, value.c_type());
+            self.source_type(*variable, value.program_type());
         }
     }
 
@@ -208,7 +212,7 @@ impl SnapshotLabels {
                     crate::surface::diagnostics::rust_variable_spelling(parameter.name())
                         .unwrap_or_else(|| parameter.name().to_string()),
                 );
-                labels.source_types.insert(*variable, value.c_type());
+                labels.source_types.insert(*variable, value.program_type());
             }
         }
         labels.naming = Some(std::sync::Arc::new((
@@ -565,7 +569,7 @@ impl SnapshotLabels {
     pub(crate) fn naming_tables(
         &self,
     ) -> Option<(
-        &[crate::languages::c::syntax::C0Parameter],
+        &[crate::languages::interface::ImportedParameter],
         &[crate::kernel::ProgramExpression],
     )> {
         self.naming
@@ -618,7 +622,7 @@ impl SnapshotLabels {
     pub(crate) fn naming_with_snapshot_values(
         &self,
     ) -> (
-        Vec<crate::languages::c::syntax::C0Parameter>,
+        Vec<crate::languages::interface::ImportedParameter>,
         Vec<crate::kernel::ProgramExpression>,
     ) {
         let (mut parameters, mut arguments) = self
@@ -645,12 +649,12 @@ impl SnapshotLabels {
         &mut self,
         variable: Variable,
         name: String,
-        c_type: crate::kernel::ProgramType,
+        interface_type: crate::kernel::ProgramType,
     ) {
         if let std::collections::hash_map::Entry::Vacant(entry) = self.source_names.entry(variable)
         {
             entry.insert(name);
-            self.source_types.entry(variable).or_insert(c_type);
+            self.source_types.entry(variable).or_insert(interface_type);
         }
     }
 
@@ -898,7 +902,7 @@ pub(crate) fn render_proposition(proposition: &Proposition) -> String {
 }
 
 type NamingTables = (
-    Vec<crate::languages::c::syntax::C0Parameter>,
+    Vec<crate::languages::interface::ImportedParameter>,
     Vec<crate::kernel::ProgramExpression>,
 );
 
@@ -1019,7 +1023,7 @@ pub(crate) fn clear_ambient_naming() {
 /// diagnostic's current-state naming table contains only kernel types.
 pub(in crate::surface) fn ambient_source_parameter(
     name: &str,
-) -> Option<crate::languages::c::syntax::C0Parameter> {
+) -> Option<crate::languages::interface::ImportedParameter> {
     AMBIENT_NAMING.with(|slot| {
         slot.borrow()
             .as_ref()?
@@ -2636,7 +2640,7 @@ impl Renderer<'_> {
                 if self.trace_facts {
                     self.fmt(format_args!(
                         "ptr<{}>(",
-                        crate::kernel::program_type_spelling(p.c_type())
+                        crate::kernel::program_type_spelling(p.program_type())
                     ));
                     self.pointer(p);
                     self.push(")");

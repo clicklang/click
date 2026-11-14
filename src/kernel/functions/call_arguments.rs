@@ -40,7 +40,7 @@ pub(super) fn with_contract_interface_argument_views(
         state.locals.set_typed_with_all_qualifiers(
             parameter.name().to_string(),
             value.clone(),
-            parameter.c_type(),
+            parameter.program_type(),
             parameter.is_volatile(),
             parameter.pointee_is_volatile(),
             parameter.is_constant(),
@@ -48,7 +48,7 @@ pub(super) fn with_contract_interface_argument_views(
         );
         if let ProgramValue::Pointer(pointer) = &value {
             let Some(element_width) = parameter
-                .c_type()
+                .program_type()
                 .pointee_type()
                 .map(ProgramType::byte_width)
             else {
@@ -234,7 +234,7 @@ pub(super) fn freed_pointer_argument_conversion(
         .iter()
         .zip(values)
         .filter(|(parameter, _)| {
-            parameter.aggregate_layout().is_none() && !parameter.c_type().is_pointer()
+            parameter.aggregate_layout().is_none() && !parameter.program_type().is_pointer()
         })
         .find_map(|(_, value)| freed_pointer_use(state, value, assumptions))
 }
@@ -336,7 +336,7 @@ pub(in crate::kernel) fn coerce_retained_function_return_value(
 ) -> Option<StoredExecutionValue> {
     if value.shared().is_some()
         && matches!(
-            value.c_type(),
+            value.program_type(),
             ProgramType::Int8
                 | ProgramType::UInt8
                 | ProgramType::Int16
@@ -346,7 +346,7 @@ pub(in crate::kernel) fn coerce_retained_function_return_value(
                 | ProgramType::Int64
                 | ProgramType::UInt64
         )
-        && value.c_type() == function.return_type()
+        && value.program_type() == function.return_type()
     {
         return Some(value);
     }
@@ -370,7 +370,7 @@ pub(super) fn coerce_function_return_value(
     if function.return_aggregate_layout().is_some()
         && let ProgramValue::Pointer(pointer) = &value
         && matches!(
-            pointer.c_type(),
+            pointer.program_type(),
             ProgramType::Int32Pointer | ProgramType::UInt8Pointer
         )
         && !pointer.pointer().block.is_function()
@@ -391,7 +391,7 @@ pub(super) fn coerce_function_return_value(
 
 pub(in crate::kernel) fn coerce_program_value_with_pointee_constant(
     value: ProgramValue,
-    c_type: ProgramType,
+    program_type: ProgramType,
     pointee_constant: bool,
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
@@ -399,13 +399,13 @@ pub(in crate::kernel) fn coerce_program_value_with_pointee_constant(
     // This is an implicit conversion boundary. Explicit C casts have their
     // own rules; storage read-only status is independently checked on writes.
     if matches!(&value, ProgramValue::Pointer(pointer) if pointer.pointee_constant())
-        && c_type.is_pointer()
+        && program_type.is_pointer()
         && !pointee_constant
     {
         return None;
     }
     Some(
-        coerce_program_value_to_type(value, c_type, obligations, assumptions)?
+        coerce_program_value_to_type(value, program_type, obligations, assumptions)?
             .with_pointer_pointee_constant(pointee_constant),
     )
 }
@@ -444,8 +444,8 @@ pub(super) fn symbolic_contract_result(
         .with_pointer_declared_object_class(interface.return_pointee_class())
 }
 
-pub(crate) fn symbolic_call_result(c_type: ProgramType, variable: Variable) -> ProgramValue {
-    match c_type {
+pub(crate) fn symbolic_call_result(program_type: ProgramType, variable: Variable) -> ProgramValue {
+    match program_type {
         ProgramType::Parameter(name) => ProgramValue::Parameter(Box::new(AlgebraicTerm {
             algebraic_type: name.algebraic_type(),
             node: AlgebraicTermNode::Variable(variable),
@@ -457,7 +457,7 @@ pub(crate) fn symbolic_call_result(c_type: ProgramType, variable: Variable) -> P
             ProgramValue::of_bool(crate::kernel::ConditionTerm::Variable(variable))
         }
         ProgramType::VoidPointer | ProgramType::VoidPointerPointer => {
-            ProgramValue::typed_pointer(Pointer::symbolic(variable), c_type)
+            ProgramValue::typed_pointer(Pointer::symbolic(variable), program_type)
         }
         ProgramType::Int8 => ProgramValue::Int8(MachineTerm::Variable(variable)),
         ProgramType::Int16 => ProgramValue::Int16(MachineTerm::Variable(variable)),
@@ -472,7 +472,7 @@ pub(crate) fn symbolic_call_result(c_type: ProgramType, variable: Variable) -> P
         ProgramType::Float32 => ProgramValue::Float32(MachineTerm::Variable(variable)),
         ProgramType::Float64 => ProgramValue::Float64(MachineTerm::Variable(variable)),
         ProgramType::Int8Pointer | ProgramType::Int8PointerPointer => {
-            ProgramValue::typed_pointer(Pointer::symbolic(variable), c_type)
+            ProgramValue::typed_pointer(Pointer::symbolic(variable), program_type)
         }
         ProgramType::ParameterPointer(_)
         | ProgramType::Int16Pointer
@@ -497,10 +497,10 @@ pub(crate) fn symbolic_call_result(c_type: ProgramType, variable: Variable) -> P
         | ProgramType::Float64Pointer
         | ProgramType::Float32PointerPointer
         | ProgramType::Float64PointerPointer => {
-            ProgramValue::typed_pointer(Pointer::symbolic(variable), c_type)
+            ProgramValue::typed_pointer(Pointer::symbolic(variable), program_type)
         }
         ProgramType::FunctionPointer(_) => {
-            ProgramValue::typed_pointer(Pointer::symbolic_function(variable), c_type)
+            ProgramValue::typed_pointer(Pointer::symbolic_function(variable), program_type)
         }
         ProgramType::Int8Array(_) => {
             unreachable!("C functions cannot return array values")
@@ -638,7 +638,7 @@ pub(super) fn type_function_address_value(
     match value {
         ProgramValue::Pointer(pointer)
             if pointer.block.is_function()
-                && pointer.c_type()
+                && pointer.program_type()
                     == ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED) =>
         {
             // Return and parameter qualifications belong to the callback
@@ -667,10 +667,10 @@ pub(super) fn contract_argument_binding_error(
         .zip(values)
         .any(|(parameter, value)| {
             matches!(
-                (parameter.c_type(), value),
+                (parameter.program_type(), value),
                 (ProgramType::FunctionPointer(expected), ProgramValue::Pointer(actual))
                     if actual.block.is_function()
-                        && actual.c_type() != ProgramType::FunctionPointer(expected)
+                        && actual.program_type() != ProgramType::FunctionPointer(expected)
             )
         })
     {
@@ -744,9 +744,9 @@ pub(in crate::kernel) fn bind_program_function_arguments_with(
         // the volatile event to name.
         .filter(|parameter| {
             (address_taken.contains(parameter.name()) || parameter.is_volatile())
-                && (parameter.is_volatile() && parameter.c_type().is_pointer()
+                && (parameter.is_volatile() && parameter.program_type().is_pointer()
                     || matches!(
-                        parameter.c_type(),
+                        parameter.program_type(),
                         ProgramType::Int8
                             | ProgramType::Int16
                             | ProgramType::Int32
@@ -867,7 +867,7 @@ pub(in crate::kernel) fn bind_program_function_arguments_with(
             .with_pointer_declared_object_class(parameter.pointee_class());
         if address_taken_parameters.contains(parameter.name()) {
             let slot = Memory::frame_local_pointer(frame, parameter.name());
-            register_block_alignment(&slot.block, parameter.c_type().abi_alignment());
+            register_block_alignment(&slot.block, parameter.program_type().abi_alignment());
             callee_state.set_memory(
                 callee_state
                     .memory
@@ -878,7 +878,7 @@ pub(in crate::kernel) fn bind_program_function_arguments_with(
             callee_state.locals.set_typed_qualified_with_all_qualifiers(
                 parameter.name().to_string(),
                 value,
-                parameter.c_type(),
+                parameter.program_type(),
                 slot,
                 parameter.is_volatile(),
                 parameter.pointee_is_volatile(),
@@ -889,7 +889,7 @@ pub(in crate::kernel) fn bind_program_function_arguments_with(
             callee_state.locals.set_typed_qualified_with_all_qualifiers(
                 parameter.name().to_string(),
                 value,
-                parameter.c_type(),
+                parameter.program_type(),
                 Memory::value_parameter_pointer(parameter.name()),
                 parameter.is_volatile(),
                 parameter.pointee_is_volatile(),
@@ -1011,7 +1011,7 @@ pub(super) fn bind_contract_arguments(
         callee_state.locals.set_typed_qualified_with_all_qualifiers(
             parameter.name().to_string(),
             value,
-            parameter.c_type(),
+            parameter.program_type(),
             Memory::value_parameter_pointer(parameter.name()),
             parameter.is_volatile(),
             parameter.pointee_is_volatile(),
@@ -1037,7 +1037,7 @@ pub(super) fn coerce_contract_argument_without_obligations(
     let mut obligations = Vec::new();
     let value = coerce_program_value_with_pointee_constant(
         value.clone(),
-        parameter.c_type(),
+        parameter.program_type(),
         parameter.pointee_is_constant(),
         &mut obligations,
         &PureFactContext::new(),
@@ -1082,16 +1082,18 @@ pub(super) fn coerce_contract_arguments(
             // `char *`.
             let value = match value {
                 ProgramValue::Pointer(pointer)
-                    if parameter.c_type() != pointer.c_type()
-                        && parameter.c_type().is_signedness_view_of(pointer.c_type()) =>
+                    if parameter.program_type() != pointer.program_type()
+                        && parameter
+                            .program_type()
+                            .is_signedness_view_of(pointer.program_type()) =>
                 {
-                    ProgramValue::Pointer(pointer.clone().with_type(parameter.c_type()))
+                    ProgramValue::Pointer(pointer.clone().with_type(parameter.program_type()))
                 }
                 value => value.clone(),
             };
             coerced.push(coerce_program_value_with_pointee_constant(
                 value,
-                parameter.c_type(),
+                parameter.program_type(),
                 parameter.pointee_is_constant(),
                 &mut obligations,
                 assumptions,

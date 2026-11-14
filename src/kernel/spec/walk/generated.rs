@@ -110,7 +110,7 @@ impl Gen {
             1 => SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(self.variable()))),
             2 => SpecExpression::ResourceField {
                 projection: self.projection(),
-                c_type: ProgramType::Int32,
+                program_type: ProgramType::Int32,
             },
             _ => SpecExpression::ProgramExpression(self.c()),
         }

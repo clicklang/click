@@ -80,7 +80,7 @@ fn mixed_arithmetic_matches_native_terms_and_domains() {
                 for defined in [false, true] {
                     let mut execution = ExecutionBudget::new();
                     let mut budget = SpecEvaluation::logical(&mut execution);
-                    budget.c_definedness = defined;
+                    budget.program_definedness = defined;
                     for case in 0..4 {
                         let term = |format: MachineIntegerType, id| match case {
                             0 => MachineTerm::Variable(Variable(id)),

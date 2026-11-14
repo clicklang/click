@@ -120,10 +120,10 @@ fn private_local_copy_ignores_unrelated_resources() {
                         .chain((0..size).map(|index| format!("beside_{index}")))
                         .collect(),
                 );
-                let declare = |state: &ExecutionState, name: &str, c_type: ProgramType| {
+                let declare = |state: &ExecutionState, name: &str, interface_type: ProgramType| {
                     let mut paths = execute_execution_statement_paths(
                         state,
-                        &program_declare(name, c_type),
+                        &program_declare(name, interface_type),
                         &PureFactContext::new(),
                         ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
                         &mut ExecutionBudget::default(),
@@ -135,7 +135,7 @@ fn private_local_copy_ignores_unrelated_resources() {
                     };
                     *next
                 };
-                let (c_type, initial, value, expression) = if pointer_copy {
+                let (interface_type, initial, value, expression) = if pointer_copy {
                     let value = ProgramValue::typed_pointer(
                         heap_base(TARGET_HEAP),
                         ProgramType::UInt8Pointer,
@@ -155,7 +155,7 @@ fn private_local_copy_ignores_unrelated_resources() {
                     )
                 };
                 let mut state = if address_backed {
-                    declare(&ExecutionState::new(), "target", c_type)
+                    declare(&ExecutionState::new(), "target", interface_type)
                 } else {
                     ExecutionState::new().with_local("target", initial)
                 };

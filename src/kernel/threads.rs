@@ -358,7 +358,7 @@ impl PendingThreadCreate {
                 let binding = selected.locals.binding(&name).cloned();
                 if let Some(
                     super::LocalBinding::Object {
-                        c_type,
+                        program_type,
                         volatile,
                         pointee_volatile,
                         constant,
@@ -366,7 +366,7 @@ impl PendingThreadCreate {
                         ..
                     }
                     | super::LocalBinding::UninitializedObject {
-                        c_type,
+                        program_type,
                         volatile,
                         pointee_volatile,
                         constant,
@@ -378,7 +378,7 @@ impl PendingThreadCreate {
                     selected.locals.set_typed_with_all_qualifiers(
                         name,
                         self.storage.handle_value.clone(),
-                        c_type,
+                        program_type,
                         volatile,
                         pointee_volatile,
                         constant,

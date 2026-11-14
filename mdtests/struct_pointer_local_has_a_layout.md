@@ -2,7 +2,7 @@
 
 A contract's parameters carry their struct names from the signature, so
 `root->value` in a `have` has a layout. An automatic local declared in the C
-body had none: `syntax::C0Function` recorded globals, static locals and
+body had none: `syntax::ImportedFunction` recorded globals, static locals and
 aggregates but not the body's own declarations, so `p->value` lowered to no
 path at all even when `p` provably aliased `root`.
 

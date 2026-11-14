@@ -4613,7 +4613,7 @@ pub(super) fn comparison_snapshot_variants(
         );
     }
     if let ClickProposition::ForAll {
-        click_type: c_type,
+        click_type: interface_type,
         name,
         written_name,
         body,
@@ -4623,7 +4623,7 @@ pub(super) fn comparison_snapshot_variants(
             comparison_snapshot_variants(body, selectors)?
                 .into_iter()
                 .map(|body| ClickProposition::ForAll {
-                    click_type: c_type.clone(),
+                    click_type: interface_type.clone(),
                     name: name.clone(),
                     written_name: written_name.clone(),
                     body: Box::new(body),
@@ -5050,11 +5050,11 @@ mod shared_goal_spelling_tests {
                 crate::kernel::MachineBinaryOp::Add,
                 [
                     KernelTerm::variable(
-                        KernelType::Program(MachineIntegerType::Int32.c_type()),
+                        KernelType::Program(MachineIntegerType::Int32.program_type()),
                         variable,
                     ),
                     KernelTerm::variable(
-                        KernelType::Program(MachineIntegerType::Int32.c_type()),
+                        KernelType::Program(MachineIntegerType::Int32.program_type()),
                         variable,
                     ),
                 ],

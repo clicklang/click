@@ -622,7 +622,7 @@ fn parses_existential_proof_tactics() {
         ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit)
     ));
     assert!(matches!(&tactics[1], ProofTactic::LetSatisfy(binding)
-        if binding.bindings == [("k".to_string(), ClickType::Program(C0Type::Int32))]));
+        if binding.bindings == [("k".to_string(), ClickType::Program(InterfaceType::Int32))]));
     assert_eq!(
         tactics[2],
         ProofTactic::Witness(ProofWitness::single(
@@ -808,7 +808,7 @@ fn parses_rust_style_let_annotations() {
         body,
         ContractExpression::Let {
             name,
-            click_type: Some(ClickType::Program(C0Type::Int32)),
+            click_type: Some(ClickType::Program(InterfaceType::Int32)),
             ..
         } if name == "next"
     ));
@@ -834,7 +834,7 @@ fn parses_contract_level_let_bindings() {
         Ensure::Proposition(ClickProposition::Comparison {
             right: ContractExpression::Let {
                 name,
-                click_type: Some(ClickType::Program(C0Type::Int32)),
+                click_type: Some(ClickType::Program(InterfaceType::Int32)),
                 ..
             },
             ..
@@ -860,7 +860,7 @@ fn parses_contract_level_let_where_bindings() {
     assert!(matches!(
         ensure.ensure(),
         Ensure::Proposition(ClickProposition::Exists {
-            click_type: ClickType::Program(C0Type::Int32),
+            click_type: ClickType::Program(InterfaceType::Int32),
             name,
             body,
             ..
@@ -888,7 +888,7 @@ fn parses_proposition_let_where_bindings() {
     assert!(matches!(
         ensure.ensure(),
         Ensure::Proposition(ClickProposition::Exists {
-            click_type: ClickType::Program(C0Type::Int32),
+            click_type: ClickType::Program(InterfaceType::Int32),
             name,
             ..
         }) if name == "k"

@@ -61,7 +61,7 @@ fn wide_multiply_constants_match_exact_oracle_at_signed_boundaries() {
                 let ExpressionOutcome::Value(value) = outcome else {
                     panic!("{left} * {right}: {outcome:?}")
                 };
-                assert_eq!(value.c_type(), ProgramType::Int128);
+                assert_eq!(value.program_type(), ProgramType::Int128);
                 assert_eq!(
                     MachineIntegerType::Int128
                         .constant_from_value(&value)

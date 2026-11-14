@@ -128,7 +128,8 @@ fn machine_comparison_alpha_keys_retain_shared_dags() {
     let samples = [8usize, 32, 96].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::UInt64;
-        let mut term = KernelTerm::variable(KernelType::Program(format.c_type()), Variable(98123));
+        let mut term =
+            KernelTerm::variable(KernelType::Program(format.program_type()), Variable(98123));
         for _ in 0..size {
             term = KernelTerm::machine_binary_shared(
                 format,

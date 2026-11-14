@@ -1240,7 +1240,7 @@ impl TermClasses {
                                 128 => W::Bits128,
                                 _ => unreachable!("machine argument width"),
                             };
-                            pending.push(Work::Wrap(ArgumentTag::Value(value.ty().c_type())));
+                            pending.push(Work::Wrap(ArgumentTag::Value(value.ty().program_type())));
                             pending.push(Work::RetainedMachine(value, width));
                         }
                         A::Algebraic(term) => {

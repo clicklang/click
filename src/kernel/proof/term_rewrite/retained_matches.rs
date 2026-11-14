@@ -31,7 +31,7 @@ pub(super) fn collect_match_carriers(matched: &KernelMatch, variables: &mut Carr
                 );
             }
         } else if let KernelType::Program(ty) = child.ty()
-            && MachineIntegerType::from_c_type(*ty).is_some()
+            && MachineIntegerType::from_program_type(*ty).is_some()
         {
             collect_machine_operand_carriers(MachineOperandView::Shared(child), variables);
         } else if let Ok(argument) = export.argument(child) {
@@ -200,7 +200,7 @@ impl TermRewrite<'_> {
             return Some(value);
         }
         if let KernelType::Program(ty) = child.ty()
-            && MachineIntegerType::from_c_type(*ty).is_some()
+            && MachineIntegerType::from_program_type(*ty).is_some()
         {
             return self.shared_machine_operand(child);
         }
@@ -370,7 +370,7 @@ mod tests {
     #[test]
     fn common_numeric_match_reduction_agrees_with_native_checked_fields() {
         for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
-            let ty = format.c_type();
+            let ty = format.program_type();
             let binding = AlgebraicValue::Program(if format == MachineIntegerType::Int32 {
                 ProgramValue::Int32(MachineTerm::Variable(Variable(7)))
             } else {
@@ -514,7 +514,7 @@ mod tests {
                     .unwrap(),
                 expected
             );
-            assert!(new.scope.c.is_empty());
+            assert!(new.scope.program_values.is_empty());
         }
     }
 
@@ -568,7 +568,7 @@ mod tests {
                 .unwrap(),
             expected
         );
-        assert!(new.scope.c.is_empty());
+        assert!(new.scope.program_values.is_empty());
     }
 
     #[test]
@@ -676,7 +676,7 @@ mod tests {
             .expect("composite source under a C binder refuses");
         let mut new = TermRewrite::for_bits(&source, &replacement);
         assert_eq!(new.retained_match(&common), Err(expected));
-        assert!(new.scope.c.is_empty());
+        assert!(new.scope.program_values.is_empty());
     }
 }
 

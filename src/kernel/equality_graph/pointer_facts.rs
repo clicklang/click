@@ -122,7 +122,7 @@ impl EqualityGraph {
                     crate::kernel::SUBOBJECT_COVERS_PREDICATE_PREFIX.to_string(),
                     arguments.len(),
                     position,
-                    pointer.c_type(),
+                    pointer.program_type(),
                 ),
             ));
         }
@@ -133,7 +133,7 @@ impl EqualityGraph {
                     name.clone(),
                     arguments.len(),
                     position,
-                    pointer.c_type(),
+                    pointer.program_type(),
                 )
             });
         Some((pointer.pointer().clone(), key))
@@ -262,7 +262,7 @@ impl EqualityGraph {
                                 Term::ProgramValue(ProgramValue::Pointer(left)),
                                 Term::ProgramValue(ProgramValue::Pointer(right)),
                             ) => {
-                                left.c_type() == right.c_type()
+                                left.program_type() == right.program_type()
                                     && left.pointee_volatile() == right.pointee_volatile()
                                     && self.knows_condition(
                                         &crate::kernel::ConditionTerm::PointerValueEqual(
@@ -292,7 +292,7 @@ impl EqualityGraph {
                     SUBOBJECT_COVERS_PREDICATE_PREFIX.to_string(),
                     arity,
                     0,
-                    PointerValue::new(start.clone(), ProgramType::VoidPointer).c_type(),
+                    PointerValue::new(start.clone(), ProgramType::VoidPointer).program_type(),
                 );
                 self.pointer_fact_candidates(start, &key)
                     .iter()

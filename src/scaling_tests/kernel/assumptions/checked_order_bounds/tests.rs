@@ -51,7 +51,7 @@ fn shared_word_prefix_bounds_do_not_materialize_operands() {
         for size in [8, 32, 96] {
             let _session = crate::kernel::VerificationSession::enter();
             let mut term =
-                KernelTerm::variable(KernelType::Program(format.c_type()), Variable(982002));
+                KernelTerm::variable(KernelType::Program(format.program_type()), Variable(982002));
             let mut index = CheckedOrderBounds::default();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for _ in 0..size {

@@ -138,7 +138,7 @@ pub(super) fn verify_execution_theorem(
     let mut sources = Vec::new();
     if let Some(callback) = callback {
         if callback.name() == "result"
-            && target.function_block().signature().return_type() != C0Type::Void
+            && target.function_block().signature().return_type() != InterfaceType::Void
         {
             return Err(error(
                 "a return-valued callback parameter must not be named result",
@@ -164,7 +164,7 @@ pub(super) fn verify_execution_theorem(
                     "the source assumption must describe the executed callback",
                 ));
             }
-            if callback.c_type() != source.function_pointer_type() {
+            if callback.interface_type() != source.function_pointer_type() {
                 return Err(error(
                     "executes signature does not match the source contract",
                 ));
@@ -199,7 +199,7 @@ pub(super) fn verify_execution_theorem(
                 .parameters
                 .iter()
                 .zip(&parameter_types)
-                .any(|(written, declared)| &written.c_type().to_kernel_type() != declared)
+                .any(|(written, declared)| &written.interface_type().to_kernel_type() != declared)
             || target
                 .function_block()
                 .signature()
@@ -216,14 +216,14 @@ pub(super) fn verify_execution_theorem(
     let target_parameters = target.function_block().signature().parameters();
     let (call_parameters, value_parameters) =
         target_parameters.split_at(target_parameters.len() - target_values.len());
-    if callback.is_some_and(|callback| callback.c_type() != target.function_pointer_type())
+    if callback.is_some_and(|callback| callback.interface_type() != target.function_pointer_type())
         || execution.parameters.len() != call_parameters.len()
         || execution
             .parameters
             .iter()
             .zip(call_parameters)
             .any(|(written, declared)| {
-                written.c_type() != declared.c_type()
+                written.interface_type() != declared.interface_type()
                     || written.struct_name() != declared.struct_name()
                     || written.pointee_is_constant() != declared.pointee_is_constant()
                     || written.is_reference() != declared.is_reference()
@@ -341,7 +341,7 @@ pub(super) fn verify_execution_theorem(
         .iter()
         .map(|p| syntax::C0Expression::Variable(p.name().to_string()))
         .collect();
-    let body = if block.signature().return_type() == C0Type::Void {
+    let body = if block.signature().return_type() == InterfaceType::Void {
         syntax::C0Statement::Call {
             function_name: call_name.to_string(),
             arguments,

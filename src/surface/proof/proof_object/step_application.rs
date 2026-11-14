@@ -3227,8 +3227,8 @@ impl<'a> Proof<'a> {
                         // chose: `intro` freshens the binder away from
                         // ambient facts.
                         let value = match (pointer, introduced_pointer) {
-                            (true, Some(c_type)) => {
-                                ProgramValue::typed_pointer(Pointer::symbolic(variable), c_type).with_pointer_object_class(object_class)
+                            (true, Some(interface_type)) => {
+                                ProgramValue::typed_pointer(Pointer::symbolic(variable), interface_type).with_pointer_object_class(object_class)
                             }
                             _ => match self.proposition_goal("`intro` requires a proposition goal").expect("intro checked its goal") {
                                 Proposition::ForAll { sort, .. } if sort.machine_integer_type().is_some() => sort.machine_integer_type().unwrap().symbolic_value(variable),

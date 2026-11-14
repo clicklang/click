@@ -1180,7 +1180,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .filter(|(parameter, argument)| {
                 matches!(parameter.click_type(), ClickType::Algebraic(_))
                     || matches!(parameter.click_type(), ClickType::Program(ty)
-                        if crate::kernel::MachineIntegerType::from_c_type(ty.to_kernel_type()).is_some())
+                        if crate::kernel::MachineIntegerType::from_program_type(ty.to_kernel_type()).is_some())
                     || (parameter.click_type() == &ClickType::Integer
                         && crate::surface::lowering::lower_contract_integer_to_spec(
                             argument,

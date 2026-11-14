@@ -51,19 +51,19 @@ impl IntegerSuffix {
         }
     }
 
-    /// The suffix of the fixed-width integer type `c_type`; plain `char`
+    /// The suffix of the fixed-width integer type `interface_type`; plain `char`
     /// takes the byte type of its signedness.
-    pub(super) fn of_c_type(c_type: C0Type) -> Option<Self> {
+    pub(super) fn of_c_type(interface_type: InterfaceType) -> Option<Self> {
         use crate::languages::c::syntax::PlainChar;
-        Some(match c_type {
-            C0Type::Int8 | C0Type::Char(PlainChar::Signed) => Self::I8,
-            C0Type::Int16 => Self::I16,
-            C0Type::Int32 => Self::I32,
-            C0Type::Int64(_) => Self::I64,
-            C0Type::UInt8 | C0Type::Char(PlainChar::Unsigned) => Self::U8,
-            C0Type::UInt16 => Self::U16,
-            C0Type::UInt32 => Self::U32,
-            C0Type::UInt64(_) => Self::U64,
+        Some(match interface_type {
+            InterfaceType::Int8 | InterfaceType::Char(PlainChar::Signed) => Self::I8,
+            InterfaceType::Int16 => Self::I16,
+            InterfaceType::Int32 => Self::I32,
+            InterfaceType::Int64(_) => Self::I64,
+            InterfaceType::UInt8 | InterfaceType::Char(PlainChar::Unsigned) => Self::U8,
+            InterfaceType::UInt16 => Self::U16,
+            InterfaceType::UInt32 => Self::U32,
+            InterfaceType::UInt64(_) => Self::U64,
             _ => return None,
         })
     }
@@ -267,7 +267,7 @@ impl IntegerLiteral {
             | ProgramValue::UInt8(term)
             | ProgramValue::Int16(term)
             | ProgramValue::UInt16(term) => {
-                let ty = crate::kernel::MachineIntegerType::from_c_type(value.c_type())
+                let ty = crate::kernel::MachineIntegerType::from_program_type(value.program_type())
                     .expect("a narrow integer type");
                 let word = ty
                     .constant_from_term(term)
@@ -301,10 +301,10 @@ impl IntegerLiteral {
             ProgramValue::Int8(bits32_constant!(bits))
             | ProgramValue::Int16(bits32_constant!(bits))
             | ProgramValue::UInt16(bits32_constant!(bits)) => C0Expression::Cast {
-                c_type: match value {
-                    ProgramValue::Int8(_) => C0Type::Int8,
-                    ProgramValue::Int16(_) => C0Type::Int16,
-                    _ => C0Type::UInt16,
+                interface_type: match value {
+                    ProgramValue::Int8(_) => InterfaceType::Int8,
+                    ProgramValue::Int16(_) => InterfaceType::Int16,
+                    _ => InterfaceType::UInt16,
                 },
                 expression: Box::new(C0Expression::Int32Literal(constant_u32(bits))),
                 struct_name: None,
@@ -383,7 +383,7 @@ mod tests {
         assert!(matches!(
             expression,
             C0Expression::Cast {
-                c_type: C0Type::UInt16,
+                interface_type: InterfaceType::UInt16,
                 ..
             }
         ));

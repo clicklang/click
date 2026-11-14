@@ -196,9 +196,10 @@ pub(in crate::surface) fn resolve_resource_field_schema(
                         "Resource values are supported as theorem parameters only",
                     ));
                 }
-                ClickType::Program(ty) | ClickType::CObjectPointer { c_type: ty, .. } => {
-                    crate::kernel::ResourceFieldType::Program(ty.to_kernel_type())
-                }
+                ClickType::Program(ty)
+                | ClickType::CObjectPointer {
+                    interface_type: ty, ..
+                } => crate::kernel::ResourceFieldType::Program(ty.to_kernel_type()),
                 ClickType::Algebraic(application) => crate::kernel::ResourceFieldType::Algebraic(
                     algebraic_kernel_type(environment, application).map_err(ClickError::new)?,
                 ),
@@ -557,7 +558,7 @@ type FunctionContractSummary = (
 /// not recorded, and framing then has nothing to say about that function.
 pub(in crate::surface) fn register_kernel_fold_read_definitions(
     spec_definitions: SpecDefinitions<'_>,
-    struct_layouts: &BTreeMap<String, syntax::C0StructLayout>,
+    struct_layouts: &BTreeMap<String, crate::languages::interface::RecordLayout>,
 ) {
     for definition in spec_definitions.functions.definitions.values() {
         if !definition.type_parameters().is_empty()
@@ -569,9 +570,11 @@ pub(in crate::surface) fn register_kernel_fold_read_definitions(
             .parameters()
             .iter()
             .map(|parameter| match parameter.click_type() {
-                ClickType::Program(c_type) | ClickType::CObjectPointer { c_type, .. } => {
-                    Some((parameter.name().to_string(), c_type.to_kernel_type()))
-                }
+                ClickType::Program(interface_type)
+                | ClickType::CObjectPointer { interface_type, .. } => Some((
+                    parameter.name().to_string(),
+                    interface_type.to_kernel_type(),
+                )),
                 _ => None,
             })
             .collect::<Option<Vec<_>>>()
@@ -590,7 +593,7 @@ pub(in crate::surface) fn register_kernel_fold_read_definitions(
             result_type: ProgramType::Int32,
             entry_values: BTreeMap::new(),
             aggregate_parameters: BTreeSet::new(),
-            c_parameter_types: BTreeMap::new(),
+            program_parameter_types: BTreeMap::new(),
             local_type_state: None,
             pointer_element_types: definition
                 .parameters()
@@ -598,7 +601,7 @@ pub(in crate::surface) fn register_kernel_fold_read_definitions(
                 .filter_map(|parameter| {
                     Some((
                         parameter.name().to_string(),
-                        click_array_element_type(parameter.click_type().c_type()?)?,
+                        click_array_element_type(parameter.click_type().interface_type()?)?,
                     ))
                 })
                 .collect(),
@@ -635,7 +638,7 @@ pub(in crate::surface) fn register_kernel_fold_read_definitions(
 pub(in crate::surface) fn lower_composite_resource_condition(
     definition: &ResourceDefinition,
     spec_definitions: SpecDefinitions<'_>,
-    struct_layouts: &BTreeMap<String, syntax::C0StructLayout>,
+    struct_layouts: &BTreeMap<String, crate::languages::interface::RecordLayout>,
 ) -> Result<Option<SpecProposition>, ClickError> {
     let Some(condition) = definition
         .composite_body()
@@ -656,7 +659,7 @@ pub(in crate::surface) fn lower_composite_resource_condition(
         result_type: ProgramType::Int32,
         entry_values: BTreeMap::new(),
         aggregate_parameters: BTreeSet::new(),
-        c_parameter_types: BTreeMap::new(),
+        program_parameter_types: BTreeMap::new(),
         local_type_state: None,
         pointer_element_types: definition
             .parameters()
@@ -664,7 +667,7 @@ pub(in crate::surface) fn lower_composite_resource_condition(
             .filter_map(|parameter| {
                 Some((
                     parameter.name().to_string(),
-                    click_array_element_type(parameter.c_type())?,
+                    click_array_element_type(parameter.interface_type())?,
                 ))
             })
             .collect(),
@@ -710,7 +713,7 @@ pub(in crate::surface) struct LoweredResourceBody {
 pub(in crate::surface) fn lower_composite_resource_body(
     definition: &ResourceDefinition,
     spec_definitions: SpecDefinitions<'_>,
-    struct_layouts: &BTreeMap<String, syntax::C0StructLayout>,
+    struct_layouts: &BTreeMap<String, crate::languages::interface::RecordLayout>,
 ) -> Result<LoweredResourceBody, ClickError> {
     lower_composite_resource_body_with_bindings(
         definition,
@@ -726,7 +729,7 @@ pub(in crate::surface) fn lower_composite_resource_body_with_bindings(
     spec_definitions: SpecDefinitions<'_>,
     bindings: &[(String, ClickType)],
     integer_binding_variables: &BTreeMap<String, crate::kernel::Variable>,
-    struct_layouts: &BTreeMap<String, syntax::C0StructLayout>,
+    struct_layouts: &BTreeMap<String, crate::languages::interface::RecordLayout>,
 ) -> Result<LoweredResourceBody, ClickError> {
     let body = definition
         .composite_body()
@@ -743,7 +746,7 @@ pub(in crate::surface) fn lower_composite_resource_body_with_bindings(
         result_type: ProgramType::Int32,
         entry_values: BTreeMap::new(),
         aggregate_parameters: BTreeSet::new(),
-        c_parameter_types: BTreeMap::new(),
+        program_parameter_types: BTreeMap::new(),
         local_type_state: None,
         pointer_element_types: definition
             .parameters()
@@ -751,7 +754,7 @@ pub(in crate::surface) fn lower_composite_resource_body_with_bindings(
             .filter_map(|parameter| {
                 Some((
                     parameter.name().to_string(),
-                    click_array_element_type(parameter.c_type())?,
+                    click_array_element_type(parameter.interface_type())?,
                 ))
             })
             .collect(),
@@ -858,7 +861,7 @@ pub(in crate::surface) fn lower_composite_resource_body_with_bindings(
 
 pub(in crate::surface) fn annotated_function(
     function_block: &FunctionBlock,
-    parsed_function: &syntax::C0Function,
+    parsed_function: &crate::languages::interface::ImportedFunction,
     entry_state: &ExecutionState,
     arguments: &[ProgramExpression],
     spec_definitions: SpecDefinitions<'_>,
@@ -893,7 +896,7 @@ pub(in crate::surface) struct ResourceFrameEntry<'a> {
 
 pub(in crate::surface) fn annotated_function_with_assumptions(
     function_block: &FunctionBlock,
-    parsed_function: &syntax::C0Function,
+    parsed_function: &crate::languages::interface::ImportedFunction,
     entry_state: &ExecutionState,
     arguments: &[ProgramExpression],
     spec_definitions: SpecDefinitions<'_>,
@@ -1140,7 +1143,7 @@ impl LoopAnnotation {
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface) fn annotated_loop_function(
     function_block: &FunctionBlock,
-    parsed_function: &syntax::C0Function,
+    parsed_function: &crate::languages::interface::ImportedFunction,
     entry_state: &ExecutionState,
     arguments: &[ProgramExpression],
     spec_definitions: SpecDefinitions<'_>,
@@ -1194,7 +1197,7 @@ pub(in crate::surface) fn annotated_loop_function(
 pub(in crate::surface) fn annotated_loop_function_extending(
     previous: &LoopAnnotation,
     function_block: &FunctionBlock,
-    parsed_function: &syntax::C0Function,
+    parsed_function: &crate::languages::interface::ImportedFunction,
     entry_state: &ExecutionState,
     arguments: &[ProgramExpression],
     spec_definitions: SpecDefinitions<'_>,
@@ -1255,13 +1258,13 @@ pub(in crate::surface) fn annotated_loop_function_extending(
             .filter(|p| p.is_struct_value())
             .map(|p| p.name().to_string())
             .collect(),
-        c_parameter_types: parsed_function
+        program_parameter_types: parsed_function
             .parameters()
             .iter()
             .map(|parameter| {
                 (
                     parameter.name().to_string(),
-                    parameter.c_type().to_kernel_type(),
+                    parameter.interface_type().to_kernel_type(),
                 )
             })
             .chain(library_iterator_local_types(parsed_function))
@@ -1276,7 +1279,7 @@ pub(in crate::surface) fn annotated_loop_function_extending(
                 }
                 Some((
                     parameter.name().to_string(),
-                    click_array_element_type(parameter.c_type())?,
+                    click_array_element_type(parameter.interface_type())?,
                 ))
             })
             .collect(),
@@ -1638,7 +1641,7 @@ fn count_kernel_loops(statement: &ProgramStatement) -> usize {
 #[allow(clippy::too_many_arguments)]
 fn annotate_function(
     function_block: &FunctionBlock,
-    parsed_function: &syntax::C0Function,
+    parsed_function: &crate::languages::interface::ImportedFunction,
     entry_state: &ExecutionState,
     arguments: &[ProgramExpression],
     spec_definitions: SpecDefinitions<'_>,
@@ -1724,13 +1727,13 @@ fn annotate_function(
             .filter(|p| p.is_struct_value())
             .map(|p| p.name().to_string())
             .collect(),
-        c_parameter_types: parsed_function
+        program_parameter_types: parsed_function
             .parameters()
             .iter()
             .map(|parameter| {
                 (
                     parameter.name().to_string(),
-                    parameter.c_type().to_kernel_type(),
+                    parameter.interface_type().to_kernel_type(),
                 )
             })
             .chain(library_iterator_local_types(parsed_function))
@@ -1745,7 +1748,7 @@ fn annotate_function(
                 }
                 Some((
                     parameter.name().to_string(),
-                    click_array_element_type(parameter.c_type())?,
+                    click_array_element_type(parameter.interface_type())?,
                 ))
             })
             .collect(),
@@ -1831,7 +1834,7 @@ fn annotate_function(
         parsed_function
             .parameters()
             .iter()
-            .map(syntax::C0Parameter::to_kernel_parameter)
+            .map(crate::languages::interface::ImportedParameter::to_kernel_parameter)
             .collect(),
         body,
     )
@@ -2003,7 +2006,7 @@ fn annotate_function(
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface) fn lower_branch_interface_fact(
     proposition: &ClickProposition,
-    parsed_function: &syntax::C0Function,
+    parsed_function: &crate::languages::interface::ImportedFunction,
     entry_state: &ExecutionState,
     current_state: &ExecutionState,
     branch_join_target: &ProgramPointRef,
@@ -2034,13 +2037,13 @@ pub(in crate::surface) fn lower_branch_interface_fact(
             .filter(|p| p.is_struct_value())
             .map(|p| p.name().to_string())
             .collect(),
-        c_parameter_types: parsed_function
+        program_parameter_types: parsed_function
             .parameters()
             .iter()
             .map(|parameter| {
                 (
                     parameter.name().to_string(),
-                    parameter.c_type().to_kernel_type(),
+                    parameter.interface_type().to_kernel_type(),
                 )
             })
             .chain(library_iterator_local_types(parsed_function))
@@ -2052,7 +2055,7 @@ pub(in crate::surface) fn lower_branch_interface_fact(
             .filter_map(|parameter| {
                 Some((
                     parameter.name().to_string(),
-                    click_array_element_type(parameter.c_type())?,
+                    click_array_element_type(parameter.interface_type())?,
                 ))
             })
             .collect(),
@@ -2099,11 +2102,11 @@ fn fixed_state_elaboration<'a>(
         spec_definitions,
         entry_state,
         result_type: result
-            .map(ProgramValue::c_type)
+            .map(ProgramValue::program_type)
             .unwrap_or(ProgramType::Int32),
         entry_values,
         aggregate_parameters: BTreeSet::new(),
-        c_parameter_types: BTreeMap::new(),
+        program_parameter_types: BTreeMap::new(),
         local_type_state: None,
         pointer_element_types: array_element_types,
         parameter_pointer_element_widths,
@@ -2475,21 +2478,22 @@ pub(in crate::surface) fn elaborate_requirement_proposition(
 ) -> Result<SpecProposition, String> {
     // A requirement reads only the parameters it names: with the binding's
     // index, the parameter tables hold those alone.
-    let parameters: Vec<&syntax::C0Parameter> = match parameter_binding.index {
-        Some(index) => {
-            let mut names = BTreeSet::new();
-            crate::surface::lowering::collect_click_proposition_referenced_names(
-                proposition,
-                &mut names,
-            );
-            names
-                .iter()
-                .filter_map(|name| index.position(name))
-                .map(|position| &parameter_binding.parameters[position])
-                .collect()
-        }
-        None => parameter_binding.parameters.iter().collect(),
-    };
+    let parameters: Vec<&crate::languages::interface::ImportedParameter> =
+        match parameter_binding.index {
+            Some(index) => {
+                let mut names = BTreeSet::new();
+                crate::surface::lowering::collect_click_proposition_referenced_names(
+                    proposition,
+                    &mut names,
+                );
+                names
+                    .iter()
+                    .filter_map(|name| index.position(name))
+                    .map(|position| &parameter_binding.parameters[position])
+                    .collect()
+            }
+            None => parameter_binding.parameters.iter().collect(),
+        };
     let mut lowerer = AnnotationLowerer {
         capture_referenced_names: None,
         structural_clauses: StructuralClauses::empty(),
@@ -2501,12 +2505,12 @@ pub(in crate::surface) fn elaborate_requirement_proposition(
         result_type: ProgramType::Int32,
         entry_values: BTreeMap::new(),
         aggregate_parameters: BTreeSet::new(),
-        c_parameter_types: parameters
+        program_parameter_types: parameters
             .iter()
             .map(|parameter| {
                 (
                     parameter.name().to_string(),
-                    parameter.c_type().to_kernel_type(),
+                    parameter.interface_type().to_kernel_type(),
                 )
             })
             .collect(),
@@ -2516,7 +2520,7 @@ pub(in crate::surface) fn elaborate_requirement_proposition(
             .filter_map(|parameter| {
                 Some((
                     parameter.name().to_string(),
-                    click_array_element_type(parameter.c_type())?,
+                    click_array_element_type(parameter.interface_type())?,
                 ))
             })
             .collect(),
@@ -2554,7 +2558,7 @@ fn resolved_function_block(
 
 pub(in crate::surface) fn function_contract_summary(
     function_block: &FunctionBlock,
-    parsed_function: &syntax::C0Function,
+    parsed_function: &crate::languages::interface::ImportedFunction,
     spec_definitions: SpecDefinitions<'_>,
     _resource_environment: &ResourceEnvironment,
 ) -> Result<FunctionContractSummary, ClickError> {
@@ -2575,13 +2579,13 @@ pub(in crate::surface) fn function_contract_summary(
         result_type: parsed_function.return_type().to_kernel_type(),
         entry_values: BTreeMap::new(),
         aggregate_parameters: BTreeSet::new(),
-        c_parameter_types: parsed_function
+        program_parameter_types: parsed_function
             .parameters()
             .iter()
             .map(|parameter| {
                 (
                     parameter.name().to_string(),
-                    parameter.c_type().to_kernel_type(),
+                    parameter.interface_type().to_kernel_type(),
                 )
             })
             .chain(library_iterator_local_types(parsed_function))
@@ -2593,7 +2597,7 @@ pub(in crate::surface) fn function_contract_summary(
             .filter_map(|parameter| {
                 Some((
                     parameter.name().to_string(),
-                    click_array_element_type(parameter.c_type())?,
+                    click_array_element_type(parameter.interface_type())?,
                 ))
             })
             .collect(),
@@ -2638,7 +2642,7 @@ pub(in crate::surface) fn function_contract_summary(
                     .parameters()
                     .iter()
                     .find(|parameter| parameter.name() == name)
-                    .map(syntax::C0Parameter::c_type)
+                    .map(crate::languages::interface::ImportedParameter::interface_type)
             });
         unfold_click_predicates_in_proposition_with_active(
             spec_definitions.predicates,
@@ -2889,7 +2893,7 @@ fn proposition_supported_in_opaque_contract(proposition: &ClickProposition) -> b
 /// for a caller that annotates the function repeatedly and indexes it once
 /// (`SourceExecutionLayout::local_pointer_element_types`).
 pub(in crate::surface) fn local_pointer_element_types(
-    parsed_function: &syntax::C0Function,
+    parsed_function: &crate::languages::interface::ImportedFunction,
 ) -> BTreeMap<String, ProgramType> {
     let mut types = BTreeMap::new();
     collect_local_pointer_element_types(parsed_function.to_kernel_function().body(), &mut types);
@@ -2907,8 +2911,10 @@ fn collect_local_pointer_element_types(
     while let Some(statement) = pending.pop() {
         crate::instrumentation::record_deterministic_work(1);
         match statement {
-            ProgramStatement::Declare { name, c_type, .. } => {
-                let element = c_type.pointee_type().or(match c_type {
+            ProgramStatement::Declare {
+                name, program_type, ..
+            } => {
+                let element = program_type.pointee_type().or(match program_type {
                     ProgramType::Int8Array(_) => Some(ProgramType::Int8),
                     ProgramType::Int16Array(_) => Some(ProgramType::Int16),
                     ProgramType::Int32Array(_) => Some(ProgramType::Int32),
@@ -2957,7 +2963,7 @@ fn collect_local_pointer_element_types(
 /// are the resource context its body executes with.
 fn loop_resource_declarations(
     function_block: &FunctionBlock,
-    parsed_function: &syntax::C0Function,
+    parsed_function: &crate::languages::interface::ImportedFunction,
     resource_environment: &ResourceEnvironment,
     lowerer: &mut AnnotationLowerer<'_>,
 ) -> Result<BTreeMap<usize, LoopResourceDeclaration>, ClickError> {
@@ -3088,7 +3094,7 @@ struct AnnotationLowerer<'a> {
     /// Declared C types of the function's parameters, where a function is
     /// in scope: a clause's range over a `size_t` parameter is a `size_t`
     /// range.
-    c_parameter_types: BTreeMap<String, ProgramType>,
+    program_parameter_types: BTreeMap<String, ProgramType>,
     /// Declared pointee types of parameters and encountered automatic locals.
     /// Local names are the frontend's distinct kernel bindings.
     pointer_element_types: BTreeMap<String, ProgramType>,
@@ -3174,7 +3180,7 @@ pub(in crate::surface) fn parameter_pointer_element_widths_named(
 }
 
 pub(in crate::surface) fn parameter_pointer_element_widths<'a>(
-    parameters: impl IntoIterator<Item = &'a syntax::C0Parameter>,
+    parameters: impl IntoIterator<Item = &'a crate::languages::interface::ImportedParameter>,
 ) -> BTreeMap<String, u32> {
     parameters
         .into_iter()
@@ -3183,7 +3189,7 @@ pub(in crate::surface) fn parameter_pointer_element_widths<'a>(
                 .array_element_width()
                 .or_else(|| {
                     parameter
-                        .c_type()
+                        .interface_type()
                         .pointee_type()
                         .filter(|ty| ty.is_pointer())
                         .map(|ty| ty.to_kernel_type().byte_width())
@@ -3204,14 +3210,14 @@ pub(in crate::surface) fn parameter_pointer_element_widths<'a>(
 /// layout is unavailable outside the C translation unit.
 pub(in crate::surface) fn click_parameter_pointer_element_widths_with_layouts(
     parameters: &[FunctionParameter],
-    struct_layouts: &BTreeMap<String, syntax::C0StructLayout>,
+    struct_layouts: &BTreeMap<String, crate::languages::interface::RecordLayout>,
 ) -> BTreeMap<String, u32> {
     parameters
         .iter()
         .filter_map(|parameter| {
             parameter
                 .click_type()
-                .c_type()
+                .interface_type()
                 .and_then(|ty| ty.pointee_type())
                 .filter(|ty| ty.is_pointer())
                 .map(|ty| {
@@ -3229,7 +3235,7 @@ pub(in crate::surface) fn click_parameter_pointer_element_widths_with_layouts(
                 .or_else(|| {
                     parameter
                         .click_type()
-                        .c_type()
+                        .interface_type()
                         .and_then(click_array_element_type)
                         .map(|element| (parameter.name().to_string(), element.byte_width()))
                 })
@@ -3302,7 +3308,7 @@ pub(in crate::surface) fn lower_integer_certificate_proposition(
 /// iterator, `ChunksExact<uint8>`: a clause read with no state in hand, such
 /// as a loop's `decreases`, still knows the local holds a spec value.
 fn library_iterator_local_types(
-    function: &crate::languages::c::syntax::C0Function,
+    function: &crate::languages::interface::ImportedFunction,
 ) -> Vec<(String, ProgramType)> {
     function
         .loop_iterators()
@@ -3318,8 +3324,8 @@ fn library_iterator_local_types(
                 .arguments
                 .iter()
                 .map(|argument| match argument {
-                    ClickType::Program(c_type) => {
-                        Some(AlgebraicValueType::Program(c_type.to_kernel_type()))
+                    ClickType::Program(interface_type) => {
+                        Some(AlgebraicValueType::Program(interface_type.to_kernel_type()))
                     }
                     _ => None,
                 })
@@ -4053,7 +4059,7 @@ impl AnnotationLowerer<'_> {
                         .parameters()
                         .iter()
                         .find(|parameter| parameter.name() == name)
-                        .is_none_or(|parameter| parameter.c_type() == C0Type::Int32)
+                        .is_none_or(|parameter| parameter.interface_type() == InterfaceType::Int32)
                 {
                     return Ok(Vec::new());
                 }
@@ -4373,7 +4379,7 @@ impl AnnotationLowerer<'_> {
     ) -> Result<SpecProposition, String> {
         match proposition {
             ClickProposition::ForAll {
-                click_type: c_type,
+                click_type,
                 name,
                 written_name,
                 body,
@@ -4385,7 +4391,7 @@ impl AnnotationLowerer<'_> {
                 body_environment.values.remove(name);
                 body_environment.algebraic_values.remove(name);
                 body_environment.array_refs.remove(name);
-                if *c_type == ClickType::Integer {
+                if *click_type == ClickType::Integer {
                     body_environment.integer_values.insert(
                         name.clone(),
                         crate::kernel::SpecIntegerExpression::Term(
@@ -4400,7 +4406,7 @@ impl AnnotationLowerer<'_> {
                         body: Box::new(body),
                     });
                 }
-                if let ClickType::Algebraic(application) = c_type {
+                if let ClickType::Algebraic(application) = click_type {
                     let algebraic_type = self.cached_algebraic_kernel_type(application)?;
                     body_environment.algebraic_values.insert(
                         name.clone(),
@@ -4418,24 +4424,27 @@ impl AnnotationLowerer<'_> {
                         body: Box::new(body),
                     });
                 }
-                let c_type = c_type
-                    .c_type()
+                let program_type = click_type
+                    .interface_type()
                     .ok_or("only C quantifier binders are currently supported")?
                     .to_kernel_type();
-                let value = match c_type {
-                    c_type if crate::kernel::MachineIntegerType::from_c_type(c_type).is_some() => {
-                        crate::kernel::MachineIntegerType::from_c_type(c_type)
+                let value = match program_type {
+                    program_type
+                        if crate::kernel::MachineIntegerType::from_program_type(program_type)
+                            .is_some() =>
+                    {
+                        crate::kernel::MachineIntegerType::from_program_type(program_type)
                             .expect("machine integer")
                             .symbolic_value(variable)
                     }
-                    c_type if c_type.is_pointer() => {
-                        if matches!(c_type, ProgramType::FunctionPointer(_)) {
+                    program_type if program_type.is_pointer() => {
+                        if matches!(program_type, ProgramType::FunctionPointer(_)) {
                             ProgramValue::typed_pointer(
                                 Pointer::symbolic_function(variable),
-                                c_type,
+                                program_type,
                             )
                         } else {
-                            ProgramValue::typed_pointer(Pointer::symbolic(variable), c_type)
+                            ProgramValue::typed_pointer(Pointer::symbolic(variable), program_type)
                         }
                     }
                     _ => {
@@ -4457,14 +4466,14 @@ impl AnnotationLowerer<'_> {
                         self.quantified_values.remove(name);
                     }
                 }
-                if c_type == ProgramType::Int32 {
+                if program_type == ProgramType::Int32 {
                     Ok(SpecProposition::ForAllInt32 {
                         name: display_name.clone(),
                         variable,
                         body: Box::new(body),
                     })
                 } else if let Some(integer_type) =
-                    crate::kernel::MachineIntegerType::from_c_type(c_type)
+                    crate::kernel::MachineIntegerType::from_program_type(program_type)
                 {
                     Ok(SpecProposition::ForAllMachineInteger {
                         name: display_name.clone(),
@@ -4476,7 +4485,7 @@ impl AnnotationLowerer<'_> {
                     Ok(SpecProposition::ForAllPointer {
                         name: display_name.clone(),
                         variable,
-                        c_type,
+                        program_type,
                         body: Box::new(body),
                     })
                 }
@@ -4493,7 +4502,7 @@ impl AnnotationLowerer<'_> {
     ) -> Result<SpecProposition, String> {
         match proposition {
             ClickProposition::Exists {
-                click_type: c_type,
+                click_type,
                 name,
                 written_name,
                 body,
@@ -4505,7 +4514,7 @@ impl AnnotationLowerer<'_> {
                 body_environment.values.remove(name);
                 body_environment.algebraic_values.remove(name);
                 body_environment.array_refs.remove(name);
-                if *c_type == ClickType::Integer {
+                if *click_type == ClickType::Integer {
                     body_environment.integer_values.insert(
                         name.clone(),
                         crate::kernel::SpecIntegerExpression::Term(
@@ -4520,7 +4529,7 @@ impl AnnotationLowerer<'_> {
                         body: Box::new(body),
                     });
                 }
-                if let ClickType::Algebraic(application) = c_type {
+                if let ClickType::Algebraic(application) = click_type {
                     let algebraic_type = self.cached_algebraic_kernel_type(application)?;
                     body_environment.algebraic_values.insert(
                         name.clone(),
@@ -4538,24 +4547,27 @@ impl AnnotationLowerer<'_> {
                         body: Box::new(body),
                     });
                 }
-                let c_type = c_type
-                    .c_type()
+                let program_type = click_type
+                    .interface_type()
                     .ok_or("only C quantifier binders are currently supported")?
                     .to_kernel_type();
-                let value = match c_type {
-                    c_type if crate::kernel::MachineIntegerType::from_c_type(c_type).is_some() => {
-                        crate::kernel::MachineIntegerType::from_c_type(c_type)
+                let value = match program_type {
+                    program_type
+                        if crate::kernel::MachineIntegerType::from_program_type(program_type)
+                            .is_some() =>
+                    {
+                        crate::kernel::MachineIntegerType::from_program_type(program_type)
                             .expect("machine integer")
                             .symbolic_value(variable)
                     }
-                    c_type if c_type.is_pointer() => {
-                        if matches!(c_type, ProgramType::FunctionPointer(_)) {
+                    program_type if program_type.is_pointer() => {
+                        if matches!(program_type, ProgramType::FunctionPointer(_)) {
                             ProgramValue::typed_pointer(
                                 Pointer::symbolic_function(variable),
-                                c_type,
+                                program_type,
                             )
                         } else {
-                            ProgramValue::typed_pointer(Pointer::symbolic(variable), c_type)
+                            ProgramValue::typed_pointer(Pointer::symbolic(variable), program_type)
                         }
                     }
                     _ => {
@@ -4577,14 +4589,14 @@ impl AnnotationLowerer<'_> {
                         self.quantified_values.remove(name);
                     }
                 }
-                if c_type == ProgramType::Int32 {
+                if program_type == ProgramType::Int32 {
                     Ok(SpecProposition::ExistsInt32 {
                         name: display_name.clone(),
                         variable,
                         body: Box::new(body),
                     })
                 } else if let Some(integer_type) =
-                    crate::kernel::MachineIntegerType::from_c_type(c_type)
+                    crate::kernel::MachineIntegerType::from_program_type(program_type)
                 {
                     Ok(SpecProposition::ExistsMachineInteger {
                         name: display_name.clone(),
@@ -4596,7 +4608,7 @@ impl AnnotationLowerer<'_> {
                     Ok(SpecProposition::ExistsPointer {
                         name: display_name.clone(),
                         variable,
-                        c_type,
+                        program_type,
                         body: Box::new(body),
                     })
                 }
@@ -4921,14 +4933,16 @@ impl AnnotationLowerer<'_> {
                 let mut lowered_arguments = Vec::new();
                 for (parameter, argument) in definition.parameters().iter().zip(arguments) {
                     if parameter_is_click_array_ref(parameter) {
-                        let expected_element_type = click_array_element_type(parameter.c_type())
-                            .ok_or_else(|| {
-                                format!(
-                                    "predicate `{}` parameter `{}` is not an array-ref parameter",
-                                    definition.name(),
-                                    parameter.name()
-                                )
-                            })?;
+                        let expected_element_type = click_array_element_type(
+                            parameter.interface_type(),
+                        )
+                        .ok_or_else(|| {
+                            format!(
+                                "predicate `{}` parameter `{}` is not an array-ref parameter",
+                                definition.name(),
+                                parameter.name()
+                            )
+                        })?;
                         let array_ref = self.lower_array_ref_to_spec(argument, environment)?;
                         if !crate::surface::validation::array_ref_elements_compatible(
                             array_ref.element_type,
@@ -5262,15 +5276,15 @@ impl AnnotationLowerer<'_> {
         [start, end].into_iter().any(|bound| {
             matches!(
                 self.contract_expression_click_type(bound, environment),
-                Some(ClickType::Program(C0Type::UInt64(_)))
+                Some(ClickType::Program(InterfaceType::UInt64(_)))
             ) || matches!(bound, ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
                     if self.c_variable_type(name) == Some(ProgramType::UInt64))
                 || matches!(bound, ContractExpression::ProgramExpression(ProgramExpression::Value(value))
-                    if value.c_type() == ProgramType::UInt64)
+                    if value.program_type() == ProgramType::UInt64)
                 // A written cast, `n as uint64`, has the type it names.
                 || matches!(
                     generics::explicit_cast_click_type(bound),
-                    Some(ClickType::Program(C0Type::UInt64(_)))
+                    Some(ClickType::Program(InterfaceType::UInt64(_)))
                 )
         })
     }
@@ -5278,15 +5292,15 @@ impl AnnotationLowerer<'_> {
     /// The declared C type of a parameter or local named in a clause, from
     /// its typed entry value or the live declaration state.
     fn c_variable_type(&self, name: &str) -> Option<ProgramType> {
-        self.c_parameter_types
+        self.program_parameter_types
             .get(name)
             .copied()
-            .or_else(|| self.entry_values.get(name).map(ProgramValue::c_type))
+            .or_else(|| self.entry_values.get(name).map(ProgramValue::program_type))
             .or_else(|| {
                 self.entry_state
                     .locals()
                     .get(name)
-                    .map(|value| value.c_type())
+                    .map(|value| value.program_type())
             })
             .or_else(|| {
                 self.local_type_state
@@ -5390,7 +5404,7 @@ impl AnnotationLowerer<'_> {
                     if integer_index {
                         Some(ClickType::Integer)
                     } else {
-                        Some(ClickType::Program(C0Type::Int32))
+                        Some(ClickType::Program(InterfaceType::Int32))
                     },
                 ));
                 let body_type = self.contract_expression_click_type_in_scope(
@@ -5859,12 +5873,12 @@ impl AnnotationLowerer<'_> {
                 }
                 let argument = self.lower_contract_expression_to_spec(argument, environment)?;
                 if let SpecExpression::Value(value) = &argument {
-                    let destination = crate::kernel::MachineIntegerType::from_c_type(
-                        value.c_type(),
-                    )
-                    .ok_or_else(|| {
-                        "to_integer expects a signed or unsigned machine integer".to_string()
-                    })?;
+                    let destination =
+                        crate::kernel::MachineIntegerType::from_program_type(value.program_type())
+                            .ok_or_else(|| {
+                                "to_integer expects a signed or unsigned machine integer"
+                                    .to_string()
+                            })?;
                     let (crate::kernel::integer_c_value!(bits)) = value.numeric_value() else {
                         return Err(
                             "to_integer expects a signed or unsigned machine integer".into()
@@ -6010,7 +6024,9 @@ impl AnnotationLowerer<'_> {
                     matches!(expression, SpecExpression::Cast(_, ProgramType::UInt64))
                         || matches!(
                             spec_expression_click_type(expression),
-                            Some(ClickType::Program(syntax::C0Type::UInt64(_)))
+                            Some(ClickType::Program(
+                                crate::languages::interface::InterfaceType::UInt64(_)
+                            ))
                         )
                 };
                 let as_uint64 = |expression: SpecExpression| match &expression {
@@ -6078,8 +6094,8 @@ impl AnnotationLowerer<'_> {
             } if !self.contract_expression_is_integer(value, environment) => {
                 let mut value = self.lower_contract_expression_to_spec(value, environment)?;
                 // A typed `let`'s value is at its declared type (G2).
-                if let Some(ClickType::Program(c_type)) = click_type {
-                    value = value.at_machine_type(c_type.to_kernel_type());
+                if let Some(ClickType::Program(interface_type)) = click_type {
+                    value = value.at_machine_type(interface_type.to_kernel_type());
                 }
                 let mut body_environment = environment.clone();
                 body_environment.integer_values.remove(name);
@@ -6200,7 +6216,9 @@ impl AnnotationLowerer<'_> {
                             && pointee_struct.is_none()
                             && !matches!(
                                 self.contract_expression_click_type(operand, environment),
-                                Some(ClickType::Program(C0Type::Int64(_) | C0Type::UInt64(_)))
+                                Some(ClickType::Program(
+                                    InterfaceType::Int64(_) | InterfaceType::UInt64(_)
+                                ))
                             )
                             && !self
                                 .contract_pointer_element_type(operand, environment)
@@ -6330,7 +6348,7 @@ impl AnnotationLowerer<'_> {
                 if integer_conversion_target(name).is_some() =>
             {
                 let argument = integer_conversion_argument(name, arguments)?;
-                let destination = crate::kernel::MachineIntegerType::from_c_type(
+                let destination = crate::kernel::MachineIntegerType::from_program_type(
                     integer_conversion_target(name).unwrap().to_kernel_type(),
                 )
                 .expect("conversion target is an integral machine type");
@@ -6353,7 +6371,7 @@ impl AnnotationLowerer<'_> {
                 Ok(SpecExpression::Value(value))
             }
             ContractExpression::ResourceField(access) => {
-                let Some(ClickType::Program(c_type)) = &access.click_type else {
+                let Some(ClickType::Program(interface_type)) = &access.click_type else {
                     return Err("expected a scalar resource field".into());
                 };
                 if let Some(value) = self.fixed_resource_field(access, environment)? {
@@ -6369,7 +6387,7 @@ impl AnnotationLowerer<'_> {
                         field_index: access.field_index,
                         at_entry: environment.at_function_entry,
                     },
-                    c_type: c_type.to_kernel_type(),
+                    program_type: interface_type.to_kernel_type(),
                 })
             }
             ContractExpression::SequenceLiteral(_) | ContractExpression::SequenceConcat(_, _) => {
@@ -6584,14 +6602,14 @@ impl AnnotationLowerer<'_> {
                 lowered,
                 ..
             } => {
-                if let Some(ClickType::Program(c_type)) =
+                if let Some(ClickType::Program(interface_type)) =
                     self.contract_expression_click_type(base, environment)
-                    && !c_type.is_pointer()
+                    && !interface_type.is_pointer()
                 {
                     return Err(format!(
                         "cannot read field `{field}` of `{}`: `{}` has no fields",
                         diagnostics::describe_contract_expression(base),
-                        describe_c0_type(c_type),
+                        describe_interface_type(interface_type),
                     ));
                 }
                 self.lower_program_expression_to_spec(lowered, environment)
@@ -6897,14 +6915,15 @@ impl AnnotationLowerer<'_> {
                 let initial = self.lower_contract_expression_to_spec(initial, environment)?;
                 // C-valued subfolds can occur inside Integer expressions, so
                 // guard the kernel's carrier here as well as in validation.
-                let c_type = |expression: &SpecExpression| match expression {
-                    SpecExpression::Cast(_, ty) | SpecExpression::PointerCoercion(_, ty) => {
-                        Some(ClickType::Program(generics::c0_type_from_kernel(*ty)))
-                    }
+                let interface_type = |expression: &SpecExpression| match expression {
+                    SpecExpression::Cast(_, ty) | SpecExpression::PointerCoercion(_, ty) => Some(
+                        ClickType::Program(generics::interface_type_from_program_type(*ty)),
+                    ),
                     _ => spec_expression_click_type(expression),
                 };
                 let unsupported = |expression: &SpecExpression| {
-                    c_type(expression).is_some_and(|ty| ty != ClickType::Program(C0Type::Int32))
+                    interface_type(expression)
+                        .is_some_and(|ty| ty != ClickType::Program(InterfaceType::Int32))
                 };
                 if unsupported(&start) || unsupported(&end) {
                     return Err("C-valued range fold requires int32 bounds; uint64 bounds require an Integer accumulator".to_string());
@@ -6971,12 +6990,12 @@ impl AnnotationLowerer<'_> {
                 }
                 let mut value = self.lower_contract_expression_to_spec(value, environment)?;
                 // A typed `let`'s value is at its declared type (G2).
-                if let Some(ClickType::Program(c_type)) = click_type {
-                    value = value.at_machine_type(c_type.to_kernel_type());
+                if let Some(ClickType::Program(interface_type)) = click_type {
+                    value = value.at_machine_type(interface_type.to_kernel_type());
                 }
-                if let (Some(ClickType::Program(c_type)), SpecExpression::Value(fixed)) =
+                if let (Some(ClickType::Program(interface_type)), SpecExpression::Value(fixed)) =
                     (click_type, &value)
-                    && !program_value_matches_click_type(fixed, *c_type)
+                    && !program_value_matches_click_type(fixed, *interface_type)
                 {
                     return Err(format!(
                         "let binding `{name}` evaluated to `{}` of type `{}`, which does not match the declared type `{}`",
@@ -6984,8 +7003,8 @@ impl AnnotationLowerer<'_> {
                             fixed,
                             ParameterBinding::default()
                         ),
-                        crate::kernel::program_type_spelling(fixed.c_type()),
-                        crate::surface::validation::describe_c0_type(*c_type)
+                        crate::kernel::program_type_spelling(fixed.program_type()),
+                        crate::surface::validation::describe_interface_type(*interface_type)
                     ));
                 }
                 let mut body_environment = environment.clone();
@@ -7035,20 +7054,20 @@ impl AnnotationLowerer<'_> {
         if name == "result" {
             Some(self.result_type)
         } else {
-            self.c_parameter_types.get(name).copied().or_else(|| {
+            self.program_parameter_types.get(name).copied().or_else(|| {
                 self.entry_values
                     .get(name)
-                    .map(ProgramValue::c_type)
+                    .map(ProgramValue::program_type)
                     .or_else(|| {
                         self.local_type_state
                             .and_then(|state| state.locals().get(name))
-                            .map(|value| value.c_type())
+                            .map(|value| value.program_type())
                     })
                     // A name bound to a value in this context: a fixed state's
                     // local, including one that keeps an enum in memory.
                     .or_else(|| match environment.values.get(name)? {
                         SpecExpression::Value(value @ ProgramValue::Parameter(_)) => {
-                            Some(value.c_type())
+                            Some(value.program_type())
                         }
                         _ => None,
                     })
@@ -7206,9 +7225,9 @@ impl AnnotationLowerer<'_> {
                         // how a model says this node is the root. Without the
                         // field's declared type the literal lowers as an
                         // `int32` zero and the constructor denotes no value.
-                        AlgebraicValueType::Program(c_type)
-                        | AlgebraicValueType::ObjectPointer(c_type, _)
-                            if c_type.is_pointer()
+                        AlgebraicValueType::Program(interface_type)
+                        | AlgebraicValueType::ObjectPointer(interface_type, _)
+                            if interface_type.is_pointer()
                                 && matches!(
                                     argument,
                                     ContractExpression::IntegerLiteral(text) if text == "0"
@@ -7217,7 +7236,7 @@ impl AnnotationLowerer<'_> {
                             Ok(SpecAlgebraicValue::Program(SpecExpression::Value(
                                 crate::kernel::ProgramValue::typed_pointer(
                                     crate::kernel::Pointer::null(),
-                                    *c_type,
+                                    *interface_type,
                                 ),
                             )))
                         }
@@ -7229,13 +7248,13 @@ impl AnnotationLowerer<'_> {
                         // literals, `3 - 1`, is the literal it denotes. A
                         // literal the type cannot hold is refused, never
                         // wrapped.
-                        AlgebraicValueType::Program(c_type)
-                            if crate::kernel::MachineIntegerType::from_c_type(*c_type).is_some()
+                        AlgebraicValueType::Program(interface_type)
+                            if crate::kernel::MachineIntegerType::from_program_type(*interface_type).is_some()
                                 && integer_constant_spelling(argument).is_some() =>
                         {
                             let text = integer_constant_spelling(argument)
                                 .expect("the guard matched an integer constant");
-                            let ty = crate::kernel::MachineIntegerType::from_c_type(*c_type)
+                            let ty = crate::kernel::MachineIntegerType::from_program_type(*interface_type)
                                 .expect("the guard matched an integer type");
                             crate::kernel::MachineIntegerConstant::parse_decimal(ty.format(), &text)
                                 .and_then(|value| ty.constant_value(value))
@@ -7247,26 +7266,26 @@ impl AnnotationLowerer<'_> {
                                     )
                                 })
                         }
-                        AlgebraicValueType::Program(c_type)
-                        | AlgebraicValueType::ObjectPointer(c_type, _) => {
+                        AlgebraicValueType::Program(interface_type)
+                        | AlgebraicValueType::ObjectPointer(interface_type, _) => {
                             // Validation admits only an argument whose type
                             // converts to the field's exactly, so an integer
                             // argument of another type is widened, as a pure
                             // call's argument is. One of the field's own type
                             // is left as it is, so a constructor rebuilt from
                             // its fields is the value it was built from.
-                            let widens = crate::kernel::MachineIntegerType::from_c_type(*c_type)
+                            let widens = crate::kernel::MachineIntegerType::from_program_type(*interface_type)
                                 .is_some()
                                 && self
                                     .infer_unconstrained_call_argument_type(argument, environment)?
-                                    .and_then(|actual| actual.c_type())
-                                    .is_some_and(|actual| actual.to_kernel_type() != *c_type);
+                                    .and_then(|actual| actual.interface_type())
+                                    .is_some_and(|actual| actual.to_kernel_type() != *interface_type);
                             let value =
                                 self.lower_contract_expression_to_spec(argument, environment)?;
-                            Ok(SpecAlgebraicValue::Program(if *c_type == ProgramType::VoidPointer {
-                                SpecExpression::PointerCoercion(Box::new(value), *c_type)
+                            Ok(SpecAlgebraicValue::Program(if *interface_type == ProgramType::VoidPointer {
+                                SpecExpression::PointerCoercion(Box::new(value), *interface_type)
                             } else if widens {
-                                SpecExpression::Cast(Box::new(value), *c_type)
+                                SpecExpression::Cast(Box::new(value), *interface_type)
                             } else {
                                 value
                             }))
@@ -7606,16 +7625,18 @@ impl AnnotationLowerer<'_> {
                     // parameter and lowers to that pointer type's null value, not
                     // to an `int32` zero, so `rb_parent_is(sub, 0)` compares the
                     // model's parent payload with a pointer.
-                    ClickType::Program(c_type) | ClickType::CObjectPointer { c_type, .. }
+                    ClickType::Program(interface_type)
+                    | ClickType::CObjectPointer { interface_type, .. }
                         if crate::surface::lowering::argument_is_null_pointer_constant(
-                            argument, *c_type,
+                            argument,
+                            *interface_type,
                         ) =>
                     {
                         let pointer = SpecExpression::Value(ProgramValue::typed_pointer(
                             crate::kernel::Pointer::null(),
-                            c_type.to_kernel_type(),
+                            interface_type.to_kernel_type(),
                         ));
-                        Ok(match click_array_element_type(*c_type) {
+                        Ok(match click_array_element_type(*interface_type) {
                             Some(element_type) => {
                                 crate::kernel::SpecPureFunctionArgument::ArrayRef {
                                     memory: if memory_independent {
@@ -7655,7 +7676,7 @@ impl AnnotationLowerer<'_> {
                             element_type: array_ref.element_type,
                         })
                     }
-                    ClickType::Program(c_type) => {
+                    ClickType::Program(interface_type) => {
                         // An argument is at its parameter's type (G2).
                         let value = self
                             .lower_pure_parameter_argument_to_spec(
@@ -7663,7 +7684,7 @@ impl AnnotationLowerer<'_> {
                                 argument,
                                 environment,
                             )?
-                            .at_machine_type(c_type.to_kernel_type());
+                            .at_machine_type(interface_type.to_kernel_type());
                         Ok(crate::kernel::SpecPureFunctionArgument::Value(value))
                     }
                     ClickType::CObjectPointer { .. } => {
@@ -7783,7 +7804,7 @@ impl AnnotationLowerer<'_> {
             }
             // A `T*` parameter binds `T` from the argument's pointer type,
             // as a `T` parameter binds it from the argument's type.
-            ClickType::Program(C0Type::ParameterPointer(_)) | ClickType::Parameter(_) => {
+            ClickType::Program(InterfaceType::ParameterPointer(_)) | ClickType::Parameter(_) => {
                 self.infer_unconstrained_call_argument_type(argument, environment)
             }
             ClickType::Program(_) | ClickType::CObjectPointer { .. } => Ok(Some(expected.clone())),
@@ -7854,7 +7875,7 @@ impl AnnotationLowerer<'_> {
                 let left = self.infer_unconstrained_call_argument_type(left, environment)?;
                 if left
                     .as_ref()
-                    .is_some_and(|ty| ty.c_type().is_some_and(|c| c.is_pointer()))
+                    .is_some_and(|ty| ty.interface_type().is_some_and(|c| c.is_pointer()))
                 {
                     return Ok(left);
                 }
@@ -7862,7 +7883,7 @@ impl AnnotationLowerer<'_> {
                     let right = self.infer_unconstrained_call_argument_type(right, environment)?;
                     if right
                         .as_ref()
-                        .is_some_and(|ty| ty.c_type().is_some_and(|c| c.is_pointer()))
+                        .is_some_and(|ty| ty.interface_type().is_some_and(|c| c.is_pointer()))
                     {
                         return Ok(right);
                     }
@@ -8267,10 +8288,10 @@ impl AnnotationLowerer<'_> {
             })
             .ok_or_else(|| format!("`{}` has no field `{field_name}`", spelled()))?;
         let (offset, value_type) = match rest {
-            [] => (field.offset_bytes(), field.c_type()),
+            [] => (field.offset_bytes(), field.program_type()),
             [RegionParameterAccess::Index(index)] => {
                 let (element, length) =
-                    super::resource_lowering::array_field_elements(field.c_type())
+                    super::resource_lowering::array_field_elements(field.program_type())
                         .ok_or_else(|| format!("`{}.{field_name}` is not an array", spelled()))?;
                 let position = literal_element_index(index).ok_or_else(|| {
                     format!(
@@ -8939,7 +8960,7 @@ impl AnnotationLowerer<'_> {
             ));
         }
 
-        let Some(result_type) = definition.return_type().c_type() else {
+        let Some(result_type) = definition.return_type().interface_type() else {
             return Err(format!("function `{name}` does not return a C value"));
         };
         Ok(SpecExpression::PureFunctionApplication {
@@ -9069,7 +9090,7 @@ impl AnnotationLowerer<'_> {
             ContractExpression::Call { .. } => {
                 let element_type = match self
                     .infer_unconstrained_call_argument_type(expression, environment)?
-                    .and_then(|result| result.c_type())
+                    .and_then(|result| result.interface_type())
                     .and_then(|result| result.pointee_type())
                 {
                     Some(element_type) => element_type.to_kernel_type(),
@@ -9165,7 +9186,7 @@ impl AnnotationLowerer<'_> {
             .or_else(|| {
                 environment.values.get(name).and_then(|value| match value {
                     SpecExpression::Value(ProgramValue::Pointer(pointer)) => {
-                        pointer.c_type().pointee_type()
+                        pointer.program_type().pointee_type()
                     }
                     _ => None,
                 })
@@ -9187,7 +9208,7 @@ impl AnnotationLowerer<'_> {
             } if matches!(body.as_ref(), ContractExpression::Binding(binding) if binding == name) => {
                 click_type
                     .as_ref()
-                    .and_then(ClickType::c_type)
+                    .and_then(ClickType::interface_type)
                     .and_then(|ty| ty.to_kernel_type().pointee_type())
                     .unwrap_or_else(|| self.contract_array_element_type(value, environment))
             }
@@ -9197,7 +9218,7 @@ impl AnnotationLowerer<'_> {
                 .or_else(|| {
                     environment.values.get(name).and_then(|value| match value {
                         SpecExpression::Value(ProgramValue::Pointer(pointer)) => {
-                            pointer.c_type().pointee_type()
+                            pointer.program_type().pointee_type()
                         }
                         _ => None,
                     })
@@ -9280,8 +9301,9 @@ impl AnnotationLowerer<'_> {
             .functions
             .get(name)
             .is_some_and(|definition| match definition.return_type() {
-                ClickType::Program(c_type) => {
-                    c_type.is_pointer() || matches!(c_type, C0Type::ParameterPointer(_))
+                ClickType::Program(interface_type) => {
+                    interface_type.is_pointer()
+                        || matches!(interface_type, InterfaceType::ParameterPointer(_))
                 }
                 ClickType::CObjectPointer { .. } => true,
                 _ => false,
@@ -9291,7 +9313,7 @@ impl AnnotationLowerer<'_> {
         }
         Ok(self
             .infer_unconstrained_call_argument_type(expression, environment)?
-            .and_then(|result| result.c_type())
+            .and_then(|result| result.interface_type())
             .and_then(|result| result.pointee_type())
             .map(|element| element.to_kernel_type().byte_width()))
     }
@@ -9352,7 +9374,7 @@ impl AnnotationLowerer<'_> {
                 .or_else(|| {
                     environment.values.get(name).and_then(|value| match value {
                         SpecExpression::Value(ProgramValue::Pointer(pointer)) => {
-                            pointer.c_type().pointee_type()
+                            pointer.program_type().pointee_type()
                         }
                         _ => None,
                     })
@@ -9394,7 +9416,7 @@ impl AnnotationLowerer<'_> {
         }
         match expression {
             ProgramExpression::Value(ProgramValue::Pointer(pointer)) => {
-                pointer.c_type().pointee_type()
+                pointer.program_type().pointee_type()
             }
             ProgramExpression::AddressOf(target)
             | ProgramExpression::CheckedObjectAddress(target) => match target.as_ref() {
@@ -9417,7 +9439,7 @@ impl AnnotationLowerer<'_> {
                 .or_else(|| {
                     environment.values.get(name).and_then(|value| match value {
                         SpecExpression::Value(ProgramValue::Pointer(pointer)) => {
-                            pointer.c_type().pointee_type()
+                            pointer.program_type().pointee_type()
                         }
                         _ => None,
                     })
@@ -9488,9 +9510,10 @@ impl AnnotationLowerer<'_> {
                 }
                 _ => None,
             },
-            ProgramExpression::Value(ProgramValue::Pointer(pointer)) => {
-                pointer.c_type().pointee_type().map(ProgramType::byte_width)
-            }
+            ProgramExpression::Value(ProgramValue::Pointer(pointer)) => pointer
+                .program_type()
+                .pointee_type()
+                .map(ProgramType::byte_width),
             ProgramExpression::Cast { target_type, .. } => {
                 target_type.pointee_type().map(ProgramType::byte_width)
             }
@@ -9521,9 +9544,10 @@ impl AnnotationLowerer<'_> {
                 })
                 .or_else(|| {
                     environment.values.get(name).and_then(|value| match value {
-                        SpecExpression::Value(ProgramValue::Pointer(pointer)) => {
-                            pointer.c_type().pointee_type().map(ProgramType::byte_width)
-                        }
+                        SpecExpression::Value(ProgramValue::Pointer(pointer)) => pointer
+                            .program_type()
+                            .pointee_type()
+                            .map(ProgramType::byte_width),
                         _ => None,
                     })
                 }),
@@ -9612,8 +9636,8 @@ fn aggregate_projection_root(expression: &ProgramExpression) -> Option<&str> {
 }
 
 fn spec_expression_click_type(expression: &SpecExpression) -> Option<ClickType> {
-    let c_type = match expression {
-        SpecExpression::ResourceField { c_type, .. } => *c_type,
+    let program_type = match expression {
+        SpecExpression::ResourceField { program_type, .. } => *program_type,
         SpecExpression::Value(value) => {
             return Some(generics::click_type_from_program_value(value));
         }
@@ -9623,7 +9647,7 @@ fn spec_expression_click_type(expression: &SpecExpression) -> Option<ClickType> 
             ..
         } => {
             return Some(ClickType::from_object_pointer_class(
-                generics::c0_type_from_kernel(*result_type),
+                generics::interface_type_from_program_type(*result_type),
                 class,
             ));
         }
@@ -9648,7 +9672,9 @@ fn spec_expression_click_type(expression: &SpecExpression) -> Option<ClickType> 
         SpecExpression::PointerOffset { .. } => ProgramType::VoidPointer,
         _ => return None,
     };
-    Some(ClickType::Program(generics::c0_type_from_kernel(c_type)))
+    Some(ClickType::Program(
+        generics::interface_type_from_program_type(program_type),
+    ))
 }
 
 fn algebraic_kernel_type_arguments(
@@ -9667,9 +9693,11 @@ fn click_type_to_algebraic_value_type(
     match click_type {
         ClickType::Resource => Err("Resource is not an algebraic field type".into()),
         ClickType::Parameter(name) => Err(format!("unresolved type parameter `{name}`")),
-        ClickType::Program(c_type) => Ok(AlgebraicValueType::Program(c_type.to_kernel_type())),
-        ClickType::CObjectPointer { c_type, .. } => Ok(AlgebraicValueType::ObjectPointer(
-            c_type.to_kernel_type(),
+        ClickType::Program(interface_type) => {
+            Ok(AlgebraicValueType::Program(interface_type.to_kernel_type()))
+        }
+        ClickType::CObjectPointer { interface_type, .. } => Ok(AlgebraicValueType::ObjectPointer(
+            interface_type.to_kernel_type(),
             click_type
                 .pointer_object_class()
                 .expect("nominal pointer type"),
@@ -9810,9 +9838,11 @@ fn instantiate_algebraic_kernel_field_type(
 ) -> Result<AlgebraicValueType, String> {
     match field {
         AlgebraicFieldType::Integer => Ok(AlgebraicValueType::Integer),
-        AlgebraicFieldType::C { c_type, .. } => Ok(match field.pointer_object_class() {
-            Some(class) => AlgebraicValueType::ObjectPointer(c_type.to_kernel_type(), class),
-            None => AlgebraicValueType::Program(c_type.to_kernel_type()),
+        AlgebraicFieldType::C { interface_type, .. } => Ok(match field.pointer_object_class() {
+            Some(class) => {
+                AlgebraicValueType::ObjectPointer(interface_type.to_kernel_type(), class)
+            }
+            None => AlgebraicValueType::Program(interface_type.to_kernel_type()),
         }),
         AlgebraicFieldType::Parameter(name) => definition
             .type_parameters()
@@ -9828,7 +9858,7 @@ fn instantiate_algebraic_kernel_field_type(
             .and_then(|index| arguments.get(index))
         {
             Some(AlgebraicValueType::Program(element)) => {
-                crate::surface::generics::c0_type_from_kernel(*element)
+                crate::surface::generics::interface_type_from_program_type(*element)
                     .pointer_type()
                     .map(|pointer| AlgebraicValueType::Program(pointer.to_kernel_type()))
                     .ok_or_else(|| format!("`{name}*` needs `{name}` to be a C scalar type"))

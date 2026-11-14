@@ -52,7 +52,7 @@ pub(super) fn collect_common_memory_loads(
                 KernelTermNode::Fold(_) | KernelTermNode::Match(_)
             )
             && let KernelType::Program(ty) = term.ty()
-            && let Some(format) = MachineIntegerType::from_c_type(*ty)
+            && let Some(format) = MachineIntegerType::from_program_type(*ty)
             && let Some(value) = SharedMachineIntegerTerm::from_shared(format, term.clone())
         {
             collect_shared_machine_memory_loads(

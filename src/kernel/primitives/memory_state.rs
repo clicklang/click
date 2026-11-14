@@ -1287,12 +1287,17 @@ impl LocalEnvironment {
     }
 
     pub fn set(&mut self, name: impl Into<String>, value: ProgramValue) {
-        let c_type = value.c_type();
-        self.set_typed(name, value, c_type);
+        let program_type = value.program_type();
+        self.set_typed(name, value, program_type);
     }
 
-    pub fn set_typed(&mut self, name: impl Into<String>, value: ProgramValue, c_type: ProgramType) {
-        self.set_typed_with_qualifiers(name, value, c_type, false, false);
+    pub fn set_typed(
+        &mut self,
+        name: impl Into<String>,
+        value: ProgramValue,
+        program_type: ProgramType,
+    ) {
+        self.set_typed_with_qualifiers(name, value, program_type, false, false);
     }
 
     /// Bind model data independently of any same-named automatic object.
@@ -1300,10 +1305,10 @@ impl LocalEnvironment {
         &mut self,
         name: impl Into<String>,
         value: ProgramValue,
-        c_type: ProgramType,
+        program_type: ProgramType,
     ) {
         let name = name.into();
-        self.set_typed(name.clone(), value, c_type);
+        self.set_typed(name.clone(), value, program_type);
         let mut binding = self
             .bindings
             .get(&name)
@@ -1322,14 +1327,14 @@ impl LocalEnvironment {
         &mut self,
         name: impl Into<String>,
         value: ProgramValue,
-        c_type: ProgramType,
+        program_type: ProgramType,
         volatile: bool,
         pointee_volatile: bool,
     ) {
         self.set_typed_with_all_qualifiers(
             name,
             value,
-            c_type,
+            program_type,
             volatile,
             pointee_volatile,
             false,
@@ -1341,7 +1346,7 @@ impl LocalEnvironment {
         &mut self,
         name: impl Into<String>,
         value: ProgramValue,
-        c_type: ProgramType,
+        program_type: ProgramType,
         volatile: bool,
         pointee_volatile: bool,
         constant: bool,
@@ -1356,8 +1361,8 @@ impl LocalEnvironment {
             .unwrap_or_else(|| Memory::local_pointer(&name));
         self.set_typed_qualified_with_all_qualifiers(
             name,
-            value.retag_pointer(c_type),
-            c_type,
+            value.retag_pointer(program_type),
+            program_type,
             slot,
             volatile,
             pointee_volatile,
@@ -1370,7 +1375,7 @@ impl LocalEnvironment {
         &mut self,
         name: impl Into<String>,
         value: ProgramValue,
-        c_type: ProgramType,
+        program_type: ProgramType,
         slot: Pointer,
         volatile: bool,
         pointee_volatile: bool,
@@ -1396,7 +1401,7 @@ impl LocalEnvironment {
                     .with_pointer_pointee_volatile(pointee_volatile)
                     .with_pointer_pointee_constant(pointee_constant)
                     .into(),
-                c_type,
+                program_type,
                 slot,
                 volatile,
                 pointee_volatile,
@@ -1409,7 +1414,7 @@ impl LocalEnvironment {
     pub(in crate::kernel) fn set_global_with_all_qualifiers(
         &mut self,
         name: impl Into<String>,
-        c_type: ProgramType,
+        program_type: ProgramType,
         slot: Pointer,
         volatile: bool,
         pointee_volatile: bool,
@@ -1419,7 +1424,7 @@ impl LocalEnvironment {
         self.insert_binding(
             name.into(),
             LocalBinding::GlobalObject {
-                c_type,
+                program_type,
                 slot,
                 volatile,
                 pointee_volatile,
@@ -1432,7 +1437,7 @@ impl LocalEnvironment {
     pub(in crate::kernel) fn set_uninitialized_with_all_qualifiers(
         &mut self,
         name: impl Into<String>,
-        c_type: ProgramType,
+        program_type: ProgramType,
         slot: Pointer,
         volatile: bool,
         pointee_volatile: bool,
@@ -1442,7 +1447,7 @@ impl LocalEnvironment {
         self.insert_binding(
             name.into(),
             LocalBinding::UninitializedObject {
-                c_type,
+                program_type,
                 slot,
                 volatile,
                 pointee_volatile,
@@ -1511,18 +1516,18 @@ impl LocalEnvironment {
         &mut self,
         name: impl Into<String>,
         value: impl Into<StoredExecutionValue>,
-        c_type: ProgramType,
+        program_type: ProgramType,
         volatile: bool,
         pointee_volatile: bool,
         constant: bool,
         pointee_constant: bool,
     ) {
         let value = value.into();
-        if value.shared().is_none() || value.c_type().is_pointer() {
+        if value.shared().is_none() || value.program_type().is_pointer() {
             self.set_typed_with_all_qualifiers(
                 name,
                 value.into_native(),
-                c_type,
+                program_type,
                 volatile,
                 pointee_volatile,
                 constant,
@@ -1550,7 +1555,7 @@ impl LocalEnvironment {
             LocalBinding::Object {
                 storage_declared,
                 value,
-                c_type,
+                program_type,
                 slot,
                 volatile,
                 pointee_volatile,
@@ -1718,9 +1723,9 @@ impl LocalEnvironment {
 
     pub(in crate::kernel) fn object_type(&self, name: &str) -> Option<ProgramType> {
         match self.binding(name) {
-            Some(LocalBinding::Object { c_type, .. }) => Some(*c_type),
-            Some(LocalBinding::UninitializedObject { c_type, .. }) => Some(*c_type),
-            Some(LocalBinding::GlobalObject { c_type, .. }) => Some(*c_type),
+            Some(LocalBinding::Object { program_type, .. }) => Some(*program_type),
+            Some(LocalBinding::UninitializedObject { program_type, .. }) => Some(*program_type),
+            Some(LocalBinding::GlobalObject { program_type, .. }) => Some(*program_type),
             Some(LocalBinding::ArrayObject { element_type, .. }) => Some(*element_type),
             None => None,
             Some(LocalBinding::AggregateObject { .. }) => None,
@@ -1729,8 +1734,8 @@ impl LocalEnvironment {
 
     pub(crate) fn scalar_object_type(&self, name: &str) -> Option<ProgramType> {
         match self.binding(name) {
-            Some(LocalBinding::Object { c_type, .. }) => Some(*c_type),
-            Some(LocalBinding::UninitializedObject { c_type, .. }) => Some(*c_type),
+            Some(LocalBinding::Object { program_type, .. }) => Some(*program_type),
+            Some(LocalBinding::UninitializedObject { program_type, .. }) => Some(*program_type),
             Some(LocalBinding::GlobalObject { .. }) => None,
             Some(LocalBinding::ArrayObject { .. })
             | Some(LocalBinding::AggregateObject { .. })
@@ -2164,7 +2169,7 @@ impl LocalEnvironment {
             let KernelType::Program(ty) = term.ty() else {
                 return false;
             };
-            let Some(format) = MachineIntegerType::from_c_type(*ty) else {
+            let Some(format) = MachineIntegerType::from_program_type(*ty) else {
                 return false;
             };
             if let Some(root) = held.shared() {
@@ -2337,7 +2342,7 @@ impl LocalEnvironment {
     /// the name held such an object.
     pub(in crate::kernel) fn forget_initialization(&mut self, name: &str) -> bool {
         let Some(LocalBinding::Object {
-            c_type,
+            program_type,
             slot,
             volatile,
             pointee_volatile,
@@ -2351,7 +2356,7 @@ impl LocalEnvironment {
         self.insert_binding(
             name.to_string(),
             LocalBinding::UninitializedObject {
-                c_type,
+                program_type,
                 slot,
                 volatile,
                 pointee_volatile,
@@ -3227,11 +3232,11 @@ where
 /// question above covers every byte the cell can be read as.
 fn union_overlay_widths(memory: &Memory) -> BTreeMap<Pointer, u32> {
     let mut widths = BTreeMap::<Pointer, u32>::new();
-    for (pointer, c_type) in memory.union_cells.keys() {
+    for (pointer, program_type) in memory.union_cells.keys() {
         widths
             .entry(pointer.clone())
-            .and_modify(|width| *width = (*width).max(c_type.byte_width()))
-            .or_insert_with(|| c_type.byte_width());
+            .and_modify(|width| *width = (*width).max(program_type.byte_width()))
+            .or_insert_with(|| program_type.byte_width());
     }
     widths
 }
@@ -3443,9 +3448,9 @@ impl Memory {
         self,
         block: PointerBlock,
         size: u32,
-        c_type: ProgramType,
+        program_type: ProgramType,
     ) -> Self {
-        self.with_classed_scalar_block(block, size, c_type, None)
+        self.with_classed_scalar_block(block, size, program_type, None)
     }
 
     /// Declares one complete automatic scalar, retaining its type while its
@@ -3456,14 +3461,14 @@ impl Memory {
         mut self,
         block: PointerBlock,
         size: u32,
-        c_type: ProgramType,
+        program_type: ProgramType,
         declared_class: Option<crate::kernel::effective_type::CAccessClass>,
     ) -> Self {
         let base = intern_derivation_base(&mut self);
         let mut declaration = MemoryBlock::new(size);
-        declaration.declared_scalar_type = Some(c_type);
+        declaration.declared_scalar_type = Some(program_type);
         declaration.declared_class = declared_class
-            .or_else(|| crate::kernel::effective_type::CAccessClass::of_kernel_type(c_type));
+            .or_else(|| crate::kernel::effective_type::CAccessClass::of_kernel_type(program_type));
         std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), declaration);
         record_memory_derivation(&mut self, MemoryDerivation::BlockDeclared { base, block });
         self
@@ -3828,7 +3833,7 @@ impl Memory {
                     .is_some()
                 {
                     let value_type = match value {
-                        CachedValue::Cell(value) => value.c_type(),
+                        CachedValue::Cell(value) => value.program_type(),
                         CachedValue::UnionView(value_type, _) => value_type,
                     };
                     // Function pointers do not yet use logical version reads.
@@ -4829,10 +4834,10 @@ impl Memory {
                     record.record(pointer, value.byte_width());
                 }
             }
-            for ((pointer, c_type), _) in local_block_entries(&memory.union_cells) {
+            for ((pointer, program_type), _) in local_block_entries(&memory.union_cells) {
                 visited += 1;
                 if !preserved_blocks.contains_block(&pointer.block) {
-                    record.record(pointer, c_type.byte_width());
+                    record.record(pointer, program_type.byte_width());
                 }
             }
             crate::instrumentation::record_deterministic_work(visited);
@@ -4974,11 +4979,11 @@ impl Memory {
                     blocks.insert(pointer.block.clone());
                 }
             }
-            for ((pointer, c_type), _) in memory.union_cells.iter() {
+            for ((pointer, program_type), _) in memory.union_cells.iter() {
                 visited += 1;
                 if !loan_preserving_havoc_keeps_cell(
                     pointer,
-                    c_type.byte_width(),
+                    program_type.byte_width(),
                     preserved_blocks,
                     ledger,
                 ) {
@@ -5474,7 +5479,7 @@ impl Memory {
         }
         if base.block.is_local_block()
             || matches!(base.block, PointerBlock::Heap(_))
-            || value.c_type() != element_type
+            || value.program_type() != element_type
             || !self.run_can_stand_for_cells_at(&base)
             || AliasCandidates::only_block(&base.block)
                 .entries(self.cells.concrete())
@@ -5538,7 +5543,7 @@ impl Memory {
             let run = CellRun::new_with_mode(
                 base.offset_by_bytes(run.offset),
                 run.stride,
-                run.value.c_type(),
+                run.value.program_type(),
                 run.count,
                 source.clone(),
                 RunValueMode::Constant(run.value.clone()),
@@ -5694,7 +5699,7 @@ impl Memory {
                     return Err(invalid("unsupported run values"));
                 };
                 if run.element_type() != element_type
-                    || value.c_type() != element_type
+                    || value.program_type() != element_type
                     || run.element_width() != element_type.byte_width()
                     || (run_start - start) % width != 0
                 {
@@ -5747,11 +5752,11 @@ impl Memory {
                 if offset < start
                     || offset + width > end
                     || (offset - start) % width != 0
-                    || value.c_type() != element_type
+                    || value.program_type() != element_type
                 {
                     return Err(invalid(&format!(
                         "cell at byte {offset} with type {:?} does not fit {element_type:?} region {start}..{end}",
-                        value.c_type()
+                        value.program_type()
                     )));
                 }
                 let index = ((offset - start) / width) as u32;
@@ -5774,7 +5779,7 @@ impl Memory {
                 );
             }
         } else {
-            if value.c_type() != element_type {
+            if value.program_type() != element_type {
                 return Err(RuntimeError::TypeMismatch);
             }
             spans.push((0, count, value));
@@ -5843,7 +5848,7 @@ impl Memory {
         }
         if count == 0 {
             if (copy && !matches!(value, ProgramValue::Pointer(_)))
-                || (!copy && value.c_type() != element)
+                || (!copy && value.program_type() != element)
             {
                 return Err(RuntimeError::TypeMismatch);
             }
@@ -5973,7 +5978,7 @@ impl Memory {
                 if delta < 0
                     || delta + width > i64::from(bytes)
                     || delta % width != 0
-                    || value.c_type() != element
+                    || value.program_type() != element
                 {
                     return Err(RuntimeError::TypeMismatch);
                 }
@@ -5998,7 +6003,7 @@ impl Memory {
                 ));
             }
         } else {
-            if value.c_type() != element {
+            if value.program_type() != element {
                 return Err(RuntimeError::TypeMismatch);
             }
             captured_runs.push(CellRun::new_with_mode(
@@ -6116,8 +6121,13 @@ impl Memory {
     /// The observation is computed here so callers cannot supply a new value
     /// under the guise of a read.
     #[cfg(test)]
-    pub(crate) fn materialize_symbolic_cell(self, pointer: Pointer, c_type: ProgramType) -> Self {
-        let value = crate::kernel::eval::symbolic_storage_cell_value(&self, &pointer, c_type, true);
+    pub(crate) fn materialize_symbolic_cell(
+        self,
+        pointer: Pointer,
+        program_type: ProgramType,
+    ) -> Self {
+        let value =
+            crate::kernel::eval::symbolic_storage_cell_value(&self, &pointer, program_type, true);
         match value {
             Some(value) => self.materialize_named_cell(pointer, value),
             None => self,
@@ -6131,14 +6141,15 @@ impl Memory {
     pub(crate) fn materialize_cell_from_source(
         self,
         pointer: Pointer,
-        c_type: ProgramType,
+        program_type: ProgramType,
         source: SharedMemory,
     ) -> Self {
-        let value = if let ProgramType::Parameter(parameter) = c_type {
+        let value = if let ProgramType::Parameter(parameter) = program_type {
             AlgebraicTermNode::parameter_load(source, pointer.clone(), parameter)
         } else {
-            let load = crate::kernel::eval::canonical_cell_load(source, pointer.clone(), c_type);
-            crate::kernel::cell_run_value(c_type, load)
+            let load =
+                crate::kernel::eval::canonical_cell_load(source, pointer.clone(), program_type);
+            crate::kernel::cell_run_value(program_type, load)
         };
         self.materialize_named_cell(pointer, value)
     }
@@ -6647,7 +6658,7 @@ impl Memory {
         memory
     }
 
-    /// Drops every cell a field of `c_type` at `offset_bytes` from `base`
+    /// Drops every cell a field of `program_type` at `offset_bytes` from `base`
     /// could occupy.
     ///
     /// Used where a copy cannot carry a field's value: leaving the
@@ -6657,7 +6668,7 @@ impl Memory {
         &self,
         base: &Pointer,
         offset_bytes: u32,
-        c_type: ProgramType,
+        program_type: ProgramType,
     ) -> Self {
         let diagnostic_base = self.clone();
         let Some(field_start) = base
@@ -6667,7 +6678,7 @@ impl Memory {
         else {
             return self.clone();
         };
-        let field_end = field_start + i64::from(c_type.byte_width());
+        let field_end = field_start + i64::from(program_type.byte_width());
         let mut memory = self.clone();
         let source = intern_memory_ref(&memory);
         let overlaps = |pointer: &Pointer| {
@@ -6702,7 +6713,7 @@ impl Memory {
                 block: base.block.clone(),
                 offset: PointerOffsetTerm::Constant(field_start),
             },
-            c_type.byte_width(),
+            program_type.byte_width(),
         );
         // Nothing restores these cells — the copy could not carry the field —
         // so the result knows strictly less than its source and must not be
@@ -6719,7 +6730,7 @@ impl Memory {
             vec![
                 ProgramValue::pointer(base.clone()),
                 ProgramValue::Int32(offset_bytes.into()),
-                ProgramValue::Int32(c_type.byte_width().into()),
+                ProgramValue::Int32(program_type.byte_width().into()),
             ],
         );
         memory
@@ -6849,17 +6860,17 @@ impl Memory {
             };
         }
         if !self.union_cells.is_empty() {
-            let mut keep_view = |(pointer, c_type): &(Pointer, ProgramType),
+            let mut keep_view = |(pointer, program_type): &(Pointer, ProgramType),
                                  value: &ProgramValue| match fate(
                 pointer,
-                CachedValue::UnionView(*c_type, value),
+                CachedValue::UnionView(*program_type, value),
             ) {
                 CachedValueFate::Kept => true,
                 CachedValueFate::Overwritten | CachedValueFate::Retired => false,
                 CachedValueFate::Forgotten => {
                     push_dropped_initialized(
                         &mut forgotten_cells,
-                        (pointer.clone(), c_type.byte_width()),
+                        (pointer.clone(), program_type.byte_width()),
                     );
                     false
                 }
@@ -7307,7 +7318,7 @@ impl Memory {
             scope,
             |pointer, value| match value {
                 CachedValue::Cell(value) => cell_fate(pointer, value),
-                CachedValue::UnionView(c_type, _) => view_fate(pointer, c_type),
+                CachedValue::UnionView(program_type, _) => view_fate(pointer, program_type),
             },
             run_rule,
         );
@@ -7635,7 +7646,7 @@ impl Memory {
         let load = MachineTerm::MemoryLoad(
             crate::kernel::intern_memory(self.clone()),
             Box::new(pointer.clone()),
-            LoadKind::of_type(ty.c_type())?,
+            LoadKind::of_type(ty.program_type())?,
         );
         Some(match ty {
             MachineIntegerType::Int128 => ProgramValue::Int128(load),
@@ -8700,13 +8711,13 @@ impl ExecutionState {
             let value = argument
                 .as_program_value()
                 .ok_or("control resource needs concrete arguments")?;
-            if parameter.c_type() != value.c_type() {
+            if parameter.program_type() != value.program_type() {
                 return Err("control resource argument has the wrong type".into());
             }
             evaluation.locals.set_typed(
                 parameter.name().to_string(),
                 value.clone(),
-                parameter.c_type(),
+                parameter.program_type(),
             );
         }
         let mut children = Vec::with_capacity(definition.contains().len());
@@ -9662,10 +9673,10 @@ impl ExecutionState {
             .bindings
             .iter()
             .filter_map(|(name, binding)| {
-                let (c_type, slot, volatile, pointee_volatile, constant, pointee_constant) =
+                let (program_type, slot, volatile, pointee_volatile, constant, pointee_constant) =
                     match binding {
                         LocalBinding::Object {
-                            c_type,
+                            program_type,
                             slot,
                             volatile,
                             pointee_volatile,
@@ -9674,7 +9685,7 @@ impl ExecutionState {
                             ..
                         }
                         | LocalBinding::UninitializedObject {
-                            c_type,
+                            program_type,
                             slot,
                             volatile,
                             pointee_volatile,
@@ -9682,7 +9693,7 @@ impl ExecutionState {
                             pointee_constant,
                             ..
                         } => (
-                            *c_type,
+                            *program_type,
                             slot.clone(),
                             *volatile,
                             *pointee_volatile,
@@ -9699,7 +9710,7 @@ impl ExecutionState {
                 memory
                     .known_value(&slot)
                     .and_then(|value| {
-                        c_type.read_cell(&value).or_else(|| {
+                        program_type.read_cell(&value).or_else(|| {
                             (!matches!(binding, LocalBinding::UninitializedObject { .. }))
                                 .then_some(value)
                         })
@@ -9708,7 +9719,7 @@ impl ExecutionState {
                         (
                             name.clone(),
                             value,
-                            c_type,
+                            program_type,
                             slot,
                             volatile,
                             pointee_volatile,
@@ -9718,13 +9729,21 @@ impl ExecutionState {
                     })
             })
             .collect::<Vec<_>>();
-        for (name, value, c_type, slot, volatile, pointee_volatile, constant, pointee_constant) in
-            updates
+        for (
+            name,
+            value,
+            program_type,
+            slot,
+            volatile,
+            pointee_volatile,
+            constant,
+            pointee_constant,
+        ) in updates
         {
             self.locals.set_typed_qualified_with_all_qualifiers(
                 name,
                 value,
-                c_type,
+                program_type,
                 slot,
                 volatile,
                 pointee_volatile,
@@ -10287,7 +10306,7 @@ impl<'a> CachedValue<'a> {
     pub(super) fn byte_width(self) -> u32 {
         match self {
             Self::Cell(value) => value.byte_width(),
-            Self::UnionView(c_type, _) => c_type.byte_width(),
+            Self::UnionView(program_type, _) => program_type.byte_width(),
         }
     }
 }

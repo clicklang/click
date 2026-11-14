@@ -279,11 +279,11 @@ fn checked_integer_binding_rewrites_registered_load_at_exact_snapshot() {
     };
     let load = exact_load(&memory, &pointer);
     let input = Term::Integer(machine_variable(load));
-    let c_replacements = BTreeMap::new();
+    let program_replacements = BTreeMap::new();
     let integer_replacements = BTreeMap::from([(source, IntegerTerm::constant_i64(9))]);
     let algebraic_replacements = BTreeMap::new();
     let mut rewrite = TermRewrite::for_checked_typed_variables(
-        &c_replacements,
+        &program_replacements,
         &integer_replacements,
         &algebraic_replacements,
     );

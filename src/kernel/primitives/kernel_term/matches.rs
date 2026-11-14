@@ -81,7 +81,7 @@ impl KernelMatchArm {
                 // export. Reify its existing typed descriptor directly.
                 if let (KernelType::Program(ty), KernelTermNode::Variable(variable)) =
                     (value.ty(), value.node())
-                    && let Some(format) = MachineIntegerType::from_c_type(*ty)
+                    && let Some(format) = MachineIntegerType::from_program_type(*ty)
                 {
                     crate::instrumentation::record_deterministic_work(1);
                     return Ok(AlgebraicValue::Program(machine::wrap_exact(
@@ -178,7 +178,7 @@ impl KernelMatch {
             })
             .collect();
         Some(
-            Self::new(KernelType::Program(format.c_type()), scrutinee, arms)
+            Self::new(KernelType::Program(format.program_type()), scrutinee, arms)
                 .expect("native machine match types"),
         )
     }
@@ -252,7 +252,7 @@ impl KernelMatch {
         let KernelType::Program(ty) = self.result_type else {
             return Err("expected machine match");
         };
-        if MachineIntegerType::from_c_type(ty).is_none() {
+        if MachineIntegerType::from_program_type(ty).is_none() {
             return Err("expected machine integer match");
         }
         Ok(MachineTerm::AlgebraicMatch {
@@ -476,7 +476,7 @@ mod tests {
             let common = KernelMatch::import_machine(&mut import, format, &native).unwrap();
             assert_eq!(
                 common.arguments[1].ty(),
-                &KernelType::Program(format.c_type())
+                &KernelType::Program(format.program_type())
             );
             assert_eq!(common.export_machine(&mut export).unwrap(), native);
         }

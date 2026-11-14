@@ -15,7 +15,7 @@ impl SpecValue {
         if then_value == else_value {
             return Ok(Some(then_value.clone()));
         }
-        let is_bool = |value: &Self| value.c_type() == ProgramType::Bool;
+        let is_bool = |value: &Self| value.program_type() == ProgramType::Bool;
         if (is_bool(then_value) && else_value.machine().is_some())
             || (is_bool(else_value) && then_value.machine().is_some())
         {
@@ -103,7 +103,7 @@ impl SpecValue {
         }
         let value = self.native();
         IntegerTerm::from_machine(
-            MachineIntegerType::from_c_type(value.c_type())?,
+            MachineIntegerType::from_program_type(value.program_type())?,
             program_value_bitvector_term(&value)?,
         )
     }
@@ -177,7 +177,8 @@ impl SpecCallArgument {
                 let KernelType::Program(ty) = value.ty() else {
                     unreachable!("machine argument");
                 };
-                let format = MachineIntegerType::from_c_type(*ty).expect("machine argument type");
+                let format =
+                    MachineIntegerType::from_program_type(*ty).expect("machine argument type");
                 PureFunctionArgument::SharedMachine(
                     SharedMachineIntegerTerm::from_shared(format, value)
                         .expect("retained pure-call argument"),

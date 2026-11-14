@@ -52,11 +52,11 @@ impl LoweredCppFunction {
     pub(crate) fn prepared_execution(&self) -> std::sync::Arc<crate::languages::PreparedExecution> {
         self.execution.clone()
     }
-    pub fn contract_functions(&self) -> &[crate::languages::c::syntax::C0Function] {
+    pub fn contract_functions(&self) -> &[crate::languages::interface::ImportedFunction] {
         &self.execution.functions
     }
 
-    pub fn record_layouts(&self) -> &BTreeMap<String, crate::languages::c::syntax::C0StructLayout> {
+    pub fn record_layouts(&self) -> &BTreeMap<String, crate::languages::interface::RecordLayout> {
         &self.execution.layouts
     }
 
@@ -201,7 +201,7 @@ fn lower_function(
     names: &ResolvedNames,
     records: &super::schema::RecordIndex<'_>,
     constants: &BTreeMap<&str, &CppConstant>,
-    layouts: &BTreeMap<String, crate::languages::c::syntax::C0StructLayout>,
+    layouts: &BTreeMap<String, crate::languages::interface::RecordLayout>,
     polymorphism: &Polymorphism<'_>,
 ) -> Result<ProgramFunction, String> {
     let mut declared_places = Vec::new();
@@ -337,7 +337,7 @@ pub(super) fn is_reference_parameter(index: usize, parameter: &CppPlace) -> bool
 
 fn lower_parameter(
     parameter: &CppPlace,
-    layouts: &BTreeMap<String, crate::languages::c::syntax::C0StructLayout>,
+    layouts: &BTreeMap<String, crate::languages::interface::RecordLayout>,
 ) -> Result<crate::kernel::ProgramParameter, String> {
     match &parameter.value_type {
         CppType::Record {
@@ -455,7 +455,7 @@ struct LoweringContext<'a> {
     places: BTreeMap<&'a str, &'a CppPlace>,
     records: &'a super::schema::RecordIndex<'a>,
     constants: &'a BTreeMap<&'a str, &'a CppConstant>,
-    layouts: &'a BTreeMap<String, crate::languages::c::syntax::C0StructLayout>,
+    layouts: &'a BTreeMap<String, crate::languages::interface::RecordLayout>,
     next_load_occurrence: u32,
     return_capture_name: String,
     nested_capture_name: String,
@@ -2420,7 +2420,7 @@ impl LoweringContext<'_> {
     fn record_layout(&self, name: &str) -> Result<AggregateLayout, String> {
         self.layouts
             .get(name)
-            .map(crate::languages::c::syntax::C0StructLayout::to_kernel_aggregate_layout)
+            .map(crate::languages::interface::RecordLayout::to_kernel_aggregate_layout)
             .ok_or_else(|| format!("C++ lowering found no checked layout for `{name}`"))
     }
 

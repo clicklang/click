@@ -58,7 +58,7 @@ fn cast_rule_keeps_shared_operand_prefixes() {
         for size in [8, 32, 96] {
             let _session = crate::kernel::VerificationSession::enter();
             let mut term =
-                KernelTerm::variable(KernelType::Program(source.c_type()), Variable(982107));
+                KernelTerm::variable(KernelType::Program(source.program_type()), Variable(982107));
             let opaque = IntegerTerm::from_machine(
                 source,
                 MachineTerm::PureFunctionApplication {

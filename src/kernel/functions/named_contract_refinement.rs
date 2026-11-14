@@ -154,7 +154,7 @@ pub(super) fn snake_case_contract_name(name: &str) -> String {
 /// spelled by its pointer type. The skeleton is source the user edits, and
 /// this is the one slot they may have to correct.
 pub(super) fn program_parameter_type_spelling(parameter: &ProgramParameter) -> String {
-    let base = program_type_spelling(parameter.c_type());
+    let base = program_type_spelling(parameter.program_type());
     if parameter.pointee_is_constant() {
         format!("const {base}")
     } else {
@@ -165,8 +165,8 @@ pub(super) fn program_parameter_type_spelling(parameter: &ProgramParameter) -> S
 /// The C0 spelling of a kernel C type, for a diagnostic that has to say what
 /// type a value had. An aggregate pointer is spelled by its pointer type, as
 /// [`program_parameter_type_spelling`] explains.
-pub(crate) fn program_type_spelling(c_type: ProgramType) -> &'static str {
-    match c_type {
+pub(crate) fn program_type_spelling(program_type: ProgramType) -> &'static str {
+    match program_type {
         ProgramType::Parameter(name) => name.name(),
         ProgramType::ParameterPointer(name) => {
             crate::kernel::TypeParameterName::intern(&format!("{}*", name.name())).name()
@@ -345,7 +345,7 @@ pub(in crate::kernel) fn contract_refinement_context_for_interface(
     for (index, parameter) in function_interface.parameters().iter().enumerate() {
         let variable = budget.allocate_kernel_variable().ok()?;
         argument_values.push(
-            symbolic_call_result(parameter.c_type(), variable)
+            symbolic_call_result(parameter.program_type(), variable)
                 .complete_word(Pointer::symbolic(variable))
                 .with_pointer_object_class(
                     contract
@@ -366,7 +366,7 @@ pub(in crate::kernel) fn contract_refinement_context_for_interface(
             let mut values = Vec::new();
             for parameter in contract.interface().value_parameters() {
                 let variable = budget.allocate_kernel_variable().ok()?;
-                values.push(symbolic_call_result(parameter.c_type(), variable));
+                values.push(symbolic_call_result(parameter.program_type(), variable));
             }
             contract.instantiated(&values)?
         };
@@ -409,7 +409,7 @@ pub(in crate::kernel) fn function_contract_refinement_entry_state(
         state.locals.set_typed_with_all_qualifiers(
             parameter.name().to_string(),
             value.clone(),
-            parameter.c_type(),
+            parameter.program_type(),
             false,
             false,
             false,
@@ -438,7 +438,7 @@ pub(super) fn function_contract_refinement_implementation_state(
         state.locals.set_typed_with_all_qualifiers(
             parameter.name().to_string(),
             value.clone(),
-            parameter.c_type(),
+            parameter.program_type(),
             false,
             false,
             false,
@@ -927,8 +927,8 @@ pub(in crate::kernel) fn resource_instance_field_value(
 ) -> AlgebraicValue {
     match field_type {
         ResourceFieldType::Integer => AlgebraicValue::Integer(IntegerTerm::Variable(variable)),
-        ResourceFieldType::Program(c_type) => {
-            AlgebraicValue::Program(symbolic_call_result(*c_type, variable))
+        ResourceFieldType::Program(program_type) => {
+            AlgebraicValue::Program(symbolic_call_result(*program_type, variable))
         }
         ResourceFieldType::Algebraic(algebraic_type) => AlgebraicValue::Algebraic(AlgebraicTerm {
             algebraic_type: algebraic_type.clone(),

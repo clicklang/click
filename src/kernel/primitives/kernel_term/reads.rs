@@ -48,7 +48,7 @@ impl KernelTerm {
             return None;
         }
         Some(Self::intern(
-            KernelType::Program(format.c_type()),
+            KernelType::Program(format.program_type()),
             KernelTermNode::MemoryLoad {
                 memory: memory.clone(),
                 address: address.clone(),

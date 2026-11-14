@@ -418,7 +418,7 @@ mod tests {
         let spec = SpecProposition::ForAllPointer {
             name: "p".to_string(),
             variable: Variable(501),
-            c_type: ProgramType::Int32Pointer,
+            program_type: ProgramType::Int32Pointer,
             body: Box::new(SpecProposition::Defined(typed(variable("p")))),
         };
         assert!(declared_requirements(&interface(spec)).is_empty());

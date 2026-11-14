@@ -213,7 +213,7 @@ pub(in crate::kernel) fn integer_cell_byte(value: &ProgramValue, byte: u32) -> O
     Some(match value {
         ProgramValue::Int16(term) | ProgramValue::UInt16(term) => {
             word(MachineTerm::machine_integer_cast(
-                Ty::from_c_type(value.c_type())?,
+                Ty::from_program_type(value.program_type())?,
                 Ty::UInt32,
                 term.clone(),
             ))

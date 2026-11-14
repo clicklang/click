@@ -2526,7 +2526,7 @@ fn count_uses_its_written_anchor_not_a_proven_alias() {
         arguments: vec![Some(SpecExpression::Value(ProgramValue::Pointer(pointer)))],
     };
     let anchor_count = count_of(anchor.clone());
-    let alias_count = count_of(PointerValue::new(alias.clone(), anchor.c_type()));
+    let alias_count = count_of(PointerValue::new(alias.clone(), anchor.program_type()));
     let events = CreationEvents::new()
         .import_opaque_contract_population_inner(
             &description,

@@ -351,7 +351,7 @@ fn leading_domain_recognition_retains_shared_arithmetic() {
     for size in [8, 32, 96] {
         let _session = crate::kernel::VerificationSession::enter();
         let mut root = KernelTerm::variable(
-            KernelType::Program(MachineIntegerType::Int32.c_type()),
+            KernelType::Program(MachineIntegerType::Int32.program_type()),
             Variable(991704),
         );
         for _ in 0..size {

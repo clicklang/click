@@ -27,7 +27,9 @@ pub(in crate::surface) fn count_loops(statement: &syntax::C0Statement) -> usize 
     }
 }
 
-pub(in crate::surface) fn count_loop_regions(function: &syntax::C0Function) -> usize {
+pub(in crate::surface) fn count_loop_regions(
+    function: &crate::languages::interface::ImportedFunction,
+) -> usize {
     let Some(kernel) = function.prelowered_kernel_function() else {
         return count_loops(function.body())
             + usize::from(function.natural_control_loop().is_some());
@@ -318,7 +320,7 @@ fn record_assignment(layout: &mut SourceExecutionLayoutData, local: &str, index:
 
 impl SourceExecutionLayout {
     pub(in crate::surface) fn for_function(
-        function: &syntax::C0Function,
+        function: &crate::languages::interface::ImportedFunction,
     ) -> Result<Self, ClickError> {
         let parameter_names = function
             .parameters()
@@ -549,7 +551,9 @@ impl SourceExecutionLayout {
         Self::new_with_natural_loop(statement, None, None, None)
     }
 
-    pub(in crate::surface) fn new_for_function(function: &syntax::C0Function) -> Self {
+    pub(in crate::surface) fn new_for_function(
+        function: &crate::languages::interface::ImportedFunction,
+    ) -> Self {
         let mut layout = match function.natural_control_loop() {
             Some((target, exit_target, _)) => {
                 let exit_label = exit_target.and_then(|exit_target| {

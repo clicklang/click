@@ -288,7 +288,7 @@ impl NodeKey {
                     LegacyIdentity::Fresh(_) | LegacyIdentity::Machine(_)
                 )
             }
-            KernelTermNode::Call { .. } if matches!(ty, KernelType::Program(ty) if MachineIntegerType::from_c_type(ty).is_some()) => {
+            KernelTermNode::Call { .. } if matches!(ty, KernelType::Program(ty) if MachineIntegerType::from_program_type(ty).is_some()) => {
                 true
             }
             KernelTermNode::Call { arguments, .. }
@@ -324,7 +324,7 @@ impl NodeKey {
         // keep their old storage; inspect immediate children only.
         let shared_machine_operand = match &node {
             KernelTermNode::Match(matched) => {
-                matches!(&ty, KernelType::Program(c) if MachineIntegerType::from_c_type(*c).is_some())
+                matches!(&ty, KernelType::Program(c) if MachineIntegerType::from_program_type(*c).is_some())
                     && matched.arguments[1..]
                         .iter()
                         .all(KernelTerm::is_shared_machine_operand)
@@ -337,7 +337,7 @@ impl NodeKey {
                         .all(KernelTerm::is_shared_machine_operand)
             }
             KernelTermNode::Call { .. } => {
-                matches!(&ty, KernelType::Program(c) if MachineIntegerType::from_c_type(*c).is_some())
+                matches!(&ty, KernelType::Program(c) if MachineIntegerType::from_program_type(*c).is_some())
             }
             KernelTermNode::MachineLiteral(_) | KernelTermNode::MemoryLoad { .. } => true,
             KernelTermNode::IntegerToMachine { .. } => !opaque_observation_boundary,
@@ -346,7 +346,7 @@ impl NodeKey {
                 LegacyIdentity::Machine(_) | LegacyIdentity::MachineObservation(_)
             ),
             KernelTermNode::Variable(_) => {
-                matches!(&ty, KernelType::Program(c) if MachineIntegerType::from_c_type(*c).is_some())
+                matches!(&ty, KernelType::Program(c) if MachineIntegerType::from_program_type(*c).is_some())
             }
             KernelTermNode::MachineBinary { arguments, .. } => {
                 arguments.iter().all(KernelTerm::is_shared_machine_operand)
@@ -663,7 +663,7 @@ impl KernelTerm {
             return Err("Boolean conversion requires a Bool operand");
         }
         Ok(Self::intern(
-            KernelType::Program(destination.c_type()),
+            KernelType::Program(destination.program_type()),
             KernelTermNode::BoolCast {
                 destination,
                 operand,
@@ -679,7 +679,7 @@ impl KernelTerm {
             return Err("machine conversion requires an Integer operand");
         }
         Ok(Self::intern(
-            KernelType::Program(destination.c_type()),
+            KernelType::Program(destination.program_type()),
             KernelTermNode::IntegerToMachine {
                 destination,
                 operand,
@@ -886,8 +886,10 @@ impl KernelTerm {
     fn legacy_at(argument: PureFunctionArgument, identity: LegacyIdentity) -> Self {
         let ty = match &argument {
             PureFunctionArgument::Integer(_) => KernelType::Integer,
-            PureFunctionArgument::Value(value) => KernelType::Program(value.c_type()),
-            PureFunctionArgument::SharedMachine(value) => KernelType::Program(value.ty().c_type()),
+            PureFunctionArgument::Value(value) => KernelType::Program(value.program_type()),
+            PureFunctionArgument::SharedMachine(value) => {
+                KernelType::Program(value.ty().program_type())
+            }
             PureFunctionArgument::Algebraic(value) => {
                 KernelType::Algebraic(value.algebraic_type.clone())
             }
@@ -923,7 +925,7 @@ impl KernelTermImport {
                 .cloned()
                 .unwrap_or_else(|| self.machine(value.ty(), value.value())),
             PureFunctionArgument::Value(value) if matches!(value, integer_c_value!(_)) => {
-                let format = MachineIntegerType::from_c_type(value.c_type()).unwrap();
+                let format = MachineIntegerType::from_program_type(value.program_type()).unwrap();
                 let (integer_c_value!(bits)) = value else {
                     unreachable!()
                 };
@@ -1081,8 +1083,10 @@ mod tests {
             MachineIntegerType::Int64,
             MachineIntegerType::UInt64,
         ] {
-            let leaf =
-                KernelTerm::variable(KernelType::Program(format.c_type()), Variable(87654325));
+            let leaf = KernelTerm::variable(
+                KernelType::Program(format.program_type()),
+                Variable(87654325),
+            );
             let operand =
                 KernelTerm::arithmetic_binary(format, MachineBinaryOp::Add, [leaf.clone(), leaf])
                     .unwrap();
@@ -1187,7 +1191,7 @@ mod tests {
             assert_eq!(common.ty(), &KernelType::Integer);
             assert_eq!(
                 common.children()[0].ty(),
-                &KernelType::Program(format.c_type())
+                &KernelType::Program(format.program_type())
             );
             drop(source);
             let restored = KernelTermExport::default().integer(&common).unwrap();
@@ -1357,8 +1361,8 @@ impl KernelTermExport {
         if let Some(value) = term.legacy_integer() {
             return Ok(PureFunctionArgument::Integer(value));
         }
-        if let KernelType::Program(c_type) = term.ty()
-            && let Some(format) = MachineIntegerType::from_c_type(*c_type)
+        if let KernelType::Program(program_type) = term.ty()
+            && let Some(format) = MachineIntegerType::from_program_type(*program_type)
             && !matches!(term.node(), KernelTermNode::Legacy(_))
         {
             // Export the explicit boxed output once. Caching and then cloning

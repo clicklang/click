@@ -84,12 +84,20 @@ fn call_outcome_split_does_not_copy_the_proofs_facts() {
             program_return(crate::kernel::program_expression::int32_literal(5)),
         ),
     );
-    let parsed_function = syntax::C0Function::external(
-        C0Type::Int32,
+    let parsed_function = crate::languages::interface::ImportedFunction::external(
+        InterfaceType::Int32,
         "caller".into(),
         vec![
-            syntax::C0Parameter::new(C0Type::Bool, "construct".into(), None),
-            syntax::C0Parameter::new(C0Type::Bool, "should_throw".into(), None),
+            crate::languages::interface::ImportedParameter::new(
+                InterfaceType::Bool,
+                "construct".into(),
+                None,
+            ),
+            crate::languages::interface::ImportedParameter::new(
+                InterfaceType::Bool,
+                "should_throw".into(),
+                None,
+            ),
         ],
     )
     .with_prelowered_kernel_function(function.clone());

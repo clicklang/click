@@ -3,14 +3,15 @@ use super::scalar::{Scalar, ScalarKind};
 use super::{CppStatement, CppType, PreparedCppImport};
 use crate::kernel::ProgramFunction;
 use crate::languages::PreparedExecution;
-use crate::languages::c::syntax::{self, C0Type, LongRank};
+use crate::languages::c::target::LongRank;
+use crate::languages::interface::InterfaceType;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn prepare(
     import: &PreparedCppImport,
     selected: &[ProgramFunction],
     reachable: &[ProgramFunction],
-    layouts: BTreeMap<String, syntax::C0StructLayout>,
+    layouts: BTreeMap<String, crate::languages::interface::RecordLayout>,
     library_contracts: String,
     object_coercions: &BTreeSet<(String, String)>,
     dispatches: &BTreeMap<String, String>,
@@ -50,15 +51,15 @@ pub(super) fn prepare(
             crate::languages::cpp::names::object_const_unpack_name(derived, base),
         ] {
             crate::instrumentation::record_deterministic_work(1);
-            let object = syntax::C0Parameter::new(
-                C0Type::Int32Pointer,
+            let object = crate::languages::interface::ImportedParameter::new(
+                InterfaceType::Int32Pointer,
                 "object".to_string(),
                 Some(derived.clone()),
             )
             .with_pointee_struct_layout(derived.clone(), layout.clone())
             .with_pointee_constant(true);
-            functions.push(syntax::C0Function::external(
-                C0Type::Void,
+            functions.push(crate::languages::interface::ImportedFunction::external(
+                InterfaceType::Void,
                 name,
                 vec![object],
             ));
@@ -96,7 +97,7 @@ pub(super) fn prepare(
 /// Materialize checked nominal layouts once for execution and proof metadata.
 pub(super) fn prepare_layouts(
     import: &PreparedCppImport,
-) -> Result<BTreeMap<String, syntax::C0StructLayout>, String> {
+) -> Result<BTreeMap<String, crate::languages::interface::RecordLayout>, String> {
     let mut layouts = BTreeMap::new();
     let records = import
         .export()
@@ -154,7 +155,7 @@ pub(super) fn prepare_layouts(
                             super::scalar::record_pointee(&field.value_type) =>
                     {
                         struct_name = Some(name.to_owned());
-                        C0Type::Int32Pointer
+                        InterfaceType::Int32Pointer
                     }
                     CppType::Pointer { pointee }
                         if Scalar::pointer_element(pointee, true).is_some() =>
@@ -171,17 +172,17 @@ pub(super) fn prepare_layouts(
                         ..
                     } => {
                         struct_name = Some(name.clone());
-                        C0Type::Int32 // C's nominal embedded-record placeholder.
+                        InterfaceType::Int32 // C's nominal embedded-record placeholder.
                     }
                     CppType::Parameter {
                         name,
                         is_const: false,
-                    } => C0Type::Parameter(crate::kernel::TypeParameterName::intern(name)),
+                    } => InterfaceType::Parameter(crate::kernel::TypeParameterName::intern(name)),
                     CppType::Array { element, length } => {
                         match Scalar::pointer_element(element, false).map(|scalar| scalar.kind) {
-                            Some(ScalarKind::Int32) => C0Type::Int32Array(*length),
-                            Some(ScalarKind::UInt32) => C0Type::UInt32Array(*length),
-                            Some(ScalarKind::UInt8) => C0Type::UInt8Array(*length),
+                            Some(ScalarKind::Int32) => InterfaceType::Int32Array(*length),
+                            Some(ScalarKind::UInt32) => InterfaceType::UInt32Array(*length),
+                            Some(ScalarKind::UInt8) => InterfaceType::UInt8Array(*length),
                             _ => {
                                 return Err(format!(
                                     "C++ record field `{}.{}` has an unsupported array element",
@@ -215,20 +216,21 @@ pub(super) fn prepare_layouts(
                 0,
                 (
                     "base".into(),
-                    C0Type::Int32,
+                    InterfaceType::Int32,
                     Some(name.clone()),
                     base.offset_bytes,
                     base.size_bytes,
                 ),
             );
         }
-        let mut layout = syntax::C0StructLayout::from_explicit_fields_with_structs(
-            fields,
-            record.size_bytes,
-            record.alignment_bytes,
-            &layouts,
-        )
-        .map_err(|error| format!("invalid C++ record layout for `{}`: {error}", record.name))?;
+        let mut layout =
+            crate::languages::interface::RecordLayout::from_explicit_fields_with_structs(
+                fields,
+                record.size_bytes,
+                record.alignment_bytes,
+                &layouts,
+            )
+            .map_err(|error| format!("invalid C++ record layout for `{}`: {error}", record.name))?;
         for name in &constant_pointees {
             layout.mark_pointee_constant(name)?;
         }
@@ -243,8 +245,8 @@ fn prepare_functions(
     import: &PreparedCppImport,
     selected: &[ProgramFunction],
     reachable: &[ProgramFunction],
-    layouts: &BTreeMap<String, syntax::C0StructLayout>,
-) -> Result<Vec<syntax::C0Function>, String> {
+    layouts: &BTreeMap<String, crate::languages::interface::RecordLayout>,
+) -> Result<Vec<crate::languages::interface::ImportedFunction>, String> {
     let observers = super::schema::observer_callees(import);
     // An override's interface is the virtual method it overrides, which a
     // call through that method assumes of it.
@@ -359,13 +361,13 @@ fn prepare_functions(
 fn function_interface(
     source: &super::CppFunction,
     lowered: &crate::kernel::ProgramFunction,
-    layouts: &BTreeMap<String, syntax::C0StructLayout>,
-) -> Result<syntax::C0Function, String> {
+    layouts: &BTreeMap<String, crate::languages::interface::RecordLayout>,
+) -> Result<crate::languages::interface::ImportedFunction, String> {
     let return_reference = matches!(source.return_type, CppType::LvalueReference { .. });
     let return_element = super::scalar::reference_element(&source.return_type);
     let return_constant = super::scalar::returns_constant_element(&source.return_type);
     let return_type = if source.return_type == CppType::Void {
-        C0Type::Void
+        InterfaceType::Void
     } else if let Some(element) = return_element {
         element
             .kind
@@ -375,7 +377,7 @@ fn function_interface(
         || return_reference
         || super::scalar::record_pointee(&source.return_type).is_some()
     {
-        C0Type::Int32Pointer
+        InterfaceType::Int32Pointer
     } else if let CppType::Pointer { pointee } = &source.return_type {
         Scalar::pointer_element(pointee, true)
             .and_then(|scalar| scalar.kind.pointer_proof_type())
@@ -405,19 +407,19 @@ fn function_interface(
                 parameter.name.clone()
             };
             if let Some(kind) = Scalar::mutable_kind(&parameter.value_type) {
-                return Ok(syntax::C0Parameter::new(kind.proof_type(), carried_name.clone(), None));
+                return Ok(crate::languages::interface::ImportedParameter::new(kind.proof_type(), carried_name.clone(), None));
             }
             match &parameter.value_type {
             CppType::Record { name, is_const: false, .. } => {
                 let layout = layouts.get(name).ok_or("C++ record parameter has no checked layout")?;
-                Ok(syntax::C0Parameter::new(C0Type::UInt8Pointer, carried_name.clone(), None)
+                Ok(crate::languages::interface::ImportedParameter::new(InterfaceType::UInt8Pointer, carried_name.clone(), None)
                     .with_struct_value(name.clone(), layout.clone()))
             }
             reference @ CppType::LvalueReference { .. }
                 if super::scalar::reference_element(reference).is_some() =>
             {
                 let element = super::scalar::reference_element(reference).unwrap();
-                Ok(syntax::C0Parameter::new(
+                Ok(crate::languages::interface::ImportedParameter::new(
                     element
                         .kind
                         .pointer_proof_type()
@@ -431,8 +433,8 @@ fn function_interface(
             CppType::LvalueReference { pointee }
                 if Scalar::is(pointee, ScalarKind::Int64, true) =>
             {
-                Ok(syntax::C0Parameter::new(
-                    C0Type::Int64Pointer(LongRank::Long),
+                Ok(crate::languages::interface::ImportedParameter::new(
+                    InterfaceType::Int64Pointer(LongRank::Long),
                     carried_name.clone(),
                     None,
                 )
@@ -446,8 +448,8 @@ fn function_interface(
                         source.declaration_id, parameter.name
                     ));
                 };
-                let carrier = syntax::C0Parameter::new(
-                    C0Type::Int32Pointer,
+                let carrier = crate::languages::interface::ImportedParameter::new(
+                    InterfaceType::Int32Pointer,
                     carried_name.clone(),
                     Some(name.clone()),
                 );
@@ -463,8 +465,8 @@ fn function_interface(
             }
             pointer @ CppType::Pointer { .. } if super::scalar::record_pointee(pointer).is_some() => {
                 let (_, name) = super::scalar::record_pointee(pointer).unwrap();
-                let carrier = syntax::C0Parameter::new(
-                    C0Type::Int32Pointer,
+                let carrier = crate::languages::interface::ImportedParameter::new(
+                    InterfaceType::Int32Pointer,
                     carried_name.clone(),
                     Some(name.to_owned()),
                 );
@@ -473,13 +475,13 @@ fn function_interface(
                     None => carrier,
                 })
             }
-            CppType::FunctionPointer { .. } => Ok(syntax::C0Parameter::function_pointer(
+            CppType::FunctionPointer { .. } => Ok(crate::languages::interface::ImportedParameter::function_pointer(
                 carried_name.clone(),
                 function_pointer_signature(&parameter.value_type)?,
             )),
             CppType::Pointer { pointee } if Scalar::pointer_element(pointee, false).is_some() =>
             {
-                Ok(syntax::C0Parameter::new(
+                Ok(crate::languages::interface::ImportedParameter::new(
                     Scalar::pointer_element(pointee, false).unwrap().kind.pointer_proof_type().unwrap(),
                     carried_name.clone(),
                     None,
@@ -492,10 +494,13 @@ fn function_interface(
             }
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let mut interface =
-        syntax::C0Function::external(return_type, lowered.name().to_owned(), parameters)
-            .with_return_reference(return_reference)
-            .with_return_pointee_constant(return_constant);
+    let mut interface = crate::languages::interface::ImportedFunction::external(
+        return_type,
+        lowered.name().to_owned(),
+        parameters,
+    )
+    .with_return_reference(return_reference)
+    .with_return_pointee_constant(return_constant);
     // An axiom keeps no body: its calls are checked against a contract.
     // A pure virtual method is only its interface.
     // A generic method's instance is verified as that method, once.
@@ -527,7 +532,7 @@ fn function_interface(
 /// function-pointer declarator in a sidecar head spells it.
 pub(super) fn function_pointer_signature(
     value_type: &CppType,
-) -> Result<syntax::C0FunctionPointerSignature, String> {
+) -> Result<crate::languages::interface::CallbackInterface, String> {
     let CppType::FunctionPointer {
         return_type,
         parameters,
@@ -537,7 +542,7 @@ pub(super) fn function_pointer_signature(
         return Err("C++ function-pointer signature requires a function-pointer type".into());
     };
     let proof_type = |value_type: &CppType| match value_type {
-        CppType::Void => Some(C0Type::Void),
+        CppType::Void => Some(InterfaceType::Void),
         CppType::Pointer { pointee } => Scalar::pointer_element(pointee, false)
             .and_then(|element| element.kind.pointer_proof_type()),
         _ => Scalar::mutable_kind(value_type).map(ScalarKind::proof_type),
@@ -549,12 +554,14 @@ pub(super) fn function_pointer_signature(
         .map(|parameter| {
             crate::instrumentation::record_deterministic_work(1);
             proof_type(parameter)
-                .filter(|c_type| *c_type != C0Type::Void)
-                .map(|c_type| syntax::C0FunctionPointerParameter::new(c_type, None, false))
+                .filter(|interface_type| *interface_type != InterfaceType::Void)
+                .map(|interface_type| {
+                    crate::languages::interface::CallbackParameter::new(interface_type, None, false)
+                })
                 .ok_or_else(unsupported)
         })
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(syntax::C0FunctionPointerSignature::new(
+    Ok(crate::languages::interface::CallbackInterface::new(
         return_type,
         None,
         parameters,

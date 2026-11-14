@@ -43,7 +43,8 @@ fn growing_arithmetic_guards(truth: Option<bool>) {
     for size in [8, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let variable = |id| KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(id));
+        let variable =
+            |id| KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(id));
         let mut root = variable(985001);
         let other = variable(985002);
         let zero =

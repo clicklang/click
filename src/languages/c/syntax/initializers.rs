@@ -12,25 +12,25 @@ impl Parser {
     pub(super) fn parse_local_array_initializer(
         &mut self,
         name: &str,
-        c_type: C0Type,
+        interface_type: InterfaceType,
         array_shape: Option<&[u32]>,
         compact: bool,
     ) -> Result<(Option<C0ZeroFill>, C0Statement), C0SyntaxError> {
-        let (length, element_type) = match c_type {
-            C0Type::Int32Array(length) => (length, C0Type::Int32),
-            C0Type::CharArray(plain, length) => (length, C0Type::Char(plain)),
-            C0Type::UInt8Array(length) => (length, C0Type::UInt8),
-            C0Type::Int8Array(length) => (length, C0Type::Int8),
-            C0Type::Int16Array(length) => (length, C0Type::Int16),
-            C0Type::UInt16Array(length) => (length, C0Type::UInt16),
-            C0Type::UInt32Array(length) => (length, C0Type::UInt32),
-            C0Type::Int64Array(rank, length) => (length, C0Type::Int64(rank)),
-            C0Type::Int128Array(length) => (length, C0Type::Int128),
-            C0Type::UInt64Array(rank, length) => (length, C0Type::UInt64(rank)),
-            C0Type::UInt128Array(length) => (length, C0Type::UInt128),
-            C0Type::Float32Array(length) => (length, C0Type::Float32),
-            C0Type::Float64Array(length) => (length, C0Type::Float64),
-            C0Type::PointerArray(element, rank, length) => {
+        let (length, element_type) = match interface_type {
+            InterfaceType::Int32Array(length) => (length, InterfaceType::Int32),
+            InterfaceType::CharArray(plain, length) => (length, InterfaceType::Char(plain)),
+            InterfaceType::UInt8Array(length) => (length, InterfaceType::UInt8),
+            InterfaceType::Int8Array(length) => (length, InterfaceType::Int8),
+            InterfaceType::Int16Array(length) => (length, InterfaceType::Int16),
+            InterfaceType::UInt16Array(length) => (length, InterfaceType::UInt16),
+            InterfaceType::UInt32Array(length) => (length, InterfaceType::UInt32),
+            InterfaceType::Int64Array(rank, length) => (length, InterfaceType::Int64(rank)),
+            InterfaceType::Int128Array(length) => (length, InterfaceType::Int128),
+            InterfaceType::UInt64Array(rank, length) => (length, InterfaceType::UInt64(rank)),
+            InterfaceType::UInt128Array(length) => (length, InterfaceType::UInt128),
+            InterfaceType::Float32Array(length) => (length, InterfaceType::Float32),
+            InterfaceType::Float64Array(length) => (length, InterfaceType::Float64),
+            InterfaceType::PointerArray(element, rank, length) => {
                 (length, pointer_array_element_type(element, rank))
             }
             _ => unreachable!("array initializer called for a scalar type"),
@@ -295,7 +295,7 @@ impl Parser {
         &mut self,
         object_name: &str,
         struct_name: &str,
-        layout: &C0StructLayout,
+        layout: &RecordLayout,
         length: u32,
     ) -> Result<Vec<C0AggregateInitializer>, C0SyntaxError> {
         self.parse_aggregate_array_initializer_with_bound(
@@ -311,7 +311,7 @@ impl Parser {
         &mut self,
         object_name: &str,
         struct_name: &str,
-        layout: &C0StructLayout,
+        layout: &RecordLayout,
         length: Option<u32>,
     ) -> Result<(u32, Vec<C0AggregateInitializer>), C0SyntaxError> {
         self.expect(Token::LBrace)?;
@@ -523,7 +523,7 @@ impl Parser {
         &mut self,
         object_name: &str,
         base_offset: u32,
-        field: &C0StructField,
+        field: &RecordField,
     ) -> Result<Vec<C0AggregateInitializer>, C0SyntaxError> {
         let field_offset = base_offset
             .checked_add(field.offset_bytes)
@@ -552,7 +552,7 @@ impl Parser {
                 element_width,
             );
         }
-        if field.c_type == C0Type::Int32
+        if field.interface_type == InterfaceType::Int32
             && let Some(nested_name) = field.struct_name.as_deref()
         {
             if self.peek() != Some(&Token::LBrace) {
@@ -598,7 +598,7 @@ impl Parser {
         // A callback field takes a function address or the null pointer. The
         // field's own signature is the expected one, so the check is the same
         // one an assignment through a pointer already performs.
-        if matches!(field.c_type, C0Type::FunctionPointer(_)) {
+        if matches!(field.interface_type, InterfaceType::FunctionPointer(_)) {
             let expected = field
                 .function_pointer_signature
                 .as_ref()
@@ -614,15 +614,19 @@ impl Parser {
             }
             return Ok(vec![C0AggregateInitializer::new(
                 field_offset,
-                field.c_type,
+                field.interface_type,
                 value,
             )]);
         }
-        self.reject_discarded_const_pointer(field.c_type, field.pointee_constant, &mut value)?;
-        validate_aggregate_initializer(self, field.c_type, &value)?;
+        self.reject_discarded_const_pointer(
+            field.interface_type,
+            field.pointee_constant,
+            &mut value,
+        )?;
+        validate_aggregate_initializer(self, field.interface_type, &value)?;
         Ok(vec![C0AggregateInitializer::new(
             field_offset,
-            field.c_type,
+            field.interface_type,
             value,
         )])
     }
@@ -840,8 +844,8 @@ impl Parser {
         &mut self,
         target_pointer: C0Expression,
         struct_name: &str,
-        root_fields: &[C0StructField],
-    ) -> Result<(usize, C0Expression, C0StructField), C0SyntaxError> {
+        root_fields: &[RecordField],
+    ) -> Result<(usize, C0Expression, RecordField), C0SyntaxError> {
         let mut current_struct_name = struct_name.to_string();
         let mut parent_pointer = target_pointer;
         let mut root_index = None;
@@ -873,7 +877,7 @@ impl Parser {
             }
             if self.peek() == Some(&Token::Dot) {
                 if field.array_element_width.is_some()
-                    || field.c_type != C0Type::Int32
+                    || field.interface_type != InterfaceType::Int32
                     || field.struct_name.is_none()
                 {
                     return Err(self
@@ -895,7 +899,7 @@ impl Parser {
     pub(super) fn parse_struct_initializer_field(
         &mut self,
         target_pointer: C0Expression,
-        field: &C0StructField,
+        field: &RecordField,
     ) -> Result<Vec<C0Statement>, C0SyntaxError> {
         let field_pointer = offset_field_pointer(target_pointer, field.offset_bytes);
         if let Some(element_width) = field.array_element_width {
@@ -922,7 +926,7 @@ impl Parser {
                 true,
             );
         }
-        if field.c_type == C0Type::Int32
+        if field.interface_type == InterfaceType::Int32
             && let Some(struct_name) = field.struct_name.as_deref()
         {
             if self.peek() != Some(&Token::LBrace) {
@@ -963,11 +967,15 @@ impl Parser {
         }
 
         let mut value = self.parse_expression()?;
-        self.reject_discarded_const_pointer(field.c_type, field.pointee_constant, &mut value)?;
+        self.reject_discarded_const_pointer(
+            field.interface_type,
+            field.pointee_constant,
+            &mut value,
+        )?;
         Ok(vec![C0Statement::Store {
             pointer: field_pointer,
             value,
-            value_type: Some(field.c_type),
+            value_type: Some(field.interface_type),
             lvalue_class: None,
             pointee_constant: field.pointee_constant,
             site: C0Site::NONE,
@@ -1179,7 +1187,7 @@ impl Parser {
     pub(super) fn zero_struct_initializer_field(
         &self,
         target_pointer: C0Expression,
-        field: &C0StructField,
+        field: &RecordField,
     ) -> Vec<C0Statement> {
         let field_pointer = offset_field_pointer(target_pointer, field.offset_bytes);
         if let Some(element_width) = field.array_element_width {
@@ -1200,7 +1208,7 @@ impl Parser {
                 element_width,
             );
         }
-        if field.c_type == C0Type::Int32
+        if field.interface_type == InterfaceType::Int32
             && let Some(struct_name) = field.struct_name.as_deref()
         {
             return self.zero_struct_initializer_level(field_pointer, struct_name);
@@ -1227,8 +1235,8 @@ impl Parser {
 
         vec![C0Statement::Store {
             pointer: field_pointer,
-            value: zero_initializer_value(field.c_type),
-            value_type: Some(field.c_type),
+            value: zero_initializer_value(field.interface_type),
+            value_type: Some(field.interface_type),
             lvalue_class: None,
             pointee_constant: field.pointee_constant,
             site: C0Site::NONE,

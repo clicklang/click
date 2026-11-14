@@ -76,7 +76,10 @@ pub(in crate::surface::proof) struct StatedSite<'a> {
         Option<&'a crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>>,
     // Built only when a message is spelled: most lowerings raise nothing,
     // and one per resource clause must not cost every value in scope.
-    naming: std::cell::OnceCell<(Vec<syntax::C0Parameter>, Vec<ProgramExpression>)>,
+    naming: std::cell::OnceCell<(
+        Vec<crate::languages::interface::ImportedParameter>,
+        Vec<ProgramExpression>,
+    )>,
 }
 
 impl<'a> StatedSite<'a> {
@@ -131,7 +134,12 @@ impl<'a> StatedSite<'a> {
         labels
     }
 
-    fn naming(&self) -> &(Vec<syntax::C0Parameter>, Vec<ProgramExpression>) {
+    fn naming(
+        &self,
+    ) -> &(
+        Vec<crate::languages::interface::ImportedParameter>,
+        Vec<ProgramExpression>,
+    ) {
         self.naming
             .get_or_init(|| crate::surface::diagnostics::value_naming_tables(self.values))
     }

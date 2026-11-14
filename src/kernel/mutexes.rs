@@ -4030,7 +4030,7 @@ mod tests {
         let declarations = [
             ProgramStatement::Declare {
                 name: "holder".into(),
-                c_type: ProgramType::Int32,
+                program_type: ProgramType::Int32,
                 volatile: false,
                 pointee_volatile: false,
                 constant: false,

@@ -387,7 +387,7 @@ impl MachineIntegerType {
             MachineTerm::Constant { format, .. } => *format == self,
             MachineTerm::Variable(_) => true,
             MachineTerm::MemoryLoad(_, _, kind) => {
-                crate::kernel::LoadKind::of_type(self.c_type()) == Some(*kind)
+                crate::kernel::LoadKind::of_type(self.program_type()) == Some(*kind)
             }
             MachineTerm::IntegerToMachine { destination, .. } => *destination == self,
             MachineTerm::Cast {
@@ -410,7 +410,7 @@ impl MachineIntegerType {
                 }
                 MachineTerm::Variable(_) => return true,
                 MachineTerm::MemoryLoad(_, _, kind) if ty.format().bits() == 128 => {
-                    return crate::kernel::LoadKind::of_type(ty.c_type()) == Some(*kind);
+                    return crate::kernel::LoadKind::of_type(ty.program_type()) == Some(*kind);
                 }
                 MachineTerm::IntegerToMachine { destination, .. } => return *destination == ty,
                 MachineTerm::Cast {
@@ -495,7 +495,7 @@ impl MachineIntegerType {
         self,
         value: &ProgramValue,
     ) -> Option<MachineIntegerConstant> {
-        if value.c_type() != self.c_type() {
+        if value.program_type() != self.program_type() {
             return None;
         }
         let term = match value {
@@ -1154,7 +1154,7 @@ mod tests {
                     destination,
                 )
                 .unwrap();
-                assert_eq!(symbolic.c_type(), destination.c_type());
+                assert_eq!(symbolic.program_type(), destination.program_type());
                 for integer in &samples {
                     let constant = MachineIntegerConstant::from_integer(format, integer).unwrap();
                     let substituted = substitute_bitvector_variable_in_term(
@@ -1466,7 +1466,7 @@ mod tests {
                 let term = ty.constant_term(constant).unwrap();
                 assert_eq!(ty.constant_from_term(&term), Some(constant));
                 let runtime = ty.constant_value(constant).unwrap();
-                assert_eq!(runtime.c_type(), ty.c_type());
+                assert_eq!(runtime.program_type(), ty.program_type());
                 assert_eq!(ty.constant_from_value(&runtime), Some(constant));
                 for other in types().filter(|other| *other != ty) {
                     assert!(other.constant_value(constant).is_none());

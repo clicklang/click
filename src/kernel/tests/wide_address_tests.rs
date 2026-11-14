@@ -65,7 +65,7 @@ fn wide_address_scalar_address_and_pointer_slot_preserve_type_and_payload() {
             ),
         );
         let pointer = value(&state, crate::kernel::program_expression::variable("p"));
-        assert_eq!(pointer.c_type(), pointer_ty);
+        assert_eq!(pointer.program_type(), pointer_ty);
         assert_eq!(pointer.byte_width(), 8);
         assert_eq!(
             value(
@@ -77,7 +77,7 @@ fn wide_address_scalar_address_and_pointer_slot_preserve_type_and_payload() {
             expected
         );
         let slot = value(&state, crate::kernel::program_expression::addr_of("p"));
-        assert_eq!(slot.c_type(), slot_ty);
+        assert_eq!(slot.program_type(), slot_ty);
         assert_eq!(
             value(
                 &state,
@@ -125,7 +125,7 @@ fn wide_address_arrays_use_sixteen_byte_stride_and_preserve_endpoint_values() {
         let state = normal(ExecutionState::new(), program_declare("items", array_ty));
         let expected = value(&ExecutionState::new(), literal.clone());
         let base = value(&state, crate::kernel::program_expression::variable("items"));
-        assert_eq!(base.c_type(), ty.pointer_to().unwrap());
+        assert_eq!(base.program_type(), ty.pointer_to().unwrap());
         let ProgramValue::Pointer(base) = base else {
             unreachable!()
         };
@@ -230,7 +230,7 @@ fn wide_address_pointer_arrays_scale_slots_by_eight_and_pointees_by_sixteen() {
         let ProgramValue::Pointer(slot) = value(&state, element_address(1)) else {
             unreachable!()
         };
-        assert_eq!(slot.c_type(), pointer_ty.pointer_to().unwrap());
+        assert_eq!(slot.program_type(), pointer_ty.pointer_to().unwrap());
         assert_eq!(slot.offset, PointerOffsetTerm::Constant(8));
         assert_eq!(
             value(
@@ -298,7 +298,7 @@ fn wide_address_pointer_slot_read_needs_eight_bytes_but_pointee_read_needs_sixte
                 ProgramType::UInt128Pointer,
             ),
         );
-        assert_eq!(pointer.c_type(), ProgramType::UInt128Pointer);
+        assert_eq!(pointer.program_type(), ProgramType::UInt128Pointer);
         let read = outcome(
             &state,
             crate::kernel::program_expression::typed_load(
@@ -352,7 +352,7 @@ fn wide_address_symbolic_pointer_slot_reads_keep_eight_byte_access_identity() {
                 let ExpressionOutcome::Value(pointer) = first else {
                     panic!("pointer read")
                 };
-                assert_eq!(pointer.c_type(), pointer_ty);
+                assert_eq!(pointer.program_type(), pointer_ty);
                 assert_eq!(pointer.byte_width(), 8);
                 assert_eq!(pointer_ty.pointee_type().unwrap().byte_width(), 16);
             }

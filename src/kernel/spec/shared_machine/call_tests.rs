@@ -35,7 +35,7 @@ fn native_term(value: &MachineTerm) -> MachineTerm {
                         PureFunctionArgument::Value(value) => {
                             if let crate::kernel::integer_c_value!(term) = value {
                                 PureFunctionArgument::Value(
-                                    MachineIntegerType::from_c_type(value.c_type())
+                                    MachineIntegerType::from_program_type(value.program_type())
                                         .unwrap()
                                         .value_from_term(native_term(term)),
                                 )
@@ -158,7 +158,7 @@ fn common_call_arithmetic_preserves_native_values_and_domains() {
                 for defined in [false, true] {
                     let mut execution = ExecutionBudget::new();
                     let mut budget = SpecEvaluation::logical(&mut execution);
-                    budget.c_definedness = defined;
+                    budget.program_definedness = defined;
                     let expected = crate::kernel::eval::apply_spec_machine_arithmetic(
                         op,
                         if defined {
@@ -312,7 +312,7 @@ fn call_expression(format: MachineIntegerType, arguments: Vec<SpecExpression>) -
             .into_iter()
             .map(SpecPureFunctionArgument::Value)
             .collect(),
-        result_type: format.c_type(),
+        result_type: format.program_type(),
         pointer_result: None,
         result_object_class: None,
         projection: None,
@@ -352,7 +352,7 @@ fn actual_call_producers_keep_all_integer_types_and_nested_arguments() {
             let SpecValue::Shared(root) = &paths[0].value else {
                 panic!("common call result")
             };
-            assert_eq!(root.ty(), &KernelType::Program(format.c_type()));
+            assert_eq!(root.ty(), &KernelType::Program(format.program_type()));
             assert!(matches!(root.node(), KernelTermNode::Call { .. }));
             assert!(paths[0].facts.is_empty());
             assert!(paths[0].obligations.is_empty());
@@ -454,7 +454,7 @@ fn actual_call_arithmetic_keeps_native_values_and_definedness() {
                 let mut budget = SpecEvaluation::logical(&mut execution);
                 budget.machine_preparation_disabled = legacy;
                 budget.machine_result_production_disabled = legacy;
-                budget.c_definedness = defined;
+                budget.program_definedness = defined;
                 evaluate_spec_expression_paths_with_algebraic_bindings_in(
                     SpecScope::unbound(&ExecutionState::new(), None),
                     &expression,

@@ -1016,18 +1016,18 @@ impl<'a> Proof<'a> {
             // As at resource and pure-function parameters, the literal `0`
             // denotes a typed null pointer here. Do not coerce arbitrary
             // integer expressions, even when their evaluated value is zero.
-            if parameter.c_type().is_pointer()
+            if parameter.program_type().is_pointer()
                 && matches!(&argument, ContractExpression::IntegerLiteral(text) if text == "0")
             {
                 arguments.push(ProgramValue::typed_pointer(
                     crate::kernel::Pointer::null(),
-                    parameter.c_type(),
+                    parameter.program_type(),
                 ));
                 continue;
             }
             let (value, obligations) = capture_resource_field_initializer(
                 &argument,
-                &crate::kernel::ResourceFieldType::Program(parameter.c_type()),
+                &crate::kernel::ResourceFieldType::Program(parameter.program_type()),
                 self.facts().assumptions(),
                 ContractEnvironment::new(&values, &array_refs),
                 pre_state,

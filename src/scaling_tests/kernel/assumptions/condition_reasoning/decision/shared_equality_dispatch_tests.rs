@@ -5,9 +5,9 @@ fn growing_prefixes(unresolved: bool, cancel: bool) {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let base = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(982001));
+        let base = KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(982001));
         let other = if unresolved {
-            KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(982002))
+            KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(982002))
         } else {
             base.clone()
         };
@@ -80,7 +80,8 @@ fn wide_mask_queries_retain_growing_shared_operands() {
                 .machine_arithmetic(ty, &MachineTerm::uint64_constant(n))
                 .unwrap()
         };
-        let mut root = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(983101));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(983101));
         let one = literal(1);
         let mask = literal(8);
         let zero = literal(0);

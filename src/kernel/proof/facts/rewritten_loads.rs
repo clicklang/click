@@ -338,7 +338,7 @@ mod tests {
     fn mixed_read_evidence_refuses_opaque_mismatch_without_export() {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let x = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(1007330));
+        let x = KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1007330));
         let sum = KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [x.clone(), x]);
         let opaque = MachineTerm::PureFunctionApplication {
             name: "read_evidence_opaque".into(),

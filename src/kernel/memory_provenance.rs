@@ -673,7 +673,7 @@ fn canonical_memory_deep_uncached(memory: &Memory) -> Memory {
     );
     canonical.cells = std::sync::Arc::new(cells);
     let union_cells = std::mem::take(&mut canonical.union_cells);
-    for ((pointer, c_type), value) in union_cells.iter() {
+    for ((pointer, program_type), value) in union_cells.iter() {
         let key = canonicalize_pointer_loads(pointer);
         let value = match value {
             ProgramValue::PointerInteger(record) => {
@@ -711,7 +711,7 @@ fn canonical_memory_deep_uncached(memory: &Memory) -> Memory {
                     .with_pointee_constant(false),
             ),
         };
-        std::sync::Arc::make_mut(&mut canonical.union_cells).insert((key, *c_type), value);
+        std::sync::Arc::make_mut(&mut canonical.union_cells).insert((key, *program_type), value);
     }
     canonical.record_diagnostic_transform(
         "canonicalize embedded reads",
@@ -6209,7 +6209,7 @@ pub(crate) fn certified_store_equations(
             );
             let format = match store.value.numeric_value() {
                 ProgramValue::Bool(_) => MachineIntegerType::UInt8,
-                value => MachineIntegerType::from_c_type(value.c_type())?,
+                value => MachineIntegerType::from_program_type(value.program_type())?,
             };
             // Use the language comparison constructor as well as its width:
             // 64/128-bit equality has one sign-free, signed-format spelling.
