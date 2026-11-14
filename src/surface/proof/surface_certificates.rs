@@ -1680,6 +1680,40 @@ pub(super) fn viewability_restriction_steps(
     Some((steps, narrow_range))
 }
 
+/// Plan an element-range restriction whose kernel view has a native byte
+/// count. The ordinary resource laws perform the element-width scaling;
+/// planning only proves the written endpoint bounds.
+pub(super) fn native_viewability_restriction_steps(
+    source: &ClickProposition,
+    target: &ClickProposition,
+    premises: &[ClickProposition],
+) -> Option<Vec<(ClickProposition, Vec<ProofStep>)>> {
+    let requirements = viewability_restriction_requirements(source, target)?;
+    let mut cited = premises.to_vec();
+    let mut goals = Vec::new();
+    for requirement in requirements {
+        if cited.contains(&requirement) {
+            continue;
+        }
+        let step = if matches!(
+            &requirement,
+            ClickProposition::Comparison {
+                operator: ComparisonOperator::Equal,
+                ..
+            }
+        ) {
+            ProofStep::Assumption
+        } else {
+            ProofStep::ArithmeticUsing(cited.clone())
+        };
+        goals.push((requirement.clone(), vec![step]));
+        cited.push(requirement);
+    }
+    let (steps, _) = viewability_restriction_steps(source, target, &cited)?;
+    goals.push((target.clone(), steps));
+    Some(goals)
+}
+
 /// Plan a narrow range with one computed upper endpoint through the explicit
 /// signed operation identity. Search applies these steps under its budget;
 /// replay retains the resulting arithmetic certificates and library steps.

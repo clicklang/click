@@ -22212,6 +22212,37 @@ fn rewritten_concrete_range_fold_expands_and_replays() {
 }
 
 #[test]
+#[ignore = "nightly: native view expansion, cold replay, and missing-bound controls"]
+fn native_byte_count_view_restrictions_expand_to_resource_laws() {
+    for (element, proof) in [
+        (
+            "uint8",
+            "solve() using { viewable(p[0u64..length]); hi <= length; }",
+        ),
+        ("uint32", "solve()"),
+    ] {
+        let source = format!(
+            r#"
+            theorem restrict_view(p: {element}*, length: uint64, hi: uint64) {{
+                requires viewable(p[0u64..length]);
+                requires hi <= length;
+                ensures viewable(p[0u64..hi]) by {{ {proof}; }}
+            }}
+        "#
+        );
+        let expanded = expand_c0_claim_source_by_label(&source, &[], "restrict_view.ensures_0")
+            .unwrap_or_else(|error| panic!("{element}: {}", error.report()));
+        assert!(!expanded.contains("transport("), "{expanded}");
+        assert!(expanded.contains("subrange"), "{expanded}");
+        assert!(expanded.contains("viewable_restrict"), "{expanded}");
+        without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+        let missing = expanded.replace("requires hi <= length;", "");
+        assert_ne!(missing, expanded);
+        assert!(without_implicit_solve(|| verify_click_theorems(&missing)).is_err());
+    }
+}
+
+#[test]
 fn computed_subtraction_view_restriction_expands_to_library_steps() {
     let source = r#"
         theorem restrict_view(data: int32[], index: int32, length: int32) {

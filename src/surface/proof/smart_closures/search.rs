@@ -2649,7 +2649,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if let Some(proof) = Self::try_resource_descriptor_rewrite_closure(search_input)? {
             return Ok(Some(proof));
         }
-        if let Some(proof) = Self::try_computed_viewability_restriction_closure(search_input, None)
+        if let Some(proof) = Self::try_ordinary_viewability_restriction_closure(search_input, None)
         {
             return Ok(Some(proof));
         }
@@ -9212,18 +9212,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
 
     /// Both forms of solve select the same explicit endpoint proof. Ambient
     /// source enumeration belongs only to the unrestricted smart tactic.
-    pub(in crate::surface::proof) fn try_computed_viewability_restriction_closure(
+    pub(in crate::surface::proof) fn try_ordinary_viewability_restriction_closure(
         search_input: &Proof<'a>,
         selected: Option<&[ClickProposition]>,
     ) -> Option<Proof<'a>> {
         #[cfg(test)]
-        crate::kernel::search::record_discovery("try_computed_viewability_restriction_closure");
-        if !matches!(
-            search_input.goal(),
-            Some(Proposition::CMemoryLoadable { wide: false, .. })
-        ) {
+        crate::kernel::search::record_discovery("try_ordinary_viewability_restriction_closure");
+        let Some(Proposition::CMemoryLoadable { wide, .. }) = search_input.goal() else {
             return None;
-        }
+        };
         let target = search_input.surface_goal()?;
         // Reject other goal shapes before selecting any ambient premises.
         let ClickProposition::Loadable { segment } = target else {
@@ -9232,10 +9229,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let ContractSegmentSurface::Range { end, .. } = &segment.surface else {
             return None;
         };
-        if !matches!(
-            contract_expression_as_c_fragment(end),
-            Some(CExpression::Add(..) | CExpression::Subtract(..))
-        ) {
+        if !wide
+            && !matches!(
+                contract_expression_as_c_fragment(end),
+                Some(CExpression::Add(..) | CExpression::Subtract(..))
+            )
+        {
             return None;
         }
         let recorded;
@@ -9264,8 +9263,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .iter()
             .filter(|source| matches!(source, ClickProposition::Loadable { .. }))
         {
-            let Some(goals) = computed_viewability_restriction_steps(source, target, surfaces)
-            else {
+            let goals = if *wide {
+                native_viewability_restriction_steps(source, target, surfaces)
+            } else {
+                computed_viewability_restriction_steps(source, target, surfaces)
+            };
+            let Some(goals) = goals else {
                 continue;
             };
             let candidate = goals
@@ -9299,7 +9302,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_restricted_solve_closure_before_arithmetic");
         if let Some(proof) =
-            Self::try_computed_viewability_restriction_closure(search_input, Some(surfaces))
+            Self::try_ordinary_viewability_restriction_closure(search_input, Some(surfaces))
         {
             return Some(proof);
         }
