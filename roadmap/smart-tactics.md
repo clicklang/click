@@ -75,7 +75,7 @@ helpers exposes four existing search-only caller records; it adds no runtime wor
 
 - **Confirmed architectural exceptions:** explicit legacy transport invokes
   discovery.
-  T5 also retains uncharged transition-assumption reconstruction. No fresh
+  Its fixed-state route retains uncharged transition-assumption reconstruction. No fresh
   scaling curve was run for this reconciliation.
 - **Unmeasured candidates:** four kernel bridges map to three groups, L1, R2
   and C1. Other transition and declaration checks
@@ -85,7 +85,8 @@ helpers exposes four existing search-only caller records; it adds no runtime wor
   planning. Generating obligations is fast work; solving them may be slow and
   expandable. Have/claim and resource-scope obligation scheduling, step/fold dispatch,
   and retained step/fold completion are no longer open extractions.
-- **Transport coverage:** T1–T5 below describe remaining routes. Scalar
+- **Transport coverage:** the remaining inventory below covers written syntax and
+  retirement. Scalar
   conjunction selection/regrouping and matching compound/nested implications
   with scalar leaves have ordinary expansion coverage. They do not settle
   non-scalar leaves, binders, other proof contexts or legacy retirement.
@@ -111,8 +112,8 @@ interpretation now also lives in the driver; primitive split/focus/join operatio
 do not run arm-script callbacks. No operation-to-driver records remain in the frozen inventory.
 For a new scaling experiment, L1 through an actual write remains a bounded
 candidate. Boundary cleanup and enforcement are alternative next slices below.
-Transport work should target a named T1–T5 route and its retirement criterion,
-not accumulate more examples of an already-covered shape. These are separate
+Transport work should target a surviving generated form or a written legacy
+consumer and its retirement criterion, not accumulate already-covered shapes. These are separate
 work items; this reconciliation changes no behavior.
 
 ### Remaining obligation generation
@@ -248,9 +249,9 @@ then remove it, including obsolete source/result normalization and
 premise/effect collection. Finish with a boundary test that an expanded proof
 cannot create `ProofSearch`; a text search alone is insufficient.
 
-The next sequence is T1, T4, T5, then the remaining written corpus and
-dispatcher retirement. These are three proof migrations plus compatibility
-cleanup and deletion. Corpus migration can accompany each fix. Missing primitives or newly reproduced output shapes require a new
+The next sequence is migration of the remaining written corpus, then syntax
+and dispatcher retirement. Preserve negative fixtures' semantic refusals during
+migration. Missing primitives or newly reproduced output shapes require a new
 design discussion rather than silently expanding a chunk. This inventory does
 not claim exhaustive coverage of all possible source programs or the unrelated
 fast-operation ledger.
@@ -543,7 +544,7 @@ authorize a new primitive or a verifier behavior change.
 
 F2 and C1 remain subsequent measurement candidates, followed by R2, R1
 reachability, and J1/M1/lifecycle coverage. Declaration-validation search and
-legacy transport T1–T5 remain separate design tracks; preparation completion did
+legacy explicit transport remains a separate design track; preparation completion did
 not remove either. The inventoried operation/driver adapters have been extracted. This clears
 that migration list; it does not remove the direct operation/search dependencies
 or prove that all generated operations are fast.
