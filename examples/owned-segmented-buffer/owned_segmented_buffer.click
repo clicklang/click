@@ -341,58 +341,24 @@ int32 owned_segmented_buffer_pipeline(
         rewrite(at(region(4).entry, owner->first_data) == at(region(4).entry, first_data));
         normalize();
     }
-    transport(at(region(4).entry, first_data[0]) == at(region(4).entry, first_value), first_data[0] == first_value) using {
-        at(region(4).entry, first_data[0]) == at(region(4).entry, first_value);
-    };
+    have first_data[0] == first_value by { assumption(); }
     step();
-    transport(at(region(4).entry, owner->first_len) == at(region(4).entry, first_len), owner->first_len == first_len) using {
-        1 <= second_len;
-        at(region(4).entry, owner->first_len) == first_len;
-        at(region(4).entry, owner->second_data) == second_data;
-    };
-    transport(at(region(4).entry, owner->second_len) == at(region(4).entry, second_len), owner->second_len == second_len) using {
-        1 <= second_len;
-        at(region(4).entry, owner->second_len) == second_len;
-        at(region(4).entry, owner->second_data) == second_data;
-    };
-    transport(at(region(4).entry, 0) < at(region(4).entry, owner->first_len), 0 < owner->first_len) using {
-        0 < at(region(4).entry, owner->first_len);
-        1 <= second_len;
-        at(region(4).entry, owner->second_data) == second_data;
-    };
-    transport(at(region(4).entry, 0) < at(region(4).entry, owner->second_len), 0 < owner->second_len) using {
-        0 < at(region(4).entry, owner->second_len);
-        at(region(4).entry, owner->second_len) == second_len;
-        at(region(4).entry, owner->second_data) == second_data;
-    };
-    transport(at(region(4).entry, first_data[0]) == at(region(4).entry, first_value), first_data[0] == first_value) using {
-        1 <= first_len;
-        1 <= second_len;
-        at(region(4).entry, first_data[0]) == first_value;
-        at(region(4).entry, owner->second_data) == second_data;
-    };
-    transport(at(region(4).entry, owner->first_data) == at(region(4).entry, first_data), owner->first_data == first_data) using {
-        1 <= second_len;
-        at(region(4).entry, owner->first_data) == first_data;
-        at(region(4).entry, owner->second_data) == second_data;
-    };
-    transport(at(region(4).entry, owner->second_data) == at(region(4).entry, second_data), owner->second_data == second_data) using {
-        at(region(4).entry, owner->second_data) == at(region(4).entry, second_data);
-        1 <= second_len;
-    };
+    have owner->first_len == first_len by { assumption(); }
+    have owner->second_len == second_len by { assumption(); }
+    have 0 < owner->first_len by { assumption(); }
+    have 0 < owner->second_len by { assumption(); }
+    have first_data[0] == first_value by { assumption(); }
+    have owner->first_data == first_data by { assumption(); }
+    have owner->second_data == second_data by { assumption(); }
     have at(region(5).entry, second_data[0]) == at(region(5).entry, second_value) by {
         rewrite(at(region(5).entry, second_value) == at(region(5).entry, owner->second_data[0]));
         rewrite(at(region(5).entry, owner->second_data) == at(region(5).entry, second_data));
         normalize();
     }
-    transport(at(region(5).entry, second_data[0]) == at(region(5).entry, second_value), second_data[0] == second_value) using {
-        at(region(5).entry, second_data[0]) == at(region(5).entry, second_value);
-    };
+    have second_data[0] == second_value by { assumption(); }
     fold(owned_segmented_buffer(owner));
     step();
-    transport(at(statement(5).entry, first_data[0]) == first_value, first_data[0] == first_value) using {
-        at(statement(5).entry, first_data[0]) == first_value;
-    };
+    have first_data[0] == first_value by { assumption(); }
     apply(int32_equality_transitive(c(result), first_data[0], first_value)) using {
         c(result) == first_data[0];
         *first_data == first_value;

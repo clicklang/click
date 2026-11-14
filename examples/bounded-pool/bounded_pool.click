@@ -280,18 +280,28 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
             have separate(memory(source->checked_out), memory(destination->capacity));
             mark before_source_write;
             step();
-            have destination->checked_out == at(before_source_write, destination->checked_out) by {
-                transport(at(before_source_write, destination->checked_out) == at(before_source_write, destination->checked_out),
-                          destination->checked_out == at(before_source_write, destination->checked_out)) using {
-                    separate(memory(source->checked_out), memory(destination->checked_out));
-                };
+            have separate(statement(0).footprint, memory(destination->checked_out)) by {
+                normalize() using { separate(memory(source->checked_out), memory(destination->checked_out)); };
             }
-            step();
+            have destination->checked_out == at(before_source_write, destination->checked_out) by {
+                preserve(separate(statement(0).footprint, memory(destination->checked_out)));
+            }
+            have separate(statement(0).footprint, memory(destination->capacity)) by {
+                normalize() using { separate(memory(source->checked_out), memory(destination->capacity)); };
+            }
             have destination->capacity == at(before_source_write, destination->capacity) by {
-                transport(at(before_source_write, destination->capacity) == at(before_source_write, destination->capacity),
-                          destination->capacity == at(before_source_write, destination->capacity)) using {
-                    separate(memory(source->checked_out), memory(destination->capacity));
-                };
+                preserve(separate(statement(0).footprint, memory(destination->capacity)));
+            }
+            have separate(memory(destination->checked_out), memory(destination->capacity));
+            step();
+            have separate(statement(1).footprint, memory(destination->capacity)) by {
+                normalize() using { separate(memory(destination->checked_out), memory(destination->capacity)); };
+            }
+            have destination->capacity == at(statement(1).entry, destination->capacity) by {
+                preserve(separate(statement(1).footprint, memory(destination->capacity)));
+            }
+            have destination->capacity == at(before_source_write, destination->capacity) by {
+                assumption();
             }
             fold(pool_object(destination, object));
             fold(pool_slot(source));
