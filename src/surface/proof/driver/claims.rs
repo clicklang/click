@@ -1142,6 +1142,7 @@ use exit_claim::{ClaimCertificate, ClaimClosure, ClosedClaim};
 /// obligations, and its completion retains the clause it establishes.
 fn contract_closing_goal<'a>(
     function: &'a ProgramFunction,
+    retained_entry: Option<&crate::kernel::RetainedClosingEntry>,
     target: Option<&FunctionContractClaimTarget>,
     pre_state: &ExecutionState,
     arguments: &[ProgramExpression],
@@ -1172,14 +1173,22 @@ fn contract_closing_goal<'a>(
                     function.name(),
                     "explicit return closer",
                     "return claim state preparation",
-                    || {
-                        crate::kernel::FunctionEnsureGoalContext::new(
+                    || match retained_entry {
+                        Some(entry) => {
+                            crate::kernel::FunctionEnsureGoalContext::from_retained_entry(
+                                function,
+                                entry,
+                                outcome,
+                                assumptions,
+                            )
+                        }
+                        None => crate::kernel::FunctionEnsureGoalContext::new(
                             function,
                             pre_state,
                             arguments,
                             outcome,
                             assumptions,
-                        )
+                        ),
                     },
                 )
             })
@@ -1197,14 +1206,23 @@ fn contract_closing_goal<'a>(
                 ))
             })?,
         FunctionContractClaimTarget::ExceptionalEnsureProposition(contract_index) => {
-            crate::kernel::program_function_exceptional_ensure_goals(
-                function,
-                *contract_index,
-                pre_state,
-                arguments,
-                outcome,
-                assumptions,
-            )
+            match retained_entry {
+                Some(entry) => crate::kernel::program_function_exceptional_ensure_goals_from_entry(
+                    function,
+                    *contract_index,
+                    entry,
+                    outcome,
+                    assumptions,
+                ),
+                None => crate::kernel::program_function_exceptional_ensure_goals(
+                    function,
+                    *contract_index,
+                    pre_state,
+                    arguments,
+                    outcome,
+                    assumptions,
+                ),
+            }
             .ok_or_else(|| {
                 ClickError::new("contract closing could not evaluate the exceptional postcondition")
             })?
@@ -1231,6 +1249,7 @@ fn contract_closing_goal<'a>(
 /// form; two forms at most.
 fn contract_closing_goal_forms<'a>(
     function: &'a ProgramFunction,
+    retained_entry: Option<&crate::kernel::RetainedClosingEntry>,
     target: Option<&FunctionContractClaimTarget>,
     pre_state: &ExecutionState,
     arguments: &[ProgramExpression],
@@ -1252,6 +1271,7 @@ fn contract_closing_goal_forms<'a>(
             || {
                 contract_closing_goal(
                     function,
+                    retained_entry,
                     target,
                     pre_state,
                     arguments,
@@ -1425,6 +1445,9 @@ fn begin_outcome_existence_proof<'a>(
     let root = outcome_root.clone();
     let kernel_goal = contract_closing_goal(
         function,
+        root.execution_context()
+            .and_then(|context| context.constants.entry_context.as_ref())
+            .map(|entry| entry.cases.closing_entry()),
         root.claim_goals()
             .and_then(|goals| goals.target(&claims[claim_index].key())),
         pre_state,
@@ -1516,6 +1539,9 @@ fn close_claim_directly_from_outcome<'a>(
         .then(|| {
             contract_closing_goal(
                 function,
+                root.execution_context()
+                    .and_then(|context| context.constants.entry_context.as_ref())
+                    .map(|entry| entry.cases.closing_entry()),
                 root.claim_goals()
                     .and_then(|goals| goals.target(&claim.key())),
                 pre_state,
@@ -2713,6 +2739,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                     .map(|(claim_index, _, _)| {
                         contract_closing_goal_forms(
                             function,
+                            proof_context.constants.entry_context.as_ref().map(|entry| entry.cases.closing_entry()),
                             outcome_proof.as_ref().and_then(Proof::claim_goals).and_then(|goals| goals.target(&claims[*claim_index].key())),
                             contract_pre_state,
                             arguments,
@@ -4703,6 +4730,11 @@ pub(super) fn finish_ordered_proof<'a>(
                                     };
                                     let kernel_goals = contract_closing_goal_forms(
                                         function,
+                                        proof_context
+                                            .constants
+                                            .entry_context
+                                            .as_ref()
+                                            .map(|entry| entry.cases.closing_entry()),
                                         outcome_proof
                                             .as_ref()
                                             .and_then(Proof::claim_goals)
@@ -4911,6 +4943,11 @@ pub(super) fn finish_ordered_proof<'a>(
                                     };
                                     let kernel_goals = contract_closing_goal_forms(
                                         function,
+                                        proof_context
+                                            .constants
+                                            .entry_context
+                                            .as_ref()
+                                            .map(|entry| entry.cases.closing_entry()),
                                         outcome_proof
                                             .as_ref()
                                             .and_then(Proof::claim_goals)
@@ -6300,6 +6337,7 @@ mod contract_closing_tests {
         };
         let error = contract_closing_goal(
             &function,
+            None,
             Some(&FunctionContractClaimTarget::EnsureProposition(0)),
             &ExecutionState::new(),
             &[],

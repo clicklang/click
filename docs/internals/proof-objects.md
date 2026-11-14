@@ -446,11 +446,24 @@ including the normalized natural loops that termination rules name. Other
 clause proofs remain independent execution alternatives. Loop semantics and
 call dependencies come from the selected executions.
 
-Return-path reconstruction before whole-contract completion remains migration
-work, as does replacing batch receipt association with direct updates to the
-whole-contract owner. Independent conditional execution artifacts have no
-opened-entry authority and retain their separate validation and rule-packaging
-APIs.
+Entry opening also retains the contract's evaluated required resources,
+checked clause metadata and derived resource facts in `RetainedClosingEntry`.
+Each prepared guard case owns its corresponding entry view while sharing the
+checked clause metadata. The checked entry transfer prepares the static-storage
+footprint input before body tactics. Range projection runs only when the open
+footprint goal needs it; it never reevaluates entry clauses. Closing consumes these inputs instead of binding the
+arguments, reevaluating entry clauses or projecting entry resources again.
+Normal and exceptional postcondition goals use the retained entry and the
+current outcome. Resource/effect closing likewise reads the proof-owned result
+and state directly. Resource changes prepare a new exit view while preserving
+the immutable entry input. Conditional resource exits remain work of the open
+returned-resource goal; conditional effect cases consume their prepared entry
+views and projections without sharing case-local facts with siblings.
+
+Batch receipt association, including the legacy per-path specification
+wrappers, remains migration work for direct updates to the whole-contract
+owner. Independent conditional execution artifacts have no opened-entry
+authority and retain their separate entry preparation and rule-packaging APIs.
 
 Closing goal state is fixed-size and shared proof forks retain independent
 updates. An explicit `assumption()` discharges the selected closing goal using
