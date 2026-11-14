@@ -3,36 +3,6 @@ use super::*;
 use crate::surface::proof::driver::ProofDriver;
 
 impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
-    /// Applies a planner's flat explicit candidate directly to persistent
-    /// `Proof` descendants. Planning may select surface operations, but only
-    /// their checked implementations can advance the proof.
-    ///
-    /// Generated candidates historically retain a final `assumption()` even
-    /// when the preceding operation already discharged the goal. Ignore only
-    /// that final no-op; any other operation after closure rejects the
-    /// candidate. No certificate is materialized or interpreted here.
-    pub(in crate::surface::proof) fn try_planned_explicit_steps(
-        &self,
-        tactics: &[ProofTactic],
-    ) -> Option<Proof<'a>> {
-        let driver_proof = self.proof;
-        if tactics.is_empty() {
-            return None;
-        }
-        let mut proof = driver_proof.clone();
-        for (index, tactic) in tactics.iter().enumerate() {
-            if proof.focused_discharged() {
-                if index + 1 == tactics.len() && matches!(tactic, ProofTactic::Assumption) {
-                    continue;
-                }
-                return None;
-            }
-            let step = SourceContext::PureGoal.leaf_step(tactic)?;
-            proof = proof.driver().apply_step(step).ok()?;
-        }
-        proof.focused_discharged().then_some(proof)
-    }
-
     /// Checks source whose caller has already selected this Proof driver as
     /// the semantic authority. Explicit operation failures propagate instead
     /// of being converted into a compatibility miss; recursive scopes and

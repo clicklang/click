@@ -22260,3 +22260,25 @@ fn computed_subtraction_view_restriction_expands_to_library_steps() {
     let missing = expanded.replace("requires index < length;", "");
     assert!(without_implicit_solve(|| verify_click_theorems(&missing)).is_err());
 }
+
+#[test]
+fn instantiated_bound_to_result_expands_without_transport() {
+    let c_source = "int32 stronger(int32 p[], int32 n, int32 limit) { return limit + 1; }";
+    let source = r#"
+        verifying "stronger.c";
+        int32 stronger(int32 p[], int32 n, int32 limit) {
+            views p[0..n];
+            requires limit < 2147483647;
+            requires forall (i: int32) { 0 <= i and i < n implies p[i] <= limit };
+            ensures forall (i: int32) { 0 <= i and i < n implies p[i] < result };
+        } by { step_until(function.exit); solve(); }
+    "#;
+    let sources = [("stronger.c", c_source)];
+    let expanded = expand_function_proof_source(source, &sources, "stronger").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("instantiate("), "{expanded}");
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    let false_claim = source.replace("p[i] < result", "p[i] + 1 < result");
+    assert!(verify_c0_sources(&false_claim, &sources).is_err());
+}

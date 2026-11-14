@@ -8373,7 +8373,37 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 },
             )
         })?;
-        search_input.driver().try_planned_explicit_steps(&tactics)
+        Self::try_universal_steps_with_arithmetic(search_input, &tactics)
+    }
+
+    /// Specialization can expose an arithmetic consequence without changing
+    /// any read. Keep that consequence as ordinary arithmetic certificates,
+    /// rather than asking legacy transport to rediscover it. This runs only
+    /// in search; checking the emitted steps never enters arithmetic planning.
+    fn try_universal_steps_with_arithmetic(
+        search_input: &Proof<'a>,
+        tactics: &[ProofTactic],
+    ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_universal_steps_with_arithmetic");
+        let mut proof = search_input.clone();
+        for (index, tactic) in tactics.iter().enumerate() {
+            if proof.focused_discharged() {
+                if index + 1 == tactics.len() && matches!(tactic, ProofTactic::Assumption) {
+                    continue;
+                }
+                return None;
+            }
+            if matches!(tactic, ProofTactic::TransportUsing { .. })
+                && let Ok(Some(closed)) = Self::try_arithmetic_with_selected_premises(&proof)
+            {
+                proof = closed;
+                continue;
+            }
+            let step = SourceContext::PureGoal.leaf_step(tactic)?;
+            proof = proof.driver().apply_step(step).ok()?;
+        }
+        proof.focused_discharged().then_some(proof)
     }
 
     /// Tries available universal facts when the atomic decision cannot name
@@ -8865,7 +8895,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .ok()
                 .flatten()
         } else {
-            search_input.driver().try_planned_explicit_steps(&tactics)
+            Self::try_universal_steps_with_arithmetic(search_input, &tactics)
         }
     }
 
