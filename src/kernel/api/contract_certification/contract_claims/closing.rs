@@ -412,25 +412,6 @@ impl CContractExitObligations {
         })
     }
 
-    #[cfg(test)]
-    pub(crate) fn close(
-        &self,
-        execution: &CCheckedFunctionExecution,
-        path: &SymbolicCExecutionPath,
-        specification: &CheckedPathSpecification,
-        outcome: &OutcomeProofCore,
-        claims: &OutcomeClaimGoals,
-        facts: &ProofFacts,
-    ) -> Result<(Self, CClosedContractExit), CContractClosingRefusal> {
-        let mut current = self.clone();
-        while let Some(kind) = current.first_open_goal() {
-            current =
-                current.prove_goal(kind, execution, path, specification, outcome, claims, facts)?;
-        }
-        let completed = current.completion(path)?;
-        Ok((current, completed))
-    }
-
     /// Clause receipts prove individual ownership. Consume their explicit
     /// returned units together: one surviving unit cannot return both a
     /// borrowed input and an additional produced unit.

@@ -68,6 +68,12 @@ fn contract_closing_input(
     })
 }
 
+#[derive(Clone, Copy)]
+enum ClosingProofMode {
+    Explicit,
+    Implicit,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn prove_next_contract_closing_goal<'a>(
     outcome_proof: &mut Option<Proof<'a>>,
@@ -78,6 +84,7 @@ fn prove_next_contract_closing_goal<'a>(
     certified_path_index: usize,
     has_return_resource_rewrite: bool,
     post_return_facts: &[(usize, ProofFacts)],
+    mode: ClosingProofMode,
 ) -> Result<bool, ClickError> {
     let Some(root) = outcome_proof.as_ref() else {
         return Ok(false);
@@ -98,8 +105,11 @@ fn prove_next_contract_closing_goal<'a>(
         )?);
     }
     let input = input.as_ref().expect("prepared closing input");
-    let proved =
-        root.prove_contract_closing_goal(kind, execution, &input.path, &input.specification)?;
+    let proved = root.prove_contract_closing_goal(kind, execution, &input.path, &input.specification)
+        .map_err(|error| match mode {
+            ClosingProofMode::Explicit => error.with_context(format!("this tactic could not prove the {} obligation while closing the contract", kind.description())),
+            ClosingProofMode::Implicit => error.with_context(format!("the implicit solver could not prove the {} obligation while closing the contract; write an explicit proof or establish the required facts and resources before closing", kind.description())),
+        })?;
     check_verification_deadline()?;
     *outcome_proof = Some(proved);
     Ok(true)
@@ -4022,15 +4032,25 @@ pub(super) fn finish_ordered_proof<'a>(
                         ) {
                             closing_input = None;
                         }
-                        if matches!(post_tactic, PostExecutionTactic::SolveUsing(_))
+                        let proposition_closer = match post_tactic {
+                            PostExecutionTactic::SolveUsing(_) => Some("solve() using"),
+                            PostExecutionTactic::Leaf(
+                                tactic @ (ProofTactic::Normalize
+                                | ProofTactic::NormalizeUsing(_)
+                                | ProofTactic::ArithmeticUsing(_)
+                                | ProofTactic::Preserve(_)
+                                | ProofTactic::TransportCertificate(_)
+                                | ProofTactic::ArithmeticCertificate(_)),
+                            ) => Some(tactic_name(tactic)),
+                            PostExecutionTactic::Both(_) => Some("both"),
+                            _ => None,
+                        };
+                        if let Some(closer) = proposition_closer
                             && let Some(root) = outcome_proof.as_ref()
                             && let Some(crate::kernel::proof::OutcomeGoal::Closing(kind)) =
                                 root.first_open_outcome_goal()?
                         {
-                            return Err(ClickError::new(format!(
-                                "`solve() using` requires a proposition goal; the current goal is {}; use `assumption()` for this closing operation",
-                                kind.description()
-                            )));
+                            return Err(root.step_error(format!("`{closer}` requires a proposition goal; the current contract-closing goal is {}; use `assumption()` for this closing operation", kind.description())));
                         }
                         // Written assumption and solve select the same closing goal.
                         // The implicit solver schedules that primitive for every omitted proof.
@@ -4049,6 +4069,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 certified_path_index,
                                 has_return_resource_rewrite,
                                 &post_return_facts,
+                                ClosingProofMode::Explicit,
                             )?
                         {
                             record_post_execution_surface_tactic(
@@ -5050,6 +5071,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                         certified_path_index,
                                         has_return_resource_rewrite,
                                         &post_return_facts,
+                                        ClosingProofMode::Implicit,
                                     )? {
                                         record_post_execution_surface_tactic(
                                             &mut path_grouped_surface_closers,
@@ -5310,6 +5332,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             certified_path_index,
                             has_return_resource_rewrite,
                             &post_return_facts,
+                            ClosingProofMode::Implicit,
                         )? {
                             path_grouped_surface_closers.push(ProofTactic::Assumption);
                         }

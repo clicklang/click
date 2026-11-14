@@ -941,16 +941,21 @@ mod outcome_claim_goal_tests {
         let path = &execution.paths()[0];
         let specification =
             crate::kernel::CheckedPathSpecification::new(execution.function(), path).unwrap();
-        let (closed, _) = transitioned
-            .close(
-                &execution,
-                path,
-                &specification,
-                &core,
-                goal.claims.as_ref().unwrap(),
-                &super::super::ProofFacts::from_ordered(&[]),
-            )
-            .unwrap();
+        let mut closed = transitioned;
+        while let Some(kind) = closed.first_open_goal() {
+            closed = closed
+                .prove_goal(
+                    kind,
+                    &execution,
+                    path,
+                    &specification,
+                    &core,
+                    goal.claims.as_ref().unwrap(),
+                    &super::super::ProofFacts::from_ordered(&[]),
+                )
+                .unwrap();
+        }
+        assert!(closed.completion(path).unwrap().matches_path(path));
         goal.closing = Some(closed.clone());
         assert_eq!(goal.first_open_goal(), Ok(None));
         let completed = outcome_root(goal.clone())
