@@ -4,6 +4,9 @@
 use super::*;
 use crate::kernel::MachineCastSpelling;
 mod boolean;
+// Prepared payloads; activation follows scoped consumers and Surface support.
+#[allow(dead_code)]
+mod folds;
 mod machine;
 mod reads;
 pub use machine::KernelMachineLiteral;
