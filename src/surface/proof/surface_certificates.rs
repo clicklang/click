@@ -1037,7 +1037,7 @@ fn read_preservation_steps(
 }
 
 /// Read bridges selected by the written comparison only.
-fn comparison_preservation_reads(
+pub(super) fn comparison_preservation_reads(
     source: &ClickProposition,
     target: &ClickProposition,
 ) -> Option<Vec<(ContractExpression, ContractExpression)>> {
