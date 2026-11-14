@@ -133,10 +133,12 @@ impl ProgramStatement {
                 name,
                 expression,
                 source,
+                prior_result,
             } => Self::Assign {
                 name: name.clone(),
                 expression: expression.clone(),
                 source: source.clone(),
+                prior_result: *prior_result,
             },
             Self::CallAssign {
                 target,

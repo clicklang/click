@@ -46,9 +46,11 @@ checked. Each one costs completeness, expansion, or a readable report.
   integer and Boolean synthesis uses a reverse term index, and algebraic
   synthesis (a Rust enum a call returned) an index from the value to the
   first call that returned it (`algebraic_call_results`). Replacing or removing
-  the recorded exit replaces or removes its result name too. A call step's result
-  is also named from the state that holds it (`ExecutionState::call_results`, by call
-  number; `SourceExecutionLayout::call_region` maps the number to its call).
+  the recorded exit replaces or removes its result name too. A step's result
+  is also named from the state that holds it (`ExecutionState::step_results`, by step
+  number; `SourceExecutionLayout::step_region` maps the number to its step).
+  A postfix update's result, the value it replaced, is
+  `at(<its region>.entry, x)`.
   Source-layout result locals preserve allocation naming, and the remaining
   frontend result temporaries map back to their calls
   (`SourceExecutionLayout::temporary_call_region`).

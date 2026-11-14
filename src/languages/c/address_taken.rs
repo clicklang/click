@@ -270,7 +270,7 @@ fn child_expressions<'a>(
         C0Expression::ScalarUpdate { .. } => {}
         C0Expression::Void
         | C0Expression::Variable(_)
-        | C0Expression::CallResult { .. }
+        | C0Expression::StepResult { .. }
         | C0Expression::FunctionAddress(_)
         | C0Expression::Int32Literal(_)
         | C0Expression::UInt8Literal(_)

@@ -246,7 +246,7 @@ impl Names {
         use ProgramExpression::*;
         match expression {
             Variable(name) => self.reference(name),
-            Value(_) | FunctionAddress(_) | CallResult { .. } => {}
+            Value(_) | FunctionAddress(_) | StepResult { .. } => {}
             Cast { expression, .. }
             | FloatClassification { expression, .. }
             | PointerOffsetBytes {

@@ -295,6 +295,7 @@ mod tests {
             name: format!("x{index}"),
             expression: crate::kernel::program_expression::int32_literal(index as u32),
             source: Default::default(),
+            prior_result: None,
         })
     }
 

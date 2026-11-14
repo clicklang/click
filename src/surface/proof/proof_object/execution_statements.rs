@@ -905,7 +905,7 @@ impl<'a> Proof<'a> {
                         .locals()
                         .get(target)
                         .map(|value| value.clone().into_native()),
-                    FrontierResult::Call(call) => state.call_result(*call).cloned(),
+                    FrontierResult::Call(call) => state.step_result(*call).cloned(),
                 }
                 .ok_or_else(|| {
                     self.step_error(format!(

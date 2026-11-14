@@ -892,9 +892,10 @@ Supported C surface includes:
   `char **`, is refused at execution as a type mismatch
   (`mdtests/a_parenthesized_update_of_a_stored_pointer_is_refused_at_execution.md`)
 - expression-valued prefix and postfix `++`/`--` on named arithmetic and
-  typed data-pointer scalars. A typed temporary captures the consumed value
-  once; prefix forms return the updated value and postfix forms return the
-  original value. Updates in loop guards run on every condition evaluation,
+  typed data-pointer scalars. The update is a step of its own; prefix forms
+  read the updated local, and postfix forms read the value the update
+  replaced, `at(<the update's region>.entry, x)`. Updates in loop guards run
+  on every condition evaluation,
   including the final false guard and a do-while `continue`. Unsigned updates
   wrap at their full native width; signed overflow remains undefined behavior.
   Pointer updates preserve struct stride and const pointee access. Reads such

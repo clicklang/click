@@ -9449,7 +9449,7 @@ impl ExecutionProofCore {
             );
         }
         // The condition's call results end with it.
-        let reached = crate::kernel::eval::without_read_call_results(*reached, decided);
+        let reached = crate::kernel::eval::without_read_step_results(*reached, decided);
         Ok((reached, source_after))
     }
 
