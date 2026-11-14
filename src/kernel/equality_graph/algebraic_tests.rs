@@ -314,7 +314,7 @@ fn scalar_read_conflicts_require_the_same_snapshot() {
         block: "cell".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let before = CMemory::new().with_block("cell", 4).store(
+    let before = Memory::new().with_block("cell", 4).store(
         p.clone(),
         ProgramValue::Int32(MachineTerm::Variable(Variable(500))),
     );

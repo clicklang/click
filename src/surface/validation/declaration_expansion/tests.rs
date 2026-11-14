@@ -136,7 +136,7 @@ fn authority_type_argument_requires_exact_unary_pointer_family() {
         .expect("checked source authority lowers to a kernel resource term");
     assert!(matches!(
         spec.term(),
-        crate::kernel::CResourceTerm::PopulationAuthority { .. }
+        crate::kernel::ResourceTerm::PopulationAuthority { .. }
     ));
     assert!(
         expand_resource_type_arguments(

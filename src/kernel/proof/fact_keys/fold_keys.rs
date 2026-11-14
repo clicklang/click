@@ -190,13 +190,13 @@ mod tests {
     #[test]
     fn common_fold_keys_preserve_snapshot_identity() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = crate::kernel::CMemory::new();
+        let memory = crate::kernel::Memory::new();
         let pointer = Pointer::symbolic(Variable(101));
         let later = memory.clone().store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(1)),
         );
-        let fold = |memory: &crate::kernel::CMemory| {
+        let fold = |memory: &crate::kernel::Memory| {
             let native = machine_fold(
                 81,
                 82,

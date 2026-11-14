@@ -97,7 +97,7 @@ mod ranking_diagnostic_tests {
             )),
         );
         let key = crate::surface::verification::termination_measure_source(&measure);
-        let component = crate::kernel::CRankingComponent::PureInteger {
+        let component = crate::kernel::RankingComponent::PureInteger {
             source: key,
             expression: crate::kernel::SpecIntegerExpression::FromMachine(Box::new(
                 crate::kernel::SpecExpression::ProgramExpression(crate::kernel::c_uint32_literal(
@@ -755,7 +755,7 @@ impl<'a> Proof<'a> {
                     context.parameter_binding(),
                     state,
                 )?;
-                let crate::kernel::CResource::Composite { arguments, .. } = fact.resource() else {
+                let crate::kernel::Resource::Composite { arguments, .. } = fact.resource() else {
                     return Err(self.step_error(format!(
                         "type binder `{name}` must name a resource with a body"
                     )));
@@ -1541,10 +1541,10 @@ impl<'a> Proof<'a> {
         loop_head_state: &ExecutionState,
         head_iterations: &crate::kernel::IntegerTerm,
         condition: &ProgramExpression,
-        invariant_checks: &[CLoopInvariantCheck],
-        binders: &[crate::kernel::CLoopBinder],
+        invariant_checks: &[LoopInvariantCheck],
+        binders: &[crate::kernel::LoopBinder],
         structural_measure: Option<&str>,
-        composite_resource_definitions: &[CCompositeResourceDefinition],
+        composite_resource_definitions: &[CompositeResourceDefinition],
     ) -> Result<(), ClickError> {
         if !matches!(self.context.as_ref(), ProofContext::Execution(_)) {
             return Err(self.step_error("loop state join requires an execution proof"));
@@ -1621,8 +1621,8 @@ impl<'a> Proof<'a> {
     /// Consume the complete prepared bundle without lowering or proof search.
     pub(in crate::surface::proof) fn validate_loop_invariant_bundle(
         &self,
-        invariant_checks: &[CLoopInvariantCheck],
-        ranking_measures: &[crate::kernel::CRankingComponent],
+        invariant_checks: &[LoopInvariantCheck],
+        ranking_measures: &[crate::kernel::RankingComponent],
     ) -> Result<(), ClickError> {
         self.state
             .validate_checked_invariant_lowerings(invariant_checks, ranking_measures)
@@ -1639,8 +1639,8 @@ impl<'a> Proof<'a> {
     /// explicit proof could spell.
     pub(in crate::surface::proof) fn certify_loop_invariant_bundle(
         &self,
-        invariant_checks: &[CLoopInvariantCheck],
-        ranking_measures: &[crate::kernel::CRankingComponent],
+        invariant_checks: &[LoopInvariantCheck],
+        ranking_measures: &[crate::kernel::RankingComponent],
     ) -> Result<Self, ClickError> {
         self.validate_loop_invariant_bundle(invariant_checks, ranking_measures)?;
         let execution = self

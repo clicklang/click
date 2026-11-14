@@ -28,7 +28,9 @@ pub(in crate::surface) fn describe_proof_obligation_context(
 use crate::kernel::ExecutionFactSource;
 use crate::kernel::SharedMemory;
 use crate::kernel::resource_tracker;
-use crate::kernel::{CComparisonOperator, CFloatCondition, CUpdateOperator};
+use crate::kernel::{
+    ComparisonOperator as KernelComparisonOperator, FloatCondition, UpdateOperator,
+};
 use crate::surface::validation::describe_click_type;
 
 mod cpp_model;
@@ -598,7 +600,7 @@ pub(super) fn describe_pure_facts(pure_facts: &[Proposition]) -> String {
 pub(super) fn describe_pure_fact_with_environment(
     fact: &Proposition,
     parameter_binding: ParameterBinding<'_>,
-    environment: &crate::kernel::CExecutionEnvironment,
+    environment: &crate::kernel::ExecutionEnvironment,
     predicate_environment: Option<&PredicateEnvironment>,
 ) -> String {
     let description = describe_pure_fact(fact, parameter_binding);
@@ -677,7 +679,7 @@ pub(super) fn concrete_named_contract_fact(fact: &Proposition) -> Option<(&str, 
     let Proposition::Predicate { name, arguments } = fact else {
         return None;
     };
-    let contract = crate::kernel::CFunctionContract::surface_name_from_predicate(name)?;
+    let contract = crate::kernel::FunctionContract::surface_name_from_predicate(name)?;
     let [_, Term::ProgramValue(ProgramValue::Pointer(pointer))] = arguments.as_slice() else {
         return None;
     };
@@ -897,10 +899,10 @@ pub(super) fn condition_kind(condition: &ConditionTerm) -> &'static str {
         } => "int64 left-shift overflow",
         ConditionTerm::Compare { .. } => "machine comparison",
         ConditionTerm::Overflows { .. } => "machine overflow test",
-        ConditionTerm::Float32(CFloatCondition::Comparison { .. }) => "float32 comparison",
-        ConditionTerm::Float32(CFloatCondition::Classification { .. }) => "float32 classification",
-        ConditionTerm::Float64(CFloatCondition::Comparison { .. }) => "float64 comparison",
-        ConditionTerm::Float64(CFloatCondition::Classification { .. }) => "float64 classification",
+        ConditionTerm::Float32(FloatCondition::Comparison { .. }) => "float32 comparison",
+        ConditionTerm::Float32(FloatCondition::Classification { .. }) => "float32 classification",
+        ConditionTerm::Float64(FloatCondition::Comparison { .. }) => "float64 comparison",
+        ConditionTerm::Float64(FloatCondition::Classification { .. }) => "float64 classification",
         ConditionTerm::PointerOffsetEqual(_, _) => "pointer-offset equality",
         ConditionTerm::PointerEqual(_, _) => "pointer equality",
         ConditionTerm::Constant(_) => "constant condition",
@@ -940,7 +942,7 @@ pub(super) fn describe_execution_pure_facts(facts: &(impl ExecutionFactSource + 
 
 pub(super) fn describe_available_facts(
     pure_facts: &[Proposition],
-    resource_facts: &[CResourceFact],
+    resource_facts: &[ResourceFact],
     parameter_binding: ParameterBinding<'_>,
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
 ) -> String {
@@ -973,7 +975,7 @@ pub(super) fn describe_required_pure_fact(
 pub(super) fn describe_missing_pure_fact(
     required: &Proposition,
     pure_facts: &[Proposition],
-    resource_facts: &[CResourceFact],
+    resource_facts: &[ResourceFact],
     parameter_binding: ParameterBinding<'_>,
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
 ) -> String {
@@ -996,7 +998,7 @@ pub(super) fn describe_missing_pure_fact(
 fn describe_missing_fact_context(
     requirement: &str,
     pure_facts: &[Proposition],
-    resource_facts: &[CResourceFact],
+    resource_facts: &[ResourceFact],
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
     labels: &mut crate::surface::proof_diagnostics::render::SnapshotLabels,
 ) -> String {
@@ -1012,18 +1014,18 @@ fn describe_missing_fact_context(
 }
 
 pub(super) fn describe_missing_resource_fact(
-    required: &CResourceFact,
+    required: &ResourceFact,
     pure_facts: &[Proposition],
-    resource_facts: &[CResourceFact],
+    resource_facts: &[ResourceFact],
     parameter_binding: ParameterBinding<'_>,
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
 ) -> String {
     let mut note = String::new();
-    if let CResource::Iterated(required_iterated) = required.resource()
+    if let Resource::Iterated(required_iterated) = required.resource()
         && let Some(held) = resource_facts
             .iter()
             .find_map(|fact| match fact.resource() {
-                CResource::Iterated(held)
+                Resource::Iterated(held)
                     if held.owner() == required_iterated.owner() && !held.holes().is_empty() =>
                 {
                     Some(held)
@@ -1214,7 +1216,7 @@ pub(super) fn describe_goal_proof_context(
     goal: Option<&Proposition>,
     pure_facts: &[Proposition],
     case_facts: &[Proposition],
-    resource_facts: &[CResourceFact],
+    resource_facts: &[ResourceFact],
     result: Option<&ProgramValue>,
     labels: &mut crate::surface::proof_diagnostics::render::SnapshotLabels,
 ) -> String {
@@ -1254,7 +1256,7 @@ pub(super) fn describe_goal_proof_context(
 
 pub(super) fn describe_proof_context(
     pure_facts: &[Proposition],
-    resource_facts: &[CResourceFact],
+    resource_facts: &[ResourceFact],
     parameter_binding: ParameterBinding<'_>,
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
 ) -> String {
@@ -1275,10 +1277,10 @@ pub(super) fn describe_proof_context(
 
 /// A loop head the kernel could not build, spelled over the head state's
 /// locals.
-pub(super) fn describe_loop_head_refusal(refusal: &crate::kernel::CLoopHeadRefusal) -> String {
+pub(super) fn describe_loop_head_refusal(refusal: &crate::kernel::LoopHeadRefusal) -> String {
     let (proposition, context, state) = match refusal {
-        crate::kernel::CLoopHeadRefusal::Message(message) => return message.clone(),
-        crate::kernel::CLoopHeadRefusal::UnheldResource { fact, state } => {
+        crate::kernel::LoopHeadRefusal::Message(message) => return message.clone(),
+        crate::kernel::LoopHeadRefusal::UnheldResource { fact, state } => {
             let (parameters, arguments) = local_naming_tables(state);
             return format!(
                 "loop declares a resource the enclosing function does not hold: `{}`",
@@ -1288,7 +1290,7 @@ pub(super) fn describe_loop_head_refusal(refusal: &crate::kernel::CLoopHeadRefus
                 )
             );
         }
-        crate::kernel::CLoopHeadRefusal::MissingPrerequisite {
+        crate::kernel::LoopHeadRefusal::MissingPrerequisite {
             proposition,
             context,
             state,
@@ -1333,9 +1335,9 @@ pub(super) fn describe_ensure_clause(clause: &EnsureClause) -> String {
 /// diagnostic item limit.
 pub(super) fn describe_unverified_contract_claims(
     function_block: &FunctionBlock,
-    keys: &[crate::kernel::CFunctionContractClaimKey],
+    keys: &[crate::kernel::FunctionContractClaimKey],
 ) -> String {
-    use crate::kernel::CFunctionContractClaimKey;
+    use crate::kernel::FunctionContractClaimKey;
     let function_name = function_block.signature().name();
     let describe_clause = |label: String, clause: &EnsureClause| {
         format!("{label} `{}`", describe_ensure_clause(clause))
@@ -1345,18 +1347,18 @@ pub(super) fn describe_unverified_contract_claims(
         .iter()
         .take(item_limit)
         .map(|key| match key {
-            CFunctionContractClaimKey::BodySafety => format!("{function_name} body safety"),
-            CFunctionContractClaimKey::Effect(index) => {
+            FunctionContractClaimKey::BodySafety => format!("{function_name} body safety"),
+            FunctionContractClaimKey::Effect(index) => {
                 format!("{function_name} effect clause {index}")
             }
-            CFunctionContractClaimKey::Ensure(index) => {
+            FunctionContractClaimKey::Ensure(index) => {
                 let label = function_block.ensure_claim_label(*index);
                 match function_block.ensures().get(*index) {
                     Some(clause) => describe_clause(label, clause),
                     None => label,
                 }
             }
-            CFunctionContractClaimKey::ExceptionalEnsure(index) => {
+            FunctionContractClaimKey::ExceptionalEnsure(index) => {
                 let label = function_block.exceptional_ensure_claim_label(*index);
                 match function_block.exceptional_ensures().get(*index) {
                     Some(clause) => describe_clause(label, clause),
@@ -1483,7 +1485,7 @@ pub(super) fn local_naming_tables_with_source(
 /// A runtime error spelled over `state`'s locals, so an address a loop head
 /// minted a variable for reads as the index the source wrote.
 pub(super) fn describe_runtime_error_over_locals(
-    error: &crate::kernel::CRuntimeError,
+    error: &crate::kernel::RuntimeError,
     state: &ExecutionState,
 ) -> String {
     let (parameters, arguments) = local_naming_tables(state);
@@ -1493,7 +1495,7 @@ pub(super) fn describe_runtime_error_over_locals(
 pub(super) fn describe_missing_proof_obligations(
     obligations: &[ProofObligation],
     pure_facts: &[Proposition],
-    resource_facts: &[CResourceFact],
+    resource_facts: &[ResourceFact],
     parameter_binding: ParameterBinding<'_>,
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
 ) -> String {
@@ -1581,7 +1583,7 @@ pub(in crate::surface) fn describe_undefined_behavior_site(
     state: &ExecutionState,
     statement: &ProgramStatement,
     assumptions: &crate::kernel::PureFactContext,
-    kind: &crate::kernel::CUndefinedBehavior,
+    kind: &crate::kernel::UndefinedBehavior,
 ) -> String {
     describe_located_undefined_behavior(crate::kernel::locate_undefined_behavior(
         state,
@@ -1596,7 +1598,7 @@ pub(in crate::surface) fn describe_undefined_behavior_condition_site(
     state: &ExecutionState,
     condition: &ProgramExpression,
     assumptions: &crate::kernel::PureFactContext,
-    kind: &crate::kernel::CUndefinedBehavior,
+    kind: &crate::kernel::UndefinedBehavior,
 ) -> String {
     describe_located_undefined_behavior(crate::kernel::locate_undefined_behavior_in_condition(
         state,
@@ -1607,11 +1609,11 @@ pub(in crate::surface) fn describe_undefined_behavior_condition_site(
 }
 
 fn describe_located_undefined_behavior(
-    site: Option<crate::kernel::CUndefinedBehaviorSite>,
+    site: Option<crate::kernel::UndefinedBehaviorSite>,
 ) -> String {
     let (prefix, expression) = match site {
-        Some(crate::kernel::CUndefinedBehaviorSite::Expression(expression)) => ("", expression),
-        Some(crate::kernel::CUndefinedBehaviorSite::Store(pointer)) => {
+        Some(crate::kernel::UndefinedBehaviorSite::Expression(expression)) => ("", expression),
+        Some(crate::kernel::UndefinedBehaviorSite::Store(pointer)) => {
             ("the store through ", pointer)
         }
         None => return String::new(),
@@ -1651,27 +1653,27 @@ fn without_enclosing_parentheses(spelling: &str) -> &str {
 }
 
 pub(super) fn describe_function_outcome(
-    outcome: &CFunctionOutcome,
+    outcome: &FunctionOutcome,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
     match outcome {
-        CFunctionOutcome::Return { value, .. } => {
+        FunctionOutcome::Return { value, .. } => {
             format!(
                 "returned {}",
                 describe_c_value(&value.native(), parameter_binding)
             )
         }
-        CFunctionOutcome::Throw { value, .. } => {
+        FunctionOutcome::Throw { value, .. } => {
             format!(
                 "threw {}",
                 describe_c_value(&value.native(), parameter_binding)
             )
         }
-        CFunctionOutcome::VerificationDiverges => "has no verified return frontier".to_string(),
-        CFunctionOutcome::UndefinedBehavior(kind) => {
+        FunctionOutcome::VerificationDiverges => "has no verified return frontier".to_string(),
+        FunctionOutcome::UndefinedBehavior(kind) => {
             format!("undefined behavior: {}", kind.description())
         }
-        CFunctionOutcome::RuntimeError(error) => format!(
+        FunctionOutcome::RuntimeError(error) => format!(
             "C operation could not be verified: {}",
             describe_runtime_error(error, parameter_binding)
         ),
@@ -1679,36 +1681,36 @@ pub(super) fn describe_function_outcome(
 }
 
 pub(super) fn describe_runtime_error(
-    error: &crate::kernel::CRuntimeError,
+    error: &crate::kernel::RuntimeError,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
     match error {
-        crate::kernel::CRuntimeError::UnboundVariable(name) => {
+        crate::kernel::RuntimeError::UnboundVariable(name) => {
             format!("unbound variable `{name}`")
         }
-        crate::kernel::CRuntimeError::UnknownFunction(name)
+        crate::kernel::RuntimeError::UnknownFunction(name)
             if crate::languages::c::thread_runtime::is_publication_operation(name) =>
         {
             format!(
                 "`{name}` is declared by Click's `<stdatomic.h>` projection, but only the modeled-pthread thread runtime models C11 atomic operations"
             )
         }
-        crate::kernel::CRuntimeError::UnknownFunction(name) => {
+        crate::kernel::RuntimeError::UnknownFunction(name) => {
             format!(
                 "unknown function `{name}`: no verified source defines it and the sidecar declares no contract for it; describe an implementation outside the verified sources with an `extern` contract in the sidecar (docs/reference/language/c.md#external-function-contracts)"
             )
         }
-        crate::kernel::CRuntimeError::TypeMismatch => "type mismatch".to_string(),
-        crate::kernel::CRuntimeError::HeapAllocationSize => {
-            crate::kernel::CRuntimeError::HEAP_ALLOCATION_SIZE_MESSAGE.to_string()
+        crate::kernel::RuntimeError::TypeMismatch => "type mismatch".to_string(),
+        crate::kernel::RuntimeError::HeapAllocationSize => {
+            crate::kernel::RuntimeError::HEAP_ALLOCATION_SIZE_MESSAGE.to_string()
         }
-        crate::kernel::CRuntimeError::HeapAllocationSizeAboveInt32 => {
-            crate::kernel::CRuntimeError::HEAP_ALLOCATION_SIZE_ABOVE_INT32_MESSAGE.to_string()
+        crate::kernel::RuntimeError::HeapAllocationSizeAboveInt32 => {
+            crate::kernel::RuntimeError::HEAP_ALLOCATION_SIZE_ABOVE_INT32_MESSAGE.to_string()
         }
-        crate::kernel::CRuntimeError::WideRangeRespellingMayWrap(no_wrap) => {
+        crate::kernel::RuntimeError::WideRangeRespellingMayWrap(no_wrap) => {
             describe_wide_range_no_wrap(no_wrap, parameter_binding)
         }
-        crate::kernel::CRuntimeError::LoadTypeMismatch {
+        crate::kernel::RuntimeError::LoadTypeMismatch {
             pointer,
             value_type,
             stored,
@@ -1725,16 +1727,16 @@ pub(super) fn describe_runtime_error(
                 describe_pointer(pointer, parameter_binding)
             )
         }
-        crate::kernel::CRuntimeError::PointerConversion(message)
-        | crate::kernel::CRuntimeError::EnumVariant(message) => message.clone(),
-        crate::kernel::CRuntimeError::IndeterminatePointeeType => {
+        crate::kernel::RuntimeError::PointerConversion(message)
+        | crate::kernel::RuntimeError::EnumVariant(message) => message.clone(),
+        crate::kernel::RuntimeError::IndeterminatePointeeType => {
             "pointer operation has no known pointee type".to_string()
         }
-        crate::kernel::CRuntimeError::WrongArity { expected, actual } => {
+        crate::kernel::RuntimeError::WrongArity { expected, actual } => {
             format!("wrong argument count: expected {expected}, got {actual}")
         }
-        crate::kernel::CRuntimeError::MissingReturn => "missing return".to_string(),
-        crate::kernel::CRuntimeError::MutexStorageScopeEnd { local, mutex, may_alias } => {
+        crate::kernel::RuntimeError::MissingReturn => "missing return".to_string(),
+        crate::kernel::RuntimeError::MutexStorageScopeEnd { local, mutex, may_alias } => {
             let live = format!("mutex_live({})", describe_mutex_pointer(mutex, parameter_binding));
             if *may_alias {
                 format!("Click cannot yet prove that {live} lies outside local storage `{local}`; its storage must outlive this scope")
@@ -1742,7 +1744,7 @@ pub(super) fn describe_runtime_error(
                 format!("Cannot end local storage `{local}` while {live} remains initialized; call pthread_mutex_destroy before leaving its scope")
             }
         }
-        crate::kernel::CRuntimeError::MutexStorageInUse { mutex, .. } => {
+        crate::kernel::RuntimeError::MutexStorageInUse { mutex, .. } => {
             let subject = if matches!(mutex.block, crate::kernel::PointerBlock::Heap(_)) {
                 "a mutex in this allocation".to_string()
             } else {
@@ -1750,36 +1752,36 @@ pub(super) fn describe_runtime_error(
             };
             format!("Cannot release allocation storage while {subject} remains initialized; call pthread_mutex_destroy before releasing its storage")
         }
-        crate::kernel::CRuntimeError::MutexStorageSeparationRequired { allocation, storage } =>
+        crate::kernel::RuntimeError::MutexStorageSeparationRequired { allocation, storage } =>
             format!("Requires {}; initialized mutex storage must remain live",
                 describe_pure_fact(&Proposition::CResourceSeparate {
-                    left: Box::new(CResource::Memory(*allocation.clone())),
-                    right: Box::new(CResource::Memory(*storage.clone())),
+                    left: Box::new(Resource::Memory(*allocation.clone())),
+                    right: Box::new(Resource::Memory(*storage.clone())),
                 }, parameter_binding)),
-        crate::kernel::CRuntimeError::MutexStorageWrite { write, storage } =>
+        crate::kernel::RuntimeError::MutexStorageWrite { write, storage } =>
             format!("Requires {}; initialized mutex storage is reserved until pthread_mutex_destroy",
                 describe_pure_fact(&Proposition::CResourceSeparate {
-                    left: Box::new(CResource::Memory(*write.clone())),
-                    right: Box::new(CResource::Memory(*storage.clone())),
+                    left: Box::new(Resource::Memory(*write.clone())),
+                    right: Box::new(Resource::Memory(*storage.clone())),
                 }, parameter_binding)),
-        crate::kernel::CRuntimeError::MissingMutexStorageAlignment { mutex, alignment } =>
+        crate::kernel::RuntimeError::MissingMutexStorageAlignment { mutex, alignment } =>
             format!("Requires aligned({}, {alignment})", describe_mutex_pointer(mutex, parameter_binding)),
-        crate::kernel::CRuntimeError::UnsupportedMutexStorageRetirement =>
+        crate::kernel::RuntimeError::UnsupportedMutexStorageRetirement =>
             "Click does not yet support freeing or reallocating storage in a preserving guard contract; checked mutex lifetime authority is required".into(),
-        crate::kernel::CRuntimeError::MissingMutexGuard { mutex } => format!(
+        crate::kernel::RuntimeError::MissingMutexGuard { mutex } => format!(
             "Requires owns mutex_guard({})",
             describe_mutex_pointer(mutex, parameter_binding)
         ),
-        crate::kernel::CRuntimeError::MissingMutexLive { mutex } => format!(
+        crate::kernel::RuntimeError::MissingMutexLive { mutex } => format!(
             "Requires owns mutex_live({})",
             describe_mutex_pointer(mutex, parameter_binding)
         ),
-        crate::kernel::CRuntimeError::MissingMutexUse { mutex } => format!(
+        crate::kernel::RuntimeError::MissingMutexUse { mutex } => format!(
             "Requires owns mutex_use({})",
             describe_mutex_pointer(mutex, parameter_binding)
         ),
-        crate::kernel::CRuntimeError::MissingMutexInvariant { resource, supplied } => {
-            let spell = |fact: &CResourceFact| render_resource_fact_diagnostic(fact, parameter_binding);
+        crate::kernel::RuntimeError::MissingMutexInvariant { resource, supplied } => {
+            let spell = |fact: &ResourceFact| render_resource_fact_diagnostic(fact, parameter_binding);
             match supplied {
                 Some(supplied) => format!(
                     "Requires {}; the selected state is {}",
@@ -1789,15 +1791,15 @@ pub(super) fn describe_runtime_error(
                 None => format!("Requires {}", spell(resource)),
             }
         }
-        crate::kernel::CRuntimeError::MissingResource { resource } => {
+        crate::kernel::RuntimeError::MissingResource { resource } => {
             let fact = render_resource_fact_diagnostic(resource, parameter_binding);
-            if matches!(resource.resource(), CResource::MutexGuard(_) | CResource::MutexLive(_) | CResource::MutexUse(_)) {
+            if matches!(resource.resource(), Resource::MutexGuard(_) | Resource::MutexLive(_) | Resource::MutexUse(_)) {
                 format!("Requires {fact}")
             } else {
                 format!("missing resource fact `{fact}`")
             }
         }
-        crate::kernel::CRuntimeError::UnestablishedAssemblyFact { assembled, fact, source } => {
+        crate::kernel::RuntimeError::UnestablishedAssemblyFact { assembled, fact, source } => {
             use crate::surface::proof_diagnostics::render::{SnapshotLabels, render_proposition_labeled};
             let mut labels = SnapshotLabels::naming(parameter_binding);
             let requirement = match source.as_deref() {
@@ -1811,18 +1813,18 @@ pub(super) fn describe_runtime_error(
                 labels.trace_legend()
             )
         }
-        crate::kernel::CRuntimeError::UnbackedReturnedView { view } => format!(
+        crate::kernel::RuntimeError::UnbackedReturnedView { view } => format!(
             "{}: `{}`",
-            crate::kernel::CRuntimeError::UNBACKED_RETURNED_VIEW,
+            crate::kernel::RuntimeError::UNBACKED_RETURNED_VIEW,
             render_resource_fact_diagnostic(view, parameter_binding)
         ),
-        crate::kernel::CRuntimeError::MissingVerifiedFunctionRule(name) => format!(
+        crate::kernel::RuntimeError::MissingVerifiedFunctionRule(name) => format!(
             "cannot execute call to `{name}`: the sidecar states no contract for it; state one, as a function this sidecar verifies or as an `extern` declaration"
         ),
-        crate::kernel::CRuntimeError::UnsupportedOpaqueFunctionContract(name) => format!(
+        crate::kernel::RuntimeError::UnsupportedOpaqueFunctionContract(name) => format!(
             "cannot execute call to `{name}` opaquely: its contract refers to an internal program point that is unavailable at the call site"
         ),
-        crate::kernel::CRuntimeError::AbstractFunctionPointerCall(name) => {
+        crate::kernel::RuntimeError::AbstractFunctionPointerCall(name) => {
             if let Some(source) = super::proof::callback_source_name(name) {
                 format!("cannot verify call: no contract fact for the function pointer `{source}` with this call signature")
             } else {
@@ -1836,7 +1838,7 @@ pub(super) fn describe_runtime_error(
                 )
             }
         }
-        crate::kernel::CRuntimeError::ContractResourceDiagnostic { reason, held, required, memory } => {
+        crate::kernel::RuntimeError::ContractResourceDiagnostic { reason, held, required, memory } => {
             use crate::surface::proof_diagnostics::render::{SnapshotLabels, render_resource_fact_labeled};
             let mut labels = SnapshotLabels::naming(parameter_binding);
             let mut message = format!("function contract could not be applied: {reason}");
@@ -1853,7 +1855,7 @@ pub(super) fn describe_runtime_error(
             message.push_str(&labels.trace_legend());
             message
         }
-        crate::kernel::CRuntimeError::PendingCallObligations(pending) => {
+        crate::kernel::RuntimeError::PendingCallObligations(pending) => {
             use crate::surface::proof_diagnostics::render::{SnapshotLabels, render_proposition_labeled};
             let mut labels = SnapshotLabels::naming(parameter_binding);
             let mut message = "call cannot finish with unresolved proof obligations:".to_string();
@@ -1872,35 +1874,35 @@ pub(super) fn describe_runtime_error(
             message.push_str(&labels.trace_legend());
             message
         }
-        crate::kernel::CRuntimeError::FunctionContract(message)
-        | crate::kernel::CRuntimeError::UnsuppliedResourceValue(message) => {
+        crate::kernel::RuntimeError::FunctionContract(message)
+        | crate::kernel::RuntimeError::UnsuppliedResourceValue(message) => {
             format!(
                 "function contract could not be applied: {}",
                 name_string_literal_storage(message)
             )
         }
-        crate::kernel::CRuntimeError::UninitializedMutex { mutex } => format!(
+        crate::kernel::RuntimeError::UninitializedMutex { mutex } => format!(
             "could not prove that mutex `{}` was initialized on this path",
             describe_pointer(mutex, parameter_binding)
         ),
-        crate::kernel::CRuntimeError::UnsupportedConcurrentMutex => {
+        crate::kernel::RuntimeError::UnsupportedConcurrentMutex => {
             "Click cannot yet verify pthread workers sharing an initialized mutex".to_string()
         }
-        crate::kernel::CRuntimeError::InvalidFree(reason) => match reason {
-            crate::kernel::CInvalidFree::InteriorPointer => {
+        crate::kernel::RuntimeError::InvalidFree(reason) => match reason {
+            crate::kernel::InvalidFree::InteriorPointer => {
                 "cannot free an interior pointer; free requires the allocation base".to_string()
             }
-            crate::kernel::CInvalidFree::NonHeapPointer => {
+            crate::kernel::InvalidFree::NonHeapPointer => {
                 "cannot free a pointer that is not a live heap allocation".to_string()
             }
-            crate::kernel::CInvalidFree::DoubleFree => {
+            crate::kernel::InvalidFree::DoubleFree => {
                 "cannot free an allocation whose lifetime has already ended".to_string()
             }
         },
-        crate::kernel::CRuntimeError::UnresolvedAllocationOutcome => {
+        crate::kernel::RuntimeError::UnresolvedAllocationOutcome => {
             "malloc result was neither refined by a null check nor returned".to_string()
         }
-        crate::kernel::CRuntimeError::LiveAllocationLeak {
+        crate::kernel::RuntimeError::LiveAllocationLeak {
             allocation,
             resource,
         } => {
@@ -1914,20 +1916,20 @@ pub(super) fn describe_runtime_error(
             }
             message
         }
-        crate::kernel::CRuntimeError::StaleResourceAfterFree { resource } => format!(
+        crate::kernel::RuntimeError::StaleResourceAfterFree { resource } => format!(
             "resource would remain usable after its allocation is freed: `{}`",
             render_resource_fact_diagnostic(resource, parameter_binding)
         ),
-        crate::kernel::CRuntimeError::DuplicateResource { resource } => format!(
+        crate::kernel::RuntimeError::DuplicateResource { resource } => format!(
             "duplicate resource fact `{}`",
             render_resource_fact_diagnostic(resource, parameter_binding)
         ),
-        crate::kernel::CRuntimeError::OverlappingOwnedMemoryResources { left, right } => format!(
+        crate::kernel::RuntimeError::OverlappingOwnedMemoryResources { left, right } => format!(
             "overlapping owned memory resource facts `owns {}` and `owns {}`",
             describe_memory_range(left, parameter_binding),
             describe_memory_range(right, parameter_binding)
         ),
-        crate::kernel::CRuntimeError::ProducedCompositeOverlapsHeldResource {
+        crate::kernel::RuntimeError::ProducedCompositeOverlapsHeldResource {
             produced,
             piece,
             held,
@@ -1938,7 +1940,7 @@ pub(super) fn describe_runtime_error(
             render_resource_fact_diagnostic(piece, parameter_binding),
             render_resource_fact_diagnostic(held, parameter_binding)
         ),
-        crate::kernel::CRuntimeError::LoanRefusal(diagnostic) => {
+        crate::kernel::RuntimeError::LoanRefusal(diagnostic) => {
             describe_loan_refusal(diagnostic, parameter_binding)
         }
     }
@@ -1947,11 +1949,11 @@ pub(super) fn describe_runtime_error(
 /// Kernel `RuntimeError` includes ordinary proof refusals, so its name is not
 /// a surface error category. Only explicitly marked verifier limitations are
 /// reported as internal errors.
-pub(super) fn runtime_refusal_kind(error: &crate::kernel::CRuntimeError) -> ClickErrorKind {
+pub(super) fn runtime_refusal_kind(error: &crate::kernel::RuntimeError) -> ClickErrorKind {
     match error {
-        crate::kernel::CRuntimeError::UnsupportedConcurrentMutex
-        | crate::kernel::CRuntimeError::UnsupportedMutexStorageRetirement
-        | crate::kernel::CRuntimeError::MutexStorageScopeEnd {
+        crate::kernel::RuntimeError::UnsupportedConcurrentMutex
+        | crate::kernel::RuntimeError::UnsupportedMutexStorageRetirement
+        | crate::kernel::RuntimeError::MutexStorageScopeEnd {
             may_alias: true, ..
         } => ClickErrorKind::Internal,
         _ => ClickErrorKind::Proof,
@@ -2099,7 +2101,7 @@ pub(in crate::surface) fn describe_loan_refusal(
 /// the bounded index, the guard, and the element range at that index, plus
 /// the indices currently taken out.
 pub(in crate::surface) fn describe_iterated_memory(
-    iterated: &crate::kernel::CIteratedMemory,
+    iterated: &crate::kernel::IteratedMemory,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
     let index = MachineTerm::Variable(crate::kernel::Variable(u64::MAX - 7));
@@ -2281,7 +2283,7 @@ fn describe_layout_place_range(
 }
 
 fn describe_struct_place_range(
-    range: &CMemoryRange,
+    range: &MemoryRange,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
     let start = u64::from(range.constant_start()?);
@@ -2343,7 +2345,7 @@ fn describe_struct_place_range(
 /// field: `p->a[i]`, `p->a[0..4]` or `h->in->a[i]`, for bounds the lowering
 /// wrote as byte offsets from the struct. Display only.
 fn describe_struct_array_field_range(
-    range: &CMemoryRange,
+    range: &MemoryRange,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
     let (base, layout, start, end) = struct_byte_bounds(range, parameter_binding)?;
@@ -2366,7 +2368,7 @@ fn describe_struct_array_field_range(
 /// layout, and the range's bounds as byte offsets from the pointer: a
 /// pointer parameter, or a pointer field some load read.
 fn struct_byte_bounds(
-    range: &CMemoryRange,
+    range: &MemoryRange,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<(String, syntax::C0StructLayout, MachineTerm, MachineTerm)> {
     range.int32_bounds()?;
@@ -2567,7 +2569,7 @@ fn exact_quotient(term: &MachineTerm, width: u32) -> Option<MachineTerm> {
 }
 
 pub(super) fn describe_memory_range(
-    range: &CMemoryRange,
+    range: &MemoryRange,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
     // A wide range is spelled from its base and its own 64-bit bounds.
@@ -2693,7 +2695,7 @@ pub(super) fn describe_memory_range(
 /// read through a loaded pointer forms, rather than an unnamed base. Only a
 /// base the describer can name takes part.
 fn describe_indexed_base_range(
-    range: &CMemoryRange,
+    range: &MemoryRange,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
     let width = i64::from(range.element_width());
@@ -2743,7 +2745,7 @@ fn named_object_block(
 }
 
 pub(super) fn describe_parameter_relative_range(
-    range: &CMemoryRange,
+    range: &MemoryRange,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
     let (parameter, base_index) = parameter_relative_base(range, parameter_binding)?;
@@ -2824,7 +2826,7 @@ fn range_end_is_next_element(start: &MachineTerm, end: &MachineTerm) -> bool {
 /// constant offset from, and fall back to the first symbolic one only when no
 /// parameter does.
 fn parameter_relative_base<'a>(
-    range: &CMemoryRange,
+    range: &MemoryRange,
     parameter_binding: ParameterBinding<'a>,
 ) -> Option<(&'a syntax::C0Parameter, MachineTerm)> {
     let mut symbolic = None;
@@ -2870,7 +2872,7 @@ fn rescale_range_index(index: &MachineTerm, from: u32, to: u32) -> Option<Machin
 
 fn parameter_relative_endpoints(
     base_index: &MachineTerm,
-    range: &CMemoryRange,
+    range: &MemoryRange,
 ) -> (MachineTerm, MachineTerm) {
     // A wide range is shown by its own bounds: they are 64-bit terms, and
     // a 32-bit parameter offset is not added to them. Display only.
@@ -2888,13 +2890,13 @@ fn parameter_relative_endpoints(
 /// missing fact and the available facts, as a refused `fold` reports them.
 /// `None` for every other runtime error.
 pub(super) fn describe_unestablished_assembly_fact(
-    error: &crate::kernel::CRuntimeError,
+    error: &crate::kernel::RuntimeError,
     pure_facts: &[Proposition],
-    resource_facts: &[CResourceFact],
+    resource_facts: &[ResourceFact],
     parameter_binding: ParameterBinding<'_>,
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
 ) -> Option<String> {
-    let crate::kernel::CRuntimeError::UnestablishedAssemblyFact {
+    let crate::kernel::RuntimeError::UnestablishedAssemblyFact {
         assembled,
         fact,
         source,
@@ -2932,7 +2934,7 @@ pub(super) fn describe_unestablished_assembly_fact(
 }
 
 fn describe_assembly_body_fact_source(
-    source: &crate::kernel::CResourceBodyFactSource,
+    source: &crate::kernel::ResourceBodyFactSource,
     labels: &mut crate::surface::proof_diagnostics::render::SnapshotLabels,
 ) -> String {
     let bindings = source
@@ -2960,11 +2962,11 @@ fn describe_assembly_body_fact_source(
 /// them, so a range whose base pointer already carries an offset is compared
 /// with the held range at the same scale.
 pub(super) fn describe_missing_range_end_note(
-    error: &crate::kernel::CRuntimeError,
-    resource_facts: &[CResourceFact],
+    error: &crate::kernel::RuntimeError,
+    resource_facts: &[ResourceFact],
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
-    let crate::kernel::CRuntimeError::MissingResource { resource } = error else {
+    let crate::kernel::RuntimeError::MissingResource { resource } = error else {
         return String::new();
     };
     let Some(required) = resource
@@ -3009,7 +3011,7 @@ pub(super) fn describe_missing_range_end_note(
             Some((layout, field))
         });
     // Endpoints of the held range and of the required one, on one scale.
-    let comparable = |held: &CMemoryRange| {
+    let comparable = |held: &MemoryRange| {
         // This repair describes signed arithmetic; native bounds need their own rule.
         if held.int32_bounds().is_none() || required.int32_bounds().is_none() {
             return None;
@@ -3347,7 +3349,7 @@ pub(super) fn describe_model_field_mismatch(
 ) -> Option<String> {
     let origin = unresolved_model_field(value)?;
     let explanation = resource_tracker::explain_at_states(
-        resource_tracker::Resource::ModelField {
+        resource_tracker::TrackedResource::ModelField {
             identity: origin.identity,
             children: &[],
             field_index: origin.field_index,
@@ -3372,7 +3374,7 @@ pub(super) fn describe_unseparated_write(
 ) -> Option<String> {
     let (memory, load) = unresolved_load(value)?;
     let explanation = resource_tracker::explain_last_same(
-        resource_tracker::Resource::Cell {
+        resource_tracker::TrackedResource::Cell {
             pointer: &load,
             bytes: crate::kernel::load_access_width_or_widest(&memory, &load),
         },
@@ -3410,7 +3412,7 @@ pub(super) fn describe_unheld_model_field_initializer(
     // access is the first one lowered.
     crate::kernel::model_fields::register_instance_spelling(access.identity, &access.owner);
     let explanation = resource_tracker::explain_at_states(
-        resource_tracker::Resource::ModelField {
+        resource_tracker::TrackedResource::ModelField {
             identity: access.identity,
             children: &access.children,
             field_index: access.field_index,
@@ -3629,7 +3631,7 @@ pub(super) fn describe_two_sided_version_mismatch(
         return Some(mismatch);
     }
     let explanation = resource_tracker::explain(
-        resource_tracker::Resource::Cell {
+        resource_tracker::TrackedResource::Cell {
             pointer: &left_load,
             bytes: crate::kernel::load_access_width_or_widest(&left_memory, &left_load),
         },
@@ -3952,7 +3954,7 @@ struct AccessWidths {
 /// other step, and for a point that records no edge at all.
 fn recorded_store_byte_width(at: Option<&resource_tracker::ProgramPoint>) -> Option<u32> {
     match at?.snapshot().derivation()?.as_ref() {
-        crate::kernel::CMemoryDerivation::Store { value, .. } => Some(value.c_type().byte_width()),
+        crate::kernel::MemoryDerivation::Store { value, .. } => Some(value.c_type().byte_width()),
         _ => None,
     }
 }
@@ -4489,7 +4491,7 @@ fn describe_wide_store_byte_reach(
 fn describe_havoc_cause(
     step: &str,
     cell: Option<&SourceCell>,
-    ranges: &[CMemoryRange],
+    ranges: &[MemoryRange],
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
     let spelled = ranges
@@ -4847,7 +4849,7 @@ fn prefer_source_cell(
 /// A memory range as the source writes it, or nothing when its base or its
 /// bounds have no spelling in the caller's own names.
 fn describe_source_range(
-    range: &CMemoryRange,
+    range: &MemoryRange,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
     if let Some((_, base_index)) = parameter_relative_base(range, parameter_binding) {
@@ -5510,7 +5512,7 @@ fn describe_wide_range_no_wrap(
     let width = no_wrap
         .range
         .memory_range()
-        .map_or(0, crate::kernel::CMemoryRange::element_width);
+        .map_or(0, crate::kernel::MemoryRange::element_width);
     let product = format!(
         "{} * {}",
         describe_c_value(
@@ -6367,7 +6369,7 @@ const MAX_POINTER_CHAIN: usize = 8;
 /// read: `o->b->data[2]` or `o->b->data[i]`. A pointer to a struct is left
 /// to the struct spelling. Display only.
 fn describe_loaded_pointer_range(
-    range: &CMemoryRange,
+    range: &MemoryRange,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
     range.int32_bounds()?;
@@ -6783,18 +6785,18 @@ fn describe_c_expression_list(expressions: &[ProgramExpression]) -> String {
         .join(", ")
 }
 
-fn describe_c_update_operator(operator: CUpdateOperator) -> &'static str {
+fn describe_c_update_operator(operator: UpdateOperator) -> &'static str {
     match operator {
-        CUpdateOperator::Add => "+",
-        CUpdateOperator::Subtract => "-",
-        CUpdateOperator::Multiply => "*",
-        CUpdateOperator::Divide => "/",
-        CUpdateOperator::Remainder => "%",
-        CUpdateOperator::ShiftLeft => "<<",
-        CUpdateOperator::ShiftRight => ">>",
-        CUpdateOperator::BitwiseAnd => "&",
-        CUpdateOperator::BitwiseOr => "|",
-        CUpdateOperator::BitwiseXor => "^",
+        UpdateOperator::Add => "+",
+        UpdateOperator::Subtract => "-",
+        UpdateOperator::Multiply => "*",
+        UpdateOperator::Divide => "/",
+        UpdateOperator::Remainder => "%",
+        UpdateOperator::ShiftLeft => "<<",
+        UpdateOperator::ShiftRight => ">>",
+        UpdateOperator::BitwiseAnd => "&",
+        UpdateOperator::BitwiseOr => "|",
+        UpdateOperator::BitwiseXor => "^",
     }
 }
 
@@ -6856,7 +6858,7 @@ fn describe_untyped_array_field_read(
         Box::new(ProgramExpression::Cast {
             expression: pointer.clone(),
             target_type: ProgramType::UInt8Pointer,
-            integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+            integer_mode: crate::kernel::IntegerCastMode::CConversion,
             pointee_struct: None,
             pointee_volatile: *volatile,
             pointee_constant: *pointee_constant,
@@ -6989,7 +6991,7 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
             match lowered {
                 ProgramExpression::Cast {
                     target_type: ProgramType::UInt64,
-                    integer_mode: crate::kernel::CIntegerCastMode::Standard,
+                    integer_mode: crate::kernel::IntegerCastMode::Standard,
                     pointee_struct: None,
                     ..
                 } => format!("address({operand})"),
@@ -7032,7 +7034,7 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
         ContractExpression::CFragment(ProgramExpression::Cast {
             expression,
             target_type: ProgramType::UInt64,
-            integer_mode: crate::kernel::CIntegerCastMode::Standard,
+            integer_mode: crate::kernel::IntegerCastMode::Standard,
             pointee_struct: None,
             ..
         }) => format!("address({})", describe_c_expression(expression)),
@@ -8262,24 +8264,24 @@ pub(super) fn describe_binary_condition(
     )
 }
 
-fn describe_float_condition(condition: &CFloatCondition) -> String {
+fn describe_float_condition(condition: &FloatCondition) -> String {
     match condition {
-        CFloatCondition::Comparison {
+        FloatCondition::Comparison {
             operator,
             left,
             right,
         } => {
             let operator = match operator {
-                CComparisonOperator::Equal => "==",
-                CComparisonOperator::NotEqual => "!=",
-                CComparisonOperator::LessThan => "<",
-                CComparisonOperator::LessEqual => "<=",
-                CComparisonOperator::GreaterThan => ">",
-                CComparisonOperator::GreaterEqual => ">=",
+                KernelComparisonOperator::Equal => "==",
+                KernelComparisonOperator::NotEqual => "!=",
+                KernelComparisonOperator::LessThan => "<",
+                KernelComparisonOperator::LessEqual => "<=",
+                KernelComparisonOperator::GreaterThan => ">",
+                KernelComparisonOperator::GreaterEqual => ">=",
             };
             describe_binary_condition(left, operator, right)
         }
-        CFloatCondition::Classification {
+        FloatCondition::Classification {
             classification,
             value,
         } => format!("is{classification:?}({})", describe_bitvector(value)),
@@ -8293,15 +8295,15 @@ mod wide_range_reader_tests {
     #[test]
     fn wide_missing_ranges_are_rendered_or_omitted_without_signed_readers() {
         let base = Pointer::symbolic(Variable(985_400));
-        let wide = CMemoryRange::new_wide(
+        let wide = MemoryRange::new_wide(
             base,
             MachineTerm::uint64_constant(0),
             MachineTerm::uint64_constant(1 << 33),
             1,
         );
         assert!(describe_source_range(&wide, ParameterBinding::default()).is_none());
-        let resource = CResourceFact::view_memory(wide);
-        let error = crate::kernel::CRuntimeError::MissingResource {
+        let resource = ResourceFact::view_memory(wide);
+        let error = crate::kernel::RuntimeError::MissingResource {
             resource: Box::new(resource.clone()),
         };
         assert!(
@@ -8321,8 +8323,8 @@ mod assembly_fact_tests {
         let pointer = ProgramValue::pointer(Pointer::symbolic(Variable(985_410)));
         let arguments = vec![ProgramExpression::Value(pointer.clone())];
         let binding = ParameterBinding::new(parsed.parameters(), &arguments);
-        let mut error = crate::kernel::CRuntimeError::UnestablishedAssemblyFact {
-            assembled: Box::new(CResourceFact::view_composite(
+        let mut error = crate::kernel::RuntimeError::UnestablishedAssemblyFact {
+            assembled: Box::new(ResourceFact::view_composite(
                 "zero".into(),
                 vec![pointer.clone()],
             )),
@@ -8330,7 +8332,7 @@ mod assembly_fact_tests {
                 ConditionTerm::Constant(false),
                 true,
             )),
-            source: Some(Box::new(crate::kernel::CResourceBodyFactSource {
+            source: Some(Box::new(crate::kernel::ResourceBodyFactSource {
                 spelling: "*formal == 0".into(),
                 bindings: vec![("formal".into(), pointer)],
             })),
@@ -8343,7 +8345,7 @@ mod assembly_fact_tests {
             assert!(text.contains("formal = actual"), "{text}");
             assert!(!text.contains("missing pure fact: false"), "{text}");
         }
-        let crate::kernel::CRuntimeError::UnestablishedAssemblyFact { source, .. } = &mut error
+        let crate::kernel::RuntimeError::UnestablishedAssemblyFact { source, .. } = &mut error
         else {
             unreachable!()
         };

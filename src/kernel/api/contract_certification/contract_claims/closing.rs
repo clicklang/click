@@ -8,35 +8,35 @@ use crate::kernel::proof::{
 use std::sync::{Arc, OnceLock};
 
 /// Shared declaration input of the closing goals, prepared once per proof.
-pub(crate) struct CContractClosingContext {
+pub(crate) struct ContractClosingContext {
     function: ProgramFunction,
     caller: ExecutionState,
     arguments: Vec<ProgramExpression>,
     entry_assumptions: PureFactContext,
     checked_entry: Option<Arc<crate::kernel::functions::CheckedBoundaryResourceTransfer>>,
-    resource_claims: Vec<CFunctionContractClaim>,
-    resource_keys: Arc<BTreeSet<CFunctionContractClaimKey>>,
+    resource_claims: Vec<FunctionContractClaim>,
+    resource_keys: Arc<BTreeSet<FunctionContractClaimKey>>,
     complete_boundary: bool,
-    effect_claims: Vec<CFunctionContractClaim>,
+    effect_claims: Vec<FunctionContractClaim>,
     entry: OnceLock<Result<ClosingEntry, String>>,
 }
 
 struct ClosingEntry {
     state: ExecutionState,
-    resources: Option<Arc<[CCheckedResourceFact]>>,
-    projection: CFunctionMemoryEffectProjection,
+    resources: Option<Arc<[CheckedResourceFact]>>,
+    projection: FunctionMemoryEffectProjection,
 }
 
-impl CContractClosingContext {
+impl ContractClosingContext {
     #[cfg(test)]
-    pub(crate) fn new(execution: &CCheckedFunctionExecution) -> Arc<Self> {
+    pub(crate) fn new(execution: &CheckedFunctionExecution) -> Arc<Self> {
         Self::for_resource_prefix(execution, execution.function.resource_ensures().len())
     }
 
     /// A clause-specific proof owes its jointly returned prefix, not clauses
     /// whose separate proofs have not run. The final prefix closes the boundary.
     pub(crate) fn for_resource_prefix(
-        execution: &CCheckedFunctionExecution,
+        execution: &CheckedFunctionExecution,
         resource_prefix: usize,
     ) -> Arc<Self> {
         crate::instrumentation::record_deterministic_work(execution.arguments.len() + 1);
@@ -48,7 +48,7 @@ impl CContractClosingContext {
                 crate::instrumentation::record_deterministic_work(1);
             })
             .filter(|claim| {
-                matches!(claim.target(), CFunctionContractClaimTarget::EnsureResource(index) if *index < resource_prefix)
+                matches!(claim.target(), FunctionContractClaimTarget::EnsureResource(index) if *index < resource_prefix)
             })
             .cloned()
             .collect::<Vec<_>>();
@@ -68,7 +68,7 @@ impl CContractClosingContext {
                 .function
                 .contract_claims()
                 .iter()
-                .filter(|claim| matches!(claim.target(), CFunctionContractClaimTarget::Effect))
+                .filter(|claim| matches!(claim.target(), FunctionContractClaimTarget::Effect))
                 .cloned()
                 .collect(),
             resource_claims,
@@ -82,8 +82,8 @@ impl CContractClosingContext {
         self: &Arc<Self>,
         path_index: usize,
         outcome: &OutcomeProofCore,
-    ) -> CContractExitObligations {
-        CContractExitObligations {
+    ) -> ContractExitObligations {
+        ContractExitObligations {
             context: self.clone(),
             path_index,
             outcome: outcome.identity.clone(),
@@ -93,7 +93,7 @@ impl CContractClosingContext {
         }
     }
 
-    fn entry(&self) -> Result<&ClosingEntry, CContractClosingRefusal> {
+    fn entry(&self) -> Result<&ClosingEntry, ContractClosingRefusal> {
         self.entry
             .get_or_init(|| {
                 let state = match &self.checked_entry {
@@ -136,7 +136,7 @@ impl CContractClosingContext {
                 })
             })
             .as_ref()
-            .map_err(|reason| CContractClosingRefusal::Resource(reason.clone()))
+            .map_err(|reason| ContractClosingRefusal::Resource(reason.clone()))
     }
 }
 
@@ -144,8 +144,8 @@ impl CContractClosingContext {
 /// Checked resource transitions retain evidence; ordinary proof operations
 /// discharge returned resources, allocation lifetime, and write footprints.
 #[derive(Clone)]
-pub(crate) struct CContractExitObligations {
-    context: Arc<CContractClosingContext>,
+pub(crate) struct ContractExitObligations {
+    context: Arc<ContractClosingContext>,
     path_index: usize,
     outcome: OutcomeIdentity,
     goals: ContractClosingGoals,
@@ -164,14 +164,14 @@ struct PreparedEffectGoals {
 
 /// Evidence consumed by registration, never a request to check a path again.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CClosedContractExit {
+pub(crate) struct ClosedContractExit {
     path_index: usize,
     origin: Theorem,
-    resources: Arc<BTreeSet<CFunctionContractClaimKey>>,
+    resources: Arc<BTreeSet<FunctionContractClaimKey>>,
     complete_boundary: bool,
 }
 
-impl CClosedContractExit {
+impl ClosedContractExit {
     pub(crate) fn completes_boundary(&self) -> bool {
         self.complete_boundary
     }
@@ -179,28 +179,28 @@ impl CClosedContractExit {
     pub(in crate::kernel) fn path_index(&self) -> usize {
         self.path_index
     }
-    pub(in crate::kernel) fn matches_path(&self, path: &SymbolicCExecutionPath) -> bool {
+    pub(in crate::kernel) fn matches_path(&self, path: &SymbolicExecutionPath) -> bool {
         Arc::ptr_eq(&self.origin.proposition, &path.theorem.proposition)
     }
-    pub(in crate::kernel) fn covers(&self, claim: &CFunctionContractClaim) -> bool {
+    pub(in crate::kernel) fn covers(&self, claim: &FunctionContractClaim) -> bool {
         match claim.target() {
-            CFunctionContractClaimTarget::EnsureResource(_) => self.resources.contains(claim.key()),
-            CFunctionContractClaimTarget::BodySafety => self.complete_boundary,
-            CFunctionContractClaimTarget::Effect => true,
+            FunctionContractClaimTarget::EnsureResource(_) => self.resources.contains(claim.key()),
+            FunctionContractClaimTarget::BodySafety => self.complete_boundary,
+            FunctionContractClaimTarget::Effect => true,
             _ => false,
         }
     }
 
     #[cfg(test)]
-    pub(super) fn fixture(path_index: usize, path: &SymbolicCExecutionPath) -> Self {
+    pub(super) fn fixture(path_index: usize, path: &SymbolicExecutionPath) -> Self {
         Self::fixture_for_claims(path_index, path, [])
     }
 
     #[cfg(test)]
     pub(super) fn fixture_for_claims(
         path_index: usize,
-        path: &SymbolicCExecutionPath,
-        claims: impl IntoIterator<Item = CFunctionContractClaimKey>,
+        path: &SymbolicExecutionPath,
+        claims: impl IntoIterator<Item = FunctionContractClaimKey>,
     ) -> Self {
         Self {
             path_index,
@@ -212,17 +212,17 @@ impl CClosedContractExit {
 }
 
 #[derive(Debug)]
-pub(crate) enum CContractClosingRefusal {
+pub(crate) enum ContractClosingRefusal {
     Resource(String),
-    Claim(CFunctionContractClaimKey),
-    Runtime(CRuntimeError),
+    Claim(FunctionContractClaimKey),
+    Runtime(RuntimeError),
     Write(Pointer),
-    Range(CMemoryRange),
+    Range(MemoryRange),
     Storage(Vec<crate::kernel::functions::StorageWriteOutsideFootprint>),
     Pending(ContractClosingGoal),
 }
 
-impl CContractExitObligations {
+impl ContractExitObligations {
     #[cfg(test)]
     pub(in crate::kernel) fn fixture_close_goal(&self, kind: ContractClosingGoal) -> Self {
         Self {
@@ -253,9 +253,9 @@ impl CContractExitObligations {
     pub(crate) fn apply_resource_transition(
         &self,
         caller: &ExecutionState,
-        outcome: CFunctionOutcome,
+        outcome: FunctionOutcome,
         assumptions: &PureFactContext,
-    ) -> Result<(Self, CFunctionOutcome), String> {
+    ) -> Result<(Self, FunctionOutcome), String> {
         let outcome = checked_c_function_contract_resource_transition(
             caller,
             &self.context.function,
@@ -263,7 +263,7 @@ impl CContractExitObligations {
             outcome,
             assumptions,
         )?;
-        if let CFunctionOutcome::RuntimeError(error) = &outcome {
+        if let FunctionOutcome::RuntimeError(error) = &outcome {
             return Err(error.kernel_summary());
         }
         Ok((
@@ -279,20 +279,20 @@ impl CContractExitObligations {
     pub(crate) fn prove_goal(
         &self,
         kind: ContractClosingGoal,
-        execution: &CCheckedFunctionExecution,
-        path: &SymbolicCExecutionPath,
+        execution: &CheckedFunctionExecution,
+        path: &SymbolicExecutionPath,
         specification: &CheckedPathSpecification,
         outcome: &OutcomeProofCore,
         claims: &OutcomeClaimGoals,
         facts: &ProofFacts,
-    ) -> Result<Self, CContractClosingRefusal> {
+    ) -> Result<Self, ContractClosingRefusal> {
         if !self.outcome.same_as(&outcome.identity) {
-            return Err(CContractClosingRefusal::Resource(
+            return Err(ContractClosingRefusal::Resource(
                 "closing obligations belong to another outcome".into(),
             ));
         }
         if self.first_open_goal() != Some(kind) {
-            return Err(CContractClosingRefusal::Resource(
+            return Err(ContractClosingRefusal::Resource(
                 "the selected closing goal is not open".into(),
             ));
         }
@@ -311,12 +311,12 @@ impl CContractExitObligations {
         match kind {
             ContractClosingGoal::ReturnedResources => {
                 if !outcome.is_exceptional {
-                    if let CFunctionOutcome::RuntimeError(error) =
+                    if let FunctionOutcome::RuntimeError(error) =
                         specification.specification().outcome()
                     {
                         if (self.context.complete_boundary && self.checked_transition.is_none())
                             || !crate::kernel::functions::is_deferred_conditional_resource_effect_error(error)
-                        { return Err(CContractClosingRefusal::Runtime(error.clone())); }
+                        { return Err(ContractClosingRefusal::Runtime(error.clone())); }
                     }
                 }
                 let receipts_closed = !self.context.complete_boundary
@@ -329,7 +329,7 @@ impl CContractExitObligations {
                     || receipts_closed
                         && matches!(
                             specification.specification().outcome(),
-                            CFunctionOutcome::Return { .. }
+                            FunctionOutcome::Return { .. }
                         )
                         && self.resource_receipts_jointly_available(
                             outcome,
@@ -362,12 +362,12 @@ impl CContractExitObligations {
             ContractClosingGoal::WriteFootprint => {
                 if !self.context.effect_claims.is_empty() {
                     let effects = self.effects.as_ref().ok_or_else(|| {
-                        CContractClosingRefusal::Resource(
+                        ContractClosingRefusal::Resource(
                             "the resource goal has not prepared the effect input".into(),
                         )
                     })?;
                     let delta = facts.introduced_since(&effects.base).ok_or_else(|| {
-                        CContractClosingRefusal::Resource(
+                        ContractClosingRefusal::Resource(
                             "the effect goal belongs to another proof context".into(),
                         )
                     })?;
@@ -384,7 +384,7 @@ impl CContractExitObligations {
                                 None,
                                 Some(&assumptions),
                             ) {
-                                return Err(CContractClosingRefusal::Claim(claim.key().clone()));
+                                return Err(ContractClosingRefusal::Claim(claim.key().clone()));
                             }
                         }
                     }
@@ -399,12 +399,12 @@ impl CContractExitObligations {
     /// Consume completed goal evidence; no semantic checker runs here.
     pub(crate) fn completion(
         &self,
-        path: &SymbolicCExecutionPath,
-    ) -> Result<CClosedContractExit, CContractClosingRefusal> {
+        path: &SymbolicExecutionPath,
+    ) -> Result<ClosedContractExit, ContractClosingRefusal> {
         if let Some(goal) = self.first_open_goal() {
-            return Err(CContractClosingRefusal::Pending(goal));
+            return Err(ContractClosingRefusal::Pending(goal));
         }
-        Ok(CClosedContractExit {
+        Ok(ClosedContractExit {
             path_index: self.path_index,
             origin: path.theorem.clone(),
             resources: self.context.resource_keys.clone(),
@@ -443,13 +443,13 @@ impl CContractExitObligations {
 
     fn prove_resource_goals(
         &self,
-        execution: &CCheckedFunctionExecution,
-        path: &SymbolicCExecutionPath,
+        execution: &CheckedFunctionExecution,
+        path: &SymbolicExecutionPath,
         outcome: &OutcomeProofCore,
         claims: &OutcomeClaimGoals,
         facts: &ProofFacts,
         check_resources: bool,
-    ) -> Result<Vec<CertifiedFunctionClaimPath>, CContractClosingRefusal> {
+    ) -> Result<Vec<CertifiedFunctionClaimPath>, ContractClosingRefusal> {
         let context = &self.context;
         // A successful checked transition has resolved this boundary. The
         // original execution's deferred marker predates post-return folds;
@@ -475,7 +475,7 @@ impl CContractExitObligations {
                 &context.entry_assumptions,
             )
             .ok_or_else(|| {
-                CContractClosingRefusal::Resource(
+                ContractClosingRefusal::Resource(
                     "could not create the conditional resource obligations".into(),
                 )
             })?
@@ -483,12 +483,12 @@ impl CContractExitObligations {
             vec![vec![]]
         };
         let checked_outcome = if outcome.is_exceptional {
-            CFunctionOutcome::Throw {
+            FunctionOutcome::Throw {
                 value: outcome.result.as_ref().clone().into(),
                 state: Box::new((*outcome.state).clone()),
             }
         } else {
-            CFunctionOutcome::Return {
+            FunctionOutcome::Return {
                 value: outcome.result.as_ref().clone().into(),
                 state: Box::new((*outcome.state).clone()),
             }
@@ -531,13 +531,13 @@ impl CContractExitObligations {
                 execution.boundary_transfer.as_deref(),
                 Some(&checked_outcome),
             )
-            .map_err(|failure| CContractClosingRefusal::Resource(failure.reason))?;
+            .map_err(|failure| ContractClosingRefusal::Resource(failure.reason))?;
             match &prepared.outcome {
-                CFunctionOutcome::RuntimeError(error) => {
-                    return Err(CContractClosingRefusal::Runtime(error.clone()));
+                FunctionOutcome::RuntimeError(error) => {
+                    return Err(ContractClosingRefusal::Runtime(error.clone()));
                 }
-                CFunctionOutcome::UndefinedBehavior(error) => {
-                    return Err(CContractClosingRefusal::Resource(format!(
+                FunctionOutcome::UndefinedBehavior(error) => {
+                    return Err(ContractClosingRefusal::Resource(format!(
                         "undefined behavior: {}",
                         error.description()
                     )));
@@ -554,7 +554,7 @@ impl CContractExitObligations {
                     None,
                     None,
                 ) {
-                    return Err(CContractClosingRefusal::Claim(claim.key().clone()));
+                    return Err(ContractClosingRefusal::Claim(claim.key().clone()));
                 }
             }
             if !context.effect_claims.is_empty() {
@@ -569,7 +569,7 @@ impl CContractExitObligations {
         outcome: &OutcomeProofCore,
         claims: &OutcomeClaimGoals,
         facts: &ProofFacts,
-    ) -> Result<(), CContractClosingRefusal> {
+    ) -> Result<(), ContractClosingRefusal> {
         let context = &self.context;
         let assumptions = facts.assumptions();
         let mut returned = ResourceContext::new_with_equalities(assumptions);
@@ -613,12 +613,12 @@ impl CContractExitObligations {
                 assumptions,
                 &mut budget,
             )
-            .map_err(|limit| CContractClosingRefusal::Resource(limit.describe()))?
+            .map_err(|limit| ContractClosingRefusal::Resource(limit.describe()))?
         }
-        .map_err(CContractClosingRefusal::Runtime)?;
+        .map_err(ContractClosingRefusal::Runtime)?;
         if let Some(obligation) = result {
-            return Err(CContractClosingRefusal::Runtime(
-                CRuntimeError::LiveAllocationLeak {
+            return Err(ContractClosingRefusal::Runtime(
+                RuntimeError::LiveAllocationLeak {
                     allocation: Box::new(obligation.allocation().clone()),
                     resource: obligation.holder().cloned().map(Box::new),
                 },
@@ -629,9 +629,9 @@ impl CContractExitObligations {
 
     fn prove_footprint(
         &self,
-        path: &SymbolicCExecutionPath,
+        path: &SymbolicExecutionPath,
         assumptions: &PureFactContext,
-    ) -> Result<(), CContractClosingRefusal> {
+    ) -> Result<(), ContractClosingRefusal> {
         let context = &self.context;
         let function = &context.function;
         let effects = &path.effect_facts;
@@ -654,12 +654,12 @@ impl CContractExitObligations {
                     entry.resources.as_deref(),
                     Some(&entry.projection),
                 )
-                .map_err(|limit| CContractClosingRefusal::Resource(limit.describe().to_string()))?
+                .map_err(|limit| ContractClosingRefusal::Resource(limit.describe().to_string()))?
                 {
                     Some(outside) if outside.is_empty() => {}
-                    Some(outside) => return Err(CContractClosingRefusal::Storage(outside)),
+                    Some(outside) => return Err(ContractClosingRefusal::Storage(outside)),
                     None => {
-                        return Err(CContractClosingRefusal::Resource(
+                        return Err(ContractClosingRefusal::Resource(
                             "could not evaluate the owned write footprint".into(),
                         ));
                     }
@@ -676,10 +676,10 @@ pub(crate) fn check_empty_footprint(
     caller: &ExecutionState,
     effects: &ExecutionFacts,
     assumptions: &PureFactContext,
-) -> Result<(), CContractClosingRefusal> {
+) -> Result<(), ContractClosingRefusal> {
     for pointer in crate::kernel::memory_effect_write_pointers(effects) {
         if preexisting_write(&pointer, caller, assumptions) {
-            return Err(CContractClosingRefusal::Write(pointer));
+            return Err(ContractClosingRefusal::Write(pointer));
         }
     }
     for fact in effects {
@@ -698,7 +698,7 @@ pub(crate) fn check_empty_footprint(
                             assumptions,
                         ))
                 {
-                    return Err(CContractClosingRefusal::Range(range.clone()));
+                    return Err(ContractClosingRefusal::Range(range.clone()));
                 }
             }
         }

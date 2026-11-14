@@ -11,8 +11,8 @@ use crate::kernel::proof::arithmetic_special::{
     SpecialArithmeticCertificate as KernelCertificate, SpecialArithmeticNode as KernelNode,
     signed_constant_bound_on_view, signed_definedness_query,
 };
-use crate::kernel::{CFloatClassification, CFloatCondition, ConditionTerm, Proposition};
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{ConditionTerm, FloatClassification, FloatCondition, Proposition};
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int64_constant, uint64_constant,
 };
@@ -699,12 +699,12 @@ fn float_finite_premise(goal: &Proposition, premises: &[Proposition]) -> Option<
         return None;
     };
     let (width, expression) = match condition {
-        ConditionTerm::Float32(CFloatCondition::Comparison { left, right, .. })
+        ConditionTerm::Float32(FloatCondition::Comparison { left, right, .. })
             if bounded_term_equal(left, right) =>
         {
             (32, left.as_ref())
         }
-        ConditionTerm::Float64(CFloatCondition::Comparison { left, right, .. })
+        ConditionTerm::Float64(FloatCondition::Comparison { left, right, .. })
             if bounded_term_equal(left, right) =>
         {
             (64, left.as_ref())
@@ -719,8 +719,8 @@ fn float_finite_premise(goal: &Proposition, premises: &[Proposition]) -> Option<
             (
                 32,
                 Proposition::ConditionIs(
-                    ConditionTerm::Float32(CFloatCondition::Classification {
-                        classification: CFloatClassification::Finite,
+                    ConditionTerm::Float32(FloatCondition::Classification {
+                        classification: FloatClassification::Finite,
                         value,
                     }),
                     true,
@@ -729,8 +729,8 @@ fn float_finite_premise(goal: &Proposition, premises: &[Proposition]) -> Option<
             | (
                 64,
                 Proposition::ConditionIs(
-                    ConditionTerm::Float64(CFloatCondition::Classification {
-                        classification: CFloatClassification::Finite,
+                    ConditionTerm::Float64(FloatCondition::Classification {
+                        classification: FloatClassification::Finite,
                         value,
                     }),
                     true,
@@ -792,10 +792,10 @@ fn charge_proposition(proposition: &Proposition) -> bool {
             bounded_pointer_work(left) && bounded_pointer_work(right)
         }
         ConditionTerm::Float32(float) | ConditionTerm::Float64(float) => match float {
-            CFloatCondition::Comparison { left, right, .. } => {
+            FloatCondition::Comparison { left, right, .. } => {
                 bounded_term_work(left) && bounded_term_work(right)
             }
-            CFloatCondition::Classification { value, .. } => bounded_term_work(value),
+            FloatCondition::Classification { value, .. } => bounded_term_work(value),
         },
         _ => true,
     }
@@ -1075,7 +1075,7 @@ fn alignment_shape(condition: &ConditionTerm) -> Option<(&crate::kernel::Pointer
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{CComparisonOperator, MachineTerm, Variable};
+    use crate::kernel::{ComparisonOperator as KernelComparisonOperator, MachineTerm, Variable};
 
     fn bound(value: usize) -> ClickProposition {
         ClickProposition::Comparison {
@@ -1140,16 +1140,16 @@ mod tests {
             );
         }
         let goal = Proposition::ConditionIs(
-            ConditionTerm::Float32(CFloatCondition::Comparison {
-                operator: CComparisonOperator::Equal,
+            ConditionTerm::Float32(FloatCondition::Comparison {
+                operator: KernelComparisonOperator::Equal,
                 left: Box::new(term.clone()),
                 right: Box::new(term.clone()),
             }),
             true,
         );
         let finite = Proposition::ConditionIs(
-            ConditionTerm::Float32(CFloatCondition::Classification {
-                classification: CFloatClassification::Finite,
+            ConditionTerm::Float32(FloatCondition::Classification {
+                classification: FloatClassification::Finite,
                 value: Box::new(term),
             }),
             true,
@@ -1160,7 +1160,7 @@ mod tests {
     #[test]
     fn finite_read_certificate_preserves_snapshot_address_and_kind() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = crate::kernel::intern_c_memory(crate::kernel::CMemory::new());
+        let memory = crate::kernel::intern_c_memory(crate::kernel::Memory::new());
         let pointer = crate::kernel::Pointer::symbolic(Variable(22_104));
         let read = |memory, pointer, kind| MachineTerm::MemoryLoad(memory, Box::new(pointer), kind);
         let value = read(
@@ -1172,7 +1172,7 @@ mod tests {
             ConditionTerm::float64_compare(
                 value.clone(),
                 value.clone(),
-                crate::kernel::CComparisonOperator::Equal,
+                crate::kernel::ComparisonOperator::Equal,
             ),
             true,
         );
@@ -1197,7 +1197,7 @@ mod tests {
             (
                 read(
                     crate::kernel::intern_c_memory(
-                        crate::kernel::CMemory::new().with_block("other", 8),
+                        crate::kernel::Memory::new().with_block("other", 8),
                     ),
                     pointer,
                     crate::kernel::LoadKind::Float64,
@@ -1206,7 +1206,7 @@ mod tests {
             ),
         ] {
             let premise = Proposition::ConditionIs(
-                ConditionTerm::float64_classification(value, CFloatClassification::Finite),
+                ConditionTerm::float64_classification(value, FloatClassification::Finite),
                 true,
             );
             let plan = plan_special_arithmetic_certificate(&goal, std::slice::from_ref(&premise));
@@ -1221,8 +1221,8 @@ mod tests {
     fn finite_candidate_scan_charges_unrelated_premises() {
         let value = MachineTerm::Variable(Variable(2));
         let goal = Proposition::ConditionIs(
-            ConditionTerm::Float32(CFloatCondition::Comparison {
-                operator: CComparisonOperator::Equal,
+            ConditionTerm::Float32(FloatCondition::Comparison {
+                operator: KernelComparisonOperator::Equal,
                 left: Box::new(value.clone()),
                 right: Box::new(value.clone()),
             }),
@@ -1242,8 +1242,8 @@ mod tests {
             })
             .collect::<Vec<_>>();
         premises.push(Proposition::ConditionIs(
-            ConditionTerm::Float32(CFloatCondition::Classification {
-                classification: CFloatClassification::Finite,
+            ConditionTerm::Float32(FloatCondition::Classification {
+                classification: FloatClassification::Finite,
                 value: Box::new(value),
             }),
             true,

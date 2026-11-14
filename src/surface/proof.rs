@@ -214,7 +214,7 @@ mod certificate_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(CMemory::new()),
+            crate::kernel::intern_c_memory(Memory::new()),
             Box::new(pointer),
             crate::kernel::LoadKind::Int32,
         );
@@ -294,8 +294,8 @@ mod certificate_tests {
 
     #[test]
     fn snapshot_index_finds_a_late_exact_selector_inside_a_quantifier() {
-        let early_memory = CMemory::new().with_block("early", 4);
-        let target_memory = CMemory::new().with_block("target", 4);
+        let early_memory = Memory::new().with_block("early", 4);
+        let target_memory = Memory::new().with_block("target", 4);
         let pointer = Pointer {
             block: "target".into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -346,7 +346,7 @@ mod certificate_tests {
 
     #[test]
     fn missing_snapshot_form_reports_a_concise_indexed_failure() {
-        let target_memory = CMemory::new().with_block("target", 4);
+        let target_memory = Memory::new().with_block("target", 4);
         let pointer = Pointer {
             block: "target".into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -364,7 +364,7 @@ mod certificate_tests {
             },
             true,
         );
-        let state = ExecutionState::new().with_memory(CMemory::new().with_block("current", 4));
+        let state = ExecutionState::new().with_memory(Memory::new().with_block("current", 4));
 
         let facts = ProofFacts::from_ordered(&[]);
         let error = checked_surface_comparison_fact_in_state_with_indexed_facts(
@@ -393,7 +393,7 @@ mod certificate_tests {
                 .contains("0 exact and 0 compatible recorded snapshots"),
             "{error}"
         );
-        assert!(!error.message().contains("CMemory"), "{error}");
+        assert!(!error.message().contains("Memory"), "{error}");
     }
 
     #[test]
@@ -1754,12 +1754,10 @@ pub(super) enum FunctionClaimRef<'a> {
 }
 
 impl<'a> FunctionClaimRef<'a> {
-    pub(super) fn key(self) -> CFunctionContractClaimKey {
+    pub(super) fn key(self) -> FunctionContractClaimKey {
         match self {
-            Self::Ensure(index, _) => CFunctionContractClaimKey::Ensure(index),
-            Self::ExceptionalEnsure(index, _) => {
-                CFunctionContractClaimKey::ExceptionalEnsure(index)
-            }
+            Self::Ensure(index, _) => FunctionContractClaimKey::Ensure(index),
+            Self::ExceptionalEnsure(index, _) => FunctionContractClaimKey::ExceptionalEnsure(index),
         }
     }
 
@@ -1775,24 +1773,21 @@ impl<'a> FunctionClaimRef<'a> {
         }
     }
 
-    pub(super) fn applies_to(self, outcome: &CFunctionOutcome) -> bool {
+    pub(super) fn applies_to(self, outcome: &FunctionOutcome) -> bool {
         matches!(
             (self, outcome),
-            (Self::Ensure(_, _), CFunctionOutcome::Return { .. })
-                | (
-                    Self::ExceptionalEnsure(_, _),
-                    CFunctionOutcome::Throw { .. }
-                )
+            (Self::Ensure(_, _), FunctionOutcome::Return { .. })
+                | (Self::ExceptionalEnsure(_, _), FunctionOutcome::Throw { .. })
         )
     }
 
-    pub(super) fn is_vacuous_for(self, outcome: &CFunctionOutcome) -> bool {
+    pub(super) fn is_vacuous_for(self, outcome: &FunctionOutcome) -> bool {
         matches!(
             (self, outcome),
-            (Self::Ensure(_, _), CFunctionOutcome::Throw { .. })
+            (Self::Ensure(_, _), FunctionOutcome::Throw { .. })
                 | (
                     Self::ExceptionalEnsure(_, _),
-                    CFunctionOutcome::Return { .. }
+                    FunctionOutcome::Return { .. }
                 )
         )
     }
@@ -1897,7 +1892,7 @@ fn bool_range_surface(name: &str) -> ClickProposition {
         lowered: ProgramExpression::Cast {
             expression: Box::new(ProgramExpression::Variable(name.to_string())),
             target_type: crate::kernel::ProgramType::Int32,
-            integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+            integer_mode: crate::kernel::IntegerCastMode::CConversion,
             pointee_struct: None,
             pointee_volatile: false,
             pointee_constant: false,
@@ -2529,7 +2524,7 @@ fn refuse_overlapping_returned_places(
         return Ok(());
     };
     // Name each place as its clause wrote it.
-    let spelled = |range: &crate::kernel::CMemoryRange| {
+    let spelled = |range: &crate::kernel::MemoryRange| {
         written
             .iter()
             .find(|(candidate, _)| candidate == range)
@@ -2691,7 +2686,7 @@ fn evaluate_entry_resource_context(
     include_owned_composite_cores: Option<resources::OwnedCores>,
     claim_label: &str,
     entry_resources: &ResourceContext,
-    entry_memory: &CMemory,
+    entry_memory: &Memory,
 ) -> Result<(ExecutionState, Vec<Proposition>, Vec<Proposition>), ClickError> {
     let parameter_binding = ParameterBinding::new(parsed_function.parameters(), arguments);
     let (resource_specs, _) = crate::surface::verification::function_resource_summary(
@@ -2724,7 +2719,7 @@ fn evaluate_entry_resource_context(
         .filter(|fact| {
             matches!(
                 fact.resource(),
-                CResource::Instance(_) | CResource::Memory(_) | CResource::PopulationAuthority(_)
+                Resource::Instance(_) | Resource::Memory(_) | Resource::PopulationAuthority(_)
             )
         })
         .cloned()
@@ -2744,7 +2739,7 @@ fn evaluate_entry_resource_context(
                 binary_term!(Int32, Multiply, left, right)
                     if **right == MachineTerm::constant(ProgramType::Int32.byte_width()) =>
                 {
-                    CMemoryRange::new(
+                    MemoryRange::new(
                         base.clone(),
                         MachineTerm::constant(0),
                         left.as_ref().clone(),
@@ -2753,7 +2748,7 @@ fn evaluate_entry_resource_context(
                 binary_term!(Int32, Multiply, left, right)
                     if **left == MachineTerm::constant(ProgramType::Int32.byte_width()) =>
                 {
-                    CMemoryRange::new(
+                    MemoryRange::new(
                         base.clone(),
                         MachineTerm::constant(0),
                         right.as_ref().clone(),
@@ -2762,7 +2757,7 @@ fn evaluate_entry_resource_context(
                 bits32_constant!(bytes)
                     if constant_u32(*bytes).is_multiple_of(ProgramType::Int32.byte_width()) =>
                 {
-                    CMemoryRange::new(
+                    MemoryRange::new(
                         base.clone(),
                         MachineTerm::constant(0),
                         MachineTerm::constant(
@@ -2770,14 +2765,14 @@ fn evaluate_entry_resource_context(
                         ),
                     )
                 }
-                _ => CMemoryRange::new_with_element_width(
+                _ => MemoryRange::new_with_element_width(
                     base.clone(),
                     MachineTerm::constant(0),
                     bytes.clone(),
                     1,
                 ),
             };
-            Some(CResourceFact::view_memory(range))
+            Some(ResourceFact::view_memory(range))
         })
         .collect::<Vec<_>>();
     let assumptions = pure_facts.context();
@@ -2995,7 +2990,7 @@ pub(super) fn prove_claim_by_implicit_tail(
     parsed_function: &syntax::C0Function,
     claim: &FunctionClaimRef<'_>,
     claim_label: &str,
-    function_environment: &CExecutionEnvironment,
+    function_environment: &ExecutionEnvironment,
     spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
     theorem_environment: &TheoremEnvironment,
@@ -3033,7 +3028,7 @@ pub(super) fn prove_claim_by_solve(
     parsed_function: &syntax::C0Function,
     claim: &FunctionClaimRef<'_>,
     claim_label: &str,
-    function_environment: &CExecutionEnvironment,
+    function_environment: &ExecutionEnvironment,
     spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
     theorem_environment: &TheoremEnvironment,
@@ -3077,7 +3072,7 @@ pub(super) fn prove_claim_by_script(
     parsed_function: &syntax::C0Function,
     claim: &FunctionClaimRef<'_>,
     claim_label: &str,
-    function_environment: &CExecutionEnvironment,
+    function_environment: &ExecutionEnvironment,
     spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
     theorem_environment: &TheoremEnvironment,

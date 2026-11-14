@@ -3,7 +3,7 @@
 //! A name is an alias, never a second resource. In particular, a copied name
 //! does not keep an authority alive after its owned occurrence is consumed.
 
-use super::{CResource, CResourceFact, ExecutionState, ResourceOccurrenceId, Variable};
+use super::{ExecutionState, Resource, ResourceFact, ResourceOccurrenceId, Variable};
 use crate::persistent::PersistentMap;
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
 #[derive(Clone, Debug)]
 struct NamedMutexAuthority {
-    fact: CResourceFact,
+    fact: ResourceFact,
     occurrence: ResourceOccurrenceId,
 }
 
@@ -61,13 +61,13 @@ impl NamedMutexAuthorities {
     pub(in crate::kernel) fn bind(
         &self,
         binder: Variable,
-        fact: &CResourceFact,
+        fact: &ResourceFact,
         state: &ExecutionState,
     ) -> Result<Self, NamedMutexAuthorityError> {
         if !matches!(
             fact,
-            CResourceFact::Own(
-                CResource::MutexLive(_) | CResource::MutexUse(_) | CResource::MutexGuard(_),
+            ResourceFact::Own(
+                Resource::MutexLive(_) | Resource::MutexUse(_) | Resource::MutexGuard(_),
                 _
             )
         ) || fact
@@ -107,7 +107,7 @@ impl NamedMutexAuthorities {
         &'a self,
         binder: Variable,
         state: &ExecutionState,
-    ) -> Option<&'a CResourceFact> {
+    ) -> Option<&'a ResourceFact> {
         let alias = self.aliases.get(&binder)?;
         state
             .resources
@@ -136,7 +136,7 @@ impl NamedMutexAuthorities {
     pub(in crate::kernel) fn rebind_existing_exact(
         &self,
         binder: Variable,
-        expected: &CResourceFact,
+        expected: &ResourceFact,
         state: &ExecutionState,
     ) -> Result<Self, NamedMutexAuthorityError> {
         let previous = self
@@ -203,8 +203,8 @@ impl NamedMutexAuthorities {
     pub(in crate::kernel) fn transport_checked_use(
         &self,
         binder: Variable,
-        source: &CResourceFact,
-        derived: &CResourceFact,
+        source: &ResourceFact,
+        derived: &ResourceFact,
         state: &ExecutionState,
     ) -> Result<Self, NamedMutexAuthorityError> {
         let previous = self
@@ -215,15 +215,15 @@ impl NamedMutexAuthorities {
             return Err(NamedMutexAuthorityError::MismatchedAuthority);
         }
         let (source_mutex, source_initialization) = match source.resource() {
-            CResource::MutexLive(identity) => (&identity.mutex, identity.epoch),
-            CResource::MutexUse(identity) => (&identity.mutex, identity.initialization),
+            Resource::MutexLive(identity) => (&identity.mutex, identity.epoch),
+            Resource::MutexUse(identity) => (&identity.mutex, identity.initialization),
             _ => return Err(NamedMutexAuthorityError::NotMutexAuthority),
         };
         // A use share may also return to the lifecycle authority it was split
         // from, as when a join recovers a parent's retained share.
         let (target_mutex, target_initialization) = match derived.resource() {
-            CResource::MutexUse(target) => (&target.mutex, target.initialization),
-            CResource::MutexLive(target) if matches!(source.resource(), CResource::MutexUse(_)) => {
+            Resource::MutexUse(target) => (&target.mutex, target.initialization),
+            Resource::MutexLive(target) if matches!(source.resource(), Resource::MutexUse(_)) => {
                 (&target.mutex, target.epoch)
             }
             _ => return Err(NamedMutexAuthorityError::NotMutexAuthority),
@@ -291,15 +291,15 @@ mod tests {
     use super::*;
     use crate::kernel::{MutexIdentity, MutexUseIdentity, Pointer, ResourceContext};
 
-    fn authority(epoch: u64) -> CResourceFact {
-        CResourceFact::own(CResource::MutexLive(MutexIdentity {
+    fn authority(epoch: u64) -> ResourceFact {
+        ResourceFact::own(Resource::MutexLive(MutexIdentity {
             epoch: Some(epoch),
             mutex: Pointer::symbolic(Variable(400)),
         }))
     }
 
-    fn use_authority(epoch: u64, mutex: Variable) -> CResourceFact {
-        CResourceFact::own(CResource::MutexUse(MutexUseIdentity {
+    fn use_authority(epoch: u64, mutex: Variable) -> ResourceFact {
+        ResourceFact::own(Resource::MutexUse(MutexUseIdentity {
             protected: None,
             binding: None,
             initialization: Some(epoch),
@@ -379,7 +379,7 @@ mod tests {
             named.bind(Variable(2), &authority(2), &state),
             Err(NamedMutexAuthorityError::NotUniquelyOwned)
         );
-        let token = CResourceFact::own(CResource::Token {
+        let token = ResourceFact::own(Resource::Token {
             name: "other".into(),
             arguments: vec![].into(),
         });

@@ -68,7 +68,7 @@ impl Context<'_> {
         self.memory_values.insert(name.into(), value_type);
         Ok(c_begin_aggregate_construction(
             name.to_string(),
-            CAggregateLayout::holding_value(value_type),
+            AggregateLayout::holding_value(value_type),
         ))
     }
     /// Storage of the `Option<&T>` a library slice iterator's `next()`

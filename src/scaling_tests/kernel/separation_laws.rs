@@ -87,9 +87,9 @@ fn conjunction_construction_and_index_keys_do_not_rewalk_prefixes() {
     let costs = [16usize, 32, 64, 128].map(|n| {
         let _session = crate::kernel::VerificationSession::enter();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let mut expression = CResource::Emp;
+            let mut expression = Resource::Emp;
             for i in 0..n {
-                expression = CResource::star(expression, CResource::Parameter(Variable(i as u64)));
+                expression = Resource::star(expression, Resource::Parameter(Variable(i as u64)));
                 // Fact indexes hash the new descriptor at each written step.
                 let mut key = std::collections::hash_map::DefaultHasher::new();
                 expression.hash(&mut key);
@@ -114,17 +114,17 @@ fn conjunction_construction_and_index_keys_do_not_rewalk_prefixes() {
 fn conjunction_lowering_visits_written_operands_not_ambient_facts() {
     fn cost(n: usize, right_nested: bool, ambient: usize, memory: bool) -> usize {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut resource = SpecResource::Value(CResource::Emp);
+        let mut resource = SpecResource::Value(Resource::Emp);
         for i in 0..n {
             let leaf = SpecResource::Value(if memory {
-                CResource::Memory(CMemoryRange::new_with_element_width(
+                Resource::Memory(MemoryRange::new_with_element_width(
                     Pointer::symbolic(Variable(8_391_000)),
                     0u32.into(),
                     MachineTerm::Variable(Variable(8_392_000 + i as u64)),
                     4,
                 ))
             } else {
-                CResource::Parameter(Variable(i as u64))
+                Resource::Parameter(Variable(i as u64))
             });
             resource = if right_nested {
                 SpecResource::Star(Box::new(leaf), Box::new(resource))
@@ -135,13 +135,13 @@ fn conjunction_lowering_visits_written_operands_not_ambient_facts() {
         let mut assumptions = PureFactContext::new();
         for i in 0..ambient {
             assumptions = assumptions.assume_proposition(Proposition::CResourceContains {
-                parent: Box::new(CResource::Parameter(Variable(i as u64))),
-                child: Box::new(CResource::Parameter(Variable(i as u64 + 1))),
+                parent: Box::new(Resource::Parameter(Variable(i as u64))),
+                child: Box::new(Resource::Parameter(Variable(i as u64 + 1))),
             });
         }
         let proposition = SpecProposition::ResourceSeparate {
             left: resource,
-            right: SpecResource::Value(CResource::Emp),
+            right: SpecResource::Value(Resource::Emp),
         };
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::spec::lower_spec_proposition_at_state_with_loop_entry(
@@ -173,19 +173,19 @@ fn conjunction_lowering_visits_written_operands_not_ambient_facts() {
 fn viewable_restrict_does_not_walk_compositions_or_enumerate_memory() {
     let costs = [4u32, 16, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut parent = CResource::Emp;
+        let mut parent = Resource::Emp;
         for i in 0..size {
-            parent = CResource::star(parent, CResource::Parameter(Variable(i as u64)));
+            parent = Resource::star(parent, Resource::Parameter(Variable(i as u64)));
         }
-        let memory = CMemory::new();
-        let range = CResource::Memory(CMemoryRange::new_with_element_width(
+        let memory = Memory::new();
+        let range = Resource::Memory(MemoryRange::new_with_element_width(
             Pointer::symbolic(Variable(8_390_100)),
             0u32.into(),
             size.into(),
             4,
         ));
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            prove_viewable_restrict(&memory, parent, CResource::Parameter(Variable(0)));
+            prove_viewable_restrict(&memory, parent, Resource::Parameter(Variable(0)));
             prove_viewable_restrict(&memory, range.clone(), range);
         });
         work

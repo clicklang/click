@@ -78,7 +78,7 @@ fn condition_transport_cannot_hide_inside_statement_publication() {
             crate::kernel::ConditionTerm::Constant(true),
             true,
         ),
-        &crate::kernel::CMemory::new(),
+        &crate::kernel::Memory::new(),
         &crate::kernel::PureFactContext::new(),
     );
 }

@@ -593,7 +593,7 @@ pub(in crate::surface) fn resource_body_children<'b>(
                             parent.name()
                         )));
                     }
-                    crate::kernel::CResourceChildField::Parent(access.field_index)
+                    crate::kernel::ResourceChildField::Parent(access.field_index)
                 }
                 ContractExpression::Binding(variable)
                 | ContractExpression::CBinding(variable)
@@ -607,7 +607,7 @@ pub(in crate::surface) fn resource_body_children<'b>(
                                 "child field requires a constructor binding or parent field of the same type",
                             )
                         })?;
-                    crate::kernel::CResourceChildField::Constructor(*index)
+                    crate::kernel::ResourceChildField::Constructor(*index)
                 }
                 _ => {
                     return Err(ClickError::new(

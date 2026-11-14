@@ -897,7 +897,7 @@ fn execution_effect_diagnostics_omit_raw_memory_snapshots() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(8),
     };
-    let before = CMemory::new().store(pointer.clone(), int32(1));
+    let before = Memory::new().store(pointer.clone(), int32(1));
     let after = before.clone().store(pointer.clone(), int32(2));
     let facts = vec![
         ExecutionPureFact::new(Proposition::CMemoryMutatesOnly {
@@ -908,7 +908,7 @@ fn execution_effect_diagnostics_omit_raw_memory_snapshots() {
         ExecutionPureFact::new(Proposition::CMemoryEffectSummary {
             before: before.clone(),
             after: after.clone(),
-            mutable_ranges: vec![CMemoryRange::new(
+            mutable_ranges: vec![MemoryRange::new(
                 pointer.clone(),
                 MachineTerm::constant(0),
                 MachineTerm::constant(1),
@@ -930,7 +930,7 @@ fn execution_effect_diagnostics_omit_raw_memory_snapshots() {
         "{description}"
     );
     assert!(description.contains("freed between"), "{description}");
-    assert!(!description.contains("CMemory"), "{description}");
+    assert!(!description.contains("Memory"), "{description}");
     assert!(
         !description.contains("diagnostic truncated"),
         "{description}"
@@ -1215,14 +1215,14 @@ fn negative_mdtest_failures_include_structured_proof_context() {
             assert!(message.contains("goal:"), "{name}: {message}");
             assert!(message.contains("recent premises"), "{name}: {message}");
         }
-        assert!(!message.contains("CMemory {"), "{name}: {message}");
+        assert!(!message.contains("Memory {"), "{name}: {message}");
     }
 }
 
 /// An undecided C `if` reported its two condition paths with the kernel
 /// `Debug` of their facts. A condition whose load has not been named by a
 /// load variable — the shape `list_count_live` reaches after its recursive
-/// call — then carries the whole `CMemory` snapshot, blocks and heap
+/// call — then carries the whole `Memory` snapshot, blocks and heap
 /// included, twice. That is the raw-state dump `AGENTS.md` names. Each path
 /// is now spelled on its own line in the bounded source vocabulary, which is
 /// what says which condition each arm assumes.
@@ -1270,8 +1270,8 @@ int32 pick(struct node* node) {
         message.contains("condition path 0:") && message.contains("condition path 1:"),
         "each arm's assumption should be spelled on its own line: {message}"
     );
-    assert!(!message.contains("CMemory {"), "{message}");
-    assert!(!message.contains("CHeapMemory {"), "{message}");
+    assert!(!message.contains("Memory {"), "{message}");
+    assert!(!message.contains("HeapMemory {"), "{message}");
     assert!(!message.contains("MemoryBlock {"), "{message}");
     assert!(message.len() < 8000, "{message}");
 }
@@ -1352,14 +1352,14 @@ fn statement_head_names_the_guard_without_the_loop_node() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_09")]
 fn loan_refusal_diagnostic_renders_only_its_selected_subject() {
-    use crate::kernel::{CMemoryRange, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm};
     use crate::kernel::{LoanRefusal, LoanRefusalOperation, LoanRefusalSubject};
+    use crate::kernel::{MachineTerm, MemoryRange, Pointer, PointerBlock, PointerOffsetTerm};
 
     let pointer = Pointer {
         block: PointerBlock::Concrete("selected_resource".to_string()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let selected = CResourceFact::own_memory(CMemoryRange::new(
+    let selected = ResourceFact::own_memory(MemoryRange::new(
         pointer,
         MachineTerm::constant(0),
         MachineTerm::constant(4),
@@ -1369,7 +1369,7 @@ fn loan_refusal_diagnostic_renders_only_its_selected_subject() {
         LoanRefusalSubject::for_resource(selected),
     );
     let rendered = super::diagnostics::describe_runtime_error(
-        &crate::kernel::CRuntimeError::LoanRefusal(Box::new(diagnostic)),
+        &crate::kernel::RuntimeError::LoanRefusal(Box::new(diagnostic)),
         ParameterBinding::default(),
     );
 
@@ -1382,10 +1382,10 @@ fn loan_refusal_diagnostic_renders_only_its_selected_subject() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_09")]
 fn loan_refusal_diagnostic_renders_a_range_subject_without_ledger_state() {
-    use crate::kernel::{CMemoryRange, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm};
     use crate::kernel::{LoanRefusal, LoanRefusalOperation, LoanRefusalSubject};
+    use crate::kernel::{MachineTerm, MemoryRange, Pointer, PointerBlock, PointerOffsetTerm};
 
-    let range = CMemoryRange::new(
+    let range = MemoryRange::new(
         Pointer {
             block: PointerBlock::Concrete("selected_range".to_string()),
             offset: PointerOffsetTerm::Constant(0),
@@ -1398,13 +1398,13 @@ fn loan_refusal_diagnostic_renders_a_range_subject_without_ledger_state() {
         LoanRefusalSubject::for_range(range),
     );
     let rendered = super::diagnostics::describe_runtime_error(
-        &crate::kernel::CRuntimeError::LoanRefusal(Box::new(diagnostic)),
+        &crate::kernel::RuntimeError::LoanRefusal(Box::new(diagnostic)),
         ParameterBinding::default(),
     );
 
     assert!(rendered.contains("selected range"), "{rendered}");
     assert!(rendered.contains("selected_range"), "{rendered}");
-    assert!(!rendered.contains("CMemoryRange {"), "{rendered}");
+    assert!(!rendered.contains("MemoryRange {"), "{rendered}");
     assert!(rendered.len() < 1024, "{}", rendered.len());
 }
 
@@ -1595,7 +1595,7 @@ fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
         block: PointerBlock::Symbolic(Variable(982_001)),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let before = CMemory::new().with_block(global.block.clone(), 4);
+    let before = Memory::new().with_block(global.block.clone(), 4);
     let after = before.clone().store(alias.clone(), int32(1));
     let pre_state = ExecutionState::new().with_memory(before.clone());
     let aliases_global =
@@ -1609,7 +1609,7 @@ fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
         ExecutionPureFact::new(Proposition::CMemoryEffectSummary {
             before,
             after,
-            mutable_ranges: vec![CMemoryRange::new(
+            mutable_ranges: vec![MemoryRange::new(
                 alias,
                 MachineTerm::constant(0),
                 MachineTerm::constant(1),
@@ -1632,8 +1632,8 @@ fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
         .expect_err("a fact-aliased write reaches the preexisting global");
         assert!(matches!(
             error,
-            crate::kernel::CContractClosingRefusal::Write(_)
-                | crate::kernel::CContractClosingRefusal::Range(_)
+            crate::kernel::ContractClosingRefusal::Write(_)
+                | crate::kernel::ContractClosingRefusal::Range(_)
         ));
     }
 }
@@ -1700,13 +1700,13 @@ fn missing_mutex_use_names_the_required_resource_without_loan_internals() {
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let rendered = super::diagnostics::describe_runtime_error(
-        &crate::kernel::CRuntimeError::MissingMutexUse {
+        &crate::kernel::RuntimeError::MissingMutexUse {
             mutex: mutex.clone(),
         },
         ParameterBinding::default(),
     );
     let owner = super::diagnostics::describe_runtime_error(
-        &crate::kernel::CRuntimeError::MissingMutexLive { mutex },
+        &crate::kernel::RuntimeError::MissingMutexLive { mutex },
         ParameterBinding::default(),
     );
     assert_eq!(rendered, owner.replace("mutex_live", "mutex_use"));
@@ -2110,7 +2110,7 @@ fn unheld_field_without_a_checked_consumption_does_not_invent_one() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_12")]
 fn source_unknown_local_pointer_diagnostics_identify_byte_units() {
     use crate::kernel::{
-        CMemoryRange, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm, PointerValue,
+        MachineTerm, MemoryRange, Pointer, PointerBlock, PointerOffsetTerm, PointerValue,
         ProgramType,
     };
     let base = Pointer {
@@ -2122,7 +2122,7 @@ fn source_unknown_local_pointer_diagnostics_identify_byte_units() {
         ProgramValue::Pointer(PointerValue::new(base.clone(), ProgramType::Int32Pointer)),
     );
     let (parameters, arguments) = super::diagnostics::local_naming_tables_with_source(&state, None);
-    let range = CMemoryRange::new(base, MachineTerm::constant(1), MachineTerm::constant(2));
+    let range = MemoryRange::new(base, MachineTerm::constant(1), MachineTerm::constant(2));
     assert_eq!(
         super::diagnostics::describe_memory_range(
             &range,
@@ -2851,7 +2851,7 @@ fn memory_history_diagnostic_names_the_store_and_limits_its_claim() {
         offset: PointerOffsetTerm::Variable(Variable(992001)),
     };
     let written = Pointer::symbolic(Variable(992002));
-    let before = CMemory::new();
+    let before = Memory::new();
     let blocked = before.clone().store(
         written.clone(),
         ProgramValue::UInt64(MachineTerm::uint64_constant(42)),
@@ -2863,7 +2863,7 @@ fn memory_history_diagnostic_names_the_store_and_limits_its_claim() {
         },
         int32(1),
     );
-    let load = |memory: &CMemory| {
+    let load = |memory: &Memory| {
         MachineTerm::MemoryLoad(
             intern_c_memory(memory.clone()),
             Box::new(read.clone()),
@@ -3052,21 +3052,21 @@ void call(int32* p, int32* q, int32* anchor) {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_16")]
 fn call_resource_diagnostic_read_shows_snapshot_and_access() {
-    use crate::kernel::{CMemoryRange, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm};
+    use crate::kernel::{MachineTerm, MemoryRange, Pointer, PointerBlock, PointerOffsetTerm};
     let address = Pointer {
         block: PointerBlock::Concrete("selected_child_cell".into()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let required = CResourceFact::View(crate::kernel::CResource::Memory(CMemoryRange::new(
+    let required = ResourceFact::View(crate::kernel::Resource::Memory(MemoryRange::new(
         address,
         MachineTerm::constant(0),
         MachineTerm::constant(1),
     )));
-    let error = crate::kernel::CRuntimeError::ContractResourceDiagnostic {
+    let error = crate::kernel::RuntimeError::ContractResourceDiagnostic {
         reason: "resource `child` argument 1 could not be evaluated: required access authority is unavailable".into(),
         held: None,
         required: Box::new(required),
-        memory: Some(Box::new(crate::kernel::CMemory::new())),
+        memory: Some(Box::new(crate::kernel::Memory::new())),
     };
     let rendered = super::diagnostics::describe_runtime_error(&error, ParameterBinding::default());
     assert!(
@@ -3431,11 +3431,11 @@ fn native_view_solve_distinguishes_a_rejected_kernel_query() {
 fn pending_call_obligations_use_shared_goal_printer_and_snapshot_legend() {
     let _typed = crate::surface::proof_diagnostics::render::TypedNotationScope::enter();
     use crate::kernel::{
-        CMemory, CRuntimeError, ConditionTerm, MachineTerm, Pointer, PointerOffsetTerm,
-        ProofObligation, Proposition,
+        ConditionTerm, MachineTerm, Memory, Pointer, PointerOffsetTerm, ProofObligation,
+        Proposition, RuntimeError,
     };
     use crate::surface::proof_diagnostics::render::{SnapshotLabels, render_proposition_labeled};
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let pointer = Pointer {
         block: "pending_read_cell".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -3459,7 +3459,7 @@ fn pending_call_obligations_use_shared_goal_printer_and_snapshot_legend() {
             "reader.contract",
             0,
             &[],
-            &CMemory::new(),
+            &Memory::new(),
         )),
         7,
         Some(7),
@@ -3472,7 +3472,7 @@ fn pending_call_obligations_use_shared_goal_printer_and_snapshot_legend() {
             .with_call_requirement_site(source),
         ProofObligation::verification_condition(goal.clone()).with_context("call postcondition"),
     ];
-    let error = CRuntimeError::PendingCallObligations(obligations.into());
+    let error = RuntimeError::PendingCallObligations(obligations.into());
     let rendered = super::diagnostics::describe_runtime_error(&error, ParameterBinding::default());
     let expected = render_proposition_labeled(
         &goal,
@@ -3505,7 +3505,7 @@ fn pending_call_obligations_use_shared_goal_printer_and_snapshot_legend() {
         "{rendered}"
     );
     assert!(rendered.contains("pending_read_cell"), "{rendered}");
-    assert!(!rendered.contains("CMemory {"), "{rendered}");
+    assert!(!rendered.contains("Memory {"), "{rendered}");
 }
 
 #[test]
@@ -3573,17 +3573,17 @@ void symbolic(int32* p, const struct callbacks* cb) {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_19")]
 fn call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_snapshots() {
     use crate::kernel::{
-        AlgebraicValue, CMemory, CResource, LoadKind, Pointer, PointerBlock, PointerOffsetTerm,
-        PointerValue, ProgramType, ProgramValue, Variable, intern_c_memory,
+        AlgebraicValue, LoadKind, Memory, Pointer, PointerBlock, PointerOffsetTerm, PointerValue,
+        ProgramType, ProgramValue, Resource, Variable, intern_c_memory,
     };
     let _session = crate::kernel::VerificationSession::enter();
     let read = Pointer {
         block: PointerBlock::Concrete("child_cell".into()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let before = CMemory::new();
+    let before = Memory::new();
     let after = before.clone().store(read.clone(), int32(7));
-    let argument = |memory: CMemory| {
+    let argument = |memory: Memory| {
         AlgebraicValue::C(ProgramValue::Pointer(PointerValue::new(
             Pointer {
                 block: PointerBlock::Concrete("nodes".into()),
@@ -3605,12 +3605,12 @@ fn call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_snapshots(
         )))
     };
     let resource = |argument| {
-        CResourceFact::own(CResource::Composite {
+        ResourceFact::own(Resource::Composite {
             name: "optional_size".into(),
             arguments: vec![argument].into(),
         })
     };
-    let error = crate::kernel::CRuntimeError::ContractResourceDiagnostic {
+    let error = crate::kernel::RuntimeError::ContractResourceDiagnostic {
         reason: "equality of resource argument 1 was not established".into(),
         held: Some(Box::new(resource(argument(before)))),
         required: Box::new(resource(argument(after))),
@@ -4320,7 +4320,7 @@ fn struct_pointer_pointer_ranges_print_pointer_units() {
         pointer.clone(),
     ))];
     for (start, end) in [(0, 4), (1, 3)] {
-        let range = CMemoryRange::from_pointer_value(
+        let range = MemoryRange::from_pointer_value(
             &pointer,
             MachineTerm::constant(start),
             MachineTerm::constant(end),

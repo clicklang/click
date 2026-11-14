@@ -1,7 +1,7 @@
 //! The entries of a pointer-keyed snapshot collection that an access into
 //! one block can alias.
 //!
-//! Every memory map and heap collection in a `CMemory` is keyed by a
+//! Every memory map and heap collection in a `Memory` is keyed by a
 //! `Pointer` (or by a key whose ordering starts with one), and `Pointer`
 //! orders by `block` first. `PointerBlock` in turn orders by variant:
 //!

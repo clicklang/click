@@ -34,7 +34,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         &self,
         since: &ProofCheckpoint<'a>,
         goals: &[ClickProposition],
-        claim_goals: &[Vec<crate::kernel::CClaimGoal>],
+        claim_goals: &[Vec<crate::kernel::ContractClaimGoal>],
     ) -> Result<
         (
             ProofCertificate,
@@ -52,7 +52,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         &self,
         since: Option<&ProofCheckpoint<'a>>,
         goals: &[ClickProposition],
-        claim_goals: &[Vec<crate::kernel::CClaimGoal>],
+        claim_goals: &[Vec<crate::kernel::ContractClaimGoal>],
     ) -> Result<
         (
             ProofCertificate,

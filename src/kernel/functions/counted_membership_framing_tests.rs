@@ -1,13 +1,13 @@
 use super::*;
 use crate::kernel::*;
 
-fn boxed_definition() -> CCompositeResourceDefinition {
-    CCompositeResourceDefinition::new(
+fn boxed_definition() -> CompositeResourceDefinition {
+    CompositeResourceDefinition::new(
         "boxed",
         vec![c_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
-        vec![CResourceSpec::owned_memory(CMemorySegment::new(
+        vec![ResourceSpec::owned_memory(MemorySegment::new(
             c_variable("p"),
             c_int32_literal(0),
             c_int32_literal(1),
@@ -26,11 +26,11 @@ fn a_call_keeps_an_argument_direct_composites_memory_without_opening_it() {
     let boxed = boxed_definition();
     assert!(boxed.has_argument_direct_body());
     let object = |index: u64| Pointer::symbolic(Variable(781_000 + index));
-    let residual = ResourceContext::new().unchecked_with_fact(CResourceFact::own_composite(
+    let residual = ResourceContext::new().unchecked_with_fact(ResourceFact::own_composite(
         "boxed".into(),
         vec![ProgramValue::pointer(object(1))],
     ));
-    let memory = CMemory::new().store(object(1), int32(5));
+    let memory = Memory::new().store(object(1), int32(5));
     let assumptions = PureFactContext::new();
     let state = ExecutionState::new()
         .with_memory(memory.clone())
@@ -40,7 +40,7 @@ fn a_call_keeps_an_argument_direct_composites_memory_without_opening_it() {
         kept.opened_resources_for_test().is_empty(),
         "an argument-direct composite is not opened at the call"
     );
-    let written = CMemoryRange::new(
+    let written = MemoryRange::new(
         object(2),
         MachineTerm::constant(0),
         MachineTerm::constant(1),
@@ -73,16 +73,16 @@ fn caller_flat_exclusions_keep_new_composites_fragments_and_views() {
     let cell = object(783_901);
     let other = object(783_902);
     let range =
-        |base: Pointer, start, end| CMemoryRange::new_with_element_width(base, start, end, 4);
+        |base: Pointer, start, end| MemoryRange::new_with_element_width(base, start, end, 4);
     let flat = range(cell.clone(), 0u32.into(), 3u32.into());
     let boxed = |base: Pointer| {
-        CResourceFact::own_composite("boxed".into(), vec![ProgramValue::pointer(base)])
+        ResourceFact::own_composite("boxed".into(), vec![ProgramValue::pointer(base)])
     };
     let original = ResourceContext::new()
-        .unchecked_with_fact(CResourceFact::own_memory(flat.clone()))
+        .unchecked_with_fact(ResourceFact::own_memory(flat.clone()))
         .unchecked_with_fact(boxed(other));
     let assumptions = PureFactContext::new();
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let record = |original: &ResourceContext, residual: &ResourceContext| {
         let state = ExecutionState::new()
             .with_memory(memory.clone())
@@ -111,7 +111,7 @@ fn caller_flat_exclusions_keep_new_composites_fragments_and_views() {
     assert!(!kept.holds_access(&cell.offset_by_elements(1u32.into(), 4), 4, &assumptions));
 
     let right = cell.offset_by_elements(2u32.into(), 4);
-    let fragments = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(range(
+    let fragments = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(range(
         cell.clone(),
         2u32.into(),
         3u32.into(),
@@ -123,8 +123,8 @@ fn caller_flat_exclusions_keep_new_composites_fragments_and_views() {
 
     let zero = repackaged
         .clone()
-        .unchecked_with_fact(CResourceFact::own_quantity(
-            CResource::Memory(flat.clone()),
+        .unchecked_with_fact(ResourceFact::own_quantity(
+            Resource::Memory(flat.clone()),
             0u32.into(),
         ));
     assert!(
@@ -134,7 +134,7 @@ fn caller_flat_exclusions_keep_new_composites_fragments_and_views() {
 
     let viewed = repackaged
         .clone()
-        .unchecked_with_fact(CResourceFact::view_memory(flat.clone()));
+        .unchecked_with_fact(ResourceFact::view_memory(flat.clone()));
     assert!(
         record(&viewed, &repackaged).holds_access(&cell, 4, &assumptions),
         "a view must not exclude its composite owner"
@@ -154,20 +154,20 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
         crate::kernel::eval::declare_load_access_width(&shared, 4);
         crate::kernel::eval::declare_load_access_width(&private, 4);
         let range = |pointer: &Pointer| {
-            CMemoryRange::new(
+            MemoryRange::new(
                 pointer.clone(),
                 MachineTerm::constant(0),
                 MachineTerm::constant(1),
             )
         };
         let memory_spec = |name: &str| {
-            CResourceSpec::owned_memory(CMemorySegment::new(
+            ResourceSpec::owned_memory(MemorySegment::new(
                 c_variable(name),
                 c_int32_literal(0),
                 c_int32_literal(1),
             ))
         };
-        let population = CCompositeResourceDefinition::authority_control(
+        let population = CompositeResourceDefinition::authority_control(
             "remaining",
             vec![c_parameter("p", ProgramType::Int32Pointer)],
             None,
@@ -179,7 +179,7 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
             ResourceFieldType::C(ProgramType::Int32),
         )])
         .unwrap();
-        let wrapper = CCompositeResourceDefinition::new(
+        let wrapper = CompositeResourceDefinition::new(
             "wrapper",
             vec![
                 c_parameter("p", ProgramType::Int32Pointer),
@@ -188,8 +188,8 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
             None,
             false,
             vec![
-                CResourceSpec::composite(
-                    CResourceAccessMode::Own,
+                ResourceSpec::composite(
+                    ResourceAccessMode::Own,
                     "remaining".into(),
                     vec![c_variable("p")],
                     vec![ProgramType::Int32Pointer],
@@ -202,20 +202,20 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
         let mut residual = ResourceContext::new();
         let head = match wrapper_kind {
             0 => {
-                residual = residual.unchecked_with_fact(CResourceFact::own_memory(range(&private)));
-                CResourceFact::own_composite(
+                residual = residual.unchecked_with_fact(ResourceFact::own_memory(range(&private)));
+                ResourceFact::own_composite(
                     "remaining".into(),
                     vec![ProgramValue::pointer(shared.clone())],
                 )
             }
-            1 => CResourceFact::own_composite(
+            1 => ResourceFact::own_composite(
                 "wrapper".into(),
                 vec![
                     ProgramValue::pointer(shared.clone()),
                     ProgramValue::pointer(private.clone()),
                 ],
             ),
-            _ => CResourceFact::own(CResource::Instance(
+            _ => ResourceFact::own(Resource::Instance(
                 ResourceInstance::new(
                     Variable(780_100),
                     "wrapper".into(),
@@ -231,10 +231,10 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
             )),
         };
         residual = residual.unchecked_with_fact(head);
-        let base = CMemory::new()
+        let base = Memory::new()
             .with_block("shared-counter", 4)
             .with_block("private-cell", 4);
-        let load_in = |memory: &CMemory| {
+        let load_in = |memory: &Memory| {
             MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory_ref(memory),
                 Box::new(shared.clone()),

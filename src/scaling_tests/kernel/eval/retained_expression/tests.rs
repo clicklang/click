@@ -22,7 +22,7 @@ fn c_expression_handoffs_retain_growing_arithmetic_without_exports() {
         assert_eq!(paths.len(), 1);
         assert!(matches!(
             &paths[0].outcome,
-            CExpressionOutcome::Value(ExecutionValue::Shared(_))
+            ExpressionOutcome::Value(ExecutionValue::Shared(_))
         ));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         work.push(measured);
@@ -61,7 +61,7 @@ fn c_conditional_handoffs_keep_machine_results_without_exporting_prefixes() {
         assert_eq!(paths.len(), 1);
         assert!(matches!(
             &paths[0].outcome,
-            CExpressionOutcome::Value(ExecutionValue::Shared(_))
+            ExpressionOutcome::Value(ExecutionValue::Shared(_))
         ));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         work.push(measured);
@@ -107,7 +107,7 @@ fn rust_expression_handoffs_retain_growing_narrow_and_shift_results() {
             assert_eq!(paths.len(), 1);
             assert!(matches!(
                 &paths[0].outcome,
-                CExpressionOutcome::Value(ExecutionValue::Shared(_))
+                ExpressionOutcome::Value(ExecutionValue::Shared(_))
             ));
             assert_eq!(KernelTermExport::machine_export_count(), exports);
             work.push(measured);
@@ -147,7 +147,7 @@ fn retained_local_assignment_and_readback_scale_without_prefix_exports() {
                     &PureFactContext::new(),
                 )
                 .unwrap();
-                let CStatementOutcome::Normal(after) = outcome else {
+                let StatementOutcome::Normal(after) = outcome else {
                     panic!("local assignment");
                 };
                 state = *after;
@@ -199,7 +199,7 @@ fn retained_return_and_caller_receipt_do_not_export_growing_prefixes() {
         let exports = KernelTermExport::machine_export_count();
         let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {
-                let CStatementOutcome::Return { value, .. } =
+                let StatementOutcome::Return { value, .. } =
                     super::super::super::statements::execute_c_statement(
                         &state,
                         &statement,
@@ -251,7 +251,7 @@ fn complete_c_and_rust_machine_handoffs_retain_roots_without_prefix_exports() {
                     &ExecutionState::new(),
                     &statement,
                     &PureFactContext::new(),
-                    CExecutionContext::execute_bodies(&environment),
+                    ExecutionContext::execute_bodies(&environment),
                     &mut ExecutionBudget::new(),
                 )
                 .unwrap()
@@ -259,7 +259,7 @@ fn complete_c_and_rust_machine_handoffs_retain_roots_without_prefix_exports() {
             let [path] = paths.as_slice() else {
                 panic!("one complete machine path");
             };
-            let CStatementOutcome::Return { value, state } = &path.outcome else {
+            let StatementOutcome::Return { value, state } = &path.outcome else {
                 panic!("machine return: {:?}", path.outcome);
             };
             assert!(path.obligations.is_empty(), "{:?}", path.obligations);

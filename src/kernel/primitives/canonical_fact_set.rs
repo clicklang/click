@@ -27,7 +27,7 @@
 //! it and whether its whole subtree came from that table. Two pure trees of
 //! one table are equal exactly when their roots are one node; any other pair
 //! is compared fact by fact.
-use super::{CResourceFact, Variable};
+use super::{ResourceFact, Variable};
 use std::cmp::Ordering;
 use std::sync::{Arc, Weak};
 
@@ -37,7 +37,7 @@ pub(in crate::kernel) struct CanonicalFactSet {
 }
 
 struct Node {
-    fact: CResourceFact,
+    fact: ResourceFact,
     count: u32,
     priority: u64,
     left: Option<Arc<Node>>,
@@ -101,7 +101,7 @@ fn subtree_pure(node: &Option<Arc<Node>>, domain: u64) -> bool {
 /// The node holding `fact` `count` times over `left` and `right`: the live
 /// one this thread's table already made, or a new one.
 fn make(
-    fact: &CResourceFact,
+    fact: &ResourceFact,
     count: u32,
     priority: u64,
     left: Option<Arc<Node>>,
@@ -163,7 +163,7 @@ fn remake(node: &Node, left: Option<Arc<Node>>, right: Option<Arc<Node>>) -> Arc
 /// The subtrees of `node` before `fact`, holding `fact`, and after it.
 fn split(
     node: &Option<Arc<Node>>,
-    fact: &CResourceFact,
+    fact: &ResourceFact,
 ) -> (Option<Arc<Node>>, Option<Arc<Node>>, Option<Arc<Node>>) {
     let Some(current) = node else {
         return (None, None, None);
@@ -212,7 +212,7 @@ fn merge(left: Option<Arc<Node>>, right: Option<Arc<Node>>) -> Option<Arc<Node>>
 
 impl CanonicalFactSet {
     /// One more occurrence of `fact`, whose content hash is `hash`.
-    pub(in crate::kernel) fn with_inserted(&self, fact: &CResourceFact, hash: u64) -> Self {
+    pub(in crate::kernel) fn with_inserted(&self, fact: &ResourceFact, hash: u64) -> Self {
         let (less, equal, greater) = split(&self.root, fact);
         let count = equal.as_ref().map_or(0, |node| node.count) + 1;
         let node = make(fact, count, hash, None, None);
@@ -222,7 +222,7 @@ impl CanonicalFactSet {
     }
 
     /// One occurrence of `fact` fewer; unchanged when it holds none.
-    pub(in crate::kernel) fn without_one(&self, fact: &CResourceFact, hash: u64) -> Self {
+    pub(in crate::kernel) fn without_one(&self, fact: &ResourceFact, hash: u64) -> Self {
         let (less, equal, greater) = split(&self.root, fact);
         let Some(equal) = equal else {
             return self.clone();
@@ -247,11 +247,11 @@ impl CanonicalFactSet {
     /// cache does not record which function filled it.
     pub(in crate::kernel) fn syntax_ceiling(
         &self,
-        fact_ceiling: fn(&CResourceFact) -> SyntaxCeiling,
+        fact_ceiling: fn(&ResourceFact) -> SyntaxCeiling,
     ) -> SyntaxCeiling {
         fn subtree(
             node: &Option<Arc<Node>>,
-            fact_ceiling: fn(&CResourceFact) -> SyntaxCeiling,
+            fact_ceiling: fn(&ResourceFact) -> SyntaxCeiling,
         ) -> SyntaxCeiling {
             let Some(node) = node else {
                 return (None, false);
@@ -338,7 +338,7 @@ impl<'a> Sorted<'a> {
 }
 
 impl<'a> Iterator for Sorted<'a> {
-    type Item = &'a CResourceFact;
+    type Item = &'a ResourceFact;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {

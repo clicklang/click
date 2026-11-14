@@ -49,9 +49,9 @@ fn a_recursion_check_is_linear_in_sequential_branches() {
             n()
         };
         body = ProgramStatement::seq(Arc::new(body), Arc::new(guarded_call(argument)));
-        [CVerifiedFunctionRule {
+        [VerifiedFunctionRule {
             pointer_result: None,
-            loop_semantics: CLoopSemantics::ApplyVerifiedRules,
+            loop_semantics: LoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
             applied_tactics: Default::default(),
             function: ProgramFunction::new(
@@ -62,9 +62,9 @@ fn a_recursion_check_is_linear_in_sequential_branches() {
             ),
         }]
     };
-    let plan = CFunctionTerminationPlan {
+    let plan = FunctionTerminationPlan {
         function_name: "countdown".to_string(),
-        recursive_measure: Some(CFunctionTerminationMeasure::NumericParameter(0)),
+        recursive_measure: Some(FunctionTerminationMeasure::NumericParameter(0)),
         loop_measures: BTreeMap::new(),
     };
     // Judged by the checker's deterministic work, not the host clock:

@@ -92,7 +92,7 @@ checked. Each one costs completeness, expansion, or a readable report.
   records, inside a call or after the last point, is read at the nearest
   recorded memory that reads the same bytes.
   A local that keeps one value in memory, a borrowed Rust enum or
-  type-parameter local (`CAggregateLayout::holding_value`), is named by its
+  type-parameter local (`AggregateLayout::holding_value`), is named by its
   own name: `o` lowers to the read of its object at the point it was last
   written (`ExecutionState::held_local_value`), never to a value a store left there,
   and that read spells `o`, or `at(point, o)` at the recorded point whose

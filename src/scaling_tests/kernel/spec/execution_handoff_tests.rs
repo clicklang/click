@@ -18,7 +18,7 @@ fn specification_execution_adapter_retains_growing_machine_results() {
         let (paths, measured) =
             crate::instrumentation::measure_deterministic_work(|| adapter(&expression));
         assert_eq!(paths.len(), 1);
-        let CExpressionOutcome::Value(SpecValue::Shared(root)) = &paths[0].outcome else {
+        let ExpressionOutcome::Value(SpecValue::Shared(root)) = &paths[0].outcome else {
             panic!("the adapter must retain the produced machine root");
         };
         assert_eq!(root.ty(), &KernelType::C(ProgramType::UInt32));

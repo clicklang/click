@@ -319,7 +319,7 @@ impl MachineTerm {
         }
     }
 
-    pub(crate) fn float32_binary(left: Self, right: Self, operator: CFloatBinaryOperator) -> Self {
+    pub(crate) fn float32_binary(left: Self, right: Self, operator: FloatBinaryOperator) -> Self {
         match (float32_bits_as_const(&left), float32_bits_as_const(&right)) {
             (Some(left), Some(right)) => {
                 Self::constant(
@@ -334,7 +334,7 @@ impl MachineTerm {
         }
     }
 
-    pub(crate) fn float64_binary(left: Self, right: Self, operator: CFloatBinaryOperator) -> Self {
+    pub(crate) fn float64_binary(left: Self, right: Self, operator: FloatBinaryOperator) -> Self {
         match (float64_bits_as_const(&left), float64_bits_as_const(&right)) {
             (Some(left), Some(right)) => {
                 Self::uint64_constant(float_binary_bits(left, right, 11, 52, operator))
@@ -1684,26 +1684,26 @@ fn float_binary_bits(
     right: u64,
     exponent_bits: u32,
     fraction_bits: u32,
-    operator: CFloatBinaryOperator,
+    operator: FloatBinaryOperator,
 ) -> u64 {
     let bias = (1i32 << (exponent_bits - 1)) - 1;
     let left = decode_float_bits(left, exponent_bits, fraction_bits, bias);
     let right = decode_float_bits(right, exponent_bits, fraction_bits, bias);
     match operator {
-        CFloatBinaryOperator::Add => {
+        FloatBinaryOperator::Add => {
             add_decoded_floats(left, right, exponent_bits, fraction_bits, bias)
         }
-        CFloatBinaryOperator::Subtract => add_decoded_floats(
+        FloatBinaryOperator::Subtract => add_decoded_floats(
             left,
             negate_decoded_float(right),
             exponent_bits,
             fraction_bits,
             bias,
         ),
-        CFloatBinaryOperator::Multiply => {
+        FloatBinaryOperator::Multiply => {
             multiply_decoded_floats(left, right, exponent_bits, fraction_bits, bias)
         }
-        CFloatBinaryOperator::Divide => {
+        FloatBinaryOperator::Divide => {
             divide_decoded_floats(left, right, exponent_bits, fraction_bits, bias)
         }
     }
@@ -2666,7 +2666,7 @@ impl ConditionTerm {
     pub(crate) fn float32_compare(
         left: MachineTerm,
         right: MachineTerm,
-        operator: CComparisonOperator,
+        operator: ComparisonOperator,
     ) -> Self {
         match (left.float32_as_const(), right.float32_as_const()) {
             (Some(left), Some(right)) => Self::Constant(compare_float_bits(
@@ -2676,7 +2676,7 @@ impl ConditionTerm {
                 23,
                 operator,
             )),
-            _ => Self::Float32(CFloatCondition::Comparison {
+            _ => Self::Float32(FloatCondition::Comparison {
                 operator,
                 left: Box::new(left),
                 right: Box::new(right),
@@ -2687,13 +2687,13 @@ impl ConditionTerm {
     pub(crate) fn float64_compare(
         left: MachineTerm,
         right: MachineTerm,
-        operator: CComparisonOperator,
+        operator: ComparisonOperator,
     ) -> Self {
         match (left.float64_as_const(), right.float64_as_const()) {
             (Some(left), Some(right)) => {
                 Self::Constant(compare_float_bits(left, right, 11, 52, operator))
             }
-            _ => Self::Float64(CFloatCondition::Comparison {
+            _ => Self::Float64(FloatCondition::Comparison {
                 operator,
                 left: Box::new(left),
                 right: Box::new(right),
@@ -2703,13 +2703,13 @@ impl ConditionTerm {
 
     pub(crate) fn float32_classification(
         value: MachineTerm,
-        classification: CFloatClassification,
+        classification: FloatClassification,
     ) -> Self {
         match value.float32_as_const() {
             Some(value) => {
                 Self::Constant(classify_float_bits(u64::from(value), 8, 23, classification))
             }
-            None => Self::Float32(CFloatCondition::Classification {
+            None => Self::Float32(FloatCondition::Classification {
                 classification,
                 value: Box::new(value),
             }),
@@ -2718,11 +2718,11 @@ impl ConditionTerm {
 
     pub(crate) fn float64_classification(
         value: MachineTerm,
-        classification: CFloatClassification,
+        classification: FloatClassification,
     ) -> Self {
         match value.float64_as_const() {
             Some(value) => Self::Constant(classify_float_bits(value, 11, 52, classification)),
-            None => Self::Float64(CFloatCondition::Classification {
+            None => Self::Float64(FloatCondition::Classification {
                 classification,
                 value: Box::new(value),
             }),
@@ -3838,7 +3838,7 @@ fn classify_float_bits(
     bits: u64,
     exponent_bits: u32,
     fraction_bits: u32,
-    classification: CFloatClassification,
+    classification: FloatClassification,
 ) -> bool {
     let exponent_mask = (1u64 << exponent_bits) - 1;
     let exponent = (bits >> fraction_bits) & exponent_mask;
@@ -3846,11 +3846,11 @@ fn classify_float_bits(
     let all_ones = exponent == exponent_mask;
     let zero_exponent = exponent == 0;
     match classification {
-        CFloatClassification::Finite => !all_ones,
-        CFloatClassification::Infinite => all_ones && fraction == 0,
-        CFloatClassification::Zero => zero_exponent && fraction == 0,
-        CFloatClassification::Subnormal => zero_exponent && fraction != 0,
-        CFloatClassification::Nan => all_ones && fraction != 0,
+        FloatClassification::Finite => !all_ones,
+        FloatClassification::Infinite => all_ones && fraction == 0,
+        FloatClassification::Zero => zero_exponent && fraction == 0,
+        FloatClassification::Subnormal => zero_exponent && fraction != 0,
+        FloatClassification::Nan => all_ones && fraction != 0,
     }
 }
 
@@ -3859,34 +3859,34 @@ fn compare_float_bits(
     right: u64,
     exponent_bits: u32,
     fraction_bits: u32,
-    operator: CComparisonOperator,
+    operator: ComparisonOperator,
 ) -> bool {
-    let nan = CFloatClassification::Nan;
+    let nan = FloatClassification::Nan;
     let left_nan = classify_float_bits(left, exponent_bits, fraction_bits, nan);
     let right_nan = classify_float_bits(right, exponent_bits, fraction_bits, nan);
     if left_nan || right_nan {
-        return matches!(operator, CComparisonOperator::NotEqual);
+        return matches!(operator, ComparisonOperator::NotEqual);
     }
 
     let left_zero = classify_float_bits(
         left,
         exponent_bits,
         fraction_bits,
-        CFloatClassification::Zero,
+        FloatClassification::Zero,
     );
     let right_zero = classify_float_bits(
         right,
         exponent_bits,
         fraction_bits,
-        CFloatClassification::Zero,
+        FloatClassification::Zero,
     );
     let equal = (left_zero && right_zero) || left == right;
     if equal {
         return matches!(
             operator,
-            CComparisonOperator::Equal
-                | CComparisonOperator::LessEqual
-                | CComparisonOperator::GreaterEqual
+            ComparisonOperator::Equal
+                | ComparisonOperator::LessEqual
+                | ComparisonOperator::GreaterEqual
         );
     }
 
@@ -3913,12 +3913,12 @@ fn compare_float_bits(
     let left_key = ordering_key(left);
     let right_key = ordering_key(right);
     match operator {
-        CComparisonOperator::Equal => false,
-        CComparisonOperator::NotEqual => true,
-        CComparisonOperator::LessThan => left_key < right_key,
-        CComparisonOperator::LessEqual => left_key <= right_key,
-        CComparisonOperator::GreaterThan => left_key > right_key,
-        CComparisonOperator::GreaterEqual => left_key >= right_key,
+        ComparisonOperator::Equal => false,
+        ComparisonOperator::NotEqual => true,
+        ComparisonOperator::LessThan => left_key < right_key,
+        ComparisonOperator::LessEqual => left_key <= right_key,
+        ComparisonOperator::GreaterThan => left_key > right_key,
+        ComparisonOperator::GreaterEqual => left_key >= right_key,
     }
 }
 
@@ -3947,7 +3947,7 @@ impl ProgramType {
             return_type,
             return_constant,
             parameters,
-            CExceptionalSignature::None,
+            ExceptionalSignature::None,
         )
     }
 
@@ -3955,7 +3955,7 @@ impl ProgramType {
         return_type: Self,
         return_constant: bool,
         parameters: &[(Self, bool)],
-        exceptional_signature: CExceptionalSignature,
+        exceptional_signature: ExceptionalSignature,
     ) -> CallbackSignature {
         // Exact base-46 digits: twenty-three modeled types, each with a pointee-const
         // bit. The leading one distinguishes arities. Fourteen digits plus
@@ -4048,8 +4048,8 @@ impl ProgramType {
         // high bit for the closed int32 exceptional channel so non-throwing
         // encodings cannot collide with it.
         let signature = match exceptional_signature {
-            CExceptionalSignature::None => signature,
-            CExceptionalSignature::Int32 => signature | (1u128 << 79),
+            ExceptionalSignature::None => signature,
+            ExceptionalSignature::Int32 => signature | (1u128 << 79),
         };
         CallbackSignature::from_encoded(signature)
     }
@@ -5380,7 +5380,7 @@ mod float_evaluator_differential_tests {
         name: &'static str,
         a: u64,
         b: u64,
-        operator: CFloatBinaryOperator,
+        operator: FloatBinaryOperator,
         exponent_bits: u32,
         fraction_bits: u32,
         expected: u64,
@@ -5395,7 +5395,7 @@ mod float_evaluator_differential_tests {
     /// the evaluator's canonical NaN; payloads are not compared.
     #[test]
     fn float_binary_matches_reference() {
-        use CFloatBinaryOperator::{Add, Divide, Multiply, Subtract};
+        use FloatBinaryOperator::{Add, Divide, Multiply, Subtract};
         let cases = [
             // Division: the subnormal-division regression is fixed. The first
             // case is the regression itself: the sticky bit collided with the

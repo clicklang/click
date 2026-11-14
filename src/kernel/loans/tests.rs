@@ -1,16 +1,14 @@
 use super::*;
-use crate::kernel::{
-    CResource, CResourceFact, ConditionTerm, Pointer, PointerOffsetTerm, Variable,
-};
+use crate::kernel::{ConditionTerm, Pointer, PointerOffsetTerm, Resource, ResourceFact, Variable};
 
-fn owned(name: &str) -> CResourceFact {
-    CResourceFact::own(CResource::Token {
+fn owned(name: &str) -> ResourceFact {
+    ResourceFact::own(Resource::Token {
         name: name.to_string(),
         arguments: Vec::new().into(),
     })
 }
 
-fn backing(fact: &CResourceFact) -> ResourceOccurrenceId {
+fn backing(fact: &ResourceFact) -> ResourceOccurrenceId {
     ResourceContext::new()
         .unchecked_with_fact(fact.clone())
         .unique_owned_occurrence_for_fact(fact)
@@ -22,7 +20,7 @@ fn lend_test(
     ledger: &LoanLedger,
     lender: LoanParticipantId,
     borrower: LoanParticipantId,
-    escrow: CResourceFact,
+    escrow: ResourceFact,
 ) -> LoanOpening {
     ledger
         .lend(lender, borrower, backing(&escrow), escrow)
@@ -36,22 +34,22 @@ fn participants() -> (LoanLedger, LoanParticipantId, LoanParticipantId) {
     (ledger, owner, reader)
 }
 
-fn opaque_memory_borrow_fixture() -> (CResourceFact, CCheckedResourceFact) {
+fn opaque_memory_borrow_fixture() -> (ResourceFact, CheckedResourceFact) {
     let pointer = crate::kernel::PointerValue::new(
         Pointer::symbolic(Variable(9_819_001)),
         crate::kernel::ProgramType::Int32Pointer,
     );
     let owner =
-        crate::kernel::CMemoryRange::from_pointer_value(&pointer, 0u32.into(), 4u32.into(), 4);
-    let requested = crate::kernel::CMemoryRange::from_pointer_value(
+        crate::kernel::MemoryRange::from_pointer_value(&pointer, 0u32.into(), 4u32.into(), 4);
+    let requested = crate::kernel::MemoryRange::from_pointer_value(
         &pointer.with_root_extent(),
         1u32.into(),
         2u32.into(),
         4,
     );
     (
-        CResourceFact::own_memory(owner),
-        checked(CResourceFact::own_memory(requested)),
+        ResourceFact::own_memory(owner),
+        checked(ResourceFact::own_memory(requested)),
     )
 }
 
@@ -61,9 +59,9 @@ fn concrete_view_recovery_retains_the_callers_opaque_carrier() {
     let assumptions = PureFactContext::new();
     let (owner, requested) = opaque_memory_borrow_fixture();
     let requested = requested.fact.memory_own_range().unwrap();
-    let first = checked(CResourceFact::view_memory(requested.clone()));
-    let second = checked(CResourceFact::view_memory(
-        crate::kernel::CMemoryRange::new_with_element_width(
+    let first = checked(ResourceFact::view_memory(requested.clone()));
+    let second = checked(ResourceFact::view_memory(
+        crate::kernel::MemoryRange::new_with_element_width(
             requested.base().clone(),
             2u32.into(),
             3u32.into(),
@@ -85,7 +83,7 @@ fn concrete_view_recovery_retains_the_callers_opaque_carrier() {
         assert!(
             !plan
                 .callee_resources
-                .satisfies_fact(&CResourceFact::own_memory(requested.clone()), &assumptions,)
+                .satisfies_fact(&ResourceFact::own_memory(requested.clone()), &assumptions,)
         );
         let recovery = plan
             .recover_stable_views(&assumptions, &BTreeMap::new(), &[])
@@ -142,7 +140,7 @@ fn partial_owned_borrow_returns_only_its_slice_with_the_callers_opaque_domain() 
         )
         .is_err()
     );
-    let viewed = ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(
+    let viewed = ResourceContext::new().unchecked_with_fact(ResourceFact::view_memory(
         owner.memory_own_range().unwrap().clone(),
     ));
     assert!(
@@ -184,8 +182,8 @@ fn borrowed_contract_input_is_read_only_and_cannot_be_closed_or_recovered() {
     );
 }
 
-fn parameter_range(variable: u64, start: u32, end: u32, width: u32) -> CMemoryRange {
-    CMemoryRange::new_with_element_width(
+fn parameter_range(variable: u64, start: u32, end: u32, width: u32) -> MemoryRange {
+    MemoryRange::new_with_element_width(
         crate::kernel::Pointer {
             block: PointerBlock::ExternalArgument,
             offset: crate::kernel::PointerOffsetTerm::Variable(Variable(variable)),
@@ -196,8 +194,8 @@ fn parameter_range(variable: u64, start: u32, end: u32, width: u32) -> CMemoryRa
     )
 }
 
-fn local_job_range() -> CMemoryRange {
-    CMemoryRange::new_with_element_width(
+fn local_job_range() -> MemoryRange {
+    MemoryRange::new_with_element_width(
         crate::kernel::Pointer {
             block: "local:job".into(),
             offset: crate::kernel::PointerOffsetTerm::Constant(0),
@@ -212,7 +210,7 @@ fn local_job_range() -> CMemoryRange {
 fn symbolic_external_write_is_distinct_from_a_fresh_local_loan() {
     let assumptions = PureFactContext::new();
     let (ledger, owner, reader) = participants();
-    let job = CResourceFact::own_memory(local_job_range());
+    let job = ResourceFact::own_memory(local_job_range());
     let opening = lend_test(&ledger, owner, reader, job);
     let ledger = ledger.apply(&opening.transition).unwrap();
     assert!(ledger.invariant_holds());
@@ -244,7 +242,7 @@ fn symbolic_external_write_still_refuses_a_nonlocal_indexed_loan() {
         &ledger,
         owner,
         reader,
-        CResourceFact::own_memory(local_job_range()),
+        ResourceFact::own_memory(local_job_range()),
     );
     let ledger = ledger.apply(&job.transition).unwrap();
     let global = lend_test(&ledger, owner, reader, memory(0, 4, true));
@@ -265,7 +263,7 @@ fn symbolic_external_write_still_refuses_a_second_symbolic_loan() {
         &ledger,
         owner,
         reader,
-        CResourceFact::own_memory(local_job_range()),
+        ResourceFact::own_memory(local_job_range()),
     );
     let ledger = ledger.apply(&job.transition).unwrap();
     assert!(ledger.invariant_holds());
@@ -277,9 +275,9 @@ fn symbolic_external_write_still_refuses_a_second_symbolic_loan() {
 
 fn rooted_parameter_view(
     variable: u64,
-) -> (LoanLedger, LoanParticipantId, LoanOpening, CResourceFact) {
+) -> (LoanLedger, LoanParticipantId, LoanOpening, ResourceFact) {
     let (ledger, holder, _) = participants();
-    let viewed = CResourceFact::view_memory(parameter_range(variable, 0, 1, 4));
+    let viewed = ResourceFact::view_memory(parameter_range(variable, 0, 1, 4));
     let resources = ResourceContext::new().unchecked_with_fact(viewed.clone());
     let support = resources.occurrences_for_fact(&viewed)[0];
     let opening = ledger
@@ -387,8 +385,8 @@ fn symbolic_and_concrete_loans_fail_closed_across_the_index_boundary() {
 }
 
 /// A concrete block range at one offset, at an explicit element width.
-fn buffer_range(start: u32, end: u32, width: u32) -> CMemoryRange {
-    CMemoryRange::new_with_element_width(
+fn buffer_range(start: u32, end: u32, width: u32) -> MemoryRange {
+    MemoryRange::new_with_element_width(
         crate::kernel::Pointer {
             block: "buffer".into(),
             offset: crate::kernel::PointerOffsetTerm::Constant(0),
@@ -413,7 +411,7 @@ fn bytewise_overlap_is_decided_across_mismatched_element_widths() {
         &ledger,
         owner,
         reader,
-        CResourceFact::own_memory(buffer_range(0, 1, 4)),
+        ResourceFact::own_memory(buffer_range(0, 1, 4)),
     );
     let ledger = ledger.apply(&wide.transition).unwrap();
     // Byte 5, spelled as one width-1 element.
@@ -421,7 +419,7 @@ fn bytewise_overlap_is_decided_across_mismatched_element_widths() {
         &ledger,
         owner,
         reader,
-        CResourceFact::own_memory(buffer_range(5, 6, 1)),
+        ResourceFact::own_memory(buffer_range(5, 6, 1)),
     );
     let ledger = ledger.apply(&narrow.transition).unwrap();
     assert!(ledger.invariant_holds());
@@ -450,7 +448,7 @@ fn child_reborrow_of_a_symbolic_root_keeps_the_root_protected() {
     let (ledger, holder, _) = participants();
     let reader = ledger.fresh_participant().unwrap();
     let assumptions = PureFactContext::new();
-    let viewed = CResourceFact::view_memory(parameter_range(9, 0, 1, 4));
+    let viewed = ResourceFact::view_memory(parameter_range(9, 0, 1, 4));
     let resources = ResourceContext::new().unchecked_with_fact(viewed.clone());
     let support = resources.occurrences_for_fact(&viewed)[0];
     let opening = ledger
@@ -502,8 +500,8 @@ fn projection_extends_permitted_descriptions_without_a_transition() {
     let ledger = ledger.apply(&opening.transition).unwrap();
     let assumptions = PureFactContext::new();
     let nested_view = composite("nested", false);
-    let deep = CResourceFact::view_memory(memory(0, 1, true).memory_range().unwrap().clone());
-    let describe = |viewed: CResourceFact| StableViewDescription {
+    let deep = ResourceFact::view_memory(memory(0, 1, true).memory_range().unwrap().clone());
+    let describe = |viewed: ResourceFact| StableViewDescription {
         loan: opening.loan,
         support,
         viewed,
@@ -574,7 +572,7 @@ fn projection_extends_permitted_descriptions_without_a_transition() {
         Err(LoanRefusal::InvalidEvidence),
         "evidence for another composite cannot authorize this parent"
     );
-    let sibling = CResourceFact::view_memory(memory(4, 5, true).memory_range().unwrap().clone());
+    let sibling = ResourceFact::view_memory(memory(4, 5, true).memory_range().unwrap().clone());
     assert_eq!(
         projected.project(reader, opening.loan, &nested_view, &evidence, sibling),
         Err(LoanRefusal::MissingBacking),
@@ -610,8 +608,8 @@ fn a_projection_mints_no_share_and_keeps_the_ledger_identity() {
     let ledger = ledger.apply(&opening.transition).unwrap();
     let assumptions = PureFactContext::new();
     let nested_view = composite("nested", false);
-    let deep = CResourceFact::view_memory(memory(0, 1, true).memory_range().unwrap().clone());
-    let describe = |viewed: CResourceFact| StableViewDescription {
+    let deep = ResourceFact::view_memory(memory(0, 1, true).memory_range().unwrap().clone());
+    let describe = |viewed: ResourceFact| StableViewDescription {
         loan: opening.loan,
         support,
         viewed,
@@ -703,9 +701,9 @@ fn a_reborrow_narrows_to_the_description_that_authorized_it() {
         .unwrap();
     let ledger = ledger.apply(&opening.transition).unwrap();
     let head_view = composite("cell", false);
-    let sibling_view = CResourceFact::view_memory(sibling.memory_range().unwrap().clone());
+    let sibling_view = ResourceFact::view_memory(sibling.memory_range().unwrap().clone());
     let nested_view = composite("nested", false);
-    let deep = CResourceFact::view_memory(memory(8, 9, true).memory_range().unwrap().clone());
+    let deep = ResourceFact::view_memory(memory(8, 9, true).memory_range().unwrap().clone());
     let evidence = CompositeProjectionEvidence::from_checked_expansion(
         nested_view.clone(),
         vec![deep.clone()],
@@ -725,7 +723,7 @@ fn a_reborrow_narrows_to_the_description_that_authorized_it() {
     let child = ledger.reborrow(parent, reader, borrower).unwrap();
     let ledger = ledger.apply(&child.transition).unwrap();
     assert!(ledger.invariant_holds());
-    let describe = |viewed: CResourceFact| StableViewDescription {
+    let describe = |viewed: ResourceFact| StableViewDescription {
         loan: child.loan,
         support,
         viewed,
@@ -776,7 +774,7 @@ fn a_reborrow_narrows_to_the_description_that_authorized_it() {
     let grandchild = ledger.reborrow(projected_parent, reader, borrower).unwrap();
     let ledger = ledger.apply(&grandchild.transition).unwrap();
     assert!(ledger.invariant_holds());
-    let describe = |viewed: CResourceFact| StableViewDescription {
+    let describe = |viewed: ResourceFact| StableViewDescription {
         loan: grandchild.loan,
         support,
         viewed,
@@ -789,7 +787,7 @@ fn a_reborrow_narrows_to_the_description_that_authorized_it() {
     ));
     for wider in [
         composite("cell", false),
-        CResourceFact::view_memory(sibling.memory_range().unwrap().clone()),
+        ResourceFact::view_memory(sibling.memory_range().unwrap().clone()),
         composite("nested", false),
     ] {
         assert!(
@@ -826,7 +824,7 @@ fn a_reborrow_of_a_memory_view_protects_exactly_the_viewed_bytes() {
         .lend_composite(owner, reader, support, head, backing_pieces)
         .unwrap();
     let ledger = ledger.apply(&opening.transition).unwrap();
-    let viewed = CResourceFact::view_memory(viewed_piece.memory_range().unwrap().clone());
+    let viewed = ResourceFact::view_memory(viewed_piece.memory_range().unwrap().clone());
     let parent = LoanViewBinding {
         loan: opening.loan,
         scope: opening.scope,
@@ -877,7 +875,7 @@ fn a_reborrow_of_a_memory_view_protects_exactly_the_viewed_bytes() {
 #[test]
 fn ending_a_reborrow_of_a_byteless_composite_loan_keeps_the_barrier_armed() {
     let (ledger, owner, reader) = participants();
-    let head = CResourceFact::own(CResource::Composite {
+    let head = ResourceFact::own(Resource::Composite {
         name: "box".to_string(),
         arguments: Vec::new().into(),
     });
@@ -896,7 +894,7 @@ fn ending_a_reborrow_of_a_byteless_composite_loan_keeps_the_barrier_armed() {
         scope: opening.scope,
         share: opening.root_share,
         support,
-        viewed: CResourceFact::view_composite("box".to_string(), Vec::new()),
+        viewed: ResourceFact::view_composite("box".to_string(), Vec::new()),
         hold: None,
     };
     let child = ledger.reborrow(parent, reader, owner).unwrap();
@@ -920,8 +918,8 @@ fn ending_a_reborrow_of_a_byteless_composite_loan_keeps_the_barrier_armed() {
     assert!(ledger.invariant_holds());
 }
 
-fn mutex_owner(epoch: Option<u64>) -> CResourceFact {
-    CResourceFact::own(CResource::MutexLive(crate::kernel::MutexIdentity {
+fn mutex_owner(epoch: Option<u64>) -> ResourceFact {
+    ResourceFact::own(Resource::MutexLive(crate::kernel::MutexIdentity {
         mutex: crate::kernel::Pointer {
             block: "mutex".into(),
             offset: crate::kernel::PointerOffsetTerm::Constant(0),
@@ -934,12 +932,12 @@ fn abstract_mutex_input() -> (
     LoanLedger,
     LoanParticipantId,
     MutexUseContractInput,
-    CResourceFact,
+    ResourceFact,
 ) {
     let ledger = LoanLedger::new();
     let holder = ledger.fresh_participant().unwrap();
     let live = mutex_owner(None);
-    let CResource::MutexLive(identity) = live.resource() else {
+    let Resource::MutexLive(identity) = live.resource() else {
         unreachable!()
     };
     let (ledger, input) = ledger
@@ -1129,7 +1127,7 @@ fn mutex_contract_input_return_requires_exact_owned_root_and_current_holder() {
             .check_mutex_use_input_return(&input, holder, &duplicate)
             .is_err()
     );
-    let CResource::MutexLive(identity) = description.resource() else {
+    let Resource::MutexLive(identity) = description.resource() else {
         unreachable!()
     };
     let (ledger, other) = ledger
@@ -1204,9 +1202,9 @@ fn mutex_contract_input_return_requires_unsplit_unit_ownership() {
     let (ledger, holder, input, _) = abstract_mutex_input();
     let fact = ledger.mutex_use_resource(input.usage, holder).unwrap();
     for invalid in [
-        CResourceFact::View(fact.resource().clone()),
-        CResourceFact::Own(fact.resource().clone(), Box::new(MachineTerm::constant(0))),
-        CResourceFact::Own(fact.resource().clone(), Box::new(MachineTerm::constant(2))),
+        ResourceFact::View(fact.resource().clone()),
+        ResourceFact::Own(fact.resource().clone(), Box::new(MachineTerm::constant(0))),
+        ResourceFact::Own(fact.resource().clone(), Box::new(MachineTerm::constant(2))),
     ] {
         assert!(
             ledger
@@ -1482,7 +1480,7 @@ fn mutex_use_lending_never_authorizes_a_stable_view() {
         ledger
             .describe_view(
                 loan.loan,
-                CResourceFact::View(live.resource().clone()),
+                ResourceFact::View(live.resource().clone()),
                 &PureFactContext::new()
             )
             .is_err()
@@ -1508,7 +1506,7 @@ fn mutex_use_lending_never_authorizes_a_stable_view() {
                     scope: loan.scope,
                     share: loan.usage.0.share,
                     support,
-                    viewed: CResourceFact::View(live.resource().clone()),
+                    viewed: ResourceFact::View(live.resource().clone()),
                     hold: None,
                 },
                 reader,
@@ -1563,11 +1561,11 @@ fn mutex_use_rejects_invented_owners_receipts_and_certificates() {
     for escrow in [
         memory(0, 1, true),
         owned("token"),
-        CResourceFact::Own(
+        ResourceFact::Own(
             mutex_owner(Some(1)).resource().clone(),
             Box::new(2u32.into()),
         ),
-        CResourceFact::View(mutex_owner(Some(1)).resource().clone()),
+        ResourceFact::View(mutex_owner(Some(1)).resource().clone()),
     ] {
         assert_eq!(
             ledger.lend_mutex_use(owner, reader, backing(&mutex_owner(Some(1))), escrow),
@@ -1625,7 +1623,7 @@ fn mutex_use_rejects_invented_owners_receipts_and_certificates() {
     let LoanTransitionEvidence::Lend { escrow, .. } = &mut invalid.evidence else {
         panic!("lend")
     };
-    *escrow = CResourceFact::View(mutex_owner(None).resource().clone());
+    *escrow = ResourceFact::View(mutex_owner(None).resource().clone());
     invalid.checked_evidence = invalid.evidence.clone();
     assert_eq!(
         ledger.apply_evidence(&invalid.evidence),
@@ -1858,7 +1856,7 @@ fn lifetime_hold_certificate_cannot_substitute_a_different_share() {
 fn a_hold_blocks_ending_the_scope_and_changes_identity() {
     let (ledger, owner, reader) = participants();
     let assumptions = PureFactContext::new();
-    let escrow = CResourceFact::own_memory(parameter_range(31, 0, 1, 4));
+    let escrow = ResourceFact::own_memory(parameter_range(31, 0, 1, 4));
     let support = backing(&escrow);
     let opening = ledger.lend(owner, reader, support, escrow.clone()).unwrap();
     let ledger = ledger.apply(&opening.transition).unwrap();
@@ -1940,7 +1938,7 @@ fn a_hold_blocks_ending_the_scope_and_changes_identity() {
 #[test]
 fn a_borrowing_fold_hold_is_exactly_the_hold_its_head_carries() {
     let (ledger, holder, other) = participants();
-    let viewed = CResourceFact::view_memory(parameter_range(32, 0, 1, 4));
+    let viewed = ResourceFact::view_memory(parameter_range(32, 0, 1, 4));
     let resources = ResourceContext::new().unchecked_with_fact(viewed.clone());
     let support = resources.occurrences_for_fact(&viewed)[0];
     let opening = ledger
@@ -1996,7 +1994,7 @@ fn a_borrowing_fold_hold_is_exactly_the_hold_its_head_carries() {
 #[test]
 fn a_hold_needs_a_live_binding_and_may_rest_on_a_contract_input_root() {
     let (ledger, holder, other) = participants();
-    let viewed = CResourceFact::view_memory(parameter_range(32, 0, 1, 4));
+    let viewed = ResourceFact::view_memory(parameter_range(32, 0, 1, 4));
     let resources = ResourceContext::new().unchecked_with_fact(viewed.clone());
     let support = resources.occurrences_for_fact(&viewed)[0];
     let opening = ledger
@@ -2027,7 +2025,7 @@ fn a_hold_needs_a_live_binding_and_may_rest_on_a_contract_input_root() {
 #[test]
 fn composite_lend_counts_as_a_memory_loan_without_byte_backing() {
     let (ledger, owner, reader) = participants();
-    let head = CResourceFact::own(CResource::Composite {
+    let head = ResourceFact::own(Resource::Composite {
         name: "box".to_string(),
         arguments: Vec::new().into(),
     });
@@ -2692,7 +2690,7 @@ fn owner_observation_is_not_a_stable_view_description() {
     assert_eq!(observation.support(), occurrence);
     assert_eq!(
         observation.viewed(),
-        &CResourceFact::View(fact.resource().clone())
+        &ResourceFact::View(fact.resource().clone())
     );
     let (_ledger, _owner, _reader) = participants();
     // Only `lend` creates a `StableViewDescription`; an observation has
@@ -2741,7 +2739,7 @@ fn reborrow_rejects_a_borrower_from_another_ledger_arena() {
 #[test]
 fn first_loan_family_boundary_rejects_composites() {
     let (ledger, owner, reader) = participants();
-    let composite = CResourceFact::own_composite("cell".to_string(), Vec::new());
+    let composite = ResourceFact::own_composite("cell".to_string(), Vec::new());
     assert_eq!(
         ledger.lend(owner, reader, backing(&composite), composite),
         Err(LoanRefusal::UnsupportedResource)
@@ -2777,19 +2775,19 @@ fn local_ledger_updates_allocate_logarithmically() {
     }
 }
 
-pub(super) fn checked(fact: CResourceFact) -> CCheckedResourceFact {
-    CCheckedResourceFact {
+pub(super) fn checked(fact: ResourceFact) -> CheckedResourceFact {
+    CheckedResourceFact {
         fact,
-        role: CResourceTransferRole::Borrow,
-        snapshot: CResourceSnapshot::Entry,
+        role: ResourceTransferRole::Borrow,
+        snapshot: ResourceSnapshot::Entry,
         clause_position: None,
         section_index: None,
         selected_mutex_source: None,
     }
 }
 
-pub(super) fn memory(start: u32, end: u32, own: bool) -> CResourceFact {
-    let range = crate::kernel::CMemoryRange::new(
+pub(super) fn memory(start: u32, end: u32, own: bool) -> ResourceFact {
+    let range = crate::kernel::MemoryRange::new(
         crate::kernel::Pointer {
             block: "buffer".into(),
             offset: crate::kernel::PointerOffsetTerm::Constant(0),
@@ -2798,9 +2796,9 @@ pub(super) fn memory(start: u32, end: u32, own: bool) -> CResourceFact {
         crate::kernel::MachineTerm::constant(end),
     );
     if own {
-        CResourceFact::own_memory(range)
+        ResourceFact::own_memory(range)
     } else {
-        CResourceFact::view_memory(range)
+        ResourceFact::view_memory(range)
     }
 }
 
@@ -2817,7 +2815,7 @@ fn ledger_lending_the_first_four_elements() -> LoanLedger {
     ledger.apply(&opening.transition).expect("apply input root")
 }
 
-fn range(start: u32, end: u32) -> CMemoryRange {
+fn range(start: u32, end: u32) -> MemoryRange {
     memory(start, end, true).memory_range().unwrap().clone()
 }
 
@@ -2916,15 +2914,15 @@ fn ranges_below_a_base_that_do_not_meet_are_still_separate() {
     ));
 }
 
-fn composite(name: &str, own: bool) -> CResourceFact {
-    let resource = CResource::Composite {
+fn composite(name: &str, own: bool) -> ResourceFact {
+    let resource = Resource::Composite {
         name: name.to_string(),
         arguments: Vec::new().into(),
     };
     if own {
-        CResourceFact::own(resource)
+        ResourceFact::own(resource)
     } else {
-        CResourceFact::View(resource)
+        ResourceFact::View(resource)
     }
 }
 
@@ -2954,7 +2952,7 @@ fn composite_loan_protects_primitive_frontier_and_restores_head_once() {
     let child = ledger
         .describe_view(
             opening.loan,
-            CResourceFact::view_memory(piece.memory_range().unwrap().clone()),
+            ResourceFact::view_memory(piece.memory_range().unwrap().clone()),
             &assumptions,
         )
         .unwrap();
@@ -3065,7 +3063,7 @@ fn composite_planner_rejects_an_owned_requirement_inside_the_viewed_frontier() {
     let head = composite("cell", true);
     let view = composite("cell", false);
     let piece = memory(0, 4, true);
-    let plan_with_owned = |owned: CResourceFact| {
+    let plan_with_owned = |owned: ResourceFact| {
         let context = ResourceContext::new().unchecked_with_facts([head.clone(), owned.clone()]);
         let support = context.unique_owned_occurrence_for_fact(&head).unwrap().0;
         let mut backings = BTreeMap::new();
@@ -3081,10 +3079,10 @@ fn composite_planner_rejects_an_owned_requirement_inside_the_viewed_frontier() {
         plan_stable_view_transfer_with_bindings_and_composites(
             &context,
             &[
-                CCheckedResourceFact {
+                CheckedResourceFact {
                     fact: owned,
-                    role: CResourceTransferRole::Consume,
-                    snapshot: CResourceSnapshot::Entry,
+                    role: ResourceTransferRole::Consume,
+                    snapshot: ResourceSnapshot::Entry,
                     clause_position: None,
                     section_index: None,
                     selected_mutex_source: None,
@@ -3173,12 +3171,12 @@ fn composite_planner_escrows_one_head_and_recovers_it_once() {
 fn composite_planner_keeps_other_counted_token_units_usable() {
     let (ledger, owner, reader) = participants();
     let assumptions = PureFactContext::new();
-    let token = CResource::Token {
+    let token = Resource::Token {
         name: "unit".into(),
         arguments: Vec::new().into(),
     };
-    let owned_units = CResourceFact::own_quantity(token.clone(), MachineTerm::constant(3));
-    let view = CResourceFact::View(token);
+    let owned_units = ResourceFact::own_quantity(token.clone(), MachineTerm::constant(3));
+    let view = ResourceFact::View(token);
     let caller = ResourceContext::new().unchecked_with_fact(owned_units.clone());
     let plan = plan_stable_view_transfer(
         &caller,
@@ -3190,8 +3188,8 @@ fn composite_planner_keeps_other_counted_token_units_usable() {
     )
     .unwrap();
     assert!(plan.caller_resources_after_requirements.satisfies_fact(
-        &CResourceFact::own_quantity(
-            CResource::Token {
+        &ResourceFact::own_quantity(
+            Resource::Token {
                 name: "unit".into(),
                 arguments: Vec::new().into(),
             },
@@ -3212,15 +3210,15 @@ fn composite_planner_keeps_other_counted_token_units_usable() {
 #[test]
 fn ordinary_view_refuses_equal_looking_replacement_after_ownership_reservation() {
     let assumptions = PureFactContext::new();
-    let token = CResource::Token {
+    let token = Resource::Token {
         name: "unit".into(),
         arguments: Vec::new().into(),
     };
-    let owner = CResourceFact::own(token.clone());
+    let owner = ResourceFact::own(token.clone());
     let caller = ResourceContext::new().unchecked_with_facts([owner.clone(), owner.clone()]);
     let mut consume = checked(owner);
-    consume.role = CResourceTransferRole::Consume;
-    let view = CResourceFact::View(token);
+    consume.role = ResourceTransferRole::Consume;
+    let view = ResourceFact::View(token);
     let (ledger, caller_participant, callee_participant) = participants();
 
     let error = plan_stable_view_transfer(
@@ -3245,7 +3243,7 @@ fn memory_view_refuses_a_different_owner_after_whole_owner_reservation() {
     let owner = memory(0, 8, true);
     let resources = ResourceContext::new().unchecked_with_facts([owner.clone(), owner.clone()]);
     let mut consume = checked(owner);
-    consume.role = CResourceTransferRole::Consume;
+    consume.role = ResourceTransferRole::Consume;
     let (ledger, caller, callee) = participants();
     let error = plan_stable_view_transfer(
         &resources,
@@ -3545,7 +3543,7 @@ fn composite_backing_tamper_and_instance_frontier_are_refused() {
     else {
         panic!("composite lend evidence")
     };
-    *support_fact = CResourceFact::own_token("other".into(), Vec::new());
+    *support_fact = ResourceFact::own_token("other".into(), Vec::new());
     let invalid = ledger
         .apply(&opening.transition)
         .expect_err("tampered occurrence evidence must be refused");
@@ -3557,8 +3555,8 @@ fn composite_backing_tamper_and_instance_frontier_are_refused() {
     );
 }
 
-fn symbolic_memory(start: MachineTerm, end: MachineTerm, own: bool) -> CResourceFact {
-    let range = crate::kernel::CMemoryRange::new(
+fn symbolic_memory(start: MachineTerm, end: MachineTerm, own: bool) -> ResourceFact {
+    let range = crate::kernel::MemoryRange::new(
         crate::kernel::Pointer {
             block: "buffer".into(),
             offset: crate::kernel::PointerOffsetTerm::Constant(0),
@@ -3567,9 +3565,9 @@ fn symbolic_memory(start: MachineTerm, end: MachineTerm, own: bool) -> CResource
         end,
     );
     if own {
-        CResourceFact::own_memory(range)
+        ResourceFact::own_memory(range)
     } else {
-        CResourceFact::view_memory(range)
+        ResourceFact::view_memory(range)
     }
 }
 
@@ -3983,10 +3981,10 @@ fn joint_planner_rejects_view_and_mutable_transfer_of_same_authority() {
     let (ledger, caller, callee) = participants();
     let requirements = [
         checked(memory(0, 4, false)),
-        CCheckedResourceFact {
+        CheckedResourceFact {
             fact: owner,
-            role: CResourceTransferRole::Consume,
-            snapshot: CResourceSnapshot::Entry,
+            role: ResourceTransferRole::Consume,
+            snapshot: ResourceSnapshot::Entry,
             clause_position: None,
             section_index: None,
             selected_mutex_source: None,
@@ -4010,10 +4008,10 @@ fn joint_planner_partitions_disjoint_write_and_view_ranges_in_any_clause_order()
     let assumptions = PureFactContext::new();
     let caller_resources = ResourceContext::new().unchecked_with_fact(memory(0, 8, true));
     let (ledger, caller, callee) = participants();
-    let write = CCheckedResourceFact {
+    let write = CheckedResourceFact {
         fact: memory(4, 8, true),
-        role: CResourceTransferRole::Consume,
-        snapshot: CResourceSnapshot::Entry,
+        role: ResourceTransferRole::Consume,
+        snapshot: ResourceSnapshot::Entry,
         clause_position: None,
         section_index: None,
         selected_mutex_source: None,
@@ -4071,10 +4069,10 @@ fn joint_planner_partitions_disjoint_write_and_view_ranges_in_any_clause_order()
     assert_eq!(bound(&left), bound(&right));
     assert_eq!(left.memory_effects, right.memory_effects);
 
-    let reverse_write = CCheckedResourceFact {
+    let reverse_write = CheckedResourceFact {
         fact: memory(0, 4, true),
-        role: CResourceTransferRole::Consume,
-        snapshot: CResourceSnapshot::Entry,
+        role: ResourceTransferRole::Consume,
+        snapshot: ResourceSnapshot::Entry,
         clause_position: None,
         section_index: None,
         selected_mutex_source: None,
@@ -4109,13 +4107,13 @@ fn rejected_joint_plan_leaves_caller_resources_and_ledger_unchanged() {
     let resources_before = caller_resources.clone();
     let (ledger, caller, callee) = participants();
     let ledger_before = ledger.clone();
-    let missing = CResourceFact::own_token("missing".to_string(), Vec::new());
+    let missing = ResourceFact::own_token("missing".to_string(), Vec::new());
     let requirements = [
         checked(memory(0, 4, false)),
-        CCheckedResourceFact {
+        CheckedResourceFact {
             fact: missing.clone(),
-            role: CResourceTransferRole::Consume,
-            snapshot: CResourceSnapshot::Entry,
+            role: ResourceTransferRole::Consume,
+            snapshot: ResourceSnapshot::Entry,
             clause_position: None,
             section_index: None,
             selected_mutex_source: None,
@@ -4248,11 +4246,11 @@ fn nested_view_reborrow_accepts_checked_offset_alias_and_preserves_authority() {
             true,
         );
     let range = |pointer, end| {
-        crate::kernel::CMemoryRange::new_with_element_width(pointer, 0u32.into(), end, 1)
+        crate::kernel::MemoryRange::new_with_element_width(pointer, 0u32.into(), end, 1)
     };
-    let owned = CResourceFact::own_memory(range(base.clone(), 16u32.into()));
-    let parent_view = CResourceFact::view_memory(range(base, 16u32.into()));
-    let child_view = CResourceFact::view_memory(range(alias.clone(), 4u32.into()));
+    let owned = ResourceFact::own_memory(range(base.clone(), 16u32.into()));
+    let parent_view = ResourceFact::view_memory(range(base, 16u32.into()));
+    let child_view = ResourceFact::view_memory(range(alias.clone(), 4u32.into()));
     let (ledger, caller, callee) = participants();
     let opening = lend_test(&ledger, caller, caller, owned);
     let ledger = ledger.apply(&opening.transition).unwrap();
@@ -4293,7 +4291,7 @@ fn nested_view_reborrow_accepts_checked_offset_alias_and_preserves_authority() {
         (&empty, child_view.clone(), &bindings),
         (
             &assumptions,
-            CResourceFact::view_memory(range(alias, 17u32.into())),
+            ResourceFact::view_memory(range(alias, 17u32.into())),
             &bindings,
         ),
         (&assumptions, child_view, &LoanViewBindings::default()),
@@ -4436,7 +4434,7 @@ fn indexed_loan_blocks_write_through_exact_pointer_alias() {
         block: PointerBlock::Symbolic(Variable(702)),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let protected = CResourceFact::own_memory(CMemoryRange::new(
+    let protected = ResourceFact::own_memory(MemoryRange::new(
         protected_base.clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(4),
@@ -4457,7 +4455,7 @@ fn indexed_loan_blocks_write_through_exact_pointer_alias() {
             .exact_pointer_aliases(&query_base)
             .any(|alias| alias == &protected_base)
     );
-    let query = CMemoryRange::new(
+    let query = MemoryRange::new(
         query_base,
         MachineTerm::constant(0),
         MachineTerm::constant(1),
@@ -4483,13 +4481,13 @@ fn symbolic_loan_fallback_checks_equal_pointer_alias_buckets() {
         block: PointerBlock::Symbolic(Variable(704)),
         offset: PointerOffsetTerm::Variable(Variable(700)),
     };
-    let protected = CMemoryRange::new_with_element_width(
+    let protected = MemoryRange::new_with_element_width(
         protected_base.clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(4),
         4,
     );
-    let opening = lend_test(&ledger, owner, reader, CResourceFact::own_memory(protected));
+    let opening = lend_test(&ledger, owner, reader, ResourceFact::own_memory(protected));
     let ledger = ledger.apply(&opening.transition).unwrap();
 
     let query_base = Pointer {
@@ -4505,7 +4503,7 @@ fn symbolic_loan_fallback_checks_equal_pointer_alias_buckets() {
             .exact_pointer_aliases(&query_base)
             .any(|alias| alias == &protected_base)
     );
-    let query = CMemoryRange::new_with_element_width(
+    let query = MemoryRange::new_with_element_width(
         query_base,
         MachineTerm::constant(0),
         MachineTerm::constant(1),
@@ -4678,7 +4676,7 @@ fn indexed_write_witness_keeps_the_least_loan_across_buckets_and_aliases() {
         ),
         true,
     );
-    let query = CMemoryRange::new_with_element_width(
+    let query = MemoryRange::new_with_element_width(
         alias,
         0u32.into(),
         32u32.into(),

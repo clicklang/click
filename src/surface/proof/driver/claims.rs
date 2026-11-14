@@ -8,13 +8,13 @@ use std::sync::Arc;
 /// once before the first step, and the same path identity reaches registration.
 struct ContractClosingInput {
     returned: Option<crate::kernel::proof::CheckedReturnPath>,
-    path: crate::kernel::SymbolicCExecutionPath,
+    path: crate::kernel::SymbolicExecutionPath,
     specification: crate::kernel::CheckedPathSpecification,
 }
 
 fn contract_closing_input(
     root: Option<&Proof<'_>>,
-    execution: &CCheckedFunctionExecution,
+    execution: &CheckedFunctionExecution,
     function: &ProgramFunction,
     path_index: usize,
     certified_path_index: usize,
@@ -78,7 +78,7 @@ enum ClosingProofMode {
 fn prove_next_contract_closing_goal<'a>(
     outcome_proof: &mut Option<Proof<'a>>,
     input: &mut Option<ContractClosingInput>,
-    execution: &CCheckedFunctionExecution,
+    execution: &CheckedFunctionExecution,
     function: &ProgramFunction,
     path_index: usize,
     certified_path_index: usize,
@@ -410,7 +410,7 @@ pub(in crate::surface) fn prove_claim_by_tactics(
     parsed_function: &syntax::C0Function,
     claim: &FunctionClaimRef<'_>,
     claim_label: &str,
-    function_environment: &CExecutionEnvironment,
+    function_environment: &ExecutionEnvironment,
     spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
     theorem_environment: &TheoremEnvironment,
@@ -453,7 +453,7 @@ pub(in crate::surface) fn prove_claims_by_grouped_tactics(
     function_block: &FunctionBlock,
     parsed_function: &syntax::C0Function,
     claims: &[FunctionClaimRef<'_>],
-    function_environment: &CExecutionEnvironment,
+    function_environment: &ExecutionEnvironment,
     spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
     theorem_environment: &TheoremEnvironment,
@@ -507,7 +507,7 @@ fn prove_claims_by_checked_tactics(
     claims: &[FunctionClaimRef<'_>],
     proof_label: &str,
     grouped: bool,
-    function_environment: &CExecutionEnvironment,
+    function_environment: &ExecutionEnvironment,
     spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
     theorem_environment: &TheoremEnvironment,
@@ -562,7 +562,7 @@ fn prove_claims_by_checked_tactics(
         parsed_function.parameters(),
         &pure_facts,
         &entry_fact_origins,
-        crate::kernel::CMemorySnapshotIdentity::of(state.memory()),
+        crate::kernel::MemorySnapshotIdentity::of(state.memory()),
         Some(spec_definitions.predicates),
     );
     let function = annotated_function_with_assumptions(
@@ -796,7 +796,7 @@ pub(in crate::surface) fn prove_claims_by_implicit_tail(
     function_block: &FunctionBlock,
     parsed_function: &syntax::C0Function,
     claims: &[FunctionClaimRef<'_>],
-    function_environment: &CExecutionEnvironment,
+    function_environment: &ExecutionEnvironment,
     spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
     theorem_environment: &TheoremEnvironment,
@@ -860,7 +860,7 @@ pub(in crate::surface) fn prove_claims_by_grouped_script(
     function_block: &FunctionBlock,
     parsed_function: &syntax::C0Function,
     claims: &[FunctionClaimRef<'_>],
-    function_environment: &CExecutionEnvironment,
+    function_environment: &ExecutionEnvironment,
     spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
     theorem_environment: &TheoremEnvironment,
@@ -900,12 +900,12 @@ mod exit_claim {
     enum ClaimEvidence<'e> {
         Proposition(crate::kernel::proof::CheckedProposition),
         Resource(CheckedResourceClaim<'e>),
-        Vacuous(&'e CCheckedFunctionExecution),
+        Vacuous(&'e CheckedFunctionExecution),
     }
 
     #[derive(Clone)]
     pub(super) struct ClosedClaim<'e> {
-        key: CFunctionContractClaimKey,
+        key: FunctionContractClaimKey,
         path_index: usize,
         certificate: ClaimCertificate,
         evidence: ClaimEvidence<'e>,
@@ -947,9 +947,9 @@ mod exit_claim {
         }
         pub(super) fn validate_for(
             &self,
-            execution: &CCheckedFunctionExecution,
+            execution: &CheckedFunctionExecution,
             path_index: usize,
-            key: &CFunctionContractClaimKey,
+            key: &FunctionContractClaimKey,
         ) -> Result<(), ClickError> {
             let matches = self.path_index == path_index
                 && &self.key == key
@@ -990,9 +990,9 @@ mod exit_claim {
         }
         pub(super) fn require_evidence(
             &self,
-            execution: &CCheckedFunctionExecution,
+            execution: &CheckedFunctionExecution,
             path_index: usize,
-            key: &CFunctionContractClaimKey,
+            key: &FunctionContractClaimKey,
         ) -> Result<&ClosedClaim<'e>, ClickError> {
             let closed = self
                 .closed()
@@ -1016,7 +1016,7 @@ mod exit_claim {
         /// opened. Those tactics are already in the path's surface proof, so
         /// the claim contributes only `tactics`, what followed them.
         pub(super) fn by_continued_proposition(
-            key: CFunctionContractClaimKey,
+            key: FunctionContractClaimKey,
             path_index: usize,
             tactics: Vec<ProofTactic>,
             checked: crate::kernel::proof::CheckedProposition,
@@ -1025,7 +1025,7 @@ mod exit_claim {
         }
 
         pub(super) fn by_checked_proposition(
-            key: CFunctionContractClaimKey,
+            key: FunctionContractClaimKey,
             path_index: usize,
             certificate: &ProofCertificate,
             checked: crate::kernel::proof::CheckedProposition,
@@ -1038,7 +1038,7 @@ mod exit_claim {
             )
         }
         pub(super) fn by_grouped_proposition(
-            key: CFunctionContractClaimKey,
+            key: FunctionContractClaimKey,
             path_index: usize,
             _certificate: &ProofCertificate,
             checked: crate::kernel::proof::CheckedProposition,
@@ -1051,14 +1051,14 @@ mod exit_claim {
             )
         }
         pub(super) fn by_exact_check_completing(
-            key: CFunctionContractClaimKey,
+            key: FunctionContractClaimKey,
             path_index: usize,
             checked: crate::kernel::proof::CheckedProposition,
         ) -> Self {
             Self::proposition(key, path_index, ClaimCertificate::ExactCheck, checked)
         }
         fn proposition(
-            key: CFunctionContractClaimKey,
+            key: FunctionContractClaimKey,
             path_index: usize,
             certificate: ClaimCertificate,
             checked: crate::kernel::proof::CheckedProposition,
@@ -1084,9 +1084,9 @@ mod exit_claim {
         /// Vacuity is read only from the kernel-created execution theorem for
         /// this path, never from a caller's boolean or serialized closer.
         pub(super) fn vacuous(
-            execution: &'e CCheckedFunctionExecution,
+            execution: &'e CheckedFunctionExecution,
             path_index: usize,
-            key: CFunctionContractClaimKey,
+            key: FunctionContractClaimKey,
             certificate: ClaimCertificate,
         ) -> Result<Self, ClickError> {
             let path = execution
@@ -1102,14 +1102,14 @@ mod exit_claim {
             };
             if !matches!(
                 (&key, outcome),
-                (_, CFunctionOutcome::VerificationDiverges)
+                (_, FunctionOutcome::VerificationDiverges)
                     | (
-                        CFunctionContractClaimKey::Ensure(_),
-                        CFunctionOutcome::Throw { .. }
+                        FunctionContractClaimKey::Ensure(_),
+                        FunctionOutcome::Throw { .. }
                     )
                     | (
-                        CFunctionContractClaimKey::ExceptionalEnsure(_),
-                        CFunctionOutcome::Return { .. }
+                        FunctionContractClaimKey::ExceptionalEnsure(_),
+                        FunctionOutcome::Return { .. }
                     )
             ) {
                 return Err(ClickError::new(
@@ -1133,14 +1133,14 @@ use exit_claim::{ClaimCertificate, ClaimClosure, ClosedClaim};
 /// obligations, and its completion retains the clause it establishes.
 fn contract_closing_goal<'a>(
     function: &'a ProgramFunction,
-    target: Option<&CFunctionContractClaimTarget>,
+    target: Option<&FunctionContractClaimTarget>,
     pre_state: &ExecutionState,
     arguments: &[ProgramExpression],
-    outcome: &CFunctionOutcome,
+    outcome: &FunctionOutcome,
     assumptions: &PureFactContext,
     unfolded_predicates: &[String],
-    return_context: &mut Option<Option<crate::kernel::CFunctionEnsureGoalContext<'a>>>,
-) -> Result<Option<crate::kernel::CClaimGoal>, ClickError> {
+    return_context: &mut Option<Option<crate::kernel::FunctionEnsureGoalContext<'a>>>,
+) -> Result<Option<crate::kernel::ContractClaimGoal>, ClickError> {
     // None denotes a structural claim or a proof-local clause of a function
     // without a reusable contract, not a failed postcondition construction.
     // Registered postconditions always return a kernel goal or an error.
@@ -1148,23 +1148,23 @@ fn contract_closing_goal<'a>(
         return Ok(None);
     };
     let claim_label = match target {
-        CFunctionContractClaimTarget::EnsureProposition(index) => {
+        FunctionContractClaimTarget::EnsureProposition(index) => {
             format!("{}.ensures_{index}", function.name())
         }
-        CFunctionContractClaimTarget::ExceptionalEnsureProposition(index) => {
+        FunctionContractClaimTarget::ExceptionalEnsureProposition(index) => {
             format!("{}.exceptional_ensures_{index}", function.name())
         }
         _ => return Ok(None),
     };
     let mut goals = match target {
-        CFunctionContractClaimTarget::EnsureProposition(contract_index) => return_context
+        FunctionContractClaimTarget::EnsureProposition(contract_index) => return_context
             .get_or_insert_with(|| {
                 crate::instrumentation::measure_operation(
                     function.name(),
                     "explicit return closer",
                     "return claim state preparation",
                     || {
-                        crate::kernel::CFunctionEnsureGoalContext::new(
+                        crate::kernel::FunctionEnsureGoalContext::new(
                             function,
                             pre_state,
                             arguments,
@@ -1187,7 +1187,7 @@ fn contract_closing_goal<'a>(
                     function.name(),
                 ))
             })?,
-        CFunctionContractClaimTarget::ExceptionalEnsureProposition(contract_index) => {
+        FunctionContractClaimTarget::ExceptionalEnsureProposition(contract_index) => {
             crate::kernel::c_function_exceptional_ensure_goals(
                 function,
                 *contract_index,
@@ -1222,14 +1222,14 @@ fn contract_closing_goal<'a>(
 /// form; two forms at most.
 fn contract_closing_goal_forms<'a>(
     function: &'a ProgramFunction,
-    target: Option<&CFunctionContractClaimTarget>,
+    target: Option<&FunctionContractClaimTarget>,
     pre_state: &ExecutionState,
     arguments: &[ProgramExpression],
-    outcome: &CFunctionOutcome,
+    outcome: &FunctionOutcome,
     assumptions: &PureFactContext,
     unfolded_predicates: &[String],
-    return_context: &mut Option<Option<crate::kernel::CFunctionEnsureGoalContext<'a>>>,
-) -> Result<Vec<Option<crate::kernel::CClaimGoal>>, ClickError> {
+    return_context: &mut Option<Option<crate::kernel::FunctionEnsureGoalContext<'a>>>,
+) -> Result<Vec<Option<crate::kernel::ContractClaimGoal>>, ClickError> {
     let mut forms = Vec::new();
     let mut failure = None;
     // With no unfolded predicates both configurations are identical. Both
@@ -1274,7 +1274,7 @@ fn required_outcome<'p, 'a>(root: &'p Option<Proof<'a>>) -> Result<&'p Proof<'a>
 
 fn focus_claim_goal<'a>(
     root: &Proof<'a>,
-    kernel_goal: Option<crate::kernel::CClaimGoal>,
+    kernel_goal: Option<crate::kernel::ContractClaimGoal>,
     surface_goal: &ClickProposition,
 ) -> Result<Proof<'a>, ClickError> {
     match kernel_goal {
@@ -1318,7 +1318,7 @@ fn apply_claim_step<'a>(
     rewritten: Option<&(Proof<'a>, ProofCheckpoint<'a>)>,
     root: Option<&Proof<'a>>,
     surface_goal: &ClickProposition,
-    candidates: impl FnOnce() -> Result<Vec<Option<crate::kernel::CClaimGoal>>, ClickError>,
+    candidates: impl FnOnce() -> Result<Vec<Option<crate::kernel::ContractClaimGoal>>, ClickError>,
     step: impl Fn(&Proof<'a>, ClaimProofOrigin) -> Result<Result<Proof<'a>, ClickError>, ClickError>,
 ) -> Result<Result<ClaimStepApplied<'a>, ClaimStepMiss>, ClickError> {
     if let Some((rewritten, checkpoint)) = rewritten {
@@ -1380,7 +1380,7 @@ fn begin_outcome_existence_proof<'a>(
     function: &ProgramFunction,
     pre_state: &ExecutionState,
     arguments: &[ProgramExpression],
-    outcome: &CFunctionOutcome,
+    outcome: &FunctionOutcome,
     claims: &[FunctionClaimRef<'_>],
     closures: &[ClaimClosure],
     rewrite_claim_equalities: &[Vec<ClickProposition>],
@@ -1477,14 +1477,14 @@ fn close_claim_directly_from_outcome<'a>(
     function: &ProgramFunction,
     claim: &FunctionClaimRef<'_>,
     pre_state: &ExecutionState,
-    outcome: &CFunctionOutcome,
+    outcome: &FunctionOutcome,
     surface_goal: &ClickProposition,
     rewrite_equalities: &[ClickProposition],
     unfolded_predicates: &[String],
     claim_label: &str,
     path_index: usize,
     entry_facts: &[Proposition],
-    execution_paths: &[crate::kernel::CFunctionExecutionCandidate],
+    execution_paths: &[crate::kernel::FunctionExecutionCandidate],
     parameter_binding: ParameterBinding<'_>,
     spec_definitions: SpecDefinitions<'_>,
     // How far to search before explaining a failure. An explicit closer's
@@ -1606,11 +1606,10 @@ fn close_claim_directly_from_outcome<'a>(
     // other memory a value reads is a `<state A>` defined after the context.
     let mut labels =
         crate::surface::proof_diagnostics::render::SnapshotLabels::naming(parameter_binding);
-    if let CFunctionOutcome::Return { state, .. } | CFunctionOutcome::Throw { state, .. } = outcome
-    {
+    if let FunctionOutcome::Return { state, .. } | FunctionOutcome::Throw { state, .. } = outcome {
         labels.register_current_state(state);
     }
-    if let CFunctionOutcome::Return { value, .. } = outcome {
+    if let FunctionOutcome::Return { value, .. } = outcome {
         labels.source_result(&value.native());
     }
     // A value the outcome state no longer names may be what a local held
@@ -1629,7 +1628,7 @@ fn close_claim_directly_from_outcome<'a>(
     let evaluated_sides = match (surface_goal, outcome) {
         (
             ClickProposition::Comparison { left, right, .. },
-            CFunctionOutcome::Return { value, state },
+            FunctionOutcome::Return { value, state },
         ) => {
             let values = parameter_values(parameter_binding).unwrap_or_default();
             let array_refs =
@@ -1778,19 +1777,19 @@ fn close_claim_directly_from_outcome<'a>(
     // Which checked step is missing is not knowable here, so the diagnostic
     // also reports the checked proof context every other failure path
     // reports, rather than guessing at the absent reasoning.
-    let resource_facts: &[CResourceFact] = match outcome {
-        CFunctionOutcome::Return { state, .. } | CFunctionOutcome::Throw { state, .. } => {
+    let resource_facts: &[ResourceFact] = match outcome {
+        FunctionOutcome::Return { state, .. } | FunctionOutcome::Throw { state, .. } => {
             state.resources().facts()
         }
-        CFunctionOutcome::VerificationDiverges
-        | CFunctionOutcome::UndefinedBehavior(_)
-        | CFunctionOutcome::RuntimeError(_) => &[],
+        FunctionOutcome::VerificationDiverges
+        | FunctionOutcome::UndefinedBehavior(_)
+        | FunctionOutcome::RuntimeError(_) => &[],
     };
     // The pure facts listed are those bearing on the goal, so a premise the
     // closure lacked is not pushed past the item limit by unrelated ones.
     let path_facts = root.facts().propositions().cloned().collect::<Vec<_>>();
     let native_result = match outcome {
-        CFunctionOutcome::Return { value, .. } => Some(value.native()),
+        FunctionOutcome::Return { value, .. } => Some(value.native()),
         _ => None,
     };
     let context = describe_goal_proof_context(
@@ -1831,7 +1830,7 @@ fn close_claim_directly_from_outcome<'a>(
 /// is never among them: every path has it.
 fn path_case_facts(
     entry_facts: &[Proposition],
-    paths: &[crate::kernel::CFunctionExecutionCandidate],
+    paths: &[crate::kernel::FunctionExecutionCandidate],
     path_index: usize,
 ) -> Vec<Proposition> {
     use std::collections::BTreeSet;
@@ -1937,21 +1936,21 @@ impl<'a> OpenedClaimProof<'a> {
 /// that threw, diverged or failed may have none.
 fn outcome_claim_root<'a>(
     outcome_proof: &Option<Proof<'a>>,
-    outcome: &CFunctionOutcome,
+    outcome: &FunctionOutcome,
     proof_label: &str,
     path_index: usize,
 ) -> Result<Option<Proof<'a>>, ClickError> {
     match (outcome_proof.as_ref(), outcome) {
         (Some(evolving), _) => Ok(Some(evolving.clone())),
-        (None, CFunctionOutcome::Return { .. }) => Err(ClickError::new(format!(
+        (None, FunctionOutcome::Return { .. }) => Err(ClickError::new(format!(
             "`{proof_label}` path {path_index}: missing retained outcome Proof"
         ))),
         (
             None,
-            CFunctionOutcome::Throw { .. }
-            | CFunctionOutcome::VerificationDiverges
-            | CFunctionOutcome::UndefinedBehavior(_)
-            | CFunctionOutcome::RuntimeError(_),
+            FunctionOutcome::Throw { .. }
+            | FunctionOutcome::VerificationDiverges
+            | FunctionOutcome::UndefinedBehavior(_)
+            | FunctionOutcome::RuntimeError(_),
         ) => Ok(None),
     }
 }
@@ -2066,7 +2065,7 @@ fn apply_post_execution_arithmetic_using<'a>(
 fn fold_produced_resources<'a>(
     claims: &[FunctionClaimRef<'_>],
     closures: &[ClaimClosure<'_>],
-    outcome: &mut CFunctionOutcome,
+    outcome: &mut FunctionOutcome,
     outcome_proof: &mut Option<Proof<'a>>,
     capturing_this_tactic: bool,
     path_grouped_surface_closers: &mut Vec<ProofTactic>,
@@ -2086,7 +2085,7 @@ fn fold_produced_resources<'a>(
         let current = required_outcome(outcome_proof)?;
         // An already-held exact resource needs no new fold or certificate
         // node. This lookup only selects whether to attempt a new operation.
-        if let (ProofContext::Execution(context), CFunctionOutcome::Return { state, value }) =
+        if let (ProofContext::Execution(context), FunctionOutcome::Return { state, value }) =
             (current.context.as_ref(), &*outcome)
             && let Ok(held) = lower_resource_clause_at_state_with_result(
                 resource,
@@ -2140,15 +2139,15 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
     pre_state: &ExecutionState,
     contract_pre_state: &ExecutionState,
     proof_context: &ExecutionProofContext<'_>,
-    execution: &CFunctionExecutionCandidates,
-    completed_execution: &'e CCheckedFunctionExecution,
+    execution: &FunctionExecutionCandidates,
+    completed_execution: &'e CheckedFunctionExecution,
     entry_pure_facts: &PureFactList,
     path_capture: Option<&DeferredTacticCapture>,
     path_requirements: &ProofFacts,
     rewrite_claim_equalities: &[Vec<ClickProposition>],
     rewritten_claim_proofs: &[Option<(Proof<'a>, ProofCheckpoint<'a>)>],
     unfolded_predicates: &SharedVec<String>,
-    outcome: &mut CFunctionOutcome,
+    outcome: &mut FunctionOutcome,
     outcome_proof: &mut Option<Proof<'a>>,
     opened_claim: &mut Option<OpenedClaimProof<'a>>,
     closures: &mut Vec<ClaimClosure<'e>>,
@@ -2187,7 +2186,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
     // it was, and the claim reports what is missing.
     if restricted_premises.is_none()
         && !*resource_transition_applied
-        && matches!(outcome, CFunctionOutcome::Return { .. })
+        && matches!(outcome, FunctionOutcome::Return { .. })
     {
         fold_produced_resources(
             claims,
@@ -2208,7 +2207,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
     // (an open composite still to fold) leaves the
     // body's own context in place.
     if !*resource_transition_applied
-        && matches!(outcome, CFunctionOutcome::Return { .. })
+        && matches!(outcome, FunctionOutcome::Return { .. })
         && !crate::kernel::c_function_return_resources_definitionally_established(
             pre_state,
             function,
@@ -2223,7 +2222,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
         *pending_resource_transition_error = Some(
             "the body outcome does not establish the contract's returned resources".to_string(),
         );
-    } else if !*resource_transition_applied && matches!(outcome, CFunctionOutcome::Return { .. }) {
+    } else if !*resource_transition_applied && matches!(outcome, FunctionOutcome::Return { .. }) {
         match required_outcome(outcome_proof)?.apply_outcome_contract_resources(pre_state, function)
         {
             Ok(transitioned) => {
@@ -2318,7 +2317,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
     // A divergent path has no outcome to prove
     // claims against. Its checked execution theorem
     // supplies vacuity evidence for each selected claim.
-    if matches!(&outcome, CFunctionOutcome::VerificationDiverges) {
+    if matches!(&outcome, FunctionOutcome::VerificationDiverges) {
         let certificate = ProofCertificate::from_proof_tactics(&[
             ProofTactic::Normalize,
         ])
@@ -2362,7 +2361,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
     }
     // Plan claim scopes on the same retained outcome. A
     // bounded miss leaves that immutable ancestor intact.
-    if let CFunctionOutcome::Return { .. } | CFunctionOutcome::Throw { .. } = &outcome {
+    if let FunctionOutcome::Return { .. } | FunctionOutcome::Throw { .. } = &outcome {
         let mut direct_claims = Vec::new();
         // Exact resource checks return evidence separately
         // from the proposition scopes in this group.
@@ -2399,7 +2398,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
             }
         }
         if !direct_resource_claims.is_empty() {
-            let CFunctionOutcome::Return { .. } = &outcome else {
+            let FunctionOutcome::Return { .. } = &outcome else {
                 unreachable!("gated on a return outcome above");
             };
             for (claim_index, _, _) in &direct_resource_claims {
@@ -2985,7 +2984,7 @@ fn continue_claim_existence_proof<'a>(
     closures: &mut [ClaimClosure],
     claims: &[FunctionClaimRef<'_>],
     outcome_proof: &mut Option<Proof<'a>>,
-    execution: &CCheckedFunctionExecution,
+    execution: &CheckedFunctionExecution,
     path_index: usize,
     apply: impl FnOnce(&Proof<'a>) -> Result<Proof<'a>, ClickError>,
 ) -> Result<Option<ProofCertificate>, ClickError> {
@@ -3056,7 +3055,7 @@ fn record_claim_closure<'e>(
     outcome_proof: &mut Option<Proof<'_>>,
     closures: &mut [ClaimClosure<'e>],
     claims: &[FunctionClaimRef<'_>],
-    execution: &CCheckedFunctionExecution,
+    execution: &CheckedFunctionExecution,
     path_index: usize,
     claim_index: usize,
     closure: ClaimClosure<'e>,
@@ -3140,7 +3139,7 @@ pub(super) fn finish_ordered_proof<'a>(
     spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
     _theorem_environment: &TheoremEnvironment,
-    function_environment: &CExecutionEnvironment,
+    function_environment: &ExecutionEnvironment,
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
     certificate_tactics: &std::sync::Arc<[ProofTactic]>,
@@ -3251,8 +3250,8 @@ pub(super) fn finish_ordered_proof<'a>(
             function.opaque_contract_supported()
                 || !matches!(
                     claim.target(),
-                    CFunctionContractClaimTarget::EnsureProposition(_)
-                        | CFunctionContractClaimTarget::ExceptionalEnsureProposition(_)
+                    FunctionContractClaimTarget::EnsureProposition(_)
+                        | FunctionContractClaimTarget::ExceptionalEnsureProposition(_)
                 )
         })
         .map(|claim| {
@@ -3319,11 +3318,11 @@ pub(super) fn finish_ordered_proof<'a>(
         // Keep that semantics even when no loop was reached. Calling it
         // `Verify` in that case incorrectly suggests that an unreachable
         // frame-annotated loop might have been summarized.
-        let execution_semantics = CExecutionSemantics::APPLY_VERIFIED_RULES;
+        let execution_semantics = ExecutionSemantics::APPLY_VERIFIED_RULES;
         let execution_mode = if proof_execution.core.concrete_loop_execution {
-            CFunctionContractExecutionMode::ExecuteLoops
+            FunctionContractExecutionMode::ExecuteLoops
         } else {
-            CFunctionContractExecutionMode::VerifyLoops
+            FunctionContractExecutionMode::VerifyLoops
         };
         // The proof object composes the checked execution from its retained
         // traces, every step of which it checked when recorded, under the
@@ -3379,7 +3378,7 @@ pub(super) fn finish_ordered_proof<'a>(
             .map(|path_index| {
                 let rejected = !matches!(
                     execution.paths()[path_index].outcome(),
-                    CFunctionOutcome::VerificationDiverges
+                    FunctionOutcome::VerificationDiverges
                 ) && outcome_substrate
                     .outcome_branch_for_path(path_index)
                     .is_none();
@@ -3389,7 +3388,7 @@ pub(super) fn finish_ordered_proof<'a>(
         let resource_prefix = claims
             .iter()
             .filter_map(|claim| match claim_targets.get(&claim.key()) {
-                Some(CFunctionContractClaimTarget::EnsureResource(index)) => Some(index + 1),
+                Some(FunctionContractClaimTarget::EnsureResource(index)) => Some(index + 1),
                 _ => None,
             })
             .max()
@@ -3405,8 +3404,8 @@ pub(super) fn finish_ordered_proof<'a>(
                 crate::instrumentation::record_deterministic_work(1);
                 match (key, target) {
                     (
-                        CFunctionContractClaimKey::Ensure(source_index),
-                        CFunctionContractClaimTarget::EnsureResource(index),
+                        FunctionContractClaimKey::Ensure(source_index),
+                        FunctionContractClaimTarget::EnsureResource(index),
                     ) if *source_index < function_block.ensures().len() => Some(index + 1),
                     _ => None,
                 }
@@ -3418,14 +3417,14 @@ pub(super) fn finish_ordered_proof<'a>(
         } else {
             resource_prefix
         };
-        let closing_context = crate::kernel::CContractClosingContext::for_resource_prefix(
+        let closing_context = crate::kernel::ContractClosingContext::for_resource_prefix(
             &completed_execution,
             resource_prefix,
         );
         let mut closed_exit_obligations = Vec::new();
         let mut verified = Vec::new();
         let mut checked_resource_claims_by_path =
-            vec![Vec::<CFunctionContractClaimKey>::new(); execution.paths().len()];
+            vec![Vec::<FunctionContractClaimKey>::new(); execution.paths().len()];
         let mut checked_resource_transitions_by_path = vec![false; execution.paths().len()];
         let mut checked_returned_resources_by_path =
             vec![crate::kernel::ResourceContext::new(); execution.paths().len()];
@@ -3682,7 +3681,7 @@ pub(super) fn finish_ordered_proof<'a>(
                     let mut outcome = path.outcome().clone();
                     let mut outcome_proof = if matches!(
                         outcome,
-                        CFunctionOutcome::VerificationDiverges
+                        FunctionOutcome::VerificationDiverges
                     ) {
                         None
                     } else {
@@ -3693,7 +3692,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             .prepare_outcome_cases()?
                     };
                     if outcome_proof.is_none()
-                        && !matches!(outcome, CFunctionOutcome::VerificationDiverges)
+                        && !matches!(outcome, FunctionOutcome::VerificationDiverges)
                     {
                         continue 'execution_path;
                     }
@@ -3844,7 +3843,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         // context. A body that still has to fold an open composite
                         // does not satisfy the guard here; the closing `solve` runs
                         // the same transition once that fold has happened.
-                        if matches!(outcome, CFunctionOutcome::Return { .. })
+                        if matches!(outcome, FunctionOutcome::Return { .. })
                             && crate::kernel::c_function_return_resources_definitionally_established(
                                 pre_state,
                                 function,
@@ -4224,7 +4223,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 }
                             }
                             PostExecutionTactic::Apply(application) => {
-                                let CFunctionOutcome::Return { .. } = &outcome else {
+                                let FunctionOutcome::Return { .. } = &outcome else {
                                     return Err(ClickError::new(format!(
                                         "`{proof_label}` path {path_index}, tactic {tactic_index}: theorem application requires a return outcome"
                                     )));
@@ -4289,8 +4288,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                 // `exceptional ensures` names the thrown value
                                 // `exception`, which smart `solve` already
                                 // scopes with the same checked `have`.
-                                let (CFunctionOutcome::Return { .. }
-                                | CFunctionOutcome::Throw { .. }) = &outcome
+                                let (FunctionOutcome::Return { .. }
+                                | FunctionOutcome::Throw { .. }) = &outcome
                                 else {
                                     return Err(ClickError::new(format!(
                                         "`{proof_label}` path {path_index}, tactic {tactic_index}: `have` requires a return outcome"
@@ -4306,7 +4305,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     .as_ref()
                                     .is_some_and(|opened| opened.introduces_scope)
                                     && !resource_transition_applied
-                                    && matches!(outcome, CFunctionOutcome::Return { .. })
+                                    && matches!(outcome, FunctionOutcome::Return { .. })
                                     && claims.iter().enumerate().any(|(index, claim)| {
                                         !closures[index].is_closed()
                                             && matches!(
@@ -4450,7 +4449,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     }
                                     _ => None,
                                 };
-                                if !matches!(outcome, CFunctionOutcome::Return { .. }) {
+                                if !matches!(outcome, FunctionOutcome::Return { .. }) {
                                     return Err(ClickError::new(format!(
                                         "`{proof_label}` path {path_index}, tactic {tactic_index}: `transport` requires a return outcome"
                                     )));
@@ -4611,7 +4610,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 if assumption
                                     && !resource_transition_applied
                                     && !assumption_transition_attempted
-                                    && matches!(outcome, CFunctionOutcome::Return { .. })
+                                    && matches!(outcome, FunctionOutcome::Return { .. })
                                     && claims.iter().enumerate().any(|(index, claim)| {
                                         let clause = claim.clause();
                                         !closures[index].is_closed()
@@ -4661,7 +4660,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     let claim = &claims[claim_index];
                                     let ensure_clause = claim.clause();
                                     if !assumption
-                                        && matches!(outcome, CFunctionOutcome::VerificationDiverges)
+                                        && matches!(outcome, FunctionOutcome::VerificationDiverges)
                                     {
                                         if matches!(post_tactic, PostExecutionTactic::Both(_)) {
                                             return Err(ClickError::new(
@@ -4918,7 +4917,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 let rewrite_step = SourceContext::PostExecution
                                     .leaf_step(tactic)
                                     .expect("a post-execution leaf converts to its checked step");
-                                let CFunctionOutcome::Return { .. } = &outcome else {
+                                let FunctionOutcome::Return { .. } = &outcome else {
                                     return Err(ClickError::new(format!(
                                         "`{proof_label}` path {path_index}, tactic {tactic_index}: `rewrite` requires a return outcome"
                                     )));
@@ -5099,7 +5098,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     _ => None,
                                 };
                                 if let Some(operation) = return_operation
-                                    && !matches!(outcome, CFunctionOutcome::Return { .. })
+                                    && !matches!(outcome, FunctionOutcome::Return { .. })
                                 {
                                     return Err(ClickError::new(format!(
                                         "`{proof_label}` path {path_index}, tactic {tactic_index}: {operation} requires a return outcome"
@@ -5215,7 +5214,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             if closures[claim_index].is_closed() {
                                 continue;
                             }
-                            if matches!(outcome, CFunctionOutcome::VerificationDiverges) {
+                            if matches!(outcome, FunctionOutcome::VerificationDiverges) {
                                 record_claim_closure(
                                     &mut outcome_proof,
                                     &mut closures,
@@ -5300,7 +5299,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     ClaimClosure::resource(ClaimCertificate::ExactCheck, checked),
                                 )?,
                                 Some(Err(error)) => closures[claim_index].record_failure(error),
-                                None if !matches!(outcome, CFunctionOutcome::Return { .. }) => {
+                                None if !matches!(outcome, FunctionOutcome::Return { .. }) => {
                                     closures[claim_index].record_failure(ClickError::new(format!(
                                         "`{claim_label}` failed on path {path_index}: {}",
                                         describe_function_outcome(
@@ -5435,7 +5434,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         .frontier_loop_clauses
                         .to_vec()
                         .into();
-                    let frontier_loop_rules: std::sync::Arc<[CVerifiedLoopRule]> =
+                    let frontier_loop_rules: std::sync::Arc<[VerifiedLoopRule]> =
                         proof_execution.core.frontier_loop_rules.to_vec().into();
                     for (claim_index, claim) in claims.iter().enumerate() {
                         // A path with an outcome holds each claim's evidence on its
@@ -6206,7 +6205,7 @@ mod evidence_tests {
         else {
             panic!("checked function path")
         };
-        let key = CFunctionContractClaimKey::Ensure(*index);
+        let key = FunctionContractClaimKey::Ensure(*index);
         let facts = ProofFacts::from_ordered(&path.assumptions().pure_facts());
         let checked = prove_ensure_resource(
             execution,
@@ -6230,12 +6229,12 @@ mod evidence_tests {
         assert!(closure.require_evidence(execution, 1, &key).is_err());
         assert!(
             closure
-                .require_evidence(execution, 0, &CFunctionContractClaimKey::Ensure(index + 1))
+                .require_evidence(execution, 0, &FunctionContractClaimKey::Ensure(index + 1))
                 .is_err()
         );
         assert!(
             closure
-                .require_evidence(&CCheckedFunctionExecution::clone(execution), 0, &key)
+                .require_evidence(&CheckedFunctionExecution::clone(execution), 0, &key)
                 .is_err()
         );
         assert!(
@@ -6266,7 +6265,7 @@ mod evidence_tests {
         )
         .unwrap();
         let execution = &verified[0].checked_execution;
-        let key = CFunctionContractClaimKey::Ensure(0);
+        let key = FunctionContractClaimKey::Ensure(0);
         let closure =
             ClaimClosure::vacuous(execution, 0, key.clone(), ClaimCertificate::ExactCheck).unwrap();
         closure.require_evidence(execution, 0, &key).unwrap();
@@ -6317,7 +6316,7 @@ fn contract_entry_view(
         }
     }
     for fact in entry.facts() {
-        use crate::kernel::CContractEntryFactOrigin as Origin;
+        use crate::kernel::ContractEntryFactOrigin as Origin;
         let visible = !matches!(
             fact.origin(),
             Origin::CompositeDefinition
@@ -6384,13 +6383,13 @@ mod contract_closing_tests {
             vec![],
             crate::kernel::c_return(crate::kernel::c_int32_literal(0)),
         );
-        let outcome = CFunctionOutcome::Return {
+        let outcome = FunctionOutcome::Return {
             value: crate::kernel::int32(0).into(),
             state: Box::new(ExecutionState::new()),
         };
         let error = contract_closing_goal(
             &function,
-            Some(&CFunctionContractClaimTarget::EnsureProposition(0)),
+            Some(&FunctionContractClaimTarget::EnsureProposition(0)),
             &ExecutionState::new(),
             &[],
             &outcome,

@@ -38,7 +38,7 @@ fn closing_evidence_work_tracks_paths_instead_of_ambient_facts() {
             let index = checked_proposition_index(&proofs);
             let (closed, work) = crate::instrumentation::measure_deterministic_work(|| {
                 closed_proposition_holds_on_every_case(
-                    &CFunctionContractClaimTarget::EnsureProposition(0),
+                    &FunctionContractClaimTarget::EnsureProposition(0),
                     &cases,
                     &index,
                 )
@@ -53,7 +53,7 @@ fn closing_evidence_work_tracks_paths_instead_of_ambient_facts() {
             let missing = CheckedPropositionIndex::default();
             let (closed, miss_work) = crate::instrumentation::measure_deterministic_work(|| {
                 closed_proposition_holds_on_every_case(
-                    &CFunctionContractClaimTarget::EnsureProposition(0),
+                    &FunctionContractClaimTarget::EnsureProposition(0),
                     &cases,
                     &missing,
                 )
@@ -77,7 +77,7 @@ fn closing_evidence_work_tracks_paths_instead_of_ambient_facts() {
             let cases = contract_path_set_views(&execution, false);
             let (closed, vacuous_work) = crate::instrumentation::measure_deterministic_work(|| {
                 closed_proposition_holds_on_every_case(
-                    &CFunctionContractClaimTarget::EnsureProposition(0),
+                    &FunctionContractClaimTarget::EnsureProposition(0),
                     &cases,
                     &missing,
                 )
@@ -93,8 +93,8 @@ fn closing_evidence_work_tracks_paths_instead_of_ambient_facts() {
 
 #[test]
 fn resource_and_effect_completion_lookup_ignores_unrelated_path_history() {
-    let resource = CFunctionContractClaim::ensure_resource(0, 0);
-    let effect = CFunctionContractClaim::effect(0);
+    let resource = FunctionContractClaim::ensure_resource(0, 0);
+    let effect = FunctionContractClaim::effect(0);
     for paths in [1, 4, 16] {
         let mut costs = Vec::new();
         for facts in [0, 64, 1024] {
@@ -116,7 +116,7 @@ fn resource_and_effect_completion_lookup_ignores_unrelated_path_history() {
                 .iter()
                 .enumerate()
                 .map(|(index, path)| {
-                    Some(CClosedContractExit::fixture_for_claims(
+                    Some(ClosedContractExit::fixture_for_claims(
                         index,
                         path,
                         [resource.key().clone()],
@@ -139,7 +139,7 @@ fn resource_and_effect_completion_lookup_ignores_unrelated_path_history() {
                     .all(|view| view.prepared.get().is_none())
             );
             costs.push(work);
-            let wrong = CFunctionContractClaim::ensure_resource(1, 1);
+            let wrong = FunctionContractClaim::ensure_resource(1, 1);
             assert!(!closed_resource_effect_claim_holds(&wrong, &cases));
             execution.cases[0][0].closed_exit_obligations.clear();
             assert!(!closed_exit_obligations_cover_every_case(&execution));

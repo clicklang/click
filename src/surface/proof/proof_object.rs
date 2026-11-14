@@ -2,7 +2,7 @@ use super::pure_theorems::{
     PureInductionSetup, PureStructuralInductionBranchSetup, PureTheoremContext,
 };
 use super::*;
-use crate::kernel::CFunctionExecutionCandidate;
+use crate::kernel::FunctionExecutionCandidate;
 use crate::kernel::proof::{
     BranchId, CheckedBranchSplit, CheckedCallOutcomeSplit, ClaimGoalError, ClaimGoalEvidence,
     ExecutionUpdateError, FrontierObligation, FrontierSplitError, FunctionOutcomeObligation,
@@ -255,7 +255,7 @@ struct CheckedExecutionJoinArm<'v> {
     /// Frontier-local loops the arm proved inside its region. They are
     /// checked function-proof state, so a join carries them like unfolds.
     introduced_loop_clauses: Vec<StructuralClause>,
-    introduced_loop_rules: Vec<CVerifiedLoopRule>,
+    introduced_loop_rules: Vec<VerifiedLoopRule>,
 }
 
 #[cfg(test)]
@@ -666,7 +666,7 @@ pub(in crate::surface::proof) struct ExistentialProjection {
     pub(in crate::surface::proof) chosen_body: Proposition,
     pub(in crate::surface::proof) chosen_name: String,
     pub(in crate::surface::proof) chosen_variable: crate::kernel::Variable,
-    pub(in crate::surface::proof) source_snapshot: crate::kernel::CMemorySnapshotIdentity,
+    pub(in crate::surface::proof) source_snapshot: crate::kernel::MemorySnapshotIdentity,
     pub(in crate::surface::proof) leaves: Vec<ExistentialProjectionLeaf>,
 }
 
@@ -694,7 +694,7 @@ pub(in crate::surface::proof) struct ChosenProjection {
     pub(in crate::surface::proof) checked_source: Proposition,
     pub(in crate::surface::proof) chosen_name: String,
     pub(in crate::surface::proof) chosen_variable: crate::kernel::Variable,
-    pub(in crate::surface::proof) source_snapshot: crate::kernel::CMemorySnapshotIdentity,
+    pub(in crate::surface::proof) source_snapshot: crate::kernel::MemorySnapshotIdentity,
     pub(in crate::surface::proof) source_selector: SnapshotSelector,
     pub(in crate::surface::proof) leaves: Vec<ChosenProjectionLeaf>,
 }
@@ -917,9 +917,9 @@ pub(in crate::surface::proof) struct LoopAnnotationCache {
 /// A claim's execution environment extended by a path's frontier loop
 /// rules (`ExecutionProofPresentation::loop_rule_environment`).
 pub(in crate::surface::proof) struct LoopRuleEnvironment {
-    pub(in crate::surface::proof) base: CExecutionEnvironment,
-    pub(in crate::surface::proof) rules: PersistentSequence<crate::kernel::CVerifiedLoopRule>,
-    pub(in crate::surface::proof) environment: CExecutionEnvironment,
+    pub(in crate::surface::proof) base: ExecutionEnvironment,
+    pub(in crate::surface::proof) rules: PersistentSequence<crate::kernel::VerifiedLoopRule>,
+    pub(in crate::surface::proof) environment: ExecutionEnvironment,
 }
 
 impl LoopRuleEnvironment {
@@ -927,8 +927,8 @@ impl LoopRuleEnvironment {
     /// an earlier prefix of `rules` over the same base.
     pub(in crate::surface::proof) fn extending(
         cached: Option<&Self>,
-        base: &CExecutionEnvironment,
-        rules: &PersistentSequence<crate::kernel::CVerifiedLoopRule>,
+        base: &ExecutionEnvironment,
+        rules: &PersistentSequence<crate::kernel::VerifiedLoopRule>,
     ) -> Self {
         let environment = cached
             .filter(|cached| cached.base == *base)
@@ -1248,7 +1248,7 @@ impl ProofExecutionView<'_> {
 /// under, and whether those facts already hold every effect its path
 /// retained, so an outcome goal need not import them again.
 pub(in crate::surface::proof) type CheckedLeafFacts =
-    (CFunctionExecutionCandidate, ProofFacts, bool);
+    (FunctionExecutionCandidate, ProofFacts, bool);
 
 /// The facts a path's last checked statement held, with every effect the
 /// path has retained. Each statement extends it by the facts it introduced
@@ -1809,7 +1809,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         Some(self.12)
     }
 
-    fn resources(&self) -> &[CResourceFact] {
+    fn resources(&self) -> &[ResourceFact] {
         if let Some(state) = &self.3 {
             return state.resources().facts();
         }
@@ -3155,7 +3155,7 @@ impl<'a> Proof<'a> {
         &self,
         goal: Proposition,
         surface_goal: Option<ClickProposition>,
-        claim_goal: Option<&crate::kernel::CClaimGoal>,
+        claim_goal: Option<&crate::kernel::ContractClaimGoal>,
     ) -> Result<Self, ClickError> {
         let fixed_state_context = matches!(self.context.as_ref(), ProofContext::FixedState(_))
             && matches!(self.focused_obligation(), Some(Obligation::Frontier(_)));

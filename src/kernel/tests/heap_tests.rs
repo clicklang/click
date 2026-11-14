@@ -12,16 +12,16 @@ fn free_retires_a_cached_interior_alias() {
         ConditionTerm::pointer_equal(alias.clone(), base.offset_by_bytes(8)),
         true,
     ));
-    let memory = CMemory::new()
+    let memory = Memory::new()
         .with_heap_allocation_claim(base.clone(), HeapExtent::int32(12))
         .unwrap()
         .with_block(base.block.clone(), 12)
         .store(alias.clone(), int32(7));
-    assert_eq!(memory.load(&alias), CExpressionOutcome::Value(int32(7)));
+    assert_eq!(memory.load(&alias), ExpressionOutcome::Value(int32(7)));
     let freed = memory.free_heap_block(&base, &assumptions).unwrap();
     assert_eq!(
         freed.load(&alias),
-        CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory),
+        ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),
         "an interior alias must not retain a cached value after free"
     );
 }
@@ -30,7 +30,7 @@ fn free_retires_a_cached_interior_alias() {
 fn free_keeps_an_uncertain_block_only_with_ownership_of_the_whole_cell() {
     let base = Pointer::symbolic(Variable(945_010));
     let cell = Pointer::symbolic(Variable(945_011));
-    let memory = CMemory::new()
+    let memory = Memory::new()
         .with_heap_allocation_claim(base.clone(), HeapExtent::int32(12))
         .unwrap()
         .store(
@@ -41,8 +41,8 @@ fn free_keeps_an_uncertain_block_only_with_ownership_of_the_whole_cell() {
     for owned_bytes in [0u32, 4, 8] {
         let mut ownership = ResourceContext::new();
         if owned_bytes != 0 {
-            ownership = ownership.unchecked_with_fact(CResourceFact::own_memory(
-                CMemoryRange::new_with_element_width(
+            ownership = ownership.unchecked_with_fact(ResourceFact::own_memory(
+                MemoryRange::new_with_element_width(
                     cell.clone(),
                     0u32.into(),
                     owned_bytes.into(),
@@ -57,9 +57,9 @@ fn free_keeps_an_uncertain_block_only_with_ownership_of_the_whole_cell() {
         assert_eq!(
             freed.load(&cell),
             if owned_bytes == 8 {
-                CExpressionOutcome::Value(ProgramValue::Int64(MachineTerm::int64_constant(7)))
+                ExpressionOutcome::Value(ProgramValue::Int64(MachineTerm::int64_constant(7)))
             } else {
-                CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory)
+                ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory)
             },
             "ownership of {owned_bytes} bytes"
         );
@@ -77,19 +77,19 @@ fn a_free_publishes_its_owned_pointer_frame_as_an_equality() {
         block: PointerBlock::Heap(950_002),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = CMemory::new()
+    let memory = Memory::new()
         .with_heap_allocation_claim(base.clone(), HeapExtent::int32(4))
         .unwrap()
         .store(cell.clone(), ProgramValue::pointer(value));
     let resources = ResourceContext::new()
-        .unchecked_with_fact(CResourceFact::own_allocation(base.clone(), 4))
-        .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+        .unchecked_with_fact(ResourceFact::own_allocation(base.clone(), 4))
+        .unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
             base.clone(),
             0u32.into(),
             1u32.into(),
         )))
-        .unchecked_with_fact(CResourceFact::own_memory(
-            CMemoryRange::new_with_element_width(cell.clone(), 0u32.into(), 1u32.into(), 8),
+        .unchecked_with_fact(ResourceFact::own_memory(
+            MemoryRange::new_with_element_width(cell.clone(), 0u32.into(), 1u32.into(), 8),
         ));
     let state = ExecutionState::new()
         .with_memory(memory)
@@ -99,14 +99,14 @@ fn a_free_publishes_its_owned_pointer_frame_as_an_equality() {
         &state,
         &c_heap_free(c_variable("p")),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .unwrap();
     let [path] = paths.as_slice() else {
         panic!("one free outcome");
     };
-    let CStatementOutcome::Normal(after) = &path.outcome else {
+    let StatementOutcome::Normal(after) = &path.outcome else {
         panic!("free succeeds: {:?}", path.outcome);
     };
     let ProgramValue::Pointer(before_read) = state
@@ -160,8 +160,8 @@ fn a_free_publishes_its_owned_pointer_frame_as_an_equality() {
     );
 }
 
-fn active_heap_memory_loan(range: CMemoryRange) -> LoanLedger {
-    let fact = CResourceFact::own_memory(range);
+fn active_heap_memory_loan(range: MemoryRange) -> LoanLedger {
+    let fact = ResourceFact::own_memory(range);
     let support = ResourceContext::new()
         .unchecked_with_fact(fact.clone())
         .unique_owned_occurrence_for_fact(&fact)
@@ -178,8 +178,8 @@ fn active_heap_memory_loan(range: CMemoryRange) -> LoanLedger {
         .expect("memory loan apply")
 }
 
-fn assert_heap_loan_write_rejected(outcome: &CStatementOutcome) {
-    let CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(diagnostic)) = outcome else {
+fn assert_heap_loan_write_rejected(outcome: &StatementOutcome) {
+    let StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(diagnostic)) = outcome else {
         panic!("expected a loan refusal, got {outcome:?}");
     };
     assert_eq!(
@@ -196,7 +196,7 @@ fn assert_heap_loan_write_rejected(outcome: &CStatementOutcome) {
     assert!(diagnostic.subject().loan_id().is_some());
 }
 
-fn heap_allocation_paths() -> Vec<CStatementExecutionPath> {
+fn heap_allocation_paths() -> Vec<StatementExecutionPath> {
     let state = ExecutionState::new()
         .with_population_creation_tracking()
         .with_local("p", ProgramValue::pointer(Pointer::null()));
@@ -204,7 +204,7 @@ fn heap_allocation_paths() -> Vec<CStatementExecutionPath> {
         &state,
         &c_heap_allocate("p", 16),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("fixed-size allocation should execute")
@@ -213,8 +213,8 @@ fn heap_allocation_paths() -> Vec<CStatementExecutionPath> {
 fn successful_heap_allocation_state() -> ExecutionState {
     let paths = heap_allocation_paths();
     let [
-        CStatementExecutionPath {
-            outcome: CStatementOutcome::Normal(pending),
+        StatementExecutionPath {
+            outcome: StatementOutcome::Normal(pending),
             ..
         },
     ] = paths.as_slice()
@@ -239,11 +239,11 @@ fn checked_object_address_rejects_freed_backing_without_reading_it() {
         &success,
         &c_heap_free(c_variable("p")),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .unwrap();
-    let CStatementOutcome::Normal(freed) = &paths[0].outcome else {
+    let StatementOutcome::Normal(freed) = &paths[0].outcome else {
         panic!("free should complete normally");
     };
     let theorem = prove_c_expression_evaluation(
@@ -254,7 +254,7 @@ fn checked_object_address_rejects_freed_backing_without_reading_it() {
     assert!(matches!(
         theorem.proposition(),
         Proposition::CExpressionEvaluates {
-            outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory),
+            outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),
             ..
         }
     ));
@@ -278,17 +278,14 @@ fn heap_allocate_has_null_or_fresh_uninitialized_outcomes() {
         .expect("successful allocation should record a memory edge");
     assert!(matches!(
         derivation.as_ref(),
-        CMemoryDerivation::HeapAllocated { block, bytes, .. }
+        MemoryDerivation::HeapAllocated { block, bytes, .. }
             if block == &pointer.block && *bytes == MachineTerm::constant(16)
     ));
     assert!(
         success
             .resources()
             .facts()
-            .contains(&CResourceFact::own_allocation(
-                pointer.pointer().clone(),
-                16
-            ))
+            .contains(&ResourceFact::own_allocation(pointer.pointer().clone(), 16))
     );
     let read = evaluate_c_expression_paths(
         &success,
@@ -299,13 +296,13 @@ fn heap_allocate_has_null_or_fresh_uninitialized_outcomes() {
     .expect("heap read should execute");
     assert!(matches!(
         read.as_slice(),
-        [CExpressionPath {
-            outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead),
+        [ExpressionPath {
+            outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::UninitializedRead),
             ..
         }]
     ));
 
-    let CStatementOutcome::Normal(pending) = &paths[0].outcome else {
+    let StatementOutcome::Normal(pending) = &paths[0].outcome else {
         unreachable!();
     };
     let local_native_output_306 = pending.locals().get_native("p");
@@ -340,7 +337,7 @@ fn call_havoc_preserves_initialization_of_a_heap_scalar() {
             .clone()
             .store(pointer.pointer().clone(), int32(7)),
     );
-    let range = CMemoryRange::new_with_element_width(
+    let range = MemoryRange::new_with_element_width(
         pointer.pointer().clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(1),
@@ -374,8 +371,8 @@ fn call_havoc_preserves_initialization_of_a_heap_scalar() {
     .expect("initialized heap scalar should remain readable after call havoc");
     assert!(matches!(
         read.as_slice(),
-        [CExpressionPath {
-            outcome: CExpressionOutcome::Value(_),
+        [ExpressionPath {
+            outcome: ExpressionOutcome::Value(_),
             ..
         }]
     ));
@@ -406,8 +403,8 @@ fn naming_an_uninitialized_heap_cell_does_not_initialize_it() {
     .expect("heap read should execute");
     assert!(matches!(
         read.as_slice(),
-        [CExpressionPath {
-            outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead),
+        [ExpressionPath {
+            outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::UninitializedRead),
             ..
         }]
     ));
@@ -422,7 +419,7 @@ fn naming_an_initialized_heap_cell_preserves_its_initialization() {
     };
     let address = pointer.pointer().clone();
     let stored = allocated.memory().clone().store(address.clone(), int32(7));
-    let range = CMemoryRange::new_with_element_width(
+    let range = MemoryRange::new_with_element_width(
         address.clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(1),
@@ -454,11 +451,11 @@ fn zeroed_heap_allocation_reads_zero_until_a_store() {
             true,
         ),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("calloc-shaped allocation should execute");
-    let CStatementOutcome::Normal(pending) = &paths[0].outcome else {
+    let StatementOutcome::Normal(pending) = &paths[0].outcome else {
         panic!("allocation should produce a pending outcome");
     };
     let local_native_output_454 = pending.locals().get_native("p");
@@ -491,8 +488,8 @@ fn zeroed_heap_allocation_reads_zero_until_a_store() {
     .expect("zeroed element read should execute");
     assert!(matches!(
         read.as_slice(),
-        [CExpressionPath {
-            outcome: CExpressionOutcome::Value(ProgramValue::Int32(value)),
+        [ExpressionPath {
+            outcome: ExpressionOutcome::Value(ProgramValue::Int32(value)),
             ..
         }] if *value == MachineTerm::constant(0)
     ));
@@ -504,11 +501,11 @@ fn zeroed_heap_allocation_reads_zero_until_a_store() {
             c_int32_literal(7),
         ),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("store into zeroed allocation should execute");
-    let CStatementOutcome::Normal(stored) = &stored[0].outcome else {
+    let StatementOutcome::Normal(stored) = &stored[0].outcome else {
         panic!("store should have a normal outcome");
     };
     let read_after_store = evaluate_c_expression_paths(
@@ -520,8 +517,8 @@ fn zeroed_heap_allocation_reads_zero_until_a_store() {
     .expect("stored element read should execute");
     assert!(matches!(
         read_after_store.as_slice(),
-        [CExpressionPath {
-            outcome: CExpressionOutcome::Value(ProgramValue::Int32(value)),
+        [ExpressionPath {
+            outcome: ExpressionOutcome::Value(ProgramValue::Int32(value)),
             ..
         }] if *value == MachineTerm::constant(7)
     ));
@@ -540,11 +537,11 @@ fn realloc_preserves_zeroed_prefix_and_leaves_growth_uninitialized() {
             true,
         ),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("calloc-shaped allocation should execute");
-    let CStatementOutcome::Normal(calloc_pending) = &calloc_paths[0].outcome else {
+    let StatementOutcome::Normal(calloc_pending) = &calloc_paths[0].outcome else {
         panic!("calloc should produce a pending outcome");
     };
     let local_native_output_538 = calloc_pending.locals().get_native("p");
@@ -567,13 +564,13 @@ fn realloc_preserves_zeroed_prefix_and_leaves_growth_uninitialized() {
         &allocated,
         &c_call_assign("q", "realloc", vec![c_variable("p"), c_int32_literal(12)]),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("realloc of zeroed storage should execute");
     let [
-        CStatementExecutionPath {
-            outcome: CStatementOutcome::Normal(pending),
+        StatementExecutionPath {
+            outcome: StatementOutcome::Normal(pending),
             ..
         },
     ] = realloc_paths.as_slice()
@@ -634,8 +631,8 @@ fn realloc_preserves_zeroed_prefix_and_leaves_growth_uninitialized() {
     .expect("zeroed realloc prefix read should execute");
     assert!(matches!(
         prefix_read.as_slice(),
-        [CExpressionPath {
-            outcome: CExpressionOutcome::Value(ProgramValue::Int32(value)),
+        [ExpressionPath {
+            outcome: ExpressionOutcome::Value(ProgramValue::Int32(value)),
             ..
         }] if *value == MachineTerm::constant(0)
     ));
@@ -649,8 +646,8 @@ fn realloc_preserves_zeroed_prefix_and_leaves_growth_uninitialized() {
     .expect("uninitialized realloc tail read should execute");
     assert!(matches!(
         tail_read.as_slice(),
-        [CExpressionPath {
-            outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead),
+        [ExpressionPath {
+            outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::UninitializedRead),
             ..
         }]
     ));
@@ -665,7 +662,7 @@ fn pending_and_failed_heap_allocation_preserve_existing_memory() {
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(Pointer::null()))
         .with_memory(
-            CMemory::new()
+            Memory::new()
                 .with_block("arg-memory", 4)
                 .store(existing.clone(), int32(37)),
         );
@@ -673,13 +670,13 @@ fn pending_and_failed_heap_allocation_preserve_existing_memory() {
         &state,
         &c_heap_allocate("p", 16),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("allocation statement should produce a pending result");
     let [
-        CStatementExecutionPath {
-            outcome: CStatementOutcome::Normal(pending),
+        StatementExecutionPath {
+            outcome: StatementOutcome::Normal(pending),
             ..
         },
     ] = paths.as_slice()
@@ -696,7 +693,7 @@ fn pending_and_failed_heap_allocation_preserve_existing_memory() {
     let pending_derivation = intern_c_memory_ref(&pending_memory)
         .derivation()
         .expect("pending allocation should record a memory edge");
-    let CMemoryDerivation::HeapAllocationPending {
+    let MemoryDerivation::HeapAllocationPending {
         base,
         allocation_base,
         bytes,
@@ -746,7 +743,7 @@ fn pending_and_failed_heap_allocation_preserve_existing_memory() {
     let derivation = intern_c_memory_ref(succeeded.memory())
         .derivation()
         .expect("successful allocation should record a memory edge");
-    let CMemoryDerivation::HeapAllocated { base, block, bytes } = derivation.as_ref() else {
+    let MemoryDerivation::HeapAllocated { base, block, bytes } = derivation.as_ref() else {
         panic!("unexpected successful-allocation derivation: {derivation:?}");
     };
     assert_eq!(base.as_ref(), &pending_memory);
@@ -775,7 +772,7 @@ fn successful_heap_allocation_is_fresh_from_every_existing_block() {
     ));
     assert!(pointers_proven_distinct_for_memory_resolution(
         &first_pointer,
-        &CMemory::local_pointer("local"),
+        &Memory::local_pointer("local"),
         &PureFactContext::new(),
     ));
     assert!(pointers_proven_distinct_for_memory_resolution(
@@ -792,15 +789,15 @@ fn successful_heap_allocation_is_fresh_from_every_existing_block() {
         &state,
         &c_heap_allocate("q", 16),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         // Deliberately reset the generator: existing heap identities still
         // have to prevent reuse.
         &mut ExecutionBudget::default(),
     )
     .expect("second allocation should execute");
     let [
-        CStatementExecutionPath {
-            outcome: CStatementOutcome::Normal(pending),
+        StatementExecutionPath {
+            outcome: StatementOutcome::Normal(pending),
             ..
         },
     ] = paths.as_slice()
@@ -838,13 +835,13 @@ mod a_free_reaches_every_element_of_its_block {
     use super::*;
     use crate::kernel::memory_provenance::with_extended_dag_bridging;
     use crate::kernel::resource_tracker::{
-        Resource,
+        TrackedResource,
         step_effect::{Evidence, Separation, StepEffect, affects},
     };
 
     /// The rule's answer about one cell for the `free` that produced
     /// `freed`, inside the one scope that may read these edges at all.
-    fn effect_of_the_free(freed: &CMemory, cell: &Pointer) -> StepEffect {
+    fn effect_of_the_free(freed: &Memory, cell: &Pointer) -> StepEffect {
         let produced = crate::kernel::intern_c_memory(freed.clone());
         let derivation = produced.derivation().expect("the free records an edge");
         let no_facts = PureFactContext::new();
@@ -852,7 +849,7 @@ mod a_free_reaches_every_element_of_its_block {
             affects(
                 derivation.as_ref(),
                 &produced,
-                Resource::Cell {
+                TrackedResource::Cell {
                     pointer: cell,
                     bytes: 4,
                 },
@@ -864,7 +861,7 @@ mod a_free_reaches_every_element_of_its_block {
         })
     }
 
-    fn freed_sixteen_byte_allocation() -> (CMemory, Pointer) {
+    fn freed_sixteen_byte_allocation() -> (Memory, Pointer) {
         let state = successful_heap_allocation_state();
         let local_native_output_849 = state.locals().get_native("p");
         let Some(ProgramValue::Pointer(pointer)) = local_native_output_849.as_deref() else {
@@ -919,13 +916,13 @@ fn heap_free_deallocates_the_complete_block_and_rejects_double_free() {
         &success,
         &c_heap_free(c_variable("p")),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("free should execute");
     let [
-        CStatementExecutionPath {
-            outcome: CStatementOutcome::Normal(freed),
+        StatementExecutionPath {
+            outcome: StatementOutcome::Normal(freed),
             facts: free_facts,
             ..
         },
@@ -962,7 +959,7 @@ fn heap_free_deallocates_the_complete_block_and_rejects_double_free() {
         .expect("free should record a memory edge");
     assert!(matches!(
         derivation.as_ref(),
-        CMemoryDerivation::HeapFreed { allocation_base, bytes, .. }
+        MemoryDerivation::HeapFreed { allocation_base, bytes, .. }
             if allocation_base == pointer.pointer() && *bytes == MachineTerm::constant(16)
     ));
 
@@ -970,15 +967,15 @@ fn heap_free_deallocates_the_complete_block_and_rejects_double_free() {
         freed,
         &c_heap_free(c_variable("p")),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("double free should execute to a diagnostic");
     assert!(matches!(
         double.as_slice(),
-        [CStatementExecutionPath {
-            outcome: CStatementOutcome::RuntimeError(CRuntimeError::InvalidFree(
-                CInvalidFree::DoubleFree
+        [StatementExecutionPath {
+            outcome: StatementOutcome::RuntimeError(RuntimeError::InvalidFree(
+                InvalidFree::DoubleFree
             )),
             ..
         }]
@@ -994,12 +991,12 @@ fn consuming_a_whole_range_drops_snapshot_equivalent_prefix_residues() {
     let held_start = MachineTerm::Variable(Variable(90_001));
     let required_start = MachineTerm::Variable(Variable(90_002));
     let length = MachineTerm::Variable(Variable(90_003));
-    let held = CResourceFact::own_memory(CMemoryRange::new(
+    let held = ResourceFact::own_memory(MemoryRange::new(
         owner.clone(),
         held_start.clone(),
         MachineTerm::add(held_start.clone(), length.clone()),
     ));
-    let required = CResourceFact::own_memory(CMemoryRange::new(
+    let required = ResourceFact::own_memory(MemoryRange::new(
         owner.offset_by_int32_elements(required_start.clone()),
         MachineTerm::constant(0),
         length,
@@ -1033,19 +1030,19 @@ fn scoped_call_borrows_end_before_free() {
         c_return(c_int32_literal(0)),
     )
     .with_resource_summary(
-        vec![CResourceSpec::viewed_memory(CMemorySegment::new(
+        vec![ResourceSpec::viewed_memory(MemorySegment::new(
             c_variable("data"),
             c_int32_literal(0),
             c_int32_literal(1),
         ))],
         Vec::new(),
     );
-    let environment = CExecutionEnvironment::new()
+    let environment = ExecutionEnvironment::new()
         .with_function(helper.clone())
-        .with_verified_function_rule(CVerifiedFunctionRule {
+        .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: helper,
-            loop_semantics: CLoopSemantics::Verify,
+            loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
             applied_tactics: Default::default(),
         });
@@ -1057,15 +1054,15 @@ fn scoped_call_borrows_end_before_free() {
         &state,
         &statement,
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment),
+        ExecutionContext::apply_verified_rules(&environment),
         &mut ExecutionBudget::default(),
     )
     .expect("a read-only call borrow followed by free should execute");
 
     assert!(matches!(
         paths.as_slice(),
-        [CStatementExecutionPath {
-            outcome: CStatementOutcome::Normal(after),
+        [StatementExecutionPath {
+            outcome: StatementOutcome::Normal(after),
             ..
         }] if after.resources().facts().is_empty()
     ));
@@ -1079,31 +1076,31 @@ fn standalone_view_cannot_authorize_free() {
         panic!("successful allocation should expose its pointer")
     };
     let pointer = pointer.pointer().clone();
-    let complete_access = CMemoryRange::new(
+    let complete_access = MemoryRange::new(
         pointer.clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(4),
     );
     let resources = ResourceContext::new()
-        .unchecked_with_fact(CResourceFact::own_allocation(pointer, 16))
-        .unchecked_with_fact(CResourceFact::view_memory(complete_access.clone()));
+        .unchecked_with_fact(ResourceFact::own_allocation(pointer, 16))
+        .unchecked_with_fact(ResourceFact::view_memory(complete_access.clone()));
     let state = state.with_resource_context(resources);
     let paths = execute_c_statement_paths(
         &state,
         &c_heap_free(c_variable("p")),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("a standalone view should fail locally at free");
     assert!(matches!(
         paths.as_slice(),
-        [CStatementExecutionPath {
-            outcome: CStatementOutcome::RuntimeError(CRuntimeError::MissingResource { resource }),
+        [StatementExecutionPath {
+            outcome: StatementOutcome::RuntimeError(RuntimeError::MissingResource { resource }),
             ..
         }] if matches!(
             &**resource,
-            CResourceFact::Own(CResource::Memory(missing), _) if missing == &complete_access
+            ResourceFact::Own(Resource::Memory(missing), _) if missing == &complete_access
         )
     ));
 }
@@ -1115,7 +1112,7 @@ fn persistent_composite_view_blocks_free_and_realloc_locally() {
     let Some(ProgramValue::Pointer(pointer)) = local_native_output_1090.as_deref() else {
         panic!("successful allocation should expose its pointer")
     };
-    let persistent = CResourceFact::view_composite(
+    let persistent = ResourceFact::view_composite(
         "borrowed_allocation".to_string(),
         vec![ProgramValue::pointer(pointer.pointer().clone())],
     );
@@ -1134,16 +1131,16 @@ fn persistent_composite_view_blocks_free_and_realloc_locally() {
             &state,
             &statement,
             &PureFactContext::new(),
-            CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+            ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
             &mut ExecutionBudget::default(),
         )
         .expect("a persistent stale view should produce a local diagnostic");
         assert!(
             matches!(
                 paths.as_slice(),
-                [CStatementExecutionPath {
-                    outcome: CStatementOutcome::RuntimeError(
-                        CRuntimeError::StaleResourceAfterFree { resource }
+                [StatementExecutionPath {
+                    outcome: StatementOutcome::RuntimeError(
+                        RuntimeError::StaleResourceAfterFree { resource }
                     ),
                     ..
                 }] if **resource == persistent
@@ -1160,7 +1157,7 @@ fn separated_persistent_view_survives_free() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),
     };
-    let view = CResourceFact::view_memory(CMemoryRange::new(
+    let view = ResourceFact::view_memory(MemoryRange::new(
         other,
         MachineTerm::constant(0),
         MachineTerm::constant(1),
@@ -1172,15 +1169,15 @@ fn separated_persistent_view_survives_free() {
         &state,
         &c_heap_free(c_variable("p")),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("a view of a distinct allocation should survive free");
 
     assert!(matches!(
         paths.as_slice(),
-        [CStatementExecutionPath {
-            outcome: CStatementOutcome::Normal(after),
+        [StatementExecutionPath {
+            outcome: StatementOutcome::Normal(after),
             ..
         }] if after.resources().facts() == [view]
     ));
@@ -1196,13 +1193,13 @@ fn free_of_external_allocation_forgets_cells_without_separation() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(908_001)), 4),
     };
-    let memory = CMemory::new()
+    let memory = Memory::new()
         .store(unrelated.clone(), int32(37))
         .with_heap_allocation_claim(allocation_base.clone(), HeapExtent::int32(16))
         .expect("external allocation claim should be fresh");
     let resources = ResourceContext::new()
-        .unchecked_with_fact(CResourceFact::own_allocation(allocation_base.clone(), 16))
-        .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+        .unchecked_with_fact(ResourceFact::own_allocation(allocation_base.clone(), 16))
+        .unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
             allocation_base.clone(),
             MachineTerm::constant(0),
             MachineTerm::constant(4),
@@ -1216,13 +1213,13 @@ fn free_of_external_allocation_forgets_cells_without_separation() {
         &state,
         &c_heap_free(c_variable("p")),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("freeing an imported allocation should execute");
     let [
-        CStatementExecutionPath {
-            outcome: CStatementOutcome::Normal(after),
+        StatementExecutionPath {
+            outcome: StatementOutcome::Normal(after),
             ..
         },
     ] = paths.as_slice()
@@ -1232,7 +1229,7 @@ fn free_of_external_allocation_forgets_cells_without_separation() {
 
     assert_eq!(
         after.memory().load(&unrelated),
-        CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory)
+        ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory)
     );
     assert!(
         !after
@@ -1257,7 +1254,7 @@ fn interface_heap_join_retains_potential_live_allocation() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let retained = ExecutionState::new().with_memory(
-        CMemory::new()
+        Memory::new()
             .with_heap_allocation_claim(allocation_base.clone(), HeapExtent::int32(16))
             .expect("the allocation claim should be fresh"),
     );
@@ -1309,14 +1306,14 @@ fn free_requires_allocation_authority_not_just_write_access() {
         &success,
         &c_heap_free(c_variable("p")),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("missing-authority free should execute to a diagnostic");
     assert!(matches!(
         paths.as_slice(),
-        [CStatementExecutionPath {
-            outcome: CStatementOutcome::RuntimeError(CRuntimeError::MissingResource {
+        [StatementExecutionPath {
+            outcome: StatementOutcome::RuntimeError(RuntimeError::MissingResource {
                 resource
             }),
             ..
@@ -1331,13 +1328,13 @@ fn heap_storage_becomes_readable_only_after_a_store() {
         &success,
         &c_store(c_variable("p"), c_int32_literal(37)),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("an owned fresh heap cell should be writable");
     let [
-        CStatementExecutionPath {
-            outcome: CStatementOutcome::Normal(stored),
+        StatementExecutionPath {
+            outcome: StatementOutcome::Normal(stored),
             ..
         },
     ] = stored.as_slice()
@@ -1353,8 +1350,8 @@ fn heap_storage_becomes_readable_only_after_a_store() {
     .expect("initialized heap read should execute");
     assert!(matches!(
         read.as_slice(),
-        [CExpressionPath {
-            outcome: CExpressionOutcome::Value(value),
+        [ExpressionPath {
+            outcome: ExpressionOutcome::Value(value),
             ..
         }] if value == &int32(37)
     ));
@@ -1368,7 +1365,7 @@ fn active_stable_loan_rejects_overlapping_heap_free_and_realloc() {
         panic!("allocation should assign a pointer");
     };
     // The second int32 cell is a strict subrange of the 16-byte allocation.
-    let loan = active_heap_memory_loan(CMemoryRange::new(
+    let loan = active_heap_memory_loan(MemoryRange::new(
         pointer.pointer().clone(),
         MachineTerm::constant(1),
         MachineTerm::constant(2),
@@ -1378,7 +1375,7 @@ fn active_stable_loan_rejects_overlapping_heap_free_and_realloc() {
         &state,
         &c_heap_free(c_variable("p")),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("free should return a checked refusal");
@@ -1389,7 +1386,7 @@ fn active_stable_loan_rejects_overlapping_heap_free_and_realloc() {
         &state,
         &c_call_assign("q", "realloc", vec![c_variable("p"), c_int32_literal(8)]),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("realloc should return a checked refusal");
@@ -1403,13 +1400,13 @@ fn realloc_keeps_old_resources_until_result_and_transfers_them_on_success() {
         &state,
         &c_store(c_variable("p"), c_int32_literal(37)),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("the old allocation should be writable");
     let [
-        CStatementExecutionPath {
-            outcome: CStatementOutcome::Normal(stored),
+        StatementExecutionPath {
+            outcome: StatementOutcome::Normal(stored),
             ..
         },
     ] = stored.as_slice()
@@ -1423,13 +1420,13 @@ fn realloc_keeps_old_resources_until_result_and_transfers_them_on_success() {
         &state,
         &c_call_assign("q", "realloc", vec![c_variable("p"), c_int32_literal(8)]),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("realloc should leave one pending result");
     let [
-        CStatementExecutionPath {
-            outcome: CStatementOutcome::Normal(pending),
+        StatementExecutionPath {
+            outcome: StatementOutcome::Normal(pending),
             ..
         },
     ] = realloc_paths.as_slice()
@@ -1484,7 +1481,7 @@ fn realloc_keeps_old_resources_until_result_and_transfers_them_on_success() {
         success
             .resources()
             .facts()
-            .contains(&CResourceFact::own_allocation(resized.pointer().clone(), 8,))
+            .contains(&ResourceFact::own_allocation(resized.pointer().clone(), 8,))
     );
     assert!(!success.resources().facts().iter().any(|fact| {
         fact.allocation()
@@ -1510,7 +1507,7 @@ fn realloc_keeps_old_resources_until_result_and_transfers_them_on_success() {
         failure
             .resources()
             .facts()
-            .contains(&CResourceFact::own_allocation(
+            .contains(&ResourceFact::own_allocation(
                 old_pointer.pointer().clone(),
                 16,
             ))
@@ -1524,14 +1521,14 @@ fn free_null_needs_no_allocation_resources() {
         &state,
         &c_heap_free(c_variable("p")),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("free(NULL) should execute");
     assert!(matches!(
         paths.as_slice(),
-        [CStatementExecutionPath {
-            outcome: CStatementOutcome::Normal(after),
+        [StatementExecutionPath {
+            outcome: StatementOutcome::Normal(after),
             ..
         }] if **after == state
     ));
@@ -1547,19 +1544,19 @@ fn free_preserves_a_separate_recursive_tail_with_the_same_symbolic_block() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(909_001)), 4),
     };
-    let tail_resource = CResourceFact::own_composite(
+    let tail_resource = ResourceFact::own_composite(
         "allocated_list".to_string(),
         vec![ProgramValue::pointer(tail)],
     );
     let resources = ResourceContext::new()
-        .unchecked_with_fact(CResourceFact::own_allocation(base.clone(), 16))
-        .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+        .unchecked_with_fact(ResourceFact::own_allocation(base.clone(), 16))
+        .unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
             base.clone(),
             MachineTerm::constant(0),
             MachineTerm::constant(4),
         )))
         .unchecked_with_fact(tail_resource.clone());
-    let memory = CMemory::new()
+    let memory = Memory::new()
         .with_heap_allocation_claim(base.clone(), HeapExtent::int32(16))
         .expect("symbolic allocation claim should be fresh");
     let state = ExecutionState::new()
@@ -1571,14 +1568,14 @@ fn free_preserves_a_separate_recursive_tail_with_the_same_symbolic_block() {
         &state,
         &c_heap_free(c_variable("p")),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("freeing a separated parent should execute");
     assert!(matches!(
         paths.as_slice(),
-        [CStatementExecutionPath {
-            outcome: CStatementOutcome::Normal(after),
+        [StatementExecutionPath {
+            outcome: StatementOutcome::Normal(after),
             ..
         }] if after.resources().facts() == [tail_resource]
     ));
@@ -1593,18 +1590,18 @@ fn nullable_owner_contract(
     };
     let pointer_value = ProgramValue::pointer(pointer.clone());
     let pointer_expression = SpecExpression::ProgramExpression(c_variable("item"));
-    let definition = CCompositeResourceDefinition::new(
+    let definition = CompositeResourceDefinition::new(
         "owned_item",
         vec![c_parameter("item", ProgramType::Int32Pointer)],
         Some(SpecProposition::Comparison {
             left: pointer_expression.clone(),
-            operator: CComparisonOperator::NotEqual,
+            operator: ComparisonOperator::NotEqual,
             right: SpecExpression::Value(ProgramValue::pointer(Pointer::null())),
         }),
         false,
         vec![
-            CResourceSpec::token(
-                CResourceAccessMode::Own,
+            ResourceSpec::token(
+                ResourceAccessMode::Own,
                 "allocation".to_string(),
                 vec![
                     c_variable("item"),
@@ -1612,7 +1609,7 @@ fn nullable_owner_contract(
                 ],
                 vec![ProgramType::Int32Pointer, ProgramType::Int32],
             ),
-            CResourceSpec::owned_memory(CMemorySegment {
+            ResourceSpec::owned_memory(MemorySegment {
                 base: c_variable("item"),
                 start: c_int32_literal(0),
                 end: c_int32_literal(1),
@@ -1624,8 +1621,8 @@ fn nullable_owner_contract(
         ],
         Vec::new(),
     );
-    let requirement = CResourceSpec::composite(
-        CResourceAccessMode::Own,
+    let requirement = ResourceSpec::composite(
+        ResourceAccessMode::Own,
         "owned_item".to_string(),
         vec![c_variable("item")],
         vec![ProgramType::Int32Pointer],
@@ -1641,13 +1638,13 @@ fn nullable_owner_contract(
         Vec::new(),
         Vec::new(),
         Vec::new(),
-        vec![CFunctionContractClaim::body_safety()],
+        vec![FunctionContractClaim::body_safety()],
         true,
     )
     .with_composite_resource_definitions(vec![definition]);
     let state =
         ExecutionState::new().with_resource_context(ResourceContext::new().unchecked_with_fact(
-            CResourceFact::own_composite("owned_item".to_string(), vec![pointer_value]),
+            ResourceFact::own_composite("owned_item".to_string(), vec![pointer_value]),
         ));
     (state, function, vec![c_pointer_value(pointer)])
 }
@@ -1657,19 +1654,19 @@ fn guarded_opaque_call_footprints_skip_only_inactive_segments() {
     let (_, mut function, _) = nullable_owner_contract(c_return(c_int32_literal(0)));
     let active = SpecProposition::Comparison {
         left: SpecExpression::ProgramExpression(c_variable("item")),
-        operator: CComparisonOperator::NotEqual,
+        operator: ComparisonOperator::NotEqual,
         right: SpecExpression::Value(ProgramValue::pointer(Pointer::null())),
     };
     std::sync::Arc::make_mut(&mut function.contract_interface).contract_mutable = vec![
-        CMemorySegment::new(c_int32_literal(7), c_int32_literal(0), c_int32_literal(1))
+        MemorySegment::new(c_int32_literal(7), c_int32_literal(0), c_int32_literal(1))
             .with_guard(active),
     ];
-    let environment = CExecutionEnvironment::new()
+    let environment = ExecutionEnvironment::new()
         .with_function(function.clone())
-        .with_verified_function_rule(CVerifiedFunctionRule {
+        .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: function.clone(),
-            loop_semantics: CLoopSemantics::Verify,
+            loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
             applied_tactics: Default::default(),
         });
@@ -1678,20 +1675,20 @@ fn guarded_opaque_call_footprints_skip_only_inactive_segments() {
     let null_state = ExecutionState::new()
         .with_population_creation_tracking()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
-            CResourceFact::own_composite("owned_item".to_string(), vec![null]),
+            ResourceFact::own_composite("owned_item".to_string(), vec![null]),
         ));
     let null_paths = execute_c_statement_paths(
         &null_state,
         &c_call_assign("result", "item_destroy", vec![c_int32_literal(0)]),
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment),
+        ExecutionContext::apply_verified_rules(&environment),
         &mut ExecutionBudget::default(),
     )
     .expect("an inactive malformed footprint should not be evaluated");
     assert!(matches!(
         null_paths.as_slice(),
-        [CStatementExecutionPath {
-            outcome: CStatementOutcome::Normal(_),
+        [StatementExecutionPath {
+            outcome: StatementOutcome::Normal(_),
             ..
         }]
     ));
@@ -1703,7 +1700,7 @@ fn guarded_opaque_call_footprints_skip_only_inactive_segments() {
     let nonnull_state = ExecutionState::new()
         .with_population_creation_tracking()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
-            CResourceFact::own_composite(
+            ResourceFact::own_composite(
                 "owned_item".to_string(),
                 vec![ProgramValue::pointer(nonnull.clone())],
             ),
@@ -1712,14 +1709,14 @@ fn guarded_opaque_call_footprints_skip_only_inactive_segments() {
         &nonnull_state,
         &c_call_assign("result", "item_destroy", vec![c_pointer_value(nonnull)]),
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment),
+        ExecutionContext::apply_verified_rules(&environment),
         &mut ExecutionBudget::default(),
     )
     .expect("an active malformed footprint should produce a local diagnostic");
     assert!(matches!(
         nonnull_paths.as_slice(),
-        [CStatementExecutionPath {
-            outcome: CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(message)),
+        [StatementExecutionPath {
+            outcome: StatementOutcome::RuntimeError(RuntimeError::FunctionContract(message)),
             ..
         }] if message.contains("could not evaluate mutable footprint")
     ));
@@ -1736,9 +1733,9 @@ fn contract_certification_splits_undecided_conditional_resource_guards() {
         function.clone(),
         arguments,
         Vec::new(),
-        CExecutionEnvironment::new(),
-        CExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        CFunctionContractExecutionMode::VerifyLoops,
+        ExecutionEnvironment::new(),
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
+        FunctionContractExecutionMode::VerifyLoops,
     );
 
     assert_eq!(execution.path_count(), 2);
@@ -1750,11 +1747,11 @@ fn contract_certification_splits_undecided_conditional_produced_resources() {
     let (state, function, arguments) = nullable_owner_contract(c_return(c_int32_literal(0)));
     let guard = SpecProposition::Comparison {
         left: SpecExpression::ProgramExpression(c_variable("item")),
-        operator: CComparisonOperator::NotEqual,
+        operator: ComparisonOperator::NotEqual,
         right: SpecExpression::Value(ProgramValue::pointer(Pointer::null())),
     };
-    let resource = CResourceSpec::composite(
-        CResourceAccessMode::Own,
+    let resource = ResourceSpec::composite(
+        ResourceAccessMode::Own,
         "owned_item".to_string(),
         vec![c_variable("item")],
         vec![ProgramType::Int32Pointer],
@@ -1766,9 +1763,9 @@ fn contract_certification_splits_undecided_conditional_produced_resources() {
         function.clone(),
         arguments,
         Vec::new(),
-        CExecutionEnvironment::new(),
-        CExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        CFunctionContractExecutionMode::VerifyLoops,
+        ExecutionEnvironment::new(),
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
+        FunctionContractExecutionMode::VerifyLoops,
     );
 
     assert_eq!(execution.path_count(), 2);
@@ -1789,9 +1786,9 @@ fn conditional_resource_certification_checks_the_unsafe_case_too() {
         function.clone(),
         arguments,
         Vec::new(),
-        CExecutionEnvironment::new(),
-        CExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        CFunctionContractExecutionMode::VerifyLoops,
+        ExecutionEnvironment::new(),
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
+        FunctionContractExecutionMode::VerifyLoops,
     );
 
     assert_eq!(execution.path_count(), 2);
@@ -1810,15 +1807,15 @@ fn interior_free_and_store_after_free_are_rejected() {
         &success,
         &c_heap_free(c_add(c_variable("p"), c_int32_literal(1))),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("interior free should produce a diagnostic");
     assert!(matches!(
         interior.as_slice(),
-        [CStatementExecutionPath {
-            outcome: CStatementOutcome::RuntimeError(CRuntimeError::InvalidFree(
-                CInvalidFree::InteriorPointer
+        [StatementExecutionPath {
+            outcome: StatementOutcome::RuntimeError(RuntimeError::InvalidFree(
+                InvalidFree::InteriorPointer
             )),
             ..
         }]
@@ -1828,13 +1825,13 @@ fn interior_free_and_store_after_free_are_rejected() {
         &success,
         &c_heap_free(c_variable("p")),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("valid free should execute");
     let [
-        CStatementExecutionPath {
-            outcome: CStatementOutcome::Normal(freed),
+        StatementExecutionPath {
+            outcome: StatementOutcome::Normal(freed),
             ..
         },
     ] = freed.as_slice()
@@ -1845,14 +1842,14 @@ fn interior_free_and_store_after_free_are_rejected() {
         freed,
         &c_store(c_variable("p"), c_int32_literal(1)),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("store-after-free should produce undefined behavior");
     assert!(matches!(
         store.as_slice(),
-        [CStatementExecutionPath {
-            outcome: CStatementOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory),
+        [StatementExecutionPath {
+            outcome: StatementOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),
             ..
         }]
     ));
@@ -1866,7 +1863,7 @@ fn returning_malloc_result_resolves_null_and_success_outcomes() {
         &state,
         &statement,
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("returning a malloc result should split its outcomes");
@@ -1881,7 +1878,7 @@ fn returning_malloc_result_resolves_null_and_success_outcomes() {
     let mut saw_success = false;
     let mut saw_failure = false;
     for path in paths {
-        let CStatementOutcome::Return { value, state } = path.outcome else {
+        let StatementOutcome::Return { value, state } = path.outcome else {
             panic!("malloc return should not produce a diagnostic");
         };
         let ProgramValue::Pointer(pointer) = value.clone().into_native() else {
@@ -1902,10 +1899,7 @@ fn returning_malloc_result_resolves_null_and_success_outcomes() {
                 state
                     .resources()
                     .facts()
-                    .contains(&CResourceFact::own_allocation(
-                        pointer.pointer().clone(),
-                        16
-                    ))
+                    .contains(&ResourceFact::own_allocation(pointer.pointer().clone(), 16))
             );
         }
     }
@@ -1920,14 +1914,14 @@ fn unreturned_unresolved_malloc_result_cannot_cross_a_return() {
         &state,
         &statement,
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("unresolved allocation should execute to a diagnostic");
     assert!(matches!(
         paths.as_slice(),
-        [CStatementExecutionPath {
-            outcome: CStatementOutcome::RuntimeError(CRuntimeError::UnresolvedAllocationOutcome),
+        [StatementExecutionPath {
+            outcome: StatementOutcome::RuntimeError(RuntimeError::UnresolvedAllocationOutcome),
             ..
         }]
     ));
@@ -1959,7 +1953,7 @@ fn freeing_through_one_spelling_retires_the_equal_spelling_too() {
         true,
     ));
 
-    let memory = CMemory::new()
+    let memory = Memory::new()
         .store(alias.clone(), int32(7))
         .with_block(fresh.block.clone(), 8)
         .store(fresh.clone(), int32(11))
@@ -1979,7 +1973,7 @@ fn freeing_through_one_spelling_retires_the_equal_spelling_too() {
     );
     assert_eq!(
         freed.load(&alias),
-        CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory),
+        ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),
         "no cached cell survives under the aliased spelling"
     );
     assert!(
@@ -1989,12 +1983,12 @@ fn freeing_through_one_spelling_retires_the_equal_spelling_too() {
     assert!(
         freed.is_deallocated_heap_address(&base, &assumptions)
             && freed.load(&base)
-                == CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory),
+                == ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),
         "the allocation's own spelling is deallocated and unavailable"
     );
     assert_eq!(
         freed.load(&fresh),
-        CExpressionOutcome::Value(int32(11)),
+        ExpressionOutcome::Value(int32(11)),
         "a structurally fresh, proven-distinct allocation is unaffected"
     );
 }
@@ -2009,11 +2003,11 @@ fn contract_retire_forgets_zeroed_reading_and_records_the_change() {
         &state,
         &c_heap_allocate_sized_with_zeroed("p", c_int32_literal(4), true),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("calloc-shaped allocation should execute");
-    let CStatementOutcome::Normal(pending) = &paths[0].outcome else {
+    let StatementOutcome::Normal(pending) = &paths[0].outcome else {
         panic!("allocation should produce a pending outcome");
     };
     let local_native_output_1985 = pending.locals().get_native("p");
@@ -2056,7 +2050,7 @@ fn contract_retire_forgets_zeroed_reading_and_records_the_change() {
     );
     assert!(matches!(
         intern_c_memory_ref(&retired).derivation().as_deref(),
-        Some(CMemoryDerivation::ContractAllocationRetired { allocation_base, .. })
+        Some(MemoryDerivation::ContractAllocationRetired { allocation_base, .. })
             if allocation_base == &base
     ));
     let after_call = success.with_memory(retired);
@@ -2070,8 +2064,8 @@ fn contract_retire_forgets_zeroed_reading_and_records_the_change() {
     assert!(
         !matches!(
             read.as_slice(),
-            [CExpressionPath {
-                outcome: CExpressionOutcome::Value(value),
+            [ExpressionPath {
+                outcome: ExpressionOutcome::Value(value),
                 ..
             }] if value == &int32(0)
         ),
@@ -2095,7 +2089,7 @@ fn store_union_forgets_aliased_raw_cell() {
         ConditionTerm::pointer_equal(alias.clone(), base.clone()),
         true,
     ));
-    let memory = CMemory::new().store(alias.clone(), int32(7)).store_union(
+    let memory = Memory::new().store(alias.clone(), int32(7)).store_union(
         base.clone(),
         ProgramType::Int16,
         crate::kernel::int16(42),
@@ -2110,7 +2104,7 @@ fn store_union_forgets_aliased_raw_cell() {
         )
     ));
 
-    let memory = CMemory::new()
+    let memory = Memory::new()
         .store_union(base.clone(), ProgramType::Int16, crate::kernel::int16(42))
         .store_with_context(alias.clone(), int32(7), &assumptions);
     assert_eq!(memory.known_value(&alias), Some(int32(7)));
@@ -2135,7 +2129,7 @@ fn logical_heap_value_does_not_initialize_a_c_read() {
     let [path] = logical.as_slice() else {
         panic!("one logical read");
     };
-    let CExpressionOutcome::Value(ProgramValue::Int32(value)) = &path.outcome else {
+    let ExpressionOutcome::Value(ProgramValue::Int32(value)) = &path.outcome else {
         panic!("logical read must have a value");
     };
     assert!(path.obligations.is_empty());
@@ -2157,8 +2151,8 @@ fn logical_heap_value_does_not_initialize_a_c_read() {
     .expect("C evaluation should report the invalid read");
     assert!(matches!(
         reads.as_slice(),
-        [CExpressionPath {
-            outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead),
+        [ExpressionPath {
+            outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::UninitializedRead),
             ..
         }]
     ));
@@ -2183,7 +2177,7 @@ fn explicit_read_validity_is_typed_and_does_not_cross_havoc() {
         &address,
         ProgramType::Int64
     ));
-    let range = CMemoryRange::new(
+    let range = MemoryRange::new(
         address.clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(1),
@@ -2252,7 +2246,7 @@ fn read_validity_transports_checked_aliases_without_crossing_writes_or_retiremen
     ));
     let changed = state.memory().clone().store(unrelated, int32(5));
     assert!(assumptions.has_memory_read_defined_evidence(&changed, &alias, ProgramType::Int32));
-    let range = CMemoryRange::new(alias.clone(), 0u32.into(), 1u32.into());
+    let range = MemoryRange::new(alias.clone(), 0u32.into(), 1u32.into());
     let havoc =
         changed
             .clone()
@@ -2271,7 +2265,7 @@ fn read_validity_transports_field_offsets_through_equal_base_pointers() {
     let alias = Pointer::symbolic(Variable(943_001));
     let field = base.offset_by_bytes(4);
     let alias_field = alias.offset_by_bytes(4);
-    let memory = CMemory::new()
+    let memory = Memory::new()
         .with_heap_allocation_claim(base.clone(), HeapExtent::int32(8))
         .unwrap();
     let assumptions = PureFactContext::new()
@@ -2309,7 +2303,7 @@ fn read_validity_transports_field_offsets_through_equal_base_pointers() {
     ));
     let havoc = changed.clone().with_call_memory_havoc(
         Variable(943_003),
-        &[CMemoryRange::new(
+        &[MemoryRange::new(
             alias_field.clone(),
             0u32.into(),
             1u32.into(),
@@ -2336,7 +2330,7 @@ fn naming_an_uninitialized_local_cell_does_not_initialize_it() {
         block: "local:uninitialized".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = CMemory::new().with_block("local:uninitialized", 4);
+    let memory = Memory::new().with_block("local:uninitialized", 4);
     let name = canonical_form_of_load(
         intern_c_memory(memory.clone()),
         address.clone(),
@@ -2355,8 +2349,8 @@ fn naming_an_uninitialized_local_cell_does_not_initialize_it() {
     .unwrap();
     assert!(matches!(
         reads.as_slice(),
-        [CExpressionPath {
-            outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead),
+        [ExpressionPath {
+            outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::UninitializedRead),
             ..
         }]
     ));
@@ -2389,7 +2383,7 @@ fn an_unplaced_heap_store_keeps_the_elements_it_may_alias_initialized() {
         block: base.block.clone(),
         offset: PointerOffsetTerm::scale_int32(index, 4),
     };
-    let store = |memory: CMemory, pointer: Pointer, value: u32| {
+    let store = |memory: Memory, pointer: Pointer, value: u32| {
         memory
             .without_possible_aliasing_cells(&pointer, 4, &assumptions)
             .store_with_context(pointer, int32(value), &assumptions)
@@ -2413,13 +2407,13 @@ fn an_unplaced_heap_store_keeps_the_elements_it_may_alias_initialized() {
     assert!(
         first
             .iter()
-            .all(|path| matches!(path.outcome, CExpressionOutcome::Value(_))),
+            .all(|path| matches!(path.outcome, ExpressionOutcome::Value(_))),
         "an initialized element whose value is forgotten reads as a value: {first:?}"
     );
     assert!(
         read(2).iter().any(|path| matches!(
             path.outcome,
-            CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead)
+            ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::UninitializedRead)
         )),
         "a never-written element stays uninitialized"
     );
@@ -2450,13 +2444,13 @@ fn fresh_heap_struct_binding_checks_extent_alignment_and_resolution() {
                     ends_program_on_failure: false,
                 },
                 &PureFactContext::new(),
-                CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+                ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
                 &mut ExecutionBudget::default(),
             )
             .unwrap();
             let [
-                CStatementExecutionPath {
-                    outcome: CStatementOutcome::Normal(pending),
+                StatementExecutionPath {
+                    outcome: StatementOutcome::Normal(pending),
                     ..
                 },
             ] = paths.as_slice()
@@ -2511,13 +2505,13 @@ fn an_allocation_that_ends_the_program_on_failure_continues_only_on_success() {
             ends_program_on_failure: true,
         },
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .unwrap();
     let [
-        CStatementExecutionPath {
-            outcome: CStatementOutcome::Normal(pending),
+        StatementExecutionPath {
+            outcome: StatementOutcome::Normal(pending),
             facts,
             ..
         },
@@ -2551,7 +2545,7 @@ mod free_base_alias_tests;
 /// and, for its one pending outcome, the success state.
 fn size_t_heap_allocation(
     facts: &[ConditionTerm],
-) -> (Vec<CStatementExecutionPath>, Option<ExecutionState>) {
+) -> (Vec<StatementExecutionPath>, Option<ExecutionState>) {
     size_t_heap_allocation_with_zeroed(facts, false)
 }
 
@@ -2561,7 +2555,7 @@ fn size_t_heap_allocation(
 fn size_t_heap_allocation_with_zeroed(
     facts: &[ConditionTerm],
     zeroed: bool,
-) -> (Vec<CStatementExecutionPath>, Option<ExecutionState>) {
+) -> (Vec<StatementExecutionPath>, Option<ExecutionState>) {
     let n = MachineTerm::Variable(Variable(1 << 40));
     let state = ExecutionState::new()
         .with_population_creation_tracking()
@@ -2580,14 +2574,14 @@ fn size_t_heap_allocation_with_zeroed(
             zeroed,
         ),
         &assumptions,
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("a size_t allocation should execute");
     let success = match paths.as_slice() {
         [
-            CStatementExecutionPath {
-                outcome: CStatementOutcome::Normal(pending),
+            StatementExecutionPath {
+                outcome: StatementOutcome::Normal(pending),
                 ..
             },
         ] => {
@@ -2630,13 +2624,13 @@ fn a_bounded_size_t_element_count_makes_a_64_bit_block() {
         Some(&extent)
     );
     let facts = success.resources().facts();
-    assert!(facts.contains(&CResourceFact::own_heap_allocation(
+    assert!(facts.contains(&ResourceFact::own_heap_allocation(
         pointer.pointer().clone(),
         &extent
     )));
     let range = extent.range(pointer.pointer().clone(), n, 4);
     assert_eq!(range.kind(), RangeIndexKind::UInt64);
-    assert!(facts.contains(&CResourceFact::own_memory(range)));
+    assert!(facts.contains(&ResourceFact::own_memory(range)));
 }
 
 /// A `size_t` count with no upper bound is refused, and so is one whose
@@ -2657,8 +2651,8 @@ fn an_unbounded_size_t_element_count_is_refused() {
         let (paths, _) = size_t_heap_allocation(&facts);
         assert!(matches!(
             paths.as_slice(),
-            [CStatementExecutionPath {
-                outcome: CStatementOutcome::RuntimeError(CRuntimeError::HeapAllocationSize),
+            [StatementExecutionPath {
+                outcome: StatementOutcome::RuntimeError(RuntimeError::HeapAllocationSize),
                 ..
             }]
         ));
@@ -2715,7 +2709,7 @@ fn a_bounded_size_t_calloc_count_makes_a_zeroed_64_bit_block() {
         success
             .resources()
             .facts()
-            .contains(&CResourceFact::own_heap_allocation(
+            .contains(&ResourceFact::own_heap_allocation(
                 pointer.pointer().clone(),
                 &extent
             ))
@@ -2747,8 +2741,8 @@ fn a_size_t_calloc_count_whose_product_may_wrap_is_refused() {
         assert!(
             matches!(
                 paths.as_slice(),
-                [CStatementExecutionPath {
-                    outcome: CStatementOutcome::RuntimeError(CRuntimeError::HeapAllocationSize),
+                [StatementExecutionPath {
+                    outcome: StatementOutcome::RuntimeError(RuntimeError::HeapAllocationSize),
                     ..
                 }]
             ),
@@ -2799,13 +2793,13 @@ fn a_64_bit_block_reallocates_to_a_64_bit_size() {
             ],
         ),
         &assumptions,
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("a 64-bit realloc should execute");
     let [
-        CStatementExecutionPath {
-            outcome: CStatementOutcome::Normal(pending),
+        StatementExecutionPath {
+            outcome: StatementOutcome::Normal(pending),
             ..
         },
     ] = paths.as_slice()
@@ -2841,20 +2835,20 @@ fn a_64_bit_block_reallocates_to_a_64_bit_size() {
         HeapExtentKind::UInt64,
     );
     let facts = success.resources().facts();
-    assert!(!facts.contains(&CResourceFact::own_heap_allocation(
+    assert!(!facts.contains(&ResourceFact::own_heap_allocation(
         old_pointer.clone(),
         &old_extent
     )));
-    assert!(!facts.contains(&CResourceFact::own_memory(old_extent.range(
+    assert!(!facts.contains(&ResourceFact::own_memory(old_extent.range(
         old_pointer,
         n,
         4
     ))));
-    assert!(facts.contains(&CResourceFact::own_heap_allocation(
+    assert!(facts.contains(&ResourceFact::own_heap_allocation(
         resized.pointer().clone(),
         &extent
     )));
     let range = extent.range(resized.pointer().clone(), m, 4);
     assert_eq!(range.kind(), RangeIndexKind::UInt64);
-    assert!(facts.contains(&CResourceFact::own_memory(range)));
+    assert!(facts.contains(&ResourceFact::own_memory(range)));
 }

@@ -9,7 +9,7 @@ fn a_loop_frame_normalizes_its_retained_views_once() {
         let state = ExecutionState::new();
         let views = (0..count)
             .map(|index| {
-                CResourceFact::view_memory(CMemoryRange::new(
+                ResourceFact::view_memory(MemoryRange::new(
                     Pointer::symbolic(Variable(9_360_000 + index)),
                     MachineTerm::constant(0),
                     MachineTerm::constant(1),
@@ -71,13 +71,13 @@ fn loop_binding_carryover_ignores_ambient_observations() {
                 Pointer::symbolic(Variable(9_370_001)),
                 ProgramType::Int32Pointer,
             );
-            let view = CResourceFact::view_memory(CMemoryRange::from_pointer_value(
+            let view = ResourceFact::view_memory(MemoryRange::from_pointer_value(
                 &pointer,
                 0u32.into(),
                 8u32.into(),
                 4,
             ));
-            let spec = CResourceSpec::viewed_memory(CMemorySegment::new(
+            let spec = ResourceSpec::viewed_memory(MemorySegment::new(
                 ProgramExpression::Value(ProgramValue::Pointer(pointer)),
                 ProgramExpression::Value(ProgramValue::Int32(0u32.into())),
                 ProgramExpression::Value(ProgramValue::Int32(8u32.into())),
@@ -219,10 +219,9 @@ fn explicit_loop_views_keep_scalar_owners_without_visiting_observations() {
         let scalar = Pointer::symbolic(Variable(9_380_001));
         let heap = Pointer::symbolic(Variable(9_380_002));
         let scalar_owner =
-            CResourceFact::own_memory(CMemoryRange::new(scalar.clone(), 0u32.into(), 4u32.into()));
-        let heap_owner =
-            CResourceFact::own_memory(CMemoryRange::new(heap, 0u32.into(), 4u32.into()));
-        let state = ExecutionState::new().with_memory(CMemory::new().with_declared_scalar_block(
+            ResourceFact::own_memory(MemoryRange::new(scalar.clone(), 0u32.into(), 4u32.into()));
+        let heap_owner = ResourceFact::own_memory(MemoryRange::new(heap, 0u32.into(), 4u32.into()));
+        let state = ExecutionState::new().with_memory(Memory::new().with_declared_scalar_block(
             scalar.block,
             4,
             ProgramType::Int32,
@@ -231,7 +230,7 @@ fn explicit_loop_views_keep_scalar_owners_without_visiting_observations() {
             .unchecked_with_fact(scalar_owner.clone())
             .unchecked_with_fact(heap_owner.clone());
         for index in 0..count {
-            withheld = withheld.unchecked_with_fact(CResourceFact::view_memory(CMemoryRange::new(
+            withheld = withheld.unchecked_with_fact(ResourceFact::view_memory(MemoryRange::new(
                 Pointer::symbolic(Variable(9_381_000 + index)),
                 0u32.into(),
                 4u32.into(),
@@ -275,14 +274,14 @@ fn explicit_loop_frame_ignores_rejected_heap_owners() {
             ProgramType::Int32Pointer,
         );
         let scalar_owner =
-            CResourceFact::own_memory(CMemoryRange::new(scalar.clone(), 0u32.into(), 4u32.into()));
-        let view = CResourceFact::view_memory(CMemoryRange::from_pointer_value(
+            ResourceFact::own_memory(MemoryRange::new(scalar.clone(), 0u32.into(), 4u32.into()));
+        let view = ResourceFact::view_memory(MemoryRange::from_pointer_value(
             &viewed,
             0u32.into(),
             1u32.into(),
             4,
         ));
-        let spec = CResourceSpec::viewed_memory(CMemorySegment::new(
+        let spec = ResourceSpec::viewed_memory(MemorySegment::new(
             ProgramExpression::Value(ProgramValue::Pointer(viewed)),
             ProgramExpression::Value(ProgramValue::Int32(0u32.into())),
             ProgramExpression::Value(ProgramValue::Int32(1u32.into())),
@@ -290,10 +289,10 @@ fn explicit_loop_frame_ignores_rejected_heap_owners() {
         let mut withheld =
             ResourceContext::new_with_equalities(&facts).unchecked_with_fact(scalar_owner.clone());
         let mut memory =
-            CMemory::new().with_declared_scalar_block(scalar.block, 4, ProgramType::Int32);
+            Memory::new().with_declared_scalar_block(scalar.block, 4, ProgramType::Int32);
         let mut heaps = Vec::new();
         for index in 0..count {
-            let owner = CResourceFact::own_memory(CMemoryRange::new(
+            let owner = ResourceFact::own_memory(MemoryRange::new(
                 Pointer::symbolic(Variable(9_391_000 + index)),
                 0u32.into(),
                 4u32.into(),

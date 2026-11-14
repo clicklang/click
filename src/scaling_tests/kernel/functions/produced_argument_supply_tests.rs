@@ -36,14 +36,13 @@ fn produced_read_supply_scales_with_outputs_and_ignores_the_caller_frame() {
         let mut bindings = BTreeMap::new();
         for index in 0..count {
             entry = entry.with_local(format!("unrelated_{index}"), int32(index));
-            entry.resources =
-                entry
-                    .resources
-                    .clone()
-                    .unchecked_with_fact(CResourceFact::own_token(
-                        "unrelated".into(),
-                        vec![int32(index)],
-                    ));
+            entry.resources = entry
+                .resources
+                .clone()
+                .unchecked_with_fact(ResourceFact::own_token(
+                    "unrelated".into(),
+                    vec![int32(index)],
+                ));
             // Consumed instances can retain their logical binding without
             // current custody. No primitive output depends on these names.
             let identity = Variable(910_000 + u64::from(index));

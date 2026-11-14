@@ -176,7 +176,7 @@ fn generic_pointer_struct_parameters_apply_and_expand() {
         panic!("expected containment");
     };
     for resource in [parent, child] {
-        let crate::kernel::CResource::Memory(range) = resource.as_ref() else {
+        let crate::kernel::Resource::Memory(range) = resource.as_ref() else {
             panic!("expected memory");
         };
         assert_eq!(
@@ -316,16 +316,16 @@ fn separating_conjunction_laws_expand_without_implicit_search() {
 #[test]
 fn conjunction_nodes_keep_multiplicity_and_session_identity() {
     let _session = crate::kernel::VerificationSession::enter();
-    let a = crate::kernel::CResource::Parameter(Variable(987));
-    let repeated = crate::kernel::CResource::star(a.clone(), a.clone());
+    let a = crate::kernel::Resource::Parameter(Variable(987));
+    let repeated = crate::kernel::Resource::star(a.clone(), a.clone());
     assert_ne!(repeated, a);
     assert_eq!(
         repeated,
-        crate::kernel::CResource::star(a.clone(), a.clone())
+        crate::kernel::Resource::star(a.clone(), a.clone())
     );
     let snapshot = crate::kernel::VerificationSession::capture_state();
     let entry_count = crate::kernel::VerificationSession::state_entry_count();
-    let other = crate::kernel::CResource::star(repeated.clone(), a.clone());
+    let other = crate::kernel::Resource::star(repeated.clone(), a.clone());
     assert_ne!(repeated, other);
     assert!(crate::kernel::VerificationSession::state_entry_count() > entry_count);
     assert!(crate::kernel::VerificationSession::restore_state(&snapshot));
@@ -333,7 +333,7 @@ fn conjunction_nodes_keep_multiplicity_and_session_identity() {
         entry_count,
         crate::kernel::VerificationSession::state_entry_count()
     );
-    assert_eq!(repeated, crate::kernel::CResource::star(a.clone(), a));
+    assert_eq!(repeated, crate::kernel::Resource::star(a.clone(), a));
 }
 
 #[test]

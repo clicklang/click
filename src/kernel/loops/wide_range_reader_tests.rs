@@ -4,7 +4,7 @@ use super::*;
 #[test]
 fn wide_loop_frames_cover_native_accesses_and_refuse_cross_width_ranges() {
     let base = Pointer::symbolic(Variable(984_500));
-    let wide = CMemoryRange::new_wide(
+    let wide = MemoryRange::new_wide(
         base.clone(),
         MachineTerm::uint64_constant(0),
         MachineTerm::uint64_constant(1 << 33),
@@ -26,7 +26,7 @@ fn wide_loop_frames_cover_native_accesses_and_refuse_cross_width_ranges() {
     assert!(loop_effect_segment_contains_pointer(
         &segment, &base, 4, &facts
     ));
-    let bytes = CMemoryRange::new_wide(
+    let bytes = MemoryRange::new_wide(
         base.clone(),
         MachineTerm::uint64_constant(0),
         MachineTerm::uint64_constant(1 << 33),
@@ -35,7 +35,7 @@ fn wide_loop_frames_cover_native_accesses_and_refuse_cross_width_ranges() {
     assert!(!loop_effect_segment_contains_range(
         &segment, &bytes, &facts
     ));
-    let check = CLoopEffectCheck::new(CLoopEffect::Mutable(vec![]), None)
+    let check = LoopEffectCheck::new(LoopEffect::Mutable(vec![]), None)
         .with_validated_ranges(vec![wide.clone()]);
     let state = ExecutionState::new();
     let mut budget = ExecutionBudget::beside_live_state();

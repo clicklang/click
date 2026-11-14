@@ -9,7 +9,7 @@ fn wide_storage_exact_load_and_validation_work_ignore_unrelated_memory() {
     let value = literal(c_uint128_literal(u128::MAX));
     let mut samples = Vec::new();
     for size in [16, 64, 256, 1024] {
-        let mut memory = CMemory::new()
+        let mut memory = Memory::new()
             .with_block("local:wide-storage", 16)
             .store(address(0), value.clone());
         for index in 0..size {
@@ -31,7 +31,7 @@ fn wide_storage_exact_load_and_validation_work_ignore_unrelated_memory() {
             assert!(MachineIntegerType::UInt128.accepts_wide_term(&raw));
             paths(&state, &load(address(0), ProgramType::UInt128))
         });
-        assert_eq!(result[0].outcome, CExpressionOutcome::Value(value.clone()));
+        assert_eq!(result[0].outcome, ExpressionOutcome::Value(value.clone()));
         assert!(work < 4096, "{size}: {work}");
         samples.push(work);
     }

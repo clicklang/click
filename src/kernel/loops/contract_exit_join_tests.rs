@@ -51,7 +51,7 @@ fn exit_disjunct_restates_model_getters_without_replacing_history() {
 }
 
 fn marker_exits(count: usize, ambient: usize) -> Vec<ExecutionState> {
-    let mut memory = CMemory::new()
+    let mut memory = Memory::new()
         .with_block("shared", (ambient * 4) as u32)
         .with_block("havoc:10000000", 0);
     for index in 0..ambient {
@@ -184,7 +184,7 @@ fn partial_value_binding_join_cannot_supply_a_missing_read_or_drop_declared_stor
 
     let mut declared = value;
     if let Some(mut binding) = declared.locals.bindings.get("temporary").cloned() {
-        if let CLocalBinding::Object {
+        if let LocalBinding::Object {
             storage_declared, ..
         } = &mut binding
         {
@@ -211,13 +211,13 @@ fn numeric_float_equality_does_not_materialize_positive_zero_bits() {
         block: PointerBlock::Concrete("shared".into()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = CMemory::new().with_block("shared", 4);
+    let memory = Memory::new().with_block("shared", 4);
     let zero = ProgramValue::Float32(MachineTerm::constant(0));
     let load = symbolic_storage_cell_value(&memory, &pointer, ProgramType::Float32, true).unwrap();
     // This equation also permits a negative-zero representation. Filling
     // the cache with positive-zero bits would make a later bitwise read false.
     let facts = [ExecutionPureFact::new(
-        c_value_comparison_proposition(&load, CComparisonOperator::Equal, &zero).unwrap(),
+        c_value_comparison_proposition(&load, ComparisonOperator::Equal, &zero).unwrap(),
     )];
     let mut states = vec![
         ExecutionState::new().with_memory(memory.clone().store(pointer.clone(), zero)),
@@ -250,9 +250,9 @@ fn joined_call_epochs_do_not_transport_uncached_loads_or_hide_real_blocks() {
             .unwrap();
     let zero = int32(0);
     let old_fact =
-        c_value_comparison_proposition(&old_load, CComparisonOperator::Equal, &zero).unwrap();
+        c_value_comparison_proposition(&old_load, ComparisonOperator::Equal, &zero).unwrap();
     let new_fact =
-        c_value_comparison_proposition(&new_load, CComparisonOperator::Equal, &zero).unwrap();
+        c_value_comparison_proposition(&new_load, ComparisonOperator::Equal, &zero).unwrap();
     assert!(
         !PureFactContext::new()
             .assume_proposition(old_fact)

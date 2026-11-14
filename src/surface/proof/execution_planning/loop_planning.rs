@@ -112,7 +112,7 @@ fn loop_ranking_surfaces(
 fn record_loop_entry_invariants(
     surface_propositions: &mut SurfacePropositionMap,
     invariant_surfaces: &[ClickProposition],
-    preservation: &crate::kernel::CLoopPreservationContext,
+    preservation: &crate::kernel::LoopPreservationContext,
     statement_index: usize,
 ) -> Result<Vec<ClickProposition>, ClickError> {
     if invariant_surfaces.len() != preservation.invariant_propositions().len() {
@@ -344,7 +344,7 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
     proof: &SourceProof,
     clause: &StructuralClause,
     context: &PlanningExecutionContext,
-    invariant_checks: &[CLoopInvariantCheck],
+    invariant_checks: &[LoopInvariantCheck],
     environment: &ExecutionProofEnvironment<'_>,
 ) -> Result<CheckedLoopInitialization, ClickError> {
     let source = environment.frontier_loop_source;
@@ -622,7 +622,7 @@ fn check_initialization_body<'a>(
 
 pub(in crate::surface::proof) struct CheckedLoopInitialization {
     pub(in crate::surface::proof) certificate: ProofCertificate,
-    entry_goals: crate::kernel::CLoopEntryGoals,
+    entry_goals: crate::kernel::LoopEntryGoals,
     expansion: InitializePhaseExpansion,
     completions: Vec<crate::kernel::proof::CheckedProposition>,
 }
@@ -664,7 +664,7 @@ pub(in crate::surface::proof) struct AutomaticLoopBody {
 
 pub(in crate::surface::proof) fn plan_automatic_loop_preservation_body(
     loop_index: usize,
-    preservation: &crate::kernel::CLoopPreservationContext,
+    preservation: &crate::kernel::LoopPreservationContext,
     pure_facts: &PureFactList,
     enclosing_snapshots: &RecordedSnapshots,
     body: &ProgramStatement,
@@ -884,20 +884,20 @@ fn preservation_step_paths<'a>(proof: &Proof<'a>) -> Result<Vec<Proof<'a>>, Clic
 pub(in crate::surface::proof) struct LoopPreservationProofResult {
     pub(in crate::surface::proof) return_proofs: Vec<Arc<LoopReturnProof>>,
     pub(in crate::surface::proof) certificate: ProofCertificate,
-    pub(in crate::surface::proof) final_exit_candidates: Vec<CLoopFinalExitCandidate>,
+    pub(in crate::surface::proof) final_exit_candidates: Vec<LoopFinalExitCandidate>,
     /// The body paths that left this loop through `break`, each an exit at
     /// its own state. The loop rule joins them with the guard-false exit.
-    pub(in crate::surface::proof) break_exits: Vec<CLoopBreakExit>,
+    pub(in crate::surface::proof) break_exits: Vec<LoopBreakExit>,
     /// The body paths that left the function through `return`, each with
     /// the value it returned and the state it returned in. The loop rule
     /// exports each as a `Return` outcome of the loop statement.
-    pub(in crate::surface::proof) return_exits: Vec<CLoopReturnExit>,
+    pub(in crate::surface::proof) return_exits: Vec<LoopReturnExit>,
     /// The points each path that left the loop recorded during its pass.
     pub(in crate::surface::proof) exit_points: Vec<RecordedRegionPoints>,
     /// Loop rules checked by frontier-local tactics inside this loop's
     /// preservation proof. They are evidence for termination only; the
     /// enclosing contract still uses the outer loop's checked artifact.
-    pub(in crate::surface::proof) nested_loop_rules: Vec<CVerifiedLoopRule>,
+    pub(in crate::surface::proof) nested_loop_rules: Vec<VerifiedLoopRule>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -906,11 +906,11 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     loop_index: usize,
     tactics: &[ProofTactic],
     first_generated_tactic_index: usize,
-    preservation: &crate::kernel::CLoopPreservationContext,
+    preservation: &crate::kernel::LoopPreservationContext,
     pure_facts: &PureFactList,
     enclosing_snapshots: &RecordedSnapshots,
-    invariant_checks: &[CLoopInvariantCheck],
-    ranking_measures: &[crate::kernel::CRankingComponent],
+    invariant_checks: &[LoopInvariantCheck],
+    ranking_measures: &[crate::kernel::RankingComponent],
     structural_measure: Option<&str>,
     condition: &ProgramExpression,
     body: &ProgramStatement,
@@ -1224,7 +1224,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         for rule in context_execution.core.frontier_loop_rules.iter() {
             if !nested_loop_rules
                 .iter()
-                .any(|existing: &CVerifiedLoopRule| existing == rule)
+                .any(|existing: &VerifiedLoopRule| existing == rule)
             {
                 nested_loop_rules.push(rule.clone());
             }
@@ -1425,11 +1425,11 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             if !seen_nested_returns.insert(Arc::as_ptr(nested) as usize) {
                 continue;
             }
-            let CFunctionOutcome::Return { value, state } = &pending.outcome else {
+            let FunctionOutcome::Return { value, state } = &pending.outcome else {
                 return Err(ClickError::new("nested loop return has no returned value"));
             };
             return_exits.push(
-                CLoopReturnExit::new(
+                LoopReturnExit::new(
                     value.clone(),
                     (**state).clone(),
                     pending.pure_facts.to_vec(),
@@ -1465,7 +1465,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 checked.facts(),
                 &assumptions_from_propositions(checked.facts()),
             );
-            let exit = CLoopReturnExit::new(value, state, exit_facts)
+            let exit = LoopReturnExit::new(value, state, exit_facts)
                 .with_loan_evidence(checked_execution.core.loan_evidence().clone());
             // Equal semantic exits may carry different written proofs. Keep
             // each arm so no source proof disappears through deduplication.
@@ -1523,7 +1523,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 checked.facts(),
                 &assumptions_from_propositions(checked.facts()),
             );
-            let exit = CLoopFinalExitCandidate::new(state, exit_facts)
+            let exit = LoopFinalExitCandidate::new(state, exit_facts)
                 .with_jump_target(match context_frontier.loop_control {
                     crate::kernel::proof::LoopControlExit::NaturalExit(target) => target,
                     _ => unreachable!("the checked frontier is a natural exit jump"),
@@ -1552,7 +1552,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 &checked_execution.core.state,
                 &assumptions_from_propositions(checked.facts()),
             );
-            let exit = CLoopBreakExit::from_proof_facts(state, checked.facts())
+            let exit = LoopBreakExit::from_proof_facts(state, checked.facts())
                 .with_loan_evidence(checked_execution.core.loan_evidence().clone());
             if seen_break_exits.is_new(exit.state(), exit.pure_facts(), &break_exits, &exit) {
                 break_exits.push(exit);
@@ -1594,7 +1594,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                     checked.facts(),
                     &join_assumptions,
                 );
-                let candidate = CLoopFinalExitCandidate::new(state, exit_facts)
+                let candidate = LoopFinalExitCandidate::new(state, exit_facts)
                     .with_loan_evidence(checked_execution.core.loan_evidence().clone());
                 if seen_final_exits.is_new(
                     candidate.state(),

@@ -15,13 +15,13 @@ pub(super) fn array_length(element: ProgramType, length: u64) -> Result<u32, Str
     u32::try_from(length).map_err(|_| "array length exceeds modeled storage".into())
 }
 
-fn array_layout(element: ProgramType, length: u64) -> Result<CAggregateLayout, String> {
+fn array_layout(element: ProgramType, length: u64) -> Result<AggregateLayout, String> {
     let length = array_length(element, length)?;
     let width = element.byte_width();
     let fields = (0..length)
-        .map(|i| CAggregateField::new(i.to_string(), i * width, element))
+        .map(|i| AggregateField::new(i.to_string(), i * width, element))
         .collect();
-    Ok(CAggregateLayout::new(length * width, width, fields))
+    Ok(AggregateLayout::new(length * width, width, fields))
 }
 
 impl Context<'_> {

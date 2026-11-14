@@ -29,9 +29,9 @@ fn assert_near_linear(axis: &str, samples: &[(usize, usize)]) {
 /// declared clauses, so its occurrences are fresh and only the binding
 /// content can connect it to the arm.
 fn interface_join_states(count: usize) -> (ExecutionState, ExecutionState) {
-    let support_fact = CResourceFact::own_token("shared_support".to_string(), Vec::new());
+    let support_fact = ResourceFact::own_token("shared_support".to_string(), Vec::new());
     let viewed = (0..count)
-        .map(|index| CResourceFact::view_token(format!("child_{index}"), Vec::new()))
+        .map(|index| ResourceFact::view_token(format!("child_{index}"), Vec::new()))
         .collect::<Vec<_>>();
     let resources = ResourceContext::new()
         .unchecked_with_facts(std::iter::once(support_fact.clone()).chain(viewed.iter().cloned()));
@@ -82,8 +82,8 @@ fn interface_join_states(count: usize) -> (ExecutionState, ExecutionState) {
 /// A contract-input view over parameter memory: symbolic base offset, so
 /// it never enters the concrete dyadic index and stays in its block's
 /// unindexed bucket.
-fn parameter_view(variable: u64) -> CResourceFact {
-    CResourceFact::view_memory(CMemoryRange::new_with_element_width(
+fn parameter_view(variable: u64) -> ResourceFact {
+    ResourceFact::view_memory(MemoryRange::new_with_element_width(
         Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Variable(Variable(variable)),
@@ -114,8 +114,8 @@ fn symbolic_contract_input_ledger(count: usize) -> LoanLedger {
 }
 
 /// `count` concrete cells in the same block those loans protect.
-fn cells_in_the_symbolic_block(count: usize) -> CMemory {
-    let mut memory = CMemory::new();
+fn cells_in_the_symbolic_block(count: usize) -> Memory {
+    let mut memory = Memory::new();
     for index in 0..count {
         memory = memory.store(
             Pointer {
@@ -134,7 +134,7 @@ fn symbolic_loan_retains_its_exact_cached_value_without_a_search() {
     let range = parameter_view(0).memory_range().unwrap().clone();
     assert!(ledger.permits_memory_access(&range).is_err());
     let pointer = range.base().clone();
-    let before = CMemory::new().store(pointer.clone(), int32(7));
+    let before = Memory::new().store(pointer.clone(), int32(7));
     let after = before.clone().with_loop_memory_havoc_preserving_loans(
         Variable(7),
         &BTreeSet::new(),

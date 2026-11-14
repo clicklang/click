@@ -6,12 +6,12 @@ use super::*;
 
 #[test]
 fn private_member_facts_cannot_use_ambient_cell_ownership() {
-    use crate::kernel::{CMemorySegment, c_int32_literal, c_parameter, c_variable};
+    use crate::kernel::{MemorySegment, c_int32_literal, c_parameter, c_variable};
     let (_, authority) = source_state();
-    let CResource::PopulationAuthority(description) = authority.resource() else {
+    let Resource::PopulationAuthority(description) = authority.resource() else {
         unreachable!()
     };
-    let member = CResourceFact::own(CResource::Composite {
+    let member = ResourceFact::own(Resource::Composite {
         name: "reference".into(),
         arguments: description.arguments().to_vec().into(),
     });
@@ -21,20 +21,20 @@ fn private_member_facts_cannot_use_ambient_cell_ownership() {
         unreachable!()
     };
     let pointer = pointer.pointer();
-    let memory = CMemory::new().with_block(pointer.block.clone(), 8).store(
+    let memory = Memory::new().with_block(pointer.block.clone(), 8).store(
         pointer.offset_by_elements(1.into(), 4),
         crate::kernel::int32(0),
     );
     let resources = ResourceContext::new().unchecked_with_facts([
-        CResourceFact::own_memory(CMemoryRange::new(pointer.clone(), 0.into(), 1.into())),
-        CResourceFact::own_memory(CMemoryRange::new(pointer.clone(), 1.into(), 2.into())),
+        ResourceFact::own_memory(MemoryRange::new(pointer.clone(), 0.into(), 1.into())),
+        ResourceFact::own_memory(MemoryRange::new(pointer.clone(), 1.into(), 2.into())),
     ]);
-    let definition = CCompositeResourceDefinition::new(
+    let definition = CompositeResourceDefinition::new(
         "reference",
         vec![c_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
-        vec![CResourceSpec::owned_memory(CMemorySegment::new(
+        vec![ResourceSpec::owned_memory(MemorySegment::new(
             c_variable("p"),
             c_int32_literal(0),
             c_int32_literal(1),
@@ -44,7 +44,7 @@ fn private_member_facts_cannot_use_ambient_cell_ownership() {
                 c_variable("p"),
                 c_int32_literal(1),
             )),
-            operator: crate::kernel::CComparisonOperator::Equal,
+            operator: crate::kernel::ComparisonOperator::Equal,
             right: crate::kernel::SpecExpression::Value(crate::kernel::int32(0)),
         }],
     );
@@ -108,14 +108,14 @@ fn authority_count_observation_rejects_unchecked_deltas_and_scales() {
         let (state, _) = state
             .checked_population_authority_exchange(&authority, true, facts.assumptions())
             .unwrap();
-        let CResource::PopulationAuthority(description) = authority.resource() else {
+        let Resource::PopulationAuthority(description) = authority.resource() else {
             unreachable!()
         };
-        let member = CResourceFact::own(CResource::Composite {
+        let member = ResourceFact::own(Resource::Composite {
             name: "reference".into(),
             arguments: description.arguments().to_vec().into(),
         });
-        let definition = CCompositeResourceDefinition::new(
+        let definition = CompositeResourceDefinition::new(
             "reference",
             vec![crate::kernel::c_parameter("p", ProgramType::Int32Pointer)],
             None,
@@ -133,7 +133,7 @@ fn authority_count_observation_rejects_unchecked_deltas_and_scales() {
                 format!("unrelated_{index}"),
                 crate::kernel::int32(index as u32),
             );
-            resources = resources.unchecked_with_fact(CResourceFact::own_token(
+            resources = resources.unchecked_with_fact(ResourceFact::own_token(
                 format!("unrelated_{index}"),
                 vec![],
             ));
@@ -188,7 +188,7 @@ fn authority_count_observation_rejects_unchecked_deltas_and_scales() {
             state
                 .resources()
                 .clone()
-                .unchecked_with_fact(CResourceFact::own_token("forged_child".into(), vec![])),
+                .unchecked_with_fact(ResourceFact::own_token("forged_child".into(), vec![])),
         );
         assert!(
             CheckedResourceObservation::check(

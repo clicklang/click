@@ -4,7 +4,7 @@ use crate::kernel::binary_node;
 use crate::kernel::uint64_constant;
 use num_bigint::BigInt;
 
-fn evaluated(expression: ProgramExpression) -> CExpressionOutcome {
+fn evaluated(expression: ProgramExpression) -> ExpressionOutcome {
     let theorem = prove_c_expression_evaluation(ExecutionState::new(), expression).unwrap();
     let Proposition::CExpressionEvaluates { outcome, .. } = theorem.proposition() else {
         panic!("expected expression evaluation");
@@ -39,7 +39,7 @@ fn wide_scalar_literals_preserve_full_payload_and_exact_integer_observations() {
         );
         assert_eq!(
             evaluated(ProgramExpression::Value(value.clone())),
-            CExpressionOutcome::Value(value)
+            ExpressionOutcome::Value(value)
         );
     }
     assert_eq!(
@@ -78,7 +78,7 @@ fn wide_scalar_locals_declare_assign_and_return_without_word_truncation() {
         (ProgramType::Int128, c_int128_literal(i128::MIN)),
         (ProgramType::UInt128, c_uint128_literal(u128::MAX)),
     ] {
-        let CExpressionOutcome::Value(expected) = evaluated(literal.clone()) else {
+        let ExpressionOutcome::Value(expected) = evaluated(literal.clone()) else {
             unreachable!()
         };
         let statement = c_seq(
@@ -89,7 +89,7 @@ fn wide_scalar_locals_declare_assign_and_return_without_word_truncation() {
         let Proposition::CStatementExecutes { outcome, .. } = theorem.proposition() else {
             unreachable!()
         };
-        let CStatementOutcome::Return { value, state } = outcome else {
+        let StatementOutcome::Return { value, state } = outcome else {
             panic!("{outcome:?}");
         };
         assert_eq!(value.native().as_ref(), &expected);
@@ -107,7 +107,7 @@ fn wide_scalar_symbolic_identity_substitution_and_observation_preserve_type() {
         let Proposition::CExpressionEvaluates { outcome, .. } = theorem.proposition() else {
             unreachable!()
         };
-        assert_eq!(outcome, &CExpressionOutcome::Value(value.clone()));
+        assert_eq!(outcome, &ExpressionOutcome::Value(value.clone()));
         let term = MachineTerm::Variable(variable);
         let observation = IntegerTerm::from_machine(ty, term).unwrap();
         let IntegerTerm::Machine(observed) = observation else {
@@ -133,7 +133,7 @@ fn wide_scalar_rejects_legacy_carriers_and_unsupported_arithmetic() {
     let assert_mismatch = |expression| {
         assert_eq!(
             evaluated(expression),
-            CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch)
+            ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch)
         )
     };
     for ty in [MachineIntegerType::Int128, MachineIntegerType::UInt128] {
@@ -196,7 +196,7 @@ fn wide_scalar_truthiness_uses_all_bits_and_retains_symbolic_guards() {
     ] {
         assert_eq!(
             evaluated(c_not(expression)),
-            CExpressionOutcome::Value(int32(expected))
+            ExpressionOutcome::Value(int32(expected))
         );
     }
     let state = ExecutionState::new().with_local(
@@ -215,7 +215,7 @@ fn wide_scalar_truthiness_uses_all_bits_and_retains_symbolic_guards() {
     for path in paths {
         assert!(matches!(
             path.outcome,
-            CExpressionOutcome::Value(ProgramValue::Int32(_))
+            ExpressionOutcome::Value(ProgramValue::Int32(_))
         ));
         assert!(path.facts.iter().any(|fact| matches!(
             fact.proposition(),
@@ -234,7 +234,7 @@ fn wide_scalar_boolean_cast_observes_high_bits_without_narrowing() {
     ] {
         assert_eq!(
             evaluated(c_cast(input, ProgramType::Bool)),
-            CExpressionOutcome::Value(ProgramValue::bool_constant(expected == 1))
+            ExpressionOutcome::Value(ProgramValue::bool_constant(expected == 1))
         );
     }
 }
@@ -263,7 +263,7 @@ fn wide_scalar_function_parameters_and_returns_keep_caller_storage() {
         let Proposition::CFunctionExecutes { outcome, .. } = theorem.proposition() else {
             unreachable!()
         };
-        let CFunctionOutcome::Return {
+        let FunctionOutcome::Return {
             value,
             state: returned,
         } = outcome
@@ -271,7 +271,7 @@ fn wide_scalar_function_parameters_and_returns_keep_caller_storage() {
             panic!("{outcome:?}");
         };
         assert_eq!(
-            CExpressionOutcome::Value(value.clone().into_native()),
+            ExpressionOutcome::Value(value.clone().into_native()),
             expected
         );
         assert_eq!(**returned, state);
@@ -369,14 +369,14 @@ fn wide_cast_runtime_preserves_modulo_policy_and_operand_definedness() {
             c_divide(c_int64_literal(1), c_int64_literal(0)),
             ProgramType::Int128
         )),
-        CExpressionOutcome::UndefinedBehavior(_)
+        ExpressionOutcome::UndefinedBehavior(_)
     ));
     assert!(matches!(
         evaluated(c_integer_cast_modulo(
             c_add(c_int64_literal(i64::MAX), c_int64_literal(1)),
             ProgramType::Int128
         )),
-        CExpressionOutcome::UndefinedBehavior(_)
+        ExpressionOutcome::UndefinedBehavior(_)
     ));
 }
 
@@ -478,7 +478,7 @@ fn wide_cast_function_argument_widens_and_return_narrows_without_truncating_earl
     assert!(matches!(
         theorem.proposition(),
         Proposition::CFunctionExecutes {
-            outcome: CFunctionOutcome::Return {
+            outcome: FunctionOutcome::Return {
                 value,
                 ..
             },
@@ -525,7 +525,7 @@ fn wide_cast_hostile_metadata_and_word_payloads_are_rejected_locally() {
         assert!(!MachineIntegerType::Int128.accepts_wide_term(&term));
         assert_eq!(
             evaluated(ProgramExpression::Value(ProgramValue::Int128(term))),
-            CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch)
+            ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch)
         );
     }
     assert!(
@@ -549,7 +549,7 @@ fn wide_cast_canonicalization_keeps_source_load_width_and_memory_dependencies() 
         block: "wide-cast-source".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = CMemory::new().with_block("wide-cast-source", 4).store(
+    let memory = Memory::new().with_block("wide-cast-source", 4).store(
         pointer.clone(),
         ProgramValue::Int32(MachineTerm::constant((-1i32) as u32)),
     );
@@ -688,7 +688,7 @@ fn wide_cached_load_canonicalization_preserves_kind_and_all_bits() {
             ProgramValue::UInt64(bits.clone())
         };
         let memory = intern_c_memory(
-            CMemory::new()
+            Memory::new()
                 .with_block("wide-cached-read", 8)
                 .store(pointer.clone(), value),
         );

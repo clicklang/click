@@ -81,7 +81,7 @@ impl Context<'_> {
                 self.memory_values.insert(name.into(), value_type);
                 c_begin_aggregate_construction(
                     name.to_string(),
-                    CAggregateLayout::holding_value(value_type),
+                    AggregateLayout::holding_value(value_type),
                 )
             } else {
                 c_declare(name, value_type)

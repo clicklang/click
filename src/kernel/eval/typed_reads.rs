@@ -48,7 +48,7 @@ impl Drop for ReadScope {
     }
 }
 
-pub(super) fn record(memory: &CMemory, address: &Pointer, value: &ProgramValue) {
+pub(super) fn record(memory: &Memory, address: &Pointer, value: &ProgramValue) {
     if !READS.with(|reads| reads.borrow().is_some()) {
         return;
     }
@@ -83,7 +83,7 @@ pub(super) fn record(memory: &CMemory, address: &Pointer, value: &ProgramValue) 
 /// to evaluate a read here. The written certificate names its reads by lowering
 /// them before applying the primitive.
 pub(in crate::kernel) fn get(
-    memory: &CMemory,
+    memory: &Memory,
     address: &Pointer,
     kind: ReadType,
 ) -> Option<ProgramValue> {

@@ -32,8 +32,8 @@ fn cell(base: u64, index: u32) -> Pointer {
     heap_base(base).offset_by_elements(MachineTerm::constant(index), 4)
 }
 
-fn range(base: u64, start: u32, end: u32) -> CMemoryRange {
-    CMemoryRange::new(
+fn range(base: u64, start: u32, end: u32) -> MemoryRange {
+    MemoryRange::new(
         heap_base(base),
         MachineTerm::constant(start),
         MachineTerm::constant(end),
@@ -41,8 +41,8 @@ fn range(base: u64, start: u32, end: u32) -> CMemoryRange {
 }
 
 /// `forall k in 0..capacity where occupied[k] == 0 { owns data[k..k + 1]; }`.
-fn cells_fact(capacity: u32) -> CIteratedMemory {
-    CIteratedMemory::new(
+fn cells_fact(capacity: u32) -> IteratedMemory {
+    IteratedMemory::new(
         "cells",
         heap_base(DATA),
         4,
@@ -51,7 +51,7 @@ fn cells_fact(capacity: u32) -> CIteratedMemory {
         1,
         MachineTerm::constant(0),
         MachineTerm::constant(capacity),
-        CIteratedGuard::new(
+        IteratedGuard::new(
             heap_base(OCCUPIED),
             ProgramType::Int32,
             4,
@@ -66,7 +66,7 @@ fn cells_fact(capacity: u32) -> CIteratedMemory {
 /// first `free` guard cells known to be zero, the next two known to be one,
 /// and the rest unknown.
 fn cells_state(capacity: u32, free: u32) -> ExecutionState {
-    let mut memory = CMemory::new();
+    let mut memory = Memory::new();
     for index in 0..capacity.min(free + 2) {
         memory = memory.store(cell(OCCUPIED, index), int32(u32::from(index >= free)));
     }
@@ -74,10 +74,8 @@ fn cells_state(capacity: u32, free: u32) -> ExecutionState {
         .with_memory(memory)
         .with_resource_context(
             ResourceContext::new()
-                .unchecked_with_fact(CResourceFact::own_memory(range(OCCUPIED, 0, capacity)))
-                .unchecked_with_fact(CResourceFact::own(CResource::iterated(cells_fact(
-                    capacity,
-                )))),
+                .unchecked_with_fact(ResourceFact::own_memory(range(OCCUPIED, 0, capacity)))
+                .unchecked_with_fact(ResourceFact::own(Resource::iterated(cells_fact(capacity)))),
         )
 }
 
@@ -117,12 +115,12 @@ fn store_guard(state: &ExecutionState, index: u32, value: u32) -> Result<Executi
     Ok(next.with_resource_context(resources))
 }
 
-fn held_fact(state: &ExecutionState) -> CIteratedMemory {
+fn held_fact(state: &ExecutionState) -> IteratedMemory {
     let facts = state.resources().iterated_facts();
     let [fact] = facts.as_slice() else {
         panic!("exactly one iterated fact should be held: {facts:?}");
     };
-    let CResource::Iterated(iterated) = fact.resource() else {
+    let Resource::Iterated(iterated) = fact.resource() else {
         unreachable!()
     };
     iterated.as_ref().clone()
@@ -136,7 +134,7 @@ fn allocation_and_release_protocols_keep_the_fact_exact() {
     let taken = take(&state, 3).expect("a free cell can be taken");
     assert_eq!(held_fact(&taken).holes().len(), 1);
     assert!(taken.resources().satisfies_fact(
-        &CResourceFact::own_memory(range(DATA, 3, 4)),
+        &ResourceFact::own_memory(range(DATA, 3, 4)),
         &PureFactContext::new()
     ));
     let marked = store_guard(&taken, 3, 1).expect("the taken cell's guard may be written");
@@ -149,7 +147,7 @@ fn allocation_and_release_protocols_keep_the_fact_exact() {
     let given = give(&cleared, 3).expect("the released element goes back");
     assert!(held_fact(&given).holes().is_empty());
     assert!(!given.resources().satisfies_fact(
-        &CResourceFact::own_memory(range(DATA, 3, 4)),
+        &ResourceFact::own_memory(range(DATA, 3, 4)),
         &PureFactContext::new()
     ));
 }
@@ -216,11 +214,11 @@ fn assert_constant_plus_log(what: &str, samples: &[(u32, usize)], slope: f64) {
 
 /// `cells(data, occupied, capacity)`: owns the guard cells and declares the
 /// iterated clause over them.
-fn cells_definition() -> Vec<CCompositeResourceDefinition> {
-    let iterated = CResourceSpec::new(
-        CResourceTerm::Iterated(Box::new(crate::kernel::primitives::CIteratedSpec {
+fn cells_definition() -> Vec<CompositeResourceDefinition> {
+    let iterated = ResourceSpec::new(
+        ResourceTerm::Iterated(Box::new(crate::kernel::primitives::IteratedSpec {
             owner: "cells".into(),
-            element: CMemorySegment::new(
+            element: MemorySegment::new(
                 c_variable("data"),
                 c_int32_literal(0),
                 c_variable("capacity"),
@@ -234,13 +232,13 @@ fn cells_definition() -> Vec<CCompositeResourceDefinition> {
             holds_when_equal: true,
             guard_value: c_int32_literal(0),
         })),
-        CResourceAccessMode::Own,
-        CResourceQuantity::One,
-        CResourceTransferRole::Consume,
-        CResourceSnapshot::Current,
+        ResourceAccessMode::Own,
+        ResourceQuantity::One,
+        ResourceTransferRole::Consume,
+        ResourceSnapshot::Current,
     )
     .unwrap();
-    vec![CCompositeResourceDefinition::new(
+    vec![CompositeResourceDefinition::new(
         "cells",
         vec![
             c_parameter("data", ProgramType::Int32Pointer),
@@ -250,7 +248,7 @@ fn cells_definition() -> Vec<CCompositeResourceDefinition> {
         None,
         false,
         vec![
-            CResourceSpec::owned_memory(CMemorySegment::new(
+            ResourceSpec::owned_memory(MemorySegment::new(
                 c_variable("occupied"),
                 c_int32_literal(0),
                 c_variable("capacity"),
@@ -272,11 +270,11 @@ fn iterated_element_selection_checks_pointer_reads_across_snapshots() {
         block: "iterated-pointer-slot".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let before = CMemory::new()
+    let before = Memory::new()
         .with_block("iterated-pointer-slot", 8)
         .store(cell(OCCUPIED, 0), int32(0));
     let after = before.clone().store(cell(UNRELATED, 0), int32(1));
-    let read = |memory: &CMemory, address: &Pointer| Pointer {
+    let read = |memory: &Memory, address: &Pointer| Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::scaled_int32_node(
             MachineTerm::MemoryLoad(
@@ -290,7 +288,7 @@ fn iterated_element_selection_checks_pointer_reads_across_snapshots() {
     let held_base = read(&before, &source);
     let current_base = read(&after, &source);
     assert_ne!(held_base, current_base);
-    let iterated = CIteratedMemory::new(
+    let iterated = IteratedMemory::new(
         "snapshot-cells",
         held_base,
         4,
@@ -299,7 +297,7 @@ fn iterated_element_selection_checks_pointer_reads_across_snapshots() {
         1,
         0u32.into(),
         1u32.into(),
-        CIteratedGuard::new(
+        IteratedGuard::new(
             heap_base(OCCUPIED),
             ProgramType::Int32,
             4,
@@ -312,14 +310,14 @@ fn iterated_element_selection_checks_pointer_reads_across_snapshots() {
         .with_memory(after.clone())
         .with_resource_context(
             ResourceContext::new()
-                .unchecked_with_fact(CResourceFact::own_memory(range(OCCUPIED, 0, 1)))
-                .unchecked_with_fact(CResourceFact::own(CResource::iterated(iterated.clone()))),
+                .unchecked_with_fact(ResourceFact::own_memory(range(OCCUPIED, 0, 1)))
+                .unchecked_with_fact(ResourceFact::own(Resource::iterated(iterated.clone()))),
         );
     let take_at = |base| {
         crate::kernel::apply_iterated_step(
             &state,
             &crate::kernel::IteratedStep::Take {
-                element: CMemoryRange::new(base, 0u32.into(), 1u32.into()),
+                element: MemoryRange::new(base, 0u32.into(), 1u32.into()),
             },
             &PureFactContext::new(),
         )
@@ -336,7 +334,7 @@ fn iterated_element_selection_checks_pointer_reads_across_snapshots() {
             .resources()
             .clone()
             .without_fact_incrementally(
-                &CResourceFact::own(CResource::iterated(equivalent.clone())),
+                &ResourceFact::own(Resource::iterated(equivalent.clone())),
                 &PureFactContext::new(),
             )
             .is_some()
@@ -363,7 +361,7 @@ fn iterated_element_selection_checks_pointer_reads_across_snapshots() {
         &PureFactContext::new(),
     )
     .unwrap();
-    let extra = CResourceFact::own_memory(CMemoryRange::new(
+    let extra = ResourceFact::own_memory(MemoryRange::new(
         iterated.element_base.clone(),
         1u32.into(),
         2u32.into(),
@@ -375,7 +373,7 @@ fn iterated_element_selection_checks_pointer_reads_across_snapshots() {
         .unwrap();
     let taken = taken.with_resource_context(taken_resources);
     let give = crate::kernel::IteratedStep::Give {
-        element: CMemoryRange::new(current_base.clone(), 0u32.into(), 1u32.into()),
+        element: MemoryRange::new(current_base.clone(), 0u32.into(), 1u32.into()),
     };
     let returned = crate::kernel::apply_iterated_step(&taken, &give, &PureFactContext::new())
         .expect("giving the same pointer read back must consume the held element");
@@ -384,7 +382,7 @@ fn iterated_element_selection_checks_pointer_reads_across_snapshots() {
             .resources()
             .clone()
             .without_fact_incrementally(
-                &CResourceFact::own(CResource::iterated(iterated.clone())),
+                &ResourceFact::own(Resource::iterated(iterated.clone())),
                 &PureFactContext::new(),
             )
             .is_some()
@@ -394,7 +392,7 @@ fn iterated_element_selection_checks_pointer_reads_across_snapshots() {
             .resources()
             .clone()
             .without_fact_incrementally(
-                &CResourceFact::own_memory(held_element),
+                &ResourceFact::own_memory(held_element),
                 &PureFactContext::new(),
             )
             .is_none(),

@@ -1,7 +1,7 @@
 //! Exact object binding for construction returns and ordinary constructors.
 use super::*;
 
-fn valid_layout(layout: &CAggregateLayout) -> bool {
+fn valid_layout(layout: &AggregateLayout) -> bool {
     if layout.size_bytes() == 0
         || !layout.size_bytes().is_multiple_of(layout.alignment_bytes())
         || !layout.unions().is_empty()
@@ -49,11 +49,11 @@ fn valid_layout(layout: &CAggregateLayout) -> bool {
 
 fn destination<'a>(
     state: &'a ExecutionState,
-    interface: &CFunctionContractInterface,
-) -> Option<&'a CAggregateDestination> {
+    interface: &FunctionContractInterface,
+) -> Option<&'a AggregateDestination> {
     let selected = state.aggregate_destination.as_deref()?;
     let layout = if let Some((_, layout)) = interface.construction_parameter() {
-        if interface.aggregate_return_mode() != CAggregateReturnMode::Copy
+        if interface.aggregate_return_mode() != AggregateReturnMode::Copy
             || interface.return_type() != ProgramType::Void
             || interface.return_aggregate_layout().is_some()
         {
@@ -61,7 +61,7 @@ fn destination<'a>(
         }
         layout
     } else {
-        if interface.aggregate_return_mode() != CAggregateReturnMode::Construction
+        if interface.aggregate_return_mode() != AggregateReturnMode::Construction
             || !interface.return_type().is_pointer()
         {
             return None;
@@ -124,7 +124,7 @@ fn destination<'a>(
 
 pub(super) fn bind(
     caller: &ExecutionState,
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
     callee: &mut ExecutionState,
 ) -> Option<()> {
     let parameter_destination;
@@ -138,7 +138,7 @@ pub(super) fn bind(
             .clone()
             .with_aggregate_return_destination(value.pointer().clone(), layout.clone());
         &parameter_destination
-    } else if interface.aggregate_return_mode() == CAggregateReturnMode::Copy {
+    } else if interface.aggregate_return_mode() == AggregateReturnMode::Copy {
         return Some(());
     } else {
         caller
@@ -193,7 +193,7 @@ pub(super) fn bind(
 
 pub(super) fn complete(
     state: &ExecutionState,
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
     value: ProgramValue,
 ) -> Result<ProgramValue, AggregateReturnRefusal> {
     let selected = destination(state, interface).ok_or(AggregateReturnRefusal::InvalidValue)?;
@@ -217,22 +217,22 @@ pub(super) fn complete(
 /// Check the entry-bound destination, even if the body reassigns its parameter.
 pub(super) fn complete_parameter(
     state: &ExecutionState,
-    interface: &CFunctionContractInterface,
-) -> Option<CRuntimeError> {
+    interface: &FunctionContractInterface,
+) -> Option<RuntimeError> {
     interface.construction_parameter()?;
     let Some(selected) = destination(state, interface) else {
-        return Some(CRuntimeError::FunctionContract(
+        return Some(RuntimeError::FunctionContract(
             "constructor destination is no longer live".into(),
         ));
     };
     aggregate_copy_reads_uninitialized(&state.memory, &selected.pointer, &selected.layout).then(
-        || CRuntimeError::FunctionContract("constructor must initialize every value field".into()),
+        || RuntimeError::FunctionContract("constructor must initialize every value field".into()),
     )
 }
 
 pub(super) fn summary_result(
     state: &ExecutionState,
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
 ) -> Option<ProgramValue> {
     let selected = destination(state, interface)?;
     Some(ProgramValue::typed_pointer(

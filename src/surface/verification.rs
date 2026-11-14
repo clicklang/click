@@ -558,7 +558,7 @@ fn theorem_has_certification_binders(theorem: &TheoremDefinition) -> bool {
 fn record_theorem_certification_authority(
     verified_theorems: &[VerifiedPureTheorem],
     facts: &mut BTreeMap<String, Vec<Proposition>>,
-    authorities: &mut BTreeMap<String, Vec<CVerifiedPureTheorem>>,
+    authorities: &mut BTreeMap<String, Vec<KernelVerifiedPureTheorem>>,
 ) {
     for theorem in verified_theorems.iter().filter(|theorem| {
         theorem.kernel_authority.is_some()
@@ -608,9 +608,9 @@ fn record_theorem_certification_authority(
 }
 
 fn record_assumed_theorem_certification_authority(
-    assumed: Vec<(String, Proposition, CVerifiedPureTheorem)>,
+    assumed: Vec<(String, Proposition, KernelVerifiedPureTheorem)>,
     facts: &mut BTreeMap<String, Vec<Proposition>>,
-    authorities: &mut BTreeMap<String, Vec<CVerifiedPureTheorem>>,
+    authorities: &mut BTreeMap<String, Vec<KernelVerifiedPureTheorem>>,
 ) {
     for (name, fact, authority) in assumed {
         facts.entry(name.clone()).or_default().push(fact);
@@ -665,7 +665,7 @@ pub(in crate::surface) fn verify_click_file_theorems(
 
 fn verify_click_file_theorems_with_environment(
     file: &ClickFile,
-    function_environment: Option<&CExecutionEnvironment>,
+    function_environment: Option<&ExecutionEnvironment>,
 ) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
     let predicate_definitions = combined_predicate_definitions(file)?;
     let click_function_definitions = combined_click_function_definitions(file)?;
@@ -1016,8 +1016,8 @@ fn with_tactic_procedures(
 /// the same scoped declaration assumptions used by ordinary selected proofs.
 fn with_unselected_tactic_interfaces(
     file: &ClickFile,
-    mut environment: CExecutionEnvironment,
-) -> CExecutionEnvironment {
+    mut environment: ExecutionEnvironment,
+) -> ExecutionEnvironment {
     for block in file
         .function_blocks()
         .iter()
@@ -2119,9 +2119,9 @@ pub(in crate::surface) fn verify_c0_sources_with_environment(
     click_source: &str,
     c_sources: &[(&str, &str)],
     verification_target: Option<VerificationTarget>,
-    initial_function_environment: Option<CExecutionEnvironment>,
+    initial_function_environment: Option<ExecutionEnvironment>,
     expansion_capture: Option<&mut ExpansionCapture>,
-) -> Result<(Vec<VerifiedCTheorem>, CExecutionEnvironment), ClickError> {
+) -> Result<(Vec<VerifiedCTheorem>, ExecutionEnvironment), ClickError> {
     let sources = CSourceContext::bundle(c_sources);
     verify_c0_sources_with_context(
         click_source,
@@ -2139,10 +2139,10 @@ pub(in crate::surface) fn verify_c0_sources_with_context(
     click_source: &str,
     c_sources: &CSourceContext<'_>,
     verification_target: Option<VerificationTarget>,
-    initial_function_environment: Option<CExecutionEnvironment>,
+    initial_function_environment: Option<ExecutionEnvironment>,
     expansion_capture: Option<&mut ExpansionCapture>,
     resolved_file: Option<ClickFile>,
-) -> Result<(Vec<VerifiedCTheorem>, CExecutionEnvironment), ClickError> {
+) -> Result<(Vec<VerifiedCTheorem>, ExecutionEnvironment), ClickError> {
     crate::surface::clear_ambient_proof_source();
     verify_c0_sources_in_context(
         click_source,
@@ -2159,10 +2159,10 @@ fn verify_c0_sources_in_context(
     click_source: &str,
     c_sources: &CSourceContext<'_>,
     verification_target: Option<VerificationTarget>,
-    initial_function_environment: Option<CExecutionEnvironment>,
+    initial_function_environment: Option<ExecutionEnvironment>,
     mut expansion_capture: Option<&mut ExpansionCapture>,
     resolved_file: Option<ClickFile>,
-) -> Result<(Vec<VerifiedCTheorem>, CExecutionEnvironment), ClickError> {
+) -> Result<(Vec<VerifiedCTheorem>, ExecutionEnvironment), ClickError> {
     check_verification_deadline()?;
     let preselected_runtime = resolved_file
         .as_ref()
@@ -2443,7 +2443,7 @@ fn verify_c0_sources_in_context(
         let _timing = VerificationTimingPhase::new("environment");
         let mut theorem_certification_facts = BTreeMap::<String, Vec<Proposition>>::new();
         let mut theorem_certification_authorities =
-            BTreeMap::<String, Vec<CVerifiedPureTheorem>>::new();
+            BTreeMap::<String, Vec<KernelVerifiedPureTheorem>>::new();
         record_theorem_certification_authority(
             &verified_theorems,
             &mut theorem_certification_facts,
@@ -2485,7 +2485,7 @@ fn verify_c0_sources_in_context(
     );
     check_verification_deadline()?;
     let mut verified = Vec::new();
-    let mut termination_loop_rules = BTreeMap::<String, Vec<CVerifiedLoopRule>>::new();
+    let mut termination_loop_rules = BTreeMap::<String, Vec<VerifiedLoopRule>>::new();
     // Standard-library theorems already checked for their certification
     // authority during this verification; see the certification loop below.
     let mut checked_standard_library_theorems = BTreeSet::<String>::new();
@@ -3049,9 +3049,9 @@ fn verify_c0_sources_in_context(
                 .iter()
                 .any(|verified| verified.concrete_loop_execution)
             {
-                CFunctionContractExecutionMode::ExecuteLoops
+                FunctionContractExecutionMode::ExecuteLoops
             } else {
-                CFunctionContractExecutionMode::VerifyLoops
+                FunctionContractExecutionMode::VerifyLoops
             };
             let certification_started = std::time::Instant::now();
             let contract_execution = {
@@ -3071,7 +3071,7 @@ fn verify_c0_sources_in_context(
                     || {
                         let checked_artifacts = checked_executions
                             .iter()
-                            .map(|execution| CCheckedFunctionExecution::clone(execution))
+                            .map(|execution| CheckedFunctionExecution::clone(execution))
                             .collect::<Vec<_>>();
                         // The entry state and arguments outlive the call: a
                         // refusal below names the unauthorized entry premise
@@ -3081,7 +3081,7 @@ fn verify_c0_sources_in_context(
                             contract_function.clone(),
                             certification_arguments.clone(),
                             certification_function_environment,
-                            CExecutionSemantics::APPLY_VERIFIED_RULES,
+                            ExecutionSemantics::APPLY_VERIFIED_RULES,
                             contract_execution_mode,
                             &checked_artifacts,
                             &certification_pure_theorems,
@@ -3237,14 +3237,14 @@ fn verify_c0_sources_in_context(
                     let key = if has_explicit_claims {
                         match &verified.claim {
                             VerifiedClaim::Ensure { index, .. } => {
-                                CFunctionContractClaimKey::Ensure(*index)
+                                FunctionContractClaimKey::Ensure(*index)
                             }
                             VerifiedClaim::ExceptionalEnsure { index, .. } => {
-                                CFunctionContractClaimKey::ExceptionalEnsure(*index)
+                                FunctionContractClaimKey::ExceptionalEnsure(*index)
                             }
                         }
                     } else {
-                        CFunctionContractClaimKey::BodySafety
+                        FunctionContractClaimKey::BodySafety
                     };
                     certified_claims
                         .iter()
@@ -3376,7 +3376,7 @@ fn verify_c0_sources_in_context(
             break verdicts;
         }
     };
-    let CTerminationVerdicts {
+    let TerminationVerdicts {
         rules: termination_rules,
         refusals: termination_refusals,
         unjustified_diverging,
@@ -3449,7 +3449,7 @@ fn verify_c0_sources_in_context(
         .collect::<Vec<_>>();
     if let Some((name, refusal)) = refused
         .iter()
-        .find(|(_, refusal)| !matches!(refusal, CTerminationRefusal::Callee { .. }))
+        .find(|(_, refusal)| !matches!(refusal, TerminationRefusal::Callee { .. }))
         .or(refused.first())
     {
         return Err(ClickError::new(format!(
@@ -4649,7 +4649,7 @@ fn c0_statement_calls_recording(
 /// the same proposition rather than nothing.
 fn describe_unauthorized_entry_premise(
     premise: Option<&Proposition>,
-    entry_resources: &[CResourceFact],
+    entry_resources: &[ResourceFact],
     context_facts: &[Proposition],
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
@@ -4704,10 +4704,10 @@ fn describe_unauthorized_entry_premise(
 /// the function that owns the defect has.
 fn termination_refusal_report(
     name: &str,
-    refusal: &CTerminationRefusal,
-    refusals: &BTreeMap<String, CTerminationRefusal>,
+    refusal: &TerminationRefusal,
+    refusals: &BTreeMap<String, TerminationRefusal>,
     declared_diverging: &BTreeSet<String>,
-    unsuitable_callback: Option<&CUnsuitableCallback>,
+    unsuitable_callback: Option<&UnsuitableCallback>,
     tactics: &BTreeSet<String>,
 ) -> String {
     let spelling = |name: &str| {
@@ -4721,9 +4721,9 @@ fn termination_refusal_report(
     let mut current = refusal;
     loop {
         let callee = match current {
-            CTerminationRefusal::Callee { callee } => callee,
-            CTerminationRefusal::UnmeasuredRecursion { callee } => {
-                let shown = CTerminationRefusal::UnmeasuredRecursion {
+            TerminationRefusal::Callee { callee } => callee,
+            TerminationRefusal::UnmeasuredRecursion { callee } => {
+                let shown = TerminationRefusal::UnmeasuredRecursion {
                     callee: spelling(callee),
                 };
                 if tactics.contains(&owner) {
@@ -4738,19 +4738,19 @@ fn termination_refusal_report(
                 }
                 return report;
             }
-            CTerminationRefusal::UnrankedLoop { .. } => {
+            TerminationRefusal::UnrankedLoop { .. } => {
                 report.push_str(&format!(
                     "{current}; give it one, or mark it `loop diverges` and declare `{owner}` `diverges`"
                 ));
                 return report;
             }
-            CTerminationRefusal::DivergingContract { .. } => {
+            TerminationRefusal::DivergingContract { .. } => {
                 report.push_str(&format!(
                     "{current}; declare `{owner}` `diverges` too, or require a contract without the marker"
                 ));
                 return report;
             }
-            CTerminationRefusal::IndirectCall { .. } => {
+            TerminationRefusal::IndirectCall { .. } => {
                 report.push_str(&current.to_string());
                 if let Some(unsuitable) = unsuitable_callback {
                     report.push_str(&format!(
@@ -4761,12 +4761,12 @@ fn termination_refusal_report(
                 }
                 return report;
             }
-            CTerminationRefusal::DeclaredDiverging => {
+            TerminationRefusal::DeclaredDiverging => {
                 report.push_str(&current.to_string());
                 return report;
             }
         };
-        let shown = CTerminationRefusal::Callee {
+        let shown = TerminationRefusal::Callee {
             callee: spelling(callee),
         };
         report.push_str(&shown.to_string());
@@ -4809,15 +4809,15 @@ pub(in crate::surface) fn termination_measure_name(
 pub(in crate::surface) fn termination_measure_keys(
     measure: &TerminationMeasure,
     _context: &str,
-) -> Result<Vec<crate::kernel::CRankingMeasureKey>, ClickError> {
+) -> Result<Vec<crate::kernel::RankingMeasureKey>, ClickError> {
     Ok(measure
         .components()
         .iter()
         .map(
             |expression| match resource_argument_to_c_expression(expression) {
-                Ok(expression) => crate::kernel::CRankingMeasureKey::ProgramExpression(expression),
+                Ok(expression) => crate::kernel::RankingMeasureKey::ProgramExpression(expression),
                 Err(_) => {
-                    crate::kernel::CRankingMeasureKey::Pure(termination_measure_source(expression))
+                    crate::kernel::RankingMeasureKey::Pure(termination_measure_source(expression))
                 }
             },
         )
@@ -4844,7 +4844,7 @@ pub(in crate::surface) fn termination_measure_source(expression: &ContractExpres
         | ContractExpression::CBinding(name)
         | ContractExpression::QualifiedC { name, .. } => name.clone(),
         ContractExpression::CFragment(expression) => crate::kernel::c_ranking_measure_identity(
-            &crate::kernel::CRankingComponent::ProgramExpression(expression.clone()),
+            &crate::kernel::RankingComponent::ProgramExpression(expression.clone()),
         ),
         ContractExpression::Field { base, field, .. } => {
             format!("{}.{field}", termination_measure_source(base))
@@ -4928,16 +4928,16 @@ fn termination_measure_binder_name(measure: &TerminationMeasure) -> Option<&str>
 pub(in crate::surface) fn loop_termination_measure(
     clause: &StructuralClause,
     context: &str,
-) -> Result<Option<crate::kernel::CLoopTerminationMeasure>, ClickError> {
+) -> Result<Option<crate::kernel::LoopTerminationMeasure>, ClickError> {
     let Some(measure) = clause.decreases() else {
         return Ok(None);
     };
     if let Some(name) = loop_structural_measure_binder(clause) {
-        return Ok(Some(crate::kernel::CLoopTerminationMeasure::Structural(
+        return Ok(Some(crate::kernel::LoopTerminationMeasure::Structural(
             name,
         )));
     }
-    Ok(Some(crate::kernel::CLoopTerminationMeasure::Ranking(
+    Ok(Some(crate::kernel::LoopTerminationMeasure::Ranking(
         termination_measure_keys(measure, context)?,
     )))
 }
@@ -5023,7 +5023,7 @@ pub(in crate::surface) fn c_function_termination_plans(
     executing_names: &BTreeMap<String, String>,
 ) -> Result<
     (
-        Vec<crate::kernel::CFunctionTerminationPlan>,
+        Vec<crate::kernel::FunctionTerminationPlan>,
         BTreeSet<String>,
     ),
     ClickError,
@@ -5047,7 +5047,7 @@ pub(in crate::surface) fn c_function_termination_plans(
                 // each call by the instance it passes, as an expression
                 // measure is: the body analysis below sees only self-calls.
                 CFunctionDecrease::Binder(binder) if !function.recursion_peers().is_empty() => {
-                    Ok(crate::kernel::CFunctionTerminationMeasure::Expression(
+                    Ok(crate::kernel::FunctionTerminationMeasure::Expression(
                         binder.clone(),
                     ))
                 }
@@ -5077,7 +5077,7 @@ pub(in crate::surface) fn c_function_termination_plans(
                             function.signature().name()
                         ))
                     })?;
-                    Ok(crate::kernel::CFunctionTerminationMeasure::ResourceRequirement(index))
+                    Ok(crate::kernel::FunctionTerminationMeasure::ResourceRequirement(index))
                 }
                 CFunctionDecrease::Numeric(measure) => {
                     // A bare C int32 parameter keeps its body-checked measure,
@@ -5093,7 +5093,7 @@ pub(in crate::surface) fn c_function_termination_plans(
                         function.signature().name()
                     );
                     let Ok(name) = termination_measure_name(measure, &context) else {
-                        return Ok(crate::kernel::CFunctionTerminationMeasure::Expression(
+                        return Ok(crate::kernel::FunctionTerminationMeasure::Expression(
                             termination_measure_source(measure),
                         ));
                     };
@@ -5118,16 +5118,16 @@ pub(in crate::surface) fn c_function_termination_plans(
                     if function.call_ranked_numeric_recursion
                         || function.signature().parameters()[index].c_type() != C0Type::Int32
                     {
-                        return Ok(crate::kernel::CFunctionTerminationMeasure::Expression(
+                        return Ok(crate::kernel::FunctionTerminationMeasure::Expression(
                             termination_measure_source(measure),
                         ));
                     }
-                    Ok(crate::kernel::CFunctionTerminationMeasure::NumericParameter(index))
+                    Ok(crate::kernel::FunctionTerminationMeasure::NumericParameter(index))
                 }
                 // A tuple is ranked by obligations at the self-calls, like
                 // any expression measure.
                 CFunctionDecrease::Lexicographic(components) => {
-                    Ok(crate::kernel::CFunctionTerminationMeasure::Expression(format!(
+                    Ok(crate::kernel::FunctionTerminationMeasure::Expression(format!(
                         "({})",
                         components
                             .iter()
@@ -5175,7 +5175,7 @@ pub(in crate::surface) fn c_function_termination_plans(
                             function.signature().name()
                         ))
                     })?;
-                    Ok(crate::kernel::CFunctionTerminationMeasure::ResourceRequirement(index))
+                    Ok(crate::kernel::FunctionTerminationMeasure::ResourceRequirement(index))
                 }
             })
             .transpose()?;
@@ -5860,8 +5860,8 @@ pub(in crate::surface) fn build_function_environment(
     contract_definitions: &[ContractDefinition],
     spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
-) -> Result<CExecutionEnvironment, ClickError> {
-    let mut environment = CExecutionEnvironment::new();
+) -> Result<ExecutionEnvironment, ClickError> {
+    let mut environment = ExecutionEnvironment::new();
     for definition in contract_definitions {
         let function_block = definition.function_block();
         let parsed_function = external_c0_function_with_layouts(
@@ -5902,7 +5902,7 @@ pub(in crate::surface) fn build_function_environment(
                 ))
                 .at_declaration(definition.name())
         })?;
-        let contract = CFunctionContract::new(definition.name(), function)
+        let contract = FunctionContract::new(definition.name(), function)
             .and_then(|contract| {
                 contract.with_value_parameters(definition.value_parameters().len())
             })
@@ -6123,7 +6123,7 @@ pub(in crate::surface) fn build_function_environment(
                 vec![],
                 vec![],
                 vec![],
-                vec![CFunctionContractClaim::body_safety()],
+                vec![FunctionContractClaim::body_safety()],
                 true,
             );
             let rule = crate::kernel::c_external_function_rule(no_op.clone()).ok_or_else(|| {
@@ -6206,7 +6206,7 @@ pub(in crate::surface) fn build_function_environment(
         // A crate trait method's interface is also the named contract its
         // implementations refine.
         if interfaces.contains(name) {
-            let contract = CFunctionContract::new(name, function.clone()).ok_or_else(|| {
+            let contract = FunctionContract::new(name, function.clone()).ok_or_else(|| {
                 ClickError::new(format!(
                     "trait method interface `{name}` has a contract that cannot be applied opaquely{}",
                     crate::surface::lowering::opaque_contract_refusal_suffix(
@@ -6239,7 +6239,7 @@ pub(in crate::surface) fn build_function_environment(
 /// assumes of whichever implementation it reaches. An interface the sidecar
 /// does not declare has no contract, so no call through it verifies.
 fn check_trait_method_implementations(
-    environment: &CExecutionEnvironment,
+    environment: &ExecutionEnvironment,
     parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
     function_blocks: &[FunctionBlock],
 ) -> Result<(), ClickError> {
@@ -6394,11 +6394,11 @@ fn closure_instance_names(
 /// that contract fixed to them, so a callee requiring another contract of
 /// the value is answered by contract-to-contract refinement.
 fn with_closure_instance(
-    environment: CExecutionEnvironment,
+    environment: ExecutionEnvironment,
     closure: &ProgramFunction,
     captures: usize,
-) -> Result<CExecutionEnvironment, ClickError> {
-    let contract = CFunctionContract::new(closure.name(), closure.clone())
+) -> Result<ExecutionEnvironment, ClickError> {
+    let contract = FunctionContract::new(closure.name(), closure.clone())
         .and_then(|contract| contract.with_leading_value_parameters(captures))
         .ok_or_else(|| {
             ClickError::new(format!(
@@ -6432,8 +6432,8 @@ fn with_closure_instance(
         }],
         vec![],
         vec![
-            CFunctionContractClaim::body_safety(),
-            CFunctionContractClaim::ensure_proposition(0, 0),
+            FunctionContractClaim::body_safety(),
+            FunctionContractClaim::ensure_proposition(0, 0),
         ],
         true,
     );
@@ -6467,7 +6467,7 @@ pub(in crate::surface) fn function_resource_summary(
     parsed_function: &syntax::C0Function,
     spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
-) -> Result<(Vec<CResourceSpec>, Vec<CResourceSpec>), ClickError> {
+) -> Result<(Vec<ResourceSpec>, Vec<ResourceSpec>), ClickError> {
     let borrowed_resources = function_block
         .ensures()
         .iter()
@@ -6506,21 +6506,21 @@ pub(in crate::surface) fn function_resource_summary(
             .enumerate()
             .find(|(index, borrowed)| !borrowed_requirements[*index] && **borrowed == resource)
             .map(|(index, _)| index);
-        let role = if requires[first_spec..].iter().any(CResourceSpec::is_view)
+        let role = if requires[first_spec..].iter().any(ResourceSpec::is_view)
             || borrowed_index.is_some()
         {
             if let Some(index) = borrowed_index {
                 borrowed_requirements[index] = true;
             }
-            CResourceTransferRole::Borrow
+            ResourceTransferRole::Borrow
         } else {
-            CResourceTransferRole::Consume
+            ResourceTransferRole::Consume
         };
         for spec in &mut requires[first_spec..] {
             *spec = spec
                 .clone()
                 .with_role(role)
-                .with_snapshot(CResourceSnapshot::Entry)
+                .with_snapshot(ResourceSnapshot::Entry)
                 .with_clause_position(clause_index, clause_count);
         }
         resource_clause_index += 1;
@@ -6545,14 +6545,14 @@ pub(in crate::surface) fn function_resource_summary(
             .copied()
             .unwrap_or((ensure_clause_index, ensure_clause_count));
         let role = if ensure.borrowed() {
-            CResourceTransferRole::Borrow
+            ResourceTransferRole::Borrow
         } else {
-            CResourceTransferRole::Produce
+            ResourceTransferRole::Produce
         };
         let snapshot = if ensure.borrowed() {
-            CResourceSnapshot::Entry
+            ResourceSnapshot::Entry
         } else {
-            CResourceSnapshot::Post
+            ResourceSnapshot::Post
         };
         let result_binding = BTreeMap::from([(
             "result".to_string(),
@@ -6607,7 +6607,7 @@ pub(in crate::surface) fn function_resource_summary(
             // checked against the post-call instance.  Keep that exceptional
             // snapshot explicit in the normalized descriptor.
             if ensure.borrowed() && spec.is_instance() {
-                spec = spec.with_snapshot(CResourceSnapshot::Post);
+                spec = spec.with_snapshot(ResourceSnapshot::Post);
             }
             if let Some(guard) = &guard {
                 spec = spec.with_guard(guard.clone());
@@ -6618,11 +6618,11 @@ pub(in crate::surface) fn function_resource_summary(
     }
     if let Some(storage) = crate::surface::lowering::construction_result_resource(parsed_function)?
     {
-        requires.push(storage.clone().with_snapshot(CResourceSnapshot::Entry));
+        requires.push(storage.clone().with_snapshot(ResourceSnapshot::Entry));
         ensures.push(
             storage
-                .with_role(CResourceTransferRole::Produce)
-                .with_snapshot(CResourceSnapshot::Post),
+                .with_role(ResourceTransferRole::Produce)
+                .with_snapshot(ResourceSnapshot::Post),
         );
     }
     if parsed_function.requires_read_only_contract()
@@ -6642,7 +6642,7 @@ pub(in crate::surface) fn function_resource_summary(
 
 pub(in crate::surface) fn function_resource_constructors(
     function_block: &FunctionBlock,
-) -> Result<Vec<CResourceSpec>, ClickError> {
+) -> Result<Vec<ResourceSpec>, ClickError> {
     function_block
         .constructs()
         .iter()
@@ -6663,8 +6663,8 @@ pub(in crate::surface) fn function_resource_constructors(
                 &resource,
                 &[],
                 None,
-                CResourceTransferRole::Produce,
-                CResourceSnapshot::Current,
+                ResourceTransferRole::Produce,
+                ResourceSnapshot::Current,
                 None,
             )
         })
@@ -6692,7 +6692,7 @@ pub(in crate::surface) fn ordinary_abstract_families(
                         | "publisher"
                         | "subscriber"
                 )
-                && definition.name() != crate::kernel::CResourceFact::ALLOCATION_RESOURCE_NAME
+                && definition.name() != crate::kernel::ResourceFact::ALLOCATION_RESOURCE_NAME
         })
         .map(|definition| definition.name().to_string())
         .collect()
@@ -6701,7 +6701,7 @@ pub(in crate::surface) fn ordinary_abstract_families(
 pub(in crate::surface) fn composite_resource_definitions(
     resource_environment: &ResourceEnvironment,
     spec_definitions: SpecDefinitions<'_>,
-) -> Result<Vec<CCompositeResourceDefinition>, ClickError> {
+) -> Result<Vec<CompositeResourceDefinition>, ClickError> {
     let mut definitions = Vec::new();
     let mut fold_sources = resource_environment
         .fold_sources
@@ -6902,7 +6902,7 @@ pub(in crate::surface) fn composite_resource_definitions(
                     .ok_or_else(|| ClickError::new("unknown resource match constructor"))?
                     .fields
                     .clone();
-                arms.push(crate::kernel::CResourceMatchArm {
+                arms.push(crate::kernel::ResourceMatchArm {
                     children,
                     variant,
                     bindings: bindings.into_iter().map(|(name, _)| name).collect(),
@@ -6912,7 +6912,7 @@ pub(in crate::surface) fn composite_resource_definitions(
                     facts,
                 });
             }
-            Some(crate::kernel::CResourceMatchBody {
+            Some(crate::kernel::ResourceMatchBody {
                 field_index,
                 algebraic_type: algebraic_type.clone(),
                 arms,
@@ -6934,7 +6934,7 @@ pub(in crate::surface) fn composite_resource_definitions(
             })
         });
         definitions.push(
-            CCompositeResourceDefinition::new(
+            CompositeResourceDefinition::new(
                 definition.name(),
                 parameters,
                 condition,
@@ -6956,8 +6956,8 @@ pub(in crate::surface) fn composite_resource_definitions(
                             parameter,
                             &definition_parameters,
                             None,
-                            CResourceTransferRole::Borrow,
-                            CResourceSnapshot::Current,
+                            ResourceTransferRole::Borrow,
+                            ResourceSnapshot::Current,
                             None,
                         )
                     })
@@ -6995,14 +6995,14 @@ pub(in crate::surface) fn append_entry_resource_specs(
     resource: &ResourceClause,
     parameters: &[syntax::C0Parameter],
     _resource_environment: &ResourceEnvironment,
-    specs: &mut Vec<CResourceSpec>,
+    specs: &mut Vec<ResourceSpec>,
 ) -> Result<(), ClickError> {
     specs.extend(resource_clause_to_resource_specs_with_metadata(
         resource,
         parameters,
         None,
-        CResourceTransferRole::Borrow,
-        CResourceSnapshot::Entry,
+        ResourceTransferRole::Borrow,
+        ResourceSnapshot::Entry,
         None,
     )?);
     Ok(())
@@ -7012,14 +7012,14 @@ pub(in crate::surface) fn append_entry_resource_specs_with_pointer_types(
     resource: &ResourceClause,
     parameters: &[syntax::C0Parameter],
     pointer_element_types: &BTreeMap<String, crate::kernel::ProgramType>,
-    specs: &mut Vec<CResourceSpec>,
+    specs: &mut Vec<ResourceSpec>,
 ) -> Result<(), ClickError> {
     specs.extend(resource_clause_to_resource_specs_with_metadata(
         resource,
         parameters,
         None,
-        CResourceTransferRole::Borrow,
-        CResourceSnapshot::Entry,
+        ResourceTransferRole::Borrow,
+        ResourceSnapshot::Entry,
         Some(pointer_element_types),
     )?);
     Ok(())
@@ -7029,10 +7029,10 @@ fn resource_clause_to_resource_specs_with_metadata(
     resource: &ResourceClause,
     parameters: &[syntax::C0Parameter],
     result_type: Option<crate::kernel::ProgramType>,
-    role: crate::kernel::CResourceTransferRole,
-    snapshot: crate::kernel::CResourceSnapshot,
+    role: crate::kernel::ResourceTransferRole,
+    snapshot: crate::kernel::ResourceSnapshot,
     pointer_element_types: Option<&BTreeMap<String, crate::kernel::ProgramType>>,
-) -> Result<Vec<CResourceSpec>, ClickError> {
+) -> Result<Vec<ResourceSpec>, ClickError> {
     if let ResourceClause::MemoryAggregate { access, segments } = resource {
         return segments
             .iter()
@@ -7083,13 +7083,13 @@ fn resource_clause_to_resource_spec_with_parameters(
     resource: &ResourceClause,
     parameters: &[syntax::C0Parameter],
     result_type: Option<crate::kernel::ProgramType>,
-) -> Result<CResourceSpec, ClickError> {
+) -> Result<ResourceSpec, ClickError> {
     resource_clause_to_resource_spec_with_metadata(
         resource,
         parameters,
         result_type,
-        crate::kernel::CResourceTransferRole::Borrow,
-        crate::kernel::CResourceSnapshot::Entry,
+        crate::kernel::ResourceTransferRole::Borrow,
+        crate::kernel::ResourceSnapshot::Entry,
         None,
     )
 }
@@ -7098,7 +7098,7 @@ fn resource_clause_to_resource_spec_for_body(
     resource: &ResourceClause,
     parameters: &[syntax::C0Parameter],
     result_type: Option<crate::kernel::ProgramType>,
-) -> Result<CResourceSpec, ClickError> {
+) -> Result<ResourceSpec, ClickError> {
     // Scalar model fields are bound by the instance-body evaluator, just as
     // they are for memory endpoints and child arguments. Keep this spelling
     // local to bodies: a field read in an ordinary contract still requires
@@ -7129,16 +7129,14 @@ fn resource_clause_to_resource_spec_for_body(
             ));
         }
         ResourceClause::Named { .. } | ResourceClause::Quantified { .. } => {
-            CResourceTransferRole::Consume
+            ResourceTransferRole::Consume
         }
-        ResourceClause::ViewMemory(_) => CResourceTransferRole::Borrow,
-        ResourceClause::OwnMemory(_) | ResourceClause::Iterated(_) => {
-            CResourceTransferRole::Consume
-        }
+        ResourceClause::ViewMemory(_) => ResourceTransferRole::Borrow,
+        ResourceClause::OwnMemory(_) | ResourceClause::Iterated(_) => ResourceTransferRole::Consume,
         ResourceClause::MemoryAggregate { access, .. }
         | ResourceClause::Declared { access, .. } => match access {
-            ResourceAccessMode::Own => CResourceTransferRole::Consume,
-            ResourceAccessMode::View => CResourceTransferRole::Borrow,
+            ResourceAccessMode::Own => ResourceTransferRole::Consume,
+            ResourceAccessMode::View => ResourceTransferRole::Borrow,
         },
     };
     resource_clause_to_resource_spec_with_metadata(
@@ -7146,7 +7144,7 @@ fn resource_clause_to_resource_spec_for_body(
         parameters,
         result_type,
         role,
-        CResourceSnapshot::Current,
+        ResourceSnapshot::Current,
         None,
     )
 }
@@ -7155,10 +7153,10 @@ fn resource_clause_to_resource_spec_with_metadata(
     resource: &ResourceClause,
     parameters: &[syntax::C0Parameter],
     result_type: Option<crate::kernel::ProgramType>,
-    role: crate::kernel::CResourceTransferRole,
-    snapshot: crate::kernel::CResourceSnapshot,
+    role: crate::kernel::ResourceTransferRole,
+    snapshot: crate::kernel::ResourceSnapshot,
     pointer_element_types: Option<&BTreeMap<String, crate::kernel::ProgramType>>,
-) -> Result<CResourceSpec, ClickError> {
+) -> Result<ResourceSpec, ClickError> {
     match resource {
         ResourceClause::Conditional { .. } => Err(ClickError::new(
             "conditional resource assertions require loop-contract lowering",
@@ -7174,15 +7172,15 @@ fn resource_clause_to_resource_spec_with_metadata(
             )?;
             if matches!(
                 inner.term(),
-                crate::kernel::CResourceTerm::MutexGuard { .. }
-                    | crate::kernel::CResourceTerm::MutexLive { .. }
-                    | crate::kernel::CResourceTerm::MutexUse { .. }
+                crate::kernel::ResourceTerm::MutexGuard { .. }
+                    | crate::kernel::ResourceTerm::MutexLive { .. }
+                    | crate::kernel::ResourceTerm::MutexUse { .. }
             ) {
                 return inner
                     .with_mutex_authority_binding(binding.identity, binding.name.clone())
                     .map_err(|error| ClickError::new(error.to_string()));
             }
-            CResourceSpec::instance(
+            ResourceSpec::instance(
                 binding.identity,
                 binding.name.clone(),
                 binding.schema.clone().ok_or_else(|| {
@@ -7208,7 +7206,7 @@ fn resource_clause_to_resource_spec_with_metadata(
                     quantity,
                     syntax::C0Type::Int32,
                 )?;
-            CResourceSpec::quantified_with_quantity_snapshot(
+            ResourceSpec::quantified_with_quantity_snapshot(
                 quantity,
                 inner,
                 role,
@@ -7217,8 +7215,8 @@ fn resource_clause_to_resource_spec_with_metadata(
             )
             .map_err(|error| ClickError::new(error.to_string()))
         }
-        ResourceClause::ViewMemory(segment) => Ok(CResourceSpec::memory(
-            CMemorySegment::new(
+        ResourceClause::ViewMemory(segment) => Ok(ResourceSpec::memory(
+            MemorySegment::new(
                 segment.base.clone(),
                 segment.start.clone(),
                 segment.end.clone(),
@@ -7234,12 +7232,12 @@ fn resource_clause_to_resource_spec_with_metadata(
             .with_value_runs(crate::surface::lowering::contract_segment_value_runs(
                 parameters, segment,
             )),
-            CResourceAccessMode::View,
+            KernelResourceAccessMode::View,
             role,
             snapshot,
         )),
-        ResourceClause::OwnMemory(segment) => Ok(CResourceSpec::memory(
-            CMemorySegment::new(
+        ResourceClause::OwnMemory(segment) => Ok(ResourceSpec::memory(
+            MemorySegment::new(
                 segment.base.clone(),
                 segment.start.clone(),
                 segment.end.clone(),
@@ -7256,19 +7254,19 @@ fn resource_clause_to_resource_spec_with_metadata(
             .with_value_runs(crate::surface::lowering::contract_segment_value_runs(
                 parameters, segment,
             )),
-            CResourceAccessMode::Own,
+            KernelResourceAccessMode::Own,
             role,
             snapshot,
         )),
         ResourceClause::MemoryAggregate { .. } => Err(ClickError::new(
             "aggregate resource clauses must be expanded before one resource spec is required",
         )),
-        ResourceClause::Iterated(clause) => CResourceSpec::new(
-            crate::kernel::CResourceTerm::Iterated(Box::new(
+        ResourceClause::Iterated(clause) => ResourceSpec::new(
+            crate::kernel::ResourceTerm::Iterated(Box::new(
                 crate::surface::lowering::iterated_clause_to_spec(clause, parameters)?,
             )),
-            CResourceAccessMode::Own,
-            crate::kernel::CResourceQuantity::One,
+            KernelResourceAccessMode::Own,
+            crate::kernel::ResourceQuantity::One,
             role,
             snapshot,
         )
@@ -7357,17 +7355,17 @@ fn resource_clause_to_resource_spec_with_metadata(
                         .map(crate::surface::diagnostics::describe_contract_expression)
                         .collect(),
                 );
-                return CResourceSpec::new(
-                    crate::kernel::CResourceTerm::PopulationAuthority {
+                return ResourceSpec::new(
+                    crate::kernel::ResourceTerm::PopulationAuthority {
                         population_arity,
-                        protected: Box::new(crate::kernel::CResourceTypeSpec {
+                        protected: Box::new(crate::kernel::ResourceTypeSpec {
                             resource: Box::new(protected_spec),
                             schema: schema.clone(),
                         }),
                         snapshot,
                     },
                     access,
-                    crate::kernel::CResourceQuantity::One,
+                    crate::kernel::ResourceQuantity::One,
                     role,
                     snapshot,
                 )
@@ -7377,13 +7375,13 @@ fn resource_clause_to_resource_spec_with_metadata(
                 let [mutex] = arguments.as_slice() else {
                     return Err(ClickError::new("mutex_guard expects one mutex pointer"));
                 };
-                return CResourceSpec::new(
-                    crate::kernel::CResourceTerm::MutexGuard {
+                return ResourceSpec::new(
+                    crate::kernel::ResourceTerm::MutexGuard {
                         mutex: Box::new(mutex.clone()),
                         snapshot: argument_snapshots[0],
                     },
                     access,
-                    crate::kernel::CResourceQuantity::One,
+                    crate::kernel::ResourceQuantity::One,
                     role,
                     snapshot,
                 )
@@ -7393,13 +7391,13 @@ fn resource_clause_to_resource_spec_with_metadata(
                 let [mutex] = arguments.as_slice() else {
                     return Err(ClickError::new("mutex_live expects one mutex pointer"));
                 };
-                return CResourceSpec::new(
-                    crate::kernel::CResourceTerm::MutexLive {
+                return ResourceSpec::new(
+                    crate::kernel::ResourceTerm::MutexLive {
                         mutex: Box::new(mutex.clone()),
                         snapshot: argument_snapshots[0],
                     },
                     access,
-                    crate::kernel::CResourceQuantity::One,
+                    crate::kernel::ResourceQuantity::One,
                     role,
                     snapshot,
                 )
@@ -7423,7 +7421,7 @@ fn resource_clause_to_resource_spec_with_metadata(
                         "{name} requires the published resource type"
                     )));
                 };
-                let payload = crate::kernel::CResourceTypeSpec {
+                let payload = crate::kernel::ResourceTypeSpec {
                     resource: Box::new(
                         resource_clause_to_resource_spec_with_metadata(
                             payload,
@@ -7442,15 +7440,15 @@ fn resource_clause_to_resource_spec_with_metadata(
                     ),
                     schema: schema.clone(),
                 };
-                return CResourceSpec::new(
-                    crate::kernel::CResourceTerm::Publication {
+                return ResourceSpec::new(
+                    crate::kernel::ResourceTerm::Publication {
                         side,
                         payload: Box::new(payload),
                         flag: Box::new(flag.clone()),
                         snapshot: argument_snapshots[0],
                     },
                     access,
-                    crate::kernel::CResourceQuantity::One,
+                    crate::kernel::ResourceQuantity::One,
                     role,
                     snapshot,
                 )
@@ -7460,11 +7458,11 @@ fn resource_clause_to_resource_spec_with_metadata(
                 let [mutex] = arguments.as_slice() else {
                     return Err(ClickError::new("mutex_use expects one mutex pointer"));
                 };
-                return CResourceSpec::new(
-                    crate::kernel::CResourceTerm::MutexUse {
+                return ResourceSpec::new(
+                    crate::kernel::ResourceTerm::MutexUse {
                         protected: resource_type_arguments.first().map(|resource| {
                             let ResourceClause::Declared { type_schema: Some(schema), .. } = resource else { return Err(ClickError::new("protected resource type has no checked schema")); };
-                            Ok(Box::new(crate::kernel::CResourceTypeSpec {
+                            Ok(Box::new(crate::kernel::ResourceTypeSpec {
                                 resource: Box::new(resource_clause_to_resource_spec_with_metadata(resource, parameters, result_type, role, snapshot, pointer_element_types,
 )?.with_source_arguments(match resource {
                                     ResourceClause::Declared { arguments, .. } => arguments.iter().map(crate::surface::diagnostics::describe_contract_expression).collect(),
@@ -7477,13 +7475,13 @@ fn resource_clause_to_resource_spec_with_metadata(
                         snapshot: argument_snapshots[0],
                     },
                     access,
-                    crate::kernel::CResourceQuantity::One,
+                    crate::kernel::ResourceQuantity::One,
                     role,
                     snapshot,
                 )
                 .map_err(|error| ClickError::new(error.to_string()));
             }
-            CResourceSpec::declared_with_argument_snapshots(
+            ResourceSpec::declared_with_argument_snapshots(
                 match kind {
                     ResourceKind::Composite => ResourceFamily::Composite,
                     ResourceKind::Token => ResourceFamily::Token,
@@ -7674,23 +7672,23 @@ pub(in crate::surface) fn substitute_contract_segment(
 
 pub(in crate::surface) fn resource_clause_to_resource_spec(
     resource: &ResourceClause,
-) -> Result<CResourceSpec, ClickError> {
+) -> Result<ResourceSpec, ClickError> {
     resource_clause_to_resource_spec_with_metadata(
         resource,
         &[],
         None,
-        crate::kernel::CResourceTransferRole::Borrow,
-        crate::kernel::CResourceSnapshot::Current,
+        crate::kernel::ResourceTransferRole::Borrow,
+        crate::kernel::ResourceSnapshot::Current,
         None,
     )
 }
 
 pub(in crate::surface) fn resource_access_to_kernel(
     access: ResourceAccessMode,
-) -> CResourceAccessMode {
+) -> KernelResourceAccessMode {
     match access {
-        ResourceAccessMode::Own => CResourceAccessMode::Own,
-        ResourceAccessMode::View => CResourceAccessMode::View,
+        ResourceAccessMode::Own => KernelResourceAccessMode::Own,
+        ResourceAccessMode::View => KernelResourceAccessMode::View,
     }
 }
 
@@ -7726,7 +7724,7 @@ pub(in crate::surface) fn implication_body(proposition: &Proposition) -> &Propos
 /// separate proofs are merely both checked.
 pub(in crate::surface) fn distinct_checked_executions(
     verified: &[VerifiedCTheorem],
-) -> Vec<&Arc<CCheckedFunctionExecution>> {
+) -> Vec<&Arc<CheckedFunctionExecution>> {
     let mut seen = BTreeSet::new();
     verified
         .iter()

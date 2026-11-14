@@ -11,7 +11,7 @@ fn external_array_unknown_snapshots_and_noop_maps_scale_with_representation() {
         let _session = crate::kernel::VerificationSession::enter();
         let source = external(930_000);
         let target = external(930_001);
-        let before = CMemory::new();
+        let before = Memory::new();
         let (memory, work) = crate::instrumentation::measure_deterministic_work(|| {
             let memory = copy(before.clone(), &target, &source, count);
             let mut variables = std::collections::BTreeSet::new();
@@ -89,7 +89,7 @@ fn external_array_execution_requires_full_authority_and_mutability() {
                     matches!(
                         theorem.proposition(),
                         Proposition::CStatementExecutes {
-                            outcome: CStatementOutcome::Normal(_),
+                            outcome: StatementOutcome::Normal(_),
                             ..
                         }
                     ),
@@ -118,7 +118,7 @@ fn external_array_source_selection_skips_unrelated_parameter_cells() {
             block: "local:indexed-copy".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let mut memory = CMemory::new()
+        let mut memory = Memory::new()
             .with_block(target.block.clone(), 16)
             .store(source.clone(), ProgramValue::UInt32(9u32.into()));
         for index in 0..siblings {
@@ -150,7 +150,7 @@ fn external_array_ambiguous_run_aliasing_forgets_without_extent_work() {
         let source = external(939_000);
         let target = external(939_001);
         let other = external(939_002);
-        let memory = copy(CMemory::new(), &target, &source, count);
+        let memory = copy(Memory::new(), &target, &source, count);
         let before = memory.clone();
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             memory.write_scalar_array_region(

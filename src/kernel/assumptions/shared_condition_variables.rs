@@ -321,7 +321,7 @@ mod tests {
     #[test]
     fn shared_roots_keep_native_and_load_dependent_sources_in_the_existing_index() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let memory = crate::kernel::intern_c_memory(Memory::new());
         let load = crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
             &Pointer::symbolic(Variable(994800)),

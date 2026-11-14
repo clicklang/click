@@ -10,7 +10,7 @@ fn byte_assembly_masks_symbolic_bytes_and_ignores_unrelated_memory() {
     let mut samples = Vec::new();
     for size in [0, 64, 128, 512] {
         let mut memory =
-            CMemory::new().with_declared_scalar_block(word(0).block, 4, ProgramType::UInt32);
+            Memory::new().with_declared_scalar_block(word(0).block, 4, ProgramType::UInt32);
         for byte in 0..3 {
             memory = memory.store(
                 word(byte),
@@ -58,7 +58,7 @@ fn byte_assembly_masks_symbolic_bytes_and_ignores_unrelated_memory() {
 fn containing_cell_lookup_work_is_independent_of_unrelated_cells() {
     let mut works = Vec::new();
     for unrelated in [8_u32, 32, 128, 512] {
-        let mut memory = CMemory::new().store(
+        let mut memory = Memory::new().store(
             word(0),
             ProgramValue::UInt64(MachineTerm::uint64_constant(0x0102_0304_0506_0708)),
         );

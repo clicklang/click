@@ -389,7 +389,7 @@ fn cached_pointer_read_equations_do_not_escape_symbolic_match_arms() {
     };
     let address = Pointer::symbolic(Variable(71_040));
     let value = Pointer::symbolic(Variable(71_041));
-    let memory = CMemory::new().store(
+    let memory = Memory::new().store(
         address.clone(),
         ProgramValue::typed_pointer(value, ProgramType::Int64Pointer),
     );

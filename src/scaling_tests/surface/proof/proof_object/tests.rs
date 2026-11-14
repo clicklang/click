@@ -515,7 +515,7 @@ fn choose_projection_walk_is_deterministic_across_selected_body_sizes() {
     let click_functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
     let resources = ResourceEnvironment::new(&[]);
-    let execution_environment = CExecutionEnvironment::new();
+    let execution_environment = ExecutionEnvironment::new();
     let state = ExecutionState::new();
     let arguments = vec![ProgramExpression::Value(int32(7))];
 
@@ -576,7 +576,7 @@ fn choose_projection_walk_is_deterministic_across_selected_body_sizes() {
             parsed_function.parameters(),
             std::slice::from_ref(&source),
             &entry_origins,
-            crate::kernel::CMemorySnapshotIdentity::of(state.memory()),
+            crate::kernel::MemorySnapshotIdentity::of(state.memory()),
         );
         let before = fact_node_allocations();
         let root = Proof::for_execution_frontier(
@@ -690,7 +690,7 @@ fn explicit_loop_have_retains_checked_body_and_complete_invariant_bundle() {
     let click_functions = ClickFunctionEnvironment::new(file.click_function_definitions());
     let theorems = TheoremEnvironment::new(file.theorem_definitions());
     let resources = ResourceEnvironment::new(file.resource_definitions());
-    let environment = CExecutionEnvironment::new();
+    let environment = ExecutionEnvironment::new();
     let arguments = vec![ProgramExpression::Value(int32(7))];
     let value = ContractExpression::CFragment(ProgramExpression::Value(int32(7)));
     let surface = ClickProposition::PredicateCall {
@@ -704,15 +704,15 @@ fn explicit_loop_have_retains_checked_body_and_complete_invariant_bundle() {
     };
     let spec = crate::kernel::SpecProposition::Comparison {
         left: crate::kernel::SpecExpression::Value(int32(7)),
-        operator: crate::kernel::CComparisonOperator::Equal,
+        operator: crate::kernel::ComparisonOperator::Equal,
         right: crate::kernel::SpecExpression::Value(int32(7)),
     };
     let checks = vec![
-        CLoopInvariantCheck::new(spec, None, None),
-        CLoopInvariantCheck::new(
+        LoopInvariantCheck::new(spec, None, None),
+        LoopInvariantCheck::new(
             crate::kernel::SpecProposition::Comparison {
                 left: crate::kernel::SpecExpression::Value(int32(7)),
-                operator: crate::kernel::CComparisonOperator::LessEqual,
+                operator: crate::kernel::ComparisonOperator::LessEqual,
                 right: crate::kernel::SpecExpression::Value(int32(8)),
             },
             None,
@@ -838,13 +838,13 @@ fn explicit_invariant_body_scales_and_supplies_kernel_validation() {
     let theorems = TheoremEnvironment::new(&[]);
     let parsed = syntax::parse_function("int32 region(int32 x) { return x; }").unwrap();
     let function = parsed.to_kernel_function();
-    let functions = CExecutionEnvironment::new();
+    let functions = ExecutionEnvironment::new();
     let resources = ResourceEnvironment::new(&[]);
     let arguments = [ProgramExpression::Value(int32(7))];
-    let checks = vec![crate::kernel::CLoopInvariantCheck::new(
+    let checks = vec![crate::kernel::LoopInvariantCheck::new(
         crate::kernel::SpecProposition::Comparison {
             left: crate::kernel::SpecExpression::Value(int32(0)),
-            operator: crate::kernel::CComparisonOperator::LessEqual,
+            operator: crate::kernel::ComparisonOperator::LessEqual,
             right: crate::kernel::SpecExpression::Value(int32(0)),
         },
         None,
@@ -967,7 +967,7 @@ fn cursor_execution_load_binding_work_is_deterministic_and_output_sized() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let state = ExecutionState::new().with_resource_context(
-        ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+        ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
             pointer.clone(),
             MachineTerm::constant(0),
             MachineTerm::constant(1),
@@ -977,7 +977,7 @@ fn cursor_execution_load_binding_work_is_deterministic_and_output_sized() {
         ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(60_002)))),
         ProgramExpression::Value(ProgramValue::pointer(pointer.clone())),
     ];
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment =
         ClickFunctionEnvironment::new(click_file.click_function_definitions());
@@ -1037,7 +1037,7 @@ fn cursor_execution_load_binding_work_is_deterministic_and_output_sized() {
         assert!(!paths.is_empty());
         for path in paths {
             assert!(matches!(path.outcome(),
-                CFunctionOutcome::Return { value, .. }
+                FunctionOutcome::Return { value, .. }
                     if matches!(value.native().as_ref(), ProgramValue::Int32(MachineTerm::MemoryLoad(_, at, crate::kernel::LoadKind::Int32)) if **at == pointer)));
         }
         let execution = joined.execution().expect("joined execution should remain");
@@ -1107,7 +1107,7 @@ fn integer_equality_rewrite_builds_names_only_on_refusal_and_scales() {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: crate::persistent::PersistentMap::default(),
-            memory: CMemory::new(),
+            memory: Memory::new(),
             array_refs: BTreeMap::new(),
             requires: vec![equality.clone()],
             surface_requirements: SurfacePropositionMap::default(),
@@ -1452,7 +1452,7 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: crate::persistent::PersistentMap::default(),
-            memory: CMemory::new(),
+            memory: Memory::new(),
             values: BTreeMap::from([
                 ("x".into(), ProgramValue::UInt64(x.clone())),
                 ("y".into(), ProgramValue::UInt64(y.clone())),
@@ -1697,7 +1697,7 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
     for size in [4usize, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = crate::kernel::intern_c_memory(
-            crate::kernel::CMemory::new().with_block("rewrite_reads", 4096),
+            crate::kernel::Memory::new().with_block("rewrite_reads", 4096),
         );
         let mut facts = Vec::new();
         let mut reads = Vec::new();
@@ -1949,7 +1949,7 @@ fn mixed_entry_and_current_premise_spelling_ignores_unrelated_snapshots() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let entry = ExecutionState::new()
-        .with_memory(CMemory::new().with_block("mixed-premise", 4))
+        .with_memory(Memory::new().with_block("mixed-premise", 4))
         .with_local(
             "p",
             ProgramValue::typed_pointer(pointer.clone(), ProgramType::UInt32Pointer),
@@ -2054,7 +2054,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
     let mut samples = Vec::new();
     for size in [4usize, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut memory = crate::kernel::CMemory::new().with_block("rewrite_reads", 4096);
+        let mut memory = crate::kernel::Memory::new().with_block("rewrite_reads", 4096);
         let mut facts = Vec::new();
         let mut reads = Vec::new();
         for index in 0..size {
@@ -2415,7 +2415,7 @@ fn check_impossible_offset_rewrite_search(already_intrinsic: bool, native: bool)
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: Default::default(),
-            memory: CMemory::new(),
+            memory: Memory::new(),
             values: words
                 .iter()
                 .enumerate()

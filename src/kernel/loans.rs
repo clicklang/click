@@ -16,15 +16,15 @@ use exclusive_calls::{ExclusiveCallBinding, ExclusiveCallId, ExclusiveCallRecord
 use local_references::{LocalReferenceBinding, LocalReferenceRecord};
 pub(in crate::kernel) use local_references::{LocalReferenceId, LocalScalarReference};
 
-use super::functions::CCheckedResourceFact;
+use super::functions::CheckedResourceFact;
 use super::primitives::{
     MemorySplitOrigins, OwnedMemberKey, Pointer, PointerBlock, ResourceMemoryIntervalNode,
     memory_interval_ancestors, memory_interval_nodes, memory_range_is_proven_empty,
     memory_ranges_proven_overlapping,
 };
 use super::{
-    CMemoryRange, CResource, CResourceFact, CResourceSnapshot, CResourceTransferRole, MachineTerm,
-    PureFactContext, ResourceContext, ResourceDescription, ResourceOccurrenceId, Variable,
+    MachineTerm, MemoryRange, PureFactContext, Resource, ResourceContext, ResourceDescription,
+    ResourceFact, ResourceOccurrenceId, ResourceSnapshot, ResourceTransferRole, Variable,
 };
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::cmp::Ordering;
@@ -86,12 +86,12 @@ pub(crate) struct LoanHoldId {
 pub(crate) struct StableViewDescription {
     loan: LoanId,
     support: ResourceOccurrenceId,
-    viewed: CResourceFact,
+    viewed: ResourceFact,
 }
 
 impl StableViewDescription {
     #[cfg(test)]
-    pub(crate) fn viewed(&self) -> &CResourceFact {
+    pub(crate) fn viewed(&self) -> &ResourceFact {
         &self.viewed
     }
 
@@ -160,7 +160,7 @@ pub(crate) struct LoanViewBinding {
     pub(crate) scope: LoanScopeId,
     pub(crate) share: LoanShareId,
     pub(crate) support: ResourceOccurrenceId,
-    pub(crate) viewed: CResourceFact,
+    pub(crate) viewed: ResourceFact,
     /// Present on the binding of a folded borrowing composite (and on the
     /// body piece it restores when unfolded): the occurrence keeps this
     /// loan's scope open until the hold is released.
@@ -190,7 +190,7 @@ enum BoundViewKey {
 }
 
 impl BoundViewKey {
-    fn of(fact: &CResourceFact) -> Self {
+    fn of(fact: &ResourceFact) -> Self {
         match fact.memory_range() {
             Some(range) => Self::Memory(range.base().clone()),
             None => Self::Other(OwnedMemberKey::of(fact).expect("non-memory resource")),
@@ -203,7 +203,7 @@ pub(crate) struct LoanViewBindingsState {
     pub(crate) identity: u64,
     pub(crate) map: PersistentMap<ResourceOccurrenceId, LoanViewBinding>,
     changes: imbl::Vector<(u64, ResourceOccurrenceId)>,
-    by_view: PersistentMap<CResourceFact, PersistentSet<ResourceOccurrenceId>>,
+    by_view: PersistentMap<ResourceFact, PersistentSet<ResourceOccurrenceId>>,
     by_key: PersistentMap<BoundViewKey, PersistentSet<ResourceOccurrenceId>>,
 }
 
@@ -349,7 +349,7 @@ impl LoanViewBindings {
     /// another binding after a failed coverage/liveness check. Exact bindings
     /// take priority; nonexact queries use a singleton resource bucket (or a
     /// singleton binding map for a checked alias).
-    fn bound_view_candidate(&self, required: &CResourceFact) -> Option<ResourceOccurrenceId> {
+    fn bound_view_candidate(&self, required: &ResourceFact) -> Option<ResourceOccurrenceId> {
         if self.state.map.is_empty() {
             return None;
         }
@@ -364,7 +364,7 @@ impl LoanViewBindings {
 
     fn select_bound_view(
         &self,
-        required: &CResourceFact,
+        required: &ResourceFact,
         resources: &ResourceContext,
         assumptions: &PureFactContext,
     ) -> Option<ResourceOccurrenceId> {
@@ -391,7 +391,7 @@ impl LoanViewBindings {
         &self,
         source: &ResourceContext,
         mut destination: ResourceContext,
-        inserted: &[(CResourceFact, ResourceOccurrenceId)],
+        inserted: &[(ResourceFact, ResourceOccurrenceId)],
         assumptions: &PureFactContext,
     ) -> ResourceContext {
         if self.state.map.is_empty() {
@@ -445,7 +445,7 @@ impl LoanViewBindings {
 /// its constant displacement says nothing about where it lies relative to
 /// another block, so an unproved separation from it is not a conflict, as for
 /// any symbolic view (docs/internals/stable-views.md, "Footprints").
-fn ledger_interval_nodes(range: &CMemoryRange) -> Option<Vec<ResourceMemoryIntervalNode>> {
+fn ledger_interval_nodes(range: &MemoryRange) -> Option<Vec<ResourceMemoryIntervalNode>> {
     if matches!(range.base().block, PointerBlock::LoadedPointer(_)) {
         return None;
     }
@@ -454,7 +454,7 @@ fn ledger_interval_nodes(range: &CMemoryRange) -> Option<Vec<ResourceMemoryInter
 
 fn update_active_memory_index(
     index: &PersistentMap<ResourceMemoryIntervalNode, PersistentSet<LoanId>>,
-    range: &CMemoryRange,
+    range: &MemoryRange,
     loan: LoanId,
     insert: bool,
 ) -> Result<PersistentMap<ResourceMemoryIntervalNode, PersistentSet<LoanId>>, LoanRefusal> {
@@ -478,7 +478,7 @@ fn update_active_memory_index(
 
 fn update_active_memory_subtree(
     subtree: &PersistentMap<ResourceMemoryIntervalNode, PersistentSet<LoanId>>,
-    range: &CMemoryRange,
+    range: &MemoryRange,
     loan: LoanId,
     insert: bool,
 ) -> Result<PersistentMap<ResourceMemoryIntervalNode, PersistentSet<LoanId>>, LoanRefusal> {
@@ -502,7 +502,7 @@ fn update_active_memory_subtree(
     Ok(subtree)
 }
 
-fn symbolic_memory_ranges(ranges: &[CMemoryRange]) -> Vec<CMemoryRange> {
+fn symbolic_memory_ranges(ranges: &[MemoryRange]) -> Vec<MemoryRange> {
     ranges
         .iter()
         .filter(|range| ledger_interval_nodes(range).is_none())
@@ -511,12 +511,12 @@ fn symbolic_memory_ranges(ranges: &[CMemoryRange]) -> Vec<CMemoryRange> {
 }
 
 fn with_unindexed_memory(
-    map: &PersistentMap<PointerBlock, PersistentMap<LoanId, Vec<CMemoryRange>>>,
+    map: &PersistentMap<PointerBlock, PersistentMap<LoanId, Vec<MemoryRange>>>,
     loan: LoanId,
-    ranges: &[CMemoryRange],
-) -> PersistentMap<PointerBlock, PersistentMap<LoanId, Vec<CMemoryRange>>> {
+    ranges: &[MemoryRange],
+) -> PersistentMap<PointerBlock, PersistentMap<LoanId, Vec<MemoryRange>>> {
     let mut map = map.clone();
-    let mut by_block: BTreeMap<PointerBlock, Vec<CMemoryRange>> = BTreeMap::new();
+    let mut by_block: BTreeMap<PointerBlock, Vec<MemoryRange>> = BTreeMap::new();
     for range in ranges {
         by_block
             .entry(range.base().block.clone())
@@ -531,10 +531,10 @@ fn with_unindexed_memory(
 }
 
 fn without_unindexed_memory(
-    map: &PersistentMap<PointerBlock, PersistentMap<LoanId, Vec<CMemoryRange>>>,
+    map: &PersistentMap<PointerBlock, PersistentMap<LoanId, Vec<MemoryRange>>>,
     loan: LoanId,
-    ranges: &[CMemoryRange],
-) -> PersistentMap<PointerBlock, PersistentMap<LoanId, Vec<CMemoryRange>>> {
+    ranges: &[MemoryRange],
+) -> PersistentMap<PointerBlock, PersistentMap<LoanId, Vec<MemoryRange>>> {
     let mut map = map.clone();
     for range in ranges {
         let block = &range.base().block;
@@ -565,7 +565,7 @@ fn without_unindexed_memory(
 /// Undecided is not empty. A symbolic endpoint answers `false` here and goes
 /// on to the barrier proper, which is where a range the index cannot hold is
 /// refused rather than waved through.
-fn memory_range_is_empty(range: &CMemoryRange) -> bool {
+fn memory_range_is_empty(range: &MemoryRange) -> bool {
     matches!(
         (
             range.signed_constant_start(),
@@ -575,7 +575,7 @@ fn memory_range_is_empty(range: &CMemoryRange) -> bool {
     )
 }
 
-fn memory_range_aliases(range: &CMemoryRange, assumptions: &PureFactContext) -> Vec<CMemoryRange> {
+fn memory_range_aliases(range: &MemoryRange, assumptions: &PureFactContext) -> Vec<MemoryRange> {
     crate::kernel::search::ProofSearch::<LoanLedger>::loan_aliases(range, assumptions)
 }
 
@@ -593,24 +593,24 @@ fn memory_range_aliases(range: &CMemoryRange, assumptions: &PureFactContext) -> 
 /// viewed pointer itself, through a pointer assumed equal to it, or into a
 /// concretely overlapping offset of the same object.
 pub(crate) fn protected_range_proven_overlapping(
-    query: &CMemoryRange,
-    protected: &CMemoryRange,
+    query: &MemoryRange,
+    protected: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
     protected_range_proven_overlapping_with_separation(query, protected, assumptions, true)
 }
 
 pub(crate) fn protected_range_proven_overlapping_ignoring_separation(
-    query: &CMemoryRange,
-    protected: &CMemoryRange,
+    query: &MemoryRange,
+    protected: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
     protected_range_proven_overlapping_with_separation(query, protected, assumptions, false)
 }
 
 fn protected_range_proven_overlapping_with_separation(
-    query: &CMemoryRange,
-    protected: &CMemoryRange,
+    query: &MemoryRange,
+    protected: &MemoryRange,
     assumptions: &PureFactContext,
     use_separation: bool,
 ) -> bool {
@@ -636,9 +636,9 @@ fn protected_range_proven_overlapping_with_separation(
     if separated {
         return false;
     }
-    let byte_range = |range: &CMemoryRange| {
+    let byte_range = |range: &MemoryRange| {
         let (base, bytes) = range.byte_footprint();
-        CMemoryRange::new_with_element_width(base, MachineTerm::constant(0), bytes, 1)
+        MemoryRange::new_with_element_width(base, MachineTerm::constant(0), bytes, 1)
     };
     queries.iter().any(|query| {
         protected_ranges.iter().any(|protected| {
@@ -668,13 +668,10 @@ fn protected_range_proven_overlapping_with_separation(
     })
 }
 
-fn protected_ranges_constant_overlap(
-    query: &CMemoryRange,
-    protected: &CMemoryRange,
-) -> Option<bool> {
+fn protected_ranges_constant_overlap(query: &MemoryRange, protected: &MemoryRange) -> Option<bool> {
     // Compare concrete intervals in exact byte arithmetic. Negative offsets
     // and large widths must not wrap through a 32-bit byte-count term.
-    let byte_bounds = |range: &CMemoryRange| {
+    let byte_bounds = |range: &MemoryRange| {
         let width = i64::from(range.element_width());
         let start = range.signed_constant_start()?;
         let end = range.signed_constant_end()?;
@@ -698,11 +695,11 @@ fn protected_ranges_constant_overlap(
 /// loan of a composite head, whose body is memory whether or not the
 /// one-level frontier enumerated any of it. The fail-closed barriers
 /// (unknown loop write sets, branch joins) consult this count.
-fn loan_protects_memory(memory_backing: &[CMemoryRange], permitted: &[CResourceFact]) -> bool {
+fn loan_protects_memory(memory_backing: &[MemoryRange], permitted: &[ResourceFact]) -> bool {
     !memory_backing.is_empty()
         || permitted
             .iter()
-            .any(|fact| matches!(fact.resource(), CResource::Composite { .. }))
+            .any(|fact| matches!(fact.resource(), Resource::Composite { .. }))
 }
 
 /// The authority a reborrow inherits from its parent loan. One description,
@@ -724,8 +721,8 @@ fn loan_protects_memory(memory_backing: &[CMemoryRange], permitted: &[CResourceF
 /// and its own barrier registrations are the ones its end removes.
 fn reborrowed_authority(
     parent: &LoanRecord,
-    viewed: &CResourceFact,
-) -> (Vec<CResourceFact>, Vec<CMemoryRange>) {
+    viewed: &ResourceFact,
+) -> (Vec<ResourceFact>, Vec<MemoryRange>) {
     let memory_backing = if let Some(range) = viewed.memory_range() {
         vec![range.clone()]
     } else if parent.permitted.first() == Some(viewed) {
@@ -743,15 +740,15 @@ fn reborrowed_authority(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct OwnedResourceObservation {
     support: ResourceOccurrenceId,
-    viewed: CResourceFact,
+    viewed: ResourceFact,
 }
 
 impl OwnedResourceObservation {
     #[cfg(test)]
-    pub(crate) fn new(support: ResourceOccurrenceId, owned: &CResourceFact) -> Option<Self> {
+    pub(crate) fn new(support: ResourceOccurrenceId, owned: &ResourceFact) -> Option<Self> {
         owned.is_own().then(|| Self {
             support,
-            viewed: CResourceFact::View(owned.resource().clone()),
+            viewed: ResourceFact::View(owned.resource().clone()),
         })
     }
 
@@ -761,7 +758,7 @@ impl OwnedResourceObservation {
     }
 
     #[cfg(test)]
-    pub(crate) fn viewed(&self) -> &CResourceFact {
+    pub(crate) fn viewed(&self) -> &ResourceFact {
         &self.viewed
     }
 }
@@ -813,24 +810,24 @@ struct LoanRecord {
     /// this identity, never an owner copy or a walk through ancestor scopes.
     mutex_root: Option<LoanId>,
     /// Identity promised by a modular input; this is never recoverable escrow.
-    assumed_mutex: Option<CResourceFact>,
+    assumed_mutex: Option<ResourceFact>,
     assumed_mutex_protected: Option<ResourceDescription>,
     support: ResourceOccurrenceId,
-    escrow: Option<CResourceFact>,
+    escrow: Option<ResourceFact>,
     /// Every checked viewed projection authorized by this loan.  A composite
     /// loan keeps its folded head plus all primitive body views here so a
     /// child binding cannot be minted from the head alone.
-    permitted: Vec<CResourceFact>,
+    permitted: Vec<ResourceFact>,
     origin: LoanOrigin,
     recovered: bool,
     /// Primitive body pieces whose memory remains protected while a
     /// composite head is lent.  The head is retained as the restoration
     /// recipe, while this checked list supplies the actual write footprint.
-    memory_backing: Vec<CMemoryRange>,
+    memory_backing: Vec<MemoryRange>,
 }
 
 impl LoanRecord {
-    fn mutex_identity_description(&self) -> Option<&CResourceFact> {
+    fn mutex_identity_description(&self) -> Option<&ResourceFact> {
         match self.origin {
             LoanOrigin::Escrowed(_) if self.assumed_mutex.is_none() => self
                 .escrow
@@ -839,7 +836,7 @@ impl LoanRecord {
             LoanOrigin::BorrowedContractInput if self.escrow.is_none() => {
                 self.assumed_mutex.as_ref().filter(|owner| {
                     matches!(owner,
-                    CResourceFact::Own(CResource::MutexLive(identity), quantity)
+                    ResourceFact::Own(Resource::MutexLive(identity), quantity)
                     if identity.epoch.is_some() && quantity.as_const() == Some(1))
                 })
             }
@@ -897,7 +894,7 @@ struct LoanLedgerData {
     /// entries in its own block, and the entries are bounded by the active
     /// loans with symbolic footprints, which a modular proof creates only
     /// from its contract's explicit view clauses and its own calls.
-    unindexed_memory: PersistentMap<PointerBlock, PersistentMap<LoanId, Vec<CMemoryRange>>>,
+    unindexed_memory: PersistentMap<PointerBlock, PersistentMap<LoanId, Vec<MemoryRange>>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -910,7 +907,7 @@ type CacheProtectionIndex =
     PersistentMap<(Pointer, ResourceMemoryIntervalNode), PersistentSet<LoanId>>;
 
 fn cache_protection_nodes(
-    range: &CMemoryRange,
+    range: &MemoryRange,
 ) -> Option<(Pointer, Vec<ResourceMemoryIntervalNode>)> {
     let (origin, start, end) = super::primitives::constant_memory_coordinates(range)?;
     let nodes = super::primitives::memory_interval_nodes_for_coordinates(
@@ -942,7 +939,7 @@ fn update_cache_protection_bucket(
 
 fn update_cache_protection(
     data: &mut LoanLedgerData,
-    range: &CMemoryRange,
+    range: &MemoryRange,
     loan: LoanId,
     insert: bool,
 ) {
@@ -973,7 +970,7 @@ fn update_cache_protection(
 
 fn update_indexed_memory_range(
     data: &mut LoanLedgerData,
-    range: &CMemoryRange,
+    range: &MemoryRange,
     loan: LoanId,
     insert: bool,
 ) -> Result<(), LoanRefusal> {
@@ -1095,15 +1092,15 @@ pub enum LoanOriginKind {
 /// transition history.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct LoanRefusalSubject {
-    resource: Option<CResourceFact>,
+    resource: Option<ResourceFact>,
     /// Boxed for the same reason as `conflicting`: a refusal that names a
     /// range and a fact must stay within the bounded payload size.
-    range: Option<Box<CMemoryRange>>,
+    range: Option<Box<MemoryRange>>,
     /// The fact on the other side of a conflict: the resource a live loan
     /// protects for a refused access, or the owned entry that already
     /// supports a contract input view at entry. Boxed so that naming both
     /// sides keeps the diagnostic within its bounded payload size.
-    conflicting: Option<Box<CResourceFact>>,
+    conflicting: Option<Box<ResourceFact>>,
     origin: Option<LoanOriginKind>,
     loan: Option<(u64, u64)>,
     scope: Option<(u64, u64)>,
@@ -1129,8 +1126,8 @@ impl LoanRefusalSubject {
     /// that protects it: the D13 shape for a refused write, free, or
     /// reallocation.
     pub(crate) fn for_memory_conflict(
-        attempted: CMemoryRange,
-        protected: CResourceFact,
+        attempted: MemoryRange,
+        protected: ResourceFact,
         loan: LoanId,
         origin: LoanOriginKind,
     ) -> Self {
@@ -1144,8 +1141,8 @@ impl LoanRefusalSubject {
     }
 
     pub(crate) fn for_conflicting_resources(
-        resource: CResourceFact,
-        conflicting: CResourceFact,
+        resource: ResourceFact,
+        conflicting: ResourceFact,
     ) -> Self {
         Self {
             resource: Some(resource),
@@ -1157,8 +1154,8 @@ impl LoanRefusalSubject {
     /// A contract input view and the owned entry in the same contract that
     /// already supports it.
     pub(crate) fn for_supported_view(
-        viewed: CResourceFact,
-        owner: CResourceFact,
+        viewed: ResourceFact,
+        owner: ResourceFact,
         support: ResourceOccurrenceId,
     ) -> Self {
         Self {
@@ -1169,29 +1166,29 @@ impl LoanRefusalSubject {
         }
     }
 
-    fn resource(resource: CResourceFact) -> Self {
+    fn resource(resource: ResourceFact) -> Self {
         Self {
             resource: Some(resource),
             ..Self::none()
         }
     }
 
-    pub(crate) fn for_resource(resource: CResourceFact) -> Self {
+    pub(crate) fn for_resource(resource: ResourceFact) -> Self {
         Self::resource(resource)
     }
-    fn range(range: CMemoryRange) -> Self {
+    fn range(range: MemoryRange) -> Self {
         Self {
             range: Some(Box::new(range)),
             ..Self::none()
         }
     }
 
-    pub(crate) fn with_range(range: CMemoryRange) -> Self {
+    pub(crate) fn with_range(range: MemoryRange) -> Self {
         Self::range(range)
     }
 
     #[cfg(test)]
-    pub(crate) fn for_range(range: CMemoryRange) -> Self {
+    pub(crate) fn for_range(range: MemoryRange) -> Self {
         Self::with_range(range)
     }
 
@@ -1223,15 +1220,15 @@ impl LoanRefusalSubject {
         }
     }
 
-    pub fn resource_fact(&self) -> Option<&CResourceFact> {
+    pub fn resource_fact(&self) -> Option<&ResourceFact> {
         self.resource.as_ref()
     }
 
-    pub fn memory_range(&self) -> Option<&CMemoryRange> {
+    pub fn memory_range(&self) -> Option<&MemoryRange> {
         self.range.as_deref()
     }
 
-    pub fn conflicting_resource_fact(&self) -> Option<&CResourceFact> {
+    pub fn conflicting_resource_fact(&self) -> Option<&ResourceFact> {
         self.conflicting.as_deref()
     }
 
@@ -1488,7 +1485,7 @@ enum LoanTransitionEvidence {
         lender: LoanParticipantId,
         borrower: LoanParticipantId,
         support: ResourceOccurrenceId,
-        escrow: CResourceFact,
+        escrow: ResourceFact,
         scope: LoanScopeId,
         loan: LoanId,
         root: LoanShareId,
@@ -1497,10 +1494,10 @@ enum LoanTransitionEvidence {
         lender: LoanParticipantId,
         borrower: LoanParticipantId,
         support: ResourceOccurrenceId,
-        support_fact: CResourceFact,
-        escrow: CResourceFact,
-        backing: Vec<CResourceFact>,
-        adapted: Vec<CResourceFact>,
+        support_fact: ResourceFact,
+        escrow: ResourceFact,
+        backing: Vec<ResourceFact>,
+        adapted: Vec<ResourceFact>,
         scope: LoanScopeId,
         loan: LoanId,
         root: LoanShareId,
@@ -1519,8 +1516,8 @@ enum LoanTransitionEvidence {
         local: Option<(LoanParticipantId, LocalViewBacking)>,
         holder: LoanParticipantId,
         support: ResourceOccurrenceId,
-        viewed: CResourceFact,
-        backing: Vec<CResourceFact>,
+        viewed: ResourceFact,
+        backing: Vec<ResourceFact>,
         scope: LoanScopeId,
         loan: LoanId,
         root: LoanShareId,
@@ -1600,7 +1597,7 @@ pub(crate) struct LoanOpening {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PlannedStableView {
-    pub(crate) requirement: CCheckedResourceFact,
+    pub(crate) requirement: CheckedResourceFact,
     pub(crate) support: ResourceOccurrenceId,
     pub(crate) loan: LoanId,
     pub(crate) scope: LoanScopeId,
@@ -1615,18 +1612,18 @@ pub(crate) struct PlannedStableView {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CompositeLoanBacking {
     support: ResourceOccurrenceId,
-    head: CResourceFact,
-    pieces: Vec<CResourceFact>,
+    head: ResourceFact,
+    pieces: Vec<ResourceFact>,
     /// Extra viewed composite descriptions this loan permits beside its own
     /// head: the owned-interface-to-viewed-implementation adapter, where the
     /// caller escrows `head` and the callee's clause names a different
     /// composite whose checked frontier `pieces` already covers.
-    adapted: Vec<CResourceFact>,
+    adapted: Vec<ResourceFact>,
     /// What recovery hands back instead of `head`. Empty for an ordinary
     /// lend, where the escrowed head is the restoration recipe; the exact
     /// owned facts the planner consumed when the head itself was
     /// materialized for the call.
-    restored: Vec<CResourceFact>,
+    restored: Vec<ResourceFact>,
 }
 
 /// Definition-checked primitive footprint for an externally supplied folded
@@ -1637,8 +1634,8 @@ pub(crate) struct CompositeLoanBacking {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct BorrowedContractInputBacking {
     support: ResourceOccurrenceId,
-    head: CResourceFact,
-    pieces: Vec<CResourceFact>,
+    head: ResourceFact,
+    pieces: Vec<ResourceFact>,
 }
 
 /// A definition-checked one-level expansion of one viewed composite: the
@@ -1649,27 +1646,27 @@ pub(crate) struct BorrowedContractInputBacking {
 /// (D2 law 10).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CompositeProjectionEvidence {
-    head: CResourceFact,
-    children: Vec<CResourceFact>,
+    head: ResourceFact,
+    children: Vec<ResourceFact>,
 }
 
 impl CompositeProjectionEvidence {
     pub(crate) fn from_checked_expansion(
-        head: CResourceFact,
-        children: Vec<CResourceFact>,
+        head: ResourceFact,
+        children: Vec<ResourceFact>,
     ) -> Option<Self> {
         // A projection is read-only authority derived from a viewed
         // composite, so the head is a composite view and every admissible
         // child is a view. An exclusive instance cannot be viewed (D12).
         (head.is_view()
-            && matches!(head.resource(), CResource::Composite { .. })
-            && children.iter().all(|child| {
-                child.is_view() && !matches!(child.resource(), CResource::Instance(_))
-            }))
+            && matches!(head.resource(), Resource::Composite { .. })
+            && children
+                .iter()
+                .all(|child| child.is_view() && !matches!(child.resource(), Resource::Instance(_))))
         .then_some(Self { head, children })
     }
 
-    fn contains_child(&self, child: &CResourceFact) -> bool {
+    fn contains_child(&self, child: &ResourceFact) -> bool {
         // Evidence-local structural entailment has no ambient premises.
         let assumptions = &PureFactContext::default();
         self.children.iter().any(|piece| {
@@ -1684,18 +1681,18 @@ impl CompositeProjectionEvidence {
 impl BorrowedContractInputBacking {
     pub(crate) fn from_checked_expansion(
         support: ResourceOccurrenceId,
-        head: CResourceFact,
-        pieces: Vec<CResourceFact>,
+        head: ResourceFact,
+        pieces: Vec<ResourceFact>,
     ) -> Option<Self> {
         // A nested composite child is a read-only description under the
         // same loan with no byte backing of its own: the head's escrow, or
         // the contract's partition at a root, protects everything under it.
         // An exclusive instance cannot be viewed (D12).
         (head.is_view()
-            && matches!(head.resource(), CResource::Composite { .. })
-            && pieces.iter().all(|piece| {
-                piece.is_view() && !matches!(piece.resource(), CResource::Instance(_))
-            }))
+            && matches!(head.resource(), Resource::Composite { .. })
+            && pieces
+                .iter()
+                .all(|piece| piece.is_view() && !matches!(piece.resource(), Resource::Instance(_))))
         .then_some(Self {
             support,
             head,
@@ -1711,8 +1708,8 @@ impl CompositeLoanBacking {
     #[cfg(test)]
     pub(crate) fn from_checked_expansion(
         support: ResourceOccurrenceId,
-        head: CResourceFact,
-        pieces: Vec<CResourceFact>,
+        head: ResourceFact,
+        pieces: Vec<ResourceFact>,
     ) -> Option<Self> {
         Self::from_checked_adapter(support, head, pieces, Vec::new(), Vec::new())
     }
@@ -1725,10 +1722,10 @@ impl CompositeLoanBacking {
     /// builds.
     pub(crate) fn from_checked_adapter(
         support: ResourceOccurrenceId,
-        head: CResourceFact,
-        pieces: Vec<CResourceFact>,
-        adapted: Vec<CResourceFact>,
-        restored: Vec<CResourceFact>,
+        head: ResourceFact,
+        pieces: Vec<ResourceFact>,
+        adapted: Vec<ResourceFact>,
+        restored: Vec<ResourceFact>,
     ) -> Option<Self> {
         // A nested composite child stays folded inside the escrowed head; it
         // enters the loan as a permitted description with no byte backing.
@@ -1736,20 +1733,20 @@ impl CompositeLoanBacking {
         // a description its hold keeps stable, and there is no owner here to
         // escrow for it. An exclusive instance cannot be viewed (D12).
         (head.is_own()
-            && matches!(head.resource(), CResource::Composite { .. })
+            && matches!(head.resource(), Resource::Composite { .. })
             && pieces
                 .iter()
-                .all(|piece| !matches!(piece.resource(), CResource::Instance(_)))
+                .all(|piece| !matches!(piece.resource(), Resource::Instance(_)))
             // An adapted description is read-only authority over the same
             // escrow, so it is a composite view; it never names an exclusive
             // instance (D12) and never carries ownership.
             && adapted.iter().all(|description| {
-                description.is_view() && matches!(description.resource(), CResource::Composite { .. })
+                description.is_view() && matches!(description.resource(), Resource::Composite { .. })
             })
             // A restoration is what the caller gets back, so it is owned
             // authority. An instance is not restorable this way.
             && restored.iter().all(|fact| {
-                fact.is_own() && !matches!(fact.resource(), CResource::Instance(_))
+                fact.is_own() && !matches!(fact.resource(), Resource::Instance(_))
             }))
         .then_some(Self {
             support,
@@ -1762,7 +1759,7 @@ impl CompositeLoanBacking {
 
     /// Whether this backing was checked to permit `description` beside its
     /// own head.
-    pub(crate) fn adapts(&self, description: &CResourceFact) -> bool {
+    pub(crate) fn adapts(&self, description: &ResourceFact) -> bool {
         self.adapted.contains(description)
     }
 }
@@ -1772,14 +1769,14 @@ impl CompositeLoanBacking {
 /// enforces the lifetime restriction; fields are private to this module.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct LocalViewBacking {
-    memory: super::CMemory,
-    viewed: CResourceFact,
+    memory: super::Memory,
+    viewed: ResourceFact,
 }
 
 impl LocalViewBacking {
     fn check(
-        memory: &super::CMemory,
-        viewed: &CResourceFact,
+        memory: &super::Memory,
+        viewed: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
         let range = viewed.memory_range()?;
@@ -1791,7 +1788,7 @@ impl LocalViewBacking {
             return None;
         }
         let bytes = memory.block_size(&range.base().block)?.clone();
-        let entire = CMemoryRange::new_with_element_width(
+        let entire = MemoryRange::new_with_element_width(
             super::Pointer {
                 block: range.base().block.clone(),
                 offset: super::PointerOffsetTerm::Constant(0),
@@ -1801,7 +1798,7 @@ impl LocalViewBacking {
             1,
         );
         if !ResourceContext::new_with_equalities(assumptions)
-            .unchecked_with_fact(CResourceFact::own_memory(entire))
+            .unchecked_with_fact(ResourceFact::own_memory(entire))
             .satisfies_fact(viewed, assumptions)
         {
             return None;
@@ -1818,14 +1815,14 @@ impl LocalViewBacking {
 pub(crate) struct StableViewTransferPlan {
     pub(crate) caller_resources_after_requirements: ResourceContext,
     pub(crate) callee_resources: ResourceContext,
-    pub(crate) transferred_ownership: Vec<CCheckedResourceFact>,
+    pub(crate) transferred_ownership: Vec<CheckedResourceFact>,
     exclusive_call: Option<ExclusiveCallBinding>,
     /// Caller spellings for transferred ownership. A partial memory borrow
     /// retains its supplier's carrier on only the requested slice; it never
     /// returns the supplier's larger footprint.
-    pub(crate) canonical_transferred_ownership: Vec<Option<CResourceFact>>,
+    pub(crate) canonical_transferred_ownership: Vec<Option<ResourceFact>>,
     pub(crate) stable_views: Vec<PlannedStableView>,
-    pub(crate) memory_effects: Vec<CMemoryRange>,
+    pub(crate) memory_effects: Vec<MemoryRange>,
     /// The owned occurrence each reserved requirement in
     /// `transferred_ownership` was taken out of. This is the provenance the
     /// call-site effect check reads: a valid resource context is a partition,
@@ -1835,11 +1832,11 @@ pub(crate) struct StableViewTransferPlan {
     /// arithmetic separation proof (step 4, D8). A composite requirement is
     /// recorded here too, since the effects projected from it are the bytes
     /// of that one occurrence.
-    pub(crate) reserved_ownership_supports: Vec<(CResourceFact, ResourceOccurrenceId)>,
+    pub(crate) reserved_ownership_supports: Vec<(ResourceFact, ResourceOccurrenceId)>,
     pub(crate) ledger: LoanLedger,
     pub(crate) entry_transitions: Vec<CheckedLoanTransition>,
     pub(crate) mutex_uses: Vec<mutex_calls::MutexUseCallTransfer>,
-    pub(crate) mutex_use_requirements: BTreeMap<CResourceFact, CResourceFact>,
+    pub(crate) mutex_use_requirements: BTreeMap<ResourceFact, ResourceFact>,
     callee_view_bindings: LoanViewBindings,
     parent_view_bindings: LoanViewBindings,
     parent_ledger: LoanLedger,
@@ -1850,31 +1847,31 @@ pub(crate) struct StableViewTransferPlan {
     /// A lend empties them out of the caller residual, so a check that reads
     /// the residual alone would not see what the caller still holds across
     /// the call.
-    escrowed_owners: Vec<CResourceFact>,
+    escrowed_owners: Vec<ResourceFact>,
     /// The hold bindings of escrowed borrowing composites, by escrow fact.
     /// The head leaves the caller residual for the call, but its hold stays
     /// in the ledger, and recovery hands the binding back to the restored
     /// head (step 7).
-    escrowed_holds: Vec<(CResourceFact, LoanViewBinding)>,
+    escrowed_holds: Vec<(ResourceFact, LoanViewBinding)>,
     /// Owned requirements whose caller occurrence carried a hold binding: the
     /// composite went to the callee together with its borrow. Recovery
     /// re-binds it if the callee returned it and releases the hold if the
     /// callee consumed it (step 7).
-    pub(crate) transferred_holds: Vec<(CResourceFact, LoanViewBinding)>,
+    pub(crate) transferred_holds: Vec<(ResourceFact, LoanViewBinding)>,
     /// For a view lent as a child of the caller's own binding: that parent
     /// binding, which an escaping borrow holds after the child ends.
     pub(crate) rebound_parents: BTreeMap<LoanId, LoanViewBinding>,
     /// Reborrows whose parent share was split for a suspended worker.
     suspended_split_reborrows: BTreeMap<LoanId, (ResourceOccurrenceId, LoanShareId)>,
     /// Implicit stack roots retained by the parent while modeled workers read.
-    suspended_local_parents: BTreeMap<CResourceFact, LoanViewBinding>,
-    suspended_local_reborrows: BTreeMap<LoanId, (CResourceFact, LoanShareId)>,
+    suspended_local_parents: BTreeMap<ResourceFact, LoanViewBinding>,
+    suspended_local_reborrows: BTreeMap<LoanId, (ResourceFact, LoanShareId)>,
     /// For an adapter lend whose escrowed head was materialized for the call
     /// out of owned facts the caller already held: exactly those facts, which
     /// recovery hands back in place of the head (docs/internals/stable-views.md). The
     /// escrow stays the head in the ledger, so the loan still protects the
     /// whole frontier; only what the caller gets back differs.
-    adapter_restorations: BTreeMap<LoanId, Vec<CResourceFact>>,
+    adapter_restorations: BTreeMap<LoanId, Vec<ResourceFact>>,
 }
 
 /// What a call leaves behind for a borrowing composite it produced or
@@ -1882,7 +1879,7 @@ pub(crate) struct StableViewTransferPlan {
 /// hold, that its occurrence in the caller must carry.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct EscapedHold {
-    pub(crate) head: CResourceFact,
+    pub(crate) head: ResourceFact,
     pub(crate) binding: LoanViewBinding,
 }
 
@@ -1897,14 +1894,14 @@ pub(crate) struct StableViewRecovery {
     pub(crate) resources: ResourceContext,
     /// The escrowed owners recovery handed back, in recovery order, each
     /// with the hold binding its occurrence carried before the call.
-    pub(crate) recovered_escrows: Vec<(CResourceFact, Option<LoanViewBinding>)>,
+    pub(crate) recovered_escrows: Vec<(ResourceFact, Option<LoanViewBinding>)>,
     pub(crate) mutex_authority_updates: Vec<mutex_calls::MutexAuthorityUpdate>,
     /// The holds this call's produced borrowing composites now carry.
     pub(crate) escaped_holds: Vec<EscapedHold>,
     pub(crate) view_bindings: LoanViewBindings,
     /// A completed local reader either advances its parent's share or closes
     /// the implicit root after the final sibling returns.
-    pub(crate) local_view_updates: BTreeMap<CResourceFact, Option<LoanViewBinding>>,
+    pub(crate) local_view_updates: BTreeMap<ResourceFact, Option<LoanViewBinding>>,
     pub(crate) transitions: Vec<CheckedLoanTransition>,
 }
 
@@ -2505,12 +2502,12 @@ impl StableViewRecovery {
 /// the held view is. Both steps are checked here; neither is assumed from
 /// how the held view came to be bound.
 fn bound_view_covers_requirement(
-    viewed: &CResourceFact,
-    held: Option<&CResourceFact>,
-    requirement: &CResourceFact,
+    viewed: &ResourceFact,
+    held: Option<&ResourceFact>,
+    requirement: &ResourceFact,
     assumptions: &PureFactContext,
 ) -> bool {
-    let covers = |available: &CResourceFact, required: &CResourceFact| {
+    let covers = |available: &ResourceFact, required: &ResourceFact| {
         ResourceContext::new_with_equalities(assumptions)
             .unchecked_with_fact(available.clone())
             .satisfies_fact(required, assumptions)
@@ -2522,8 +2519,8 @@ fn bound_view_covers_requirement(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum StableViewPlanError {
     InvalidRequirement,
-    MissingResource(CResourceFact),
-    ConflictingRequirement(CResourceFact),
+    MissingResource(ResourceFact),
+    ConflictingRequirement(ResourceFact),
     Loan(LoanRefusal),
     InvalidResidual,
     UnsupportedPartition,
@@ -2534,7 +2531,7 @@ pub(crate) enum StableViewPlanError {
 /// is a conflicting requirement naming that resource.
 fn composition_conflict(
     error: crate::kernel::primitives::ResourceContextValidityError,
-    composed: &CResourceFact,
+    composed: &ResourceFact,
 ) -> StableViewPlanError {
     use crate::kernel::primitives::ResourceContextValidityError as Invalid;
     match error {
@@ -2593,7 +2590,7 @@ impl From<LoanRefusal> for StableViewPlanError {
 /// one escrow and one root share.
 pub(crate) fn plan_stable_view_transfer(
     caller_resources: &ResourceContext,
-    requirements: &[CCheckedResourceFact],
+    requirements: &[CheckedResourceFact],
     assumptions: &PureFactContext,
     ledger: &LoanLedger,
     caller: LoanParticipantId,
@@ -2612,7 +2609,7 @@ pub(crate) fn plan_stable_view_transfer(
 
 pub(crate) fn plan_stable_view_transfer_with_bindings(
     caller_resources: &ResourceContext,
-    requirements: &[CCheckedResourceFact],
+    requirements: &[CheckedResourceFact],
     assumptions: &PureFactContext,
     ledger: &LoanLedger,
     caller: LoanParticipantId,
@@ -2633,7 +2630,7 @@ pub(crate) fn plan_stable_view_transfer_with_bindings(
 
 pub(crate) fn plan_stable_view_transfer_with_bindings_and_composites(
     caller_resources: &ResourceContext,
-    requirements: &[CCheckedResourceFact],
+    requirements: &[CheckedResourceFact],
     assumptions: &PureFactContext,
     ledger: &LoanLedger,
     caller: LoanParticipantId,
@@ -2665,7 +2662,7 @@ fn lend_owned_view_to_suspended_worker(
     split_origins: &mut MemorySplitOrigins,
     parent_bindings: &mut LoanViewBindings,
     split_reborrows: &mut BTreeMap<LoanId, (ResourceOccurrenceId, LoanShareId)>,
-    selected: &CResourceFact,
+    selected: &ResourceFact,
     support: ResourceOccurrenceId,
     caller: LoanParticipantId,
     callee: LoanParticipantId,
@@ -2682,7 +2679,7 @@ fn lend_owned_view_to_suspended_worker(
         .clone()
         .without_selected_fact_with_origins(support, selected, assumptions, split_origins)
         .ok_or_else(|| StableViewPlanError::MissingResource(selected.clone()))?;
-    let viewed = CResourceFact::view_memory(range);
+    let viewed = ResourceFact::view_memory(range);
     let (next_residual, occurrence) = residual
         .clone()
         .try_compose_with_fact_with_occurrence(viewed.clone(), assumptions)
@@ -2724,9 +2721,9 @@ fn lend_owned_view_to_suspended_worker(
 /// fact before trusting it.
 #[derive(Clone, Debug)]
 pub(crate) struct OwnedReservationMiss {
-    pub(crate) missing: CResourceFact,
-    pub(crate) reserved: Vec<CResourceFact>,
-    pub(crate) remaining: Vec<CResourceFact>,
+    pub(crate) missing: ResourceFact,
+    pub(crate) reserved: Vec<ResourceFact>,
+    pub(crate) remaining: Vec<ResourceFact>,
 }
 
 thread_local! {
@@ -2736,7 +2733,7 @@ thread_local! {
 
 /// The reservation state behind the latest plan's missing owner `missing`,
 /// if the latest plan refused exactly that requirement.
-pub(crate) fn owned_reservation_miss_for(missing: &CResourceFact) -> Option<OwnedReservationMiss> {
+pub(crate) fn owned_reservation_miss_for(missing: &ResourceFact) -> Option<OwnedReservationMiss> {
     LAST_OWNED_RESERVATION_MISS.with(|miss| {
         miss.borrow()
             .as_ref()
@@ -2747,7 +2744,7 @@ pub(crate) fn owned_reservation_miss_for(missing: &CResourceFact) -> Option<Owne
 
 pub(crate) fn plan_stable_view_transfer_with_bindings_and_composites_for_worker(
     caller_resources: &ResourceContext,
-    requirements: &[CCheckedResourceFact],
+    requirements: &[CheckedResourceFact],
     assumptions: &PureFactContext,
     ledger: &LoanLedger,
     caller: LoanParticipantId,
@@ -2772,7 +2769,7 @@ pub(crate) fn plan_stable_view_transfer_with_bindings_and_composites_for_worker(
 
 pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
     caller_resources: &ResourceContext,
-    requirements: &[CCheckedResourceFact],
+    requirements: &[CheckedResourceFact],
     assumptions: &PureFactContext,
     ledger: &LoanLedger,
     caller: LoanParticipantId,
@@ -2789,9 +2786,9 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         return Err(StableViewPlanError::InvalidRequirement);
     }
     if requirements.iter().any(|requirement| {
-        requirement.snapshot == CResourceSnapshot::Post
-            || requirement.role == CResourceTransferRole::Produce
-            || (requirement.fact.is_view() && requirement.role != CResourceTransferRole::Borrow)
+        requirement.snapshot == ResourceSnapshot::Post
+            || requirement.role == ResourceTransferRole::Produce
+            || (requirement.fact.is_view() && requirement.role != ResourceTransferRole::Borrow)
     }) {
         return Err(StableViewPlanError::InvalidRequirement);
     }
@@ -2816,7 +2813,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
     // two of `can_complete(cb)`, and reporting the second unit alone would
     // name a fact the caller does hold. Only constant counts add up; anything
     // else reports its own clause.
-    let mut demanded_own_quantities = BTreeMap::<CResource, Option<u32>>::new();
+    let mut demanded_own_quantities = BTreeMap::<Resource, Option<u32>>::new();
     for requirement in requirements
         .iter()
         .filter(|requirement| requirement.fact.is_own())
@@ -2833,7 +2830,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             _ => None,
         };
     }
-    let missing_own_requirement = |fact: &CResourceFact| {
+    let missing_own_requirement = |fact: &ResourceFact| {
         let demanded = demanded_own_quantities
             .get(fact.resource())
             .copied()
@@ -2842,7 +2839,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             (Some(demanded), Some(bits32_constant!(clause)))
                 if demanded > constant_u32(*clause) =>
             {
-                StableViewPlanError::MissingResource(CResourceFact::Own(
+                StableViewPlanError::MissingResource(ResourceFact::Own(
                     fact.resource().clone(),
                     Box::new(MachineTerm::constant(demanded)),
                 ))
@@ -2863,17 +2860,17 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         .iter()
         .filter(|requirement| requirement.fact.is_own())
     {
-        if let CResource::MutexUse(identity) = requirement.fact.resource()
+        if let Resource::MutexUse(identity) = requirement.fact.resource()
             && !same_thread_protocol_effect
         {
-            if requirement.role != CResourceTransferRole::Borrow {
+            if requirement.role != ResourceTransferRole::Borrow {
                 return Err(StableViewPlanError::InvalidRequirement);
             }
             let source = if let Some(selected) = &requirement.selected_mutex_source {
                 let selected_source = &selected.1;
                 let (selected_mutex, selected_initialization) = match selected_source.resource() {
-                    CResource::MutexLive(identity) => (&identity.mutex, identity.epoch),
-                    CResource::MutexUse(identity) => (&identity.mutex, identity.initialization),
+                    Resource::MutexLive(identity) => (&identity.mutex, identity.epoch),
+                    Resource::MutexUse(identity) => (&identity.mutex, identity.initialization),
                     _ => {
                         return Err(StableViewPlanError::MissingResource(
                             requirement.fact.clone(),
@@ -2908,7 +2905,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             // protected assertion against the interface after planning.
             if requirement.selected_mutex_source.is_none()
                 && identity.binding.is_some()
-                && !matches!(source.resource(), CResource::MutexUse(actual)
+                && !matches!(source.resource(), Resource::MutexUse(actual)
                     if actual.binding == identity.binding
                         && actual.initialization == identity.initialization
                         && actual.mutex == identity.mutex)
@@ -2995,7 +2992,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                     .copied()
                     .map(|support| (requirement.fact.clone(), support)),
             );
-            if requirement.role == CResourceTransferRole::Borrow {
+            if requirement.role == ResourceTransferRole::Borrow {
                 exclusive_supports.extend(
                     supports
                         .iter()
@@ -3025,7 +3022,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             {
                 let reserved = reserved_ownership_supports
                     .iter()
-                    .map(|(fact, _): &(CResourceFact, _)| fact.clone())
+                    .map(|(fact, _): &(ResourceFact, _)| fact.clone())
                     .collect();
                 let miss = OwnedReservationMiss {
                     missing: missing.clone(),
@@ -3037,7 +3034,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             return Err(error);
         };
         let same_memory_extent = match (requirement.fact.resource(), caller_fact.resource()) {
-            (CResource::Memory(required), CResource::Memory(caller)) => {
+            (Resource::Memory(required), Resource::Memory(caller)) => {
                 match (required.wide_bounds(), caller.wide_bounds()) {
                     (None, None) => {
                         let (_, required_bytes) = required.byte_footprint();
@@ -3065,17 +3062,17 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             _ => false,
         };
         let canonical_caller_fact = if !same_memory_extent
-            && requirement.role == CResourceTransferRole::Borrow
+            && requirement.role == ResourceTransferRole::Borrow
             && let (
-                CResourceFact::Own(CResource::Memory(required), quantity),
-                CResourceFact::Own(CResource::Memory(caller), _),
+                ResourceFact::Own(Resource::Memory(required), quantity),
+                ResourceFact::Own(Resource::Memory(caller), _),
             ) = (&requirement.fact, caller_fact)
         {
             // Reservation selected and consumed this caller's bytes. Return
             // exactly that slice with its original pointer domain, rather
             // than replacing the domain with the callee's selected view.
-            Some(CResourceFact::Own(
-                CResource::Memory(required.clone().with_carrier_of(caller)),
+            Some(ResourceFact::Own(
+                Resource::Memory(required.clone().with_carrier_of(caller)),
                 quantity.clone(),
             ))
         } else {
@@ -3109,7 +3106,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         if let Some(range) = requirement.fact.memory_own_range() {
             memory_effects.push(range.clone());
         }
-        if requirement.role == CResourceTransferRole::Borrow
+        if requirement.role == ResourceTransferRole::Borrow
             && requirement.fact.memory_own_range().is_some()
         {
             exclusive_supports.push((requirement.fact.clone(), occurrence));
@@ -3120,20 +3117,20 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
     }
 
     let mut loan_roots = Vec::new();
-    let mut adapter_restorations = BTreeMap::<LoanId, Vec<CResourceFact>>::new();
+    let mut adapter_restorations = BTreeMap::<LoanId, Vec<ResourceFact>>::new();
     let mut escrowed_owners = Vec::new();
     let mut escrowed_holds = Vec::new();
-    let mut grouped = BTreeMap::<ResourceOccurrenceId, Vec<(usize, CCheckedResourceFact)>>::new();
+    let mut grouped = BTreeMap::<ResourceOccurrenceId, Vec<(usize, CheckedResourceFact)>>::new();
     let mut rebound = BTreeMap::<
         LoanViewBinding,
-        (ResourceOccurrenceId, Vec<(usize, CCheckedResourceFact)>),
+        (ResourceOccurrenceId, Vec<(usize, CheckedResourceFact)>),
     >::new();
     // The checked adapter entry that permits a viewed composite beside a
     // different escrowed head (docs/internals/stable-views.md). Only a backing the caller
     // built at the kernel's expansion boundary can answer here, and only for
     // the exact description it was checked against, so this is one indexed
     // lookup over this call's own backings rather than a search.
-    let adapter_support = |required: &CResourceFact| {
+    let adapter_support = |required: &ResourceFact| {
         composite_backings
             .iter()
             .find(|(support, backing)| backing.support == **support && backing.adapts(required))
@@ -3143,7 +3140,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
     // concrete.  The concrete sweep below cannot order such a range, so the
     // covering owner itself becomes the single lent backing for everything
     // grouped under it.  See `symbolic_covering_owner`.
-    let mut symbolic_covering_owner = BTreeMap::<ResourceOccurrenceId, CResourceFact>::new();
+    let mut symbolic_covering_owner = BTreeMap::<ResourceOccurrenceId, ResourceFact>::new();
     for (index, requirement) in requirements.iter().enumerate() {
         if !requirement.fact.is_view() {
             continue;
@@ -3206,20 +3203,19 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         };
         let owned = &owned;
         match owned.resource() {
-            CResource::Footprint(_)
-            | CResource::Parameter(_)
-            | CResource::Emp
-            | CResource::Star(_) => continue,
-            CResource::PopulationAuthority(_)
-            | CResource::Instance(_)
-            | CResource::MutexGuard(_)
-            | CResource::MutexLive(_)
-            | CResource::MutexUse(_)
-            | CResource::Publication(_)
-            | CResource::Iterated(_) => {
+            Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_) => {
+                continue;
+            }
+            Resource::PopulationAuthority(_)
+            | Resource::Instance(_)
+            | Resource::MutexGuard(_)
+            | Resource::MutexLive(_)
+            | Resource::MutexUse(_)
+            | Resource::Publication(_)
+            | Resource::Iterated(_) => {
                 return Err(StableViewPlanError::Loan(LoanRefusal::UnsupportedResource));
             }
-            CResource::Composite { .. } => {
+            Resource::Composite { .. } => {
                 if caller_resources.owned_occurrences_for_fact(owned).len() != 1
                     || !composite_backings
                         .get(&support)
@@ -3228,7 +3224,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                     return Err(StableViewPlanError::Loan(LoanRefusal::UnsupportedResource));
                 }
             }
-            CResource::Memory(_) | CResource::Token { .. } => {}
+            Resource::Memory(_) | Resource::Token { .. } => {}
         }
         if requirement
             .fact
@@ -3242,7 +3238,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             // so no residual split and no separation from a sibling
             // requirement is assumed; every requirement grouped under this
             // owner shares the one loan.
-            let CResource::Memory(_) = owned.resource() else {
+            let Resource::Memory(_) = owned.resource() else {
                 return Err(StableViewPlanError::UnsupportedPartition);
             };
             symbolic_covering_owner.insert(support, owned.clone());
@@ -3365,15 +3361,15 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             }
             continue;
         }
-        let mut clusters: Vec<Vec<(usize, CCheckedResourceFact)>> = Vec::new();
+        let mut clusters: Vec<Vec<(usize, CheckedResourceFact)>> = Vec::new();
         // Keep the union beside each memory cluster.  Recomputing it by
         // walking the whole cluster on every merge made a chain of
         // overlapping views quadratic in the number of clauses.
-        let mut cluster_unions: Vec<Option<CMemoryRange>> = Vec::new();
+        let mut cluster_unions: Vec<Option<MemoryRange>> = Vec::new();
         let mut memory_items = Vec::new();
-        let mut non_memory_clusters = BTreeMap::<CResource, usize>::new();
+        let mut non_memory_clusters = BTreeMap::<Resource, usize>::new();
         for item in group {
-            if let CResource::Composite { .. } = item.1.fact.resource() {
+            if let Resource::Composite { .. } = item.1.fact.resource() {
                 let resource = item.1.fact.resource().clone();
                 let cluster_index = *non_memory_clusters.entry(resource).or_insert_with(|| {
                     clusters.push(Vec::new());
@@ -3384,7 +3380,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                 continue;
             }
             let Some(range) = item.1.fact.memory_range().cloned() else {
-                if !matches!(item.1.fact.resource(), CResource::Token { .. }) {
+                if !matches!(item.1.fact.resource(), Resource::Token { .. }) {
                     return Err(StableViewPlanError::Loan(LoanRefusal::UnsupportedResource));
                 }
                 let resource = item.1.fact.resource().clone();
@@ -3437,10 +3433,11 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                 .is_some()
             {
                 let union = cluster_union.ok_or(StableViewPlanError::UnsupportedPartition)?;
-                CResourceFact::own_memory(union)
-            } else if cluster.first().is_some_and(|(_, item)| {
-                matches!(item.fact.resource(), CResource::Composite { .. })
-            }) {
+                ResourceFact::own_memory(union)
+            } else if cluster
+                .first()
+                .is_some_and(|(_, item)| matches!(item.fact.resource(), Resource::Composite { .. }))
+            {
                 let required = cluster
                     .first()
                     .map(|(_, item)| &item.fact)
@@ -3455,7 +3452,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                 let (support, owned) = residual_for_selection
                     .directly_supporting_owned_entry(&head, assumptions)
                     .ok_or_else(|| StableViewPlanError::ConflictingRequirement(required.clone()))?;
-                if matches!(owned.resource(), CResource::Composite { .. })
+                if matches!(owned.resource(), Resource::Composite { .. })
                     && residual_for_selection
                         .owned_occurrences_for_fact(owned)
                         .len()
@@ -3475,13 +3472,13 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                     .first()
                     .map(|(_, item)| item.fact.resource().clone())
                     .ok_or(StableViewPlanError::UnsupportedPartition)?;
-                CResourceFact::own(CResource::Token {
+                ResourceFact::own(Resource::Token {
                     name: match resource {
-                        CResource::Token { ref name, .. } => name.clone(),
+                        Resource::Token { ref name, .. } => name.clone(),
                         _ => return Err(StableViewPlanError::UnsupportedPartition),
                     },
                     arguments: match resource {
-                        CResource::Token { arguments, .. } => arguments,
+                        Resource::Token { arguments, .. } => arguments,
                         _ => return Err(StableViewPlanError::UnsupportedPartition),
                     },
                 })
@@ -3502,8 +3499,8 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             // domain. Keep that domain in escrow; the callee's view may have
             // selected a known member extent instead.
             let selected = match (selected, owned.memory_own_range()) {
-                (CResourceFact::Own(CResource::Memory(range), quantity), Some(source)) => {
-                    CResourceFact::Own(CResource::Memory(range.with_carrier_of(source)), quantity)
+                (ResourceFact::Own(Resource::Memory(range), quantity), Some(source)) => {
+                    ResourceFact::Own(Resource::Memory(range.with_carrier_of(source)), quantity)
                 }
                 (selected, _) => selected,
             };
@@ -3781,8 +3778,8 @@ impl StableViewTransferPlan {
     #[cfg(test)]
     pub(crate) fn lend_local_views(
         &mut self,
-        memory: &super::CMemory,
-        requirements: &[CCheckedResourceFact],
+        memory: &super::Memory,
+        requirements: &[CheckedResourceFact],
         assumptions: &PureFactContext,
     ) -> Result<(), StableViewPlanError> {
         self.lend_local_views_with_worker_shares(memory, requirements, assumptions, None)
@@ -3790,10 +3787,10 @@ impl StableViewTransferPlan {
 
     pub(crate) fn lend_local_views_with_worker_shares(
         &mut self,
-        memory: &super::CMemory,
-        requirements: &[CCheckedResourceFact],
+        memory: &super::Memory,
+        requirements: &[CheckedResourceFact],
         assumptions: &PureFactContext,
-        existing: Option<&BTreeMap<CResourceFact, LoanViewBinding>>,
+        existing: Option<&BTreeMap<ResourceFact, LoanViewBinding>>,
     ) -> Result<(), StableViewPlanError> {
         let mut seen = std::collections::BTreeSet::new();
         for requirement in requirements {
@@ -3941,7 +3938,7 @@ impl StableViewTransferPlan {
         &self.parent_ledger
     }
 
-    pub(crate) fn suspended_local_parents(&self) -> &BTreeMap<CResourceFact, LoanViewBinding> {
+    pub(crate) fn suspended_local_parents(&self) -> &BTreeMap<ResourceFact, LoanViewBinding> {
         &self.suspended_local_parents
     }
 
@@ -3968,7 +3965,7 @@ impl StableViewTransferPlan {
     /// The owned facts a lend escrowed out of the caller residual. Recovery
     /// composes each one back, so a caller-side check on the residual has to
     /// read them too or it will treat lent ownership as gone.
-    pub(crate) fn escrowed_owners(&self) -> &[CResourceFact] {
+    pub(crate) fn escrowed_owners(&self) -> &[ResourceFact] {
         &self.escrowed_owners
     }
 
@@ -3988,7 +3985,7 @@ impl StableViewTransferPlan {
     pub(crate) fn recover_stable_views(
         self,
         assumptions: &PureFactContext,
-        escaping: &BTreeMap<LoanId, Vec<CResourceFact>>,
+        escaping: &BTreeMap<LoanId, Vec<ResourceFact>>,
         consumed_holds: &[LoanViewBinding],
     ) -> Result<StableViewRecovery, StableViewPlanError> {
         self.recover_stable_views_impl(assumptions, escaping, consumed_holds, false)
@@ -4008,7 +4005,7 @@ impl StableViewTransferPlan {
         ledger: LoanLedger,
         resources: ResourceContext,
         bindings: LoanViewBindings,
-        local_bindings: BTreeMap<CResourceFact, LoanViewBinding>,
+        local_bindings: BTreeMap<ResourceFact, LoanViewBinding>,
         assumptions: &PureFactContext,
     ) -> Result<StableViewRecovery, StableViewPlanError> {
         self.ledger = ledger;
@@ -4021,13 +4018,13 @@ impl StableViewTransferPlan {
     fn recover_stable_views_impl(
         self,
         assumptions: &PureFactContext,
-        escaping: &BTreeMap<LoanId, Vec<CResourceFact>>,
+        escaping: &BTreeMap<LoanId, Vec<ResourceFact>>,
         consumed_holds: &[LoanViewBinding],
         mut keep_terminal: bool,
     ) -> Result<StableViewRecovery, StableViewPlanError> {
         // Recovery changes only this call's escrow. Normalizing the ambient
         // frame would rebuild unrelated resource indexes at every child join.
-        let restore_resource = |resources: ResourceContext, fact: &CResourceFact| {
+        let restore_resource = |resources: ResourceContext, fact: &ResourceFact| {
             resources
                 .try_compose_into_valid_context_delaying_normalization(
                     std::iter::once(fact.clone()),
@@ -4046,7 +4043,7 @@ impl StableViewTransferPlan {
         let mut transitions = Vec::new();
         let mut recovered_escrows = Vec::new();
         let mut mutex_authority_updates = Vec::new();
-        let mut pending_holds: Vec<(Vec<CResourceFact>, LoanViewBinding)> = Vec::new();
+        let mut pending_holds: Vec<(Vec<ResourceFact>, LoanViewBinding)> = Vec::new();
         for (scope, loan, root, support, recoverable) in loan_roots.into_iter().rev() {
             let transfer = ledger.transfer(root, self.callee, self.caller)?;
             ledger = ledger.apply(&transfer)?;
@@ -4338,7 +4335,7 @@ impl StableViewTransferPlan {
     }
 }
 
-fn concrete_memory_union(left: &CMemoryRange, right: &CMemoryRange) -> Option<CMemoryRange> {
+fn concrete_memory_union(left: &MemoryRange, right: &MemoryRange) -> Option<MemoryRange> {
     // Every overlap decision is a named unit of planner work.  In
     // particular, the scaling gate must see candidate comparisons rather
     // than only the final number of clusters.
@@ -4356,7 +4353,7 @@ fn concrete_memory_union(left: &CMemoryRange, right: &CMemoryRange) -> Option<CM
     if left_end < right_start || right_end < left_start {
         return None;
     }
-    Some(CMemoryRange::new_with_element_width(
+    Some(MemoryRange::new_with_element_width(
         left.base().clone(),
         left_start.min(right_start).into(),
         left_end.max(right_end).into(),
@@ -4364,8 +4361,8 @@ fn concrete_memory_union(left: &CMemoryRange, right: &CMemoryRange) -> Option<CM
     ))
 }
 
-fn is_mutex_lifetime_owner(fact: &CResourceFact) -> bool {
-    matches!(fact, CResourceFact::Own(CResource::MutexLive(_), quantity)
+fn is_mutex_lifetime_owner(fact: &ResourceFact) -> bool {
+    matches!(fact, ResourceFact::Own(Resource::MutexLive(_), quantity)
         if quantity.as_const() == Some(1))
 }
 
@@ -4452,7 +4449,7 @@ impl LoanLedger {
         lender: LoanParticipantId,
         borrower: LoanParticipantId,
         support: ResourceOccurrenceId,
-        escrow: CResourceFact,
+        escrow: ResourceFact,
     ) -> Result<LoanOpening, LoanRefusal> {
         self.require_participant(lender)?;
         self.require_participant(borrower)?;
@@ -4464,7 +4461,7 @@ impl LoanLedger {
         }
         if !matches!(
             escrow.resource(),
-            CResource::Memory(_) | CResource::Token { .. }
+            Resource::Memory(_) | Resource::Token { .. }
         ) {
             return Err(LoanRefusal::UnsupportedResource);
         }
@@ -4496,7 +4493,7 @@ impl LoanLedger {
             description: StableViewDescription {
                 loan,
                 support,
-                viewed: CResourceFact::View(escrow.resource().clone()),
+                viewed: ResourceFact::View(escrow.resource().clone()),
             },
             transition: self.issue(evidence)?,
         })
@@ -4511,7 +4508,7 @@ impl LoanLedger {
         lender: LoanParticipantId,
         borrower: LoanParticipantId,
         support: ResourceOccurrenceId,
-        escrow: CResourceFact,
+        escrow: ResourceFact,
     ) -> Result<(Self, MutexUseLoan), LoanRefusal> {
         let (ledger, loan, _) =
             self.lend_mutex_use_with_transition(lender, borrower, support, escrow)?;
@@ -4523,7 +4520,7 @@ impl LoanLedger {
         lender: LoanParticipantId,
         borrower: LoanParticipantId,
         support: ResourceOccurrenceId,
-        escrow: CResourceFact,
+        escrow: ResourceFact,
     ) -> Result<(Self, MutexUseLoan, CheckedLoanTransition), LoanRefusal> {
         if !is_mutex_lifetime_owner(&escrow) {
             return Err(LoanRefusal::UnsupportedResource);
@@ -4573,7 +4570,7 @@ impl LoanLedger {
         &self,
         usage: MutexUseBinding,
         holder: LoanParticipantId,
-    ) -> Result<&CResourceFact, LoanRefusal> {
+    ) -> Result<&ResourceFact, LoanRefusal> {
         let record = self.validate_authority_binding(usage.0, holder)?;
         let root_id = record.mutex_root.ok_or(LoanRefusal::MissingLoanBinding)?;
         let root = self
@@ -4624,12 +4621,12 @@ impl LoanLedger {
         &self,
         usage: MutexUseBinding,
         holder: LoanParticipantId,
-    ) -> Result<CResourceFact, LoanRefusal> {
+    ) -> Result<ResourceFact, LoanRefusal> {
         let owner = self.mutex_use_identity_description(usage, holder)?;
-        let CResource::MutexLive(identity) = owner.resource() else {
+        let Resource::MutexLive(identity) = owner.resource() else {
             return Err(LoanRefusal::MissingLoanBinding);
         };
-        Ok(CResourceFact::own(CResource::MutexUse(
+        Ok(ResourceFact::own(Resource::MutexUse(
             super::MutexUseIdentity {
                 binding: Some(usage),
                 protected: self.mutex_use_protected_type(usage, holder)?.cloned(),
@@ -4646,7 +4643,7 @@ impl LoanLedger {
         &self,
         opening: &MutexUseLoan,
         holder: LoanParticipantId,
-    ) -> Result<(Self, CResourceFact), LoanRefusal> {
+    ) -> Result<(Self, ResourceFact), LoanRefusal> {
         let ended = self.end_mutex_reborrow(opening, holder)?;
         let child = self
             .storage
@@ -4899,7 +4896,7 @@ impl LoanLedger {
         &self,
         opening: &MutexUseLoan,
         holder: LoanParticipantId,
-    ) -> Result<(Self, CResourceFact), LoanRefusal> {
+    ) -> Result<(Self, ResourceFact), LoanRefusal> {
         let authority = opening.usage.0;
         let record = self.validate_authority_binding(authority, holder)?;
         if opening.scope != authority.scope
@@ -4920,7 +4917,7 @@ impl LoanLedger {
     pub(crate) fn hold_mutex_use(
         &self,
         usage: MutexUseBinding,
-        owner: &CResourceFact,
+        owner: &ResourceFact,
         holder: LoanParticipantId,
     ) -> Result<(Self, LoanHoldId), LoanRefusal> {
         let (held, hold, _) = self.hold_mutex_use_with_transition(usage, owner, holder)?;
@@ -4930,7 +4927,7 @@ impl LoanLedger {
     pub(crate) fn hold_mutex_use_with_transition(
         &self,
         usage: MutexUseBinding,
-        owner: &CResourceFact,
+        owner: &ResourceFact,
         holder: LoanParticipantId,
     ) -> Result<(Self, LoanHoldId, CheckedLoanTransition), LoanRefusal> {
         if self.mutex_use_identity_description(usage, holder)? != owner {
@@ -4948,7 +4945,7 @@ impl LoanLedger {
         &self,
         holder: LoanParticipantId,
         support: ResourceOccurrenceId,
-        viewed: CResourceFact,
+        viewed: ResourceFact,
         backing: Option<BorrowedContractInputBacking>,
     ) -> Result<LoanOpening, LoanRefusal> {
         self.open_borrowed_root(holder, support, viewed, backing, None)
@@ -4958,7 +4955,7 @@ impl LoanLedger {
         &self,
         holder: LoanParticipantId,
         support: ResourceOccurrenceId,
-        viewed: CResourceFact,
+        viewed: ResourceFact,
         backing: Option<BorrowedContractInputBacking>,
         local: Option<(LoanParticipantId, LocalViewBacking)>,
     ) -> Result<LoanOpening, LoanRefusal> {
@@ -4970,8 +4967,8 @@ impl LoanLedger {
             return Err(LoanRefusal::InvalidEvidence);
         }
         let backing = match (viewed.resource(), backing) {
-            (CResource::Memory(_) | CResource::Token { .. }, None) => Vec::new(),
-            (CResource::Composite { .. }, Some(backing))
+            (Resource::Memory(_) | Resource::Token { .. }, None) => Vec::new(),
+            (Resource::Composite { .. }, Some(backing))
                 if backing.support == support && backing.head == viewed =>
             {
                 backing.pieces
@@ -5023,7 +5020,7 @@ impl LoanLedger {
         lender: LoanParticipantId,
         borrower: LoanParticipantId,
         support: ResourceOccurrenceId,
-        escrow: CResourceFact,
+        escrow: ResourceFact,
         backing: CompositeLoanBacking,
     ) -> Result<LoanOpening, LoanRefusal> {
         self.require_participant(lender)?;
@@ -5031,7 +5028,7 @@ impl LoanLedger {
         if support == ResourceOccurrenceId::default() {
             return Err(LoanRefusal::MissingBacking);
         }
-        if !matches!(escrow.resource(), CResource::Composite { .. })
+        if !matches!(escrow.resource(), Resource::Composite { .. })
             || !escrow.is_own()
             || backing.support != support
             || backing.head != escrow
@@ -5041,7 +5038,7 @@ impl LoanLedger {
         if backing
             .pieces
             .iter()
-            .any(|fact| matches!(fact.resource(), CResource::Instance(_)))
+            .any(|fact| matches!(fact.resource(), Resource::Instance(_)))
         {
             return Err(LoanRefusal::UnsupportedResource);
         }
@@ -5076,7 +5073,7 @@ impl LoanLedger {
             description: StableViewDescription {
                 loan,
                 support,
-                viewed: CResourceFact::View(escrow.resource().clone()),
+                viewed: ResourceFact::View(escrow.resource().clone()),
             },
             transition: self.issue(evidence)?,
         })
@@ -5108,9 +5105,9 @@ impl LoanLedger {
         &self,
         holder: LoanParticipantId,
         loan: LoanId,
-        parent: &CResourceFact,
+        parent: &ResourceFact,
         evidence: &CompositeProjectionEvidence,
-        child: CResourceFact,
+        child: ResourceFact,
     ) -> Result<Self, LoanRefusal> {
         self.require_arena(loan.arena)?;
         self.require_participant(holder)?;
@@ -5133,7 +5130,7 @@ impl LoanLedger {
         // Binding identity is checked without importing ambient equality facts.
         let assumptions = &PureFactContext::default();
         if !parent.is_view()
-            || !matches!(parent.resource(), CResource::Composite { .. })
+            || !matches!(parent.resource(), Resource::Composite { .. })
             || !record.permitted.iter().any(|permitted| {
                 ResourceContext::new_with_equalities(assumptions)
                     .unchecked_with_fact(permitted.clone())
@@ -5145,7 +5142,7 @@ impl LoanLedger {
         if evidence.head != *parent {
             return Err(LoanRefusal::InvalidEvidence);
         }
-        if !child.is_view() || matches!(child.resource(), CResource::Instance(_)) {
+        if !child.is_view() || matches!(child.resource(), Resource::Instance(_)) {
             return Err(LoanRefusal::UnsupportedResource);
         }
         if !evidence.contains_child(&child) {
@@ -5270,7 +5267,7 @@ impl LoanLedger {
     pub(crate) fn release_mutex_use_hold_with_transition(
         &self,
         usage: MutexUseBinding,
-        owner: &CResourceFact,
+        owner: &ResourceFact,
         hold: LoanHoldId,
         holder: LoanParticipantId,
     ) -> Result<(Self, CheckedLoanTransition), LoanRefusal> {
@@ -5310,7 +5307,7 @@ impl LoanLedger {
 
     /// The descriptions a live loan authorizes, or none for an ended or
     /// unknown loan.
-    pub(crate) fn permitted_descriptions(&self, loan: LoanId) -> Vec<CResourceFact> {
+    pub(crate) fn permitted_descriptions(&self, loan: LoanId) -> Vec<ResourceFact> {
         let data = &self.storage.data;
         data.loans
             .get(&loan)
@@ -5604,7 +5601,7 @@ impl LoanLedger {
         &self,
         loan: LoanId,
         holder: LoanParticipantId,
-    ) -> Result<(CheckedLoanTransition, CResourceFact, ResourceOccurrenceId), LoanRefusal> {
+    ) -> Result<(CheckedLoanTransition, ResourceFact, ResourceOccurrenceId), LoanRefusal> {
         self.require_arena(loan.arena)?;
         self.require_participant(holder)?;
         let record = self
@@ -5681,7 +5678,7 @@ impl LoanLedger {
     pub(crate) fn describe_view(
         &self,
         loan: LoanId,
-        viewed: CResourceFact,
+        viewed: ResourceFact,
         assumptions: &PureFactContext,
     ) -> Result<StableViewDescription, LoanRefusal> {
         self.describe_view_through(loan, viewed, None, assumptions)
@@ -5696,8 +5693,8 @@ impl LoanLedger {
     pub(crate) fn describe_view_through(
         &self,
         loan: LoanId,
-        viewed: CResourceFact,
-        held: Option<&CResourceFact>,
+        viewed: ResourceFact,
+        held: Option<&ResourceFact>,
         assumptions: &PureFactContext,
     ) -> Result<StableViewDescription, LoanRefusal> {
         self.require_arena(loan.arena)?;
@@ -5717,7 +5714,7 @@ impl LoanLedger {
         {
             return Err(LoanRefusal::ScopeEnded);
         }
-        let covers = |available: &CResourceFact, required: &CResourceFact| {
+        let covers = |available: &ResourceFact, required: &ResourceFact| {
             ResourceContext::new_with_equalities(assumptions)
                 .unchecked_with_fact(available.clone())
                 .satisfies_fact(required, assumptions)
@@ -5768,7 +5765,7 @@ impl LoanLedger {
     /// selecting the minimum preserves the diagnostic's existing loan choice.
     fn first_active_memory_overlap(
         &self,
-        range: &CMemoryRange,
+        range: &MemoryRange,
     ) -> Result<Option<LoanId>, LoanRefusal> {
         if memory_range_is_empty(range) {
             return Ok(None);
@@ -5804,7 +5801,7 @@ impl LoanLedger {
     #[cfg(test)]
     pub(crate) fn active_memory_overlaps(
         &self,
-        range: &CMemoryRange,
+        range: &MemoryRange,
     ) -> Result<Vec<LoanId>, LoanRefusal> {
         if memory_range_is_empty(range) {
             return Ok(Vec::new());
@@ -5840,7 +5837,7 @@ impl LoanLedger {
 
     fn first_active_memory_overlap_with_assumptions(
         &self,
-        range: &CMemoryRange,
+        range: &MemoryRange,
         assumptions: &PureFactContext,
     ) -> Result<Option<LoanId>, LoanRefusal> {
         let mut selected: Option<LoanId> = None;
@@ -5865,7 +5862,7 @@ impl LoanLedger {
     /// there.
     pub(crate) fn permits_memory_access_with_assumptions(
         &self,
-        range: &CMemoryRange,
+        range: &MemoryRange,
         assumptions: &PureFactContext,
     ) -> Result<(), LoanRefusal> {
         // An empty barrier is a fast decision, not a search invocation.
@@ -5879,16 +5876,16 @@ impl LoanLedger {
     /// proposition. Building it never visits the protected ranges or aliases.
     pub(crate) fn memory_access_requirement(
         &self,
-        range: &CMemoryRange,
+        range: &MemoryRange,
     ) -> Option<super::Proposition> {
         #[cfg(test)]
         let _fast = crate::kernel::search::FastOperationScope::enter("loan access requirement");
         let footprint = self.storage.data.active_footprint.resource();
-        if matches!(footprint, CResource::Emp) || memory_range_is_empty(range) {
+        if matches!(footprint, Resource::Emp) || memory_range_is_empty(range) {
             return None;
         }
         Some(super::Proposition::CResourceSeparate {
-            left: Box::new(CResource::Memory(range.clone())),
+            left: Box::new(Resource::Memory(range.clone())),
             right: Box::new(footprint),
         })
     }
@@ -5901,7 +5898,7 @@ impl LoanLedger {
     /// ledger.
     pub(crate) fn memory_access_refusal(
         &self,
-        range: &CMemoryRange,
+        range: &MemoryRange,
         assumptions: &PureFactContext,
         operation: LoanRefusalOperation,
     ) -> Option<LoanRefusalDiagnostic> {
@@ -5911,7 +5908,7 @@ impl LoanLedger {
         let subject = match self.conflicting_memory_loan(range, assumptions) {
             Some((loan, protected, origin)) => LoanRefusalSubject::for_memory_conflict(
                 range.clone(),
-                CResourceFact::view_memory(protected),
+                ResourceFact::view_memory(protected),
                 loan,
                 origin,
             ),
@@ -5924,10 +5921,10 @@ impl LoanLedger {
     /// `range`, with the protected range and the loan's origin.
     fn conflicting_memory_loan(
         &self,
-        range: &CMemoryRange,
+        range: &MemoryRange,
         assumptions: &PureFactContext,
-    ) -> Option<(LoanId, CMemoryRange, LoanOriginKind)> {
-        let described = |loan: LoanId, protected: &CMemoryRange| {
+    ) -> Option<(LoanId, MemoryRange, LoanOriginKind)> {
+        let described = |loan: LoanId, protected: &MemoryRange| {
             let record = self.storage.data.loans.get(&loan)?;
             Some((loan, protected.clone(), origin_kind(&record.origin)))
         };
@@ -5969,7 +5966,7 @@ impl LoanLedger {
     /// the symbolic buckets. Fewer assumptions prove fewer overlaps, so this is the
     /// more permissive form; the ordinary owned-authority check remains the
     /// primary guard on every write.
-    pub(crate) fn permits_memory_access(&self, range: &CMemoryRange) -> Result<(), LoanRefusal> {
+    pub(crate) fn permits_memory_access(&self, range: &MemoryRange) -> Result<(), LoanRefusal> {
         self.permits_memory_access_with_assumptions(range, &PureFactContext::default())
     }
 
@@ -5977,7 +5974,7 @@ impl LoanLedger {
     /// bounds forget the value; they never grant permission to write.
     /// Unlike the write barrier, this optional retention query does not search
     /// other coordinate origins, and it asks only whether an interval bucket is occupied.
-    pub(crate) fn has_indexed_memory_overlap(&self, range: &CMemoryRange) -> bool {
+    pub(crate) fn has_indexed_memory_overlap(&self, range: &MemoryRange) -> bool {
         crate::instrumentation::record_deterministic_work(1);
         if self.storage.data.cache_memory_index.is_empty()
             && self.storage.data.cache_memory_subtree.is_empty()
@@ -6111,7 +6108,7 @@ impl LoanLedger {
                 self.require_participant(*borrower)?;
                 if !matches!(
                     escrow.resource(),
-                    CResource::Memory(_) | CResource::Token { .. }
+                    Resource::Memory(_) | Resource::Token { .. }
                 ) && !is_mutex_lifetime_owner(escrow)
                 {
                     return Err(LoanRefusal::UnsupportedResource);
@@ -6127,21 +6124,21 @@ impl LoanLedger {
                     return Err(LoanRefusal::InvalidEvidence);
                 }
                 let memory_backing = match escrow.resource() {
-                    CResource::Footprint(_)
-                    | CResource::Parameter(_)
-                    | CResource::Emp
-                    | CResource::Star(_) => {
+                    Resource::Footprint(_)
+                    | Resource::Parameter(_)
+                    | Resource::Emp
+                    | Resource::Star(_) => {
                         return Err(LoanRefusal::InvalidEvidence);
                     }
-                    CResource::Memory(range) => vec![range.clone()],
-                    CResource::Token { .. } | CResource::MutexLive(_) => Vec::new(),
-                    CResource::Composite { .. }
-                    | CResource::PopulationAuthority(_)
-                    | CResource::Instance(_)
-                    | CResource::MutexGuard(_)
-                    | CResource::MutexUse(_)
-                    | CResource::Publication(_)
-                    | CResource::Iterated(_) => {
+                    Resource::Memory(range) => vec![range.clone()],
+                    Resource::Token { .. } | Resource::MutexLive(_) => Vec::new(),
+                    Resource::Composite { .. }
+                    | Resource::PopulationAuthority(_)
+                    | Resource::Instance(_)
+                    | Resource::MutexGuard(_)
+                    | Resource::MutexUse(_)
+                    | Resource::Publication(_)
+                    | Resource::Iterated(_) => {
                         return Err(LoanRefusal::UnsupportedResource);
                     }
                 };
@@ -6183,7 +6180,7 @@ impl LoanLedger {
                         permitted: if is_mutex_lifetime_owner(escrow) {
                             Vec::new()
                         } else {
-                            vec![CResourceFact::View(escrow.resource().clone())]
+                            vec![ResourceFact::View(escrow.resource().clone())]
                         },
                         origin: LoanOrigin::Escrowed(*lender),
                         recovered: false,
@@ -6230,7 +6227,7 @@ impl LoanLedger {
             } => {
                 if !escrow.is_own()
                     || support_fact != escrow
-                    || !matches!(escrow.resource(), CResource::Composite { .. })
+                    || !matches!(escrow.resource(), Resource::Composite { .. })
                 {
                     return Err(LoanRefusal::UnsupportedResource);
                 }
@@ -6241,7 +6238,7 @@ impl LoanLedger {
                 self.require_participant(*borrower)?;
                 if backing
                     .iter()
-                    .any(|fact| matches!(fact.resource(), CResource::Instance(_)))
+                    .any(|fact| matches!(fact.resource(), Resource::Instance(_)))
                 {
                     return Err(LoanRefusal::UnsupportedResource);
                 }
@@ -6250,7 +6247,7 @@ impl LoanLedger {
                 // composite view and it carries no backing of its own.
                 if adapted.iter().any(|description| {
                     !description.is_view()
-                        || !matches!(description.resource(), CResource::Composite { .. })
+                        || !matches!(description.resource(), Resource::Composite { .. })
                 }) {
                     return Err(LoanRefusal::UnsupportedResource);
                 }
@@ -6265,7 +6262,7 @@ impl LoanLedger {
                 }
                 let memory_backing = backing
                     .iter()
-                    .filter_map(CResourceFact::memory_own_range)
+                    .filter_map(ResourceFact::memory_own_range)
                     .cloned()
                     .collect::<Vec<_>>();
                 // A composite head is memory whether or not its one-level
@@ -6305,11 +6302,11 @@ impl LoanLedger {
                         assumed_mutex_protected: None,
                         support: *support,
                         escrow: Some(escrow.clone()),
-                        permitted: std::iter::once(CResourceFact::View(escrow.resource().clone()))
+                        permitted: std::iter::once(ResourceFact::View(escrow.resource().clone()))
                             .chain(
                                 backing
                                     .iter()
-                                    .map(|fact| CResourceFact::View(fact.resource().clone())),
+                                    .map(|fact| ResourceFact::View(fact.resource().clone())),
                             )
                             .chain(adapted.iter().cloned())
                             .collect(),
@@ -6439,9 +6436,9 @@ impl LoanLedger {
                     return Err(LoanRefusal::MissingBacking);
                 }
                 let valid_backing = match viewed.resource() {
-                    CResource::Memory(_) | CResource::Token { .. } => backing.is_empty(),
-                    CResource::Composite { .. } => backing.iter().all(|piece| {
-                        piece.is_view() && !matches!(piece.resource(), CResource::Instance(_))
+                    Resource::Memory(_) | Resource::Token { .. } => backing.is_empty(),
+                    Resource::Composite { .. } => backing.iter().all(|piece| {
+                        piece.is_view() && !matches!(piece.resource(), Resource::Instance(_))
                     }),
                     _ => false,
                 };
@@ -6461,7 +6458,7 @@ impl LoanLedger {
                 permitted.extend(backing.iter().cloned());
                 let memory_backing = permitted
                     .iter()
-                    .filter_map(CResourceFact::memory_range)
+                    .filter_map(ResourceFact::memory_range)
                     .cloned()
                     .collect::<Vec<_>>();
                 let protects_memory = loan_protects_memory(&memory_backing, &permitted);
@@ -7177,7 +7174,7 @@ impl LoanLedger {
             }
             let origin_is_valid = match &loan.origin {
                 LoanOrigin::Escrowed(recovery_right) => {
-                    loan.escrow.as_ref().is_some_and(CResourceFact::is_own)
+                    loan.escrow.as_ref().is_some_and(ResourceFact::is_own)
                         && scope.close_right == Some(*recovery_right)
                         && scope.parent.is_none()
                 }
@@ -7204,7 +7201,7 @@ impl LoanLedger {
                         && scope.parent.is_none()
                         && !loan.recovered
                         && loan.support != ResourceOccurrenceId::default()
-                        && loan.permitted.iter().all(CResourceFact::is_view)
+                        && loan.permitted.iter().all(ResourceFact::is_view)
                 }
             };
             if !origin_is_valid {

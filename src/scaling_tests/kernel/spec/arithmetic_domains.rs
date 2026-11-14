@@ -1,5 +1,5 @@
 // `defined(...)` keeps C's nonzero divisor; a specification quotient owes none.
-fn division_paths(context: &PureFactContext) -> Vec<CExpressionPath> {
+fn division_paths(context: &PureFactContext) -> Vec<ExpressionPath> {
     apply_spec_arithmetic_with(
         crate::kernel::MachineBinaryOp::Divide,
         SpecDivision::CDefined,
@@ -12,10 +12,10 @@ fn division_paths(context: &PureFactContext) -> Vec<CExpressionPath> {
     )
 }
 
-fn value_path(paths: Vec<CExpressionPath>) -> Option<CExpressionPath> {
+fn value_path(paths: Vec<ExpressionPath>) -> Option<ExpressionPath> {
     paths
         .into_iter()
-        .find(|path| matches!(path.outcome, CExpressionOutcome::Value(_)))
+        .find(|path| matches!(path.outcome, ExpressionOutcome::Value(_)))
 }
 
 #[test]
@@ -98,7 +98,7 @@ fn native_existential_domains_scale_with_claims_not_ambient_facts() {
                         value: Box::new(SpecIntegerExpression::FromMachine(Box::new(value))),
                         destination: MachineIntegerType::UInt8,
                     },
-                    operator: CComparisonOperator::Equal,
+                    operator: ComparisonOperator::Equal,
                     right: SpecExpression::Value(crate::kernel::uint8(255u32)),
                 }),
             }
@@ -178,7 +178,7 @@ fn structural_signed_addition_keeps_its_debt_independent_of_ambient_facts() {
                 assert_eq!(paths.len(), 1);
                 assert_eq!(
                     paths[0].outcome,
-                    CExpressionOutcome::Value(int32(MachineTerm::add(
+                    ExpressionOutcome::Value(int32(MachineTerm::add(
                         variable.clone(),
                         1u32.into()
                     ),))

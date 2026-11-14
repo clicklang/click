@@ -10,12 +10,12 @@ mod region_footprint;
 pub use region_footprint::RegionFootprint;
 mod source_access;
 mod source_loans;
-pub use source_access::{CStatementAssignSource, CStatementStoreSource};
 pub(crate) use source_access::{
     ExecutedReferenceAccess, ExecutedReferenceBoundary, ReferenceAccessKind,
     ReferenceAccessSourceId, ReferenceBorrowSourceId,
 };
-pub use source_loans::{CScalarReferenceEnd, CScalarReferenceScope};
+pub use source_access::{StatementAssignSource, StatementStoreSource};
+pub use source_loans::{ScalarReferenceEnd, ScalarReferenceScope};
 pub(crate) use source_loans::{
     ScalarReferencePlanFamily, ScalarReferencePlanKey, ScalarReferenceScopeKey,
     ScalarReferenceScopePlan, ScalarReferenceSourcePlan,
@@ -48,8 +48,8 @@ mod population_access;
 // Population authority: checked anchor lifetimes, registrations and the C
 // creation ledger.
 mod population_authority;
-pub(crate) use population_authority::c_creation::CheckedPopulationAuthorityExchange;
-pub(crate) use population_authority::c_creation::CheckedPopulationMemberExchange;
+pub(crate) use population_authority::storage_creation::CheckedPopulationAuthorityExchange;
+pub(crate) use population_authority::storage_creation::CheckedPopulationMemberExchange;
 mod quantified_frame;
 mod resource_description;
 mod thread_confinement;
@@ -118,7 +118,7 @@ pub(crate) mod sorry;
 #[cfg(test)]
 pub(crate) use fold_read_summary::registered_fold_read_summary;
 pub use fold_read_summary::{
-    CFoldReadDefinition, CheckedFoldReadSummary, FoldReadDecline, register_fold_read_definition,
+    CheckedFoldReadSummary, FoldReadDecline, FoldReadDefinition, register_fold_read_definition,
 };
 pub(crate) use fold_read_summary::{FoldFrameRefusal, frame_fold_application_transport};
 pub(crate) use quantified_frame::{QuantifiedFrameRefusal, frame_quantified_transport};
@@ -183,7 +183,7 @@ pub(crate) use eval::resolve_pending_heap_allocations;
 pub(crate) use eval::scalar_read_observation;
 pub(crate) use eval::terms_have_same_canonical_form;
 pub(crate) use eval::{
-    CUndefinedBehaviorSite, locate_undefined_behavior, locate_undefined_behavior_in_condition,
+    UndefinedBehaviorSite, locate_undefined_behavior, locate_undefined_behavior_in_condition,
 };
 pub(crate) use eval::{arithmetic_comparison_form, comparison_form};
 #[cfg(test)]
@@ -218,7 +218,7 @@ pub(crate) use functions::{
     quantified_resource_requirement_assumptions, resource_clause_position_note,
     resource_clause_stall_note, unmatched_instance_body_views,
 };
-pub use loops::CLoopBinder;
+pub use loops::LoopBinder;
 #[cfg(test)]
 pub(crate) use loops::c_loop_state_components_match_at_back_edge;
 pub(crate) use loops::memory_range_extent_refusal;
@@ -255,7 +255,7 @@ pub(crate) use reasoning::{
 pub(crate) use spec::c_value_word32_term;
 pub(crate) use spec::is_verified_load_variable_defining_fact;
 pub use termination::{
-    CTerminationRefusal, CTerminationVerdicts, CUnsuitableCallback, c_function_callees,
+    TerminationRefusal, TerminationVerdicts, UnsuitableCallback, c_function_callees,
     c_termination_height_plan, c_verified_function_termination_rules,
 };
 
@@ -338,7 +338,7 @@ pub fn verification_session_generation() -> u64 {
 #[derive(Clone)]
 pub struct VerificationSessionState {
     generation: u64,
-    arena: primitives::CMemoryArenaState,
+    arena: primitives::MemoryArenaState,
     loads: eval::LoadRegistryState,
     model_fields: model_fields::ModelFieldRegistryState,
     blocks: primitives::BlockRegistriesState,

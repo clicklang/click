@@ -41,7 +41,7 @@
 //! question is a bounded walk over recorded history with exact lookups, so it
 //! gives the same answer wherever it is asked.
 //!
-//! **The soundness corridor.** The tracker reads `CMemoryDerivation` edges,
+//! **The soundness corridor.** The tracker reads `MemoryDerivation` edges,
 //! which are interned first-wins: one edge can be shared by proof paths with
 //! different assumptions, so an edge may carry only what is true on *every*
 //! path that could produce that snapshot. A write set qualifies; a
@@ -79,9 +79,9 @@ impl ProgramPoint {
         Self(snapshot.clone())
     }
 
-    /// The point a `CMemory` value stands at, interning it first. Callers
+    /// The point a `Memory` value stands at, interning it first. Callers
     /// that already hold an interned snapshot use [`ProgramPoint::at`].
-    pub(crate) fn of_memory(memory: &CMemory) -> Self {
+    pub(crate) fn of_memory(memory: &Memory) -> Self {
         Self(crate::kernel::intern_c_memory(memory.clone()))
     }
 
@@ -89,7 +89,7 @@ impl ProgramPoint {
         &self.0
     }
 
-    pub(crate) fn memory(&self) -> &CMemory {
+    pub(crate) fn memory(&self) -> &Memory {
         self.0.memory()
     }
 
@@ -155,7 +155,7 @@ impl std::fmt::Debug for StatePoint<'_> {
 /// are added as variants here and in [`OwnedResource`]; callers that only
 /// build and pass a resource do not change.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Resource<'a> {
+pub(crate) enum TrackedResource<'a> {
     /// One memory cell: this many bytes, starting at this address.
     ///
     /// The width is part of the resource because separation is a question
@@ -175,7 +175,7 @@ pub(crate) enum Resource<'a> {
     Block(&'a PointerBlock),
     /// The byte ranges a resource fact was derived from: the footprint a
     /// projection's support states, as a list of ranges.
-    Ranges(&'a [CMemoryRange]),
+    Ranges(&'a [MemoryRange]),
     /// A memory footprint the kernel cannot name — a composite core, or a
     /// projection whose address is itself read from memory through a shape the
     /// footprint walk does not enter. Every step that can write memory affects
@@ -207,7 +207,7 @@ pub(crate) fn widest_scalar_access_bytes() -> u32 {
         .expect("the widest scalar access is a small positive byte count")
 }
 
-impl Resource<'_> {
+impl TrackedResource<'_> {
     pub(crate) fn to_owned(self) -> OwnedResource {
         match self {
             Self::Cell { pointer, bytes } => OwnedResource::Cell {
@@ -237,7 +237,7 @@ impl Resource<'_> {
     }
 }
 
-/// [`Resource`] owned, for the answers a diagnostic keeps past the question.
+/// [`TrackedResource`] owned, for the answers a diagnostic keeps past the question.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum OwnedResource {
     Cell {
@@ -245,7 +245,7 @@ pub(crate) enum OwnedResource {
         bytes: u32,
     },
     Block(PointerBlock),
-    Ranges(Vec<CMemoryRange>),
+    Ranges(Vec<MemoryRange>),
     AnyMemory,
     ModelField {
         identity: Variable,
@@ -255,20 +255,20 @@ pub(crate) enum OwnedResource {
 }
 
 impl OwnedResource {
-    pub(crate) fn as_resource(&self) -> Resource<'_> {
+    pub(crate) fn as_resource(&self) -> TrackedResource<'_> {
         match self {
-            Self::Cell { pointer, bytes } => Resource::Cell {
+            Self::Cell { pointer, bytes } => TrackedResource::Cell {
                 pointer,
                 bytes: *bytes,
             },
-            Self::Block(block) => Resource::Block(block),
-            Self::Ranges(ranges) => Resource::Ranges(ranges),
-            Self::AnyMemory => Resource::AnyMemory,
+            Self::Block(block) => TrackedResource::Block(block),
+            Self::Ranges(ranges) => TrackedResource::Ranges(ranges),
+            Self::AnyMemory => TrackedResource::AnyMemory,
             Self::ModelField {
                 identity,
                 children,
                 field_index,
-            } => Resource::ModelField {
+            } => TrackedResource::ModelField {
                 identity: *identity,
                 children,
                 field_index: *field_index,
@@ -301,7 +301,7 @@ impl Stop {
     /// the walk itself asked, run with the same evidence the naming walk has —
     /// none — so a refusal explains the answer the term actually got rather
     /// than a second opinion about it.
-    fn at_point(point: &ProgramPoint, resource: Resource<'_>) -> Self {
+    fn at_point(point: &ProgramPoint, resource: TrackedResource<'_>) -> Self {
         let Some(derivation) = point.snapshot().derivation() else {
             return Self {
                 change: Change::BeginningOfHistory,
@@ -342,10 +342,10 @@ pub(crate) enum Change {
     /// distinguish input materialization from a source-level range write.
     CellsSeeded { pointer: Pointer },
     /// A call may have written the ranges it declared.
-    Call { ranges: Vec<CMemoryRange> },
+    Call { ranges: Vec<MemoryRange> },
     /// A loop may have written the ranges its checked effect summary
     /// declared, or anything at all when it declared none.
-    Loop { ranges: Option<Vec<CMemoryRange>> },
+    Loop { ranges: Option<Vec<MemoryRange>> },
     /// One heap allocation's lifetime ended.
     Free { allocation: Pointer },
     /// A fresh heap block became live.
@@ -395,52 +395,52 @@ pub(crate) enum Change {
 }
 
 impl Change {
-    fn of_derivation(derivation: &CMemoryDerivation) -> Self {
+    fn of_derivation(derivation: &MemoryDerivation) -> Self {
         match derivation {
-            CMemoryDerivation::Store { pointer, .. } => Self::Store {
+            MemoryDerivation::Store { pointer, .. } => Self::Store {
                 pointer: pointer.clone(),
             },
             // The first element names the recorded range, without attributing
             // the input materialization to a source store.
-            CMemoryDerivation::CellsSeeded { run, .. } => Self::CellsSeeded {
+            MemoryDerivation::CellsSeeded { run, .. } => Self::CellsSeeded {
                 pointer: run.base().clone(),
             },
-            CMemoryDerivation::CallHavoc { mutable_ranges, .. } => Self::Call {
+            MemoryDerivation::CallHavoc { mutable_ranges, .. } => Self::Call {
                 ranges: mutable_ranges.clone(),
             },
-            CMemoryDerivation::LoopHavoc { mutable_ranges, .. } => Self::Loop {
+            MemoryDerivation::LoopHavoc { mutable_ranges, .. } => Self::Loop {
                 ranges: mutable_ranges.clone(),
             },
-            CMemoryDerivation::HeapFreed {
+            MemoryDerivation::HeapFreed {
                 allocation_base, ..
             } => Self::Free {
                 allocation: allocation_base.clone(),
             },
-            CMemoryDerivation::HeapAllocated { block, .. } => Self::Allocation {
+            MemoryDerivation::HeapAllocated { block, .. } => Self::Allocation {
                 block: block.clone(),
             },
-            CMemoryDerivation::HeapAllocationPending { .. }
-            | CMemoryDerivation::HeapAllocationFailed { .. } => Self::AllocationPending,
-            CMemoryDerivation::ContractAllocationClaimsChanged { .. } => {
+            MemoryDerivation::HeapAllocationPending { .. }
+            | MemoryDerivation::HeapAllocationFailed { .. } => Self::AllocationPending,
+            MemoryDerivation::ContractAllocationClaimsChanged { .. } => {
                 Self::ContractAllocationClaims
             }
-            CMemoryDerivation::ContractAllocationRetired {
+            MemoryDerivation::ContractAllocationRetired {
                 allocation_base, ..
             } => Self::ContractRetirement {
                 allocation: allocation_base.clone(),
             },
-            CMemoryDerivation::BlockDeclared { block, .. } => Self::Declaration {
+            MemoryDerivation::BlockDeclared { block, .. } => Self::Declaration {
                 block: block.clone(),
             },
-            CMemoryDerivation::LocalLifetimeEnded { block, .. } => Self::LifetimeEnd {
+            MemoryDerivation::LocalLifetimeEnded { block, .. } => Self::LifetimeEnd {
                 block: block.clone(),
             },
-            CMemoryDerivation::ObjectInitializationRecorded { .. } => {
+            MemoryDerivation::ObjectInitializationRecorded { .. } => {
                 Self::ObjectInitializationRecorded
             }
-            CMemoryDerivation::CellObserved { .. } => Self::CellObserved,
-            CMemoryDerivation::CellsForgotten { .. } => Self::CellsForgotten,
-            CMemoryDerivation::BranchJoin { .. } => Self::BranchJoin,
+            MemoryDerivation::CellObserved { .. } => Self::CellObserved,
+            MemoryDerivation::CellsForgotten { .. } => Self::CellsForgotten,
+            MemoryDerivation::BranchJoin { .. } => Self::BranchJoin,
         }
     }
 }
@@ -560,12 +560,17 @@ impl Explanation {
 /// The point a resource read at `at` is named by: the oldest point it is
 /// known to be the same at. This is the naming path — memoized, and the only
 /// tracker call on the hot path.
-pub(crate) fn last_same_point(resource: Resource<'_>, at: &ProgramPoint) -> Option<ProgramPoint> {
+pub(crate) fn last_same_point(
+    resource: TrackedResource<'_>,
+    at: &ProgramPoint,
+) -> Option<ProgramPoint> {
     match resource {
-        Resource::Cell { pointer, bytes } => {
+        TrackedResource::Cell { pointer, bytes } => {
             cell_last_same_point(at.snapshot(), pointer, bytes).map(ProgramPoint)
         }
-        Resource::Block(block) => Some(ProgramPoint(block_last_same_point(at.snapshot(), block))),
+        TrackedResource::Block(block) => {
+            Some(ProgramPoint(block_last_same_point(at.snapshot(), block)))
+        }
         // No term names a memory footprint, so a footprint has no naming path
         // to be the oldest point of. Its one caller knows both ends of the
         // interval it cares about and asks [`step_effect::affects`] at every
@@ -575,22 +580,26 @@ pub(crate) fn last_same_point(resource: Resource<'_>, at: &ProgramPoint) -> Opti
         // its versions are values in saved states rather than points on the
         // memory history, so there is no oldest point to be.
         // [`same_at_states`] is its whole interface.
-        Resource::Ranges(_) | Resource::AnyMemory | Resource::ModelField { .. } => None,
+        TrackedResource::Ranges(_)
+        | TrackedResource::AnyMemory
+        | TrackedResource::ModelField { .. } => None,
     }
 }
 
 /// [`last_same_point`] with the reason the resource walk stopped.
 /// Cell naming retains that decision alongside its endpoint; querying it
 /// must not re-run the effect check that produced it.
-pub(crate) fn last_same(resource: Resource<'_>, at: &ProgramPoint) -> Option<LastSame> {
+pub(crate) fn last_same(resource: TrackedResource<'_>, at: &ProgramPoint) -> Option<LastSame> {
     match resource {
-        Resource::Cell { pointer, bytes } => last_same_named_cell(pointer, bytes, at),
-        Resource::Block(block) => {
+        TrackedResource::Cell { pointer, bytes } => last_same_named_cell(pointer, bytes, at),
+        TrackedResource::Block(block) => {
             let point = ProgramPoint(block_last_same_point(at.snapshot(), block));
             let stopped_by = Stop::at_point(&point, resource);
             Some(LastSame { point, stopped_by })
         }
-        Resource::Ranges(_) | Resource::AnyMemory | Resource::ModelField { .. } => None,
+        TrackedResource::Ranges(_)
+        | TrackedResource::AnyMemory
+        | TrackedResource::ModelField { .. } => None,
     }
 }
 
@@ -625,7 +634,11 @@ pub(crate) fn last_same_named_cell(
 /// the naming path already decides. When they do not, the later of the two
 /// stopped first, and the step below its answer is the one that broke the
 /// chain.
-pub(crate) fn same(resource: Resource<'_>, left: &ProgramPoint, right: &ProgramPoint) -> Sameness {
+pub(crate) fn same(
+    resource: TrackedResource<'_>,
+    left: &ProgramPoint,
+    right: &ProgramPoint,
+) -> Sameness {
     if left == right {
         return Sameness::Same;
     }
@@ -666,7 +679,7 @@ pub(crate) fn same(resource: Resource<'_>, left: &ProgramPoint, right: &ProgramP
 /// Whether a resource whose version is a **value in a saved state** holds one
 /// version at two such states.
 ///
-/// This is the whole interface for [`Resource::ModelField`], and it is a
+/// This is the whole interface for [`TrackedResource::ModelField`], and it is a
 /// two-point value comparison rather
 /// than a walk. There is no recorded history to walk: the memory DAG records
 /// one write set per snapshot, and nothing records "field *k* of this instance
@@ -693,7 +706,7 @@ pub(crate) fn same(resource: Resource<'_>, left: &ProgramPoint, right: &ProgramP
 /// (`crate::kernel::model_fields`), and the two values this already fetched are
 /// where that is read from.
 pub(crate) fn same_at_states(
-    resource: Resource<'_>,
+    resource: TrackedResource<'_>,
     left: StatePoint<'_>,
     right: StatePoint<'_>,
 ) -> Sameness {
@@ -755,7 +768,7 @@ fn replacing_change(left: &Version, right: &Version) -> Change {
 
 /// [`same_at_states`], with the bounded context a refusal prints.
 pub(crate) fn explain_at_states(
-    resource: Resource<'_>,
+    resource: TrackedResource<'_>,
     here: StatePoint<'_>,
     there: StatePoint<'_>,
 ) -> Explanation {
@@ -784,10 +797,10 @@ enum Version {
 /// whatever the states hold. `a_saved_state_version_costs_one_lookup_per_point`
 /// is the regression, and it is what would fail if this ever enumerated a
 /// resource context instead of indexing it.
-fn version_at_state(resource: Resource<'_>, point: StatePoint<'_>) -> Option<Version> {
+fn version_at_state(resource: TrackedResource<'_>, point: StatePoint<'_>) -> Option<Version> {
     crate::instrumentation::record_deterministic_work(1);
     match resource {
-        Resource::ModelField {
+        TrackedResource::ModelField {
             identity,
             children,
             field_index,
@@ -798,15 +811,16 @@ fn version_at_state(resource: Resource<'_>, point: StatePoint<'_>) -> Option<Ver
             .cloned()
             .map(Version::Field),
         // A memory resource's version is a program point, not a value.
-        Resource::Cell { .. } | Resource::Block(_) | Resource::Ranges(_) | Resource::AnyMemory => {
-            None
-        }
+        TrackedResource::Cell { .. }
+        | TrackedResource::Block(_)
+        | TrackedResource::Ranges(_)
+        | TrackedResource::AnyMemory => None,
     }
 }
 
 /// [`same`], with the bounded context a refusal prints.
 pub(crate) fn explain(
-    resource: Resource<'_>,
+    resource: TrackedResource<'_>,
     here: &ProgramPoint,
     there: &ProgramPoint,
 ) -> Explanation {
@@ -818,7 +832,7 @@ pub(crate) fn explain(
 /// to compare against: the step that ended the last stretch of agreement.
 /// A resource nothing has touched since the beginning of the history
 /// answers [`Sameness::Same`].
-pub(crate) fn explain_last_same(resource: Resource<'_>, here: &ProgramPoint) -> Explanation {
+pub(crate) fn explain_last_same(resource: TrackedResource<'_>, here: &ProgramPoint) -> Explanation {
     let outcome = match last_same(resource, here) {
         Some(last) => match last.stopped_by.reason {
             StopReason::HistoryEnds => Sameness::Same,
@@ -839,7 +853,7 @@ pub(crate) fn explain_last_same(resource: Resource<'_>, here: &ProgramPoint) -> 
 }
 
 fn explanation_for(
-    resource: Resource<'_>,
+    resource: TrackedResource<'_>,
     here: &ProgramPoint,
     there: Option<ProgramPoint>,
     outcome: Sameness,
@@ -940,8 +954,8 @@ thread_local! {
 /// a read of `block` is defined at all.
 ///
 /// **How that is obtained.** By asking [`step_effect::affects`] about
-/// `Resource::Block` at every recorded edge and stopping at the first one it
-/// does not answer `Separate`. That rule's `Resource::Block` arm is where the
+/// `TrackedResource::Block` at every recorded edge and stopping at the first one it
+/// does not answer `Separate`. That rule's `TrackedResource::Block` arm is where the
 /// per-step argument lives, kind by kind; it is handed no fact context at all,
 /// which is what lets this answer be memoized per interned snapshot and block.
 ///
@@ -994,7 +1008,7 @@ fn block_last_same_point(memory: &SharedMemory, block: &PointerBlock) -> SharedM
         "array-ref block version walk",
         || {
             // A block's answer is shared across proof paths, so this walk
-            // offers the rule nothing to spend; the `Resource::Block` arm
+            // offers the rule nothing to spend; the `TrackedResource::Block` arm
             // reads none of it. Built once, because a walk is one question.
             let evidence = step_effect::Evidence {
                 assumptions: &PureFactContext::new(),
@@ -1013,7 +1027,7 @@ fn block_last_same_point(memory: &SharedMemory, block: &PointerBlock) -> SharedM
                     step_effect::affects(
                         derivation.as_ref(),
                         &current,
-                        Resource::Block(block),
+                        TrackedResource::Block(block),
                         &evidence,
                     ),
                     // A cell hop cannot be the answer to a block question, and
@@ -1135,7 +1149,7 @@ fn cell_last_same_version(
                     match step_effect::affects(
                         &derivation,
                         &current,
-                        Resource::Cell { pointer, bytes },
+                        TrackedResource::Cell { pointer, bytes },
                         &evidence,
                     ) {
                         step_effect::StepEffect::Separate(step_effect::Separation::Cell(_)) => {
@@ -1157,7 +1171,7 @@ fn cell_last_same_version(
                             // A cell can cross only a cell separation.
                             let reason = step_effect::separation_check(
                                 &derivation,
-                                Resource::Cell { pointer, bytes },
+                                TrackedResource::Cell { pointer, bytes },
                             );
                             break Some(NamedCellVersion {
                                 memory: current,

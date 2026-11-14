@@ -73,7 +73,7 @@ enum AddressKind {
     ViewedStart,
 }
 
-fn range_addresses(range: &CMemoryRange, owned: bool) -> Vec<(AddressKind, Pointer)> {
+fn range_addresses(range: &MemoryRange, owned: bool) -> Vec<(AddressKind, Pointer)> {
     let addresses = vec![(
         if owned {
             AddressKind::OwnedStart
@@ -101,8 +101,8 @@ impl PartialOrd for AddressCoordinate {
 /// Positive concrete read cores contribute physical byte intervals.
 /// Unsupported entries are counted too: an incomplete interval index can
 /// supply positive candidates, but cannot establish a decisive miss.
-pub(super) fn read_extent(fact: &CResourceFact) -> Option<u64> {
-    if let CResourceFact::Own(_, quantity) = fact
+pub(super) fn read_extent(fact: &ResourceFact) -> Option<u64> {
+    if let ResourceFact::Own(_, quantity) = fact
         && !quantity.as_const().is_some_and(|value| (value as i32) > 0)
     {
         return None;
@@ -133,9 +133,9 @@ pub(super) fn read_extent(fact: &CResourceFact) -> Option<u64> {
 // supply a candidate at its exact start. This is only candidate eligibility:
 // the ordinary checker still proves signed bounds, width and quantity. Do not
 // put such intervals in a complete physical containment summary.
-fn start_access_extent(fact: &CResourceFact) -> Option<u64> {
+fn start_access_extent(fact: &ResourceFact) -> Option<u64> {
     read_extent(fact).or_else(|| {
-        if let CResourceFact::Own(_, quantity) = fact
+        if let ResourceFact::Own(_, quantity) = fact
             && !quantity.as_const().is_some_and(|value| (value as i32) > 0)
         {
             return None;
@@ -152,7 +152,7 @@ fn start_access_extent(fact: &CResourceFact) -> Option<u64> {
 // Whole-cell candidates carry their own authorized read footprints. The existing int32-slot interpretation of pointer reads is special:
 // eight bytes may read one logical four-byte element, including an interior
 // element of a longer range. Those partial reads retain the range checker.
-fn exact_access_sizes(fact: &CResourceFact) -> Vec<u32> {
+fn exact_access_sizes(fact: &ResourceFact) -> Vec<u32> {
     let Some(extent) = read_extent(fact).and_then(|extent| u32::try_from(extent).ok()) else {
         return Vec::new();
     };
@@ -193,11 +193,11 @@ pub(super) struct MemoryAddresses {
 impl MemoryAddresses {
     pub(super) fn update(
         &mut self,
-        range: &CMemoryRange,
+        range: &MemoryRange,
         owned: bool,
         entry: ResourceEntryId,
         insert: bool,
-        fact: &CResourceFact,
+        fact: &ResourceFact,
     ) {
         let extent = read_extent(fact);
         for (kind, pointer) in range_addresses(range, owned) {
@@ -211,12 +211,12 @@ impl MemoryAddresses {
 
     fn update_in_graph(
         &mut self,
-        range: &CMemoryRange,
+        range: &MemoryRange,
         owned: bool,
         entry: ResourceEntryId,
         insert: bool,
         graph: &EqualityGraph,
-        fact: &CResourceFact,
+        fact: &ResourceFact,
     ) {
         // Track unsupported offsets too: they must prevent a decisive
         // indexed miss, even when they contribute no address row.
@@ -506,7 +506,7 @@ impl AddressPoints {
         &mut self,
         entry: ResourceEntryId,
         insert: bool,
-        fact: &CResourceFact,
+        fact: &ResourceFact,
         graph: &EqualityGraph,
     ) {
         let Some(range) = fact.memory_range() else {
@@ -944,7 +944,7 @@ impl ObjectEvidenceSources {
         &self,
         pointer: &Pointer,
         assumptions: &PureFactContext,
-    ) -> Option<&CResourceFact> {
+    ) -> Option<&ResourceFact> {
         self.resources.memory_object_evidence(pointer, assumptions)
     }
 }
@@ -960,7 +960,7 @@ pub(super) struct MemoryFactCandidates {
 /// bitvector indices can wrap, and ordinary coverage/merging must validate the
 /// selected original footprints. No alternative resource spelling is tried.
 fn memory_candidate_coordinate(
-    range: &CMemoryRange,
+    range: &MemoryRange,
     bound: &MachineTerm,
 ) -> Option<(Pointer, SharedMachineIntegerTerm)> {
     let base = range.base().object_base();
@@ -987,7 +987,7 @@ fn memory_candidate_coordinate(
 /// checks. Only explicit fragment composition exhausts the selected frontier.
 pub(super) struct MemoryFactEntries {
     index: std::sync::Arc<PairedMemoryIndex>,
-    range: CMemoryRange,
+    range: MemoryRange,
     owned: bool,
     assumptions: PureFactContext,
     bound_coordinates: Option<(Pointer, SharedMachineIntegerTerm)>,
@@ -1001,9 +1001,9 @@ impl MemoryFactEntries {
         let index = &self.index;
         let range = &self.range;
         let exact = if self.owned {
-            CResourceFact::own_memory(range.clone())
+            ResourceFact::own_memory(range.clone())
         } else {
-            CResourceFact::view_memory(range.clone())
+            ResourceFact::view_memory(range.clone())
         };
         if let Some(entries) = index.resources.index.exact.get(&exact) {
             return entries.iter().next().copied();
@@ -1012,7 +1012,7 @@ impl MemoryFactEntries {
             .resources
             .index
             .by_resource
-            .get(&CResource::Memory(range.clone()))
+            .get(&Resource::Memory(range.clone()))
             && entries.len() == 1
         {
             let entry = *entries.iter().next()?;
@@ -1101,7 +1101,7 @@ impl MemoryFactEntries {
             .resources
             .index
             .by_resource
-            .get(&CResource::Memory(range.clone()))
+            .get(&Resource::Memory(range.clone()))
         {
             streams.push(Box::new(entries.clone().owned_values()));
         }
@@ -1331,7 +1331,7 @@ impl MemoryFactCandidates {
         &self,
         entry: ResourceEntryId,
         base: &Pointer,
-    ) -> Option<CResourceFact> {
+    ) -> Option<ResourceFact> {
         let fact = self.index.resources.facts.get(&entry)?;
         let available = fact.memory_range()?;
         let mut range = available.clone();
@@ -1343,10 +1343,10 @@ impl MemoryFactCandidates {
             self.index.graph.pointer_at_base(available.base(), base)?
         };
         Some(match fact {
-            CResourceFact::Own(_, quantity) => {
-                CResourceFact::Own(CResource::Memory(range), quantity.clone())
+            ResourceFact::Own(_, quantity) => {
+                ResourceFact::Own(Resource::Memory(range), quantity.clone())
             }
-            CResourceFact::View(_) => CResourceFact::View(CResource::Memory(range)),
+            ResourceFact::View(_) => ResourceFact::View(Resource::Memory(range)),
         })
     }
 
@@ -1365,8 +1365,8 @@ impl MemoryFactCandidates {
     pub(super) fn requirement(
         &self,
         entry: ResourceEntryId,
-        fact: &CResourceFact,
-    ) -> Option<CResourceFact> {
+        fact: &ResourceFact,
+    ) -> Option<ResourceFact> {
         let range = fact.memory_range()?;
         let available = self.index.resources.facts.get(&entry)?.memory_range()?;
         let base = if available.wide_bounds().is_some() {
@@ -1381,10 +1381,10 @@ impl MemoryFactCandidates {
         let mut range = range.clone();
         range.base = base;
         Some(match fact {
-            CResourceFact::Own(_, quantity) => {
-                CResourceFact::Own(CResource::Memory(range), quantity.clone())
+            ResourceFact::Own(_, quantity) => {
+                ResourceFact::Own(Resource::Memory(range), quantity.clone())
             }
-            CResourceFact::View(_) => CResourceFact::View(CResource::Memory(range)),
+            ResourceFact::View(_) => ResourceFact::View(Resource::Memory(range)),
         })
     }
 }
@@ -1392,7 +1392,7 @@ impl MemoryFactCandidates {
 #[derive(Clone, Copy)]
 enum MemoryQuery<'a> {
     Address(&'a Pointer),
-    Footprint(&'a CMemoryRange),
+    Footprint(&'a MemoryRange),
 }
 impl MemoryQuery<'_> {
     fn register(self, graph: &EqualityGraph) {
@@ -1435,7 +1435,7 @@ impl ResourceContext {
     #[cfg(test)]
     pub(crate) fn memory_write_selection_is_known_for_test(
         &self,
-        range: &CMemoryRange,
+        range: &MemoryRange,
         assumptions: &PureFactContext,
     ) -> bool {
         let pointer = range.start_pointer();
@@ -1455,7 +1455,7 @@ impl ResourceContext {
         bytes: u32,
         assumptions: &PureFactContext,
         include_views: bool,
-    ) -> Option<&CMemoryRange> {
+    ) -> Option<&MemoryRange> {
         // A view-only frame can answer an explicit base or an admitted alias
         // in the caller's structural lookup. Do not resolve an opaque pointer
         // read merely to discover whether its pointee might have a supplier.
@@ -2335,7 +2335,7 @@ impl ResourceContext {
         &self,
         pointer: &Pointer,
         assumptions: &PureFactContext,
-    ) -> Option<&CResourceFact> {
+    ) -> Option<&ResourceFact> {
         let object = pointer.object_identity();
         if let Some(entry) = self.storage.index.memory_objects.supplier(&object) {
             crate::instrumentation::record_deterministic_work(1);
@@ -2361,7 +2361,7 @@ impl ResourceContext {
     /// no base bucket, spelling enumeration, or ambient normalization is used.
     pub(super) fn memory_fact_candidates(
         &self,
-        range: &CMemoryRange,
+        range: &MemoryRange,
         owned: bool,
         assumptions: &PureFactContext,
     ) -> MemoryFactCandidates {
@@ -2436,7 +2436,7 @@ mod tests {
             } else {
                 lower.clone()
             };
-            let owned = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            let owned = ResourceFact::own_memory(MemoryRange::new_with_element_width(
                 base.clone(),
                 start,
                 end.clone(),
@@ -2445,7 +2445,7 @@ mod tests {
             let resources =
                 ResourceContext::new_with_equalities(&facts).unchecked_with_fact(owned.clone());
             resources.synchronize_memory_equalities(&facts);
-            let query = CMemoryRange::new_with_element_width(
+            let query = MemoryRange::new_with_element_width(
                 base,
                 cursor.clone(),
                 MachineTerm::add(cursor.clone(), 1u32.into()),
@@ -2489,9 +2489,9 @@ mod tests {
             true,
         );
         let assumptions = PureFactContext::new().assume_proposition(equality);
-        let range = CMemoryRange::new_with_element_width(owner, 0u32.into(), 8u32.into(), 4);
+        let range = MemoryRange::new_with_element_width(owner, 0u32.into(), 8u32.into(), 4);
         let resources = ResourceContext::new_with_equalities(&assumptions)
-            .unchecked_with_fact(CResourceFact::own_memory(range));
+            .unchecked_with_fact(ResourceFact::own_memory(range));
         let kept = crate::kernel::primitives::CallKeptRanges::new(resources, vec![], None);
         assert!(kept.holds_access(&query, 8, &assumptions));
         assert!(!kept.holds_access(&query, 12, &assumptions));
@@ -2526,8 +2526,8 @@ mod tests {
             ),
             true,
         );
-        let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(
-            CMemoryRange::new_wide(
+        let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::view_memory(
+            MemoryRange::new_wide(
                 base.clone(),
                 MachineTerm::uint64_constant(0),
                 MachineTerm::uint64_constant(5552),
@@ -2574,7 +2574,7 @@ mod tests {
         .offset_by_elements(MachineTerm::Variable(Variable(983_710)), 1);
         let whole = MachineTerm::Variable(Variable(983_711));
         let remaining = MachineTerm::Variable(Variable(983_712));
-        let available = CMemoryRange::new_wide(
+        let available = MemoryRange::new_wide(
             base.clone(),
             MachineTerm::uint64_constant(0),
             whole.clone(),
@@ -2587,7 +2587,7 @@ mod tests {
             true,
         );
         let temporary = Pointer::symbolic(Variable(983_713));
-        let required = CResourceFact::view_memory(CMemoryRange::new_with_element_width(
+        let required = ResourceFact::view_memory(MemoryRange::new_with_element_width(
             temporary.clone(),
             MachineTerm::constant(0),
             MachineTerm::constant(1),
@@ -2607,8 +2607,7 @@ mod tests {
             ConditionTerm::uint64_less_equal(MachineTerm::uint64_constant(1), remaining.clone()),
             true,
         );
-        let held =
-            ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(available));
+        let held = ResourceContext::new().unchecked_with_fact(ResourceFact::view_memory(available));
         held.synchronize_memory_equalities(&facts);
         assert!(
             held.satisfies_fact(&required, &facts),
@@ -2636,7 +2635,7 @@ mod tests {
             "truncated bounds are not native coverage"
         );
         let only_viewable = facts.assume_proposition(Proposition::CMemoryLoadable {
-            memory: CMemory::new(),
+            memory: Memory::new(),
             base,
             bytes: whole,
             wide: true,
@@ -2687,29 +2686,29 @@ mod tests {
                 true,
             );
         let range = |base: Pointer, start: u32, end: u32| {
-            CMemoryRange::new_with_element_width(base, start.into(), end.into(), 4)
+            MemoryRange::new_with_element_width(base, start.into(), end.into(), 4)
         };
         let resources = ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::own_memory(range(parameter.clone(), 0, 2)))
-            .unchecked_with_fact(CResourceFact::own_memory(range(parameter, 4, 6)))
-            .unchecked_with_fact(CResourceFact::own_memory(range(model.clone(), 2, 6)))
-            .unchecked_with_fact(CResourceFact::own_memory(range(model.clone(), 20, 24)))
-            .unchecked_with_fact(CResourceFact::view_memory(range(model, 6, 8)));
+            .unchecked_with_fact(ResourceFact::own_memory(range(parameter.clone(), 0, 2)))
+            .unchecked_with_fact(ResourceFact::own_memory(range(parameter, 4, 6)))
+            .unchecked_with_fact(ResourceFact::own_memory(range(model.clone(), 2, 6)))
+            .unchecked_with_fact(ResourceFact::own_memory(range(model.clone(), 20, 24)))
+            .unchecked_with_fact(ResourceFact::view_memory(range(model, 6, 8)));
         resources.synchronize_memory_equalities(&facts);
-        let required = CResourceFact::own_memory(range(cursor.clone(), 4, 6));
+        let required = ResourceFact::own_memory(range(cursor.clone(), 4, 6));
         let residual = resources
             .clone()
             .without_fact_incrementally(&required, &facts)
             .expect("the selected interior field is owned");
         assert!(residual.satisfies_fact(
-            &CResourceFact::own_memory(range(cursor.clone(), 2, 4)),
+            &ResourceFact::own_memory(range(cursor.clone(), 2, 4)),
             &facts
         ));
         assert!(!residual.satisfies_fact(&required, &facts));
         assert!(resources.permits_memory_read(&cursor.offset_by_bytes(16), 8, &facts));
         assert!(resources.permits_memory_read(&cursor.offset_by_bytes(24), 8, &facts));
         for (start, end) in [(0, 2), (4, 7), (6, 8)] {
-            let unowned = CResourceFact::own_memory(range(cursor.clone(), start, end));
+            let unowned = ResourceFact::own_memory(range(cursor.clone(), start, end));
             assert!(
                 resources
                     .clone()
@@ -2759,7 +2758,7 @@ mod tests {
             )
             .assume_condition(ConditionTerm::pointer_equal(cursor.clone(), model), true);
         let owner = |offset| {
-            CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            ResourceFact::own_memory(MemoryRange::new_with_element_width(
                 old_read.offset_by_bytes(offset),
                 0u32.into(),
                 1u32.into(),
@@ -2787,8 +2786,8 @@ mod tests {
         assert!(!resources.permits_memory_read(&cursor.offset_by_bytes(8), 8, &missing_alias));
     }
 
-    fn view(base: &Pointer, start: u32, end: u32) -> CResourceFact {
-        CResourceFact::view_memory(CMemoryRange::new_with_element_width(
+    fn view(base: &Pointer, start: u32, end: u32) -> ResourceFact {
+        ResourceFact::view_memory(MemoryRange::new_with_element_width(
             base.clone(),
             start.into(),
             end.into(),
@@ -2849,8 +2848,8 @@ mod tests {
         let middle = Pointer::symbolic(Variable(861_001));
         let alias = Pointer::symbolic(Variable(861_002));
         let owned_range =
-            CMemoryRange::new_with_element_width(base.clone(), 0u32.into(), 32u32.into(), 1);
-        let owned = CResourceFact::own_memory(owned_range.clone());
+            MemoryRange::new_with_element_width(base.clone(), 0u32.into(), 32u32.into(), 1);
+        let owned = ResourceFact::own_memory(owned_range.clone());
         // An exact-size view must neither grant writes nor hide a longer owner.
         let short = view(&base, 8, 12);
         let resources = ResourceContext::new()
@@ -2902,8 +2901,8 @@ mod tests {
     fn pointer_slot_candidates_preserve_the_checked_logical_width_rule() {
         let base = Pointer::symbolic(Variable(851_015));
         let facts = PureFactContext::new();
-        let slot = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
-            CMemoryRange::new(base.clone(), 0u32.into(), 1u32.into()),
+        let slot = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
+            MemoryRange::new(base.clone(), 0u32.into(), 1u32.into()),
         ));
         assert!(slot.permits_memory_read(&base, C_POINTER_BYTE_WIDTH, &facts));
         assert!(!slot.permits_memory_read(&base, 16, &facts));
@@ -2916,8 +2915,8 @@ mod tests {
         // not authorize a pointer read from a four-byte, byte-indexed view.
         let bytes = ResourceContext::new().unchecked_with_fact(view(&base, 0, 4));
         assert!(!bytes.permits_memory_read(&base, C_POINTER_BYTE_WIDTH, &facts));
-        let byte_owner = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
-            CMemoryRange::new_with_element_width(base.clone(), 0u32.into(), 4u32.into(), 1),
+        let byte_owner = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
+            MemoryRange::new_with_element_width(base.clone(), 0u32.into(), 4u32.into(), 1),
         ));
         assert!(
             byte_owner

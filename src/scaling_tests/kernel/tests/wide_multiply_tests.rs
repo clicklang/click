@@ -89,7 +89,7 @@ fn wide_multiply_resolves_indexed_narrow_inputs_with_their_signedness() {
             });
             assert_eq!(paths.len(), 1);
             assert!(paths[0].obligations.is_empty());
-            let CExpressionOutcome::Value(value) = &paths[0].outcome else {
+            let ExpressionOutcome::Value(value) = &paths[0].outcome else {
                 panic!("known bounded product")
             };
             assert_eq!(

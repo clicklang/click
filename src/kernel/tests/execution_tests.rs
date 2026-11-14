@@ -14,7 +14,7 @@ fn scalar_initialization_freezes_storage_and_preserves_lifetime() {
             state,
             statement,
             &PureFactContext::new(),
-            CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+            ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
             &mut ExecutionBudget::default(),
         )
         .unwrap()
@@ -35,7 +35,7 @@ fn scalar_initialization_freezes_storage_and_preserves_lifetime() {
     assert_eq!(state.locals.get_native("x").as_deref(), Some(&int32(7)));
     assert!(matches!(
         execute(&state, &c_assign("x", c_int32_literal(9)))[0].outcome,
-        CStatementOutcome::UndefinedBehavior(_)
+        StatementOutcome::UndefinedBehavior(_)
     ));
     // Even an unqualified forged pointer cannot write the read-only allocation.
     assert!(matches!(
@@ -48,7 +48,7 @@ fn scalar_initialization_freezes_storage_and_preserves_lifetime() {
             )
         )[0]
         .outcome,
-        CStatementOutcome::UndefinedBehavior(_)
+        StatementOutcome::UndefinedBehavior(_)
     ));
     let replaced = normal_state(&execute(&state, &declaration));
     assert_ne!(pointer, *replaced.locals.slot("x").unwrap());
@@ -61,7 +61,7 @@ fn scalar_initialization_freezes_storage_and_preserves_lifetime() {
             ))
         )[0]
         .outcome,
-        CStatementOutcome::UndefinedBehavior(_)
+        StatementOutcome::UndefinedBehavior(_)
     ));
     let unwritten = normal_state(&execute(
         &ExecutionState::new(),
@@ -81,13 +81,13 @@ fn scalar_initialization_freezes_storage_and_preserves_lifetime() {
             )
         )[0]
         .outcome,
-        CStatementOutcome::Normal(_)
+        StatementOutcome::Normal(_)
     ));
 }
 
 #[test]
 fn whole_function_execution_resumes_a_direct_forward_goto_target() {
-    let target = CControlTargetId(0);
+    let target = ControlTargetId(0);
     let target_statement = c_return(c_variable("x"));
     let function = c_function(
         ProgramType::Int32,
@@ -100,7 +100,7 @@ fn whole_function_execution_resumes_a_direct_forward_goto_target() {
     )
     .with_control_targets(BTreeMap::from([(
         target,
-        CControlTarget {
+        ControlTarget {
             statement_index: 2,
             remaining: Arc::new(target_statement),
         },
@@ -116,7 +116,7 @@ fn whole_function_execution_resumes_a_direct_forward_goto_target() {
         matches!(
             theorem.proposition(),
             Proposition::CFunctionExecutes {
-                outcome: CFunctionOutcome::Return {
+                outcome: FunctionOutcome::Return {
                     value,
                     ..
                 },
@@ -128,8 +128,8 @@ fn whole_function_execution_resumes_a_direct_forward_goto_target() {
     );
 }
 
-fn active_memory_loan(range: CMemoryRange) -> LoanLedger {
-    let fact = CResourceFact::own_memory(range);
+fn active_memory_loan(range: MemoryRange) -> LoanLedger {
+    let fact = ResourceFact::own_memory(range);
     let support = ResourceContext::new()
         .unchecked_with_fact(fact.clone())
         .unique_owned_occurrence_for_fact(&fact)
@@ -146,10 +146,10 @@ fn active_memory_loan(range: CMemoryRange) -> LoanLedger {
         .expect("memory loan apply")
 }
 
-fn normal_state(paths: &[CStatementExecutionPath]) -> ExecutionState {
+fn normal_state(paths: &[StatementExecutionPath]) -> ExecutionState {
     let [
-        CStatementExecutionPath {
-            outcome: CStatementOutcome::Normal(state),
+        StatementExecutionPath {
+            outcome: StatementOutcome::Normal(state),
             ..
         },
     ] = paths
@@ -159,8 +159,8 @@ fn normal_state(paths: &[CStatementExecutionPath]) -> ExecutionState {
     *state.clone()
 }
 
-fn assert_loan_write_rejected(outcome: &CStatementOutcome) {
-    let CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(diagnostic)) = outcome else {
+fn assert_loan_write_rejected(outcome: &StatementOutcome) {
+    let StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(diagnostic)) = outcome else {
         panic!("expected a loan refusal, got {outcome:?}");
     };
     assert_eq!(
@@ -174,8 +174,8 @@ fn assert_loan_write_rejected(outcome: &CStatementOutcome) {
     assert!(diagnostic.subject().conflicting_resource_fact().is_some());
 }
 
-fn assert_loan_write_obligation_is_unprovable(path: &CStatementExecutionPath) {
-    assert!(matches!(path.outcome, CStatementOutcome::Normal(_)));
+fn assert_loan_write_obligation_is_unprovable(path: &StatementExecutionPath) {
+    assert!(matches!(path.outcome, StatementOutcome::Normal(_)));
     let separation = path
         .obligations
         .iter()
@@ -205,13 +205,13 @@ fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store()
             declared_class: None,
         },
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("local declaration should execute");
     let state = normal_state(&declared);
     let pointer = state.locals().slot("x").cloned().expect("local pointer");
-    let loan = active_memory_loan(CMemoryRange::new(
+    let loan = active_memory_loan(MemoryRange::new(
         pointer.clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(1),
@@ -226,7 +226,7 @@ fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store()
             expression: c_int32_literal(1),
         },
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("direct assignment should return a checked refusal");
@@ -246,7 +246,7 @@ fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store()
             declared_class: None,
         },
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("name reuse should return a checked refusal");
@@ -260,7 +260,7 @@ fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store()
         &alias_state,
         &c_store(c_variable("p"), c_int32_literal(2)),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("alias store should return its loan obligation");
@@ -276,7 +276,7 @@ fn private_pointer_copy_retains_qualifier_ownership_and_loan_refusals() {
             state,
             statement,
             &PureFactContext::new(),
-            CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+            ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
             &mut ExecutionBudget::default(),
         )
         .unwrap()
@@ -303,14 +303,14 @@ fn private_pointer_copy_retains_qualifier_ownership_and_loan_refusals() {
     );
     assert!(matches!(
         execute(&state, &discard_const)[0].outcome,
-        CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch)
+        StatementOutcome::RuntimeError(RuntimeError::TypeMismatch)
     ));
     let unowned = state.clone().with_resource_context(ResourceContext::new());
     assert!(matches!(
         execute(&unowned, &copy)[0].outcome,
-        CStatementOutcome::RuntimeError(CRuntimeError::MissingResource { .. })
+        StatementOutcome::RuntimeError(RuntimeError::MissingResource { .. })
     ));
-    let protected = CMemoryRange::new_with_element_width(
+    let protected = MemoryRange::new_with_element_width(
         state.locals().slot("p").unwrap().clone(),
         0u32.into(),
         1u32.into(),
@@ -336,13 +336,13 @@ fn active_stable_loan_allows_a_disjoint_local_store() {
             declared_class: None,
         },
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("array declaration should execute");
     let state = normal_state(&declared);
     let base = state.locals().slot("a").cloned().expect("array pointer");
-    let loan = active_memory_loan(CMemoryRange::new(
+    let loan = active_memory_loan(MemoryRange::new(
         base.clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(1),
@@ -355,12 +355,12 @@ fn active_stable_loan_allows_a_disjoint_local_store() {
         &state,
         &c_store(c_variable("p"), c_int32_literal(3)),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("disjoint store should execute");
     assert!(
-        matches!(&paths[0].outcome, CStatementOutcome::Normal(_)),
+        matches!(&paths[0].outcome, StatementOutcome::Normal(_)),
         "disjoint store outcome: {:?}",
         paths[0].outcome
     );
@@ -387,7 +387,7 @@ fn volatile_parameter_accesses_emit_ordered_facts() {
         &bound,
         function.body(),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("volatile parameter body should execute");
@@ -418,7 +418,7 @@ fn volatile_parameter_accesses_emit_ordered_facts() {
             &bound,
             function.body(),
             &PureFactContext::new(),
-            CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+            ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
             &mut exhausted,
         ),
         Err(ExecutionLimit::KernelVariables {
@@ -435,7 +435,7 @@ fn volatile_parameter_accesses_emit_ordered_facts() {
 #[test]
 fn a_state_scan_reserves_memory_havoc_marker_identities() {
     let state = ExecutionState::new().with_memory(
-        CMemory::new()
+        Memory::new()
             .with_block("havoc:1000004", 0)
             .with_block("call-havoc:1000009", 0)
             .with_block("local:x", 4),
@@ -471,15 +471,15 @@ fn loop_back_edge_rejects_heap_and_resource_state_changes() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = CMemory::new()
+    let memory = Memory::new()
         .with_heap_allocation_claim(allocation.clone(), HeapExtent::int32(16))
         .expect("test allocation claim should be fresh");
     let top = ExecutionState::new()
         .with_memory(memory)
         .with_resource_context(
             ResourceContext::new()
-                .unchecked_with_fact(CResourceFact::own_allocation(allocation.clone(), 16))
-                .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+                .unchecked_with_fact(ResourceFact::own_allocation(allocation.clone(), 16))
+                .unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
                     allocation,
                     MachineTerm::constant(0),
                     MachineTerm::constant(4),
@@ -492,11 +492,11 @@ fn loop_back_edge_rejects_heap_and_resource_state_changes() {
             offset: PointerOffsetTerm::Constant(0),
         }))),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("test free should execute");
-    let CStatementOutcome::Normal(freed) = &freed[0].outcome else {
+    let StatementOutcome::Normal(freed) = &freed[0].outcome else {
         panic!("test free should have a normal outcome");
     };
     let error =
@@ -510,7 +510,7 @@ fn loop_back_edge_rejects_heap_and_resource_state_changes() {
             .expect_err("consumed resources must not cross a loop back edge");
     assert!(error.contains("resource ownership"));
 
-    let token = CResourceFact::own_token("can_complete".to_string(), Vec::new());
+    let token = ResourceFact::own_token("can_complete".to_string(), Vec::new());
     let token_top = ExecutionState::new()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(token));
     let token_consumed = ExecutionState::new();
@@ -566,7 +566,7 @@ fn join_state_forgets_changed_scalars_and_memory() {
         .with_local("x", stable_x.clone())
         .with_local("y", int32(0))
         .with_memory(
-            CMemory::new()
+            Memory::new()
                 .with_block("heap", 4)
                 .store(pointer.clone(), int32(0)),
         )
@@ -574,11 +574,7 @@ fn join_state_forgets_changed_scalars_and_memory() {
     let state_one = ExecutionState::new()
         .with_local("x", stable_x.clone())
         .with_local("y", int32(1))
-        .with_memory(
-            CMemory::new()
-                .with_block("heap", 4)
-                .store(pointer, int32(1)),
-        );
+        .with_memory(Memory::new().with_block("heap", 4).store(pointer, int32(1)));
     let stable = BTreeMap::from([("x".to_string(), stable_x.clone())]);
 
     let abstract_zero =
@@ -740,7 +736,7 @@ fn concrete_max_executes_without_list_encoding() {
         &Proposition::CStatementExecutes {
             state: Box::new(state.clone()),
             statement: Box::new(c_max_body()),
-            outcome: CStatementOutcome::Return {
+            outcome: StatementOutcome::Return {
                 value: int32(1).into(),
                 state: Box::new(state),
             },
@@ -767,7 +763,7 @@ fn concrete_max_function_call_preserves_caller_locals() {
             state: Box::new(state.clone()),
             function: Box::new(function),
             arguments,
-            outcome: CFunctionOutcome::Return {
+            outcome: FunctionOutcome::Return {
                 value: int32(1).into(),
                 state: Box::new(state),
             },
@@ -812,7 +808,7 @@ fn symbolic_max_function_call_reports_branch_facts() {
                 state: Box::new(state.clone()),
                 function: Box::new(function.clone()),
                 arguments: arguments.clone(),
-                outcome: CFunctionOutcome::Return {
+                outcome: FunctionOutcome::Return {
                     value: int32(b_bits).into(),
                     state: Box::new(state.clone()),
                 },
@@ -836,7 +832,7 @@ fn symbolic_max_function_call_reports_branch_facts() {
                 state: Box::new(state.clone()),
                 function: Box::new(function),
                 arguments,
-                outcome: CFunctionOutcome::Return {
+                outcome: FunctionOutcome::Return {
                     value: int32(a_bits).into(),
                     state: Box::new(state),
                 },
@@ -848,10 +844,10 @@ fn symbolic_max_function_call_reports_branch_facts() {
 #[test]
 fn execution_provenance_matches_only_equivalent_call_havoc() {
     let assumptions = PureFactContext::new();
-    let base = CMemory::new().with_block("arc", 16);
+    let base = Memory::new().with_block("arc", 16);
     let first_range = memory_range(arc_pointer(0), 0, 1);
     let other_range = memory_range(arc_pointer(4), 0, 1);
-    let left = CFunctionOutcome::Return {
+    let left = FunctionOutcome::Return {
         value: int32(0).into(),
         state: Box::new(
             ExecutionState::new().with_memory(base.clone().with_call_memory_havoc(
@@ -862,7 +858,7 @@ fn execution_provenance_matches_only_equivalent_call_havoc() {
             )),
         ),
     };
-    let equivalent = CFunctionOutcome::Return {
+    let equivalent = FunctionOutcome::Return {
         value: int32(0).into(),
         state: Box::new(
             ExecutionState::new().with_memory(base.clone().with_call_memory_havoc(
@@ -873,7 +869,7 @@ fn execution_provenance_matches_only_equivalent_call_havoc() {
             )),
         ),
     };
-    let different = CFunctionOutcome::Return {
+    let different = FunctionOutcome::Return {
         value: int32(0).into(),
         state: Box::new(
             ExecutionState::new().with_memory(base.with_call_memory_havoc(
@@ -929,7 +925,7 @@ fn function_call_threads_memory_but_discards_callee_locals() {
     let arguments = vec![c_pointer_value(pointer.clone())];
     let final_state = ExecutionState::new()
         .with_local("caller", int32(42))
-        .with_memory(CMemory::new().store(pointer.clone(), int32(9)))
+        .with_memory(Memory::new().store(pointer.clone(), int32(9)))
         .with_resource_context(resources);
     let theorem = prove_symbolic_c_function_execution(
         state.clone(),
@@ -945,7 +941,7 @@ fn function_call_threads_memory_but_discards_callee_locals() {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
-            outcome: CFunctionOutcome::Return {
+            outcome: FunctionOutcome::Return {
                 value: int32(9).into(),
                 state: Box::new(final_state),
             },
@@ -982,8 +978,8 @@ fn function_call_does_not_inherit_undeclared_resources() {
         caller.clone(),
         arguments.clone(),
         PureFactContext::new(),
-        CExecutionEnvironment::new().with_function(helper),
-        CExecutionSemantics::EXECUTE_BODIES,
+        ExecutionEnvironment::new().with_function(helper),
+        ExecutionSemantics::EXECUTE_BODIES,
     )
     .expect("call should report missing callee permission");
 
@@ -993,7 +989,7 @@ fn function_call_does_not_inherit_undeclared_resources() {
             state: Box::new(state),
             function: Box::new(caller),
             arguments,
-            outcome: CFunctionOutcome::RuntimeError(CRuntimeError::MissingResource {
+            outcome: FunctionOutcome::RuntimeError(RuntimeError::MissingResource {
                 resource: Box::new(own_memory_fact(pointer, 0, 1)),
             }),
         }
@@ -1007,7 +1003,7 @@ fn concrete_function_specification_is_native_theorem() {
         ExecutionState::new(),
         vec![c_int32_literal(0), c_int32_literal(1)],
         Vec::new(),
-        CFunctionOutcome::Return {
+        FunctionOutcome::Return {
             value: int32(1).into(),
             state: Box::new(ExecutionState::new()),
         },
@@ -1043,7 +1039,7 @@ fn symbolic_function_specification_uses_requirements_as_execution_pure_facts() {
             ProgramExpression::Value(int32(b_bits)),
         ],
         vec![Proposition::ConditionIs(condition.clone(), true)],
-        CFunctionOutcome::Return {
+        FunctionOutcome::Return {
             value: int32(MachineTerm::Variable(b)).into(),
             state: Box::new(ExecutionState::new()),
         },
@@ -1079,7 +1075,7 @@ fn incomplete_symbolic_function_specification_does_not_prove() {
             ProgramExpression::Value(int32(MachineTerm::Variable(b))),
         ],
         Vec::new(),
-        CFunctionOutcome::Return {
+        FunctionOutcome::Return {
             value: int32(MachineTerm::Variable(b)).into(),
             state: Box::new(ExecutionState::new()),
         },
@@ -1099,7 +1095,7 @@ fn call_assign_uses_function_environment() {
         vec![c_parameter("x", ProgramType::Int32)],
         c_return(c_add(c_variable("x"), c_int32_literal(1))),
     );
-    let environment = CExecutionEnvironment::new().with_function(increment);
+    let environment = ExecutionEnvironment::new().with_function(increment);
     let state = ExecutionState::new();
     let statement = c_seq(
         c_call_assign("result", "increment", vec![c_int32_literal(41)]),
@@ -1111,7 +1107,7 @@ fn call_assign_uses_function_environment() {
         statement.clone(),
         PureFactContext::new(),
         environment,
-        CExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::EXECUTE_BODIES,
     )
     .expect("known function call should execute");
 
@@ -1120,7 +1116,7 @@ fn call_assign_uses_function_environment() {
         &Proposition::CStatementExecutes {
             state: Box::new(state),
             statement: Box::new(statement),
-            outcome: CStatementOutcome::Return {
+            outcome: StatementOutcome::Return {
                 value: int32(42).into(),
                 state: Box::new(final_state),
             },
@@ -1137,7 +1133,7 @@ fn direct_call_propagates_internal_throw_and_skips_its_suffix() {
         ProgramStatement::Throw(c_int32_literal(7)),
     )
     .with_int32_exceptional_outcome();
-    let environment = CExecutionEnvironment::new().with_function(thrower);
+    let environment = ExecutionEnvironment::new().with_function(thrower);
     let state = ExecutionState::new().with_local("result", int32(1));
     let statement = c_seq(
         c_call_assign("result", "thrower", Vec::new()),
@@ -1148,7 +1144,7 @@ fn direct_call_propagates_internal_throw_and_skips_its_suffix() {
         statement.clone(),
         PureFactContext::new(),
         environment,
-        CExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::EXECUTE_BODIES,
     )
     .expect("an internal throw should cross a body-executed call");
 
@@ -1157,7 +1153,7 @@ fn direct_call_propagates_internal_throw_and_skips_its_suffix() {
         &Proposition::CStatementExecutes {
             state: Box::new(state.clone()),
             statement: Box::new(statement),
-            outcome: CStatementOutcome::Throw {
+            outcome: StatementOutcome::Throw {
                 value: int32(7).into(),
                 state: Box::new(state),
             },
@@ -1174,7 +1170,7 @@ fn int32_handler_receives_payload_and_thrown_state_across_a_call() {
         ProgramStatement::Throw(c_int32_literal(7)),
     )
     .with_int32_exceptional_outcome();
-    let environment = CExecutionEnvironment::new().with_function(thrower);
+    let environment = ExecutionEnvironment::new().with_function(thrower);
     let state = ExecutionState::new().with_local("x", int32(1));
     let statement = c_try_catch_int32(
         c_seq(
@@ -1189,11 +1185,11 @@ fn int32_handler_receives_payload_and_thrown_state_across_a_call() {
         statement,
         PureFactContext::new(),
         environment,
-        CExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::EXECUTE_BODIES,
     )
     .expect("the checked handler should execute from the thrown state");
     let Proposition::CStatementExecutes {
-        outcome: CStatementOutcome::Return { value, state },
+        outcome: StatementOutcome::Return { value, state },
         ..
     } = theorem.proposition()
     else {
@@ -1223,7 +1219,7 @@ fn int32_handler_does_not_run_on_normal_or_return_paths() {
     assert!(matches!(
         theorem.proposition(),
         Proposition::CStatementExecutes {
-            outcome: CStatementOutcome::Return {
+            outcome: StatementOutcome::Return {
                 value,
                 ..
             },
@@ -1240,7 +1236,7 @@ fn int32_handler_does_not_run_on_normal_or_return_paths() {
     assert!(matches!(
         theorem.proposition(),
         Proposition::CStatementExecutes {
-            outcome: CStatementOutcome::Return {
+            outcome: StatementOutcome::Return {
                 value,
                 ..
             },
@@ -1262,7 +1258,7 @@ fn throw_from_int32_handler_escapes_instead_of_being_recaught() {
     assert!(matches!(
         theorem.proposition(),
         Proposition::CStatementExecutes {
-            outcome: CStatementOutcome::Throw {
+            outcome: StatementOutcome::Throw {
                 value,
                 ..
             },
@@ -1287,7 +1283,7 @@ fn int32_handler_rejects_a_binding_that_would_replace_a_live_local() {
     assert!(matches!(
         theorem.proposition(),
         Proposition::CStatementExecutes {
-            outcome: CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(message)),
+            outcome: StatementOutcome::RuntimeError(RuntimeError::FunctionContract(message)),
             ..
         } if message.contains("handler binding `live` is not fresh")
     ));
@@ -1315,7 +1311,7 @@ fn caught_throw_satisfies_a_nonthrowing_function_signature() {
     assert!(matches!(
         theorem.proposition(),
         Proposition::CFunctionExecutes {
-            outcome: CFunctionOutcome::Return {
+            outcome: FunctionOutcome::Return {
                 value,
                 ..
             },
@@ -1365,8 +1361,8 @@ fn conditional_catch_has_a_continuing_call_outcome_and_a_terminal_one() {
             ProgramExpression::Value(bool_value(MachineTerm::Variable(Variable(80_002)))),
         ],
         PureFactContext::new(),
-        CExecutionEnvironment::new().with_function(helper),
-        CExecutionSemantics::EXECUTE_BODIES,
+        ExecutionEnvironment::new().with_function(helper),
+        ExecutionSemantics::EXECUTE_BODIES,
     );
     assert!(execution.limit().is_none());
     assert_eq!(execution.paths().len(), 3);
@@ -1381,7 +1377,7 @@ fn conditional_catch_has_a_continuing_call_outcome_and_a_terminal_one() {
             }
             match proposition {
                 Proposition::CFunctionExecutes {
-                    outcome: CFunctionOutcome::Return { value, .. },
+                    outcome: FunctionOutcome::Return { value, .. },
                     ..
                 } => {
                     let native = value.native();
@@ -1411,8 +1407,8 @@ fn internal_throw_is_int32_only_and_requires_a_verified_direct_rule() {
     assert!(throwing.verified_direct_contract_supported());
     // A throwing interface is a named contract too; the throw is part of it.
     assert!(
-        CFunctionContract::new("Throwing", throwing.clone()).is_some_and(|contract| {
-            contract.interface().exceptional_signature() == CExceptionalSignature::Int32
+        FunctionContract::new("Throwing", throwing.clone()).is_some_and(|contract| {
+            contract.interface().exceptional_signature() == ExceptionalSignature::Int32
         })
     );
 
@@ -1425,21 +1421,21 @@ fn internal_throw_is_int32_only_and_requires_a_verified_direct_rule() {
     .with_int32_exceptional_outcome();
     assert!(!declared_without_throw.opaque_contract_supported());
     assert!(declared_without_throw.verified_direct_contract_supported());
-    assert!(CFunctionContract::new("DeclaredWithoutThrow", declared_without_throw).is_some());
+    assert!(FunctionContract::new("DeclaredWithoutThrow", declared_without_throw).is_some());
 
     let modular = prove_symbolic_c_execution_with_environment(
         ExecutionState::new(),
         c_call("throwing", Vec::new()),
         PureFactContext::new(),
-        CExecutionEnvironment::new().with_function(throwing),
-        CExecutionSemantics::APPLY_VERIFIED_RULES,
+        ExecutionEnvironment::new().with_function(throwing),
+        ExecutionSemantics::APPLY_VERIFIED_RULES,
     )
     .expect("a throwing function should produce an explicit modular refusal");
     assert!(
         matches!(
             modular.proposition(),
             Proposition::CStatementVerifies {
-                outcome: CStatementOutcome::RuntimeError(CRuntimeError::MissingVerifiedFunctionRule(name)),
+                outcome: StatementOutcome::RuntimeError(RuntimeError::MissingVerifiedFunctionRule(name)),
                 ..
             } if name == "throwing"
         ),
@@ -1456,7 +1452,7 @@ fn internal_throw_is_int32_only_and_requires_a_verified_direct_rule() {
     assert!(matches!(
         theorem.proposition(),
         Proposition::CStatementExecutes {
-            outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+            outcome: StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
             ..
         }
     ));
@@ -1480,7 +1476,7 @@ fn function_execution_rejects_an_undeclared_exceptional_outcome() {
     assert!(matches!(
         theorem.proposition(),
         Proposition::CFunctionExecutes {
-            outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(message)),
+            outcome: FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(message)),
             ..
         } if message == "undeclared_throw produced an exceptional outcome not declared by its signature"
     ));
@@ -1492,10 +1488,10 @@ fn loop_semantics_explicitly_select_verification_or_verified_rules() {
     let statement = c_while_with_invariant_checks(
         c_less_than(c_variable("i"), c_int32_literal(1)),
         Vec::new(),
-        vec![CLoopInvariantCheck::new(
+        vec![LoopInvariantCheck::new(
             SpecProposition::Comparison {
                 left: SpecExpression::Value(int32(0)),
-                operator: CComparisonOperator::LessEqual,
+                operator: ComparisonOperator::LessEqual,
                 right: SpecExpression::ProgramExpression(c_variable("i")),
             },
             Some("loop entry".to_string()),
@@ -1509,8 +1505,8 @@ fn loop_semantics_explicitly_select_verification_or_verified_rules() {
             state.clone(),
             statement.clone(),
             assumptions.clone(),
-            CExecutionEnvironment::new(),
-            CExecutionSemantics::EXECUTE_BODIES,
+            ExecutionEnvironment::new(),
+            ExecutionSemantics::EXECUTE_BODIES,
         );
     let loop_rule = loop_rule.expect("loop verification should produce a rule");
     assert!(certified.paths().iter().all(|path| {
@@ -1525,14 +1521,14 @@ fn loop_semantics_explicitly_select_verification_or_verified_rules() {
         state.clone(),
         statement.clone(),
         assumptions.clone(),
-        CExecutionEnvironment::new(),
-        CExecutionSemantics::APPLY_VERIFIED_RULES,
+        ExecutionEnvironment::new(),
+        ExecutionSemantics::APPLY_VERIFIED_RULES,
     );
     assert!(missing.paths().is_empty());
 
     let mut ignored_rule = loop_rule.clone();
     ignored_rule.paths.clear();
-    let base_environment = CExecutionEnvironment::new();
+    let base_environment = ExecutionEnvironment::new();
     let cloned_environment = base_environment.clone();
     assert!(base_environment.shares_all_storage_with(&cloned_environment));
     let loop_environment = cloned_environment.with_verified_loop_rules([ignored_rule]);
@@ -1542,7 +1538,7 @@ fn loop_semantics_explicitly_select_verification_or_verified_rules() {
         statement.clone(),
         assumptions.clone(),
         loop_environment,
-        CExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::EXECUTE_BODIES,
     );
     assert!(!verified_directly.paths().is_empty());
 
@@ -1552,8 +1548,8 @@ fn loop_semantics_explicitly_select_verification_or_verified_rules() {
         assumptions
             .clone()
             .assume_condition(ConditionTerm::Constant(true), true),
-        CExecutionEnvironment::new().with_verified_loop_rules([loop_rule.clone()]),
-        CExecutionSemantics::APPLY_VERIFIED_RULES,
+        ExecutionEnvironment::new().with_verified_loop_rules([loop_rule.clone()]),
+        ExecutionSemantics::APPLY_VERIFIED_RULES,
     );
     assert_eq!(reused.paths().len(), certified.paths().len());
     assert!(reused.paths().iter().all(|path| {
@@ -1568,8 +1564,8 @@ fn loop_semantics_explicitly_select_verification_or_verified_rules() {
         state.with_local("unrelated", int32(0)),
         statement,
         assumptions,
-        CExecutionEnvironment::new().with_verified_loop_rules([loop_rule]),
-        CExecutionSemantics::APPLY_VERIFIED_RULES,
+        ExecutionEnvironment::new().with_verified_loop_rules([loop_rule]),
+        ExecutionSemantics::APPLY_VERIFIED_RULES,
     );
     assert!(mismatched.paths().is_empty());
 }
@@ -1585,7 +1581,7 @@ fn statement_checks_share_one_execution_environment_variable_index() {
             MachineTerm::Variable(reserved),
         ))),
     );
-    let environment = CExecutionEnvironment::new().with_function(indexed_function);
+    let environment = ExecutionEnvironment::new().with_function(indexed_function);
     let cloned_before_initialization = environment.clone();
     assert_eq!(environment.variable_index.build_count(), 0);
 
@@ -1595,7 +1591,7 @@ fn statement_checks_share_one_execution_environment_variable_index() {
             c_skip(),
             PureFactContext::new(),
             candidate,
-            CExecutionSemantics::EXECUTE_BODIES,
+            ExecutionSemantics::EXECUTE_BODIES,
         );
         assert_eq!(execution.paths().len(), 1);
     }
@@ -1641,7 +1637,7 @@ fn statement_checks_share_one_execution_environment_variable_index() {
 /// loops before it and the proof quadratic.
 #[test]
 fn adding_a_loop_rule_collects_only_that_rules_variables() {
-    let rule = |index: u64| CVerifiedLoopRule {
+    let rule = |index: u64| VerifiedLoopRule {
         symbolic_entry_state: ExecutionState::default(),
         loop_statement: c_skip(),
         loop_index: Some(index as usize),
@@ -1652,7 +1648,7 @@ fn adding_a_loop_rule_collects_only_that_rules_variables() {
         recursion_anchor: None,
         variable_index: Default::default(),
     };
-    let base = CExecutionEnvironment::new();
+    let base = ExecutionEnvironment::new();
     execution_environment_variable_index(&base);
     let mut environment = base.clone();
     for index in 0..8 {
@@ -1691,7 +1687,7 @@ fn environment_variable_scans_do_not_multiply_by_statement_count() {
                 body,
             );
         }
-        let environment = CExecutionEnvironment::new().with_function(c_function(
+        let environment = ExecutionEnvironment::new().with_function(c_function(
             ProgramType::Int32,
             format!("indexed_{size}"),
             Vec::new(),
@@ -1704,7 +1700,7 @@ fn environment_variable_scans_do_not_multiply_by_statement_count() {
                 c_skip(),
                 PureFactContext::new(),
                 environment.clone(),
-                CExecutionSemantics::EXECUTE_BODIES,
+                ExecutionSemantics::EXECUTE_BODIES,
             );
             assert_eq!(execution.paths().len(), 1);
         }
@@ -1722,10 +1718,10 @@ fn perpetual_loop_verifies_safety_without_minting_a_concrete_exit() {
     let statement = c_while_with_invariant_checks(
         c_int32_literal(1),
         Vec::new(),
-        vec![CLoopInvariantCheck::new(
+        vec![LoopInvariantCheck::new(
             SpecProposition::Comparison {
                 left: SpecExpression::Value(int32(0)),
-                operator: CComparisonOperator::Equal,
+                operator: ComparisonOperator::Equal,
                 right: SpecExpression::Value(int32(0)),
             },
             Some("perpetual loop entry".to_string()),
@@ -1738,8 +1734,8 @@ fn perpetual_loop_verifies_safety_without_minting_a_concrete_exit() {
             state.clone(),
             statement.clone(),
             PureFactContext::new(),
-            CExecutionEnvironment::new(),
-            CExecutionSemantics::EXECUTE_BODIES,
+            ExecutionEnvironment::new(),
+            ExecutionSemantics::EXECUTE_BODIES,
         );
     assert!(rule.is_some());
     assert_eq!(verification.paths().len(), 1);
@@ -1750,7 +1746,7 @@ fn perpetual_loop_verifies_safety_without_minting_a_concrete_exit() {
     assert!(matches!(
         proposition,
         Proposition::CStatementVerifies {
-            outcome: CStatementOutcome::VerificationDiverges,
+            outcome: StatementOutcome::VerificationDiverges,
             ..
         }
     ));
@@ -1766,10 +1762,10 @@ fn loop_exit_rule_with_proven_preservation_does_not_reverify_the_body() {
     let statement = c_while_with_invariant_checks(
         c_less_than(c_variable("i"), c_int32_literal(1)),
         Vec::new(),
-        vec![CLoopInvariantCheck::new(
+        vec![LoopInvariantCheck::new(
             SpecProposition::Comparison {
                 left: SpecExpression::Value(int32(0)),
-                operator: CComparisonOperator::LessEqual,
+                operator: ComparisonOperator::LessEqual,
                 right: SpecExpression::ProgramExpression(c_variable("i")),
             },
             Some("loop entry".to_string()),
@@ -1782,14 +1778,14 @@ fn loop_exit_rule_with_proven_preservation_does_not_reverify_the_body() {
         state.clone(),
         statement.clone(),
         assumptions.clone(),
-        CExecutionEnvironment::new(),
-        CExecutionSemantics::EXECUTE_BODIES,
+        ExecutionEnvironment::new(),
+        ExecutionSemantics::EXECUTE_BODIES,
     );
     assert!(
         automatic
             .paths()
             .iter()
-            .flat_map(SymbolicCExecutionPath::obligations)
+            .flat_map(SymbolicExecutionPath::obligations)
             .any(|obligation| obligation.context() == Some("loop preservation"))
     );
 
@@ -1797,7 +1793,7 @@ fn loop_exit_rule_with_proven_preservation_does_not_reverify_the_body() {
         state,
         statement,
         assumptions,
-        CExecutionEnvironment::new(),
+        ExecutionEnvironment::new(),
         false,
         true,
         Vec::new(),
@@ -1818,10 +1814,10 @@ fn loop_exit_with_unproven_preservation_does_not_produce_rule() {
     let statement = c_while_with_invariant_checks(
         c_int32_literal(1),
         Vec::new(),
-        vec![CLoopInvariantCheck::new(
+        vec![LoopInvariantCheck::new(
             SpecProposition::Comparison {
                 left: SpecExpression::Value(int32(0)),
-                operator: CComparisonOperator::LessEqual,
+                operator: ComparisonOperator::LessEqual,
                 right: SpecExpression::ProgramExpression(c_variable("i")),
             },
             Some("loop entry".to_string()),
@@ -1833,7 +1829,7 @@ fn loop_exit_with_unproven_preservation_does_not_produce_rule() {
         state,
         statement,
         PureFactContext::new(),
-        CExecutionEnvironment::new(),
+        ExecutionEnvironment::new(),
         true,
         false,
         Vec::new(),
@@ -1845,7 +1841,7 @@ fn loop_exit_with_unproven_preservation_does_not_produce_rule() {
     let obligations = execution
         .paths()
         .iter()
-        .flat_map(SymbolicCExecutionPath::obligations)
+        .flat_map(SymbolicExecutionPath::obligations)
         .collect::<Vec<_>>();
     assert!(
         obligations
@@ -1867,8 +1863,8 @@ fn unknown_call_assign_is_runtime_error() {
         state.clone(),
         statement.clone(),
         PureFactContext::new(),
-        CExecutionEnvironment::new(),
-        CExecutionSemantics::EXECUTE_BODIES,
+        ExecutionEnvironment::new(),
+        ExecutionSemantics::EXECUTE_BODIES,
     )
     .expect("unknown function should produce a single runtime-error path");
 
@@ -1877,7 +1873,7 @@ fn unknown_call_assign_is_runtime_error() {
         &Proposition::CStatementExecutes {
             state: Box::new(state),
             statement: Box::new(statement),
-            outcome: CStatementOutcome::RuntimeError(CRuntimeError::UnknownFunction(
+            outcome: StatementOutcome::RuntimeError(RuntimeError::UnknownFunction(
                 "missing".to_string(),
             )),
         }
@@ -1921,8 +1917,8 @@ fn unreadable_guard_operand_leaves_the_condition_undecided() {
         assert!(
             assumptions.iter().any(|assumption| matches!(
                 assumption.undecided_outcome(),
-                Some(CStatementOutcome::RuntimeError(
-                    CRuntimeError::MissingResource { .. }
+                Some(StatementOutcome::RuntimeError(
+                    RuntimeError::MissingResource { .. }
                 ))
             )),
             "the unreadable operand must be reported, not dropped (truthiness {desired_truthiness})"
@@ -1949,7 +1945,7 @@ fn while_loop_executes_concrete_countdown() {
         &Proposition::CStatementExecutes {
             state: Box::new(state),
             statement: Box::new(statement),
-            outcome: CStatementOutcome::Return {
+            outcome: StatementOutcome::Return {
                 value: int32(0).into(),
                 state: Box::new(final_state),
             },
@@ -1974,7 +1970,7 @@ fn loop_budget_exhaustion_is_executor_failure_not_c_runtime_error() {
     );
 
     assert_eq!(execution.limit(), Some(ExecutionLimit::LoopUnrolls));
-    assert_eq!(execution.paths(), &[] as &[SymbolicCExecutionPath]);
+    assert_eq!(execution.paths(), &[] as &[SymbolicExecutionPath]);
     assert!(
         prove_symbolic_c_execution_with_budget(state, statement, PureFactContext::new(), budget,)
             .is_none()
@@ -2092,8 +2088,8 @@ fn whole_function_default_budget_scales_with_selected_source() {
             function.clone(),
             arguments.clone(),
             PureFactContext::new(),
-            CExecutionEnvironment::new(),
-            CExecutionSemantics::EXECUTE_BODIES,
+            ExecutionEnvironment::new(),
+            ExecutionSemantics::EXECUTE_BODIES,
             ExecutionBudget::default(),
         );
     assert_eq!(
@@ -2107,8 +2103,8 @@ fn whole_function_default_budget_scales_with_selected_source() {
         function,
         arguments,
         PureFactContext::new(),
-        CExecutionEnvironment::new(),
-        CExecutionSemantics::EXECUTE_BODIES,
+        ExecutionEnvironment::new(),
+        ExecutionSemantics::EXECUTE_BODIES,
     );
     assert_eq!(
         source_sized_execution.limit(),
@@ -2125,7 +2121,7 @@ fn while_invariant_is_proof_obligation() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let invariant = Proposition::CMemoryLoadable {
-        memory: CMemory::new(),
+        memory: Memory::new(),
         base: pointer,
         bytes: MachineTerm::constant(4),
         wide: false,
@@ -2147,7 +2143,7 @@ fn while_invariant_is_proof_obligation() {
             Box::new(Proposition::CStatementExecutes {
                 state: Box::new(state.clone()),
                 statement: Box::new(statement),
-                outcome: CStatementOutcome::Normal(Box::new(state)),
+                outcome: StatementOutcome::Normal(Box::new(state)),
             }),
         )
     );
@@ -2177,14 +2173,14 @@ fn verified_loop_rules_are_selected_by_their_exact_prerequisites() {
     // which rule the kernel selected.
     second.paths.extend(base_rule.paths.iter().cloned());
     let environment =
-        CExecutionEnvironment::new().with_verified_loop_rules([first.clone(), second.clone()]);
+        ExecutionEnvironment::new().with_verified_loop_rules([first.clone(), second.clone()]);
 
     let applied_first = prove_symbolic_c_statement_verification_paths_with_environment(
         state.clone(),
         statement.clone(),
         PureFactContext::new().assume_condition(first_guard.clone(), true),
         environment.clone(),
-        CExecutionSemantics::APPLY_VERIFIED_RULES,
+        ExecutionSemantics::APPLY_VERIFIED_RULES,
     );
     assert_eq!(applied_first.paths().len(), first.paths.len());
 
@@ -2195,7 +2191,7 @@ fn verified_loop_rules_are_selected_by_their_exact_prerequisites() {
         statement.clone(),
         PureFactContext::new().assume_condition(second_guard.clone(), true),
         environment.clone(),
-        CExecutionSemantics::APPLY_VERIFIED_RULES,
+        ExecutionSemantics::APPLY_VERIFIED_RULES,
     );
     assert_eq!(applied_second.paths().len(), second.paths.len());
     assert_ne!(first.paths.len(), second.paths.len());
@@ -2206,7 +2202,7 @@ fn verified_loop_rules_are_selected_by_their_exact_prerequisites() {
         statement.clone(),
         PureFactContext::new().assume_condition(loop_rule_guard(3), true),
         environment.clone(),
-        CExecutionSemantics::APPLY_VERIFIED_RULES,
+        ExecutionSemantics::APPLY_VERIFIED_RULES,
     );
     assert!(applied_none.paths().is_empty());
 
@@ -2219,7 +2215,7 @@ fn verified_loop_rules_are_selected_by_their_exact_prerequisites() {
             .assume_condition(first_guard, false)
             .assume_condition(second_guard, false),
         environment,
-        CExecutionSemantics::APPLY_VERIFIED_RULES,
+        ExecutionSemantics::APPLY_VERIFIED_RULES,
     );
     assert!(applied_refuted.paths().is_empty());
 }
@@ -2237,7 +2233,7 @@ fn verified_loop_rule_prerequisites_are_not_reproved_from_ambient_facts() {
     let stronger = ConditionTerm::signed_greater_equal(bound, MachineTerm::constant(1));
     let mut rule = base_rule;
     rule.required_assumptions = PureFactContext::new().assume_condition(required.clone(), true);
-    let environment = CExecutionEnvironment::new().with_verified_loop_rules([rule]);
+    let environment = ExecutionEnvironment::new().with_verified_loop_rules([rule]);
 
     let stronger_facts = PureFactContext::new().assume_condition(stronger, true);
     // The retained condition checker still decides the implication; the rule
@@ -2249,7 +2245,7 @@ fn verified_loop_rule_prerequisites_are_not_reproved_from_ambient_facts() {
         statement.clone(),
         stronger_facts,
         environment.clone(),
-        CExecutionSemantics::APPLY_VERIFIED_RULES,
+        ExecutionSemantics::APPLY_VERIFIED_RULES,
     );
     assert!(applied.paths().is_empty());
 
@@ -2258,7 +2254,7 @@ fn verified_loop_rule_prerequisites_are_not_reproved_from_ambient_facts() {
         statement,
         PureFactContext::new().assume_condition(required, true),
         environment,
-        CExecutionSemantics::APPLY_VERIFIED_RULES,
+        ExecutionSemantics::APPLY_VERIFIED_RULES,
     );
     assert!(!exact.paths().is_empty());
 }
@@ -2273,15 +2269,15 @@ fn loop_rule_guard(value: u32) -> ConditionTerm {
 /// One verified `while` rule, built by ordinary loop verification, that the
 /// prerequisite regressions above re-issue under different required
 /// assumptions.
-fn prerequisite_loop_rule_fixture() -> (ProgramStatement, CVerifiedLoopRule) {
+fn prerequisite_loop_rule_fixture() -> (ProgramStatement, VerifiedLoopRule) {
     let state = ExecutionState::new().with_local("i", int32(0));
     let statement = c_while_with_invariant_checks(
         c_less_than(c_variable("i"), c_int32_literal(1)),
         Vec::new(),
-        vec![CLoopInvariantCheck::new(
+        vec![LoopInvariantCheck::new(
             SpecProposition::Comparison {
                 left: SpecExpression::Value(int32(0)),
-                operator: CComparisonOperator::LessEqual,
+                operator: ComparisonOperator::LessEqual,
                 right: SpecExpression::ProgramExpression(c_variable("i")),
             },
             Some("loop entry".to_string()),
@@ -2293,8 +2289,8 @@ fn prerequisite_loop_rule_fixture() -> (ProgramStatement, CVerifiedLoopRule) {
         state,
         statement.clone(),
         PureFactContext::new(),
-        CExecutionEnvironment::new(),
-        CExecutionSemantics::EXECUTE_BODIES,
+        ExecutionEnvironment::new(),
+        ExecutionSemantics::EXECUTE_BODIES,
     );
     let rule = rule.expect("loop verification should produce a rule");
     assert!(!rule.paths.is_empty());
@@ -2349,7 +2345,7 @@ fn loop_back_edge_refuses_a_dropped_share_or_a_regenerated_root() {
     };
     let head = at(head_ledger.clone(), participant);
     let assumptions = PureFactContext::new();
-    let definitions: &[CCompositeResourceDefinition] = &[];
+    let definitions: &[CompositeResourceDefinition] = &[];
 
     // The head state closes its own back edge.
     assert_eq!(
@@ -2420,12 +2416,12 @@ fn loop_entry_goals_retain_satisfied_duplicate_declarations() {
     let state = ExecutionState::new().with_local("i", int32(0));
     let proposition = SpecProposition::Comparison {
         left: SpecExpression::Value(int32(0)),
-        operator: CComparisonOperator::LessEqual,
+        operator: ComparisonOperator::LessEqual,
         right: SpecExpression::ProgramExpression(c_variable("i")),
     };
     let checks = (0..2)
         .map(|index| {
-            CLoopInvariantCheck::new(
+            LoopInvariantCheck::new(
                 proposition.clone(),
                 Some(format!("invariant {index}")),
                 None,
@@ -2459,12 +2455,12 @@ fn loop_entry_goals_preserve_guarded_judgments() {
     let state = ExecutionState::new().with_local("i", int32(MachineTerm::Variable(Variable(600))));
     let proposition = SpecProposition::Comparison {
         left: SpecExpression::Value(int32(0)),
-        operator: CComparisonOperator::LessEqual,
+        operator: ComparisonOperator::LessEqual,
         right: SpecExpression::ProgramExpression(c_variable("i")),
     };
     let checks = (0..2)
         .map(|index| {
-            CLoopInvariantCheck::new(
+            LoopInvariantCheck::new(
                 proposition.clone(),
                 Some(format!("invariant {index}")),
                 None,
@@ -2875,7 +2871,7 @@ fn a_budget_starts_an_execution_or_continues_one() {
 /// The mark is execution-relative, and reading it out of one budget and into
 /// the next must not lose the base.
 ///
-/// `CFunctionContractRefinementContext` carried the counter as a raw absolute
+/// `FunctionContractRefinementContext` carried the counter as a raw absolute
 /// field and rebuilt its obligations' budget from that field directly. It now
 /// reads the mark through `next_kernel_variable` and rebuilds with
 /// `continuing_from`, which is correct exactly while the two agree on the
@@ -3097,7 +3093,7 @@ fn loop_entry_lowering_limit_is_spelled_in_words() {
     let state = ExecutionState::new().with_local("i", int32(0));
     let proposition = SpecProposition::Comparison {
         left: SpecExpression::Value(int32(0)),
-        operator: CComparisonOperator::LessEqual,
+        operator: ComparisonOperator::LessEqual,
         right: SpecExpression::ResourceField {
             projection: ResourceFieldProjection {
                 identity: Variable(10),
@@ -3108,7 +3104,7 @@ fn loop_entry_lowering_limit_is_spelled_in_words() {
             c_type: ProgramType::Int32,
         },
     };
-    let checks = vec![CLoopInvariantCheck::new(
+    let checks = vec![LoopInvariantCheck::new(
         proposition,
         Some("invariant 0".to_string()),
         None,
@@ -3129,13 +3125,13 @@ fn zero_filled_node_array(
     length: u32,
     written: &[(u32, ProgramValue, ProgramType)],
 ) -> ProgramStatement {
-    let fill = CZeroFill::new(
+    let fill = ZeroFill::new(
         16,
         length,
         vec![
-            CZeroCell::new(0, ProgramType::Int32, false, int32(0)),
-            CZeroCell::new(4, ProgramType::UInt8, false, int32(0)),
-            CZeroCell::new(8, ProgramType::Int32Pointer, false, int32(0)),
+            ZeroCell::new(0, ProgramType::Int32, false, int32(0)),
+            ZeroCell::new(4, ProgramType::UInt8, false, int32(0)),
+            ZeroCell::new(8, ProgramType::Int32Pointer, false, int32(0)),
         ],
     );
     written.iter().fold(
@@ -3178,7 +3174,7 @@ fn load_items_field(
     state: &ExecutionState,
     offset: u32,
     value_type: ProgramType,
-) -> CExpressionOutcome {
+) -> ExpressionOutcome {
     let paths = evaluate_c_expression_paths(
         state,
         &c_typed_load(
@@ -3201,7 +3197,7 @@ fn execute_declaration(state: &ExecutionState, statement: &ProgramStatement) -> 
             state,
             statement,
             &PureFactContext::new(),
-            CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+            ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
             &mut ExecutionBudget::default(),
         )
         .expect("the declaration executes"),
@@ -3261,7 +3257,7 @@ fn a_zero_filled_automatic_array_holds_exactly_the_per_element_stores() {
         );
         assert_eq!(
             load_items_field(&declared, 16 * (length - 1), ProgramType::Int32),
-            CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead),
+            ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::UninitializedRead),
             "[{length}] an array declared without an initializer is uninitialized"
         );
     }
@@ -3274,7 +3270,7 @@ fn assert_statement_reserves_application_integer_argument(
     let statement = c_while_with_invariant_checks(
         c_less_than(c_variable("i"), c_int32_literal(1)),
         Vec::new(),
-        vec![CLoopInvariantCheck::new(invariant, None, None)],
+        vec![LoopInvariantCheck::new(invariant, None, None)],
         c_assign("i", c_add(c_variable("i"), c_int32_literal(1))),
     );
     let mut reserved = BTreeSet::new();
@@ -3300,7 +3296,7 @@ fn statement_reservations_cover_integer_arguments_of_machine_applications() {
     assert_statement_reserves_application_integer_argument(
         SpecProposition::Comparison {
             left: call,
-            operator: CComparisonOperator::LessEqual,
+            operator: ComparisonOperator::LessEqual,
             right: SpecExpression::ProgramExpression(c_variable("i")),
         },
         held,

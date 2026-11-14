@@ -416,8 +416,8 @@ pub(crate) fn normalize_using_conditions(
     facts: &super::ProofFacts,
 ) -> Result<(), ConditionalNormalizationError> {
     if let Proposition::CResourceSeparate { left, right } = goal
-        && (matches!(left.as_ref(), CResource::Footprint(_))
-            || matches!(right.as_ref(), CResource::Footprint(_)))
+        && (matches!(left.as_ref(), Resource::Footprint(_))
+            || matches!(right.as_ref(), Resource::Footprint(_)))
     {
         let mut selected = PureFactContext::new();
         for (index, premise) in premises.iter().enumerate() {
@@ -2175,7 +2175,7 @@ mod tests {
     use crate::kernel::proof::facts::ProofFacts;
     use crate::kernel::proof::quantified_equivalence_index_key;
     use crate::kernel::{
-        CMemory, CMemoryRange, CResource, Pointer, PointerBlock, PointerOffsetTerm, ProgramValue,
+        Memory, MemoryRange, Pointer, PointerBlock, PointerOffsetTerm, ProgramValue, Resource,
         Variable, intern_c_memory, load_variable_for_cell_with_origin,
     };
 
@@ -2291,7 +2291,7 @@ mod tests {
             block: "p".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let before = intern_c_memory(CMemory::new().with_block("p", 4));
+        let before = intern_c_memory(Memory::new().with_block("p", 4));
         let after = intern_c_memory(before.as_ref().clone().store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(9)),
@@ -2349,7 +2349,7 @@ mod tests {
                 Box::new(PointerOffsetTerm::Constant(4)),
             ),
         };
-        let memory = intern_c_memory(CMemory::new().store(
+        let memory = intern_c_memory(Memory::new().store(
             nested_cell.clone(),
             ProgramValue::Int32(MachineTerm::constant(7)),
         ));
@@ -2400,7 +2400,7 @@ mod tests {
             block: "cell".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let memory = CMemory::new().with_block("cell", 4).store(
+        let memory = Memory::new().with_block("cell", 4).store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::Variable(Variable(11))),
         );
@@ -2441,7 +2441,7 @@ mod tests {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(4),
         };
-        let before = CMemory::new();
+        let before = Memory::new();
         let after = before.clone().store(
             written.clone(),
             ProgramValue::Int32(MachineTerm::constant(1)),
@@ -2484,7 +2484,7 @@ mod tests {
         // The explicit derivation check must reject this pair without entering
         // the global snapshot-comparison planner.
         let loaded = preserved;
-        let changed_before = CMemory::new().store(
+        let changed_before = Memory::new().store(
             loaded.clone(),
             ProgramValue::Int32(MachineTerm::constant(1)),
         );
@@ -2655,7 +2655,7 @@ mod tests {
     fn algebraic_binder_renaming_with_structural_reads_uses_its_own_sort() {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = AlgebraicType::parameter("Fuel".into());
-        let before = intern_c_memory(CMemory::new().with_block("p", 4));
+        let before = intern_c_memory(Memory::new().with_block("p", 4));
         let pointer = Pointer {
             block: "p".into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -2703,7 +2703,7 @@ mod tests {
         // variables represent. A bound index inside a load variable keys by
         // binder ordinal, so renamed binders share a bucket with each other
         // and with the same universal written in load terms.
-        let memory = intern_c_memory(CMemory::new().with_block("p", 12));
+        let memory = intern_c_memory(Memory::new().with_block("p", 12));
         let cell = |index: Variable| {
             MachineTerm::MemoryLoad(
                 memory.clone(),
@@ -2814,17 +2814,17 @@ mod tests {
         };
         let phase_field = owner_field(4);
         let cell_field = owner_field(8);
-        let load = |memory: &CMemory, pointer: &Pointer| {
+        let load = |memory: &Memory, pointer: &Pointer| {
             MachineTerm::MemoryLoad(
                 intern_c_memory(memory.clone()),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             )
         };
-        let empty = CMemory::new();
+        let empty = Memory::new();
         // The form recorded when the resource body was unfolded: the cell
         // pointer read through the call-havoc snapshot.
-        let havoc = CMemory::new().with_block("havoc:1000000", 0);
+        let havoc = Memory::new().with_block("havoc:1000000", 0);
         // The form carried by the recorded execution facts: the same
         // loads read through the branch-entry memory with its retained cells.
         let entry = empty
@@ -2838,7 +2838,7 @@ mod tests {
                 ProgramValue::Int32(load(&empty, &owner_base)),
             );
         let cell_element_offset =
-            |memory: &CMemory| PointerOffsetTerm::scaled_int32_node(load(memory, &cell_field), 4);
+            |memory: &Memory| PointerOffsetTerm::scaled_int32_node(load(memory, &cell_field), 4);
         // The fold-state form reads the cell pointer through a memory
         // that still carries the `owner->cell[0] = owner->phase` store, whose
         // written address is itself written through a loaded pointer, so no
@@ -2850,14 +2850,14 @@ mod tests {
             },
             ProgramValue::Int32(load(&havoc, &owner_base)),
         );
-        let separation = |left_start: u32, left_end: u32, cell_memory: &CMemory| {
-            Proposition::CResourceSeparate {
-                left: Box::new(CResource::Memory(CMemoryRange::new(
+        let separation =
+            |left_start: u32, left_end: u32, cell_memory: &Memory| Proposition::CResourceSeparate {
+                left: Box::new(Resource::Memory(MemoryRange::new(
                     owner_base.clone(),
                     MachineTerm::constant(left_start),
                     MachineTerm::constant(left_end),
                 ))),
-                right: Box::new(CResource::Memory(CMemoryRange::new(
+                right: Box::new(Resource::Memory(MemoryRange::new(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: cell_element_offset(cell_memory),
@@ -2865,8 +2865,7 @@ mod tests {
                     MachineTerm::constant(0),
                     MachineTerm::constant(1),
                 ))),
-            }
-        };
+            };
         let required = separation(0, 4, &folded);
         let available = separation(0, 4, &havoc);
 
@@ -3262,7 +3261,7 @@ pub(crate) fn premise_bridged_by_load_variable_chain_with_origins(
 /// snapshot and the same cell named at a later snapshot are different load
 /// variables whenever the edge between them is crossed only in context:
 /// call-havoc and store edges carry no path assumptions (see
-/// `CMemoryDerivation`). A required condition is therefore available when an
+/// `MemoryDerivation`). A required condition is therefore available when an
 /// already-selected candidate is the same condition with each pair of load
 /// atoms proven equal under these assumptions.
 /// Candidate selection remains the caller's snapshot-blind bucket; nothing is
@@ -3376,7 +3375,7 @@ fn separations_equal_modulo_proven_snapshots(
     else {
         return false;
     };
-    let ranges_equal = |left: &CMemoryRange, right: &CMemoryRange| {
+    let ranges_equal = |left: &MemoryRange, right: &MemoryRange| {
         // The snapshot transport below proves signed 32-bit equalities only.
         left == right
             || (left.int32_bounds().is_some()
@@ -3431,7 +3430,7 @@ mod integer_reflexivity_tests {
     use super::*;
     use crate::kernel::proof::ProofFacts;
     use crate::kernel::{
-        CMemory, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType, MachineTerm, Pointer,
+        IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType, MachineTerm, Memory, Pointer,
         PointerOffsetTerm, ProgramValue, SharedIntegerRangeEndpoint, SharedMachineIntegerTerm,
         Variable,
     };
@@ -3682,8 +3681,7 @@ mod integer_reflexivity_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let a = Pointer::symbolic(Variable(96_110));
         let b = Pointer::symbolic(Variable(96_111));
-        let before =
-            crate::kernel::intern_c_memory(CMemory::new().with_block("normalize-graph", 8));
+        let before = crate::kernel::intern_c_memory(Memory::new().with_block("normalize-graph", 8));
         let after = crate::kernel::intern_c_memory(
             before
                 .memory()
@@ -3769,7 +3767,7 @@ mod integer_reflexivity_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let before =
-            crate::kernel::intern_c_memory(CMemory::new().with_block("normalize-fold-snapshot", 8));
+            crate::kernel::intern_c_memory(Memory::new().with_block("normalize-fold-snapshot", 8));
         let after = crate::kernel::intern_c_memory(before.as_ref().clone().store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(1)),
@@ -4082,21 +4080,21 @@ mod wide_range_reader_tests {
     #[test]
     fn wide_separations_compare_structurally_without_signed_snapshot_transport() {
         let base = Pointer::symbolic(Variable(984_800));
-        let wide = CMemoryRange::new_wide(
+        let wide = MemoryRange::new_wide(
             base.clone(),
             MachineTerm::uint64_constant(0),
             MachineTerm::uint64_constant(1 << 33),
             4,
         );
-        let other = CMemoryRange::new_wide(
+        let other = MemoryRange::new_wide(
             base,
             MachineTerm::uint64_constant(0),
             MachineTerm::uint64_constant(2 << 33),
             4,
         );
         let separation = |range| Proposition::CResourceSeparate {
-            left: Box::new(CResource::Memory(range)),
-            right: Box::new(CResource::Memory(wide.clone())),
+            left: Box::new(Resource::Memory(range)),
+            right: Box::new(Resource::Memory(wide.clone())),
         };
         let facts = PureFactContext::new();
         assert!(separations_equal_modulo_proven_snapshots(
@@ -4120,17 +4118,17 @@ mod range_width_snapshot_tests {
     fn separation_snapshot_transport_keeps_element_widths() {
         let base = Pointer::symbolic(Variable(985_800));
         let range = |width| {
-            CMemoryRange::new_with_element_width(base.clone(), 0u32.into(), 1u32.into(), width)
+            MemoryRange::new_with_element_width(base.clone(), 0u32.into(), 1u32.into(), width)
         };
-        let right = CMemoryRange::new_with_element_width(
+        let right = MemoryRange::new_with_element_width(
             base.offset_by_bytes(2),
             0u32.into(),
             1u32.into(),
             1,
         );
         let separation = |width| Proposition::CResourceSeparate {
-            left: Box::new(CResource::Memory(range(width))),
-            right: Box::new(CResource::Memory(right.clone())),
+            left: Box::new(Resource::Memory(range(width))),
+            right: Box::new(Resource::Memory(right.clone())),
         };
         assert!(!separations_equal_modulo_proven_snapshots(
             &separation(1),
@@ -4246,7 +4244,7 @@ mod annotated_address_condition_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let before = intern_c_memory(
-            CMemory::new()
+            Memory::new()
                 .with_block("annotated-address-index", 4)
                 .store(cell.clone(), ProgramValue::Int32(MachineTerm::constant(0))),
         );

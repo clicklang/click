@@ -490,7 +490,7 @@ impl<'a> Proof<'a> {
             && !matches!(
                 implication_body(condition_theorem.proposition()),
                 Proposition::CConditionEvaluates {
-                    outcome: CConditionOutcome::Value(actual),
+                    outcome: ConditionOutcome::Value(actual),
                     ..
                 } if *actual == expected
             )
@@ -3780,12 +3780,12 @@ impl<'a> Proof<'a> {
         let normal_index = prepared
             .transitions
             .iter()
-            .position(|transition| matches!(transition.outcome, CStatementOutcome::Normal(_)))
+            .position(|transition| matches!(transition.outcome, StatementOutcome::Normal(_)))
             .expect("prepared call split has a normal transition");
         let throw_index = prepared
             .transitions
             .iter()
-            .position(|transition| matches!(transition.outcome, CStatementOutcome::Throw { .. }))
+            .position(|transition| matches!(transition.outcome, StatementOutcome::Throw { .. }))
             .expect("prepared call split has a throw transition");
         let normal = &prepared.transitions[normal_index];
         let thrown = &prepared.transitions[throw_index];
@@ -3995,7 +3995,7 @@ mod progress_tests {
         let arguments = [ProgramExpression::Value(ProgramValue::Int32(
             MachineTerm::Variable(Variable(71_000)),
         ))];
-        let functions = CExecutionEnvironment::new();
+        let functions = ExecutionEnvironment::new();
         let resources = ResourceEnvironment::new(&[]);
         let predicates = PredicateEnvironment::new(&[]);
         let click_functions = ClickFunctionEnvironment::new(&[]);
@@ -4044,7 +4044,7 @@ mod progress_tests {
             true,
         );
         let read = Proposition::CMemoryReadDefined {
-            memory: CMemory::new(),
+            memory: Memory::new(),
             pointer: Pointer::symbolic(Variable(71_001)),
             value_type: ProgramType::Int32,
         };
@@ -4134,7 +4134,7 @@ mod progress_tests {
         let arguments = vec![ProgramExpression::Value(ProgramValue::Int32(
             MachineTerm::Variable(Variable(71_000)),
         ))];
-        let function_environment = CExecutionEnvironment::new();
+        let function_environment = ExecutionEnvironment::new();
         let condition = ClickProposition::Comparison {
             left: ContractExpression::CFragment(ProgramExpression::Variable("x".to_string())),
             operator: ComparisonOperator::GreaterEqual,

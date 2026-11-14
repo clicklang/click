@@ -129,7 +129,7 @@ fn conditional_evaluation_keeps_guarded_domains_and_ignores_ambient_truth() {
     let x = || SpecExpression::ProgramExpression(ProgramExpression::Variable("x".into()));
     let condition = SpecProposition::Comparison {
         left: x(),
-        operator: CComparisonOperator::GreaterThan,
+        operator: ComparisonOperator::GreaterThan,
         right: SpecExpression::Value(int32(0)),
     };
     let expression = SpecExpression::If {

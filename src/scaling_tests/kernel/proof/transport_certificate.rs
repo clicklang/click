@@ -97,11 +97,11 @@ fn transport_certificate_scalar_names_do_not_walk_prior_memory_history() {
             let Proposition::CResourceSeparate { right, .. } = proposition else {
                 unreachable!()
             };
-            let CResource::Memory(range) = right.as_ref() else {
+            let Resource::Memory(range) = right.as_ref() else {
                 unreachable!()
             };
             let (address, _) = range.byte_footprint();
-            **right = CResource::Memory(CMemoryRange::new_with_element_width(
+            **right = Resource::Memory(MemoryRange::new_with_element_width(
                 address.clone(),
                 0u32.into(),
                 1u32.into(),
@@ -178,7 +178,7 @@ fn transport_certificate_uses_selected_observations_without_scanning_the_registr
         let _session = crate::kernel::VerificationSession::enter();
         let _reads = typed_reads::ReadScope::enter();
         let (certificate, goal) = tests::fixture(2, false);
-        let memory = CMemory::new();
+        let memory = Memory::new();
         for index in 0..unrelated {
             tests::observe(
                 &memory,
@@ -231,7 +231,7 @@ fn region_footprint_preservation_does_not_walk_prior_memory_history() {
             unreachable!()
         };
         let separation = Proposition::CResourceSeparate {
-            left: Box::new(CResource::Footprint(footprint)),
+            left: Box::new(Resource::Footprint(footprint)),
             right: right.clone(),
         };
         let certificate = TransportCertificate {
@@ -269,16 +269,16 @@ fn simple_footprint_separation_does_not_walk_a_region_sequence() {
             &crate::kernel::ExecutionFacts::new(),
         );
         let members = (0..length)
-            .map(|_| CResource::Footprint(leaf.clone()))
+            .map(|_| Resource::Footprint(leaf.clone()))
             .collect();
-        let region = CResource::Footprint(crate::kernel::RegionFootprint::sequence(
+        let region = Resource::Footprint(crate::kernel::RegionFootprint::sequence(
             "function.footprint".into(),
             &state,
             &state,
             members,
             true,
         ));
-        let kept = CResource::Memory(CMemoryRange::new_with_element_width(
+        let kept = Resource::Memory(MemoryRange::new_with_element_width(
             Pointer::symbolic(Variable(8_390_100)),
             0u32.into(),
             1u32.into(),
@@ -302,7 +302,7 @@ fn selected_footprint_separations_are_linear_with_one_shared_address_bucket() {
         let _session = crate::kernel::VerificationSession::enter();
         let state = ExecutionState::new();
         let range = |index: u64| {
-            CMemoryRange::new_with_element_width(
+            MemoryRange::new_with_element_width(
                 Pointer {
                     block: PointerBlock::ExternalArgument,
                     offset: PointerOffsetTerm::Variable(Variable(8_391_000 + index)),
@@ -312,11 +312,11 @@ fn selected_footprint_separations_are_linear_with_one_shared_address_bucket() {
                 1,
             )
         };
-        let kept = CResource::Memory(range(1000));
+        let kept = Resource::Memory(range(1000));
         let ranges = (0..count).map(range).collect::<Vec<_>>();
         let facts = ranges.iter().fold(PureFactContext::new(), |facts, range| {
             facts.assume_proposition(Proposition::CResourceSeparate {
-                left: Box::new(CResource::Memory(range.clone())),
+                left: Box::new(Resource::Memory(range.clone())),
                 right: Box::new(kept.clone()),
             })
         });
@@ -327,7 +327,7 @@ fn selected_footprint_separations_are_linear_with_one_shared_address_bucket() {
                 mutable_ranges: ranges,
             },
         )];
-        let footprint = CResource::Footprint(crate::kernel::RegionFootprint::transition(
+        let footprint = Resource::Footprint(crate::kernel::RegionFootprint::transition(
             "region(0).footprint".into(),
             &state,
             &state,
@@ -351,13 +351,13 @@ fn two_footprints_do_not_expand_into_a_cartesian_product() {
         let _session = crate::kernel::VerificationSession::enter();
         let state = ExecutionState::new();
         let resources = (0..count).fold(state.resources().clone(), |resources, index| {
-            resources.unchecked_with_fact(CResourceFact::own_token(
+            resources.unchecked_with_fact(ResourceFact::own_token(
                 format!("changed_{index}"),
                 Vec::new(),
             ))
         });
         let after = state.clone().with_resource_context(resources);
-        let tokens = CResource::Footprint(crate::kernel::RegionFootprint::transition(
+        let tokens = Resource::Footprint(crate::kernel::RegionFootprint::transition(
             "region(0).footprint".into(),
             &state,
             &after,
@@ -369,7 +369,7 @@ fn two_footprints_do_not_expand_into_a_cartesian_product() {
                 after: state.memory().clone(),
                 mutable_ranges: (0..count)
                     .map(|index| {
-                        CMemoryRange::new_with_element_width(
+                        MemoryRange::new_with_element_width(
                             Pointer::symbolic(Variable(8_392_000 + index)),
                             0u32.into(),
                             4u32.into(),
@@ -379,7 +379,7 @@ fn two_footprints_do_not_expand_into_a_cartesian_product() {
                     .collect(),
             },
         )];
-        let memory = CResource::Footprint(crate::kernel::RegionFootprint::transition(
+        let memory = Resource::Footprint(crate::kernel::RegionFootprint::transition(
             "region(1).footprint".into(),
             &state,
             &state,

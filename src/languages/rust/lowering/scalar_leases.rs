@@ -39,7 +39,7 @@ pub(super) fn endings(prepared: &Prepared, point: MirPoint) -> ProgramStatement 
         .fold(c_skip(), |prefix, key| {
             c_seq(
                 prefix,
-                ProgramStatement::EndScalarReference(crate::kernel::CScalarReferenceEnd::new(
+                ProgramStatement::EndScalarReference(crate::kernel::ScalarReferenceEnd::new(
                     key.clone(),
                 )),
             )
@@ -233,11 +233,11 @@ mod tests {
                         pending.push(else_branch);
                     }
                     ProgramStatement::Assign { source, .. } => {
-                        births += usize::from(*source != CStatementAssignSource::default())
+                        births += usize::from(*source != StatementAssignSource::default())
                     }
                     ProgramStatement::EndScalarReference(_) => endings += 1,
                     ProgramStatement::TypedStore { source, .. } => {
-                        assert_eq!(*source, CStatementStoreSource::default())
+                        assert_eq!(*source, StatementStoreSource::default())
                     }
                     _ => {}
                 }

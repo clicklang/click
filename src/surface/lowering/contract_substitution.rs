@@ -3393,9 +3393,9 @@ pub(in crate::surface) fn pure_function_result_value(
             target_type,
             ProgramType::Int8 | ProgramType::UInt8 | ProgramType::Int16 | ProgramType::UInt16
         ) {
-            crate::kernel::CIntegerCastMode::ResultConversion
+            crate::kernel::IntegerCastMode::ResultConversion
         } else {
-            crate::kernel::CIntegerCastMode::CConversion
+            crate::kernel::IntegerCastMode::CConversion
         },
         pointee_struct: None,
         pointee_volatile: false,
@@ -3465,15 +3465,15 @@ pub(in crate::surface) fn pure_function_parameter_argument(
 /// the caller's designation and selected extent.
 pub(in crate::surface) fn pure_function_parameter_conversion(
     parameter: &FunctionParameter,
-) -> Option<(ProgramType, crate::kernel::CIntegerCastMode)> {
+) -> Option<(ProgramType, crate::kernel::IntegerCastMode)> {
     if parameter.click_type().c_type()?.to_kernel_type() == ProgramType::VoidPointer {
         Some((
             ProgramType::VoidPointer,
-            crate::kernel::CIntegerCastMode::PointerCoercion,
+            crate::kernel::IntegerCastMode::PointerCoercion,
         ))
     } else {
         pure_function_parameter_scalar_type(parameter)
-            .map(|target| (target, crate::kernel::CIntegerCastMode::CConversion))
+            .map(|target| (target, crate::kernel::IntegerCastMode::CConversion))
     }
 }
 
@@ -3490,7 +3490,7 @@ pub(in crate::surface) fn character_byte_view(name: &str) -> ContractExpression 
         lowered: ProgramExpression::Cast {
             expression: Box::new(ProgramExpression::Variable(name.to_string())),
             target_type: crate::kernel::ProgramType::UInt8Pointer,
-            integer_mode: crate::kernel::CIntegerCastMode::PointerCoercion,
+            integer_mode: crate::kernel::IntegerCastMode::PointerCoercion,
             pointee_struct: None,
             pointee_volatile: false,
             pointee_constant: false,
@@ -4713,15 +4713,15 @@ pub(in crate::surface) fn resource_body_c_fragment(
 
 pub(in crate::surface) fn c_comparison_operator(
     operator: ComparisonOperator,
-) -> CComparisonOperator {
+) -> KernelComparisonOperator {
     match operator {
-        ComparisonOperator::Equal => CComparisonOperator::Equal,
-        ComparisonOperator::NotEqual => CComparisonOperator::NotEqual,
+        ComparisonOperator::Equal => KernelComparisonOperator::Equal,
+        ComparisonOperator::NotEqual => KernelComparisonOperator::NotEqual,
         ComparisonOperator::In => unreachable!("membership is lowered before C comparisons"),
-        ComparisonOperator::LessThan => CComparisonOperator::LessThan,
-        ComparisonOperator::LessEqual => CComparisonOperator::LessEqual,
-        ComparisonOperator::GreaterThan => CComparisonOperator::GreaterThan,
-        ComparisonOperator::GreaterEqual => CComparisonOperator::GreaterEqual,
+        ComparisonOperator::LessThan => KernelComparisonOperator::LessThan,
+        ComparisonOperator::LessEqual => KernelComparisonOperator::LessEqual,
+        ComparisonOperator::GreaterThan => KernelComparisonOperator::GreaterThan,
+        ComparisonOperator::GreaterEqual => KernelComparisonOperator::GreaterEqual,
     }
 }
 

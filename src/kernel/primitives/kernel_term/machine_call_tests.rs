@@ -128,9 +128,9 @@ fn machine_call_roots_preserve_opaque_producer_payloads() {
 fn machine_call_argument_order_and_read_snapshots_remain_distinct() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = Pointer::symbolic(Variable(995802));
-    let before = crate::kernel::intern_c_memory(CMemory::new());
+    let before = crate::kernel::intern_c_memory(Memory::new());
     let after = crate::kernel::intern_c_memory(
-        CMemory::new().store(pointer.clone(), ProgramValue::Int32(7u32.into())),
+        Memory::new().store(pointer.clone(), ProgramValue::Int32(7u32.into())),
     );
     let calls = [before, after].map(|memory| {
         SharedPureApplication::intern(

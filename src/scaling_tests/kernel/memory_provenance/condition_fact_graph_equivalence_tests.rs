@@ -38,7 +38,7 @@ fn failed_check_cell_capture_is_bounded_and_ignores_unrelated_facts() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let memory =
-        crate::kernel::intern_c_memory(CMemory::new().with_block(base.block.clone(), 128).store(
+        crate::kernel::intern_c_memory(Memory::new().with_block(base.block.clone(), 128).store(
             Pointer::symbolic(Variable(982_000)),
             ProgramValue::Int32(MachineTerm::constant(9)),
         ));

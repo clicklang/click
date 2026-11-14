@@ -23,12 +23,12 @@ const MEMORY_ORDER_RELEASE: i64 = 3;
 /// The flag is an `int`.
 const FLAG_BYTES: u32 = 4;
 
-fn path(outcome: CStatementOutcome) -> CStatementExecutionPath {
-    CStatementExecutionPath::new(outcome, Vec::new().into(), Vec::new())
+fn path(outcome: StatementOutcome) -> StatementExecutionPath {
+    StatementExecutionPath::new(outcome, Vec::new().into(), Vec::new())
 }
 
-fn refusal(message: impl Into<String>) -> CStatementOutcome {
-    CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(message.into()))
+fn refusal(message: impl Into<String>) -> StatementOutcome {
+    StatementOutcome::RuntimeError(RuntimeError::FunctionContract(message.into()))
 }
 
 fn order_name(order: i64) -> &'static str {
@@ -49,7 +49,7 @@ fn required_order(
     required: i64,
     operation: &str,
     assumptions: &PureFactContext,
-) -> Result<(), CStatementOutcome> {
+) -> Result<(), StatementOutcome> {
     let ProgramValue::Int32(term) = value else {
         return Err(refusal(format!(
             "{operation} requires a constant memory order"
@@ -80,9 +80,9 @@ pub(super) fn execute_publication_paths(
     function_name: &str,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
+    environment: &ExecutionEnvironment,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
     let arity = if function_name == ATOMIC_STORE_NAME {
         3
     } else {
@@ -126,12 +126,12 @@ pub(super) fn execute_publication_paths(
         Some(environment),
     )? {
         if let Some(outcome) = argument_path.outcome {
-            paths.push(CStatementExecutionPath {
+            paths.push(StatementExecutionPath {
                 outcome: match outcome {
-                    CFunctionOutcome::UndefinedBehavior(error) => {
-                        CStatementOutcome::UndefinedBehavior(error)
+                    FunctionOutcome::UndefinedBehavior(error) => {
+                        StatementOutcome::UndefinedBehavior(error)
                     }
-                    CFunctionOutcome::RuntimeError(error) => CStatementOutcome::RuntimeError(error),
+                    FunctionOutcome::RuntimeError(error) => StatementOutcome::RuntimeError(error),
                     _ => refusal(format!("{function_name} argument did not evaluate")),
                 },
                 facts: argument_path.facts,
@@ -199,17 +199,17 @@ pub(super) fn execute_publication_paths(
                             &mut obligations,
                             &current,
                         ),
-                        (Some(_), None) => Err(CRuntimeError::TypeMismatch),
+                        (Some(_), None) => Err(RuntimeError::TypeMismatch),
                         (None, _) => Ok(()),
                     };
                     match assigned {
-                        Ok(()) => CStatementOutcome::Normal(Box::new(next)),
-                        Err(error) => CStatementOutcome::RuntimeError(error),
+                        Ok(()) => StatementOutcome::Normal(Box::new(next)),
+                        Err(error) => StatementOutcome::RuntimeError(error),
                     }
                 }
             };
             paths.push(
-                CStatementExecutionPath::new(outcome, facts, obligations)
+                StatementExecutionPath::new(outcome, facts, obligations)
                     .with_call_result(call_result),
             );
         }
@@ -225,7 +225,7 @@ fn initialize(
     value: &ProgramValue,
     payload: &crate::kernel::ResourceDescription,
     assumptions: &PureFactContext,
-) -> Result<ExecutionState, CStatementOutcome> {
+) -> Result<ExecutionState, StatementOutcome> {
     if !matches!(value, ProgramValue::Int32(term) if super::assumptions::exact_signed_constant(term, assumptions) == Some(0))
     {
         return Err(refusal(
@@ -242,8 +242,8 @@ fn initialize(
         u64::from(FLAG_BYTES),
     )) != Some(true)
     {
-        return Err(CStatementOutcome::RuntimeError(
-            CRuntimeError::MissingMutexStorageAlignment {
+        return Err(StatementOutcome::RuntimeError(
+            RuntimeError::MissingMutexStorageAlignment {
                 mutex: flag.clone(),
                 alignment: FLAG_BYTES,
             },
@@ -254,9 +254,9 @@ fn initialize(
         .clone()
         .without_owned_storage_access(flag, FLAG_BYTES, assumptions)
         .ok_or_else(|| {
-            CStatementOutcome::RuntimeError(CRuntimeError::MissingResource {
-                resource: Box::new(CResourceFact::own_memory(
-                    CMemoryRange::new_with_element_width(
+            StatementOutcome::RuntimeError(RuntimeError::MissingResource {
+                resource: Box::new(ResourceFact::own_memory(
+                    MemoryRange::new_with_element_width(
                         flag.clone(),
                         0u32.into(),
                         FLAG_BYTES.into(),
@@ -266,7 +266,7 @@ fn initialize(
             })
         })?;
     let rights = [PublicationSide::Publisher, PublicationSide::Subscriber].map(|side| {
-        CResourceFact::own(CResource::Publication(PublicationRight::new(
+        ResourceFact::own(Resource::Publication(PublicationRight::new(
             side,
             flag.clone(),
             payload.clone(),
@@ -281,8 +281,8 @@ fn initialize(
 }
 
 /// The owned folded payload a right publishes.
-fn payload_fact(right: &PublicationRight) -> CResourceFact {
-    CResourceFact::own(CResource::Composite {
+fn payload_fact(right: &PublicationRight) -> ResourceFact {
+    ResourceFact::own(Resource::Composite {
         name: right.payload().family().to_string(),
         arguments: right.payload().arguments().iter().cloned().collect(),
     })
@@ -296,9 +296,9 @@ fn release_store(
     desired: &ProgramValue,
     order: &ProgramValue,
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
+    environment: &ExecutionEnvironment,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<ExecutionState, CStatementOutcome>> {
+) -> ExecutionResult<Result<ExecutionState, StatementOutcome>> {
     if let Err(outcome) =
         required_order(order, MEMORY_ORDER_RELEASE, ATOMIC_STORE_NAME, assumptions)
     {
@@ -327,7 +327,7 @@ fn release_store(
             "a release store to a publication flag requires owns publisher(flag, P)",
         )));
     };
-    let CResource::Publication(right) = right_fact.resource() else {
+    let Resource::Publication(right) = right_fact.resource() else {
         unreachable!()
     };
     let payload = payload_fact(right);
@@ -343,8 +343,8 @@ fn release_store(
         .without_fact_delaying_normalization(&right_fact, assumptions)
         .and_then(|resources| resources.without_fact_delaying_normalization(&payload, assumptions))
     else {
-        return Ok(Err(CStatementOutcome::RuntimeError(
-            CRuntimeError::MissingResource {
+        return Ok(Err(StatementOutcome::RuntimeError(
+            RuntimeError::MissingResource {
                 resource: Box::new(payload),
             },
         )));
@@ -359,7 +359,7 @@ fn release_store(
     if !ranges.is_empty() {
         let kept = ranges
             .iter()
-            .any(CMemoryRange::is_unnamed_footprint)
+            .any(MemoryRange::is_unnamed_footprint)
             .then(|| {
                 super::functions::call_kept_ownership(
                     &next.resources,
@@ -389,7 +389,7 @@ fn acquire_load(
     order: &ProgramValue,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<(ExecutionState, ProgramValue), CStatementOutcome>> {
+) -> ExecutionResult<Result<(ExecutionState, ProgramValue), StatementOutcome>> {
     if let Err(outcome) = required_order(order, MEMORY_ORDER_ACQUIRE, ATOMIC_LOAD_NAME, assumptions)
     {
         return Ok(Err(outcome));
@@ -405,7 +405,7 @@ fn acquire_load(
     else {
         return Ok(Ok((state.clone(), value)));
     };
-    let CResource::Publication(right) = right_fact.resource() else {
+    let Resource::Publication(right) = right_fact.resource() else {
         unreachable!()
     };
     if right.observed.is_some() {
@@ -423,7 +423,7 @@ fn acquire_load(
     let mut observed = right.clone();
     observed.observed = Some(value.clone());
     let Ok(resources) = resources.try_compose_with_facts_delaying_normalization(
-        [CResourceFact::own(CResource::Publication(observed))],
+        [ResourceFact::own(Resource::Publication(observed))],
         assumptions,
     ) else {
         return Ok(Err(refusal(
@@ -449,7 +449,7 @@ pub(crate) fn resolve_observed_publications(
     }
     let mut next = state.clone();
     for fact in observed {
-        let CResource::Publication(right) = fact.resource() else {
+        let Resource::Publication(right) = fact.resource() else {
             continue;
         };
         let Some(ProgramValue::Int32(term)) = &right.observed else {
@@ -467,7 +467,7 @@ pub(crate) fn resolve_observed_publications(
         let replacement = if unpublished {
             let mut kept = right.clone();
             kept.observed = None;
-            CResourceFact::own(CResource::Publication(kept))
+            ResourceFact::own(Resource::Publication(kept))
         } else {
             payload_fact(right)
         };
@@ -507,8 +507,8 @@ mod tests {
         )
     }
 
-    fn right(side: PublicationSide, index: usize) -> CResourceFact {
-        CResourceFact::own(CResource::Publication(PublicationRight::new(
+    fn right(side: PublicationSide, index: usize) -> ResourceFact {
+        ResourceFact::own(Resource::Publication(PublicationRight::new(
             side,
             flag(index),
             payload(index),
@@ -518,7 +518,7 @@ mod tests {
     /// Subscriber rights for flags `0..subscribers`, beside `unrelated`
     /// other flags' publisher rights and as many owned cells.
     fn state(subscribers: usize, unrelated: usize) -> ExecutionState {
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         let mut resources = ResourceContext::new();
         for index in 0..subscribers {
             resources = resources.unchecked_with_fact(right(PublicationSide::Subscriber, index));
@@ -533,7 +533,7 @@ mod tests {
                 .store(cell.clone(), int32(0));
             resources = resources
                 .unchecked_with_fact(right(PublicationSide::Publisher, index))
-                .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+                .unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
                     cell,
                     0.into(),
                     1.into(),

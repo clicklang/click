@@ -12,16 +12,16 @@ fn entry_state() -> ExecutionState {
         vec![c_parameter_with_aggregate_layout(
             "input",
             ProgramType::VoidPointer,
-            CAggregateLayout::new(
+            AggregateLayout::new(
                 8,
                 8,
-                vec![CAggregateField::new("data", 0, ProgramType::Int32Pointer)],
+                vec![AggregateField::new("data", 0, ProgramType::Int32Pointer)],
             ),
         )],
         c_return(c_void_value()),
     );
     c_function_entry_state(
-        &ExecutionState::new().with_memory(CMemory::new().with_block(source.block.clone(), 8)),
+        &ExecutionState::new().with_memory(Memory::new().with_block(source.block.clone(), 8)),
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(source))],
     )

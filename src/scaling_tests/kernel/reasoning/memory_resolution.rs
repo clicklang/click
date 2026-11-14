@@ -51,7 +51,7 @@ fn stored_load_alias_lookup_ignores_unrelated_cells() {
     );
     let mut samples = Vec::new();
     for count in [8, 32, 128, 512] {
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         for index in 0..count {
             memory = memory.store(
                 Pointer {
@@ -222,7 +222,7 @@ fn unresolved_load_projection_ignores_earlier_objects_and_hidden_slots() {
         };
         let object = |index: usize| Pointer::symbolic(Variable(98_700 + index as u64));
         let value = |index: usize| ProgramValue::Int32((index as u32).into());
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         let mut last = 0;
         for index in 0..=size {
             memory = memory
@@ -316,7 +316,7 @@ fn run_access_retains_cold_shared_index_dags() {
                 4,
                 ProgramType::Int32,
                 16,
-                crate::kernel::intern_c_memory(CMemory::new()),
+                crate::kernel::intern_c_memory(Memory::new()),
                 Default::default(),
             );
             let offset = if ty == MachineIntegerType::Int32 {

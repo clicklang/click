@@ -7,7 +7,7 @@ fn external(id: u64) -> Pointer {
         offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(id)), 4),
     }
 }
-fn copy(memory: CMemory, target: &Pointer, source: &Pointer, count: u32) -> CMemory {
+fn copy(memory: Memory, target: &Pointer, source: &Pointer, count: u32) -> Memory {
     memory
         .write_scalar_array_region(
             target,
@@ -20,9 +20,9 @@ fn copy(memory: CMemory, target: &Pointer, source: &Pointer, count: u32) -> CMem
         )
         .unwrap()
 }
-fn typed_load(memory: &CMemory, pointer: &Pointer) -> ProgramValue {
+fn typed_load(memory: &Memory, pointer: &Pointer) -> ProgramValue {
     match memory.load(pointer) {
-        CExpressionOutcome::Value(value) => value,
+        ExpressionOutcome::Value(value) => value,
         _ => ProgramValue::UInt32(crate::kernel::eval::canonical_form_of_load(
             crate::kernel::intern_c_memory(memory.clone()),
             pointer.clone(),
@@ -44,7 +44,7 @@ fn external_array_sparse_copies_forward_snapshots_and_preserve_neighbors() {
             block: "local:sparse-destination".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let before = CMemory::new()
+        let before = Memory::new()
             .with_block(target.block.clone(), count * 4)
             .with_block(destination.block.clone(), count * 4)
             .store(source.clone(), ProgramValue::UInt32(11u32.into()))
@@ -78,7 +78,7 @@ fn external_array_sparse_copies_forward_snapshots_and_preserve_neighbors() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = (0..5).fold(CMemory::new(), |memory, index| {
+    let memory = (0..5).fold(Memory::new(), |memory, index| {
         memory.store(
             source.offset_by_bytes(index * 4),
             ProgramValue::UInt32((index + 1).into()),
@@ -98,7 +98,7 @@ fn external_array_read_is_not_a_reserved_variable_occurrence() {
     let _session = crate::kernel::VerificationSession::enter();
     let source = external(932_000);
     let target = external(932_001);
-    let memory = copy(CMemory::new(), &target, &source, 1_000_000);
+    let memory = copy(Memory::new(), &target, &source, 1_000_000);
     let ProgramValue::UInt32(read) = typed_load(&memory, &target.offset_by_bytes(4)) else {
         panic!("copied scalar read");
     };
@@ -130,19 +130,19 @@ fn external_array_snapshots_reject_invalid_storage_and_preserve_empty_semantics(
     let target = external(934_001);
     let context = PureFactContext::new();
     for (source, memory) in [
-        (source.offset_by_bytes(1), CMemory::new()),
+        (source.offset_by_bytes(1), Memory::new()),
         (
             source.clone(),
-            CMemory::new().store(source.clone(), ProgramValue::Int32(1.into())),
+            Memory::new().store(source.clone(), ProgramValue::Int32(1.into())),
         ),
         (
             Pointer {
                 block: "local:uninitialized".into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CMemory::new().with_block("local:uninitialized", 16),
+            Memory::new().with_block("local:uninitialized", 16),
         ),
-        (Pointer::null(), CMemory::new()),
+        (Pointer::null(), Memory::new()),
     ] {
         assert!(
             memory
@@ -158,9 +158,9 @@ fn external_array_snapshots_reject_invalid_storage_and_preserve_empty_semantics(
                 .is_err()
         );
     }
-    assert_eq!(copy(CMemory::new(), &target, &source, 0), CMemory::new());
+    assert_eq!(copy(Memory::new(), &target, &source, 0), Memory::new());
     assert!(
-        CMemory::new()
+        Memory::new()
             .write_scalar_array_region(
                 &target,
                 ProgramType::UInt32,
@@ -192,7 +192,7 @@ fn external_array_copy_representatives_cover_source_and_destination_stem_cancell
             4,
             ProgramType::UInt32,
             8,
-            crate::kernel::intern_c_memory(CMemory::new()),
+            crate::kernel::intern_c_memory(Memory::new()),
             RunValueMode::Copy {
                 source_base: source,
             },
@@ -205,7 +205,7 @@ fn external_array_copy_representatives_cover_source_and_destination_stem_cancell
                 assert!(representatives.contains(&((-shift / 4) as u32)));
             }
         }
-        let memory = CMemory::new();
+        let memory = Memory::new();
         let mut cells = (*memory.cells).clone();
         cells.add_run(run);
         assert_eq!(

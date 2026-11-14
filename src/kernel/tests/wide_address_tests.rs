@@ -3,7 +3,7 @@ use super::*;
 fn normal(state: ExecutionState, statement: ProgramStatement) -> ExecutionState {
     let theorem = prove_c_statement_execution(state, statement).unwrap();
     let Proposition::CStatementExecutes {
-        outcome: CStatementOutcome::Normal(after),
+        outcome: StatementOutcome::Normal(after),
         ..
     } = theorem.proposition()
     else {
@@ -12,7 +12,7 @@ fn normal(state: ExecutionState, statement: ProgramStatement) -> ExecutionState 
     *after.clone()
 }
 
-fn outcome(state: &ExecutionState, expression: ProgramExpression) -> CExpressionOutcome {
+fn outcome(state: &ExecutionState, expression: ProgramExpression) -> ExpressionOutcome {
     let theorem = prove_c_expression_evaluation(state.clone(), expression).unwrap();
     let Proposition::CExpressionEvaluates { outcome, .. } = theorem.proposition() else {
         unreachable!()
@@ -22,7 +22,7 @@ fn outcome(state: &ExecutionState, expression: ProgramExpression) -> CExpression
 
 fn value(state: &ExecutionState, expression: ProgramExpression) -> ProgramValue {
     match outcome(state, expression) {
-        CExpressionOutcome::Value(value) => value,
+        ExpressionOutcome::Value(value) => value,
         other => panic!("expected a value: {other:?}"),
     }
 }
@@ -132,7 +132,7 @@ fn wide_address_arrays_use_sixteen_byte_stride_and_preserve_endpoint_values() {
         );
         assert!(matches!(
             outcome(&state, c_index(c_variable("items"), c_int32_literal(1))),
-            CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead)
+            ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::UninitializedRead)
         ));
         // Forming the one-past pointer is valid; dereferencing it is not.
         let past = value(&state, c_add(c_variable("items"), c_int32_literal(3)));
@@ -151,7 +151,7 @@ fn wide_address_arrays_use_sixteen_byte_stride_and_preserve_endpoint_values() {
         assert!(
             !paths
                 .iter()
-                .any(|path| matches!(path.outcome, CExpressionOutcome::Value(_))
+                .any(|path| matches!(path.outcome, ExpressionOutcome::Value(_))
                     && path.obligations.is_empty())
         );
         assert!(prove_c_expression_evaluation(state, read_past).is_none());
@@ -219,7 +219,7 @@ fn wide_address_pointer_slot_read_needs_eight_bytes_but_pointee_read_needs_sixte
         block: "wide-pointee-external".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = CMemory::new()
+    let memory = Memory::new()
         .with_block(slot.block.clone(), 8)
         .with_block(pointee.block.clone(), 16)
         .store(
@@ -231,17 +231,17 @@ fn wide_address_pointer_slot_read_needs_eight_bytes_but_pointee_read_needs_sixte
             value(&ExecutionState::new(), c_uint128_literal(u128::MAX)),
         );
     for bytes in [8, 16] {
-        let range = |p| CMemoryRange::new_with_element_width(p, 0u32.into(), 1u32.into(), bytes);
+        let range = |p| MemoryRange::new_with_element_width(p, 0u32.into(), 1u32.into(), bytes);
         let state = ExecutionState::new()
             .with_memory(memory.clone())
             .with_resource_context(ResourceContext::new().unchecked_with_facts([
-                CResourceFact::view_memory(CMemoryRange::new_with_element_width(
+                ResourceFact::view_memory(MemoryRange::new_with_element_width(
                     slot.clone(),
                     0u32.into(),
                     1u32.into(),
                     8,
                 )),
-                CResourceFact::view_memory(range(pointee.clone())),
+                ResourceFact::view_memory(range(pointee.clone())),
             ]));
         let pointer = value(
             &state,
@@ -255,11 +255,11 @@ fn wide_address_pointer_slot_read_needs_eight_bytes_but_pointee_read_needs_sixte
             &state,
             c_typed_load(ProgramExpression::Value(pointer), ProgramType::UInt128),
         );
-        assert_eq!(matches!(read, CExpressionOutcome::Value(_)), bytes == 16);
+        assert_eq!(matches!(read, ExpressionOutcome::Value(_)), bytes == 16);
         if bytes == 8 {
             assert!(matches!(
                 read,
-                CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource { .. })
+                ExpressionOutcome::RuntimeError(RuntimeError::MissingResource { .. })
             ));
         }
     }
@@ -274,9 +274,9 @@ fn wide_address_symbolic_pointer_slot_reads_keep_eight_byte_access_identity() {
         };
         for bytes in [7, 8] {
             let state = ExecutionState::new()
-                .with_memory(CMemory::new().with_block(slot.block.clone(), 8))
+                .with_memory(Memory::new().with_block(slot.block.clone(), 8))
                 .with_resource_context(ResourceContext::new().unchecked_with_facts([
-                    CResourceFact::view_memory(CMemoryRange::new_with_element_width(
+                    ResourceFact::view_memory(MemoryRange::new_with_element_width(
                         slot.clone(),
                         0u32.into(),
                         bytes.into(),
@@ -292,10 +292,10 @@ fn wide_address_symbolic_pointer_slot_reads_keep_eight_byte_access_identity() {
             if bytes == 7 {
                 assert!(matches!(
                     first,
-                    CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource { .. })
+                    ExpressionOutcome::RuntimeError(RuntimeError::MissingResource { .. })
                 ));
             } else {
-                let CExpressionOutcome::Value(pointer) = first else {
+                let ExpressionOutcome::Value(pointer) = first else {
                     panic!("pointer read")
                 };
                 assert_eq!(pointer.c_type(), pointer_ty);
@@ -328,16 +328,15 @@ fn wide_address_static_array_startup_and_entry_keep_initializer_authority_separa
             vec![],
             c_return(c_int32_literal(0)),
         )
-        .with_static_arrays(vec![CStaticArray::new(
+        .with_static_arrays(vec![StaticArray::new(
             "items",
             "items",
             ty,
             3,
-            CArrayContents::new(3, zero.clone(), [(2, endpoint.clone())]),
+            ArrayContents::new(3, zero.clone(), [(2, endpoint.clone())]),
         )]);
-        let at = |index: u32| {
-            CMemory::static_pointer("wide_static", "items").offset_by_bytes(index * 16)
-        };
+        let at =
+            |index: u32| Memory::static_pointer("wide_static", "items").offset_by_bytes(index * 16);
         let startup = crate::kernel::initialize_c_program_storage([function.clone()]).unwrap();
         assert_eq!(startup.memory.known_value(&at(0)), Some(zero));
         assert_eq!(startup.memory.known_value(&at(2)), Some(endpoint.clone()));
@@ -364,7 +363,7 @@ fn wide_address_narrow_array_copy_refuses_a_wide_cell_overlapping_its_prefix() {
         block: "local:wide-prefix".into(),
         offset: PointerOffsetTerm::Constant(offset),
     };
-    let mut memory = CMemory::new()
+    let mut memory = Memory::new()
         .with_block("local:wide-prefix", 16)
         .with_block("local:wide-target", 8)
         .with_initialized_object(&at(0), 16)
@@ -409,7 +408,7 @@ fn checked_object_address_accepts_uninitialized_storage_without_reading_it() {
             &state,
             c_typed_load(ProgramExpression::Value(address), ProgramType::Int32)
         ),
-        CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead)
+        ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::UninitializedRead)
     ));
 }
 
@@ -421,14 +420,14 @@ fn checked_object_address_rejects_one_past_while_c_address_cancellation_preserve
     );
     assert!(matches!(
         outcome(&state, element_address(2)),
-        CExpressionOutcome::Value(ProgramValue::Pointer(_))
+        ExpressionOutcome::Value(ProgramValue::Pointer(_))
     ));
     assert!(matches!(
         outcome(
             &state,
             c_checked_object_address(c_index(c_variable("items"), c_int32_literal(2)))
         ),
-        CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory)
+        ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory)
     ));
     assert!(matches!(
         outcome(
@@ -441,7 +440,7 @@ fn checked_object_address_rejects_one_past_while_c_address_cancellation_preserve
                 ProgramType::Int32
             ))
         ),
-        CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory)
+        ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory)
     ));
 }
 
@@ -466,13 +465,13 @@ fn checked_object_address_rejects_storage_after_its_local_lifetime_ends() {
                 ProgramType::Int32
             ))
         ),
-        CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory)
+        ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory)
     ));
 }
 
 #[test]
 fn wide_pointer_subtraction_preserves_unsigned_magnitude_and_bounds() {
-    let state = ExecutionState::new().with_memory(CMemory::new().with_block("offsets", 16));
+    let state = ExecutionState::new().with_memory(Memory::new().with_block("offsets", 16));
     let at = |offset| Pointer {
         block: "offsets".into(),
         offset: PointerOffsetTerm::Constant(offset),
@@ -512,7 +511,7 @@ fn wide_pointer_subtraction_preserves_unsigned_magnitude_and_bounds() {
                     &state,
                     c_subtract(c_cast(c_typed_pointer_value(at(8), ty), ty), offset)
                 ),
-                CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::PointerArithmetic)
+                ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::PointerArithmetic)
             ));
         }
         for offset in [c_uint32_literal(0), c_uint64_literal(0), c_int64_literal(0)] {

@@ -7,8 +7,8 @@
 use super::assumed_protocol::{AssumedMutexGuard, AssumedMutexProtocol};
 use super::*;
 use crate::kernel::{
-    CFunctionContractInterface, CResourceSpec, CResourceTerm, CResourceTransferRole,
-    ResourceFamily, Variable,
+    FunctionContractInterface, ResourceFamily, ResourceSpec, ResourceTerm, ResourceTransferRole,
+    Variable,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -20,23 +20,23 @@ pub(in crate::kernel) enum HelperEffect {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::kernel) struct HelperContract {
     pub(in crate::kernel) effect: HelperEffect,
-    pub(in crate::kernel) access: CResourceSpec,
-    pub(in crate::kernel) guard: CResourceSpec,
-    pub(in crate::kernel) payload: Option<CResourceSpec>,
+    pub(in crate::kernel) access: ResourceSpec,
+    pub(in crate::kernel) guard: ResourceSpec,
+    pub(in crate::kernel) payload: Option<ResourceSpec>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::kernel) struct HelperCall {
     pub(in crate::kernel) contract: HelperContract,
-    pub(in crate::kernel) source: CResourceFact,
-    pub(in crate::kernel) required: CResourceFact,
-    pub(in crate::kernel) guard: Option<CResourceFact>,
+    pub(in crate::kernel) source: ResourceFact,
+    pub(in crate::kernel) required: ResourceFact,
+    pub(in crate::kernel) guard: Option<ResourceFact>,
 }
 
 /// Only direct, unconditional named interfaces are supported here. Preserving
 /// contracts retain their existing path and its more general resource rules.
 pub(in crate::kernel) fn classify(
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
 ) -> Result<Option<HelperContract>, &'static str> {
     let effects = interface
         .resource_requires()
@@ -44,7 +44,7 @@ pub(in crate::kernel) fn classify(
         .chain(interface.resource_ensures())
         .filter(|spec| {
             spec.family() == ResourceFamily::MutexGuard
-                && spec.role() != CResourceTransferRole::Borrow
+                && spec.role() != ResourceTransferRole::Borrow
         })
         .collect::<Vec<_>>();
     if effects.is_empty() {
@@ -56,18 +56,18 @@ pub(in crate::kernel) fn classify(
     }
     let guard = effects[0];
     let effect = match guard.role() {
-        CResourceTransferRole::Produce => HelperEffect::Acquire,
-        CResourceTransferRole::Consume => HelperEffect::Release,
+        ResourceTransferRole::Produce => HelperEffect::Acquire,
+        ResourceTransferRole::Consume => HelperEffect::Release,
         _ => return Err(unsupported),
     };
     if interface
         .resource_requires()
         .iter()
-        .any(|spec| spec.role() == CResourceTransferRole::Produce)
+        .any(|spec| spec.role() == ResourceTransferRole::Produce)
         || interface
             .resource_ensures()
             .iter()
-            .any(|spec| spec.role() == CResourceTransferRole::Consume)
+            .any(|spec| spec.role() == ResourceTransferRole::Consume)
     {
         return Err("mutex helper resource transfer is in the wrong contract section");
     }
@@ -79,7 +79,7 @@ pub(in crate::kernel) fn classify(
     let [access] = uses.as_slice() else {
         return Err(unsupported);
     };
-    if access.role() != CResourceTransferRole::Borrow
+    if access.role() != ResourceTransferRole::Borrow
         || access.mutex_authority_binding().is_none()
         || guard.mutex_authority_binding().is_none()
         || access.is_view()
@@ -93,7 +93,7 @@ pub(in crate::kernel) fn classify(
     {
         return Err(unsupported);
     }
-    let CResourceTerm::MutexUse { protected, .. } = access.term() else {
+    let ResourceTerm::MutexUse { protected, .. } = access.term() else {
         unreachable!()
     };
     let payload = if let Some(protected) = protected {
@@ -151,7 +151,7 @@ pub(in crate::kernel) fn classify(
     }))
 }
 
-fn same_preserved_access(left: &CResourceSpec, right: &CResourceSpec) -> bool {
+fn same_preserved_access(left: &ResourceSpec, right: &ResourceSpec) -> bool {
     left.term() == right.term()
         && left.mutex_authority_binding() == right.mutex_authority_binding()
         && left.role() == right.role()
@@ -170,11 +170,11 @@ pub(super) struct HelperReturnPermission {
 pub(in crate::kernel) fn install_entry(
     mut state: ExecutionState,
     contract: &HelperContract,
-    access: &CResourceFact,
-    guard: Option<&CResourceFact>,
+    access: &ResourceFact,
+    guard: Option<&ResourceFact>,
     payload: Option<crate::kernel::ResourceInstance>,
 ) -> Result<ExecutionState, MutexTransitionError> {
-    let CResource::MutexUse(identity) = access.resource() else {
+    let Resource::MutexUse(identity) = access.resource() else {
         return Err("mutex helper entry requires rooted use authority".into());
     };
     let usage = identity
@@ -298,7 +298,7 @@ pub(in crate::kernel) fn permits_return(state: &ExecutionState) -> bool {
         })
 }
 
-pub(in crate::kernel) fn exported_guard(state: &ExecutionState) -> Option<CResourceFact> {
+pub(in crate::kernel) fn exported_guard(state: &ExecutionState) -> Option<ResourceFact> {
     if !permits_return(state) {
         return None;
     }
@@ -336,12 +336,12 @@ pub(in crate::kernel) fn same_export_permission(
 /// reserves it. A declaration's stronger type is never evidence of that type.
 pub(in crate::kernel) fn check_call_access(
     state: &ExecutionState,
-    source: &CResourceFact,
-    required: &CResourceFact,
+    source: &ResourceFact,
+    required: &ResourceFact,
     effect: HelperEffect,
     assumptions: &PureFactContext,
 ) -> Result<(), MutexTransitionError> {
-    let CResource::MutexUse(required) = required.resource() else {
+    let Resource::MutexUse(required) = required.resource() else {
         return Err("mutex helper requires use authority".into());
     };
     if state
@@ -352,8 +352,8 @@ pub(in crate::kernel) fn check_call_access(
         return Err(MutexTransitionError::MissingUse(required.mutex.clone()));
     }
     let (mutex, initialization, declared_type) = match source.resource() {
-        CResource::MutexLive(live) => (&live.mutex, live.epoch, None),
-        CResource::MutexUse(usage) => {
+        Resource::MutexLive(live) => (&live.mutex, live.epoch, None),
+        Resource::MutexUse(usage) => {
             let holder = state
                 .loan_participant
                 .ok_or("missing mutex use participant")?;
@@ -424,7 +424,7 @@ pub(in crate::kernel) fn check_call_access(
         let current = ledger
             .live_resource(mutex)
             .ok_or(MutexTransitionError::NotInitialized)?;
-        if !matches!(current.resource(), CResource::MutexLive(live) if live.epoch == initialization)
+        if !matches!(current.resource(), Resource::MutexLive(live) if live.epoch == initialization)
         {
             return Err(MutexTransitionError::MissingUse(mutex.clone()));
         }
@@ -448,25 +448,25 @@ pub(in crate::kernel) fn check_call_access(
 /// ownership partition and effect checks are performed by the call engine.
 pub(in crate::kernel) fn apply_call_effect(
     state: &ExecutionState,
-    source: &CResourceFact,
-    required: &CResourceFact,
+    source: &ResourceFact,
+    required: &ResourceFact,
     effect: HelperEffect,
-    guard: Option<&CResourceFact>,
+    guard: Option<&ResourceFact>,
     payload: Option<Variable>,
-    definition: Option<&crate::kernel::CCompositeResourceDefinition>,
-    definitions: &[crate::kernel::CCompositeResourceDefinition],
+    definition: Option<&crate::kernel::CompositeResourceDefinition>,
+    definitions: &[crate::kernel::CompositeResourceDefinition],
     assumptions: &PureFactContext,
     budget: &mut crate::kernel::ExecutionBudget,
 ) -> Result<
     (
         ExecutionState,
         crate::kernel::loans::CheckedLoanCallEvidenceSequence,
-        Vec<crate::kernel::CMemoryRange>,
+        Vec<crate::kernel::MemoryRange>,
     ),
     MutexTransitionError,
 > {
     check_call_access(state, source, required, effect, assumptions)?;
-    let CResource::MutexUse(usage) = required.resource() else {
+    let Resource::MutexUse(usage) = required.resource() else {
         unreachable!()
     };
     let mutex = &usage.mutex;
@@ -481,7 +481,7 @@ pub(in crate::kernel) fn apply_call_effect(
         {
             return Err(MutexTransitionError::MissingGuard(mutex.clone()));
         }
-        if let CResource::MutexUse(selected) = source.resource()
+        if let Resource::MutexUse(selected) = source.resource()
             && let Some(MutexEntry::Locked {
                 lifetime_hold: Some((_, _, binding)),
                 ..
@@ -527,7 +527,7 @@ pub(in crate::kernel) fn apply_call_effect(
             if !description.matches_instance(old, assumptions) {
                 return Err("releasing helper state has a different protected type".into());
             }
-            let old = CResourceFact::own(CResource::Instance(old.clone()));
+            let old = ResourceFact::own(Resource::Instance(old.clone()));
             next.resources = next
                 .resources
                 .without_fact_delaying_normalization(&old, assumptions)
@@ -543,7 +543,7 @@ pub(in crate::kernel) fn apply_call_effect(
         )?;
         let fresh = fresh.expect("typed protected payload");
         ranges = crate::kernel::functions::checked_owned_memory_ranges(
-            &CResourceFact::own(CResource::Instance(fresh.clone())),
+            &ResourceFact::own(Resource::Instance(fresh.clone())),
             std::slice::from_ref(definition.expect("checked protected definition")),
             &next,
             assumptions,
@@ -561,7 +561,7 @@ pub(in crate::kernel) fn apply_call_effect(
             next.resources = next
                 .resources
                 .try_compose_with_facts_delaying_normalization(
-                    [CResourceFact::own(CResource::Instance(fresh))],
+                    [ResourceFact::own(Resource::Instance(fresh))],
                     assumptions,
                 )
                 .map_err(|error| {
@@ -604,12 +604,12 @@ pub(in crate::kernel) fn apply_call_effect(
                 MutexEntry::Unlocked {
                     initialization: *initialization,
                     interface: interface.clone(),
-                    invariant: Some(CResourceFact::own(CResource::Instance(fresh))),
+                    invariant: Some(ResourceFact::own(Resource::Instance(fresh))),
                 },
             ));
         }
         let context = MutexContext::new(next);
-        let acquired = if let CResource::MutexUse(usage) = source.resource() {
+        let acquired = if let Resource::MutexUse(usage) = source.resource() {
             context
                 .acquire_using(
                     mutex,
@@ -627,7 +627,7 @@ pub(in crate::kernel) fn apply_call_effect(
             next.resources = next
                 .resources
                 .try_compose_with_facts_delaying_normalization(
-                    [CResourceFact::own(CResource::Instance(fresh.clone()))],
+                    [ResourceFact::own(Resource::Instance(fresh.clone()))],
                     assumptions,
                 )
                 .map_err(|error| {
@@ -655,7 +655,7 @@ pub(in crate::kernel) fn apply_call_effect(
         };
         let context = MutexContext::new(next).release_with_invariant(
             guard,
-            fresh.map(|instance| CResourceFact::own(CResource::Instance(instance))),
+            fresh.map(|instance| ResourceFact::own(Resource::Instance(instance))),
             assumptions,
         )?;
         let (next, evidence) = context.into_runtime_transition();
@@ -667,37 +667,37 @@ pub(in crate::kernel) fn apply_call_effect(
 mod tests {
     use super::*;
     use crate::kernel::{
-        CFunctionOutcome, CResourceAccessMode, CResourceQuantity, CResourceSnapshot,
-        ExecutionBudget, ProgramExpression, ProgramFunction, ProgramType, ProgramValue,
-        ResourceContext, c_function, c_skip,
+        ExecutionBudget, FunctionOutcome, ProgramExpression, ProgramFunction, ProgramType,
+        ProgramValue, ResourceAccessMode, ResourceContext, ResourceQuantity, ResourceSnapshot,
+        c_function, c_skip,
     };
 
     fn mutex() -> Pointer {
         Pointer::symbolic(Variable(851))
     }
 
-    fn spec(guard: bool, role: CResourceTransferRole) -> CResourceSpec {
-        let snapshot = if role == CResourceTransferRole::Produce {
-            CResourceSnapshot::Post
+    fn spec(guard: bool, role: ResourceTransferRole) -> ResourceSpec {
+        let snapshot = if role == ResourceTransferRole::Produce {
+            ResourceSnapshot::Post
         } else {
-            CResourceSnapshot::Entry
+            ResourceSnapshot::Entry
         };
         let address = ProgramExpression::Value(ProgramValue::pointer(mutex()));
-        CResourceSpec::new(
+        ResourceSpec::new(
             if guard {
-                CResourceTerm::MutexGuard {
+                ResourceTerm::MutexGuard {
                     mutex: Box::new(address),
                     snapshot,
                 }
             } else {
-                CResourceTerm::MutexUse {
+                ResourceTerm::MutexUse {
                     mutex: Box::new(address),
                     snapshot,
                     protected: None,
                 }
             },
-            CResourceAccessMode::Own,
-            CResourceQuantity::One,
+            ResourceAccessMode::Own,
+            ResourceQuantity::One,
             role,
             snapshot,
         )
@@ -710,13 +710,13 @@ mod tests {
     }
 
     fn function(name: &str, effect: HelperEffect) -> ProgramFunction {
-        let access = spec(false, CResourceTransferRole::Borrow);
+        let access = spec(false, ResourceTransferRole::Borrow);
         let guard = spec(
             true,
             if effect == HelperEffect::Acquire {
-                CResourceTransferRole::Produce
+                ResourceTransferRole::Produce
             } else {
-                CResourceTransferRole::Consume
+                ResourceTransferRole::Consume
             },
         );
         let (requires, ensures) = match effect {
@@ -729,8 +729,8 @@ mod tests {
 
     fn input(function: &ProgramFunction, release: bool) -> ExecutionState {
         let mut state = ExecutionState::new();
-        state.resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own(
-            CResource::MutexUse(crate::kernel::MutexUseIdentity {
+        state.resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own(
+            Resource::MutexUse(crate::kernel::MutexUseIdentity {
                 protected: None,
                 binding: None,
                 initialization: None,
@@ -741,7 +741,7 @@ mod tests {
             state.resources =
                 state
                     .resources
-                    .unchecked_with_fact(CResourceFact::own(CResource::MutexGuard(
+                    .unchecked_with_fact(ResourceFact::own(Resource::MutexGuard(
                         crate::kernel::MutexIdentity {
                             epoch: None,
                             mutex: mutex(),
@@ -766,7 +766,7 @@ mod tests {
             entry,
             function,
             &[],
-            &CFunctionOutcome::Return {
+            &FunctionOutcome::Return {
                 value: ProgramValue::Void.into(),
                 state: Box::new(returned.clone()),
             },
@@ -876,7 +876,7 @@ mod tests {
             .unwrap()
             .acquire_current(&mutex(), &assumptions)
             .unwrap();
-        let guard = spec(true, CResourceTransferRole::Borrow);
+        let guard = spec(true, ResourceTransferRole::Borrow);
         let function = c_function(ProgramType::Void, "preserve_exact_guard", vec![], c_skip())
             .with_resource_summary(vec![guard.clone()], vec![guard]);
         assert!(certifies(input.state(), &function, input.state()));
@@ -885,8 +885,8 @@ mod tests {
 
     #[test]
     fn helper_effect_roles_cannot_be_moved_to_the_opposite_section() {
-        let access = spec(false, CResourceTransferRole::Borrow);
-        let guard = spec(true, CResourceTransferRole::Consume);
+        let access = spec(false, ResourceTransferRole::Borrow);
+        let guard = spec(true, ResourceTransferRole::Consume);
         let wrong = c_function(ProgramType::Void, "wrong_guard_section", vec![], c_skip())
             .with_resource_summary(vec![access.clone()], vec![access, guard]);
         assert!(classify(wrong.contract_interface()).is_err());

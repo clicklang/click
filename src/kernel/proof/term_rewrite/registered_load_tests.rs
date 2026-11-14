@@ -6,14 +6,14 @@
 use super::*;
 use crate::kernel::binary_node;
 use crate::kernel::{
-    CMemory, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType, Pointer, PointerBlock,
+    IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType, Memory, Pointer, PointerBlock,
     PointerOffsetTerm, SharedIntegerRangeEndpoint, SharedIntegerTerm, SharedMachineIntegerTerm,
     SharedMemory, Term, Variable,
 };
 use std::collections::BTreeMap;
 
 fn memory() -> SharedMemory {
-    crate::kernel::intern_c_memory(CMemory::new().with_block("registered-load-capture", 64))
+    crate::kernel::intern_c_memory(Memory::new().with_block("registered-load-capture", 64))
 }
 
 #[test]
@@ -413,17 +413,17 @@ fn resource_comparison_forms_reach_structural_scalar_read_arguments() {
     let _session = crate::kernel::VerificationSession::enter();
     let address = Pointer::symbolic(Variable(3_219_020));
     let memory = crate::kernel::intern_c_memory(
-        CMemory::new().store(address.clone(), ProgramValue::Int32(37u32.into())),
+        Memory::new().store(address.clone(), ProgramValue::Int32(37u32.into())),
     );
     let relation = |term: MachineTerm| {
-        let parent = CResource::Composite {
+        let parent = Resource::Composite {
             name: "storage".into(),
             arguments: vec![AlgebraicValue::Integer(
                 IntegerTerm::from_machine(MachineIntegerType::Int32, term.clone()).unwrap(),
             )]
             .into(),
         };
-        let child = CResource::Composite {
+        let child = Resource::Composite {
             name: "allocation".into(),
             arguments: vec![AlgebraicValue::C(ProgramValue::Int32(term))].into(),
         };
@@ -447,7 +447,7 @@ fn resource_comparison_forms_reach_structural_scalar_read_arguments() {
         Some(expected.clone())
     );
     let other_memory = crate::kernel::intern_c_memory(
-        CMemory::new().store(address.clone(), ProgramValue::Int32(38u32.into())),
+        Memory::new().store(address.clone(), ProgramValue::Int32(38u32.into())),
     );
     assert_ne!(
         crate::kernel::eval::comparison_form(&relation(read(other_memory, address))),

@@ -34,8 +34,8 @@ fn call_frame_retains_a_view_without_scanning_other_views() {
     };
     let target = pointer(900_000);
     crate::kernel::eval::declare_load_access_width(&target, 4);
-    let before = CMemory::new();
-    let load = |memory: &CMemory| {
+    let before = Memory::new();
+    let load = |memory: &Memory| {
         MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory_ref(memory),
             Box::new(target.clone()),
@@ -47,8 +47,8 @@ fn call_frame_retains_a_view_without_scanning_other_views() {
     for count in [4u64, 16, 64, 256] {
         let mut residual = ResourceContext::new();
         for index in 0..count {
-            residual = residual.unchecked_with_fact(CResourceFact::view_memory(
-                CMemoryRange::new_with_element_width(
+            residual = residual.unchecked_with_fact(ResourceFact::view_memory(
+                MemoryRange::new_with_element_width(
                     pointer(900_000 + index),
                     0u32.into(),
                     4u32.into(),
@@ -65,7 +65,7 @@ fn call_frame_retains_a_view_without_scanning_other_views() {
                 );
                 let after = before.clone().with_call_memory_havoc(
                     Variable(950_000 + count),
-                    &[CMemoryRange::unnamed_footprint()],
+                    &[MemoryRange::unnamed_footprint()],
                     &assumptions,
                     Some(&kept),
                 );
@@ -88,7 +88,7 @@ fn call_frame_retains_a_view_without_scanning_other_views() {
             &assumptions,
         ));
         assert!(
-            recorded.contains_range(&CMemoryRange::new_with_element_width(
+            recorded.contains_range(&MemoryRange::new_with_element_width(
                 target.clone(),
                 0u32.into(),
                 4u32.into(),

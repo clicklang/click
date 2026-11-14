@@ -1,4 +1,4 @@
-// Scaling tests of `src/kernel/population_authority/c_creation/tests.rs` (module `wildcard_scope_tests`): deterministic work measured at several
+// Scaling tests of `src/kernel/population_authority/storage_creation/tests.rs` (module `wildcard_scope_tests`): deterministic work measured at several
 // input sizes. Included into its `scaling_tests` module; see "Scaling
 // tests" in `docs/internals/testing.md`.
 

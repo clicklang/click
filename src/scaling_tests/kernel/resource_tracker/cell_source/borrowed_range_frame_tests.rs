@@ -11,15 +11,15 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
         let field = Pointer::symbolic(Variable(9_897_001));
         let data = Pointer::symbolic(Variable(9_897_002));
         let count = MachineTerm::Variable(Variable(9_897_003));
-        let backing = CMemoryRange::new_with_element_width(data, 0u32.into(), count.clone(), 4);
+        let backing = MemoryRange::new_with_element_width(data, 0u32.into(), count.clone(), 4);
         let descriptor =
-            CMemoryRange::new_with_element_width(field.clone(), 0u32.into(), 2u32.into(), 4);
+            MemoryRange::new_with_element_width(field.clone(), 0u32.into(), 2u32.into(), 4);
         let mut partition = ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::own_memory(backing.clone()))
-            .unchecked_with_fact(CResourceFact::view_memory(descriptor.clone()));
+            .unchecked_with_fact(ResourceFact::own_memory(backing.clone()))
+            .unchecked_with_fact(ResourceFact::view_memory(descriptor.clone()));
         for index in 0..size {
-            partition = partition.unchecked_with_fact(CResourceFact::own_memory(
-                CMemoryRange::new_with_element_width(
+            partition = partition.unchecked_with_fact(ResourceFact::own_memory(
+                MemoryRange::new_with_element_width(
                     Pointer::symbolic(Variable(9_898_000 + index)),
                     0u32.into(),
                     4u32.into(),
@@ -28,7 +28,7 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
             ));
         }
         let bare = partition.clone();
-        let view = CResourceFact::view_memory(descriptor.clone());
+        let view = ResourceFact::view_memory(descriptor.clone());
         let support = partition.occurrences_for_fact(&view)[0];
         let ledger = LoanLedger::new();
         let holder = ledger.fresh_participant().unwrap();
@@ -75,7 +75,7 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
         assert!(work < 200, "size={size}, work={work}");
         assert!(proof.checks(&backing, &field, 8, &context));
         assert!(!proof.checks(&backing, &field, 12, &context));
-        let wider_range = CMemoryRange::new_with_element_width(
+        let wider_range = MemoryRange::new_with_element_width(
             backing.base().clone(),
             0u32.into(),
             MachineTerm::add(count.clone(), 1u32.into()),
@@ -95,14 +95,14 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
         );
         // Exercise the complete explicit equality certificate, including
         // the actual LoopHavoc edge and all eight descriptor-read bytes.
-        let before = CMemory::new();
+        let before = Memory::new();
         let after = before.clone().with_loop_memory_havoc_preserving_loans(
             Variable(9_897_004),
             &std::collections::BTreeSet::new(),
             Some(std::slice::from_ref(&backing)),
             None,
         );
-        let load = |memory: &CMemory| {
+        let load = |memory: &Memory| {
             MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory_ref(memory),
                 Box::new(field.clone()),
@@ -124,8 +124,8 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
             typed_range_disjoint_from_pointer_evidence(&descriptor, &field, 8, &context).is_none()
         );
         let views = ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::view_memory(backing.clone()))
-            .unchecked_with_fact(CResourceFact::view_memory(descriptor));
+            .unchecked_with_fact(ResourceFact::view_memory(backing.clone()))
+            .unchecked_with_fact(ResourceFact::view_memory(descriptor));
         let views =
             PureFactContext::new().assume_proposition(Proposition::CResourceComposition(views));
         assert!(typed_range_disjoint_from_pointer_evidence(&backing, &field, 8, &views).is_none());

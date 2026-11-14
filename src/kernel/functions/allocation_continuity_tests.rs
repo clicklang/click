@@ -88,8 +88,8 @@ fn contract_retirement_invalidates_creation_provenance_even_with_replacement() {
     };
     let bytes = MachineTerm::constant(16);
     let input = ResourceContext::new()
-        .unchecked_with_fact(CResourceFact::own_allocation(base.clone(), bytes.clone()));
-    let memory = CMemory::new()
+        .unchecked_with_fact(ResourceFact::own_allocation(base.clone(), bytes.clone()));
+    let memory = Memory::new()
         .with_heap_allocation_claim(base.clone(), HeapExtent::int32(bytes.clone()))
         .expect("live input allocation");
     let mut state = ExecutionState::new()
@@ -117,7 +117,7 @@ fn contract_retirement_invalidates_creation_provenance_even_with_replacement() {
     ));
     for output in [
         ResourceContext::new(),
-        ResourceContext::new().unchecked_with_fact(CResourceFact::own_allocation(
+        ResourceContext::new().unchecked_with_fact(ResourceFact::own_allocation(
             base.clone(),
             replacement_bytes.clone(),
         )),
@@ -128,7 +128,7 @@ fn contract_retirement_invalidates_creation_provenance_even_with_replacement() {
             &input,
             &ResourceContext::new(),
             &output,
-            &CFunctionContractInterface::new(ProgramType::Void, vec![]),
+            &FunctionContractInterface::new(ProgramType::Void, vec![]),
             &PureFactContext::new(),
             None,
             &state,
@@ -165,7 +165,7 @@ fn contract_allocation_retirement_respects_initialized_mutex_storage() {
         let bytes = MachineTerm::constant(48);
         let input = ResourceContext::new()
             .try_compose_with_fact(
-                CResourceFact::own_allocation(base.clone(), bytes.clone()),
+                ResourceFact::own_allocation(base.clone(), bytes.clone()),
                 &PureFactContext::new(),
             )
             .unwrap();
@@ -173,14 +173,14 @@ fn contract_allocation_retirement_respects_initialized_mutex_storage() {
         let output = if continuity_undecided {
             ResourceContext::new()
                 .try_compose_with_fact(
-                    CResourceFact::own_allocation(external_pointer(930_005), bytes.clone()),
+                    ResourceFact::own_allocation(external_pointer(930_005), bytes.clone()),
                     &PureFactContext::new(),
                 )
                 .unwrap()
         } else {
             ResourceContext::new()
         };
-        let interface = CFunctionContractInterface::new(ProgramType::Void, vec![]);
+        let interface = FunctionContractInterface::new(ProgramType::Void, vec![]);
         for mutex in [
             base.offset_by_bytes(8),
             Pointer::symbolic(Variable(930_006)),
@@ -206,14 +206,14 @@ fn contract_allocation_retirement_respects_initialized_mutex_storage() {
                 assert!(matches!(
                     result,
                     Err(VerifiedAllocationDeltaError::Runtime(
-                        CRuntimeError::MutexStorageSeparationRequired { .. }
+                        RuntimeError::MutexStorageSeparationRequired { .. }
                     ))
                 ));
             } else {
                 assert!(matches!(
                     result,
                     Err(VerifiedAllocationDeltaError::Runtime(
-                        CRuntimeError::MutexStorageInUse { .. }
+                        RuntimeError::MutexStorageInUse { .. }
                     ))
                 ));
             }
@@ -278,7 +278,7 @@ fn continuity_requires_both_the_allocation_base_and_size() {
 #[test]
 fn allocation_size_continuity_uses_graph_with_snapshot_scope() {
     let _session = crate::kernel::VerificationSession::enter();
-    let before = crate::kernel::intern_c_memory(CMemory::new().with_block("alloc-size", 8));
+    let before = crate::kernel::intern_c_memory(Memory::new().with_block("alloc-size", 8));
     let pointer = |index| Pointer {
         block: "alloc-size".into(),
         offset: PointerOffsetTerm::scale_int32(index, 4),
@@ -373,7 +373,7 @@ fn a_contract_uint64_allocation_extent_needs_the_no_wrap_decision() {
     );
     assert!(matches!(
         uint64_allocation_extent_argument(&product, &unbounded),
-        Err(CRuntimeError::FunctionContract(_)),
+        Err(RuntimeError::FunctionContract(_)),
     ));
     assert_eq!(
         uint64_allocation_extent_argument(&product, &bounded),
@@ -389,14 +389,14 @@ fn a_contract_uint64_allocation_extent_needs_the_no_wrap_decision() {
     let symbolic_product = MachineTerm::uint64_multiply(count.clone(), other);
     assert!(matches!(
         uint64_allocation_extent_argument(&symbolic_product, &bounded),
-        Err(CRuntimeError::FunctionContract(_)),
+        Err(RuntimeError::FunctionContract(_)),
     ));
     assert!(matches!(
         uint64_allocation_extent_argument(&MachineTerm::uint64_constant(0), &unbounded),
-        Err(CRuntimeError::FunctionContract(_)),
+        Err(RuntimeError::FunctionContract(_)),
     ));
     assert!(matches!(
         uint64_allocation_extent_argument(&MachineTerm::uint64_constant(u64::MAX), &unbounded),
-        Err(CRuntimeError::FunctionContract(_)),
+        Err(RuntimeError::FunctionContract(_)),
     ));
 }

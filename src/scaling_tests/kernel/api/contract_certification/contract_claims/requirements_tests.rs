@@ -24,8 +24,8 @@ fn claim_requirements_use_indexed_facts_and_scale_with_their_output() {
                 ));
             }
         }
-        let goal = CClaimGoal {
-            target: CFunctionContractClaimTarget::EnsureProposition(0),
+        let goal = ContractClaimGoal {
+            target: FunctionContractClaimTarget::EnsureProposition(0),
             proposition: required.clone(),
             facts: vec![],
             obligations: vec![ProofObligation::verification_condition(required)],
@@ -59,8 +59,8 @@ fn claim_requirements_use_indexed_facts_and_scale_with_their_output() {
     let mut output_samples = Vec::new();
     for size in [16u64, 32, 64, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let goal = CClaimGoal {
-            target: CFunctionContractClaimTarget::EnsureProposition(0),
+        let goal = ContractClaimGoal {
+            target: FunctionContractClaimTarget::EnsureProposition(0),
             proposition: Proposition::ConditionIs(ConditionTerm::Constant(true), true),
             facts: vec![],
             obligations: (0..size)

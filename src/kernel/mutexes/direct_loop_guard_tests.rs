@@ -10,21 +10,21 @@ fn address(index: usize) -> Pointer {
         offset: PointerOffsetTerm::Constant(0),
     }
 }
-fn spec() -> CResourceSpec {
-    CResourceSpec::new(
-        CResourceTerm::MutexGuard {
+fn spec() -> ResourceSpec {
+    ResourceSpec::new(
+        ResourceTerm::MutexGuard {
             mutex: Box::new(c_variable("mutex")),
-            snapshot: CResourceSnapshot::Current,
+            snapshot: ResourceSnapshot::Current,
         },
-        CResourceAccessMode::Own,
-        CResourceQuantity::One,
-        CResourceTransferRole::Borrow,
-        CResourceSnapshot::Current,
+        ResourceAccessMode::Own,
+        ResourceQuantity::One,
+        ResourceTransferRole::Borrow,
+        ResourceSnapshot::Current,
     )
     .unwrap()
     .with_guard(SpecProposition::Comparison {
         left: SpecExpression::ProgramExpression(c_variable("flag")),
-        operator: CComparisonOperator::Equal,
+        operator: ComparisonOperator::Equal,
         right: SpecExpression::Value(int32(1)),
     })
 }
@@ -89,7 +89,7 @@ fn direct_loop_guard_metadata_does_not_replace_owned_carrier() {
     missing.resources = missing
         .resources
         .without_fact_incrementally(
-            &CResourceFact::own(CResource::Instance(instance)),
+            &ResourceFact::own(Resource::Instance(instance)),
             &PureFactContext::new(),
         )
         .unwrap();

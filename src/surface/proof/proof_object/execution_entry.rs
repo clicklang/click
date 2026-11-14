@@ -19,7 +19,7 @@ impl<'a> Proof<'a> {
         function: &'a ProgramFunction,
         parsed_function: &'a syntax::C0Function,
         arguments: &'a [ProgramExpression],
-        function_environment: &'a CExecutionEnvironment,
+        function_environment: &'a ExecutionEnvironment,
         resource_environment: &'a ResourceEnvironment,
         spec_definitions: SpecDefinitions<'a>,
         theorem_environment: &'a TheoremEnvironment,

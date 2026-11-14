@@ -35,8 +35,8 @@ fn typed_access_does_not_search_unrelated_address_equalities_or_ranges() {
             ConditionTerm::pointer_equal(a.pointer().clone(), b.pointer().clone()),
             true,
         );
-        let mut resources = ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(
-            CMemoryRange::from_pointer_value(&b, 0u32.into(), 1u32.into(), 4),
+        let mut resources = ResourceContext::new().unchecked_with_fact(ResourceFact::view_memory(
+            MemoryRange::from_pointer_value(&b, 0u32.into(), 1u32.into(), 4),
         ));
         for index in 0..size {
             let unrelated = value(880_000 + index * 2);
@@ -47,8 +47,8 @@ fn typed_access_does_not_search_unrelated_address_equalities_or_ranges() {
                 ),
                 true,
             );
-            resources = resources.unchecked_with_fact(CResourceFact::view_memory(
-                CMemoryRange::from_pointer_value(&unrelated, 0u32.into(), 1u32.into(), 4),
+            resources = resources.unchecked_with_fact(ResourceFact::view_memory(
+                MemoryRange::from_pointer_value(&unrelated, 0u32.into(), 1u32.into(), 4),
             ));
         }
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -197,7 +197,7 @@ fn recent_pointer_read_origin_avoids_older_alias_histories() {
             offset: PointerOffsetTerm::Constant(0),
         };
         let selected = cell("zz-recent-pointer-origin".into());
-        let mut memory = CMemory::new().with_block(selected.block.clone(), 8);
+        let mut memory = Memory::new().with_block(selected.block.clone(), 8);
         let mut older = Vec::new();
         for index in 0..size {
             let pointer = cell(format!("older-pointer-origin-{index:04}"));
@@ -233,13 +233,13 @@ fn recent_pointer_read_origin_avoids_older_alias_histories() {
         let missing = context.clone();
         let selected_fact = fact(&selected);
         context = context.assume_proposition(selected_fact);
-        let range = CMemoryRange::new(selected.clone(), 0u32.into(), 2u32.into());
+        let range = MemoryRange::new(selected.clone(), 0u32.into(), 2u32.into());
         let kept = CallKeptOwnership::new(
-            ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(range.clone())),
+            ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(range.clone())),
             CallKeptRanges::new(ResourceContext::new(), vec![], None),
             &context,
         );
-        let writes = [CMemoryRange::new(
+        let writes = [MemoryRange::new(
             Pointer::symbolic(Variable(994_002)),
             0u32.into(),
             1u32.into(),
@@ -247,8 +247,8 @@ fn recent_pointer_read_origin_avoids_older_alias_histories() {
         let after =
             memory.with_call_memory_havoc(Variable(994_003), &writes, &context, Some(&kept));
         let separation = Proposition::CResourceSeparate {
-            left: Box::new(CResource::Memory(writes[0].clone())),
-            right: Box::new(CResource::Memory(range)),
+            left: Box::new(Resource::Memory(writes[0].clone())),
+            right: Box::new(Resource::Memory(range)),
         };
         let frame_context = PureFactContext::new().assume_proposition(
             crate::kernel::region_footprint::byte_premise(&separation).unwrap(),

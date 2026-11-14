@@ -933,7 +933,7 @@ mod tests {
                             format,
                             MachineTerm::Variable(Variable(id)),
                         )),
-                        operator: CComparisonOperator::NotEqual,
+                        operator: ComparisonOperator::NotEqual,
                         right: SpecExpression::Value(wrap(
                             format,
                             crate::kernel::machine_integer::range::constant_word(format, &0.into())

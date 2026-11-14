@@ -13,14 +13,14 @@ pub(super) fn execute(
     fresh: bool,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
     let mut paths = Vec::new();
     if !matches!(
         element_type,
         ProgramType::Int32 | ProgramType::UInt8 | ProgramType::UInt32
     ) {
         return Ok(vec![path(
-            CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+            StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
             vec![].into(),
             vec![],
         )]);
@@ -30,14 +30,14 @@ pub(super) fn execute(
         .filter(|n| *n <= i32::MAX as u32)
     else {
         return Ok(vec![path(
-            CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+            StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
             vec![].into(),
             vec![],
         )]);
     };
     for target in evaluate_c_expression_paths(state, target, assumptions, budget)? {
         let target_pointer = match target.outcome {
-            CExpressionOutcome::Value(ProgramValue::Pointer(pointer)) => pointer,
+            ExpressionOutcome::Value(ProgramValue::Pointer(pointer)) => pointer,
             outcome => {
                 paths.push(path(
                     expression_error(outcome),
@@ -60,7 +60,7 @@ pub(super) fn execute(
                 continue;
             };
             let value = match source.outcome {
-                CExpressionOutcome::Value(value) => value,
+                ExpressionOutcome::Value(value) => value,
                 outcome => {
                     paths.push(path(expression_error(outcome), facts, obligations));
                     continue;
@@ -80,7 +80,7 @@ pub(super) fn execute(
             };
             let Some(value) = value else {
                 paths.push(path(
-                    CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                    StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
                     facts,
                     obligations,
                 ));
@@ -98,7 +98,7 @@ pub(super) fn execute(
                 )
             {
                 paths.push(path(
-                    CStatementOutcome::UndefinedBehavior(refusal),
+                    StatementOutcome::UndefinedBehavior(refusal),
                     facts,
                     obligations,
                 ));
@@ -109,13 +109,13 @@ pub(super) fn execute(
                     || state.memory.is_read_only_block(&target.block))
             {
                 paths.push(path(
-                    CStatementOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory),
+                    StatementOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),
                     facts,
                     obligations,
                 ));
                 continue;
             }
-            let required = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            let required = ResourceFact::own_memory(MemoryRange::new_with_element_width(
                 target.clone(),
                 0u32.into(),
                 count.into(),
@@ -130,7 +130,7 @@ pub(super) fn execute(
                 )
             {
                 paths.push(path(
-                    CStatementOutcome::RuntimeError(CRuntimeError::MissingResource {
+                    StatementOutcome::RuntimeError(RuntimeError::MissingResource {
                         resource: Box::new(required),
                     }),
                     facts,
@@ -148,7 +148,7 @@ pub(super) fn execute(
             if copy && bytes != 0 {
                 let ProgramValue::Pointer(source) = &value else {
                     paths.push(path(
-                        CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                        StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
                         facts,
                         obligations,
                     ));
@@ -163,7 +163,7 @@ pub(super) fn execute(
                     assumptions,
                 ) {
                     paths.push(path(
-                        CStatementOutcome::UndefinedBehavior(refusal),
+                        StatementOutcome::UndefinedBehavior(refusal),
                         facts,
                         obligations,
                     ));
@@ -177,15 +177,14 @@ pub(super) fn execute(
                         &selected,
                     )
                 }) {
-                    let resource =
-                        CResourceFact::view_memory(CMemoryRange::new_with_element_width(
-                            source.pointer().clone(),
-                            0u32.into(),
-                            count.into(),
-                            element_type.byte_width(),
-                        ));
+                    let resource = ResourceFact::view_memory(MemoryRange::new_with_element_width(
+                        source.pointer().clone(),
+                        0u32.into(),
+                        count.into(),
+                        element_type.byte_width(),
+                    ));
                     paths.push(path(
-                        CStatementOutcome::RuntimeError(CRuntimeError::MissingResource {
+                        StatementOutcome::RuntimeError(RuntimeError::MissingResource {
                             resource: Box::new(resource),
                         }),
                         facts,
@@ -218,15 +217,15 @@ pub(super) fn execute(
                     let mut next = state.clone();
                     next.set_memory(memory);
                     if bytes != 0
-                        && let CExpressionOutcome::Value(value) = next.memory.load(target)
+                        && let ExpressionOutcome::Value(value) = next.memory.load(target)
                     {
                         refresh_scalar_local_after_memory_store(
                             &mut next, target, &value, &selected,
                         );
                     }
-                    CStatementOutcome::Normal(Box::new(next))
+                    StatementOutcome::Normal(Box::new(next))
                 }
-                Err(error) => CStatementOutcome::RuntimeError(error),
+                Err(error) => StatementOutcome::RuntimeError(error),
             };
             paths.push(path(outcome, facts, obligations));
         }
@@ -236,18 +235,16 @@ pub(super) fn execute(
 }
 
 fn path(
-    outcome: CStatementOutcome,
+    outcome: StatementOutcome,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
-) -> CStatementExecutionPath {
-    CStatementExecutionPath::new(outcome, facts, obligations)
+) -> StatementExecutionPath {
+    StatementExecutionPath::new(outcome, facts, obligations)
 }
-fn expression_error(outcome: CExpressionOutcome) -> CStatementOutcome {
+fn expression_error(outcome: ExpressionOutcome) -> StatementOutcome {
     match outcome {
-        CExpressionOutcome::UndefinedBehavior(error) => CStatementOutcome::UndefinedBehavior(error),
-        CExpressionOutcome::RuntimeError(error) => CStatementOutcome::RuntimeError(error),
-        CExpressionOutcome::Value(_) => {
-            CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch)
-        }
+        ExpressionOutcome::UndefinedBehavior(error) => StatementOutcome::UndefinedBehavior(error),
+        ExpressionOutcome::RuntimeError(error) => StatementOutcome::RuntimeError(error),
+        ExpressionOutcome::Value(_) => StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
     }
 }

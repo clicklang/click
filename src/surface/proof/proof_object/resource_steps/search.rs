@@ -11,7 +11,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// this.
     pub(in crate::surface::proof) fn try_open_for_missing_resource(
         search_input: &Proof<'a>,
-        missing: &CResourceFact,
+        missing: &ResourceFact,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_open_for_missing_resource");
@@ -26,7 +26,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let assumptions = search_input.facts().assumptions();
         let mut opening = None;
         for held in state.resources().composite_facts() {
-            let CResourceFact::Own(CResource::Composite { name, arguments }, _) = held else {
+            let ResourceFact::Own(Resource::Composite { name, arguments }, _) = held else {
                 continue;
             };
             let Some(definition) = context.resource_environment.get(name) else {

@@ -1,6 +1,6 @@
 use super::*;
 
-fn adapter(expression: &SpecExpression) -> Vec<CExpressionPath<SpecValue>> {
+fn adapter(expression: &SpecExpression) -> Vec<ExpressionPath<SpecValue>> {
     evaluate_resource_child_argument_paths(
         &ExecutionState::new(),
         expression,
@@ -53,7 +53,7 @@ fn specification_execution_handoff_keeps_the_produced_root_and_debts() {
         assert_eq!(actual.len(), expected.len());
         for (actual, expected) in actual.into_iter().zip(expected) {
             assert!(matches!(expected.value, SpecValue::Shared(_)));
-            assert_eq!(actual.outcome, CExpressionOutcome::Value(expected.value));
+            assert_eq!(actual.outcome, ExpressionOutcome::Value(expected.value));
             assert_eq!(actual.facts, expected.facts);
             assert_eq!(actual.obligations, expected.obligations);
             if format.format().is_signed() {

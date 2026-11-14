@@ -5,7 +5,7 @@ use super::*;
 impl crate::kernel::search::ProofSearch<ProgramFunction> {
     pub(in crate::kernel) fn call_frame(
         residual: &ResourceContext,
-        definitions: &[CCompositeResourceDefinition],
+        definitions: &[CompositeResourceDefinition],
         _state: &ExecutionState,
         assumptions: &PureFactContext,
     ) -> CallKeptOwnership {
@@ -30,7 +30,7 @@ impl crate::kernel::search::ProofSearch<ProgramFunction> {
             {
                 if direct
                     .last()
-                    .is_none_or(|last: &CCompositeResourceDefinition| last.name() != name)
+                    .is_none_or(|last: &CompositeResourceDefinition| last.name() != name)
                 {
                     direct.push(found.clone());
                 }

@@ -465,11 +465,11 @@ fn tagged_word_symbolic_tag_chains_scale_without_rewalking_tags() {
 fn checker_validates_unselected_nodes_and_scales_without_cloning_results() {
     let value = MachineTerm::Variable(crate::kernel::Variable(91));
     let finite = Proposition::ConditionIs(
-        ConditionTerm::float32_classification(value.clone(), CFloatClassification::Finite),
+        ConditionTerm::float32_classification(value.clone(), FloatClassification::Finite),
         true,
     );
     let goal = Proposition::ConditionIs(
-        ConditionTerm::float32_compare(value.clone(), value, CComparisonOperator::Equal),
+        ConditionTerm::float32_compare(value.clone(), value, ComparisonOperator::Equal),
         true,
     );
     let mut nodes = vec![SpecialArithmeticNode::FloatReflexive {
@@ -629,12 +629,12 @@ fn signed_defined_certificates_keep_shared_operands_and_source_bounds() {
 
 #[test]
 fn arithmetic_read_atoms_keep_snapshot_identity_without_scanning_storage() {
-    use crate::kernel::{CMemory, LoadKind, ProgramValue, Variable, intern_c_memory};
+    use crate::kernel::{LoadKind, Memory, ProgramValue, Variable, intern_c_memory};
     let mut samples = Vec::new();
     for size in [8, 64, 512] {
         let _session = crate::kernel::VerificationSession::enter();
         let address = Pointer::symbolic(Variable(894_000));
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         for index in 0..size {
             memory = memory.store(
                 Pointer::symbolic(Variable(895_000 + index)),

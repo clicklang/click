@@ -10,11 +10,11 @@ fn local_initialization_havoc_checks_scale_with_changed_cells() {
         block: "local:target".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let range = CMemoryRange::new_with_element_width(target.clone(), 0u32.into(), 4u32.into(), 1);
+    let range = MemoryRange::new_with_element_width(target.clone(), 0u32.into(), 4u32.into(), 1);
     let facts = PureFactContext::new();
     let mut samples = Vec::new();
     for count in [16, 64, 256, 1024] {
-        let mut before = CMemory::new().with_block(target.block.clone(), 8).store(
+        let mut before = Memory::new().with_block(target.block.clone(), 8).store(
             target.clone(),
             ProgramValue::Int32(MachineTerm::constant(7)),
         );

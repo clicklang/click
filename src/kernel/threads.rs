@@ -21,10 +21,10 @@ use crate::persistent::PersistentMap;
 use super::functions::suspend_verified_worker;
 use super::loans::{LoanLedger, LoanViewBinding, LoanViewBindings, StableViewTransferPlan};
 use super::{
-    CExecutionEnvironment, CMemory, CMemoryRange, CResourceFact, CRuntimeError,
-    CVerifiedFunctionRule, CVerifiedFunctionTerminationRule, ConditionTerm, ExecutionBudget,
-    ExecutionPureFact, ExecutionResult, ExecutionState, MachineTerm, Pointer, PointerBlock,
-    ProgramValue, Proposition, PureFactContext, ResourceContext,
+    ConditionTerm, ExecutionBudget, ExecutionEnvironment, ExecutionPureFact, ExecutionResult,
+    ExecutionState, MachineTerm, Memory, MemoryRange, Pointer, PointerBlock, ProgramValue,
+    Proposition, PureFactContext, ResourceContext, ResourceFact, RuntimeError,
+    VerifiedFunctionRule, VerifiedFunctionTerminationRule,
 };
 
 /// A kernel identity, not the integer representation of `pthread_t`. The C
@@ -45,8 +45,8 @@ pub(super) enum JoinRuntimeAssumption {
 pub(super) struct WorkerCompletion {
     plan: StableViewTransferPlan,
     outputs: ResourceContext,
-    memory: CMemory,
-    effects: Vec<CMemoryRange>,
+    memory: Memory,
+    effects: Vec<MemoryRange>,
     facts: crate::kernel::ExecutionFacts,
     mutex_ledger: Option<super::mutexes::MutexLedger>,
     creation: Option<WorkerCreation>,
@@ -60,9 +60,9 @@ pub(super) struct WorkerCompletion {
 /// nothing. Join itself authorizes no population transition.
 #[derive(Clone, Debug)]
 pub(super) struct WorkerCreation {
-    pub(super) parent_after_create: super::population_authority::c_creation::CreationEvents,
-    pub(super) worker: super::population_authority::c_creation::CreationEvents,
-    pub(super) definitions: Vec<super::CCompositeResourceDefinition>,
+    pub(super) parent_after_create: super::population_authority::storage_creation::CreationEvents,
+    pub(super) worker: super::population_authority::storage_creation::CreationEvents,
+    pub(super) definitions: Vec<super::CompositeResourceDefinition>,
     pub(super) deferred: Vec<DeferredMemberExchange>,
 }
 
@@ -86,8 +86,8 @@ impl WorkerCompletion {
     pub(super) fn checked(
         plan: StableViewTransferPlan,
         outputs: ResourceContext,
-        memory: CMemory,
-        effects: Vec<CMemoryRange>,
+        memory: Memory,
+        effects: Vec<MemoryRange>,
         facts: crate::kernel::ExecutionFacts,
         mutex_ledger: Option<super::mutexes::MutexLedger>,
         creation: Option<WorkerCreation>,
@@ -141,7 +141,7 @@ struct PendingCreateAuthority {
     mutex_input_reservations: Option<super::mutexes::MutexInputReservations>,
     opaque_mutex_acquisitions: Option<super::mutexes::OpaqueMutexAcquisitions>,
     named_mutex_authorities: Option<Arc<super::named_authority::NamedMutexAuthorities>>,
-    creation: Option<super::population_authority::c_creation::CreationEvents>,
+    creation: Option<super::population_authority::storage_creation::CreationEvents>,
 }
 
 impl PendingCreateAuthority {
@@ -177,7 +177,7 @@ struct PendingThreadCreateStorage {
     status: MachineTerm,
     handle_slot: Pointer,
     handle_value: ProgramValue,
-    success_memory: CMemory,
+    success_memory: Memory,
     success: PendingCreateAuthority,
     failure: PendingCreateAuthority,
     deltas: PersistentMap<u64, PendingThreadMemoryDelta>,
@@ -269,7 +269,7 @@ impl PendingThreadCreate {
         resources: impl Fn(&ResourceContext) -> ResourceContext,
         pointer: impl Fn(&Pointer) -> Pointer,
         value: impl Fn(&ProgramValue) -> ProgramValue,
-        memory: impl Fn(&CMemory) -> CMemory,
+        memory: impl Fn(&Memory) -> Memory,
     ) -> Self {
         let storage = &self.storage;
         let map_authority = |authority: &PendingCreateAuthority| PendingCreateAuthority {
@@ -357,7 +357,7 @@ impl PendingThreadCreate {
             {
                 let binding = selected.locals.binding(&name).cloned();
                 if let Some(
-                    super::CLocalBinding::Object {
+                    super::LocalBinding::Object {
                         c_type,
                         volatile,
                         pointee_volatile,
@@ -365,7 +365,7 @@ impl PendingThreadCreate {
                         pointee_constant,
                         ..
                     }
-                    | super::CLocalBinding::UninitializedObject {
+                    | super::LocalBinding::UninitializedObject {
                         c_type,
                         volatile,
                         pointee_volatile,
@@ -439,7 +439,7 @@ struct ThreadLedgerStorage {
     state: u64,
     rights: PersistentMap<ThreadHandle, Arc<CompletionRight>>,
     loan_trace: Option<ThreadLoanTrace>,
-    local_views: PersistentMap<CResourceFact, LoanViewBinding>,
+    local_views: PersistentMap<ResourceFact, LoanViewBinding>,
     mutex_workers: PersistentMap<Pointer, usize>,
 }
 
@@ -490,7 +490,7 @@ impl ThreadLedger {
                 && right.completion.outputs.facts().iter().any(|fact| {
                     matches!(
                         fact,
-                        CResourceFact::Own(super::CResource::PopulationAuthority(lent), _)
+                        ResourceFact::Own(super::Resource::PopulationAuthority(lent), _)
                             if lent == description
                     )
                 })
@@ -522,7 +522,7 @@ impl ThreadLedger {
         !self.storage.rights.is_empty()
     }
 
-    pub(super) fn local_view_binding(&self, fact: &CResourceFact) -> Option<&LoanViewBinding> {
+    pub(super) fn local_view_binding(&self, fact: &ResourceFact) -> Option<&LoanViewBinding> {
         self.storage.local_views.get(fact)
     }
 
@@ -577,7 +577,7 @@ impl ThreadLedger {
         let mut mutex_workers = self.storage.mutex_workers.clone();
         for usage in &right.completion.plan.mutex_uses {
             let fact = usage.required_resource();
-            let super::CResource::MutexUse(identity) = fact.resource() else {
+            let super::Resource::MutexUse(identity) = fact.resource() else {
                 unreachable!()
             };
             let count = mutex_workers.get(&identity.mutex).copied().unwrap_or(0);
@@ -603,14 +603,14 @@ impl ThreadLedger {
         before: &LoanLedger,
         after: &LoanLedger,
         participant: super::loans::LoanParticipantId,
-        local_updates: &BTreeMap<CResourceFact, Option<LoanViewBinding>>,
+        local_updates: &BTreeMap<ResourceFact, Option<LoanViewBinding>>,
     ) -> Self {
         let mut local_views = self.storage.local_views.clone();
         let mut mutex_workers = self.storage.mutex_workers.clone();
         if let Some(right) = self.right(handle) {
             for usage in &right.completion.plan.mutex_uses {
                 let fact = usage.required_resource();
-                let super::CResource::MutexUse(identity) = fact.resource() else {
+                let super::Resource::MutexUse(identity) = fact.resource() else {
                     unreachable!()
                 };
                 let count = *mutex_workers
@@ -802,19 +802,19 @@ pub(super) struct ThreadContext {
 }
 
 impl ThreadContext {
-    pub(super) fn new(mut parent: ExecutionState) -> Result<Self, CRuntimeError> {
+    pub(super) fn new(mut parent: ExecutionState) -> Result<Self, RuntimeError> {
         if parent
             .mutex_ledger
             .as_ref()
             .is_some_and(super::mutexes::MutexLedger::has_locked_guard)
         {
-            return Err(CRuntimeError::UnsupportedConcurrentMutex);
+            return Err(RuntimeError::UnsupportedConcurrentMutex);
         }
         match (parent.loan_ledger(), parent.loan_participant()) {
             (None, None) => {
                 let ledger = LoanLedger::new();
                 let participant = ledger.fresh_participant().map_err(|_| {
-                    CRuntimeError::FunctionContract("invalid parent participant".to_string())
+                    RuntimeError::FunctionContract("invalid parent participant".to_string())
                 })?;
                 parent = parent
                     .with_loan_ledger(Some(ledger))
@@ -822,7 +822,7 @@ impl ThreadContext {
             }
             (Some(ledger), Some(participant)) if ledger.contains_participant(participant) => {}
             _ => {
-                return Err(CRuntimeError::FunctionContract(
+                return Err(RuntimeError::FunctionContract(
                     "inconsistent parent loan context".to_string(),
                 ));
             }
@@ -839,11 +839,11 @@ impl ThreadContext {
 
     pub(super) fn prepare_create<'a>(
         &'a self,
-        worker: &CVerifiedFunctionRule,
-        termination: Option<&CVerifiedFunctionTerminationRule>,
+        worker: &VerifiedFunctionRule,
+        termination: Option<&VerifiedFunctionTerminationRule>,
         argument: ProgramValue,
         assumptions: &PureFactContext,
-        environment: &CExecutionEnvironment,
+        environment: &ExecutionEnvironment,
         budget: &mut ExecutionBudget,
     ) -> ExecutionResult<Result<PreparedThreadCreate<'a>, String>> {
         if termination.is_none_or(|termination| termination.function != worker.function) {
@@ -909,11 +909,11 @@ impl ThreadContext {
     #[cfg(test)]
     pub(super) fn spawn(
         &self,
-        worker: &CVerifiedFunctionRule,
-        termination: Option<&CVerifiedFunctionTerminationRule>,
+        worker: &VerifiedFunctionRule,
+        termination: Option<&VerifiedFunctionTerminationRule>,
         argument: ProgramValue,
         assumptions: &PureFactContext,
-        environment: &CExecutionEnvironment,
+        environment: &ExecutionEnvironment,
         budget: &mut ExecutionBudget,
     ) -> ExecutionResult<Result<(Self, ThreadHandle, ExecutionPureFact), String>> {
         Ok(self

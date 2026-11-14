@@ -109,7 +109,7 @@ Current instances of the rule:
   closure-scoped failure memo.
 - Explicit return closers lower the folded claim goal once, and the unfolded
   form only when the proof unfolded a predicate. Consecutive exact return
-  closers share one lazy `CFunctionEnsureGoalContext`; any other tactic
+  closers share one lazy `FunctionEnsureGoalContext`; any other tactic
   discards it. There is no global cache or structural state comparison.
 - A whole-cell memory query first uses its address-class index; an exact
   supplier needs no resolution of the queried pointer's defining read.
@@ -699,7 +699,7 @@ running a complete prefix merely to decline and repeat it in another driver
 multiplies all statement and tactic work.
 
 Ordered finalization and opaque-contract certification share function-body
-work only through `CCheckedFunctionExecution`, a kernel-created artifact
+work only through `CheckedFunctionExecution`, a kernel-created artifact
 retaining the exact entry state, annotated function, arguments, environment,
 execution semantics, loop judgment, assumptions, and complete checked
 frontier. Its fields are private to the kernel; a planner can retain the

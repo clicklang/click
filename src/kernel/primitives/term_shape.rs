@@ -13,8 +13,8 @@ use crate::kernel::{MachineCastSpelling, cast_op};
 pub(crate) enum BitvectorBinaryOp {
     /// A format-carrying machine operator ([`MachineTerm::Binary`]).
     Machine(MachineIntegerType, MachineBinaryOp),
-    Float32(CFloatBinaryOperator),
-    Float64(CFloatBinaryOperator),
+    Float32(FloatBinaryOperator),
+    Float64(FloatBinaryOperator),
 }
 
 /// A one-operand arithmetic [`MachineTerm`] operator or conversion.
@@ -190,10 +190,10 @@ impl BitvectorBinaryOp {
         match self {
             Self::Machine(_, op) => op.c_symbol(),
             Self::Float32(operator) | Self::Float64(operator) => match operator {
-                CFloatBinaryOperator::Add => "+",
-                CFloatBinaryOperator::Subtract => "-",
-                CFloatBinaryOperator::Multiply => "*",
-                CFloatBinaryOperator::Divide => "/",
+                FloatBinaryOperator::Add => "+",
+                FloatBinaryOperator::Subtract => "-",
+                FloatBinaryOperator::Multiply => "*",
+                FloatBinaryOperator::Divide => "/",
             },
         }
     }
@@ -530,11 +530,11 @@ impl BitvectorComparisonOp {
 mod tests {
     use super::*;
 
-    const FLOAT_OPERATORS: [CFloatBinaryOperator; 4] = [
-        CFloatBinaryOperator::Add,
-        CFloatBinaryOperator::Subtract,
-        CFloatBinaryOperator::Multiply,
-        CFloatBinaryOperator::Divide,
+    const FLOAT_OPERATORS: [FloatBinaryOperator; 4] = [
+        FloatBinaryOperator::Add,
+        FloatBinaryOperator::Subtract,
+        FloatBinaryOperator::Multiply,
+        FloatBinaryOperator::Divide,
     ];
 
     const MACHINE_BINARY_OPERATORS: [MachineBinaryOp; 10] = [

@@ -15153,8 +15153,8 @@ fn qualified_static_struct_startup_and_expansion() {
     assert_eq!(
         state
             .memory()
-            .load(&CMemory::global_pointer("state#file-static:counter.c")),
-        CExpressionOutcome::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(7)))
+            .load(&Memory::global_pointer("state#file-static:counter.c")),
+        ExpressionOutcome::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(7)))
     );
     let verified_for_expansion = verify_c0_sources(source, &sources).unwrap();
     for (_, expanded) in expand_checked_grouped_claims(

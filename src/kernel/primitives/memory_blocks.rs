@@ -121,7 +121,7 @@ mod tests {
     fn scalar_index_tracks_lifetime_replacement_and_branch_isolation() {
         let scalar = Pointer::symbolic(Variable(9_392_001)).block;
         let heap = Pointer::symbolic(Variable(9_392_002)).block;
-        let memory = CMemory::new()
+        let memory = Memory::new()
             .with_declared_scalar_block(scalar.clone(), 4, ProgramType::Int32)
             .with_block(heap.clone(), 64);
         assert_eq!(
@@ -148,7 +148,7 @@ mod tests {
     fn scalar_index_survives_arm_union_and_selected_projection() {
         let a = Pointer::symbolic(Variable(9_392_003)).block;
         let b = Pointer::symbolic(Variable(9_392_004)).block;
-        let first = CMemory::new().with_declared_scalar_block(a.clone(), 4, ProgramType::Int32);
+        let first = Memory::new().with_declared_scalar_block(a.clone(), 4, ProgramType::Int32);
         let second = first
             .clone()
             .with_declared_scalar_block(b.clone(), 4, ProgramType::Int32);

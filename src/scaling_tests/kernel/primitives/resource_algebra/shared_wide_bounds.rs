@@ -14,7 +14,7 @@ fn rebased_wide_bounds_retain_cold_coordinate_dags() {
                 KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [root.clone(), root]);
         }
         let index = MachineOperandView::Shared(&root).retain(ty);
-        let range = CMemoryRange::new_wide(
+        let range = MemoryRange::new_wide(
             Pointer {
                 block: base.block.clone(),
                 offset: PointerOffsetTerm::Int64Scaled {
@@ -73,7 +73,7 @@ fn wide_normalization_candidates_keep_shared_endpoint_keys() {
             ),
         };
         let fact = |start, end| {
-            CResourceFact::own_memory(CMemoryRange::new_wide(
+            ResourceFact::own_memory(MemoryRange::new_wide(
                 base.clone(),
                 MachineTerm::uint64_constant(start),
                 MachineTerm::uint64_constant(end),

@@ -15,10 +15,10 @@ fn retained_resource_fields_preserve_lvalues_and_scale_with_expression() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let value = ProgramValue::typed_pointer(pointee, ProgramType::Int32Pointer);
-    let layout = CAggregateLayout::new(
+    let layout = AggregateLayout::new(
         8,
         8,
-        vec![CAggregateField::new("data", 0, ProgramType::Int32Pointer)],
+        vec![AggregateField::new("data", 0, ProgramType::Int32Pointer)],
     );
     let field = ProgramExpression::TypedLoad {
         pointer: Box::new(ProgramExpression::Variable("input".into())),
@@ -34,7 +34,7 @@ fn retained_resource_fields_preserve_lvalues_and_scale_with_expression() {
         // otherwise reuse observations recorded by the first sample.
         let _session = crate::kernel::VerificationSession::enter();
         let mut entry = ExecutionState::new().with_memory(
-            CMemory::new()
+            Memory::new()
                 .with_block(slot.block.clone(), 8)
                 .store(slot.clone(), value.clone()),
         );

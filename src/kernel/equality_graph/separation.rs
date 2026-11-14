@@ -5,7 +5,7 @@ use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use std::sync::Arc;
 
-fn anchor(range: &CMemoryRange) -> Option<Pointer> {
+fn anchor(range: &MemoryRange) -> Option<Pointer> {
     let offset = crate::kernel::assumptions::memory_range_anchor(range)?;
     Some(Pointer {
         block: range.base().block.clone(),
@@ -21,7 +21,7 @@ impl EqualityGraph {
     ) -> bool {
         let anchors = match source.proposition() {
             Proposition::CResourceSeparate { left, right } => {
-                let (CResource::Memory(a), CResource::Memory(b)) = (left.as_ref(), right.as_ref())
+                let (Resource::Memory(a), Resource::Memory(b)) = (left.as_ref(), right.as_ref())
                 else {
                     return false;
                 };

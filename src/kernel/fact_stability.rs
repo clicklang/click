@@ -165,7 +165,7 @@ int32 id(int32 x) {
             var,
             sort: crate::kernel::Sort::CInt32,
             body: Box::new(Proposition::CMemoryLoadable {
-                memory: crate::kernel::CMemory::new().with_declared_scalar_block(
+                memory: crate::kernel::Memory::new().with_declared_scalar_block(
                     "local:word".into(),
                     4,
                     crate::kernel::ProgramType::Int32,

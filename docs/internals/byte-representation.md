@@ -284,7 +284,7 @@ The copied source cells are found with one range query over the copied
 block and extent (`representation_copy_cell_moves`), and the byte view's
 containing cell with a query over the at most seven constant offsets below
 the access (`containing_integer_cell`). Neither scans memory, other blocks,
-or old snapshots. Each planted cell pays the ordinary `CMemory::store` cost.
+or old snapshots. Each planted cell pays the ordinary `Memory::store` cost.
 The regressions measure deterministic work at four or more sizes, under the
 [efficiency contract](verification-efficiency.md):
 

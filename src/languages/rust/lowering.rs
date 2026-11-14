@@ -32,7 +32,7 @@ fn reference_view(
     ProgramExpression::Cast {
         expression: Box::new(expression),
         target_type,
-        integer_mode: CIntegerCastMode::PointerCoercion,
+        integer_mode: IntegerCastMode::PointerCoercion,
         pointee_struct: None,
         pointee_volatile,
         pointee_constant,
@@ -352,7 +352,7 @@ fn branch_condition(condition: ProgramExpression) -> ProgramExpression {
     match condition {
         ProgramExpression::Cast {
             expression,
-            integer_mode: CIntegerCastMode::BoolValue,
+            integer_mode: IntegerCastMode::BoolValue,
             ..
         } => *expression,
         condition => condition,
@@ -879,7 +879,7 @@ impl Context<'_> {
         if let ProgramStatement::TypedStore { source, .. } = &mut statement
             && let Some(id) = self.reference_source(target, ReferenceAccessKind::Write)
         {
-            *source = CStatementStoreSource::new(id);
+            *source = StatementStoreSource::new(id);
         }
         statement
     }
@@ -1430,7 +1430,7 @@ impl Context<'_> {
                     && let E::Local { name: parent } = reference.as_ref()
                     && let ProgramStatement::Assign { source, .. } = &mut assignment
                 {
-                    *source = CStatementAssignSource::new(ReferenceBorrowSourceId {
+                    *source = StatementAssignSource::new(ReferenceBorrowSourceId {
                         import_identity: import_identity.clone(),
                         function: self.function.into(),
                         block: point.block,

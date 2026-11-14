@@ -519,7 +519,7 @@ mod tests {
     #[test]
     fn common_match_pointer_transport_preserves_snapshots_and_avoids_capture() {
         let _session = VerificationSession::enter();
-        let memory = intern_c_memory(CMemory::new());
+        let memory = intern_c_memory(Memory::new());
         let source = Variable(3);
         let bound = Variable(2);
         let read = |variable| {

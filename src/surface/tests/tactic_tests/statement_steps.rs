@@ -263,7 +263,7 @@ fn clone_field_stores_with_observed_source_resource_verify() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_00")]
 fn simple_statement_transition_does_not_transport_facts_automatically() {
-    let base_memory = CMemory::new();
+    let base_memory = Memory::new();
     let first = Pointer {
         block: "arg-memory".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -291,7 +291,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
     let state = ExecutionState::new()
         .with_memory(before_memory)
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
-            CResourceFact::own_memory(CMemoryRange::new(
+            ResourceFact::own_memory(MemoryRange::new(
                 first.clone(),
                 MachineTerm::constant(0),
                 MachineTerm::constant(2),
@@ -321,9 +321,9 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         &state,
         &crate::surface::PureFactList::from(vec![fact.clone()]),
         &statement,
-        &CExecutionEnvironment::new(),
+        &ExecutionEnvironment::new(),
         None,
-        CExecutionSemantics::APPLY_VERIFIED_RULES,
+        ExecutionSemantics::APPLY_VERIFIED_RULES,
         "simple transition test",
         &mut next_opaque_call,
         &mut next_kernel_variable,
@@ -336,7 +336,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
     };
 
     assert!(transition.pure_facts.contains(&fact));
-    let CStatementOutcome::Normal(post_state) = &transition.outcome else {
+    let StatementOutcome::Normal(post_state) = &transition.outcome else {
         panic!("expected a normal transition")
     };
     let transported = Proposition::ConditionIs(
@@ -1135,7 +1135,7 @@ fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
         block: "arg-memory".into(),
         offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(42)), 4),
     };
-    let read = Pointer::loaded_value(&crate::kernel::intern_c_memory(CMemory::new()), &owner);
+    let read = Pointer::loaded_value(&crate::kernel::intern_c_memory(Memory::new()), &owner);
     let proposition = Proposition::ConditionIs(
         ConditionTerm::pointer_value_equal(
             crate::kernel::PointerValue::new(read, ProgramType::Int32Pointer),

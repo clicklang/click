@@ -10,22 +10,23 @@ use std::fmt;
 use crate::instrumentation::{self, TacticEvent, VerificationEvent};
 use crate::kernel::proof::PropositionSource;
 use crate::kernel::{
-    AlgebraicValue, BitvectorEqualityDerivationStep, CCheckedFunctionExecution,
-    CCheckedFunctionProposition, CComparisonOperator, CCompositeResourceDefinition,
-    CConditionOutcome, CExecutionEnvironment, CExecutionSemantics, CExpressionOutcome,
-    CFunctionContract, CFunctionContractClaim, CFunctionContractClaimKey,
-    CFunctionContractClaimTarget, CFunctionContractExecutionMode, CFunctionExecutionCandidates,
-    CFunctionOutcome, CFunctionSpecification, CLoopBreakExit, CLoopEffect, CLoopEffectCheck,
-    CLoopEffectSpan, CLoopFinalExitCandidate, CLoopInvariantCheck, CLoopReturnExit, CMemory,
-    CMemoryRange, CMemorySegment, CResource, CResourceAccessMode, CResourceFact, CResourceSnapshot,
-    CResourceSpec, CResourceTransferRole, CStatementOutcome, CTerminationRefusal,
-    CTerminationVerdicts, CUnsuitableCallback, CVerifiedLoopRule, CVerifiedPureTheorem,
-    ConditionTerm, ExecutionBudget, ExecutionPureFact, ExecutionState, MachineTerm, Pointer,
-    PointerBlock, PointerOffsetTerm, ProgramExpression, ProgramFunction, ProgramStatement,
-    ProgramType, ProgramValue, ProofObligation, Proposition, PropositionDerivation,
-    PureFactContext, ResourceContext, ResourceContextValidityError, ResourceFamily, Sort,
+    AlgebraicValue, BitvectorEqualityDerivationStep, CheckedFunctionExecution,
+    CheckedFunctionProposition, ComparisonOperator as KernelComparisonOperator,
+    CompositeResourceDefinition, ConditionOutcome, ConditionTerm, ExecutionBudget,
+    ExecutionEnvironment, ExecutionPureFact, ExecutionSemantics, ExecutionState, ExpressionOutcome,
+    FunctionContract, FunctionContractClaim, FunctionContractClaimKey, FunctionContractClaimTarget,
+    FunctionContractExecutionMode, FunctionExecutionCandidates, FunctionOutcome,
+    FunctionSpecification, LoopBreakExit, LoopEffect, LoopEffectCheck, LoopEffectSpan,
+    LoopFinalExitCandidate, LoopInvariantCheck, LoopReturnExit, MachineTerm, Memory, MemoryRange,
+    MemorySegment, Pointer, PointerBlock, PointerOffsetTerm, ProgramExpression, ProgramFunction,
+    ProgramStatement, ProgramType, ProgramValue, ProofObligation, Proposition,
+    PropositionDerivation, PureFactContext, Resource,
+    ResourceAccessMode as KernelResourceAccessMode, ResourceContext, ResourceContextValidityError,
+    ResourceFact, ResourceFamily, ResourceSnapshot, ResourceSpec, ResourceTransferRole, Sort,
     SpecAlgebraicExpression, SpecExpression, SpecMemory, SpecPredicateArgument, SpecProposition,
-    SpecResource, SymbolicCExecution, Term, Theorem, Variable, abstract_c_state_for_join,
+    SpecResource, StatementOutcome, SymbolicExecution, Term, TerminationRefusal,
+    TerminationVerdicts, Theorem, UnsuitableCallback, Variable, VerifiedLoopRule,
+    VerifiedPureTheorem as KernelVerifiedPureTheorem, abstract_c_state_for_join,
     assume_universally_quantified_pure_implication, c_assign, c_condition_fact_memories,
     c_contract_refinement_context, c_declare, c_do_while_preservation_contexts,
     c_do_while_with_invariant_and_effect_checks, c_function,
@@ -1238,7 +1239,7 @@ pub struct ResourceChildBody {
     resource: String,
     identity: Variable,
     arguments: Vec<ContractExpression>,
-    field_bindings: Vec<crate::kernel::CResourceChildField>,
+    field_bindings: Vec<crate::kernel::ResourceChildField>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2264,7 +2265,7 @@ pub enum ResourceSubject {
         index: usize,
     },
     Captured {
-        value: crate::kernel::CResource,
+        value: crate::kernel::Resource,
         source: Box<ResourceSubject>,
     },
     Memory(ContractSegment),
@@ -3361,7 +3362,7 @@ pub(crate) use binary_contract_expression;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ClickArrayRef {
-    memory: CMemory,
+    memory: Memory,
     pointer: Pointer,
     element_type: ProgramType,
 }
@@ -3439,7 +3440,7 @@ struct RecordedRegionPoints {
 
 #[derive(Clone)]
 struct RecordedSnapshots {
-    effect_log: imbl::Vector<crate::kernel::CResource>,
+    effect_log: imbl::Vector<crate::kernel::Resource>,
     effect_gaps: imbl::Vector<usize>,
     effect_offsets: imbl::OrdMap<SnapshotSelector, usize>,
     footprint_values: std::sync::Arc<
@@ -3450,11 +3451,11 @@ struct RecordedSnapshots {
                     SnapshotSelector,
                     usize,
                     usize,
-                    Option<crate::kernel::CResource>,
+                    Option<crate::kernel::Resource>,
                     crate::kernel::SharedMemory,
                     crate::kernel::SharedMemory,
                 ),
-                crate::kernel::CResource,
+                crate::kernel::Resource,
             >,
         >,
     >,
@@ -3520,7 +3521,7 @@ struct RecordedSnapshots {
     field_points: crate::persistent::PersistentMap<crate::kernel::Variable, SnapshotSelector>,
     /// The locals of the state inserted last, against which the next insert
     /// finds the locals it changed.
-    last_locals: Option<crate::kernel::CLocalEnvironment>,
+    last_locals: Option<crate::kernel::LocalEnvironment>,
     /// The resources of the state inserted last, against which the next
     /// insert finds the instances it changed.
     last_resources: Option<crate::kernel::ResourceContext>,
@@ -3534,7 +3535,7 @@ struct RecordedSnapshots {
     cell_points: crate::persistent::PersistentMap<(u64, usize), SnapshotSelector>,
     /// The memory of the state inserted last, against which the next insert
     /// finds the cells it changed.
-    last_memory: Option<crate::kernel::CMemory>,
+    last_memory: Option<crate::kernel::Memory>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -3719,7 +3720,7 @@ impl RecordedSnapshots {
     fn record_effect(&mut self, effect: Option<&std::sync::Arc<crate::kernel::RegionFootprint>>) {
         if let Some(effect) = effect {
             let gap = self.effect_log.back().is_some_and(|previous| {
-                let crate::kernel::CResource::Footprint(previous) = previous else {
+                let crate::kernel::Resource::Footprint(previous) = previous else {
                     unreachable!()
                 };
                 crate::kernel::intern_c_memory_ref(&previous.after)
@@ -3731,11 +3732,11 @@ impl RecordedSnapshots {
             self.effect_gaps
                 .push_back(self.effect_gaps.back().copied().unwrap_or(0) + usize::from(gap));
             self.effect_log
-                .push_back(crate::kernel::CResource::Footprint(effect.clone()));
+                .push_back(crate::kernel::Resource::Footprint(effect.clone()));
         }
     }
 
-    fn footprint(&self, region: &CodeRegionRef) -> Result<crate::kernel::CResource, String> {
+    fn footprint(&self, region: &CodeRegionRef) -> Result<crate::kernel::Resource, String> {
         let before = self.recorded_spelling(SnapshotSelector::ProgramPoint(ProgramPointRef {
             region: region.clone(),
             kind: ProgramPointKind::Entry,
@@ -3757,7 +3758,7 @@ impl RecordedSnapshots {
         }
         let before_state = self.get(&before).ok_or("missing footprint entry")?;
         let after_state = self.get(&after).ok_or("missing footprint exit")?;
-        let memory_is = |a: &crate::kernel::CMemory, b: &crate::kernel::CMemory| {
+        let memory_is = |a: &crate::kernel::Memory, b: &crate::kernel::Memory| {
             crate::kernel::intern_c_memory_ref(a) == crate::kernel::intern_c_memory_ref(b)
         };
         let covered = if start == end {
@@ -3768,8 +3769,8 @@ impl RecordedSnapshots {
         } else {
             match (self.effect_log.get(start), self.effect_log.get(end - 1)) {
                 (
-                    Some(crate::kernel::CResource::Footprint(first)),
-                    Some(crate::kernel::CResource::Footprint(last)),
+                    Some(crate::kernel::Resource::Footprint(first)),
+                    Some(crate::kernel::Resource::Footprint(last)),
                 ) => {
                     memory_is(before_state.memory(), &first.before)
                         && memory_is(after_state.memory(), &last.after)
@@ -3790,9 +3791,9 @@ impl RecordedSnapshots {
         // A single atomic effect already is the execution-produced descriptor.
         // Keep its identity so its published containment fact names this term.
         if end == start + 1
-            && let Some(crate::kernel::CResource::Footprint(effect)) = self.effect_log.get(start)
+            && let Some(crate::kernel::Resource::Footprint(effect)) = self.effect_log.get(start)
         {
-            return Ok(crate::kernel::CResource::Footprint(effect.clone()));
+            return Ok(crate::kernel::Resource::Footprint(effect.clone()));
         }
         let key = (
             before.clone(),
@@ -3822,11 +3823,11 @@ impl RecordedSnapshots {
                     region: CodeRegionRef::Region(b),
                     ..
                 }),
-                Some(crate::kernel::CResource::Footprint(effect)),
+                Some(crate::kernel::Resource::Footprint(effect)),
             ) => a == b && members.len() == 1 && effect.source == format!("region({a}).footprint"),
             _ => false,
         };
-        let value = crate::kernel::CResource::Footprint(crate::kernel::RegionFootprint::sequence(
+        let value = crate::kernel::Resource::Footprint(crate::kernel::RegionFootprint::sequence(
             format!(
                 "{}.footprint",
                 diagnostics::describe_code_region_ref(region)
@@ -5340,7 +5341,7 @@ impl SpecElaborationContext {
     fn old_state(
         &self,
         entry_values: &BTreeMap<String, ProgramValue>,
-        entry_memory: &CMemory,
+        entry_memory: &Memory,
     ) -> Result<Self, String> {
         if self.function_contract {
             return Ok(Self {
@@ -5569,7 +5570,7 @@ pub struct CertifiedStatementTransition {
     /// The kernel fact context the theorem was proved under; retained with
     /// the theorem so the proof object checks its premises against exactly that.
     pub(crate) context: PureFactContext,
-    pub(crate) outcome: CStatementOutcome,
+    pub(crate) outcome: StatementOutcome,
     pub(crate) execution_facts: crate::kernel::ExecutionFacts,
     pub(crate) path_facts: Vec<Proposition>,
     pub(crate) obligations: Vec<ProofObligation>,
@@ -8201,20 +8202,20 @@ pub struct VerifiedCTheorem {
     pub proof_tactics: Option<std::sync::Arc<[ProofTactic]>>,
     pub expanded_proof: Option<ProofCertificate>,
     pub expansion_blocker: Option<String>,
-    pub specification: CFunctionSpecification,
+    pub specification: FunctionSpecification,
     pub theorem: Theorem,
     pub concrete_loop_execution: bool,
     /// Shared by every theorem one proof issued: a grouped proof issues one
     /// theorem per path and claim over the same checked execution, so the
     /// `Arc` both avoids a per-theorem copy of every path and gives
     /// finalization an exact identity to visit that execution once.
-    pub(crate) checked_execution: std::sync::Arc<CCheckedFunctionExecution>,
+    pub(crate) checked_execution: std::sync::Arc<CheckedFunctionExecution>,
     /// Exact proposition authority issued by the completed kernel proof and
     /// bound to this theorem's function path. Resource and effect claims keep
     /// their dedicated finalization checks instead.
-    pub(crate) checked_proposition: Option<CCheckedFunctionProposition>,
+    pub(crate) checked_proposition: Option<CheckedFunctionProposition>,
     pub(crate) frontier_loop_clauses: std::sync::Arc<[StructuralClause]>,
-    pub(crate) frontier_loop_rules: std::sync::Arc<[CVerifiedLoopRule]>,
+    pub(crate) frontier_loop_rules: std::sync::Arc<[VerifiedLoopRule]>,
     /// The entry the proof that issued this theorem was built from, shared
     /// by every theorem of that proof.
     pub(in crate::surface) entry_context: Option<std::sync::Arc<proof::ProofEntryContext>>,
@@ -8261,7 +8262,7 @@ pub struct VerifiedPureTheorem {
     pub proof: Option<ProofCertificate>,
     pub requires: Vec<Proposition>,
     pub conclusion: Proposition,
-    pub(crate) kernel_authority: Option<CVerifiedPureTheorem>,
+    pub(crate) kernel_authority: Option<KernelVerifiedPureTheorem>,
     /// Retained source-proof evidence. Kernel axioms and execution/refinement
     /// rules retain their authority through their dedicated checker instead.
     pub(crate) checked_completion: Option<TheoremProofCompletion>,
@@ -8339,7 +8340,7 @@ struct ReportDetail {
     /// The resource fact a refused C operation needed and the state did not
     /// hold. Planning input, like an unresolved requirement: execution search opens the
     /// one folded resource whose body holds it (design/proof-reuse.md R4).
-    missing_resource: Option<crate::kernel::CResourceFact>,
+    missing_resource: Option<crate::kernel::ResourceFact>,
     /// The proposition a refused C operation needed, for the report's
     /// `goal:` line when no unresolved requirement carries it. Diagnostics
     /// only: no planner reads it.
@@ -8555,7 +8556,7 @@ pub struct C0VerificationSession {
     pub(crate) prepared_imports: Option<Vec<crate::languages::c::compiler_import::PreparedCImport>>,
     pub(crate) prepared_program_import: Option<crate::languages::PreparedProgram>,
     baseline_file: ClickFile,
-    verified_function_environment: CExecutionEnvironment,
+    verified_function_environment: ExecutionEnvironment,
     environment_identity: verification::CProofArtifactIdentity,
     /// The kernel generation `verified_function_environment` was built
     /// under. Its snapshots live in this thread's kernel tables, which the
@@ -10887,13 +10888,13 @@ impl ClickError {
         self
     }
 
-    pub(in crate::surface) fn missing_resource(&self) -> Option<&crate::kernel::CResourceFact> {
+    pub(in crate::surface) fn missing_resource(&self) -> Option<&crate::kernel::ResourceFact> {
         self.report_detail.as_ref()?.missing_resource.as_ref()
     }
 
     pub(in crate::surface) fn with_missing_resource(
         mut self,
-        resource: &crate::kernel::CResourceFact,
+        resource: &crate::kernel::ResourceFact,
     ) -> Self {
         std::sync::Arc::make_mut(self.report_detail.get_or_insert_default()).missing_resource =
             Some(resource.clone());
@@ -10904,10 +10905,10 @@ impl ClickError {
     /// what refused it.
     pub(in crate::surface) fn with_runtime_missing_resource(
         self,
-        error: &crate::kernel::CRuntimeError,
+        error: &crate::kernel::RuntimeError,
     ) -> Self {
         match error {
-            crate::kernel::CRuntimeError::MissingResource { resource } => {
+            crate::kernel::RuntimeError::MissingResource { resource } => {
                 self.with_missing_resource(resource)
             }
             _ => self,

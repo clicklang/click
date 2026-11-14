@@ -3287,12 +3287,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                                 } | ConditionTerm::PointerValueEqual(..)
                                     | ConditionTerm::PointerEqual(..)
                                     | ConditionTerm::PointerOffsetEqual(..)
-                                    | ConditionTerm::Float32(
-                                        CFloatCondition::Classification { .. }
-                                    )
-                                    | ConditionTerm::Float64(
-                                        CFloatCondition::Classification { .. }
-                                    ),
+                                    | ConditionTerm::Float32(FloatCondition::Classification { .. })
+                                    | ConditionTerm::Float64(FloatCondition::Classification { .. }),
                                 true
                             )
                         )
@@ -5376,7 +5372,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         if !matches!(
             (goal_left.as_ref(), goal_right.as_ref()),
-            (CResource::Memory(_), CResource::Memory(_))
+            (Resource::Memory(_), Resource::Memory(_))
         ) {
             return Ok(None);
         }
@@ -5392,7 +5388,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .cloned()
             .collect::<Vec<_>>();
         for fact in view.fixed_state.state.resources().facts() {
-            if fact.is_own() && matches!(fact.resource(), CResource::Memory(_)) {
+            if fact.is_own() && matches!(fact.resource(), Resource::Memory(_)) {
                 candidates.push(Proposition::CResourceSeparate {
                     left: Box::new(fact.resource().clone()),
                     right: goal_right.clone(),
@@ -5406,7 +5402,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             };
             if !matches!(
                 (a.as_ref(), b.as_ref()),
-                (CResource::Memory(_), CResource::Memory(_))
+                (Resource::Memory(_), Resource::Memory(_))
             ) {
                 continue;
             }
@@ -5416,7 +5412,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             // The goal already owns exact spellings for these resources,
             // including reads at its selected historical points. Keep those
             // names instead of reconstructing them from the current state.
-            let source = |resource: &CResource| {
+            let source = |resource: &Resource| {
                 if resource == goal_left.as_ref() {
                     return Ok(left.clone());
                 }
@@ -7936,7 +7932,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             lowered: ProgramExpression::Cast {
                                 expression: Box::new(ProgramExpression::Value(int32(0))),
                                 target_type: ProgramType::UInt32,
-                                integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+                                integer_mode: crate::kernel::IntegerCastMode::CConversion,
                                 pointee_struct: None,
                                 pointee_volatile: false,
                                 pointee_constant: false,

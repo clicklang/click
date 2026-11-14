@@ -19,7 +19,7 @@ fn loop_written_objects_scale_with_the_body_not_the_frame() {
     fn work(body_calls: usize, unrelated: usize) -> usize {
         let _session = crate::kernel::VerificationSession::enter();
         let mut state = ExecutionState::new();
-        let layout = CAggregateLayout::holding_value(ProgramType::Int32);
+        let layout = AggregateLayout::holding_value(ProgramType::Int32);
         state
             .locals
             .set_aggregate_object_at("c", layout.clone(), object_slot("c"));

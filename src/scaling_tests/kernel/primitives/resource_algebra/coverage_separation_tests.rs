@@ -8,9 +8,9 @@
 /// pair fixed and grow those related separations.
 #[test]
 fn range_coverage_ignores_related_separations() {
-    let separation = |left: CMemoryRange, right: CMemoryRange| Proposition::CResourceSeparate {
-        left: Box::new(CResource::Memory(left)),
-        right: Box::new(CResource::Memory(right)),
+    let separation = |left: MemoryRange, right: MemoryRange| Proposition::CResourceSeparate {
+        left: Box::new(Resource::Memory(left)),
+        right: Box::new(Resource::Memory(right)),
     };
     let mut works = Vec::new();
     for size in [16u64, 64, 256] {
@@ -19,7 +19,7 @@ fn range_coverage_ignores_related_separations() {
         let n = MachineTerm::Variable(Variable(9_889_002));
         let count = MachineTerm::Variable(Variable(9_889_003));
         let window = |offset: MachineTerm, length: MachineTerm| {
-            CMemoryRange::new_wide(
+            MemoryRange::new_wide(
                 base.offset_by_typed_elements(offset, 1, true, true),
                 MachineTerm::uint64_constant(0),
                 length,
@@ -44,7 +44,7 @@ fn range_coverage_ignores_related_separations() {
                     MachineTerm::Variable(Variable(9_890_000 + index)),
                     MachineTerm::uint64_constant(8),
                 ),
-                CMemoryRange::new_wide(
+                MemoryRange::new_wide(
                     Pointer::symbolic(Variable(9_891_000 + index)),
                     MachineTerm::uint64_constant(0),
                     MachineTerm::uint64_constant(8),
@@ -53,7 +53,7 @@ fn range_coverage_ignores_related_separations() {
             ));
         }
         let held =
-            CMemoryRange::new_wide(base.clone(), MachineTerm::uint64_constant(0), n.clone(), 1);
+            MemoryRange::new_wide(base.clone(), MachineTerm::uint64_constant(0), n.clone(), 1);
         let read = window(
             MachineTerm::uint64_subtract(n.clone(), count.clone()),
             count,

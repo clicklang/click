@@ -135,9 +135,9 @@ impl ExecutionValue {
     }
 }
 
-impl<V> CExpressionPath<V> {
-    pub(in crate::kernel) fn map_value<W>(self, map: impl FnOnce(V) -> W) -> CExpressionPath<W> {
-        CExpressionPath {
+impl<V> ExpressionPath<V> {
+    pub(in crate::kernel) fn map_value<W>(self, map: impl FnOnce(V) -> W) -> ExpressionPath<W> {
+        ExpressionPath {
             outcome: self.outcome.map_value(map),
             facts: self.facts,
             obligations: self.obligations,
@@ -145,14 +145,14 @@ impl<V> CExpressionPath<V> {
     }
 }
 
-impl CExpressionPath<ExecutionValue> {
-    pub(in crate::kernel) fn into_native(self) -> CExpressionPath {
+impl ExpressionPath<ExecutionValue> {
+    pub(in crate::kernel) fn into_native(self) -> ExpressionPath {
         self.map_value(ExecutionValue::into_native)
     }
 }
 
-impl From<CExpressionPath> for CExpressionPath<ExecutionValue> {
-    fn from(path: CExpressionPath) -> Self {
+impl From<ExpressionPath> for ExpressionPath<ExecutionValue> {
+    fn from(path: ExpressionPath) -> Self {
         path.map_value(ExecutionValue::retain_native)
     }
 }
@@ -299,14 +299,13 @@ mod tests {
     #[test]
     fn execution_outcomes_preserve_native_values_and_refusals() {
         let value = ProgramValue::Int32(MachineTerm::constant(7));
-        let outcome = CExpressionOutcome::Value(value.clone()).map_value(ExecutionValue::from);
+        let outcome = ExpressionOutcome::Value(value.clone()).map_value(ExecutionValue::from);
         assert_eq!(
             outcome.map_value(ExecutionValue::into_native),
-            CExpressionOutcome::Value(value)
+            ExpressionOutcome::Value(value)
         );
-        let undefined = CExpressionOutcome::<ProgramValue>::UndefinedBehavior(
-            CUndefinedBehavior::SignedOverflow,
-        );
+        let undefined =
+            ExpressionOutcome::<ProgramValue>::UndefinedBehavior(UndefinedBehavior::SignedOverflow);
         assert_eq!(
             undefined
                 .clone()

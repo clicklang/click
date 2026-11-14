@@ -6,7 +6,7 @@ fn full_pointer_fact_transport_checks_designations_and_the_whole_read() {
         block: "pointer-snapshot-cell".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let before = intern_c_memory(CMemory::new().with_block(cell.block.clone(), 8));
+    let before = intern_c_memory(Memory::new().with_block(cell.block.clone(), 8));
     let after = intern_c_memory(before.memory().clone().with_block("other-local", 4));
     let pointer = |memory: &SharedMemory| {
         PointerValue::from_read(

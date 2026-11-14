@@ -208,8 +208,8 @@ mod tests {
             ConditionTerm::pointer_equal(a.pointer().clone(), b.pointer().clone()),
             true,
         );
-        let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
-            CMemoryRange::from_pointer_value(&b, 0u32.into(), 1u32.into(), 4),
+        let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
+            MemoryRange::from_pointer_value(&b, 0u32.into(), 1u32.into(), 4),
         ));
         assert!(context.pointers_known_equal(a.pointer(), b.pointer()));
         assert!(resources.permits_memory_read(a.pointer(), 4, &context));
@@ -254,8 +254,8 @@ mod tests {
         let byte_view = input.clone().with_root_extent();
         let parent_view = parent.clone().with_root_extent();
         let context = PureFactContext::new().assume_proposition(equality(&byte_view, &parent_view));
-        let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
-            CMemoryRange::from_pointer_value(&parent, 0u32.into(), 2u32.into(), 4),
+        let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
+            MemoryRange::from_pointer_value(&parent, 0u32.into(), 2u32.into(), 4),
         ));
         assert!(context.designations_equal(input.designation(), parent.designation()));
         assert!(!resources.permits_designated_memory_read(
@@ -271,13 +271,13 @@ mod tests {
             &context
         ));
         let split = ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::from_pointer_value(
+            .unchecked_with_fact(ResourceFact::own_memory(MemoryRange::from_pointer_value(
                 &input,
                 0u32.into(),
                 1u32.into(),
                 4,
             )))
-            .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::from_pointer_value(
+            .unchecked_with_fact(ResourceFact::own_memory(MemoryRange::from_pointer_value(
                 &parent,
                 1u32.into(),
                 2u32.into(),
@@ -296,8 +296,8 @@ mod tests {
             width: 4u32.into(),
         }));
         let selected_resources =
-            ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
-                CMemoryRange::from_pointer_value(&selected, 0u32.into(), 1u32.into(), 4),
+            ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
+                MemoryRange::from_pointer_value(&selected, 0u32.into(), 1u32.into(), 4),
             ));
         assert!(!selected_resources.permits_designated_memory_read(
             input.pointer(),
@@ -331,7 +331,7 @@ mod tests {
             start: parent.pointer().clone(),
             width: 4u32.into(),
         }));
-        let snapshot = crate::kernel::intern_c_memory(CMemory::new());
+        let snapshot = crate::kernel::intern_c_memory(Memory::new());
         let cell = Pointer::symbolic(Variable(824_002));
         let read_address = Pointer::symbolic(Variable(824_003));
         let read =
@@ -347,7 +347,7 @@ mod tests {
     fn equal_storage_addresses_preserve_a_complete_pointer_reads_designation() {
         let a = value(825_001);
         let b = value(825_002);
-        let snapshot = crate::kernel::intern_c_memory(CMemory::new());
+        let snapshot = crate::kernel::intern_c_memory(Memory::new());
         let x = PointerValue::from_read(
             Pointer::symbolic(Variable(825_003)),
             ProgramType::Int32Pointer,

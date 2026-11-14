@@ -16,7 +16,7 @@ fn facts_over_one_memory_reserve_its_variables_once() {
             block: PointerBlock::ExternalObject(Variable(7_100_000 + index)),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let memory = (0..size).fold(CMemory::new(), |memory, index| {
+        let memory = (0..size).fold(Memory::new(), |memory, index| {
             memory.store(
                 pointer(index),
                 ProgramValue::Int32(MachineTerm::Variable(Variable(7_200_000 + index))),
@@ -54,7 +54,7 @@ fn facts_over_one_memory_walk_its_bound_variables_once() {
             block: PointerBlock::ExternalObject(Variable(7_300_000 + index)),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let memory = (0..size).fold(CMemory::new(), |memory, index| {
+        let memory = (0..size).fold(Memory::new(), |memory, index| {
             memory.store(
                 pointer(index),
                 ProgramValue::Int32(MachineTerm::Variable(Variable(7_400_000 + index))),

@@ -205,7 +205,7 @@ impl<'a> Proof<'a> {
         &self,
         source: &ProofMatch,
         value: &crate::kernel::AlgebraicTerm,
-        frontier_locals: &crate::kernel::CLocalEnvironment,
+        frontier_locals: &crate::kernel::LocalEnvironment,
     ) -> Result<Vec<usize>, ClickError> {
         let variants = &value.algebraic_type.variants;
         if source.arms.len() != variants.len() {

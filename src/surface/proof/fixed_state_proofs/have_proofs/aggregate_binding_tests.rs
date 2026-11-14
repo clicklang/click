@@ -1,6 +1,6 @@
 use super::*;
 use crate::kernel::{
-    CAggregateField, CAggregateLayout, c_function, c_function_entry_state,
+    AggregateField, AggregateLayout, c_function, c_function_entry_state,
     c_parameter_with_aggregate_layout, c_return, c_void_value,
 };
 
@@ -9,10 +9,10 @@ fn aggregate_entry(count: u32) -> (ExecutionState, BTreeMap<String, ProgramValue
         block: "local:caller_packet".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
-    let layout = CAggregateLayout::new(
+    let layout = AggregateLayout::new(
         8,
         8,
-        vec![CAggregateField::new("data", 0, ProgramType::Int32Pointer)],
+        vec![AggregateField::new("data", 0, ProgramType::Int32Pointer)],
     );
     let value = ProgramValue::pointer(source.clone());
     let values = (0..count)
@@ -29,7 +29,7 @@ fn aggregate_entry(count: u32) -> (ExecutionState, BTreeMap<String, ProgramValue
             .collect(),
         c_return(c_void_value()),
     );
-    let caller = ExecutionState::new().with_memory(CMemory::new().with_block(source.block, 8));
+    let caller = ExecutionState::new().with_memory(Memory::new().with_block(source.block, 8));
     let arguments = values
         .values()
         .cloned()
@@ -119,7 +119,7 @@ fn proof_lowering_retains_each_selected_aggregate_copy() {
 fn retired_aggregate_copy_uses_the_contract_argument_image() {
     let _session = crate::kernel::VerificationSession::enter();
     let (entry, values) = aggregate_entry(1);
-    let retired = entry.clone().with_memory(CMemory::new());
+    let retired = entry.clone().with_memory(Memory::new());
     let arrays = ClickArrayRefs::new();
     let environment = ContractEnvironment::new(&values, &arrays);
     let selected = FixedStateLowering::for_names(

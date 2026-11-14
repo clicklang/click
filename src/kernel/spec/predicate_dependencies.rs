@@ -71,7 +71,7 @@ mod tests {
             )))),
         };
         for body in [nested, predicate(true)] {
-            let registered = CPredicateUnfolding::new(predicate(false), body);
+            let registered = PredicateUnfolding::new(predicate(false), body);
             assert!(matches!(
                 registered.predicate(),
                 SpecProposition::Predicate {
@@ -134,7 +134,7 @@ mod tests {
                         operator: IntegerComparisonOperator::Equal,
                         right: SpecIntegerExpression::Term(IntegerTerm::constant_i64(0)),
                     };
-                    let registered = CPredicateUnfolding::new(predicate(false), body);
+                    let registered = PredicateUnfolding::new(predicate(false), body);
                     assert!(
                         matches!(registered.predicate(), SpecProposition::Predicate {
                         resource_state_dependent, ..

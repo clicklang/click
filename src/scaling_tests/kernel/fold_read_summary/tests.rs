@@ -31,9 +31,9 @@ fn framing_is_linear_in_applications_and_ignores_unrelated_facts_and_interval_le
         let _session = VerificationSession::enter();
         register_unmarked();
         let v = parameter_base(V);
-        let before = CMemory::new();
+        let before = Memory::new();
         let after = before.clone().store(element(&v, bv(HI)), one());
-        let at = |memory: &CMemory, index: usize| {
+        let at = |memory: &Memory, index: usize| {
             fact(ConditionTerm::IntegerEqual(
                 IntegerTerm::PureFunctionApplication(application(
                     memory,
@@ -45,7 +45,7 @@ fn framing_is_linear_in_applications_and_ignores_unrelated_facts_and_interval_le
                 IntegerTerm::constant_i64(0).into(),
             ))
         };
-        let conjunction = |memory: &CMemory| {
+        let conjunction = |memory: &Memory| {
             (1..size).fold(at(memory, 0), |all, index| {
                 Proposition::And(Box::new(all), Box::new(at(memory, index)))
             })
@@ -72,7 +72,7 @@ fn framing_is_linear_in_applications_and_ignores_unrelated_facts_and_interval_le
         let _session = VerificationSession::enter();
         register_unmarked();
         let v = parameter_base(V);
-        let before = CMemory::new();
+        let before = Memory::new();
         let after = before.clone().store(element(&v, bv(J)), one());
         let old = application(&before, &v, bv(LO), bv(HI));
         let new = application(&after, &v, bv(LO), bv(HI));
@@ -100,7 +100,7 @@ fn framing_is_linear_in_applications_and_ignores_unrelated_facts_and_interval_le
         let _session = VerificationSession::enter();
         register_unmarked();
         let v = parameter_base(V);
-        let before = CMemory::new();
+        let before = Memory::new();
         let end = MachineTerm::constant(length);
         let after = before.clone().store(element(&v, end.clone()), one());
         let old = application(&before, &v, MachineTerm::constant(0), end.clone());
@@ -128,7 +128,7 @@ fn repeated_framing_along_a_store_sequence_is_linear() {
         let _session = VerificationSession::enter();
         register_unmarked();
         let v = parameter_base(V);
-        let mut memories = vec![CMemory::new()];
+        let mut memories = vec![Memory::new()];
         let mut facts = Vec::new();
         for index in 0..size as u32 {
             let written = bv(40_000 + index);

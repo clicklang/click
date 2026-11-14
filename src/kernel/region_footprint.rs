@@ -12,13 +12,13 @@ static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 pub struct RegionFootprint {
     id: u64,
     pub(crate) source: String,
-    pub(crate) before: CMemory,
-    pub(crate) after: CMemory,
+    pub(crate) before: Memory,
+    pub(crate) after: Memory,
     pub(crate) before_resources: ResourceContext,
     pub(crate) after_resources: ResourceContext,
-    pub(crate) members: imbl::Vector<CResource>,
+    pub(crate) members: imbl::Vector<Resource>,
     pub(crate) complete: bool,
-    pub(crate) resource_bound: Option<CResource>,
+    pub(crate) resource_bound: Option<Resource>,
     is_sequence: bool,
 }
 impl std::fmt::Debug for RegionFootprint {
@@ -66,7 +66,7 @@ impl RegionFootprint {
                 Proposition::CMemoryMutatesOnly { writes, .. } => {
                     extra_effect |= !writes.is_empty();
                     for (pointer, bytes) in writes {
-                        members.push_back(CResource::Memory(CMemoryRange::new_with_element_width(
+                        members.push_back(Resource::Memory(MemoryRange::new_with_element_width(
                             pointer.clone(),
                             0u32.into(),
                             (*bytes).into(),
@@ -82,7 +82,7 @@ impl RegionFootprint {
                         while let Some(resource) = pending.pop() {
                             crate::instrumentation::record_deterministic_work(1);
                             match resource {
-                                CResource::Star(pair) => {
+                                Resource::Star(pair) => {
                                     pending.push(&pair.0);
                                     pending.push(&pair.1);
                                 }
@@ -95,7 +95,7 @@ impl RegionFootprint {
                     // Keep the recorded concrete projection for existing
                     // explicit memory framing. The abstract containment bound
                     // is a separate fact, not a replacement for these members.
-                    members.extend(mutable_ranges.iter().cloned().map(CResource::Memory));
+                    members.extend(mutable_ranges.iter().cloned().map(Resource::Memory));
                 }
                 Proposition::CHeapAllocationFreed {
                     allocation_base,
@@ -103,7 +103,7 @@ impl RegionFootprint {
                     ..
                 } => {
                     extra_effect = true;
-                    members.push_back(CResource::Memory(bytes.byte_range(allocation_base.clone())));
+                    members.push_back(Resource::Memory(bytes.byte_range(allocation_base.clone())));
                 }
                 _ => {}
             }
@@ -124,7 +124,7 @@ impl RegionFootprint {
                         continue;
                     }
                     extra_effect = true;
-                    members.push_back(CResource::Memory(contents.extent().byte_range(Pointer {
+                    members.push_back(Resource::Memory(contents.extent().byte_range(Pointer {
                         block: block.clone(),
                         offset: PointerOffsetTerm::Constant(0),
                     })));
@@ -137,8 +137,8 @@ impl RegionFootprint {
         if let Some(changed) = changed {
             for fact in changed {
                 crate::instrumentation::record_deterministic_work(1);
-                if let CResourceFact::Own(resource, _) = &fact
-                    && !matches!(resource, CResource::Memory(_) | CResource::Iterated(_))
+                if let ResourceFact::Own(resource, _) = &fact
+                    && !matches!(resource, Resource::Memory(_) | Resource::Iterated(_))
                 {
                     // A bounded call's produced output is new ownership made
                     // from its consumed inputs, not memory outside the bound.
@@ -198,7 +198,7 @@ impl RegionFootprint {
         source: String,
         before: &ExecutionState,
         after: &ExecutionState,
-        members: imbl::Vector<CResource>,
+        members: imbl::Vector<Resource>,
         complete: bool,
     ) -> Arc<Self> {
         Arc::new(Self {
@@ -218,28 +218,28 @@ impl RegionFootprint {
 
 /// Establish collection separation from explicitly selected premises. Only the
 /// named region's recorded members are visited; no execution history is read.
-pub(crate) fn separate_using(left: &CResource, right: &CResource, facts: &PureFactContext) -> bool {
+pub(crate) fn separate_using(left: &Resource, right: &Resource, facts: &PureFactContext) -> bool {
     crate::instrumentation::record_deterministic_work(1);
     // Do not turn two effect collections into a Cartesian product.
     if matches!(
         (left, right),
-        (CResource::Footprint(_), CResource::Footprint(_))
+        (Resource::Footprint(_), Resource::Footprint(_))
     ) {
         return false;
     }
     let mut pending = vec![(left, right)];
     while let Some((left, right)) = pending.pop() {
         crate::instrumentation::record_deterministic_work(1);
-        let empty = |resource: &CResource| {
+        let empty = |resource: &Resource| {
             matches!(resource,
-            CResource::Memory(range) if range.wide_bounds().is_none()
+            Resource::Memory(range) if range.wide_bounds().is_none()
                 && range.byte_footprint().1.as_const() == Some(0))
         };
         if empty(left) || empty(right) {
             continue;
         }
         match (left, right) {
-            (CResource::Footprint(fp), other) | (other, CResource::Footprint(fp)) => {
+            (Resource::Footprint(fp), other) | (other, Resource::Footprint(fp)) => {
                 // A simple normalization never walks a region's execution
                 // sequence. Longer transports spell each preservation edge.
                 if !fp.complete || (fp.is_sequence && fp.members.len() > 1) {
@@ -249,9 +249,9 @@ pub(crate) fn separate_using(left: &CResource, right: &CResource, facts: &PureFa
             }
             // Primitive tokens contain no bytes. Releasing an allocation
             // still records its memory extent separately above.
-            (CResource::Token { .. }, CResource::Memory(_))
-            | (CResource::Memory(_), CResource::Token { .. }) => {}
-            (CResource::Memory(left), CResource::Memory(right))
+            (Resource::Token { .. }, Resource::Memory(_))
+            | (Resource::Memory(_), Resource::Token { .. }) => {}
+            (Resource::Memory(left), Resource::Memory(right))
                 if left.base().blocks_proven_distinct(right.base()) => {}
             _ => {
                 let (Some(left), Some(right)) = (byte_resource(left), byte_resource(right)) else {
@@ -280,14 +280,14 @@ pub(crate) fn separate_using(left: &CResource, right: &CResource, facts: &PureFa
 
 /// Compare spatial resources in byte coordinates, independently of their C
 /// element types. Unsupported wide intervals decline instead of narrowing.
-pub(crate) fn byte_resource(resource: &CResource) -> Option<CResource> {
+pub(crate) fn byte_resource(resource: &Resource) -> Option<Resource> {
     match resource {
-        CResource::Memory(range) => {
+        Resource::Memory(range) => {
             if range.wide_bounds().is_some() {
                 return None;
             }
             let (base, bytes) = range.byte_footprint();
-            Some(CResource::Memory(CMemoryRange::new_with_element_width(
+            Some(Resource::Memory(MemoryRange::new_with_element_width(
                 base,
                 0u32.into(),
                 bytes,

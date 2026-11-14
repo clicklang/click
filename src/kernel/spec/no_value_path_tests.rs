@@ -1,23 +1,23 @@
 use super::*;
 
-fn error_path(error: CRuntimeError) -> CExpressionPath {
-    CExpressionPath {
-        outcome: CExpressionOutcome::RuntimeError(error),
+fn error_path(error: RuntimeError) -> ExpressionPath {
+    ExpressionPath {
+        outcome: ExpressionOutcome::RuntimeError(error),
         facts: Vec::new().into(),
         obligations: Vec::new(),
     }
 }
 
-fn value_path() -> CExpressionPath {
-    CExpressionPath {
-        outcome: CExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::constant(1))),
+fn value_path() -> ExpressionPath {
+    ExpressionPath {
+        outcome: ExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::constant(1))),
         facts: Vec::new().into(),
         obligations: Vec::new(),
     }
 }
 
-fn width_mismatch() -> CRuntimeError {
-    CRuntimeError::LoadTypeMismatch {
+fn width_mismatch() -> RuntimeError {
+    RuntimeError::LoadTypeMismatch {
         pointer: Pointer::null(),
         value_type: ProgramType::Int32,
         stored: Some(Box::new(ProgramValue::UInt64(
@@ -33,14 +33,14 @@ fn an_all_error_evaluation_records_its_first_error_on_the_budget() {
     let paths = spec_value_paths_in(
         vec![
             error_path(width_mismatch()),
-            error_path(CRuntimeError::TypeMismatch),
+            error_path(RuntimeError::TypeMismatch),
         ],
         &mut budget,
     );
     assert!(paths.is_empty());
     assert_eq!(budget.dropped_runtime_error(), Some(&width_mismatch()));
     // A later all-error evaluation does not displace the first record.
-    spec_value_paths_in(vec![error_path(CRuntimeError::TypeMismatch)], &mut budget);
+    spec_value_paths_in(vec![error_path(RuntimeError::TypeMismatch)], &mut budget);
     assert_eq!(budget.dropped_runtime_error(), Some(&width_mismatch()));
 }
 

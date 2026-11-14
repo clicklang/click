@@ -26,9 +26,9 @@ pub(super) use special_arithmetic_planner::*;
 /// Fields are private to the checker; presentation syntax cannot create it.
 #[derive(Clone)]
 pub(super) struct CheckedResourceClaim<'e> {
-    execution: &'e CCheckedFunctionExecution,
+    execution: &'e CheckedFunctionExecution,
     path_index: usize,
-    key: CFunctionContractClaimKey,
+    key: FunctionContractClaimKey,
     returned_resources: crate::kernel::ResourceContext,
     borrowed: bool,
     deferred_guard: bool,
@@ -36,9 +36,9 @@ pub(super) struct CheckedResourceClaim<'e> {
 
 impl CheckedResourceClaim<'_> {
     pub(super) fn inactive(
-        execution: &CCheckedFunctionExecution,
+        execution: &CheckedFunctionExecution,
         path_index: usize,
-        key: CFunctionContractClaimKey,
+        key: FunctionContractClaimKey,
         borrowed: bool,
     ) -> CheckedResourceClaim<'_> {
         CheckedResourceClaim {
@@ -52,9 +52,9 @@ impl CheckedResourceClaim<'_> {
     }
 
     pub(super) fn deferred(
-        execution: &CCheckedFunctionExecution,
+        execution: &CheckedFunctionExecution,
         path_index: usize,
-        key: CFunctionContractClaimKey,
+        key: FunctionContractClaimKey,
         borrowed: bool,
     ) -> CheckedResourceClaim<'_> {
         CheckedResourceClaim {
@@ -69,13 +69,13 @@ impl CheckedResourceClaim<'_> {
 
     pub(super) fn matches(
         &self,
-        execution: &CCheckedFunctionExecution,
+        execution: &CheckedFunctionExecution,
         path_index: usize,
-        key: &CFunctionContractClaimKey,
+        key: &FunctionContractClaimKey,
     ) -> bool {
         std::ptr::eq(self.execution, execution) && self.path_index == path_index && &self.key == key
     }
-    pub(super) fn claim_key(&self) -> &CFunctionContractClaimKey {
+    pub(super) fn claim_key(&self) -> &FunctionContractClaimKey {
         &self.key
     }
     pub(super) fn path_index(&self) -> usize {
@@ -97,7 +97,7 @@ impl CheckedResourceClaim<'_> {
 /// range it has not, rendered for a diagnostic.
 fn produced_range_left_uninitialized(
     resource: &ResourceClause,
-    expected: &[CResourceFact],
+    expected: &[ResourceFact],
     parameter_binding: ParameterBinding<'_>,
     post_state: &ExecutionState,
     assumptions: &PureFactContext,
@@ -111,7 +111,7 @@ fn produced_range_left_uninitialized(
         return None;
     }
     expected.iter().enumerate().find_map(|(index, fact)| {
-        let CResource::Memory(range) = fact.resource() else {
+        let Resource::Memory(range) = fact.resource() else {
             return None;
         };
         let runs = (expected.len() == segments.len())
@@ -138,8 +138,8 @@ fn produced_range_left_uninitialized(
 }
 
 pub(super) fn prove_ensure_resource<'e>(
-    checked_execution: &'e CCheckedFunctionExecution,
-    claim_key: CFunctionContractClaimKey,
+    checked_execution: &'e CheckedFunctionExecution,
+    claim_key: FunctionContractClaimKey,
     claim_label: &str,
     path_index: usize,
     // Read only to describe a failure: a path's merged facts are its whole
@@ -151,7 +151,7 @@ pub(super) fn prove_ensure_resource<'e>(
     parameter_binding: ParameterBinding<'_>,
     pre_state: &ExecutionState,
     entry_state: &ExecutionState,
-    outcome: &CFunctionOutcome,
+    outcome: &FunctionOutcome,
     guard_active: Option<bool>,
     guard_deferred: bool,
 ) -> Result<CheckedResourceClaim<'e>, ClickError> {
@@ -165,7 +165,7 @@ pub(super) fn prove_ensure_resource<'e>(
                 "resource claim has no checked execution path",
             ));
         }
-        let CFunctionOutcome::Return {
+        let FunctionOutcome::Return {
             value: result,
             state: post_state,
         } = outcome

@@ -57,7 +57,7 @@ fn generic_result_type_cannot_prove_a_false_postcondition() {
     )
     .expect_err("declared result metadata cannot prove a false postcondition");
 }
-use crate::kernel::CLoopEffectOrigin;
+use crate::kernel::LoopEffectOrigin;
 
 fn authority_stack_project(click_source: &str) -> ClickProject {
     ClickProject::new(
@@ -1356,7 +1356,7 @@ fn verifies_fill3_c0_source_with_sidecar_specification() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let initial_memory = memory_with_symbolic_loadable_cells(
-        CMemory::new(),
+        Memory::new(),
         &std::collections::BTreeMap::from([(
             "p".to_string(),
             ConcreteMemoryRangeSeed {
@@ -1369,7 +1369,7 @@ fn verifies_fill3_c0_source_with_sidecar_specification() {
         )]),
     );
     let initial_resources =
-        ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+        ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
             base.clone(),
             MachineTerm::constant(0),
             MachineTerm::constant(3),
@@ -1404,7 +1404,7 @@ fn verifies_fill3_c0_source_with_sidecar_specification() {
         verified
             .specification
             .outcome()
-            .equal_up_to_unused_creation_ledgers(&CFunctionOutcome::Return {
+            .equal_up_to_unused_creation_ledgers(&FunctionOutcome::Return {
                 value: int32(2).into(),
                 state: Box::new(
                     ExecutionState::new()
@@ -1462,15 +1462,15 @@ fn verifies_fill3_c0_source_with_sidecar_specification() {
                                         // A resource-derived frame is lowered without
                                         // segments; the kernel installs its ranges from
                                         // the checked entry transition.
-                                        CLoopEffectCheck::new_with_origin(
-                                            CLoopEffect::Mutable(Vec::new()),
-                                            CLoopEffectSpan::Whole,
-                                            CLoopEffectOrigin::InheritedResourceDerived,
+                                        LoopEffectCheck::new_with_origin(
+                                            LoopEffect::Mutable(Vec::new()),
+                                            LoopEffectSpan::Whole,
+                                            LoopEffectOrigin::InheritedResourceDerived,
                                             Some(
                                                 "loop 0 inherited owned resource frame".to_string(),
                                             ),
                                         )
-                                        .with_validated_ranges(vec![CMemoryRange::new(
+                                        .with_validated_ranges(vec![MemoryRange::new(
                                             base.clone(),
                                             MachineTerm::constant(0),
                                             MachineTerm::constant(3),
@@ -1485,15 +1485,15 @@ fn verifies_fill3_c0_source_with_sidecar_specification() {
                     .with_source_body(parsed.source_body().clone())
                 }
                 .with_resource_summary(
-                    vec![CResourceSpec::memory(
-                        CMemorySegment::new(
+                    vec![ResourceSpec::memory(
+                        MemorySegment::new(
                             ProgramExpression::Variable("p".to_string()),
                             ProgramExpression::Value(int32(0)),
                             ProgramExpression::Value(int32(3)),
                         ),
-                        CResourceAccessMode::Own,
-                        CResourceTransferRole::Consume,
-                        CResourceSnapshot::Entry,
+                        KernelResourceAccessMode::Own,
+                        ResourceTransferRole::Consume,
+                        ResourceSnapshot::Entry,
                     )],
                     Vec::new(),
                 )
@@ -1511,13 +1511,13 @@ fn verifies_fill3_c0_source_with_sidecar_specification() {
                         left: SpecExpression::ProgramExpression(ProgramExpression::Variable(
                             crate::kernel::C_CONTRACT_RESULT_NAME.to_string(),
                         )),
-                        operator: CComparisonOperator::Equal,
+                        operator: KernelComparisonOperator::Equal,
                         right: SpecExpression::Value(int32(2)),
                     }],
                     // The write footprint is not lowered: the kernel projects it
                     // from the resource clause, so the explicit list stays empty.
                     Vec::new(),
-                    vec![CFunctionContractClaim::ensure_proposition(0, 0)],
+                    vec![FunctionContractClaim::ensure_proposition(0, 0)],
                     true,
                 )
                 .with_resource_derived_mutable_frame()

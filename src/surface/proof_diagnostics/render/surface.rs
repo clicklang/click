@@ -204,7 +204,7 @@ pub(super) fn source(proposition: &Proposition, labels: &mut SnapshotLabels) -> 
     )
 }
 
-pub(super) fn source_resource_fact(fact: &CResourceFact, labels: &mut SnapshotLabels) -> String {
+pub(super) fn source_resource_fact(fact: &ResourceFact, labels: &mut SnapshotLabels) -> String {
     bounded(printer(labels, Mode::Source).resource_fact(fact))
 }
 
@@ -227,7 +227,7 @@ pub(super) fn source_hidden_record(
         .map(bounded)
 }
 
-pub(super) fn source_resource(resource: &CResource, labels: &mut SnapshotLabels) -> String {
+pub(super) fn source_resource(resource: &Resource, labels: &mut SnapshotLabels) -> String {
     bounded(printer(labels, Mode::Source).resource(resource))
 }
 
@@ -348,7 +348,7 @@ impl Printer<'_> {
     /// Spells a place read in `memory`, then qualifies it with that memory.
     fn place_read_in(
         &mut self,
-        memory: &CMemory,
+        memory: &Memory,
         place: impl FnOnce(&mut Self) -> Option<Spelled>,
     ) -> Option<Spelled> {
         let outer = self.before_return;
@@ -525,7 +525,7 @@ impl Printer<'_> {
                         Term::ExecutionState(_) => continue,
                         // Each array argument is a (memory, pointer) pair.
                         // Its snapshot is part of the argument's identity.
-                        Term::CMemory(memory) => {
+                        Term::Memory(memory) => {
                             let pointer @ Term::ProgramValue(crate::kernel::ProgramValue::Pointer(
                                 _,
                             )) = arguments.next()?
@@ -708,7 +708,7 @@ impl Printer<'_> {
 
     /// A state's role in a sentence: `function entry`, `here`, a recorded
     /// point, or a report-local `<state A>`.
-    fn state_phrase(&mut self, memory: &CMemory) -> String {
+    fn state_phrase(&mut self, memory: &Memory) -> String {
         let point = self
             .labels
             .source_memory_context(memory)
@@ -866,12 +866,12 @@ impl Printer<'_> {
                 }
                 let single = matches!(condition, ConditionTerm::Float32(_));
                 return match float {
-                    crate::kernel::CFloatCondition::Comparison {
+                    crate::kernel::FloatCondition::Comparison {
                         operator,
                         left,
                         right,
                     } => {
-                        use crate::kernel::CComparisonOperator as C;
+                        use crate::kernel::ComparisonOperator as C;
                         let symbol = match operator {
                             C::Equal => "==",
                             C::NotEqual => "!=",
@@ -893,7 +893,7 @@ impl Printer<'_> {
                             polarity,
                         ))
                     }
-                    crate::kernel::CFloatCondition::Classification {
+                    crate::kernel::FloatCondition::Classification {
                         classification,
                         value,
                     } => {
@@ -1338,11 +1338,11 @@ impl Printer<'_> {
             _ if !self.source_mode() => None,
             Term::Condition(condition) => self.condition(condition, true, depth + 1),
             Term::PointerOffset(offset) => Some(atom(self.offset(offset, depth + 1))),
-            Term::CMemory(memory) => Some(atom(self.state_phrase(memory))),
+            Term::Memory(memory) => Some(atom(self.state_phrase(memory))),
             Term::ExecutionState(state) => Some(atom(self.state_phrase(state.memory()))),
-            Term::CExpressionOutcome(_)
-            | Term::CStatementOutcome(_)
-            | Term::CFunctionOutcome(_) => Some(atom("<an execution outcome>")),
+            Term::ExpressionOutcome(_) | Term::StatementOutcome(_) | Term::FunctionOutcome(_) => {
+                Some(atom("<an execution outcome>"))
+            }
             Term::Sequence(_) => Some(atom("<a sequence>")),
         }
     }
@@ -1750,7 +1750,7 @@ impl Printer<'_> {
 
     fn load(
         &mut self,
-        memory: &CMemory,
+        memory: &Memory,
         pointer: &Pointer,
         kind: crate::kernel::LoadKind,
         depth: usize,
@@ -1865,7 +1865,7 @@ impl Printer<'_> {
     /// report has a current state and `memory` is another recorded point,
     /// `at(point, fact)`; otherwise bare. Unlike a read, a fact at entry is
     /// `at(function.entry, fact)`: `old` takes a value.
-    fn qualify_fact(&mut self, memory: &CMemory, fact: Spelled) -> Option<Spelled> {
+    fn qualify_fact(&mut self, memory: &Memory, fact: Spelled) -> Option<Spelled> {
         let has_current = self
             .labels
             .source_memories
@@ -1883,7 +1883,7 @@ impl Printer<'_> {
         })
     }
 
-    fn qualify(&mut self, memory: &CMemory, place: Spelled) -> Option<Spelled> {
+    fn qualify(&mut self, memory: &Memory, place: Spelled) -> Option<Spelled> {
         let point = self
             .labels
             .source_memory_context(memory)
@@ -2013,7 +2013,7 @@ impl Printer<'_> {
 
     /// The pointer stored at `address` in `memory`, as the place it is read
     /// from.
-    fn pointer_cell(&mut self, memory: &CMemory, address: &Pointer, depth: usize) -> Spelled {
+    fn pointer_cell(&mut self, memory: &Memory, address: &Pointer, depth: usize) -> Spelled {
         let tables = self.labels.naming.clone();
         let cell = tables.as_deref().and_then(|(parameters, arguments)| {
             let binding = ParameterBinding::new(parameters, arguments);
@@ -2236,17 +2236,17 @@ impl Printer<'_> {
             .filter(|width| *width > 0)
     }
 
-    fn resource_fact(&mut self, fact: &CResourceFact) -> String {
+    fn resource_fact(&mut self, fact: &ResourceFact) -> String {
         if !self.source_mode() {
             return super::render_resource_fact_labeled(fact, self.labels);
         }
         let text = self.resource(fact.resource());
         match fact {
-            CResourceFact::View(_) => format!("views {text}"),
-            CResourceFact::Own(_, quantity) if quantity.as_const() == Some(1) => {
+            ResourceFact::View(_) => format!("views {text}"),
+            ResourceFact::Own(_, quantity) if quantity.as_const() == Some(1) => {
                 format!("owns {text}")
             }
-            CResourceFact::Own(_, quantity) => {
+            ResourceFact::Own(_, quantity) => {
                 let quantity = self
                     .bitvector(quantity, None, 0)
                     .map_or_else(|| "…".into(), |v| v.text);
@@ -2308,10 +2308,10 @@ impl Printer<'_> {
         Some(format!("record {{ {} }}", entries.join(", ")))
     }
 
-    fn resource(&mut self, resource: &CResource) -> String {
+    fn resource(&mut self, resource: &Resource) -> String {
         if !self.source_mode() {
             let text = super::render_resource_fact_labeled(
-                &CResourceFact::View(resource.clone()),
+                &ResourceFact::View(resource.clone()),
                 self.labels,
             );
             return text.strip_prefix("views ").unwrap_or(&text).to_owned();
@@ -2322,15 +2322,15 @@ impl Printer<'_> {
             .map_or((&[][..], &[][..]), |(p, a)| (p.as_slice(), a.as_slice()));
         let binding = ParameterBinding::new(parameters, arguments);
         match resource {
-            CResource::Emp => "separation::emp".into(),
-            CResource::Star(pair) => {
+            Resource::Emp => "separation::emp".into(),
+            Resource::Star(pair) => {
                 format!("({} * {})", self.resource(&pair.0), self.resource(&pair.1))
             }
-            CResource::Footprint(fp) => fp.source.clone(),
-            CResource::Parameter(v) => self
+            Resource::Footprint(fp) => fp.source.clone(),
+            Resource::Parameter(v) => self
                 .variable_name(*v)
                 .unwrap_or_else(|| self.unnamed_variable(*v)),
-            CResource::Memory(range) => {
+            Resource::Memory(range) => {
                 let text = crate::surface::diagnostics::describe_memory_range(range, binding);
                 if !text.starts_with('…') {
                     return text;
@@ -2342,25 +2342,25 @@ impl Printer<'_> {
                     ParameterBinding::new(&parameters, &arguments),
                 )
             }
-            CResource::Instance(instance) => {
+            Resource::Instance(instance) => {
                 let application = self.resource_arguments(instance.name(), instance.arguments());
                 match self.hidden_record(instance.schema().fields(), instance.fields()) {
                     Some(record) => format!("{application} {record}"),
                     None => application,
                 }
             }
-            CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
+            Resource::Composite { name, arguments } | Resource::Token { name, arguments } => {
                 self.resource_arguments(name, arguments)
             }
-            CResource::MutexGuard(identity) => format!(
+            Resource::MutexGuard(identity) => format!(
                 "mutex_guard({})",
                 crate::surface::diagnostics::describe_mutex_pointer(identity.mutex(), binding)
             ),
-            CResource::MutexLive(identity) => format!(
+            Resource::MutexLive(identity) => format!(
                 "mutex_live({})",
                 crate::surface::diagnostics::describe_mutex_pointer(identity.mutex(), binding)
             ),
-            CResource::MutexUse(identity) => {
+            Resource::MutexUse(identity) => {
                 let mutex =
                     crate::surface::diagnostics::describe_mutex_pointer(identity.mutex(), binding);
                 match identity.protected_type() {
@@ -2371,7 +2371,7 @@ impl Printer<'_> {
                     None => format!("mutex_use({mutex})"),
                 }
             }
-            CResource::Publication(right) => {
+            Resource::Publication(right) => {
                 let flag =
                     crate::surface::diagnostics::describe_mutex_pointer(right.flag(), binding);
                 let payload =
@@ -2384,7 +2384,7 @@ impl Printer<'_> {
                 }
                 text
             }
-            CResource::PopulationAuthority(description) => {
+            Resource::PopulationAuthority(description) => {
                 let mut text =
                     self.resource_arguments(description.family(), description.arguments());
                 if let Some(arity) = description.population_arity() {
@@ -2396,7 +2396,7 @@ impl Printer<'_> {
                 }
                 format!("authority({text})")
             }
-            CResource::Iterated(iterated) => {
+            Resource::Iterated(iterated) => {
                 crate::surface::diagnostics::describe_iterated_memory(iterated, binding)
             }
         }
@@ -2978,8 +2978,8 @@ mod tests {
             (1.5, "d >= 1.5"),
         ] {
             let fact = Proposition::ConditionIs(
-                ConditionTerm::Float64(crate::kernel::CFloatCondition::Comparison {
-                    operator: crate::kernel::CComparisonOperator::GreaterEqual,
+                ConditionTerm::Float64(crate::kernel::FloatCondition::Comparison {
+                    operator: crate::kernel::ComparisonOperator::GreaterEqual,
                     left: Box::new(MachineTerm::Variable(Variable(7))),
                     right: Box::new(MachineTerm::uint64_constant(value.to_bits())),
                 }),
@@ -2988,10 +2988,10 @@ mod tests {
             assert_eq!(source(&fact, &mut labels), expected);
         }
         let fact = Proposition::ConditionIs(
-            ConditionTerm::Float32(crate::kernel::CFloatCondition::Comparison {
-                operator: crate::kernel::CComparisonOperator::LessThan,
+            ConditionTerm::Float32(crate::kernel::FloatCondition::Comparison {
+                operator: crate::kernel::ComparisonOperator::LessThan,
                 left: Box::new(MachineTerm::Float32Binary {
-                    operator: crate::kernel::CFloatBinaryOperator::Add,
+                    operator: crate::kernel::FloatBinaryOperator::Add,
                     left: Box::new(MachineTerm::Variable(Variable(8))),
                     right: Box::new(MachineTerm::constant(1.5_f32.to_bits())),
                 }),
@@ -3230,22 +3230,22 @@ mod tests {
         ));
         let before = ExecutionState::new()
             .with_local("cells", pointer.clone())
-            .with_memory(CMemory::new().with_block("global:cells", 4));
+            .with_memory(Memory::new().with_block("global:cells", 4));
         let copied = before
             .clone()
-            .with_memory(CMemory::new().with_block("global:cells", 8));
+            .with_memory(Memory::new().with_block("global:cells", 8));
         let current = before
             .clone()
-            .with_memory(CMemory::new().with_block("global:cells", 16));
+            .with_memory(Memory::new().with_block("global:cells", 16));
         let mut labels = SnapshotLabels::with_state(ParameterBinding::default(), &current);
         labels.source_state(&before, ENTRY_POINT.into());
         labels.source_state(&copied, "copied".into());
-        let predicate = |memories: [&CMemory; 3]| Proposition::Predicate {
+        let predicate = |memories: [&Memory; 3]| Proposition::Predicate {
             name: "same".into(),
             arguments: std::iter::once(Term::ExecutionState(Box::new(before.clone())))
                 .chain(memories.into_iter().flat_map(|memory| {
                     [
-                        Term::CMemory(memory.clone()),
+                        Term::Memory(memory.clone()),
                         Term::ProgramValue(pointer.clone()),
                     ]
                 }))
@@ -3277,7 +3277,7 @@ mod tests {
         let state = ExecutionState::new()
             .with_local("m", cell("m"))
             .with_local("p", cell("p"))
-            .with_memory(CMemory::new().with_block("global:m", 4));
+            .with_memory(Memory::new().with_block("global:m", 4));
         let mut labels = SnapshotLabels::with_state(ParameterBinding::default(), &state);
         let fact = |name: String, arguments: Vec<Term>| Proposition::Predicate { name, arguments };
         let held = fact(
@@ -3294,7 +3294,7 @@ mod tests {
         );
         assert_eq!(source(&same, &mut labels), "same_object(m, p)");
         let contract = fact(
-            crate::kernel::CFunctionContract::predicate_name_for("ordered"),
+            crate::kernel::FunctionContract::predicate_name_for("ordered"),
             vec![
                 Term::ExecutionState(Box::new(state.clone())),
                 Term::ProgramValue(cell("p")),
@@ -3345,13 +3345,13 @@ mod tests {
         ));
         let before = ExecutionState::new()
             .with_local("cells", base.clone())
-            .with_memory(CMemory::new().with_block("global:cells", 4));
+            .with_memory(Memory::new().with_block("global:cells", 4));
         let after = before
             .clone()
-            .with_memory(CMemory::new().with_block("global:cells", 8));
+            .with_memory(Memory::new().with_block("global:cells", 8));
         let mut labels = SnapshotLabels::with_state(ParameterBinding::default(), &after);
         labels.source_state(&before, "pre".into());
-        let load = |memory: &CMemory, kind| {
+        let load = |memory: &Memory, kind| {
             equality(MachineTerm::MemoryLoad(
                 SharedMemory::from(memory.clone()),
                 Box::new(pointer.clone()),
@@ -3370,7 +3370,7 @@ mod tests {
             render(&load(before.memory(), LoadKind::UInt8), &mut labels),
             None
         );
-        let unknown = CMemory::new().with_block("global:cells", 16);
+        let unknown = Memory::new().with_block("global:cells", 16);
         assert_eq!(render(&load(&unknown, LoadKind::Int32), &mut labels), None);
         // The source policy names the unknown memory instead of refusing, so
         // the two reads of `cells[0]` stay distinct.
@@ -3392,8 +3392,8 @@ mod tests {
             block: PointerBlock::Heap(1),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let before = ExecutionState::new().with_memory(CMemory::new().with_block("global:a", 4));
-        let after = ExecutionState::new().with_memory(CMemory::new().with_block("global:a", 8));
+        let before = ExecutionState::new().with_memory(Memory::new().with_block("global:a", 4));
+        let after = ExecutionState::new().with_memory(Memory::new().with_block("global:a", 8));
         let mut labels = SnapshotLabels::with_state(ParameterBinding::default(), &after);
         labels.source_state(&before, "pre".into());
         labels.source_result(&ProgramValue::Int32(MachineTerm::Variable(index)));
@@ -3402,7 +3402,7 @@ mod tests {
             heap.clone(),
             ProgramType::Int32Pointer,
         )));
-        let load = |memory: &CMemory| {
+        let load = |memory: &Memory| {
             equality(MachineTerm::MemoryLoad(
                 SharedMemory::from(memory.clone()),
                 Box::new(heap.clone()),
@@ -3465,12 +3465,12 @@ mod resource_tests {
                     ProgramType::Int32Pointer,
                 )),
             )
-            .with_memory(CMemory::new().with_block("global:cells", 4));
+            .with_memory(Memory::new().with_block("global:cells", 4));
         let after = before
             .clone()
-            .with_memory(CMemory::new().with_block("global:cells", 8));
-        let resource = |memory: &CMemory| {
-            CResourceFact::view_composite(
+            .with_memory(Memory::new().with_block("global:cells", 8));
+        let resource = |memory: &Memory| {
+            ResourceFact::view_composite(
                 "sampled".into(),
                 vec![ProgramValue::Int32(MachineTerm::MemoryLoad(
                     SharedMemory::from(memory.clone()),
@@ -3510,7 +3510,7 @@ mod resource_tests {
 
     #[test]
     fn resource_model_arguments_remain_distinct_and_quantities_survive() {
-        let resource = |id| CResource::Token {
+        let resource = |id| Resource::Token {
             name: "tree".into(),
             arguments: vec![AlgebraicValue::Algebraic(AlgebraicTerm {
                 algebraic_type: AlgebraicType::parameter("Tree".into()),
@@ -3521,8 +3521,8 @@ mod resource_tests {
         let mut labels = SnapshotLabels::default();
         labels.source_name(Variable(987551), "left_model".into());
         labels.source_name(Variable(987552), "right_model".into());
-        let left = CResourceFact::own_quantity(resource(987551), MachineTerm::constant(2));
-        let right = CResourceFact::View(resource(987552));
+        let left = ResourceFact::own_quantity(resource(987551), MachineTerm::constant(2));
+        let right = ResourceFact::View(resource(987552));
         assert_eq!(
             source_resource_fact(&left, &mut labels),
             "owns tree(left_model) (quantity 2)"

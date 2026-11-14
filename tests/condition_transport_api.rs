@@ -51,7 +51,7 @@ fn consistent_context_retains_its_symbolic_premise() {
 
 #[test]
 fn context_free_disjoint_store_transport_stays_closed() {
-    let before = CMemory::new();
+    let before = Memory::new();
     let written = Pointer {
         block: "arg-memory".into(),
         offset: PointerOffsetTerm::Constant(0),

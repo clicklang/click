@@ -1120,7 +1120,7 @@ mod tests {
             "opaque_argument".into(),
             vec![PureFunctionArgument::Value(ProgramValue::Int32(
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_c_memory(CMemory::new()),
+                    crate::kernel::intern_c_memory(Memory::new()),
                     Box::new(Pointer::symbolic(Variable(87654328))),
                     LoadKind::Int32,
                 ),

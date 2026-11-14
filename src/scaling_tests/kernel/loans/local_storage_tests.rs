@@ -10,7 +10,7 @@ fn local_view_work_tracks_the_explicit_delta_not_ambient_local_storage() {
     let mut fixed = Vec::new();
     let mut growing = Vec::new();
     for size in [8, 16, 32, 64] {
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         for index in 0..size {
             memory = memory.with_block(
                 view(index, 1)

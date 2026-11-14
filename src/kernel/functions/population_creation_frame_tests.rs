@@ -9,16 +9,16 @@ fn authority_refuses_calls_that_reach_a_population() {
             helper,
             &[],
             &PureFactContext::new(),
-            CExecutionContext::apply_verified_rules(&CExecutionEnvironment::new()),
+            ExecutionContext::apply_verified_rules(&ExecutionEnvironment::new()),
             &mut ExecutionBudget::new(),
         )
         .unwrap()
     };
-    let refused = |paths: &[CFunctionPath]| {
+    let refused = |paths: &[FunctionPath]| {
         matches!(
             paths,
-            [CFunctionPath {
-                outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(message)),
+            [FunctionPath {
+                outcome: FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(message)),
                 ..
             }] if message.contains("assumed contract changes a population or mutex resource")
         )
@@ -34,8 +34,8 @@ fn authority_refuses_calls_that_reach_a_population() {
     let minting = c_function(ProgramType::Void, "mint", vec![], ProgramStatement::Skip)
         .with_resource_summary(
             vec![],
-            vec![CResourceSpec::token(
-                CResourceAccessMode::Own,
+            vec![ResourceSpec::token(
+                ResourceAccessMode::Own,
                 "ticket".into(),
                 vec![],
                 vec![],
@@ -55,7 +55,7 @@ fn unused_creation_ledgers_compare_equal_and_used_ones_do_not() {
 
     let mut base = ExecutionState::new().with_local("frame:holder", int32(0));
     let block = base.locals.slot("frame:holder").unwrap().block.clone();
-    base.set_memory(CMemory::new().with_block(block.clone(), 4));
+    base.set_memory(Memory::new().with_block(block.clone(), 4));
     let unused = base.clone().with_population_creation_tracking();
     let mut used = base.with_population_creation_tracking();
     assert!(used.equal_up_to_unused_creation_ledgers(&unused));
@@ -77,7 +77,7 @@ fn ended_automatic_storage_retires_creation_evidence() {
             .with_local(name, int32(0))
             .with_population_creation_tracking();
         let block = state.locals.slot(name).unwrap().block.clone();
-        state.set_memory(CMemory::new().with_block(block.clone(), 4));
+        state.set_memory(Memory::new().with_block(block.clone(), 4));
         state.record_population_storage_creation(block.clone());
         assert!(
             state
@@ -89,10 +89,9 @@ fn ended_automatic_storage_retires_creation_evidence() {
         );
         for memory in [
             end_inline_frame_automatic_lifetimes(&state).unwrap(),
-            end_function_body_automatic_lifetimes(&state, &function, &CMemory::new(), None)
-                .unwrap(),
+            end_function_body_automatic_lifetimes(&state, &function, &Memory::new(), None).unwrap(),
         ] {
-            let retired = retired_automatic_creation_blocks(&state, &memory);
+            let retired = retired_automatistorage_creation_blocks(&state, &memory);
             assert_eq!(retired, vec![block.clone()]);
             let mut after = state.clone().with_memory(memory);
             for block in retired {

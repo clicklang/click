@@ -933,12 +933,12 @@ impl PureFactContext {
 
     fn decide_reflexive_float_comparison(&self, condition: &ConditionTerm) -> Option<bool> {
         let (operator, left, right) = match condition {
-            ConditionTerm::Float32(CFloatCondition::Comparison {
+            ConditionTerm::Float32(FloatCondition::Comparison {
                 operator,
                 left,
                 right,
             }) => (*operator, left.as_ref(), right.as_ref()),
-            ConditionTerm::Float64(CFloatCondition::Comparison {
+            ConditionTerm::Float64(FloatCondition::Comparison {
                 operator,
                 left,
                 right,
@@ -954,19 +954,19 @@ impl PureFactContext {
         }
         let finite_left = match condition {
             ConditionTerm::Float32(_) => {
-                ConditionTerm::float32_classification(left.clone(), CFloatClassification::Finite)
+                ConditionTerm::float32_classification(left.clone(), FloatClassification::Finite)
             }
             ConditionTerm::Float64(_) => {
-                ConditionTerm::float64_classification(left.clone(), CFloatClassification::Finite)
+                ConditionTerm::float64_classification(left.clone(), FloatClassification::Finite)
             }
             _ => unreachable!(),
         };
         let finite_right = match condition {
             ConditionTerm::Float32(_) => {
-                ConditionTerm::float32_classification(right.clone(), CFloatClassification::Finite)
+                ConditionTerm::float32_classification(right.clone(), FloatClassification::Finite)
             }
             ConditionTerm::Float64(_) => {
-                ConditionTerm::float64_classification(right.clone(), CFloatClassification::Finite)
+                ConditionTerm::float64_classification(right.clone(), FloatClassification::Finite)
             }
             _ => unreachable!(),
         };
@@ -976,12 +976,12 @@ impl PureFactContext {
             return None;
         }
         Some(match operator {
-            CComparisonOperator::Equal
-            | CComparisonOperator::LessEqual
-            | CComparisonOperator::GreaterEqual => true,
-            CComparisonOperator::NotEqual
-            | CComparisonOperator::LessThan
-            | CComparisonOperator::GreaterThan => false,
+            ComparisonOperator::Equal
+            | ComparisonOperator::LessEqual
+            | ComparisonOperator::GreaterEqual => true,
+            ComparisonOperator::NotEqual
+            | ComparisonOperator::LessThan
+            | ComparisonOperator::GreaterThan => false,
         })
     }
 
@@ -2099,7 +2099,7 @@ impl PureFactContext {
                 .unwrap_or_else(|| condition.clone()),
             ConditionTerm::Constant(value) => ConditionTerm::Constant(*value),
             ConditionTerm::Variable(variable) => ConditionTerm::Variable(*variable),
-            ConditionTerm::Float32(CFloatCondition::Comparison {
+            ConditionTerm::Float32(FloatCondition::Comparison {
                 operator,
                 left,
                 right,
@@ -2108,14 +2108,14 @@ impl PureFactContext {
                 self.simplify_bitvector_under_assumptions(right),
                 *operator,
             ),
-            ConditionTerm::Float32(CFloatCondition::Classification {
+            ConditionTerm::Float32(FloatCondition::Classification {
                 classification,
                 value,
             }) => ConditionTerm::float32_classification(
                 self.simplify_bitvector_under_assumptions(value),
                 *classification,
             ),
-            ConditionTerm::Float64(CFloatCondition::Comparison {
+            ConditionTerm::Float64(FloatCondition::Comparison {
                 operator,
                 left,
                 right,
@@ -2124,7 +2124,7 @@ impl PureFactContext {
                 self.simplify_bitvector_under_assumptions(right),
                 *operator,
             ),
-            ConditionTerm::Float64(CFloatCondition::Classification {
+            ConditionTerm::Float64(FloatCondition::Classification {
                 classification,
                 value,
             }) => ConditionTerm::float64_classification(
@@ -2615,7 +2615,7 @@ mod owned_anchor_tests {
     fn owner_of(pointers: &[Pointer]) -> Proposition {
         Proposition::CResourceComposition(ResourceContext::new().unchecked_with_facts(
             pointers.iter().map(|pointer| {
-                CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                ResourceFact::own_memory(MemoryRange::new_with_element_width(
                     pointer.clone(),
                     0u32.into(),
                     1u32.into(),
@@ -3423,9 +3423,9 @@ mod intrinsic_context_tests {
 
     #[test]
     fn intrinsic_read_definitions_follow_growth_restore_and_new_sessions() {
-        use crate::kernel::{CMemory, Pointer, VerificationSession, intern_c_memory};
+        use crate::kernel::{Memory, Pointer, VerificationSession, intern_c_memory};
         let check = || {
-            let memory = intern_c_memory(CMemory::new().with_block("intrinsic", 16));
+            let memory = intern_c_memory(Memory::new().with_block("intrinsic", 16));
             let address = Pointer::symbolic(Variable(986010));
             let value = Pointer::symbolic(Variable(986011));
             let application = Pointer::loaded_value(&memory, &address);
@@ -3692,8 +3692,8 @@ mod shared_offset_evidence_tests {
     #[test]
     fn shared_offset_evidence_keeps_read_snapshots_and_shared_premises() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = crate::kernel::CMemory::global_pointer("offset-evidence");
-        let memory = crate::kernel::CMemory::new().with_block("offset-evidence", 4);
+        let pointer = crate::kernel::Memory::global_pointer("offset-evidence");
+        let memory = crate::kernel::Memory::new().with_block("offset-evidence", 4);
         let read = |memory| {
             MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory(memory),

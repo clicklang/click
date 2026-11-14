@@ -24,7 +24,7 @@ fn rust_shifts_are_fact_stable_and_do_not_scan_ambient_facts() {
                 Box::new(SpecExpression::Value(ProgramValue::Int8(x))),
                 Box::new(SpecExpression::Value(ProgramValue::UInt32(n))),
             ),
-            operator: CComparisonOperator::Equal,
+            operator: ComparisonOperator::Equal,
             right: SpecExpression::Value(crate::kernel::int8(0u32)),
         };
         let (lowered, work) = crate::instrumentation::measure_deterministic_work(|| {

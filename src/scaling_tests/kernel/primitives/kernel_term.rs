@@ -357,7 +357,7 @@ fn machine_root_checking_views_keep_shared_prefixes_unboxed() {
 #[test]
 fn retained_load_terms_grow_without_rewalking_snapshots_or_prior_arithmetic() {
     for unrelated in [0, 128, 512] {
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         for index in 0..unrelated {
             memory = memory.with_block(format!("unrelated-read-{index}"), 4);
         }
@@ -410,7 +410,7 @@ fn retained_named_reads_do_not_rewalk_their_address_on_each_import() {
             );
         }
         let raw = MachineTerm::MemoryLoad(
-            intern_c_memory(CMemory::new()),
+            intern_c_memory(Memory::new()),
             Box::new(Pointer {
                 block: PointerBlock::Symbolic(Variable(993499)),
                 offset,
@@ -442,7 +442,7 @@ fn shared_read_selection_reuses_growing_arithmetic_prefixes() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let raw = MachineTerm::MemoryLoad(
-            intern_c_memory(CMemory::new()),
+            intern_c_memory(Memory::new()),
             Box::new(Pointer::symbolic(Variable(994110))),
             LoadKind::Int32,
         );
@@ -482,7 +482,7 @@ fn shared_read_selection_reuses_growing_arithmetic_prefixes() {
 fn nested_read_address_import_is_linear_beside_unrelated_memory() {
     for unrelated in [0, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         for index in 0..unrelated {
             memory = memory.store(
                 Pointer::symbolic(Variable(997000 + index)),

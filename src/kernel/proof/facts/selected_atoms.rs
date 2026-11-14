@@ -269,7 +269,7 @@ mod tests {
             block: PointerBlock::Symbolic(Variable(1005300)),
             offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(1005301)), 4),
         };
-        let memory = intern_c_memory(CMemory::new());
+        let memory = intern_c_memory(Memory::new());
         let load = crate::kernel::eval::load_variable_for_cell(&memory, &pointer, LoadKind::Int32);
         let conversion = MachineTerm::IntegerToMachine {
             destination: MachineIntegerType::Int32,

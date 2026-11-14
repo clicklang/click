@@ -50,7 +50,7 @@ fn owned_frontier_attachment_ignores_unrelated_facts_and_caller_resources() {
     let mut samples = Vec::new();
     for size in [16, 64, 256, 1024] {
         let (viewed, definition, memory, mut facts, _) = fixture();
-        let head = CResourceFact::own(viewed.resource().clone());
+        let head = ResourceFact::own(viewed.resource().clone());
         let mut ambient = ResourceContext::new();
         for i in 0..size {
             facts = facts.assume_condition(
@@ -60,7 +60,7 @@ fn owned_frontier_attachment_ignores_unrelated_facts_and_caller_resources() {
                 ),
                 true,
             );
-            ambient = ambient.unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+            ambient = ambient.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
                 Pointer::symbolic(Variable(895_000 + i)),
                 MachineTerm::constant(0),
                 MachineTerm::constant(1),
@@ -201,7 +201,7 @@ fn fresh_and_framing_publication_do_not_scan_ambient_inputs() {
                 true,
             );
         }
-        let head = CResourceFact::own(head.resource().clone());
+        let head = ResourceFact::own(head.resource().clone());
         let residual = ResourceContext::new()
             .try_compose_with_fact(head.clone(), &facts)
             .unwrap();

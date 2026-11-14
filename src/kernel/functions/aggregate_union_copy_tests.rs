@@ -10,21 +10,21 @@ fn copying_a_union_drops_destination_views_absent_from_source() {
         block: "union-copy-destination".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let layout = CAggregateLayout::with_unions(
+    let layout = AggregateLayout::with_unions(
         4,
         4,
         vec![],
-        vec![CAggregateUnion::new(
+        vec![AggregateUnion::new(
             "u",
             0,
             4,
             vec![
-                CAggregateUnionField::new("byte", 0, ProgramType::UInt8),
-                CAggregateUnionField::new("word", 0, ProgramType::Int32),
+                AggregateUnionField::new("byte", 0, ProgramType::UInt8),
+                AggregateUnionField::new("word", 0, ProgramType::Int32),
             ],
         )],
     );
-    let memory = CMemory::new()
+    let memory = Memory::new()
         .with_block(source.block.clone(), 4)
         .with_block(destination.block.clone(), 4)
         .store_union(
@@ -53,7 +53,7 @@ fn copying_a_union_drops_destination_views_absent_from_source() {
 /// A local `{ int32 tag; union { int32 number; uint8 byte; } }` whose
 /// cached values an unplaced store into the block forgot, the union's
 /// written only when `union_written`.
-fn forgotten_local_packet(union_written: bool) -> (CMemory, Pointer, Pointer, CAggregateLayout) {
+fn forgotten_local_packet(union_written: bool) -> (Memory, Pointer, Pointer, AggregateLayout) {
     let source = Pointer {
         block: "local:forgotten-packet-source".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -62,21 +62,21 @@ fn forgotten_local_packet(union_written: bool) -> (CMemory, Pointer, Pointer, CA
         block: "local:forgotten-packet-destination".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let layout = CAggregateLayout::with_unions(
+    let layout = AggregateLayout::with_unions(
         8,
         4,
-        vec![CAggregateField::new("tag", 0, ProgramType::Int32)],
-        vec![CAggregateUnion::new(
+        vec![AggregateField::new("tag", 0, ProgramType::Int32)],
+        vec![AggregateUnion::new(
             "u",
             4,
             4,
             vec![
-                CAggregateUnionField::new("number", 0, ProgramType::Int32),
-                CAggregateUnionField::new("byte", 0, ProgramType::UInt8),
+                AggregateUnionField::new("number", 0, ProgramType::Int32),
+                AggregateUnionField::new("byte", 0, ProgramType::UInt8),
             ],
         )],
     );
-    let mut memory = CMemory::new()
+    let mut memory = Memory::new()
         .with_block(source.block.clone(), 8)
         .with_block(destination.block.clone(), 8)
         .store(
@@ -126,7 +126,7 @@ fn copying_a_never_written_union_member_stays_an_uninitialized_read() {
     let (memory, source, destination, layout) = forgotten_local_packet(false);
     assert_eq!(
         copy_aggregate_fields_checked(memory, &source, &destination, &layout).err(),
-        Some(CUndefinedBehavior::UninitializedRead),
+        Some(UndefinedBehavior::UninitializedRead),
     );
 }
 

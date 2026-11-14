@@ -22,9 +22,9 @@ const DEFINED_EVIDENCE_ELEMENT_LIMIT: u32 = 4096;
 /// copy carries each byte's initialization across, as C allows for the
 /// indeterminate bytes of an object representation.
 pub(super) fn uninitialized_call_input<'a>(
-    memory: &CMemory,
-    interface: &CFunctionContractInterface,
-    inputs: impl Iterator<Item = &'a CCheckedResourceFact>,
+    memory: &Memory,
+    interface: &FunctionContractInterface,
+    inputs: impl Iterator<Item = &'a CheckedResourceFact>,
     representation_copy: bool,
     assumptions: &PureFactContext,
 ) -> Option<String> {
@@ -37,18 +37,18 @@ pub(super) fn uninitialized_call_input<'a>(
         .and_then(|(index, _)| interface.parameters().get(index))
         .map(ProgramParameter::name)
         .or_else(|| {
-            (interface.aggregate_return_mode() == CAggregateReturnMode::Construction)
+            (interface.aggregate_return_mode() == AggregateReturnMode::Construction)
                 .then_some(crate::kernel::C_CONTRACT_RESULT_NAME)
         });
     for input in inputs {
-        let CResource::Memory(range) = input.fact.resource() else {
+        let Resource::Memory(range) = input.fact.resource() else {
             continue;
         };
         let segment = input
             .section_index
             .and_then(|index| requires.get(index))
             .and_then(|spec| spec.term().memory_segment());
-        if segment.is_some_and(CMemorySegment::is_uninitialized)
+        if segment.is_some_and(MemorySegment::is_uninitialized)
             || (representation_copy && input.fact.is_view())
             || segment
                 .zip(constructed)
@@ -61,7 +61,7 @@ pub(super) fn uninitialized_call_input<'a>(
         if memory_range_is_initialized(
             memory,
             range,
-            segment.and_then(CMemorySegment::value_runs),
+            segment.and_then(MemorySegment::value_runs),
             assumptions,
         ) {
             continue;
@@ -94,8 +94,8 @@ fn root_parameter(expression: &ProgramExpression) -> Option<&str> {
 /// Whether every byte of `range` that holds a value is initialized in
 /// `memory`; see the module comment.
 pub(crate) fn memory_range_is_initialized(
-    memory: &CMemory,
-    range: &CMemoryRange,
+    memory: &Memory,
+    range: &MemoryRange,
     value_runs: Option<&[(u32, u32)]>,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -144,7 +144,7 @@ pub(crate) fn memory_range_is_initialized(
 /// The bytes written, or each `width`-byte element of them written or
 /// `defined` by a fact such as a callee's `ensures defined(p[k])`.
 fn bytes_are_initialized(
-    memory: &CMemory,
+    memory: &Memory,
     start: &Pointer,
     bytes: u32,
     width: u32,
@@ -156,7 +156,7 @@ fn bytes_are_initialized(
 
 /// The initialization record covers the bytes, or a cell cached at exactly
 /// this address does: a cell is evidence its bytes were written.
-fn written(memory: &CMemory, start: &Pointer, bytes: u32, assumptions: &PureFactContext) -> bool {
+fn written(memory: &Memory, start: &Pointer, bytes: u32, assumptions: &PureFactContext) -> bool {
     memory.has_initialized_bytes_under(start, bytes, assumptions)
         || memory
             .known_value(start)
@@ -166,7 +166,7 @@ fn written(memory: &CMemory, start: &Pointer, bytes: u32, assumptions: &PureFact
 /// Each element written, or `defined` by a fact such as a callee's
 /// `ensures defined(p[k])`.
 fn elements_are_initialized(
-    memory: &CMemory,
+    memory: &Memory,
     start: &Pointer,
     bytes: u32,
     width: u32,

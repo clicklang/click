@@ -5,8 +5,8 @@ use crate::kernel::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 pub(super) struct DirectLoopGuard {
-    source: CResourceSpec,
-    definition: CCompositeResourceDefinition,
+    source: ResourceSpec,
+    definition: CompositeResourceDefinition,
     head: ResourceInstance,
 }
 
@@ -71,7 +71,7 @@ fn scalar_condition(condition: &SpecProposition) -> bool {
 
 fn source_condition(
     state: &ExecutionState,
-    spec: &CResourceSpec,
+    spec: &ResourceSpec,
     assumptions: &PureFactContext,
 ) -> Result<(ConditionTerm, ProgramValue), String> {
     let guard = spec
@@ -126,20 +126,20 @@ fn source_condition(
 
 fn source_mutex(
     state: &ExecutionState,
-    spec: &CResourceSpec,
+    spec: &ResourceSpec,
     assumptions: &PureFactContext,
 ) -> Result<Pointer, String> {
-    let CResourceTerm::MutexGuard {
+    let ResourceTerm::MutexGuard {
         mutex,
-        snapshot: CResourceSnapshot::Current,
+        snapshot: ResourceSnapshot::Current,
     } = spec.term()
     else {
         return Err("conditional loop guard requires current mutex_guard ownership".into());
     };
-    if spec.access() != CResourceAccessMode::Own
-        || spec.quantity() != &CResourceQuantity::One
-        || spec.snapshot() == CResourceSnapshot::Post
-        || spec.role() != CResourceTransferRole::Borrow
+    if spec.access() != ResourceAccessMode::Own
+        || spec.quantity() != &ResourceQuantity::One
+        || spec.snapshot() == ResourceSnapshot::Post
+        || spec.role() != ResourceTransferRole::Borrow
         || spec.binding_identity().is_some()
     {
         return Err(
@@ -167,7 +167,7 @@ fn source_mutex(
     Ok(pointer.pointer().clone())
 }
 
-fn missing_guard(spec: &CResourceSpec) -> String {
+fn missing_guard(spec: &ResourceSpec) -> String {
     let argument = spec
         .source_arguments()
         .and_then(|arguments| arguments.first());
@@ -191,7 +191,7 @@ fn instance_with_value(carrier: &DirectLoopGuard, value: ProgramValue) -> Resour
 pub(in crate::kernel) fn prepare_direct_loop_guard(
     entry: &ExecutionState,
     head: &ExecutionState,
-    spec: &CResourceSpec,
+    spec: &ResourceSpec,
     identity: Variable,
     assumptions: &PureFactContext,
 ) -> Result<(ExecutionState, Pointer), String> {
@@ -256,25 +256,25 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
     )])
     .unwrap();
     let name = format!("$conditional-loop-guard:{}", identity.0);
-    let body = CResourceSpec::new(
-        CResourceTerm::MutexGuard {
+    let body = ResourceSpec::new(
+        ResourceTerm::MutexGuard {
             mutex: Box::new(ProgramExpression::Value(ProgramValue::pointer(
                 mutex.clone(),
             ))),
-            snapshot: CResourceSnapshot::Current,
+            snapshot: ResourceSnapshot::Current,
         },
-        CResourceAccessMode::Own,
-        CResourceQuantity::One,
-        CResourceTransferRole::Consume,
-        CResourceSnapshot::Current,
+        ResourceAccessMode::Own,
+        ResourceQuantity::One,
+        ResourceTransferRole::Consume,
+        ResourceSnapshot::Current,
     )
     .unwrap();
-    let mut definition = CCompositeResourceDefinition::new(
+    let mut definition = CompositeResourceDefinition::new(
         name.clone(),
         vec![],
         Some(SpecProposition::Comparison {
             left: SpecExpression::ProgramExpression(c_variable("active")),
-            operator: CComparisonOperator::NotEqual,
+            operator: ComparisonOperator::NotEqual,
             right: SpecExpression::Value(int32(0)),
         }),
         false,
@@ -306,7 +306,7 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
     state.resources = state
         .resources
         .try_compose_into_valid_context_delaying_normalization(
-            [CResourceFact::own(CResource::Instance(instance))],
+            [ResourceFact::own(Resource::Instance(instance))],
             assumptions,
         )
         .map_err(|error| format!("conditional loop resource ownership overlaps: {error}"))?;
@@ -452,13 +452,11 @@ pub(in crate::kernel) fn normalize_direct_loop_guards(
         state.resources = state
             .resources
             .without_fact_incrementally(
-                &CResourceFact::own(CResource::Instance(instance)),
+                &ResourceFact::own(Resource::Instance(instance)),
                 assumptions,
             )
             .expect("just folded carrier")
-            .unchecked_with_fact(CResourceFact::own(CResource::Instance(
-                head_instance.clone(),
-            )));
+            .unchecked_with_fact(ResourceFact::own(Resource::Instance(head_instance.clone())));
         checked.push(mutex.clone());
     }
     Ok((state, checked))

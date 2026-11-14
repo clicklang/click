@@ -925,7 +925,7 @@ fn expand_declared_resource_clauses_with_rules(
         })
         .collect::<Result<BTreeMap<_, _>, ClickError>>()?;
     resource_definitions
-        .entry(CResourceFact::ALLOCATION_RESOURCE_NAME.to_string())
+        .entry(ResourceFact::ALLOCATION_RESOURCE_NAME.to_string())
         .or_insert_with(|| DeclaredResourceInfo {
             fields: Default::default(),
             field_schema: None,
@@ -2909,7 +2909,7 @@ fn expand_declared_resource_clause(
                 &info,
                 resource_definitions,
             )?;
-            if (name == CResourceFact::ALLOCATION_RESOURCE_NAME
+            if (name == ResourceFact::ALLOCATION_RESOURCE_NAME
                 || name == "mutex_guard"
                 || name == "mutex_live"
                 || name == "mutex_use"
@@ -3716,7 +3716,7 @@ fn expand_declared_resource_expression_node(
                         | "publisher"
                         | "subscriber"
                 )
-                && name != CResourceFact::ALLOCATION_RESOURCE_NAME
+                && name != ResourceFact::ALLOCATION_RESOURCE_NAME
             {
                 return Err(unauthorized_family_error("count", name));
             }

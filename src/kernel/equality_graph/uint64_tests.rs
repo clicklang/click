@@ -108,7 +108,7 @@ fn integer_address_definition_preserves_byte_displacements_and_load_snapshots() 
     assert!(graph.are_uint64_equal(&raw_address(&shifted), &sum));
     assert!(!graph.are_uint64_equal(&raw_address(&shifted), &bits));
     // Equal numeric addresses connect compatible reads, not snapshot identity.
-    let memory = intern_c_memory(CMemory::new().with_block("coordinates", 32));
+    let memory = intern_c_memory(Memory::new().with_block("coordinates", 32));
     let pointer = Pointer {
         block: "coordinates".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -156,7 +156,7 @@ fn equal_integer_address_words_do_not_merge_pointer_names_or_domains() {
 #[test]
 fn wide_read_and_packed_word_congruence_compose_early_and_late() {
     let _session = VerificationSession::enter();
-    let memory = intern_c_memory(CMemory::new().with_block("wide", 128));
+    let memory = intern_c_memory(Memory::new().with_block("wide", 128));
     let zid = Pointer::symbolic(Variable(910_001));
     let sid = Pointer::symbolic(Variable(910_002));
     let p = Pointer::loaded_value(&memory, &Pointer::symbolic(Variable(910_003)));
@@ -196,7 +196,7 @@ fn wide_read_and_packed_word_congruence_compose_early_and_late() {
 #[test]
 fn wide_reads_preserve_snapshot_width_and_value_sort() {
     let _session = VerificationSession::enter();
-    let before = intern_c_memory(CMemory::new().with_block("wide", 128));
+    let before = intern_c_memory(Memory::new().with_block("wide", 128));
     let p = Pointer::symbolic(Variable(920_001));
     let q = Pointer::symbolic(Variable(920_002));
     let after = intern_c_memory(before.memory().clone().store(
@@ -255,7 +255,7 @@ mod scaling_tests {
 #[test]
 fn a_read_through_an_alias_equals_the_value_stored_at_the_other_spelling() {
     let _session = VerificationSession::enter();
-    let memory = intern_c_memory(CMemory::new().with_block("cells", 32));
+    let memory = intern_c_memory(Memory::new().with_block("cells", 32));
     let stored_at = Pointer {
         block: "cells".into(),
         offset: PointerOffsetTerm::Constant(8),

@@ -25,7 +25,7 @@ struct Analysis<'a> {
 }
 
 pub(in crate::kernel) fn declared_requirements(
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
 ) -> ObjectTypeRequirements {
     let mut analysis = Analysis::new(interface);
     for proposition in interface
@@ -40,7 +40,7 @@ pub(in crate::kernel) fn declared_requirements(
 }
 
 impl<'a> Analysis<'a> {
-    fn new(interface: &'a CFunctionContractInterface) -> Self {
+    fn new(interface: &'a FunctionContractInterface) -> Self {
         Self {
             bindings: interface
                 .parameters()
@@ -257,7 +257,7 @@ impl<'a> Analysis<'a> {
 /// unconditional clauses and the exact nonnull-result guard cover every
 /// possible nonnull return. Other guards and branching expressions supply none.
 pub(in crate::kernel) fn declared_return_class(
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
 ) -> Option<effective_type::CAccessClass> {
     if !interface.return_type().is_pointer() {
         return None;
@@ -308,7 +308,7 @@ fn zero(value: &SpecExpression) -> bool {
     }
 }
 fn result_nonnull(proposition: &SpecProposition) -> bool {
-    matches!(proposition, SpecProposition::Comparison { left, operator: CComparisonOperator::NotEqual, right }
+    matches!(proposition, SpecProposition::Comparison { left, operator: ComparisonOperator::NotEqual, right }
         if (direct_result(left) && zero(right)) || (zero(left) && direct_result(right)))
 }
 fn result_arguments_class(
@@ -383,8 +383,8 @@ mod tests {
             }],
         }
     }
-    fn interface(proposition: SpecProposition) -> CFunctionContractInterface {
-        let mut interface = CFunctionContractInterface::new(
+    fn interface(proposition: SpecProposition) -> FunctionContractInterface {
+        let mut interface = FunctionContractInterface::new(
             ProgramType::Void,
             vec![
                 ProgramParameter::new("p", ProgramType::Int32Pointer),
@@ -422,7 +422,7 @@ mod tests {
         assert!(
             declared_requirements(&interface(SpecProposition::Comparison {
                 left: variable("p"),
-                operator: CComparisonOperator::Equal,
+                operator: ComparisonOperator::Equal,
                 right: variable("p"),
             }))
             .is_empty()
@@ -447,7 +447,7 @@ mod tests {
                 interface.parameters(),
                 interface.object_type_requirements(),
                 &mut normal,
-                &CMemory::new(),
+                &Memory::new(),
                 &PureFactContext::new()
             )
             .is_none()
@@ -461,7 +461,7 @@ mod tests {
                 "f",
                 &interface,
                 &mut captured,
-                &CMemory::new(),
+                &Memory::new(),
                 &PureFactContext::new()
             )
             .is_some()
@@ -472,22 +472,22 @@ mod tests {
                 "f",
                 &interface,
                 &mut captured,
-                &CMemory::new(),
+                &Memory::new(),
                 &PureFactContext::new()
             )
             .is_none()
         );
     }
 
-    fn returning(clause: SpecProposition) -> CFunctionContractInterface {
-        let mut interface = CFunctionContractInterface::new(ProgramType::Int32Pointer, vec![]);
+    fn returning(clause: SpecProposition) -> FunctionContractInterface {
+        let mut interface = FunctionContractInterface::new(ProgramType::Int32Pointer, vec![]);
         interface.contract_ensures = vec![clause];
         interface
     }
     fn return_check() -> SpecProposition {
         SpecProposition::Defined(typed(variable(C_CONTRACT_RESULT_NAME)))
     }
-    fn return_guard(operator: CComparisonOperator) -> SpecProposition {
+    fn return_guard(operator: ComparisonOperator) -> SpecProposition {
         SpecProposition::Comparison {
             left: variable(C_CONTRACT_RESULT_NAME),
             operator,
@@ -502,13 +502,13 @@ mod tests {
         );
         assert_eq!(
             declared_return_class(&returning(SpecProposition::Implies(
-                Box::new(return_guard(CComparisonOperator::NotEqual)),
+                Box::new(return_guard(ComparisonOperator::NotEqual)),
                 Box::new(return_check())
             ))),
             Some(class())
         );
         for guard in [
-            return_guard(CComparisonOperator::Equal),
+            return_guard(ComparisonOperator::Equal),
             SpecProposition::Defined(variable("flag")),
         ] {
             assert_eq!(
@@ -535,7 +535,7 @@ mod tests {
             declared_return_class(&returning(SpecProposition::Defined(branched))),
             None
         );
-        let mut address_only = CFunctionContractInterface::new(ProgramType::Int32Pointer, vec![]);
+        let mut address_only = FunctionContractInterface::new(ProgramType::Int32Pointer, vec![]);
         address_only.return_pointee_class = Some(class());
         assert_eq!(declared_return_class(&address_only), None);
     }

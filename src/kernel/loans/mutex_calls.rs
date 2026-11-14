@@ -6,7 +6,7 @@ use super::*;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum MutexUseCallError {
-    MissingResource(CResourceFact),
+    MissingResource(ResourceFact),
     Unavailable(&'static str),
     Loan(LoanRefusal),
     InvalidResources(crate::kernel::ResourceContextValidityError),
@@ -28,9 +28,9 @@ pub(crate) struct MutexUseCallTransfer {
     pub(crate) entry_transition: CheckedLoanTransition,
     pub(crate) entry_transitions: Vec<CheckedLoanTransition>,
     suspended_parent: Option<MutexUseBinding>,
-    retained_resource: Option<CResourceFact>,
+    retained_resource: Option<ResourceFact>,
     pub(crate) usage: MutexUseBinding,
-    source: CResourceFact,
+    source: ResourceFact,
     selected_alias: Option<Variable>,
     interface: Option<Arc<crate::kernel::mutexes::InitializedMutexInterface>>,
     required_type: Option<ResourceDescription>,
@@ -54,8 +54,8 @@ pub(crate) struct MutexUseCallReturn {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct MutexAuthorityUpdate {
     pub(crate) source_occurrence: ResourceOccurrenceId,
-    pub(crate) source: CResourceFact,
-    pub(crate) derived: CResourceFact,
+    pub(crate) source: ResourceFact,
+    pub(crate) derived: ResourceFact,
 }
 
 impl MutexUseCallTransfer {
@@ -64,17 +64,17 @@ impl MutexUseCallTransfer {
         caller: LoanParticipantId,
         callee: LoanParticipantId,
         resources: &ResourceContext,
-        source: &CResourceFact,
+        source: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> Result<Self, MutexUseCallError> {
         let (support, _) = resources
             .unique_owned_occurrence_for_fact(source)
             .ok_or_else(|| MutexUseCallError::MissingResource(source.clone()))?;
         let (ledger, loan, entry_transition) = match source.resource() {
-            CResource::MutexLive(_) => {
+            Resource::MutexLive(_) => {
                 ledger.lend_mutex_use_with_transition(caller, callee, support, source.clone())?
             }
-            CResource::MutexUse(identity) => {
+            Resource::MutexUse(identity) => {
                 ledger.check_mutex_use_available(
                     identity.binding.ok_or(LoanRefusal::MissingLoanBinding)?,
                     caller,
@@ -128,7 +128,7 @@ impl MutexUseCallTransfer {
         caller: LoanParticipantId,
         callee: LoanParticipantId,
         resources: &ResourceContext,
-        source: &CResourceFact,
+        source: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> Result<Self, MutexUseCallError> {
         let (support, _) = resources
@@ -137,7 +137,7 @@ impl MutexUseCallTransfer {
         let mut ledger = ledger.clone();
         let mut transitions = Vec::new();
         let parent = match source.resource() {
-            CResource::MutexLive(_) => {
+            Resource::MutexLive(_) => {
                 let (next, root, transition) = ledger.lend_mutex_use_with_transition(
                     caller,
                     caller,
@@ -148,7 +148,7 @@ impl MutexUseCallTransfer {
                 transitions.push(transition);
                 root.usage
             }
-            CResource::MutexUse(identity) => {
+            Resource::MutexUse(identity) => {
                 let usage = identity.binding.ok_or(LoanRefusal::MissingLoanBinding)?;
                 ledger.check_mutex_use_available(usage, caller, resources)?;
                 if ledger.mutex_use_resource(usage, caller)? != *source {
@@ -215,7 +215,7 @@ impl MutexUseCallTransfer {
         // retains; recovery at join moves the name back to the lifecycle.
         if !matches!(
             self.source.resource(),
-            CResource::MutexUse(_) | CResource::MutexLive(_)
+            Resource::MutexUse(_) | Resource::MutexLive(_)
         ) {
             return None;
         }
@@ -431,15 +431,15 @@ impl MutexUseCallTransfer {
         Ok(())
     }
 
-    pub(crate) fn required_resource(&self) -> CResourceFact {
+    pub(crate) fn required_resource(&self) -> ResourceFact {
         let mut fact = self.callee_resource().expect("checked mutex use transfer");
-        if let CResourceFact::Own(CResource::MutexUse(identity), _) = &mut fact {
+        if let ResourceFact::Own(Resource::MutexUse(identity), _) = &mut fact {
             identity.protected = self.required_type.clone();
         }
         fact
     }
 
-    pub(crate) fn source_resource(&self) -> &CResourceFact {
+    pub(crate) fn source_resource(&self) -> &ResourceFact {
         &self.source
     }
 
@@ -452,7 +452,7 @@ impl MutexUseCallTransfer {
         self.selected_alias
     }
 
-    pub(crate) fn callee_resource(&self) -> Result<CResourceFact, LoanRefusal> {
+    pub(crate) fn callee_resource(&self) -> Result<ResourceFact, LoanRefusal> {
         self.ledger.mutex_use_resource(self.usage, self.callee)
     }
 
@@ -534,13 +534,13 @@ impl MutexUseCallTransfer {
         ledger = ledger.apply(&end)?;
         exit_transitions.push(end);
         let restored = match self.source.resource() {
-            CResource::MutexLive(_) => {
+            Resource::MutexLive(_) => {
                 let (recovery, owner, _) = ledger.recover(self.loan.loan, self.caller)?;
                 ledger = ledger.apply(&recovery)?;
                 exit_transitions.push(recovery);
                 owner
             }
-            CResource::MutexUse(identity) => ledger.mutex_use_resource(
+            Resource::MutexUse(identity) => ledger.mutex_use_resource(
                 identity.binding.ok_or(LoanRefusal::MissingLoanBinding)?,
                 self.caller,
             )?,
@@ -569,8 +569,8 @@ mod tests {
     use super::*;
     use crate::kernel::{MutexIdentity, Pointer, Variable};
 
-    fn owner() -> CResourceFact {
-        CResourceFact::own(CResource::MutexLive(MutexIdentity {
+    fn owner() -> ResourceFact {
+        ResourceFact::own(Resource::MutexLive(MutexIdentity {
             epoch: Some(91),
             mutex: Pointer::symbolic(Variable(100)),
         }))
@@ -770,14 +770,14 @@ mod tests {
         )
         .unwrap();
         let mut required = first.retained_resource.clone().unwrap();
-        let CResourceFact::Own(CResource::MutexUse(identity), _) = &mut required else {
+        let ResourceFact::Own(Resource::MutexUse(identity), _) = &mut required else {
             panic!("use");
         };
         identity.protected = Some(protected_type(1));
-        let checked = CCheckedResourceFact {
+        let checked = CheckedResourceFact {
             fact: required,
-            role: CResourceTransferRole::Borrow,
-            snapshot: CResourceSnapshot::Entry,
+            role: ResourceTransferRole::Borrow,
+            snapshot: ResourceSnapshot::Entry,
             clause_position: None,
             section_index: Some(0),
             selected_mutex_source: None,
@@ -803,7 +803,7 @@ mod tests {
                 .is_err()
         );
         let mut wrong = checked;
-        let CResourceFact::Own(CResource::MutexUse(identity), _) = &mut wrong.fact else {
+        let ResourceFact::Own(Resource::MutexUse(identity), _) = &mut wrong.fact else {
             panic!("use");
         };
         identity.binding = Some(first.usage);
@@ -863,7 +863,7 @@ mod tests {
             .caller_resources
             .mutex_use_candidate_at(&pointer)
             .unwrap();
-        let CResource::MutexUse(identity) = candidate.resource() else {
+        let Resource::MutexUse(identity) = candidate.resource() else {
             panic!("use candidate");
         };
         let usage = identity.binding.unwrap();
@@ -926,7 +926,7 @@ mod tests {
         .unwrap();
         let parent = plan.suspended_parent.unwrap();
         let mut invented = plan.callee_resource().unwrap();
-        let CResourceFact::Own(CResource::MutexUse(identity), _) = &mut invented else {
+        let ResourceFact::Own(Resource::MutexUse(identity), _) = &mut invented else {
             panic!("use");
         };
         identity.binding = Some(parent);
@@ -936,7 +936,7 @@ mod tests {
                 .check_mutex_use_available(parent, caller, &forged_resources),
             Err(LoanRefusal::MissingLoanBinding)
         );
-        let CResource::MutexUse(retained) = plan.retained_resource.as_ref().unwrap().resource()
+        let Resource::MutexUse(retained) = plan.retained_resource.as_ref().unwrap().resource()
         else {
             panic!("retained use");
         };
@@ -1060,8 +1060,8 @@ mod tests {
         );
     }
 
-    fn token(name: &str) -> CResourceFact {
-        CResourceFact::own(CResource::Token {
+    fn token(name: &str) -> ResourceFact {
+        ResourceFact::own(Resource::Token {
             name: name.into(),
             arguments: Vec::new().into(),
         })
@@ -1118,14 +1118,14 @@ mod tests {
         let resources = ResourceContext::new()
             .unchecked_with_fact(first_fact.clone())
             .unchecked_with_fact(second_fact.clone());
-        let CResourceFact::Own(CResource::MutexUse(first_identity), _) = &first_fact else {
+        let ResourceFact::Own(Resource::MutexUse(first_identity), _) = &first_fact else {
             unreachable!()
         };
         let evaluated_requirement = first_identity.clone();
-        let mut required = CCheckedResourceFact {
-            fact: CResourceFact::own(CResource::MutexUse(evaluated_requirement)),
-            role: CResourceTransferRole::Borrow,
-            snapshot: CResourceSnapshot::Entry,
+        let mut required = CheckedResourceFact {
+            fact: ResourceFact::own(Resource::MutexUse(evaluated_requirement)),
+            role: ResourceTransferRole::Borrow,
+            snapshot: ResourceSnapshot::Entry,
             clause_position: None,
             section_index: Some(0),
             selected_mutex_source: Some(Arc::new((Variable(500), second_fact.clone()))),
@@ -1148,7 +1148,7 @@ mod tests {
         assert_eq!(plan.mutex_uses[0].selected_alias(), Some(Variable(500)));
         let mut stale = first_identity.clone();
         stale.initialization = Some(u64::MAX);
-        required.fact = CResourceFact::own(CResource::MutexUse(stale));
+        required.fact = ResourceFact::own(Resource::MutexUse(stale));
         assert!(matches!(
             plan_stable_view_transfer_with_bindings_and_composites_for_worker(
                 &resources,
@@ -1331,8 +1331,8 @@ mod tests {
             .is_err()
         );
         for source in [
-            CResourceFact::View(owner().resource().clone()),
-            CResourceFact::Own(
+            ResourceFact::View(owner().resource().clone()),
+            ResourceFact::Own(
                 owner().resource().clone(),
                 Box::new(MachineTerm::constant(2)),
             ),

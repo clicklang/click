@@ -104,7 +104,7 @@ not the sequentially consistent tutorial invariant rule applied unchanged.
 ## Implemented mutex resources
 
 Acquisition guards live in the ordinary kernel resource context as
-`CResource::MutexGuard`: an opaque acquisition identity with one exclusive
+`Resource::MutexGuard`: an opaque acquisition identity with one exclusive
 owned unit, no view, no count splitting, and no memory authority. Acquiring
 creates the atom alongside the protected assertion; unlock consumes the current
 acquisition's atom and the restored assertion. The mutex ledger describes
@@ -112,7 +112,7 @@ protocol state; its held bit cannot recreate absent ownership. Stale guard
 atoms do not authorize a later acquisition, and direct worker transfer rejects
 guards as thread-confined.
 
-The surface lowers `owns mutex_guard(mu)` to `CResourceTerm::MutexGuard`, with
+The surface lowers `owns mutex_guard(mu)` to `ResourceTerm::MutexGuard`, with
 explicit pointer snapshot selection. It resolves the current acquisition
 identity; folding must separately consume that atom from the available
 resources. Guards compose in ordinary exclusive resource bodies and conditional
@@ -142,7 +142,7 @@ address cannot disguise a replacement. Replacing a loop-head initialization is
 reported as an unsupported contract; a mutex created and destroyed entirely
 within an iteration leaves no loop-head obligation.
 
-The lifecycle owner is `CResource::MutexLive` in the same resource context.
+The lifecycle owner is `Resource::MutexLive` in the same resource context.
 Initialization mints exactly one owned atom for its identity; destruction
 consumes it. Folded owners cannot authorize either transition until unfolded.
 The exclusive resource algebra refuses duplicates, views, and counts; the owner

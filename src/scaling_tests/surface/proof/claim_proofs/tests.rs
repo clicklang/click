@@ -128,10 +128,10 @@ fn exact_return_closers_share_preparation_beside_unrelated_resources() {
 
 #[test]
 fn joint_resource_receipts_ignore_unrelated_holdings() {
-    use crate::kernel::{CResource, CResourceFact, MachineTerm, ResourceContext};
-    fn unit(name: String) -> CResourceFact {
-        CResourceFact::Own(
-            CResource::Token {
+    use crate::kernel::{MachineTerm, Resource, ResourceContext, ResourceFact};
+    fn unit(name: String) -> ResourceFact {
+        ResourceFact::Own(
+            Resource::Token {
                 name,
                 arguments: vec![].into(),
             },

@@ -16,7 +16,7 @@ pub(in crate::kernel) struct LocalReferenceId(u64);
 struct LocalReferenceBacking {
     holder: LoanParticipantId,
     support: ResourceOccurrenceId,
-    owned: CResourceFact,
+    owned: ResourceFact,
     value_type: ProgramType,
     reservation: Option<Arc<crate::kernel::primitives::ReservedLocalScalarOwner>>,
 }

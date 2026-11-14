@@ -1,13 +1,13 @@
 use super::*;
 
-fn output(index: u32) -> CResourceSpec {
-    CResourceSpec::owned_memory(CMemorySegment::new(
+fn output(index: u32) -> ResourceSpec {
+    ResourceSpec::owned_memory(MemorySegment::new(
         c_variable("cells"),
         c_int32_literal(index),
         c_int32_literal(index + 1),
     ))
-    .with_role(CResourceTransferRole::Produce)
-    .with_snapshot(CResourceSnapshot::Post)
+    .with_role(ResourceTransferRole::Produce)
+    .with_snapshot(ResourceSnapshot::Post)
 }
 
 fn state(count: u32) -> ExecutionState {
@@ -19,14 +19,14 @@ fn state(count: u32) -> ExecutionState {
                 offset: PointerOffsetTerm::Constant(0),
             }),
         )
-        .with_memory(CMemory::new().with_block("produced-cells", count * 4))
+        .with_memory(Memory::new().with_block("produced-cells", count * 4))
 }
 
 #[test]
 fn output_supply_keeps_entry_and_guarded_clauses_out_of_post_reads() {
     let guard = SpecProposition::Comparison {
         left: SpecExpression::ProgramExpression(c_int32_literal(0)),
-        operator: CComparisonOperator::Equal,
+        operator: ComparisonOperator::Equal,
         right: SpecExpression::ProgramExpression(c_int32_literal(1)),
     };
     let function = c_function(ProgramType::Void, "outputs", vec![], c_skip())
@@ -34,18 +34,14 @@ fn output_supply_keeps_entry_and_guarded_clauses_out_of_post_reads() {
             vec![],
             vec![
                 output(0),
-                output(1).with_snapshot(CResourceSnapshot::Entry),
+                output(1).with_snapshot(ResourceSnapshot::Entry),
                 output(2).with_guard(guard.clone()),
-                CResourceSpec::owned_memory(
-                    CMemorySegment::new(
-                        c_variable("cells"),
-                        c_int32_literal(3),
-                        c_int32_literal(4),
-                    )
-                    .with_guard(guard),
+                ResourceSpec::owned_memory(
+                    MemorySegment::new(c_variable("cells"), c_int32_literal(3), c_int32_literal(4))
+                        .with_guard(guard),
                 )
-                .with_role(CResourceTransferRole::Produce)
-                .with_snapshot(CResourceSnapshot::Post),
+                .with_role(ResourceTransferRole::Produce)
+                .with_snapshot(ResourceSnapshot::Post),
             ],
         );
     let entry = state(4);

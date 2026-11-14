@@ -10,7 +10,7 @@ fn wide_address_symbolic_array_runs_keep_typed_loads_and_bounded_work() {
         let mut samples = Vec::new();
         for count in [16, 64, 256, 1024, 1_000_000] {
             let _session = crate::kernel::VerificationSession::enter();
-            let base = CMemory::global_pointer("wide-run");
+            let base = Memory::global_pointer("wide-run");
             let at = |index| base.offset_by_bytes(index * 16);
             let zero = value(
                 &ExecutionState::new(),
@@ -26,12 +26,12 @@ fn wide_address_symbolic_array_runs_keep_typed_loads_and_bounded_work() {
                 vec![],
                 c_return(c_int32_literal(0)),
             )
-            .with_global_arrays(vec![CGlobalArray::new_with_kernel_name(
+            .with_global_arrays(vec![GlobalArray::new_with_kernel_name(
                 "wide-run",
                 "wide-run",
                 ty,
                 count,
-                CArrayContents::new(count, zero, []),
+                ArrayContents::new(count, zero, []),
             )]);
             let (entry, setup_work) = crate::instrumentation::measure_deterministic_work(|| {
                 initialize_c_function_globals(&ExecutionState::new(), &function)
@@ -48,7 +48,7 @@ fn wide_address_symbolic_array_runs_keep_typed_loads_and_bounded_work() {
             let state = ExecutionState::new()
                 .with_memory(memory.clone())
                 .with_resource_context(ResourceContext::new().unchecked_with_facts([
-                    CResourceFact::view_memory(CMemoryRange::new_with_element_width(
+                    ResourceFact::view_memory(MemoryRange::new_with_element_width(
                         at(count - 1),
                         0u32.into(),
                         1u32.into(),

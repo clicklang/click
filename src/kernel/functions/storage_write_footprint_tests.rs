@@ -6,7 +6,7 @@ fn write_extent_must_fit_inside_owned_byte_footprint() {
         block: "global:owned".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let owned = CMemoryRange::new_with_element_width(
+    let owned = MemoryRange::new_with_element_width(
         base.clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(4),
@@ -43,7 +43,7 @@ fn a_symbolic_index_write_is_placed_by_its_element_bounds() {
     let j = MachineTerm::Variable(Variable(99_001));
     let n = MachineTerm::Variable(Variable(99_002));
     let owned = |end: MachineTerm| {
-        vec![CMemoryRange::new_with_element_width(
+        vec![MemoryRange::new_with_element_width(
             base.clone(),
             MachineTerm::constant(0),
             end,
@@ -62,10 +62,9 @@ fn a_symbolic_index_write_is_placed_by_its_element_bounds() {
             )
     };
     let at_j = base.offset_by_elements(j.clone(), 4);
-    let within =
-        |pointer: &Pointer, bytes: u32, owned: &[CMemoryRange], facts: &PureFactContext| {
-            storage_write_within_owned_footprint(pointer, bytes, owned, facts)
-        };
+    let within = |pointer: &Pointer, bytes: u32, owned: &[MemoryRange], facts: &PureFactContext| {
+        storage_write_within_owned_footprint(pointer, bytes, owned, facts)
+    };
     let thousand = owned(MachineTerm::constant(1000));
     assert!(within(&at_j, 4, &thousand, &bounded(1000)));
     assert!(!within(&at_j, 4, &thousand, &bounded(1001)));
@@ -103,8 +102,8 @@ fn memory_effect_write_collection_preserves_each_access_width() {
         offset: PointerOffsetTerm::Constant(3),
     };
     let fact = ExecutionPureFact::new(Proposition::CMemoryMutatesOnly {
-        before: CMemory::new(),
-        after: CMemory::new(),
+        before: Memory::new(),
+        after: Memory::new(),
         writes: vec![(pointer.clone(), 1), (pointer.clone(), 2)],
     });
 

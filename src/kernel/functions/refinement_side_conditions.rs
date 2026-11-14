@@ -1127,30 +1127,30 @@ pub(crate) fn modified_by_value_aggregate_parameter_with_current_ensure_in_sourc
         .map(|parameter| parameter.name().to_string())
 }
 
-pub(super) fn statement_outcome_state(outcome: &CStatementOutcome) -> Option<&ExecutionState> {
+pub(super) fn statement_outcome_state(outcome: &StatementOutcome) -> Option<&ExecutionState> {
     match outcome {
-        CStatementOutcome::Normal(state)
-        | CStatementOutcome::Break(state)
-        | CStatementOutcome::Continue(state)
-        | CStatementOutcome::Jump { state, .. } => Some(state),
-        CStatementOutcome::Return { state, .. } | CStatementOutcome::Throw { state, .. } => {
+        StatementOutcome::Normal(state)
+        | StatementOutcome::Break(state)
+        | StatementOutcome::Continue(state)
+        | StatementOutcome::Jump { state, .. } => Some(state),
+        StatementOutcome::Return { state, .. } | StatementOutcome::Throw { state, .. } => {
             Some(state)
         }
-        CStatementOutcome::VerificationDiverges
-        | CStatementOutcome::UndefinedBehavior(_)
-        | CStatementOutcome::RuntimeError(_) => None,
+        StatementOutcome::VerificationDiverges
+        | StatementOutcome::UndefinedBehavior(_)
+        | StatementOutcome::RuntimeError(_) => None,
     }
 }
 
 pub(super) fn aggregate_parameter_copy_changed(
     entry_state: &ExecutionState,
-    outcome: &CStatementOutcome,
+    outcome: &StatementOutcome,
     parameter: &ProgramParameter,
 ) -> bool {
     let Some(exit_state) = statement_outcome_state(outcome) else {
         return false;
     };
-    let Some(CLocalBinding::AggregateObject { slot, layout, .. }) =
+    let Some(LocalBinding::AggregateObject { slot, layout, .. }) =
         entry_state.locals.binding(parameter.name())
     else {
         return false;
@@ -1171,12 +1171,12 @@ pub(super) fn aggregate_parameter_copy_changed(
 
 pub(super) fn modified_by_value_aggregate_parameter_with_current_ensure(
     entry_state: &ExecutionState,
-    outcome: &CStatementOutcome,
+    outcome: &StatementOutcome,
     function: &ProgramFunction,
 ) -> Option<String> {
     let ensures = match outcome {
-        CStatementOutcome::Return { .. } => function.contract_ensures(),
-        CStatementOutcome::Throw { .. } => function.exceptional_ensures(),
+        StatementOutcome::Return { .. } => function.contract_ensures(),
+        StatementOutcome::Throw { .. } => function.exceptional_ensures(),
         _ => &[],
     };
     function

@@ -35,7 +35,7 @@ fn checked_word_tag_addition_ignores_unrelated_facts() {
             )
         });
         assert!(matches!(&paths[0].outcome,
-            CExpressionOutcome::Value(ProgramValue::PointerInteger(record))
+            ExpressionOutcome::Value(ProgramValue::PointerInteger(record))
                 if matches!(record.kind, PointerIntegerKind::Word { changed_bits: 1 })));
         work
     });
@@ -76,11 +76,11 @@ fn commuted_word_tag_or_ignores_unrelated_facts() {
                 Vec::new().into(),
                 Vec::new(),
                 &context,
-                CBitwiseOperation::Or,
+                BitwiseOperation::Or,
             )
         });
         assert!(matches!(&paths[0].outcome,
-            CExpressionOutcome::Value(ProgramValue::PointerInteger(record))
+            ExpressionOutcome::Value(ProgramValue::PointerInteger(record))
                 if record.pointer == expected.pointer
                     && matches!(record.kind, PointerIntegerKind::Word { changed_bits: 1 })));
         work

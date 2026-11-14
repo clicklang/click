@@ -27,9 +27,9 @@ fn execute_c_function_body_paths(
     state: &ExecutionState,
     function: &ProgramFunction,
     assumptions: &PureFactContext,
-    execution_context: CExecutionContext<'_>,
+    execution_context: ExecutionContext<'_>,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
     execute_function_body_paths(
         state,
         function,
@@ -47,10 +47,10 @@ fn execute_function_body_paths(
     state: &ExecutionState,
     function: &ProgramFunction,
     assumptions: &PureFactContext,
-    execution_context: CExecutionContext<'_>,
+    execution_context: ExecutionContext<'_>,
     budget: &mut ExecutionBudget,
     judgment: &mut super::eval::StatementJudgment<'_, '_>,
-) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
     let initial = super::eval::execute_statement_paths(
         state,
         function.body(),
@@ -68,7 +68,7 @@ fn execute_function_body_paths(
         .collect::<Vec<_>>();
     let mut completed = Vec::new();
     while let Some((path, jump_count)) = pending.pop() {
-        let CStatementOutcome::Jump {
+        let StatementOutcome::Jump {
             target,
             state: jump_state,
         } = &path.outcome
@@ -108,12 +108,12 @@ fn execute_function_body_paths(
     Ok(completed)
 }
 
-fn invalid_goto_path(path: CStatementExecutionPath, message: &str) -> CStatementExecutionPath {
-    CStatementExecutionPath {
+fn invalid_goto_path(path: StatementExecutionPath, message: &str) -> StatementExecutionPath {
+    StatementExecutionPath {
         call_parameters: None,
         loop_invariant_correspondence: Default::default(),
         call_result: None,
-        outcome: CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
+        outcome: StatementOutcome::RuntimeError(RuntimeError::FunctionContract(
             message.to_string(),
         )),
         facts: path.facts,
@@ -134,13 +134,13 @@ use std::collections::VecDeque;
 // fact while each clause runs, allowing only clauses that depend on a newly
 // supplied fact to be retried.
 thread_local! {
-    static RESOURCE_DEPENDENCY_CAPTURE: std::cell::RefCell<Option<Vec<CResourceFact>>> =
+    static RESOURCE_DEPENDENCY_CAPTURE: std::cell::RefCell<Option<Vec<ResourceFact>>> =
         const { std::cell::RefCell::new(None) };
     #[cfg(test)]
     static RESOURCE_CLAUSE_ATTEMPTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
-pub(crate) fn record_resource_dependency(resource: CResourceFact) {
+pub(crate) fn record_resource_dependency(resource: ResourceFact) {
     RESOURCE_DEPENDENCY_CAPTURE.with(|capture| {
         let mut captured = capture.borrow_mut();
         let Some(dependencies) = captured.as_mut() else {
@@ -152,7 +152,7 @@ pub(crate) fn record_resource_dependency(resource: CResourceFact) {
     });
 }
 
-fn capture_resource_dependencies<T>(operation: impl FnOnce() -> T) -> (T, Vec<CResourceFact>) {
+fn capture_resource_dependencies<T>(operation: impl FnOnce() -> T) -> (T, Vec<ResourceFact>) {
     RESOURCE_DEPENDENCY_CAPTURE.with(|capture| {
         let previous = capture.replace(Some(Vec::new()));
         let result = operation();
@@ -209,18 +209,18 @@ impl ReturnedCallBorrows {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct CFunctionResourceTransfer {
+struct FunctionResourceTransfer {
     helper_call: Option<Arc<super::mutexes::helper_contracts::HelperCall>>,
     /// The complete checked entry transition.  The two partitions are kept
     /// explicitly so callers cannot accidentally treat a borrowed view as a
     /// consumed capability when reconstructing the caller successor.
-    borrowed_inputs: Vec<CCheckedResourceFact>,
-    consumed_inputs: Vec<CCheckedResourceFact>,
+    borrowed_inputs: Vec<CheckedResourceFact>,
+    consumed_inputs: Vec<CheckedResourceFact>,
     /// Checked callee-side borrowed ownership paired with an equivalent
     /// caller-side spelling selected by the exclusive reservation planner.
     /// This is output-sized call-boundary provenance, not a search through
     /// the caller frame.
-    canonical_borrowed_owners: Vec<(CResourceFact, CResourceFact)>,
+    canonical_borrowed_owners: Vec<(ResourceFact, ResourceFact)>,
     callee_resources: ResourceContext,
     /// Resources left in the caller after the entry requirements have been
     /// consumed; this is the caller frame for the remainder of the call.
@@ -228,18 +228,18 @@ struct CFunctionResourceTransfer {
     /// Filled by the verified-application preparer once entry guards and
     /// dependent addresses have been checked.  It is the sole memory-effect
     /// projection used by modular call havoc and its effect fact.
-    memory_effects: Vec<CMemoryRange>,
-    resource_effect_bound: Option<CResource>,
+    memory_effects: Vec<MemoryRange>,
+    resource_effect_bound: Option<Resource>,
     post_outputs: Option<ResourceContext>,
     /// Every evaluated ensured view, kept beside the composed return
     /// resources so the provenance routes see each one exactly once even
     /// when composition merges or normalizes it away.
-    candidate_output_views: Vec<CResourceFact>,
+    candidate_output_views: Vec<ResourceFact>,
     /// Each viewed piece in the one-level frontier of an ensured owned
     /// composite, with that composite's head: the borrows a produced
     /// composite packages, which the caller side binds to exactly one loan of
     /// this call (step 7).
-    produced_borrowing_pieces: Vec<(CResourceFact, CResourceFact)>,
+    produced_borrowing_pieces: Vec<(ResourceFact, ResourceFact)>,
     /// Stable-view transition, when this call was prepared through the
     /// planner. The plan owns the checked successor ledger and is consumed
     /// only after postconditions have been evaluated.
@@ -254,7 +254,7 @@ struct CFunctionResourceTransfer {
     /// view's pieces carry that composite's support, while an intrinsic or
     /// empty-composite view has no owner in the caller's context and carries
     /// none, so its bytes are always compared arithmetically.
-    checked_view_frontier: Vec<(CMemoryRange, Option<ResourceOccurrenceId>)>,
+    checked_view_frontier: Vec<(MemoryRange, Option<ResourceOccurrenceId>)>,
 }
 
 /// An authenticated function-entry plan. Its private fields prevent proof
@@ -264,7 +264,7 @@ pub(crate) struct CheckedBoundaryResourceTransfer {
     arguments: Vec<ProgramExpression>,
     caller: ExecutionState,
     callee: ExecutionState,
-    transfer: CFunctionResourceTransfer,
+    transfer: FunctionResourceTransfer,
 }
 
 impl std::fmt::Debug for CheckedBoundaryResourceTransfer {
@@ -289,7 +289,7 @@ impl CheckedBoundaryResourceTransfer {
         &self.callee
     }
 
-    pub(crate) fn checked_entry_clauses(&self) -> Vec<CCheckedResourceFact> {
+    pub(crate) fn checked_entry_clauses(&self) -> Vec<CheckedResourceFact> {
         transfer_entry_clauses(&self.transfer)
     }
 
@@ -316,7 +316,7 @@ pub(crate) fn capture_checked_boundary_resource_transfer(
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<Arc<CheckedBoundaryResourceTransfer>, CRuntimeError>> {
+) -> ExecutionResult<Result<Arc<CheckedBoundaryResourceTransfer>, RuntimeError>> {
     let Some(values) = arguments
         .iter()
         .map(|argument| match argument {
@@ -325,10 +325,10 @@ pub(crate) fn capture_checked_boundary_resource_transfer(
         })
         .collect::<Option<Vec<_>>>()
     else {
-        return Ok(Err(CRuntimeError::TypeMismatch));
+        return Ok(Err(RuntimeError::TypeMismatch));
     };
     let Some(callee) = bind_contract_proof_arguments(caller, &function, &values) else {
-        return Ok(Err(CRuntimeError::TypeMismatch));
+        return Ok(Err(RuntimeError::TypeMismatch));
     };
     let transfer = match prepare_function_resource_transfer(
         caller,
@@ -354,7 +354,7 @@ pub(crate) fn capture_checked_boundary_resource_transfer(
 
 fn callee_state_with_resource_transfer(
     callee_state: ExecutionState,
-    transfer: &CFunctionResourceTransfer,
+    transfer: &FunctionResourceTransfer,
 ) -> ExecutionState {
     let callee_state = callee_state.with_resource_context(transfer.callee_resources.clone());
     let Some(plan) = &transfer.stable_view_plan else {
@@ -373,10 +373,10 @@ fn bounded_contract_resource_frontier(resources: &ResourceContext) -> String {
     let mut heads = Vec::new();
     for fact in resources.facts().iter().take(8) {
         let label = match fact.resource() {
-            CResource::Composite { name, .. } | CResource::Token { name, .. } => {
+            Resource::Composite { name, .. } | Resource::Token { name, .. } => {
                 name.chars().take(64).collect::<String>()
             }
-            CResource::PopulationAuthority(description) => format!(
+            Resource::PopulationAuthority(description) => format!(
                 "authority({})",
                 description.family().chars().take(64).collect::<String>()
             ),
@@ -397,13 +397,13 @@ fn bounded_contract_resource_frontier(resources: &ResourceContext) -> String {
 /// Enumerate only the explicit owned transfer and its plain contained resources.
 /// Each definition lookup is indexed; the ambient caller frame is never walked.
 fn population_transfer_frontier<'a>(
-    facts: impl Iterator<Item = &'a CResourceFact>,
-    definitions: &[CCompositeResourceDefinition],
-    memory: &CMemory,
+    facts: impl Iterator<Item = &'a ResourceFact>,
+    definitions: &[CompositeResourceDefinition],
+    memory: &Memory,
     assumptions: &PureFactContext,
-) -> Result<Vec<CResourceFact>, CRuntimeError> {
+) -> Result<Vec<ResourceFact>, RuntimeError> {
     enum Work {
-        Fact(CResourceFact),
+        Fact(ResourceFact),
         Leave(String),
     }
     let mut frontier = Vec::new();
@@ -419,7 +419,7 @@ fn population_transfer_frontier<'a>(
                 }
                 Work::Fact(fact) => fact,
             };
-            if let CResourceFact::Own(CResource::Composite { name, .. }, quantity) = &fact
+            if let ResourceFact::Own(Resource::Composite { name, .. }, quantity) = &fact
                 && quantity.as_const() == Some(1)
                 && let Ok(index) = definitions.binary_search_by(|definition| {
                     crate::instrumentation::record_deterministic_work(1);
@@ -436,19 +436,19 @@ fn population_transfer_frontier<'a>(
                 && definition.contains().iter().all(|child| {
                     matches!(
                         child.term(),
-                        CResourceTerm::Memory(_) | CResourceTerm::Composite { .. }
-                    ) && child.access() == CResourceAccessMode::Own
-                        && child.quantity() == &CResourceQuantity::One
+                        ResourceTerm::Memory(_) | ResourceTerm::Composite { .. }
+                    ) && child.access() == ResourceAccessMode::Own
+                        && child.quantity() == &ResourceQuantity::One
                         && child.guard().is_none()
                         && child.resource_arguments().is_empty()
                 })
                 && definition
                     .contains()
                     .iter()
-                    .any(|child| matches!(child.term(), CResourceTerm::Composite { .. }))
+                    .any(|child| matches!(child.term(), ResourceTerm::Composite { .. }))
             {
                 if !active.insert(name.clone()) {
-                    return Err(CRuntimeError::FunctionContract(
+                    return Err(RuntimeError::FunctionContract(
                         "contained resource transfer has a recursive body".into(),
                     ));
                 }
@@ -461,7 +461,7 @@ fn population_transfer_frontier<'a>(
                     assumptions,
                 )
                 .ok_or_else(|| {
-                    CRuntimeError::FunctionContract(
+                    RuntimeError::FunctionContract(
                         "cannot instantiate contained resource transfer".into(),
                     )
                 })?;
@@ -482,20 +482,20 @@ pub(super) fn transfer_population_call_facts<'a>(
     from: &ExecutionState,
     to: &ExecutionState,
     validation_state: &ExecutionState,
-    facts: impl Iterator<Item = &'a CResourceFact>,
-    definitions: &[CCompositeResourceDefinition],
+    facts: impl Iterator<Item = &'a ResourceFact>,
+    definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
-) -> Result<ExecutionState, CRuntimeError> {
+) -> Result<ExecutionState, RuntimeError> {
     let Some(from_events) = from.population_effects.creation.as_ref() else {
         return Ok(state);
     };
     let Some(to_events) = to.population_effects.creation.as_ref() else {
-        return Err(CRuntimeError::FunctionContract(
+        return Err(RuntimeError::FunctionContract(
             "population call lost its invocation identity".into(),
         ));
     };
     let Some(mut events) = state.population_effects.creation.clone() else {
-        return Err(CRuntimeError::FunctionContract(
+        return Err(RuntimeError::FunctionContract(
             "population call lost its creation history".into(),
         ));
     };
@@ -510,14 +510,14 @@ pub(super) fn transfer_population_call_facts<'a>(
                 events = events
                     .transfer_call_anchor(from_events, to_events, &base.block)
                     .map_err(|refusal| {
-                        CRuntimeError::FunctionContract(format!(
+                        RuntimeError::FunctionContract(format!(
                             "allocation companion transfer refused: {refusal}"
                         ))
                     })?;
             }
             continue;
         }
-        if let CResourceFact::Own(CResource::Composite { name, .. }, quantity) = fact
+        if let ResourceFact::Own(Resource::Composite { name, .. }, quantity) = fact
             && quantity.as_const() == Some(1)
             && let Ok(index) = definitions.binary_search_by(|definition| {
                 crate::instrumentation::record_deterministic_work(1);
@@ -527,12 +527,12 @@ pub(super) fn transfer_population_call_facts<'a>(
             && definition
                 .contains()
                 .iter()
-                .any(|child| matches!(child.term(), CResourceTerm::PopulationAuthority { .. }))
+                .any(|child| matches!(child.term(), ResourceTerm::PopulationAuthority { .. }))
         {
             let (children, _) = validation_state
                 .checked_authority_wrapper_body(fact, definition, assumptions)
                 .map_err(|reason| {
-                    CRuntimeError::FunctionContract(format!(
+                    RuntimeError::FunctionContract(format!(
                         "population call control transfer refused: {reason}"
                     ))
                 })?;
@@ -543,7 +543,7 @@ pub(super) fn transfer_population_call_facts<'a>(
             let authorities = children
                 .iter()
                 .filter_map(|child| match child {
-                    CResourceFact::Own(CResource::PopulationAuthority(description), quantity)
+                    ResourceFact::Own(Resource::PopulationAuthority(description), quantity)
                         if quantity.as_const() == Some(1) =>
                     {
                         Some(description)
@@ -553,14 +553,14 @@ pub(super) fn transfer_population_call_facts<'a>(
                 .collect::<Vec<_>>();
             let allocations = children
                 .iter()
-                .filter_map(CResourceFact::allocation)
+                .filter_map(ResourceFact::allocation)
                 .collect::<Vec<_>>();
             if memory_count == 0
                 || authorities.is_empty()
                 || allocations.len() > 1
                 || children.len() != authorities.len() + memory_count + allocations.len()
             {
-                return Err(CRuntimeError::FunctionContract(
+                return Err(RuntimeError::FunctionContract(
                     "population call control requires owned memory, authorities, and at most one allocation".into(),
                 ));
             }
@@ -568,7 +568,7 @@ pub(super) fn transfer_population_call_facts<'a>(
                 events = events
                     .transfer_call_fact(from_events, to_events, description, true)
                     .map_err(|refusal| {
-                        CRuntimeError::FunctionContract(format!(
+                        RuntimeError::FunctionContract(format!(
                             "population call control transfer refused: {refusal}"
                         ))
                     })?;
@@ -577,12 +577,12 @@ pub(super) fn transfer_population_call_facts<'a>(
             if let Some((base, _)) = allocations.first() {
                 let [AlgebraicValue::C(ProgramValue::Pointer(pointer))] = description.arguments()
                 else {
-                    return Err(CRuntimeError::FunctionContract(
+                    return Err(RuntimeError::FunctionContract(
                         "population call control needs one pointer anchor".into(),
                     ));
                 };
                 if *base != pointer.pointer() {
-                    return Err(CRuntimeError::FunctionContract(
+                    return Err(RuntimeError::FunctionContract(
                         "population call allocation does not match its authority anchor".into(),
                     ));
                 }
@@ -596,7 +596,7 @@ pub(super) fn transfer_population_call_facts<'a>(
                     events = events
                         .transfer_call_anchor(from_events, to_events, &base.block)
                         .map_err(|refusal| {
-                            CRuntimeError::FunctionContract(format!(
+                            RuntimeError::FunctionContract(format!(
                                 "population call allocation transfer refused: {refusal}"
                             ))
                         })?;
@@ -604,7 +604,7 @@ pub(super) fn transfer_population_call_facts<'a>(
             }
             continue;
         }
-        if let CResourceFact::Own(CResource::Instance(instance), quantity) = fact {
+        if let ResourceFact::Own(Resource::Instance(instance), quantity) = fact {
             let description = ResourceDescription::from_instance(instance);
             if events.tracks_population(&description)
                 && !events.recognizes_imported_population(&description)
@@ -619,7 +619,7 @@ pub(super) fn transfer_population_call_facts<'a>(
                         assumptions,
                     )
                     .map_err(|refusal| {
-                        CRuntimeError::FunctionContract(format!(
+                        RuntimeError::FunctionContract(format!(
                             "named population call transfer refused: {refusal}"
                         ))
                     })?;
@@ -627,12 +627,12 @@ pub(super) fn transfer_population_call_facts<'a>(
             continue;
         }
         let (description, authority_fact, quantity) = match fact {
-            CResourceFact::Own(CResource::PopulationAuthority(description), quantity)
+            ResourceFact::Own(Resource::PopulationAuthority(description), quantity)
                 if quantity.as_const() == Some(1) =>
             {
                 (description.clone(), true, quantity)
             }
-            CResourceFact::Own(CResource::Composite { name, arguments }, quantity) => (
+            ResourceFact::Own(Resource::Composite { name, arguments }, quantity) => (
                 ResourceDescription::new(
                     name.clone(),
                     arguments.clone(),
@@ -641,8 +641,8 @@ pub(super) fn transfer_population_call_facts<'a>(
                 false,
                 quantity,
             ),
-            CResourceFact::Own(CResource::PopulationAuthority(_), _) => {
-                return Err(CRuntimeError::FunctionContract(
+            ResourceFact::Own(Resource::PopulationAuthority(_), _) => {
+                return Err(RuntimeError::FunctionContract(
                     "population call requires one exact authority".into(),
                 ));
             }
@@ -661,7 +661,7 @@ pub(super) fn transfer_population_call_facts<'a>(
                 assumptions,
             )
             .map_err(|refusal| {
-                CRuntimeError::FunctionContract(format!(
+                RuntimeError::FunctionContract(format!(
                     "population call transfer refused: {refusal}; declared {} of {}",
                     quantity
                         .as_const()
@@ -679,7 +679,7 @@ pub(super) fn transfer_population_call_facts<'a>(
 /// without normalizing its block. Neither route rebuilds the caller frame.
 fn rejoin_borrowed_memory(
     resources: ResourceContext,
-    transfer: &CFunctionResourceTransfer,
+    transfer: &FunctionResourceTransfer,
     assumptions: &PureFactContext,
 ) -> ResourceContext {
     let seeds = transfer
@@ -704,7 +704,7 @@ fn rejoin_borrowed_memory(
 fn recover_candidate_stable_view_resources(
     caller_state: &ExecutionState,
     callee_state: &ExecutionState,
-    transfer: &CFunctionResourceTransfer,
+    transfer: &FunctionResourceTransfer,
     return_resources: ResourceContext,
     assumptions: &PureFactContext,
     output_assumptions: &PureFactContext,
@@ -717,11 +717,11 @@ fn recover_candidate_stable_view_resources(
         LoanViewBindings,
         Option<Arc<CheckedLoanCallEvidence>>,
     ),
-    CRuntimeError,
+    RuntimeError,
 > {
     let Some(plan) = &transfer.stable_view_plan else {
         if let Some((head, piece)) = transfer.produced_borrowing_pieces.first() {
-            return Err(CRuntimeError::FunctionContract(format!(
+            return Err(RuntimeError::FunctionContract(format!(
                 "produced borrowing composite `{}` packages a view `{}` that no viewed input of this call backs",
                 head.diagnostic_summary(),
                 piece.diagnostic_summary()
@@ -736,17 +736,17 @@ fn recover_candidate_stable_view_resources(
         ));
     };
     let Some(actual_ledger) = callee_state.loan_ledger() else {
-        return Err(CRuntimeError::LoanRefusal(Box::new(
+        return Err(RuntimeError::LoanRefusal(Box::new(
             LoanRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Recovery),
         )));
     };
     if actual_ledger != &plan.ledger {
-        return Err(CRuntimeError::LoanRefusal(Box::new(
+        return Err(RuntimeError::LoanRefusal(Box::new(
             LoanRefusal::StalePredecessor.diagnostic(LoanRefusalOperation::Recovery),
         )));
     }
     if callee_state.loan_participant() != Some(plan.callee_participant()) {
-        return Err(CRuntimeError::LoanRefusal(Box::new(
+        return Err(RuntimeError::LoanRefusal(Box::new(
             LoanRefusal::WrongHolder.diagnostic(LoanRefusalOperation::Recovery),
         )));
     }
@@ -773,7 +773,7 @@ fn recover_candidate_stable_view_resources(
     // retain a conditional successor: its obligations stay attached, and the
     // proof driver cannot publish it until it has proved every one at input.
     if !obligations.is_empty() && !assumptions.retains_required_obligations() {
-        return Err(CRuntimeError::PendingCallObligations(obligations.into()));
+        return Err(RuntimeError::PendingCallObligations(obligations.into()));
     }
     // Escaping borrows (step 7). Every viewed piece a produced or returned
     // owned composite packages must be backed by exactly one loan of this
@@ -783,13 +783,13 @@ fn recover_candidate_stable_view_resources(
     // refused: a composite describing memory no loan stabilizes would let
     // the caller write or free what the composite still reads, and an
     // ambiguous backing cannot be elided.
-    let mut escaping = std::collections::BTreeMap::<LoanId, Vec<CResourceFact>>::new();
-    let mut rebound_heads = Vec::<(CResourceFact, LoanViewBinding)>::new();
+    let mut escaping = std::collections::BTreeMap::<LoanId, Vec<ResourceFact>>::new();
+    let mut rebound_heads = Vec::<(ResourceFact, LoanViewBinding)>::new();
     // A loan backs a piece when one of its permitted descriptions denotes
     // the piece's resource under the certified output facts: the piece was
     // evaluated at the post-state, where the composite's fields are fresh
     // loads the ensures relate to the lent arguments.
-    let loan_backs_piece = |loan: LoanId, piece: &CResourceFact| {
+    let loan_backs_piece = |loan: LoanId, piece: &ResourceFact| {
         plan.ledger
             .permitted_descriptions(loan)
             .iter()
@@ -818,7 +818,7 @@ fn recover_candidate_stable_view_resources(
         }
         match (backing_loans.len(), entering) {
             (0, _) => {
-                return Err(CRuntimeError::FunctionContract(format!(
+                return Err(RuntimeError::FunctionContract(format!(
                     "produced borrowing composite `{}` packages a view `{}` that no viewed input of this call backs",
                     head.diagnostic_summary(),
                     piece.diagnostic_summary()
@@ -840,7 +840,7 @@ fn recover_candidate_stable_view_resources(
                 }
             }
             _ => {
-                return Err(CRuntimeError::FunctionContract(format!(
+                return Err(RuntimeError::FunctionContract(format!(
                     "produced borrowing composite `{}` packages a view `{}` that more than one viewed input of this call could back; the borrow cannot be elided",
                     head.diagnostic_summary(),
                     piece.diagnostic_summary()
@@ -860,9 +860,9 @@ fn recover_candidate_stable_view_resources(
         .map_err(|error| {
             error
                 .loan_diagnostic(LoanRefusalOperation::Recovery)
-                .map(|refusal| CRuntimeError::LoanRefusal(Box::new(refusal)))
+                .map(|refusal| RuntimeError::LoanRefusal(Box::new(refusal)))
                 .unwrap_or_else(|| {
-                    CRuntimeError::FunctionContract("stable-view call recovery refused".to_string())
+                    RuntimeError::FunctionContract("stable-view call recovery refused".to_string())
                 })
         })?;
     let loan_evidence = Arc::new(CheckedLoanCallEvidence::new(
@@ -878,7 +878,7 @@ fn recover_candidate_stable_view_resources(
     recovery
         .recheck_transitions(actual_ledger, plan.caller_participant())
         .map_err(|error| {
-            CRuntimeError::LoanRefusal(Box::new(error.diagnostic_with_subject(
+            RuntimeError::LoanRefusal(Box::new(error.diagnostic_with_subject(
                 LoanRefusalOperation::Recovery,
                 recovery.diagnostic_subject(),
             )))
@@ -888,7 +888,7 @@ fn recover_candidate_stable_view_resources(
     for fact in plan.mutex_use_requirements.values() {
         residual = residual
             .without_fact_delaying_normalization(fact, assumptions)
-            .ok_or_else(|| CRuntimeError::MissingResource {
+            .ok_or_else(|| RuntimeError::MissingResource {
                 resource: Box::new(fact.clone()),
             })?;
     }
@@ -958,11 +958,11 @@ fn recover_candidate_stable_view_resources(
         // is not read-only and still needs one of the three routes above.
         let intrinsic_read_only = matches!(
             fact.resource(),
-            CResource::Memory(range)
+            Resource::Memory(range)
                 if caller_state.memory().is_read_only_block(&range.base().block)
         );
         if !returned_input && !preserved_outer && !projected_from_owner && !intrinsic_read_only {
-            return Err(CRuntimeError::UnbackedReturnedView {
+            return Err(RuntimeError::UnbackedReturnedView {
                 view: Box::new((*fact).clone()),
             });
         }
@@ -972,7 +972,7 @@ fn recover_candidate_stable_view_resources(
             residual = residual
                 .without_fact(&stable_view.requirement.fact, assumptions)
                 .ok_or_else(|| {
-                    CRuntimeError::FunctionContract(
+                    RuntimeError::FunctionContract(
                         "stable-view return retained an unrecoverable view".to_string(),
                     )
                 })?;
@@ -1016,7 +1016,7 @@ fn recover_candidate_stable_view_resources(
             .into_iter()
             .find(|occurrence| recovered_resources.loan_dependency(*occurrence).is_none())
         else {
-            return Err(CRuntimeError::FunctionContract(format!(
+            return Err(RuntimeError::FunctionContract(format!(
                 "produced borrowing composite `{}` has no occurrence to carry its borrow",
                 head.diagnostic_summary()
             )));
@@ -1038,33 +1038,33 @@ fn recover_candidate_stable_view_resources(
 /// an owned fact can be borrowed at the contract boundary, and an instance
 /// can retain entry identity while its fields are checked at post state.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CCheckedResourceFact {
-    pub(crate) fact: CResourceFact,
-    pub(crate) role: CResourceTransferRole,
-    pub(crate) snapshot: CResourceSnapshot,
+pub(crate) struct CheckedResourceFact {
+    pub(crate) fact: ResourceFact,
+    pub(crate) role: ResourceTransferRole,
+    pub(crate) snapshot: ResourceSnapshot,
     pub(crate) clause_position: Option<(usize, usize)>,
     /// Index of this leaf in the normalized resource section, when it was
     /// evaluated from a contract. Distinct leaves may share a source clause.
     pub(crate) section_index: Option<usize>,
     /// Caller-selected exact named authority for a mutex-use loan. The
     /// planner must consume this source, never select by address instead.
-    pub(crate) selected_mutex_source: Option<std::sync::Arc<(Variable, CResourceFact)>>,
+    pub(crate) selected_mutex_source: Option<std::sync::Arc<(Variable, ResourceFact)>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CFunctionMemoryEffectProjection {
-    ranges: Vec<CMemoryRange>,
+pub(crate) struct FunctionMemoryEffectProjection {
+    ranges: Vec<MemoryRange>,
     evidence_facts: ExecutionFacts,
     /// The owned requirement each projected range came out of, for the ranges
     /// a checked resource transition produced. An explicit effect segment
     /// names no requirement and appears here not at all; the call site reads
     /// this only to recover an effect's caller-side provenance and never to
     /// widen or narrow the ranges themselves.
-    range_sources: Vec<(CMemoryRange, CResourceFact)>,
+    range_sources: Vec<(MemoryRange, ResourceFact)>,
 }
 
-impl CFunctionMemoryEffectProjection {
-    pub(crate) fn ranges(&self) -> &[CMemoryRange] {
+impl FunctionMemoryEffectProjection {
+    pub(crate) fn ranges(&self) -> &[MemoryRange] {
         &self.ranges
     }
 }
@@ -1089,8 +1089,8 @@ enum CandidateMemoryRangeRelation {
 /// stays undecided, so an unknown alias is still reported as unproved
 /// separation rather than as disjointness.
 fn candidate_memory_ranges_proven_separate(
-    left: &CMemoryRange,
-    right: &CMemoryRange,
+    left: &MemoryRange,
+    right: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
     // This arithmetic rule uses signed 32-bit indices; wide ranges are undecided.
@@ -1100,7 +1100,7 @@ fn candidate_memory_ranges_proven_separate(
     if left.element_width() != right.element_width() {
         return false;
     }
-    let separate_in_frame = |anchor: &CMemoryRange, other: &CMemoryRange| {
+    let separate_in_frame = |anchor: &MemoryRange, other: &MemoryRange| {
         crate::instrumentation::record_deterministic_work(1);
         let Some(base_delta) = other
             .base()
@@ -1140,10 +1140,10 @@ fn candidate_memory_ranges_proven_separate(
 /// rather than picking a support, which leaves that effect on the arithmetic
 /// comparison.
 fn reserved_effect_support_index(
-    range_sources: &[(CMemoryRange, CResourceFact)],
-    reserved_ownership_supports: &[(CResourceFact, ResourceOccurrenceId)],
-) -> BTreeMap<CMemoryRange, Option<BTreeSet<ResourceOccurrenceId>>> {
-    let mut by_requirement = BTreeMap::<&CResourceFact, Option<ResourceOccurrenceId>>::new();
+    range_sources: &[(MemoryRange, ResourceFact)],
+    reserved_ownership_supports: &[(ResourceFact, ResourceOccurrenceId)],
+) -> BTreeMap<MemoryRange, Option<BTreeSet<ResourceOccurrenceId>>> {
+    let mut by_requirement = BTreeMap::<&ResourceFact, Option<ResourceOccurrenceId>>::new();
     for (fact, support) in reserved_ownership_supports {
         by_requirement
             .entry(fact)
@@ -1158,7 +1158,7 @@ fn reserved_effect_support_index(
     // footprint comes from every requirement that reaches unnamed memory --
     // so each range keeps the set of occurrences it was reserved out of, and
     // loses its provenance when any of them has none.
-    let mut index = BTreeMap::<CMemoryRange, Option<BTreeSet<ResourceOccurrenceId>>>::new();
+    let mut index = BTreeMap::<MemoryRange, Option<BTreeSet<ResourceOccurrenceId>>>::new();
     for (range, source) in range_sources {
         let support = by_requirement.get(source).copied().flatten();
         let entry = index
@@ -1188,8 +1188,8 @@ fn reserved_effect_support_index(
 /// still need the arithmetic proof. An effect reserved out of several
 /// occurrences is disjoint from a view lent from none of them.
 fn effect_is_disjoint_from_view_by_provenance(
-    reserved_effect_supports: &BTreeMap<CMemoryRange, Option<BTreeSet<ResourceOccurrenceId>>>,
-    effect: &CMemoryRange,
+    reserved_effect_supports: &BTreeMap<MemoryRange, Option<BTreeSet<ResourceOccurrenceId>>>,
+    effect: &MemoryRange,
     viewed_support: Option<ResourceOccurrenceId>,
 ) -> bool {
     let Some(viewed_support) = viewed_support else {
@@ -1204,8 +1204,8 @@ fn effect_is_disjoint_from_view_by_provenance(
 }
 
 fn candidate_memory_ranges_relation(
-    left: &CMemoryRange,
-    right: &CMemoryRange,
+    left: &MemoryRange,
+    right: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> CandidateMemoryRangeRelation {
     let relation = candidate_memory_ranges_relation_by_bounds(left, right, assumptions);
@@ -1221,8 +1221,8 @@ fn candidate_memory_ranges_relation(
 }
 
 fn candidate_memory_ranges_relation_by_bounds(
-    left: &CMemoryRange,
-    right: &CMemoryRange,
+    left: &MemoryRange,
+    right: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> CandidateMemoryRangeRelation {
     if left.base().blocks_proven_distinct(right.base())
@@ -1307,7 +1307,7 @@ fn candidate_memory_ranges_relation_by_bounds(
 
 #[derive(Clone, Debug)]
 enum VerifiedAllocationDeltaError {
-    Runtime(CRuntimeError),
+    Runtime(RuntimeError),
     InconsistentReturnedAllocation,
 }
 
@@ -1321,7 +1321,7 @@ enum AllocationContinuity {
     Inconsistent,
 }
 
-fn canonical_memory_range(range: CMemoryRange) -> CMemoryRange {
+fn canonical_memory_range(range: MemoryRange) -> MemoryRange {
     let base = Pointer {
         block: range.base().block.clone(),
         offset: crate::kernel::eval::canonical_offset_term(&range.base().offset),
@@ -1339,7 +1339,7 @@ fn function_needs_outcome_resource_transfer(function: &ProgramFunction) -> bool 
         || function
             .composite_resource_definitions()
             .iter()
-            .any(CCompositeResourceDefinition::needs_outcome_resource_transfer)
+            .any(CompositeResourceDefinition::needs_outcome_resource_transfer)
 }
 
 fn function_changes_declared_resource_quantities(function: &ProgramFunction) -> bool {
@@ -1354,23 +1354,23 @@ pub(super) fn construct_c_function_resource(
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
     result: &ProgramValue,
-    constructed: &CResourceFact,
+    constructed: &ResourceFact,
     assumptions: &PureFactContext,
-) -> ExecutionResult<Result<ExecutionState, CRuntimeError>> {
+) -> ExecutionResult<Result<ExecutionState, RuntimeError>> {
     // Constructing a token of a known ordinary abstract family creates no
     // population member; any other construction would need its authority.
     let ordinary_token = matches!(
         constructed.resource(),
-        CResource::Token { name, .. }
+        Resource::Token { name, .. }
             if function.contract_interface().is_ordinary_abstract_family(name)
     );
     if !ordinary_token {
-        return Ok(Err(CRuntimeError::FunctionContract(
+        return Ok(Err(RuntimeError::FunctionContract(
             "generic resource construction cannot create members".to_string(),
         )));
     }
     let Some(mut evaluation_state) = c_function_entry_state(state, function, arguments) else {
-        return Ok(Err(CRuntimeError::FunctionContract(
+        return Ok(Err(RuntimeError::FunctionContract(
             "could not bind function arguments for resource construction".to_string(),
         )));
     };
@@ -1395,22 +1395,22 @@ pub(super) fn construct_c_function_resource(
         }
     }
     if !authorized {
-        return Ok(Err(CRuntimeError::FunctionContract(
+        return Ok(Err(RuntimeError::FunctionContract(
             "resource construction is not authorized by the function contract".to_string(),
         )));
     }
-    let CResourceFact::Own(CResource::Token { .. }, quantity) = constructed else {
-        return Ok(Err(CRuntimeError::FunctionContract(
+    let ResourceFact::Own(Resource::Token { .. }, quantity) = constructed else {
+        return Ok(Err(RuntimeError::FunctionContract(
             "resource construction requires one owned abstract token".to_string(),
         )));
     };
     if quantity.as_const() != Some(1) {
-        return Ok(Err(CRuntimeError::FunctionContract(
+        return Ok(Err(RuntimeError::FunctionContract(
             "resource construction creates exactly one token".to_string(),
         )));
     }
     if state.resources().contains_exact_representation(constructed) {
-        return Ok(Err(CRuntimeError::FunctionContract(
+        return Ok(Err(RuntimeError::FunctionContract(
             "resource construction would duplicate an existing token".to_string(),
         )));
     }
@@ -1427,11 +1427,11 @@ pub(super) fn construct_c_function_resource(
 
 fn complete_void_fallthrough(
     function: &ProgramFunction,
-    outcome: CStatementOutcome,
-) -> CStatementOutcome {
+    outcome: StatementOutcome,
+) -> StatementOutcome {
     match (function.return_type(), outcome) {
-        (ProgramType::Void, CStatementOutcome::Normal(state)) => {
-            super::eval::return_authority_refusal(&state).unwrap_or(CStatementOutcome::Return {
+        (ProgramType::Void, StatementOutcome::Normal(state)) => {
+            super::eval::return_authority_refusal(&state).unwrap_or(StatementOutcome::Return {
                 value: ProgramValue::Void.into(),
                 state,
             })
@@ -1445,9 +1445,9 @@ pub(super) fn execute_c_function_paths(
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
-    execution_context: CExecutionContext<'_>,
+    execution_context: ExecutionContext<'_>,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CFunctionPath>> {
+) -> ExecutionResult<Vec<FunctionPath>> {
     execute_c_function_paths_with_contract_resources(
         state,
         function,
@@ -1474,11 +1474,11 @@ pub(super) fn execute_c_function_paths_with_contract_resources(
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
-    execution_context: CExecutionContext<'_>,
+    execution_context: ExecutionContext<'_>,
     budget: &mut ExecutionBudget,
     prepare_contract_resources: bool,
     defer_conditional_resource_effect: bool,
-) -> ExecutionResult<Vec<CFunctionPath>> {
+) -> ExecutionResult<Vec<FunctionPath>> {
     execute_function_paths(
         state,
         function,
@@ -1495,12 +1495,12 @@ pub(super) fn execute_c_function_paths_with_contract_resources(
 /// Refresh only caller slots named by the completed body's store events.
 /// Callee execution has its own bindings and cannot update these by name.
 fn refresh_returned_local_bindings_from_stores(
-    outcome: &mut CFunctionOutcome,
+    outcome: &mut FunctionOutcome,
     facts: &(impl ExecutionFactSource + ?Sized),
     assumptions: &PureFactContext,
 ) {
     let state = match outcome {
-        CFunctionOutcome::Return { state, .. } | CFunctionOutcome::Throw { state, .. } => state,
+        FunctionOutcome::Return { state, .. } | FunctionOutcome::Throw { state, .. } => state,
         _ => return,
     };
     for fact in facts.fact_iter() {
@@ -1526,12 +1526,12 @@ pub(super) fn execute_c_function_verification_paths(
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
-    execution_context: CExecutionContext<'_>,
+    execution_context: ExecutionContext<'_>,
     budget: &mut ExecutionBudget,
     variables: &mut KernelVariableGenerator,
     prepare_contract_resources: bool,
     defer_conditional_resource_effect: bool,
-) -> ExecutionResult<Vec<CFunctionPath>> {
+) -> ExecutionResult<Vec<FunctionPath>> {
     execute_function_paths(
         state,
         function,
@@ -1576,17 +1576,17 @@ fn execute_function_paths(
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
-    execution_context: CExecutionContext<'_>,
+    execution_context: ExecutionContext<'_>,
     budget: &mut ExecutionBudget,
     prepare_contract_resources: bool,
     defer_conditional_resource_effect: bool,
     judgment: &mut super::eval::StatementJudgment<'_, '_>,
-) -> ExecutionResult<Vec<CFunctionPath>> {
+) -> ExecutionResult<Vec<FunctionPath>> {
     let verifies = matches!(judgment, super::eval::StatementJudgment::Verifies(_));
     budget.consume_function_call()?;
     if arguments.len() != function.parameters().len() {
-        return Ok(vec![CFunctionPath::new(
-            CFunctionOutcome::RuntimeError(CRuntimeError::WrongArity {
+        return Ok(vec![FunctionPath::new(
+            FunctionOutcome::RuntimeError(RuntimeError::WrongArity {
                 expected: function.parameters().len(),
                 actual: arguments.len(),
             }),
@@ -1611,7 +1611,7 @@ fn execute_function_paths(
         },
     )? {
         if let Some(outcome) = arguments_path.outcome {
-            paths.push(CFunctionPath::new(
+            paths.push(FunctionPath::new(
                 outcome,
                 arguments_path.facts,
                 arguments_path.obligations,
@@ -1630,8 +1630,8 @@ fn execute_function_paths(
             &arguments_path.values,
             &path_assumptions,
         ) {
-            paths.push(CFunctionPath::new(
-                CFunctionOutcome::UndefinedBehavior(undefined_behavior),
+            paths.push(FunctionPath::new(
+                FunctionOutcome::UndefinedBehavior(undefined_behavior),
                 arguments_path.facts,
                 arguments_path.obligations,
             ));
@@ -1644,8 +1644,8 @@ fn execute_function_paths(
             &arguments_path.values,
             &path_assumptions,
         ) {
-            paths.push(CFunctionPath::new(
-                CFunctionOutcome::RuntimeError(refusal),
+            paths.push(FunctionPath::new(
+                FunctionOutcome::RuntimeError(refusal),
                 arguments_path.facts,
                 arguments_path.obligations,
             ));
@@ -1657,8 +1657,8 @@ fn execute_function_paths(
             &arguments_path.obligations,
             &path_assumptions,
         ) else {
-            paths.push(CFunctionPath::new(
-                CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+            paths.push(FunctionPath::new(
+                FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
                     argument_binding_error(function, &arguments_path.values).to_string(),
                 )),
                 arguments_path.facts,
@@ -1668,8 +1668,8 @@ fn execute_function_paths(
         };
         let Some(callee_state) = bind_c_function_arguments(state, function, &argument_values)
         else {
-            paths.push(CFunctionPath::new(
-                CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+            paths.push(FunctionPath::new(
+                FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
                     argument_binding_error(function, &argument_values).to_string(),
                 )),
                 arguments_path.facts,
@@ -1701,8 +1701,8 @@ fn execute_function_paths(
             )? {
                 Ok(resource_transfer) => resource_transfer,
                 Err(error) => {
-                    paths.push(CFunctionPath::new(
-                        CFunctionOutcome::RuntimeError(error),
+                    paths.push(FunctionPath::new(
+                        FunctionOutcome::RuntimeError(error),
                         arguments_path.facts,
                         argument_obligations,
                     ));
@@ -1744,8 +1744,8 @@ fn execute_function_paths(
             ),
             Ok(None) => std::borrow::Cow::Borrowed(execution_context.environment),
             Err(message) => {
-                paths.push(CFunctionPath::new(
-                    CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(message)),
+                paths.push(FunctionPath::new(
+                    FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(message)),
                     arguments_path.facts,
                     argument_obligations,
                 ));
@@ -1757,7 +1757,7 @@ fn execute_function_paths(
                 &callee_state,
                 function,
                 &body_assumptions,
-                CExecutionContext::new(&anchored_environment, execution_context.semantics),
+                ExecutionContext::new(&anchored_environment, execution_context.semantics),
                 budget,
                 judgment,
             )
@@ -1781,7 +1781,7 @@ fn execute_function_paths(
                 &body_path.outcome,
                 function,
             ) {
-                paths.push(CFunctionPath::new(CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                paths.push(FunctionPath::new(FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
                         format!(
                             "by-value aggregate parameter `{parameter}` is modified, but a postcondition reads its current state"
                         ),
@@ -1845,7 +1845,7 @@ fn execute_function_paths(
 
             append_string_literal_loadable_facts(function, &outcome, &mut facts);
 
-            paths.push(CFunctionPath {
+            paths.push(FunctionPath {
                 call_parameters: None,
                 outcome,
                 facts,
@@ -1873,12 +1873,12 @@ pub(super) fn execute_c_function_call_paths(
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
-    execution_context: CExecutionContext<'_>,
+    execution_context: ExecutionContext<'_>,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CFunctionPath>> {
+) -> ExecutionResult<Vec<FunctionPath>> {
     if caller_state.has_local_scalar_references() || caller_state.has_local_reference_scope() {
-        return Ok(vec![CFunctionPath::new(
-            CFunctionOutcome::RuntimeError(CRuntimeError::LoanRefusal(Box::new(
+        return Ok(vec![FunctionPath::new(
+            FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(Box::new(
                 crate::kernel::loans::LoanRefusal::UnsupportedResource
                     .diagnostic(crate::kernel::LoanRefusalOperation::Plan),
             ))),
@@ -1902,8 +1902,8 @@ pub(super) fn execute_c_function_call_paths(
             })
     {
         let error = authority_call_refusal();
-        return Ok(vec![CFunctionPath::new(
-            CFunctionOutcome::RuntimeError(error),
+        return Ok(vec![FunctionPath::new(
+            FunctionOutcome::RuntimeError(error),
             Vec::new().into(),
             Vec::new(),
         )]);
@@ -1940,7 +1940,7 @@ pub(super) fn execute_c_function_call_paths(
     {
         // External summaries use the same body-independent application
         // interface as verified rules, but remain an assumption: do not
-        // repackage one as `CVerifiedFunctionRule`, whose type carries body
+        // repackage one as `VerifiedFunctionRule`, whose type carries body
         // safety evidence. Applying the shared rule engine does not execute,
         // inspect, or certify the external body's storage.
         let binder_application = match selected_call_binder_application(
@@ -1955,7 +1955,7 @@ pub(super) fn execute_c_function_call_paths(
         };
         return execute_verified_function_applications(
             caller_state,
-            &[CFunctionContractApplication {
+            &[FunctionContractApplication {
                 pointer_result: None,
                 name: rule.function.name(),
                 interface_name: rule.function.name(),
@@ -2002,21 +2002,19 @@ pub(super) fn execute_c_function_call_paths(
     }
     if !executes_inline_body {
         match execution_context.semantics.calls {
-            CCallSemantics::ExecuteBodies => {}
-            CCallSemantics::ApplyVerifiedRules => {
+            CallSemantics::ExecuteBodies => {}
+            CallSemantics::ApplyVerifiedRules => {
                 let Some(rule) = execution_context
                     .environment
                     .get_verified_function_rule(function.name())
                 else {
                     let error = if function.verified_direct_contract_supported() {
-                        CRuntimeError::MissingVerifiedFunctionRule(function.name().to_string())
+                        RuntimeError::MissingVerifiedFunctionRule(function.name().to_string())
                     } else {
-                        CRuntimeError::UnsupportedOpaqueFunctionContract(
-                            function.name().to_string(),
-                        )
+                        RuntimeError::UnsupportedOpaqueFunctionContract(function.name().to_string())
                     };
-                    return Ok(vec![CFunctionPath::new(
-                        CFunctionOutcome::RuntimeError(error),
+                    return Ok(vec![FunctionPath::new(
+                        FunctionOutcome::RuntimeError(error),
                         Vec::new().into(),
                         Vec::new(),
                     )]);
@@ -2035,8 +2033,8 @@ pub(super) fn execute_c_function_call_paths(
     }
     budget.consume_function_call()?;
     if arguments.len() != function.parameters().len() {
-        return Ok(vec![CFunctionPath::new(
-            CFunctionOutcome::RuntimeError(CRuntimeError::WrongArity {
+        return Ok(vec![FunctionPath::new(
+            FunctionOutcome::RuntimeError(RuntimeError::WrongArity {
                 expected: function.parameters().len(),
                 actual: arguments.len(),
             }),
@@ -2054,7 +2052,7 @@ pub(super) fn execute_c_function_call_paths(
         Some(execution_context.environment),
     )? {
         if let Some(outcome) = arguments_path.outcome {
-            paths.push(CFunctionPath::new(
+            paths.push(FunctionPath::new(
                 outcome,
                 arguments_path.facts,
                 arguments_path.obligations,
@@ -2073,8 +2071,8 @@ pub(super) fn execute_c_function_call_paths(
             &arguments_path.values,
             &path_assumptions,
         ) {
-            paths.push(CFunctionPath::new(
-                CFunctionOutcome::UndefinedBehavior(undefined_behavior),
+            paths.push(FunctionPath::new(
+                FunctionOutcome::UndefinedBehavior(undefined_behavior),
                 arguments_path.facts,
                 arguments_path.obligations,
             ));
@@ -2087,8 +2085,8 @@ pub(super) fn execute_c_function_call_paths(
             &arguments_path.values,
             &path_assumptions,
         ) {
-            paths.push(CFunctionPath::new(
-                CFunctionOutcome::RuntimeError(refusal),
+            paths.push(FunctionPath::new(
+                FunctionOutcome::RuntimeError(refusal),
                 arguments_path.facts,
                 arguments_path.obligations,
             ));
@@ -2100,8 +2098,8 @@ pub(super) fn execute_c_function_call_paths(
             &arguments_path.obligations,
             &path_assumptions,
         ) else {
-            paths.push(CFunctionPath::new(
-                CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+            paths.push(FunctionPath::new(
+                FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
                     argument_binding_error(function, &arguments_path.values).to_string(),
                 )),
                 arguments_path.facts,
@@ -2115,7 +2113,7 @@ pub(super) fn execute_c_function_call_paths(
             &argument_values,
             &path_assumptions,
         ) {
-            paths.push(CFunctionPath::new(
+            paths.push(FunctionPath::new(
                 outcome,
                 arguments_path.facts,
                 argument_obligations,
@@ -2125,8 +2123,8 @@ pub(super) fn execute_c_function_call_paths(
         let Some(callee_state) =
             bind_c_function_arguments(caller_state, function, &argument_values)
         else {
-            paths.push(CFunctionPath::new(
-                CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+            paths.push(FunctionPath::new(
+                FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
                     argument_binding_error(function, &argument_values).to_string(),
                 )),
                 arguments_path.facts,
@@ -2184,7 +2182,7 @@ pub(super) fn execute_c_function_call_paths(
                     &facts,
                     &return_assumptions,
                 );
-                paths.push(CFunctionPath {
+                paths.push(FunctionPath {
                     call_parameters: None,
                     outcome,
                     facts,
@@ -2206,8 +2204,8 @@ pub(super) fn execute_c_function_call_paths(
         )? {
             Ok(resource_transfer) => resource_transfer,
             Err(error) => {
-                paths.push(CFunctionPath::new(
-                    CFunctionOutcome::RuntimeError(error),
+                paths.push(FunctionPath::new(
+                    FunctionOutcome::RuntimeError(error),
                     arguments_path.facts,
                     argument_obligations,
                 ));
@@ -2248,7 +2246,7 @@ pub(super) fn execute_c_function_call_paths(
 
             let mut outcome = outcome;
             refresh_returned_local_bindings_from_stores(&mut outcome, &facts, &return_assumptions);
-            paths.push(CFunctionPath {
+            paths.push(FunctionPath {
                 call_parameters: None,
                 outcome,
                 facts,
@@ -2314,7 +2312,7 @@ pub(crate) fn apply_verified_tactic_rule(
     name: &str,
     arguments: &[ProgramValue],
     facts: &crate::kernel::proof::ProofFacts,
-    environment: &CExecutionEnvironment,
+    environment: &ExecutionEnvironment,
     next_kernel_variable: u64,
 ) -> Result<TacticRuleTransition, TacticApplicationRefusal> {
     use TacticApplicationRefusal::Refused;
@@ -2333,7 +2331,7 @@ pub(crate) fn apply_verified_tactic_rule(
     if environment.get_verified_function_rule(name).is_none()
         && !environment
             .get_external_function_rule(name)
-            .is_some_and(CExternalFunctionRule::is_scoped_unselected)
+            .is_some_and(ExternalFunctionRule::is_scoped_unselected)
     {
         return Err(Refused(format!(
             "tactic `{name}` has no verified rule in this proof"
@@ -2350,7 +2348,7 @@ pub(crate) fn apply_verified_tactic_rule(
         function,
         &expressions,
         facts.assumptions(),
-        CExecutionContext::apply_verified_rules(environment),
+        ExecutionContext::apply_verified_rules(environment),
         &mut budget,
     )
     .map_err(|limit| Refused(format!("applying tactic `{name}` stopped at {limit}")))?;
@@ -2361,19 +2359,19 @@ pub(crate) fn apply_verified_tactic_rule(
         )));
     };
     let after = match &path.outcome {
-        CFunctionOutcome::Return { state, .. } => state.clone(),
-        CFunctionOutcome::RuntimeError(error) => {
+        FunctionOutcome::Return { state, .. } => state.clone(),
+        FunctionOutcome::RuntimeError(error) => {
             return Err(Refused(format!(
                 "tactic `{name}` could not be applied: {error}"
             )));
         }
-        CFunctionOutcome::UndefinedBehavior(behavior) => {
+        FunctionOutcome::UndefinedBehavior(behavior) => {
             return Err(Refused(format!(
                 "tactic `{name}` could not be applied: undefined behavior: {}",
                 behavior.description()
             )));
         }
-        CFunctionOutcome::Throw { .. } | CFunctionOutcome::VerificationDiverges => {
+        FunctionOutcome::Throw { .. } | FunctionOutcome::VerificationDiverges => {
             return Err(Refused(format!("tactic `{name}` has no ordinary outcome")));
         }
     };
@@ -2394,12 +2392,12 @@ pub(crate) fn apply_verified_tactic_rule(
 
 fn execute_verified_function_rule(
     caller_state: &ExecutionState,
-    rule: &CVerifiedFunctionRule,
+    rule: &VerifiedFunctionRule,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
+    environment: &ExecutionEnvironment,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CFunctionPath>> {
+) -> ExecutionResult<Vec<FunctionPath>> {
     // A call step's binder map names exactly this call.
     // The map is the whole binding: every instance binder the callee declares
     // is looked up once, and nothing else is consulted.
@@ -2415,7 +2413,7 @@ fn execute_verified_function_rule(
     };
     execute_verified_function_applications(
         caller_state,
-        &[CFunctionContractApplication {
+        &[FunctionContractApplication {
             pointer_result: rule.pointer_result.as_deref(),
             name: rule.function.name(),
             interface_name: rule.function.name(),
@@ -2440,10 +2438,10 @@ fn execute_verified_function_rule(
 /// internal thread transition calls this; pthread declarations are not wired.
 pub(super) fn suspend_verified_worker(
     caller_state: &ExecutionState,
-    rule: &CVerifiedFunctionRule,
+    rule: &VerifiedFunctionRule,
     argument: ProgramValue,
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
+    environment: &ExecutionEnvironment,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<(super::threads::WorkerCompletion, Vec<ProofObligation>), String>> {
     if !rule
@@ -2459,7 +2457,7 @@ pub(super) fn suspend_verified_worker(
     let mut completions = Vec::new();
     let paths = execute_verified_function_applications_with_suspension(
         caller_state,
-        &[CFunctionContractApplication {
+        &[FunctionContractApplication {
             pointer_result: rule.pointer_result.as_deref(),
             name: rule.function.name(),
             interface_name: rule.function.name(),
@@ -2477,8 +2475,8 @@ pub(super) fn suspend_verified_worker(
         budget,
         Some(&mut completions),
     )?;
-    if let Some(CFunctionPath {
-        outcome: CFunctionOutcome::RuntimeError(error),
+    if let Some(FunctionPath {
+        outcome: FunctionOutcome::RuntimeError(error),
         ..
     }) = paths.first()
     {
@@ -2514,9 +2512,9 @@ pub(super) fn unique_worker_completion(
 /// per declared binder.
 fn selected_call_binder_application(
     function_name: &str,
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
     caller_state: &ExecutionState,
-    environment: &CExecutionEnvironment,
+    environment: &ExecutionEnvironment,
     produced_names: Option<&mut ExecutionBudget>,
 ) -> Result<Option<ResourceCallApplication>, &'static str> {
     let written = environment
@@ -2569,7 +2567,7 @@ fn selected_call_binder_application(
     if let Some(budget) = produced_names {
         let required = parameters
             .iter()
-            .filter_map(CResourceSpec::binding_identity)
+            .filter_map(ResourceSpec::binding_identity)
             .collect::<BTreeSet<_>>();
         for produced in interface.resource_ensures() {
             crate::instrumentation::record_deterministic_work(1);
@@ -2617,17 +2615,17 @@ fn selected_call_binder_application(
 /// checked where its clause is, so a rename at other arguments fails there.
 pub(crate) fn exit_with_unheld_produced_binders_adopted(
     function: &ProgramFunction,
-    outcome: CFunctionOutcome,
+    outcome: FunctionOutcome,
     assumptions: &PureFactContext,
-) -> CFunctionOutcome {
-    let CFunctionOutcome::Return { value, state } = outcome else {
+) -> FunctionOutcome {
+    let FunctionOutcome::Return { value, state } = outcome else {
         return outcome;
     };
     let binders = function
         .resource_requires()
         .iter()
         .chain(function.resource_ensures())
-        .filter_map(CResourceSpec::instance_identity)
+        .filter_map(ResourceSpec::instance_identity)
         .collect::<BTreeSet<_>>();
     let mut state = *state;
     for produced in function.resource_ensures() {
@@ -2672,7 +2670,7 @@ pub(crate) fn exit_with_unheld_produced_binders_adopted(
         ) else {
             continue;
         };
-        let held = CResourceFact::own(CResource::Instance(only.clone()));
+        let held = ResourceFact::own(Resource::Instance(only.clone()));
         let Some(resources) = state
             .resources()
             .clone()
@@ -2681,21 +2679,21 @@ pub(crate) fn exit_with_unheld_produced_binders_adopted(
             continue;
         };
         state = state.clone().with_resource_context(
-            resources.unchecked_with_fact(CResourceFact::own(CResource::Instance(adopted))),
+            resources.unchecked_with_fact(ResourceFact::own(Resource::Instance(adopted))),
         );
     }
-    CFunctionOutcome::Return {
+    FunctionOutcome::Return {
         value,
         state: Box::new(state),
     }
 }
 
 /// The resource family and arity an instance binder is declared at.
-fn instance_binder_shape(parameter: &CResourceSpec) -> Option<(&str, usize)> {
-    let CResourceTerm::Instance { resource, .. } = parameter.term() else {
+fn instance_binder_shape(parameter: &ResourceSpec) -> Option<(&str, usize)> {
+    let ResourceTerm::Instance { resource, .. } = parameter.term() else {
         return None;
     };
-    let CResourceTerm::Composite {
+    let ResourceTerm::Composite {
         name, arguments, ..
     } = resource.as_ref()
     else {
@@ -2712,14 +2710,14 @@ fn instance_binder_shape(parameter: &CResourceSpec) -> Option<(&str, usize)> {
 /// Named callbacks carry neither; external assumptions carry storage but no
 /// proof evidence.
 #[derive(Clone, Copy)]
-struct CFunctionContractApplication<'a> {
+struct FunctionContractApplication<'a> {
     pointer_result: Option<&'a PurePointerResult>,
     /// Concrete callee name used for diagnostics and call provenance.
     name: &'a str,
     /// Nominal interface name used to distinguish candidates and their source
     /// requirement metadata.
     interface_name: &'a str,
-    interface: &'a CFunctionContractInterface,
+    interface: &'a FunctionContractInterface,
     storage: Option<&'a ProgramFunction>,
     evidence: Option<&'a ProgramFunction>,
     /// The checked representation-copy effect of a recognized byte-copy
@@ -2739,11 +2737,11 @@ struct CFunctionContractApplication<'a> {
 /// copy's `click::bytes::equal` guarantee already justified. An untyped source has no
 /// cells, so a raw byte copy still establishes nothing typed.
 pub(in crate::kernel) fn transfer_representation_copy_cells(
-    entry_memory: &CMemory,
+    entry_memory: &Memory,
     argument_values: &[ProgramValue],
-    memory: CMemory,
+    memory: Memory,
     effect: RepresentationCopyEffect,
-) -> CMemory {
+) -> Memory {
     representation_copy_cell_moves(entry_memory, argument_values, effect)
         .into_iter()
         .fold(memory, |memory, (pointer, value)| {
@@ -2757,7 +2755,7 @@ pub(in crate::kernel) fn transfer_representation_copy_cells(
 /// the copied extent's cell count plus one, independent of every other cell
 /// in memory.
 pub(in crate::kernel) fn representation_copy_cell_moves(
-    entry_memory: &CMemory,
+    entry_memory: &Memory,
     argument_values: &[ProgramValue],
     effect: RepresentationCopyEffect,
 ) -> Vec<(Pointer, ProgramValue)> {
@@ -2845,14 +2843,14 @@ pub(in crate::kernel) fn representation_copy_cell_moves(
 
 fn execute_verified_function_applications(
     caller_state: &ExecutionState,
-    applications: &[CFunctionContractApplication<'_>],
+    applications: &[FunctionContractApplication<'_>],
     selected_contract: Option<usize>,
     resource_application: Option<(usize, &ResourceCallApplication)>,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
+    environment: &ExecutionEnvironment,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CFunctionPath>> {
+) -> ExecutionResult<Vec<FunctionPath>> {
     // Exact contract certification may encounter a conditional produced
     // effect inside a caller's body. If the guard is not established at the
     // call boundary, split the verified contract application before applying
@@ -2917,28 +2915,28 @@ fn execute_verified_function_applications(
     Ok(paths)
 }
 
-fn is_deferred_conditional_resource_effect_outcome(outcome: &CFunctionOutcome) -> bool {
+fn is_deferred_conditional_resource_effect_outcome(outcome: &FunctionOutcome) -> bool {
     matches!(
         outcome,
-        CFunctionOutcome::RuntimeError(error)
+        FunctionOutcome::RuntimeError(error)
             if is_deferred_conditional_resource_effect_error(error)
     )
 }
 
 fn execute_verified_function_applications_with_suspension(
     caller_state: &ExecutionState,
-    applications: &[CFunctionContractApplication<'_>],
+    applications: &[FunctionContractApplication<'_>],
     selected_contract: Option<usize>,
     resource_application: Option<(usize, &ResourceCallApplication)>,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
+    environment: &ExecutionEnvironment,
     budget: &mut ExecutionBudget,
     mut suspended: Option<&mut Vec<(super::threads::WorkerCompletion, Vec<ProofObligation>)>>,
-) -> ExecutionResult<Vec<CFunctionPath>> {
+) -> ExecutionResult<Vec<FunctionPath>> {
     if applications.is_empty() {
-        return Ok(vec![CFunctionPath::new(
-            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+        return Ok(vec![FunctionPath::new(
+            FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
                 "call requires at least one contract application".to_string(),
             )),
             Vec::new().into(),
@@ -2963,8 +2961,8 @@ fn execute_verified_function_applications_with_suspension(
                         || function.contract_interface() != application.interface
                 }))
     {
-        return Ok(vec![CFunctionPath::new(
-            CFunctionOutcome::RuntimeError(CRuntimeError::UnsupportedOpaqueFunctionContract(
+        return Ok(vec![FunctionPath::new(
+            FunctionOutcome::RuntimeError(RuntimeError::UnsupportedOpaqueFunctionContract(
                 application.name.to_string(),
             )),
             Vec::new().into(),
@@ -2994,11 +2992,11 @@ fn execute_verified_function_applications_with_suspension(
                         // worker planner selects and authenticates the
                         // concrete typed authority before granting it.
                         if suspended.is_some()
-                            && resource.role() == CResourceTransferRole::Borrow
-                            && resource.access() == CResourceAccessMode::Own
+                            && resource.role() == ResourceTransferRole::Borrow
+                            && resource.access() == ResourceAccessMode::Own
                             && matches!(
                                 resource.term(),
-                                CResourceTerm::MutexUse {
+                                ResourceTerm::MutexUse {
                                     protected: Some(_),
                                     ..
                                 }
@@ -3018,8 +3016,8 @@ fn execute_verified_function_applications_with_suspension(
                     })
             })
     {
-        return Ok(vec![CFunctionPath::new(
-            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
+        return Ok(vec![FunctionPath::new(
+            FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(format!(
                 "calls with named resource instances require checked binder transport: `{unbound_function}` has an unbound instance binder `{unbound_binder}`; bind it in `step(..., {{ {unbound_binder}: instance }})`"
             ))),
             vec![].into(),
@@ -3067,7 +3065,7 @@ fn execute_verified_function_applications_with_suspension(
         Some(environment),
     )? {
         if let Some(outcome) = arguments_path.outcome {
-            paths.push(CFunctionPath::new(
+            paths.push(FunctionPath::new(
                 outcome,
                 arguments_path.facts,
                 arguments_path.obligations,
@@ -3133,8 +3131,8 @@ fn execute_verified_function_applications_with_suspension(
                     || !call.transfer.memory_effects.is_empty()
             })
         {
-            paths.push(CFunctionPath::new(
-                CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+            paths.push(FunctionPath::new(
+                FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
                     "ambiguous callback resource transition; use step(Contract) to select one"
                         .to_string(),
                 )),
@@ -3181,8 +3179,8 @@ fn execute_verified_function_applications_with_suspension(
                 )
             })
         }) {
-            paths.push(CFunctionPath::new(
-                CFunctionOutcome::RuntimeError(CRuntimeError::LoanRefusal(Box::new(diagnostic))),
+            paths.push(FunctionPath::new(
+                FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(Box::new(diagnostic))),
                 facts,
                 obligations,
             ));
@@ -3200,11 +3198,11 @@ fn execute_verified_function_applications_with_suspension(
             .flat_map(|plan| &plan.mutex_uses)
             .map(|use_plan| {
                 let mutex = match use_plan.source_resource().resource() {
-                    CResource::MutexUse(identity) => &identity.mutex,
-                    CResource::MutexLive(identity) => &identity.mutex,
+                    Resource::MutexUse(identity) => &identity.mutex,
+                    Resource::MutexLive(identity) => &identity.mutex,
                     _ => unreachable!("checked use call source"),
                 };
-                CMemoryRange::new_with_element_width(
+                MemoryRange::new_with_element_width(
                     mutex.clone(),
                     0u32.into(),
                     crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin()
@@ -3217,10 +3215,10 @@ fn execute_verified_function_applications_with_suspension(
             .into_iter()
             .collect::<Vec<_>>();
         if let Some(helper) = &transfer.helper_call {
-            let CResource::MutexUse(usage) = helper.required.resource() else {
+            let Resource::MutexUse(usage) = helper.required.resource() else {
                 unreachable!()
             };
-            let range = CMemoryRange::new_with_element_width(
+            let range = MemoryRange::new_with_element_width(
                 usage.mutex.clone(),
                 0u32.into(),
                 crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin()
@@ -3251,8 +3249,8 @@ fn execute_verified_function_applications_with_suspension(
                     )
                 })
         }) {
-            paths.push(CFunctionPath::new(
-                CFunctionOutcome::RuntimeError(CRuntimeError::LoanRefusal(Box::new(diagnostic))),
+            paths.push(FunctionPath::new(
+                FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(Box::new(diagnostic))),
                 facts,
                 obligations,
             ));
@@ -3334,10 +3332,10 @@ fn execute_verified_function_applications_with_suspension(
         };
         let mut worker_effects = transfer.memory_effects.clone();
         worker_effects.extend(mutex_storage_effects.iter().cloned());
-        let result = if interface.aggregate_return_mode() == CAggregateReturnMode::Construction {
+        let result = if interface.aggregate_return_mode() == AggregateReturnMode::Construction {
             let Some(result) = construction_return::summary_result(&entry_state, interface) else {
-                paths.push(CFunctionPath::new(
-                    CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                paths.push(FunctionPath::new(
+                    FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
                         "construction summary requires its checked destination".into(),
                     )),
                     facts,
@@ -3368,7 +3366,7 @@ fn execute_verified_function_applications_with_suspension(
             }
         };
         let mut post_state = entry_state.clone().with_memory(memory);
-        if interface.aggregate_return_mode() == CAggregateReturnMode::Construction
+        if interface.aggregate_return_mode() == AggregateReturnMode::Construction
             || interface.construction_parameter().is_some()
         {
             construction_return::initialize_summary(&mut post_state, &entry_contract_state);
@@ -3383,7 +3381,7 @@ fn execute_verified_function_applications_with_suspension(
             })
             .into_certified();
             if mutex_storage_effects.is_empty()
-                && interface.aggregate_return_mode() != CAggregateReturnMode::Construction
+                && interface.aggregate_return_mode() != AggregateReturnMode::Construction
                 && interface.construction_parameter().is_none()
             {
                 effect.resource_effect_bound = transfer.resource_effect_bound.clone().map(Arc::new);
@@ -3405,7 +3403,7 @@ fn execute_verified_function_applications_with_suspension(
                         .and_then(|bindings| bindings.get(&formal).copied())
                 });
             let definition = match helper.required.resource() {
-                CResource::MutexUse(usage) => usage.protected.as_ref().and_then(|description| {
+                Resource::MutexUse(usage) => usage.protected.as_ref().and_then(|description| {
                     environment
                         .modeled_mutex_definitions
                         .get(description.family())
@@ -3444,11 +3442,11 @@ fn execute_verified_function_applications_with_suspension(
                     Some((successor, evidence))
                 }
                 Err(error) => {
-                    let CResource::MutexUse(usage) = helper.required.resource() else {
+                    let Resource::MutexUse(usage) = helper.required.resource() else {
                         unreachable!()
                     };
-                    paths.push(CFunctionPath::new(
-                        CFunctionOutcome::RuntimeError(error.into_runtime_error(&usage.mutex)),
+                    paths.push(FunctionPath::new(
+                        FunctionOutcome::RuntimeError(error.into_runtime_error(&usage.mutex)),
                         facts,
                         obligations,
                     ));
@@ -3464,7 +3462,7 @@ fn execute_verified_function_applications_with_suspension(
             let mut failure = None;
             for use_plan in &plan.mutex_uses {
                 let required = use_plan.required_resource();
-                let CResource::MutexUse(usage) = required.resource() else {
+                let Resource::MutexUse(usage) = required.resource() else {
                     unreachable!()
                 };
                 let Some(protected) = &usage.protected else {
@@ -3474,7 +3472,7 @@ fn execute_verified_function_applications_with_suspension(
                     .modeled_mutex_definitions
                     .get(protected.family())
                 else {
-                    failure = Some(CRuntimeError::FunctionContract(
+                    failure = Some(RuntimeError::FunctionContract(
                         "typed mutex call requires a guarded resource definition".into(),
                     ));
                     break;
@@ -3509,8 +3507,8 @@ fn execute_verified_function_applications_with_suspension(
                 }
             }
             if let Some(error) = failure {
-                paths.push(CFunctionPath::new(
-                    CFunctionOutcome::RuntimeError(error),
+                paths.push(FunctionPath::new(
+                    FunctionOutcome::RuntimeError(error),
                     facts,
                     obligations,
                 ));
@@ -3543,7 +3541,7 @@ fn execute_verified_function_applications_with_suspension(
             // its caller-facing name reuses a consumed input's identity.
             // Looking it up through the entry binding map would find that
             // input and incorrectly retain its old resource arguments.
-            if resource.role() == CResourceTransferRole::Borrow {
+            if resource.role() == ResourceTransferRole::Borrow {
                 continue;
             }
             let Some(produced) = selected_bindings
@@ -3556,7 +3554,7 @@ fn execute_verified_function_applications_with_suspension(
                 .helper_call
                 .as_ref()
                 .and_then(|helper| helper.contract.payload.as_ref())
-                .and_then(CResourceSpec::instance_identity)
+                .and_then(ResourceSpec::instance_identity)
                 == Some(identity)
                 && let Some((successor, _)) = &helper_effect
             {
@@ -3617,7 +3615,7 @@ fn execute_verified_function_applications_with_suspension(
                 &effective_assumptions,
                 budget,
             )? {
-                Ok(CResourceFact::Own(CResource::Composite { name, arguments }, quantity))
+                Ok(ResourceFact::Own(Resource::Composite { name, arguments }, quantity))
                     if quantity.as_const() == Some(1) =>
                 {
                     (name, arguments)
@@ -3628,8 +3626,8 @@ fn execute_verified_function_applications_with_suspension(
                     )]);
                 }
                 Err(error) => {
-                    return Ok(vec![CFunctionPath::new(
-                        CFunctionOutcome::RuntimeError(error),
+                    return Ok(vec![FunctionPath::new(
+                        FunctionOutcome::RuntimeError(error),
                         facts,
                         obligations,
                     )]);
@@ -3650,8 +3648,8 @@ fn execute_verified_function_applications_with_suspension(
                 match evaluate_resource_reference_arguments(&entry_contract_state, resource) {
                     Ok(references) => references,
                     Err(error) => {
-                        return Ok(vec![CFunctionPath::new(
-                            CFunctionOutcome::RuntimeError(error),
+                        return Ok(vec![FunctionPath::new(
+                            FunctionOutcome::RuntimeError(error),
                             facts,
                             obligations,
                         )]);
@@ -3676,7 +3674,7 @@ fn execute_verified_function_applications_with_suspension(
             transfer.callee_resources.clone().unchecked_with_facts(
                 produced_instances
                     .values()
-                    .map(|instance| CResourceFact::own(CResource::Instance(instance.clone()))),
+                    .map(|instance| ResourceFact::own(Resource::Instance(instance.clone()))),
             )
         };
         let transition_state = post_state.clone().with_resource_context(callee_resources);
@@ -3714,7 +3712,7 @@ fn execute_verified_function_applications_with_suspension(
                 after.fields = fields;
                 after
             };
-            if resource.role() == CResourceTransferRole::Produce
+            if resource.role() == ResourceTransferRole::Produce
                 && let Some(events) = &post_state.population_effects.creation
             {
                 let description = ResourceDescription::from_instance(&after);
@@ -3722,13 +3720,13 @@ fn execute_verified_function_applications_with_suspension(
                     let scope = events
                         .governing_authority(&description)
                         .expect("tracked named population");
-                    let authority = CResourceFact::own(CResource::PopulationAuthority(scope));
+                    let authority = ResourceFact::own(Resource::PopulationAuthority(scope));
                     if !transfer
                         .callee_resources
                         .satisfies_fact(&authority, &effective_assumptions)
                     {
-                        return Ok(vec![CFunctionPath::new(
-                            CFunctionOutcome::RuntimeError(CRuntimeError::MissingResource {
+                        return Ok(vec![FunctionPath::new(
+                            FunctionOutcome::RuntimeError(RuntimeError::MissingResource {
                                 resource: Box::new(authority),
                             }),
                             facts,
@@ -3763,13 +3761,13 @@ fn execute_verified_function_applications_with_suspension(
                 .resources
                 .clone()
                 .try_compose_into_valid_context_delaying_normalization(
-                    [CResourceFact::own(CResource::Instance(after))],
+                    [ResourceFact::own(Resource::Instance(after))],
                     &effective_assumptions,
                 ) {
                 Ok(resources) => resources,
                 Err(error) => {
-                    return Ok(vec![CFunctionPath::new(
-                        CFunctionOutcome::RuntimeError(resource_context_runtime_error(error)),
+                    return Ok(vec![FunctionPath::new(
+                        FunctionOutcome::RuntimeError(resource_context_runtime_error(error)),
                         facts,
                         obligations,
                     )]);
@@ -3803,8 +3801,8 @@ fn execute_verified_function_applications_with_suspension(
             interface,
             &prepared_outputs,
             if interface.resource_ensures().iter().all(|resource| {
-                resource.role() == CResourceTransferRole::Borrow
-                    && resource.snapshot() == CResourceSnapshot::Entry
+                resource.role() == ResourceTransferRole::Borrow
+                    && resource.snapshot() == ResourceSnapshot::Entry
             }) {
                 ReturnResourceComposition::RestoreEntryBorrows
             } else {
@@ -3815,8 +3813,8 @@ fn execute_verified_function_applications_with_suspension(
         )? {
             Ok(resources) => resources,
             Err(error) => {
-                paths.push(CFunctionPath::new(
-                    CFunctionOutcome::RuntimeError(error),
+                paths.push(FunctionPath::new(
+                    FunctionOutcome::RuntimeError(error),
                     facts,
                     obligations,
                 ));
@@ -3855,8 +3853,8 @@ fn execute_verified_function_applications_with_suspension(
         )? {
             Ok(memory) => memory,
             Err(error) => {
-                paths.push(CFunctionPath::new(
-                    CFunctionOutcome::RuntimeError(error),
+                paths.push(FunctionPath::new(
+                    FunctionOutcome::RuntimeError(error),
                     facts,
                     obligations,
                 ));
@@ -3874,8 +3872,8 @@ fn execute_verified_function_applications_with_suspension(
             )? {
                 Ok(retires) => retires,
                 Err(error) => {
-                    paths.push(CFunctionPath::new(
-                        CFunctionOutcome::RuntimeError(error),
+                    paths.push(FunctionPath::new(
+                        FunctionOutcome::RuntimeError(error),
                         facts,
                         obligations,
                     ));
@@ -3891,7 +3889,7 @@ fn execute_verified_function_applications_with_suspension(
                 ));
                 continue;
             };
-            let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = member
+            let ResourceFact::Own(Resource::Composite { name, arguments }, quantity) = member
             else {
                 paths.push(resource_call_failure(
                     "final release requires one exact member",
@@ -3956,7 +3954,7 @@ fn execute_verified_function_applications_with_suspension(
                 ));
                 continue;
             };
-            let CResource::Composite {
+            let Resource::Composite {
                 name: control_name, ..
             } = control.resource()
             else {
@@ -3998,7 +3996,7 @@ fn execute_verified_function_applications_with_suspension(
             };
             let mut retired = retired;
             for child in children {
-                let CResource::PopulationAuthority(additional) = child.resource() else {
+                let Resource::PopulationAuthority(additional) = child.resource() else {
                     continue;
                 };
                 if additional == &description {
@@ -4032,7 +4030,7 @@ fn execute_verified_function_applications_with_suspension(
         // planner removes exact custody; this advances only the population ledger.
         {
             for checked in &transfer.consumed_inputs {
-                let CResource::Instance(instance) = checked.fact.resource() else {
+                let Resource::Instance(instance) = checked.fact.resource() else {
                     continue;
                 };
                 let description = ResourceDescription::from_instance(instance);
@@ -4092,8 +4090,8 @@ fn execute_verified_function_applications_with_suspension(
                     )? {
                         Ok(fact) => Some(fact),
                         Err(error) => {
-                            paths.push(CFunctionPath::new(
-                                CFunctionOutcome::RuntimeError(error),
+                            paths.push(FunctionPath::new(
+                                FunctionOutcome::RuntimeError(error),
                                 facts,
                                 obligations,
                             ));
@@ -4133,7 +4131,7 @@ fn execute_verified_function_applications_with_suspension(
                         ));
                         continue 'arguments;
                     }
-                    *output = CResourceFact::own_quantity(
+                    *output = ResourceFact::own_quantity(
                         input.fact.resource().clone(),
                         output.owned_quantity_term().expect("owned output").clone(),
                     );
@@ -4153,7 +4151,7 @@ fn execute_verified_function_applications_with_suspension(
                         })
                         .map(|checked| checked.fact.clone())
                 };
-                let Some(CResourceFact::Own(CResource::Composite { name, arguments }, quantity)) =
+                let Some(ResourceFact::Own(Resource::Composite { name, arguments }, quantity)) =
                     produced_member.as_ref().or(consumed_member.as_ref())
                 else {
                     paths.push(resource_call_failure(
@@ -4194,7 +4192,7 @@ fn execute_verified_function_applications_with_suspension(
                 }
                 let exclusive = interface
                     .composite_resource_definition(name)
-                    .is_some_and(CCompositeResourceDefinition::has_fixed_exclusive_memory);
+                    .is_some_and(CompositeResourceDefinition::has_fixed_exclusive_memory);
                 if defer_locked_exchange {
                     deferred_exchange.push(super::threads::DeferredMemberExchange {
                         block: anchor.block.clone(),
@@ -4247,8 +4245,8 @@ fn execute_verified_function_applications_with_suspension(
         ) {
             Ok(state) => state,
             Err(error) => {
-                paths.push(CFunctionPath::new(
-                    CFunctionOutcome::RuntimeError(error),
+                paths.push(FunctionPath::new(
+                    FunctionOutcome::RuntimeError(error),
                     facts,
                     obligations,
                 ));
@@ -4296,8 +4294,8 @@ fn execute_verified_function_applications_with_suspension(
         let (memory, allocation_effects, retired_creations) = match allocation_delta {
             Ok(result) => result,
             Err(VerifiedAllocationDeltaError::Runtime(error)) => {
-                paths.push(CFunctionPath::new(
-                    CFunctionOutcome::RuntimeError(error),
+                paths.push(FunctionPath::new(
+                    FunctionOutcome::RuntimeError(error),
                     facts,
                     obligations,
                 ));
@@ -4311,8 +4309,8 @@ fn execute_verified_function_applications_with_suspension(
             .into_iter()
             .find_map(|block| post_state.retire_population_storage(&block).err())
         {
-            paths.push(CFunctionPath::new(
-                CFunctionOutcome::RuntimeError(error),
+            paths.push(FunctionPath::new(
+                FunctionOutcome::RuntimeError(error),
                 facts,
                 obligations,
             ));
@@ -4329,8 +4327,8 @@ fn execute_verified_function_applications_with_suspension(
         ) {
             Ok(state) => state,
             Err(error) => {
-                paths.push(CFunctionPath::new(
-                    CFunctionOutcome::RuntimeError(error),
+                paths.push(FunctionPath::new(
+                    FunctionOutcome::RuntimeError(error),
                     facts,
                     obligations,
                 ));
@@ -4345,7 +4343,7 @@ fn execute_verified_function_applications_with_suspension(
                     output_resources
                         .facts()
                         .iter()
-                        .filter(|fact| matches!(fact.resource(), CResource::Composite { .. }))
+                        .filter(|fact| matches!(fact.resource(), Resource::Composite { .. }))
                         .cloned(),
                 );
             let Some((_, body_facts)) =
@@ -4450,10 +4448,7 @@ fn execute_verified_function_applications_with_suspension(
                     // A worker receives an exact authority through the
                     // creation ledger below, as at a sequential call boundary.
                     if worker_mutex_uses.contains(fact)
-                        || (matches!(
-                            fact,
-                            CResourceFact::Own(CResource::PopulationAuthority(_), _)
-                        ))
+                        || (matches!(fact, ResourceFact::Own(Resource::PopulationAuthority(_), _)))
                     {
                         None
                     } else {
@@ -4485,7 +4480,7 @@ fn execute_verified_function_applications_with_suspension(
                     .facts()
                     .iter()
                     .all(|fact| match fact {
-                        CResourceFact::Own(CResource::Memory(range), quantity) => {
+                        ResourceFact::Own(Resource::Memory(range), quantity) => {
                             quantity.as_const() == Some(1)
                                 && is_external_memory_pointer(range.base())
                         }
@@ -4495,11 +4490,11 @@ fn execute_verified_function_applications_with_suspension(
                     .iter()
                     .all(|range| is_external_memory_pointer(range.base()))
                 && output_resources.facts().iter().all(|fact| match fact {
-                    CResourceFact::Own(CResource::Memory(range), quantity) => {
+                    ResourceFact::Own(Resource::Memory(range), quantity) => {
                         quantity.as_const() == Some(1) && is_external_memory_pointer(range.base())
                     }
-                    CResourceFact::Own(_, _) => true,
-                    CResourceFact::View(_) => false,
+                    ResourceFact::Own(_, _) => true,
+                    ResourceFact::View(_) => false,
                 });
             if !supported {
                 paths.push(resource_call_failure(
@@ -4565,8 +4560,8 @@ fn execute_verified_function_applications_with_suspension(
         ) {
             Ok(recovered) => recovered,
             Err(error) => {
-                paths.push(CFunctionPath::new(
-                    CFunctionOutcome::RuntimeError(error),
+                paths.push(FunctionPath::new(
+                    FunctionOutcome::RuntimeError(error),
                     facts,
                     obligations,
                 ));
@@ -4630,7 +4625,7 @@ fn execute_verified_function_applications_with_suspension(
                 let Some((formal, binder)) = resource.mutex_authority_binding() else {
                     continue;
                 };
-                if resource.role() == CResourceTransferRole::Produce {
+                if resource.role() == ResourceTransferRole::Produce {
                     let Some(actual) = bindings.get(&formal).copied() else {
                         paths.push(resource_call_failure(&format!(
                             "call map omits produced mutex authority binder `{binder}`"
@@ -4646,8 +4641,8 @@ fn execute_verified_function_applications_with_suspension(
                     )? {
                         Ok(fact) => fact,
                         Err(error) => {
-                            paths.push(CFunctionPath::new(
-                                CFunctionOutcome::RuntimeError(error),
+                            paths.push(FunctionPath::new(
+                                FunctionOutcome::RuntimeError(error),
                                 facts,
                                 obligations,
                             ));
@@ -4666,7 +4661,7 @@ fn execute_verified_function_applications_with_suspension(
                     };
                     continue;
                 }
-                if resource.role() != CResourceTransferRole::Borrow {
+                if resource.role() != ResourceTransferRole::Borrow {
                     continue;
                 }
                 let Some(actual) = bindings.get(&formal).copied() else {
@@ -4706,8 +4701,8 @@ fn execute_verified_function_applications_with_suspension(
             ) {
                 Ok(state) => state,
                 Err(error) => {
-                    paths.push(CFunctionPath::new(
-                        CFunctionOutcome::RuntimeError(error),
+                    paths.push(FunctionPath::new(
+                        FunctionOutcome::RuntimeError(error),
                         facts,
                         obligations,
                     ));
@@ -4731,7 +4726,7 @@ fn execute_verified_function_applications_with_suspension(
                             .as_ref()
                             .zip(entry_state.population_effects.creation.as_ref())
                             .zip(caller_state.population_effects.creation.as_ref())
-                            .ok_or(crate::kernel::population_authority::c_creation::CreationRefusal::MissingAuthority)
+                            .ok_or(crate::kernel::population_authority::storage_creation::CreationRefusal::MissingAuthority)
                             .and_then(|((events, callee), caller)| {
                                 events.transfer_call_fact(callee, caller, description, true)
                             });
@@ -4755,8 +4750,8 @@ fn execute_verified_function_applications_with_suspension(
                     returned
                 }
                 Err(error) => {
-                    paths.push(CFunctionPath::new(
-                        CFunctionOutcome::RuntimeError(error),
+                    paths.push(FunctionPath::new(
+                        FunctionOutcome::RuntimeError(error),
                         facts,
                         obligations,
                     ));
@@ -4795,8 +4790,8 @@ fn execute_verified_function_applications_with_suspension(
         ) {
             Ok(state) => state,
             Err(error) => {
-                paths.push(CFunctionPath::new(
-                    CFunctionOutcome::RuntimeError(error),
+                paths.push(FunctionPath::new(
+                    FunctionOutcome::RuntimeError(error),
                     facts,
                     obligations,
                 ));
@@ -4805,7 +4800,7 @@ fn execute_verified_function_applications_with_suspension(
         };
         return_state.next_local_frame = post_state.next_local_frame;
         return_state.next_local_lifetime = post_state.next_local_lifetime;
-        let outcome = CFunctionOutcome::Return {
+        let outcome = FunctionOutcome::Return {
             value: result.into(),
             state: Box::new(return_state),
         };
@@ -4813,7 +4808,7 @@ fn execute_verified_function_applications_with_suspension(
             append_string_literal_loadable_facts(function, &outcome, &mut facts);
         }
         let call_parameters = CallParameters::of(&entry_contract_state, interface);
-        paths.push(CFunctionPath {
+        paths.push(FunctionPath {
             outcome,
             facts,
             obligations,
@@ -4850,18 +4845,18 @@ fn execute_verified_function_applications_with_suspension(
 /// `ensures` from becoming exceptional facts (and vice versa).
 fn exceptional_direct_function_path(
     caller_state: &ExecutionState,
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
     evidence: Option<&ProgramFunction>,
     argument_values: &[ProgramValue],
     entry_state: &ExecutionState,
     entry_contract_state: &ExecutionState,
-    transfer: &CFunctionResourceTransfer,
+    transfer: &FunctionResourceTransfer,
     mut facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     effective_assumptions: &PureFactContext,
     payload_identity: Variable,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<CFunctionPath> {
+) -> ExecutionResult<FunctionPath> {
     debug_assert!(interface.verified_direct_contract_supported());
     debug_assert!(interface.resource_requires().is_empty());
     debug_assert!(interface.resource_ensures().is_empty());
@@ -4898,14 +4893,14 @@ fn exceptional_direct_function_path(
         caller_state.population_effects.creation.as_ref(),
         post_state.population_effects.creation.as_ref(),
     );
-    let outcome = CFunctionOutcome::Throw {
+    let outcome = FunctionOutcome::Throw {
         value: payload.into(),
         state: Box::new(throw_state),
     };
     if let Some(evidence) = evidence {
         append_string_literal_loadable_facts(evidence, &outcome, &mut facts);
     }
-    Ok(CFunctionPath::new(outcome, facts, obligations))
+    Ok(FunctionPath::new(outcome, facts, obligations))
 }
 
 struct PreparedVerifiedFunctionCall<'a> {
@@ -4922,11 +4917,11 @@ struct PreparedVerifiedFunctionCall<'a> {
     /// The body-independent interface used to prepare this application. It is
     /// explicit even when it is the concrete function's own interface, so
     /// callback and ordinary calls cannot silently grow separate evaluators.
-    interface: &'a CFunctionContractInterface,
+    interface: &'a FunctionContractInterface,
     argument_values: Vec<ProgramValue>,
     entry_state: ExecutionState,
     entry_contract_state: ExecutionState,
-    transfer: CFunctionResourceTransfer,
+    transfer: FunctionResourceTransfer,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     effective_assumptions: PureFactContext,
@@ -4941,7 +4936,7 @@ struct PreparedVerifiedFunctionCall<'a> {
 /// classifier are visited, with the same finite structural budget.
 fn source_load_snapshot_for_proposition(
     proposition: &Proposition,
-) -> ExecutionResult<Option<CMemorySnapshotIdentity>> {
+) -> ExecutionResult<Option<MemorySnapshotIdentity>> {
     const MAX_NODES: usize = 4096;
     enum Work<'a> {
         Proposition(&'a Proposition),
@@ -4993,7 +4988,7 @@ fn source_load_snapshot_for_proposition(
                     else {
                         return Ok(None);
                     };
-                    let identity = CMemorySnapshotIdentity::of(origin.memory());
+                    let identity = MemorySnapshotIdentity::of(origin.memory());
                     if snapshot.is_some_and(|known| known != identity) {
                         return Ok(None);
                     }
@@ -5006,7 +5001,7 @@ fn source_load_snapshot_for_proposition(
                 )
                 .expect("structural read observation");
                 let origin = read.origin.unwrap_or(read.memory);
-                let identity = CMemorySnapshotIdentity::of(origin.memory());
+                let identity = MemorySnapshotIdentity::of(origin.memory());
                 if snapshot.is_some_and(|known| known != identity) {
                     return Ok(None);
                 }
@@ -5030,11 +5025,11 @@ fn source_load_snapshot_for_proposition(
 fn checked_returned_control_wrappers(
     mut state: ExecutionState,
     frontier: &ResourceContext,
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
     assumptions: &PureFactContext,
-) -> Result<ExecutionState, CRuntimeError> {
+) -> Result<ExecutionState, RuntimeError> {
     for fact in frontier.facts() {
-        let CResourceFact::Own(CResource::Composite { name, .. }, _) = fact else {
+        let ResourceFact::Own(Resource::Composite { name, .. }, _) = fact else {
             continue;
         };
         let Some(definition) = interface.composite_resource_definition(name) else {
@@ -5043,11 +5038,11 @@ fn checked_returned_control_wrappers(
         if definition
             .contains()
             .iter()
-            .any(|child| matches!(child.term(), CResourceTerm::PopulationAuthority { .. }))
+            .any(|child| matches!(child.term(), ResourceTerm::PopulationAuthority { .. }))
         {
             state = state
                 .with_checked_current_control_wrapper(fact, definition, assumptions)
-                .map_err(CRuntimeError::FunctionContract)?;
+                .map_err(RuntimeError::FunctionContract)?;
         }
     }
     Ok(state)
@@ -5059,12 +5054,12 @@ fn checked_returned_control_wrappers(
 fn checked_contract_control_read_state(
     state: &ExecutionState,
     frontier: &ResourceContext,
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
     assumptions: &PureFactContext,
-) -> Result<ExecutionState, CRuntimeError> {
+) -> Result<ExecutionState, RuntimeError> {
     let mut resources = state.resources().clone();
     for fact in frontier.facts() {
-        let CResourceFact::Own(CResource::Composite { name, .. }, _) = fact else {
+        let ResourceFact::Own(Resource::Composite { name, .. }, _) = fact else {
             continue;
         };
         let Some(definition) = interface.composite_resource_definition(name) else {
@@ -5073,7 +5068,7 @@ fn checked_contract_control_read_state(
         if !definition
             .contains()
             .iter()
-            .any(|child| matches!(child.term(), CResourceTerm::PopulationAuthority { .. }))
+            .any(|child| matches!(child.term(), ResourceTerm::PopulationAuthority { .. }))
         {
             continue;
         }
@@ -5087,10 +5082,10 @@ fn checked_contract_control_read_state(
         };
         let (children, _) = state
             .checked_authority_wrapper_body(&owned, definition, assumptions)
-            .map_err(CRuntimeError::FunctionContract)?;
+            .map_err(RuntimeError::FunctionContract)?;
         let without_head = resources
             .without_fact_incrementally(&owned, assumptions)
-            .ok_or_else(|| CRuntimeError::MissingResource {
+            .ok_or_else(|| RuntimeError::MissingResource {
                 resource: Box::new(fact.clone()),
             })?;
         let children = children
@@ -5106,29 +5101,29 @@ fn checked_contract_control_read_state(
 
 fn prepare_verified_function_call<'a>(
     caller_state: &ExecutionState,
-    application: CFunctionContractApplication<'a>,
+    application: FunctionContractApplication<'a>,
     candidate_ordinal: usize,
     source_arguments: &[ProgramExpression],
-    arguments_path: CArgumentsPath,
+    arguments_path: ArgumentsPath,
     require_established: bool,
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
+    environment: &ExecutionEnvironment,
     budget: &mut ExecutionBudget,
     resource_application: Option<&ResourceCallApplication>,
     suspend_worker: bool,
-) -> ExecutionResult<Result<PreparedVerifiedFunctionCall<'a>, CFunctionPath>> {
+) -> ExecutionResult<Result<PreparedVerifiedFunctionCall<'a>, FunctionPath>> {
     let contract_interface = application.interface;
     if contract_reaches_population(contract_interface)
         && ((suspend_worker && application.evidence.is_none())
             || (application.evidence.is_none()
                 && !environment
                     .get_external_function_rule(application.name)
-                    .is_some_and(CExternalFunctionRule::is_scoped_unselected)
+                    .is_some_and(ExternalFunctionRule::is_scoped_unselected)
                 && !authority_preserves_assumed_resource_contract(contract_interface)))
     {
         let error = authority_call_refusal();
-        return Ok(Err(CFunctionPath::new(
-            CFunctionOutcome::RuntimeError(error),
+        return Ok(Err(FunctionPath::new(
+            FunctionOutcome::RuntimeError(error),
             arguments_path.facts,
             arguments_path.obligations,
         )));
@@ -5143,8 +5138,8 @@ fn prepare_verified_function_call<'a>(
     if contract_interface.contract_requirement_sources().len()
         != contract_interface.contract_requires().len()
     {
-        return Ok(Err(CFunctionPath::new(
-            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+        return Ok(Err(FunctionPath::new(
+            FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
                 "call requirement source map does not match the selected contract".to_string(),
             )),
             arguments_path.facts,
@@ -5164,8 +5159,8 @@ fn prepare_verified_function_call<'a>(
         &arguments_path.values,
         &path_assumptions,
     ) {
-        return Ok(Err(CFunctionPath::new(
-            CFunctionOutcome::UndefinedBehavior(undefined_behavior),
+        return Ok(Err(FunctionPath::new(
+            FunctionOutcome::UndefinedBehavior(undefined_behavior),
             arguments_path.facts,
             arguments_path.obligations,
         )));
@@ -5177,8 +5172,8 @@ fn prepare_verified_function_call<'a>(
         &arguments_path.values,
         &path_assumptions,
     ) {
-        return Ok(Err(CFunctionPath::new(
-            CFunctionOutcome::RuntimeError(refusal),
+        return Ok(Err(FunctionPath::new(
+            FunctionOutcome::RuntimeError(refusal),
             arguments_path.facts,
             arguments_path.obligations,
         )));
@@ -5189,8 +5184,8 @@ fn prepare_verified_function_call<'a>(
         &arguments_path.obligations,
         &path_assumptions,
     ) else {
-        return Ok(Err(CFunctionPath::new(
-            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+        return Ok(Err(FunctionPath::new(
+            FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
                 contract_argument_binding_error(
                     contract_interface,
                     application.name,
@@ -5207,7 +5202,7 @@ fn prepare_verified_function_call<'a>(
         &argument_values,
         &path_assumptions,
     ) {
-        return Ok(Err(CFunctionPath::new(
+        return Ok(Err(FunctionPath::new(
             outcome,
             arguments_path.facts,
             argument_obligations,
@@ -5221,8 +5216,8 @@ fn prepare_verified_function_call<'a>(
         caller_state.memory(),
         &path_assumptions,
     ) {
-        return Ok(Err(CFunctionPath::new(
-            CFunctionOutcome::RuntimeError(refusal),
+        return Ok(Err(FunctionPath::new(
+            FunctionOutcome::RuntimeError(refusal),
             arguments_path.facts,
             argument_obligations,
         )));
@@ -5233,8 +5228,8 @@ fn prepare_verified_function_call<'a>(
         &argument_values,
         application.storage,
     ) else {
-        return Ok(Err(CFunctionPath::new(
-            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+        return Ok(Err(FunctionPath::new(
+            FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
                 contract_argument_binding_error(
                     contract_interface,
                     application.name,
@@ -5266,8 +5261,8 @@ fn prepare_verified_function_call<'a>(
         )? {
             Ok(values) => values,
             Err(message) => {
-                return Ok(Err(CFunctionPath::new(
-                    CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(message)),
+                return Ok(Err(FunctionPath::new(
+                    FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(message)),
                     arguments_path.facts,
                     argument_obligations,
                 )));
@@ -5278,8 +5273,8 @@ fn prepare_verified_function_call<'a>(
         application.value_arguments
     };
     if application_value_arguments.len() != contract_interface.value_parameters().len() {
-        return Ok(Err(CFunctionPath::new(
-            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
+        return Ok(Err(FunctionPath::new(
+            FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(format!(
                 "contract `{}` needs values for its value parameters",
                 application.interface_name
             ))),
@@ -5300,8 +5295,8 @@ fn prepare_verified_function_call<'a>(
             &path_assumptions,
         )
     {
-        return Ok(Err(CFunctionPath::new(
-            CFunctionOutcome::RuntimeError(refusal),
+        return Ok(Err(FunctionPath::new(
+            FunctionOutcome::RuntimeError(refusal),
             arguments_path.facts,
             argument_obligations,
         )));
@@ -5316,7 +5311,7 @@ fn prepare_verified_function_call<'a>(
             parameter.name().to_string(),
             value.clone(),
             parameter.c_type(),
-            CMemory::value_parameter_pointer(parameter.name()),
+            Memory::value_parameter_pointer(parameter.name()),
             false,
             false,
             false,
@@ -5338,8 +5333,8 @@ fn prepare_verified_function_call<'a>(
             &path_assumptions,
             budget,
         )? {
-            return Ok(Err(CFunctionPath::new(
-                CFunctionOutcome::RuntimeError(error),
+            return Ok(Err(FunctionPath::new(
+                FunctionOutcome::RuntimeError(error),
                 arguments_path.facts,
                 argument_obligations,
             )));
@@ -5361,15 +5356,12 @@ fn prepare_verified_function_call<'a>(
             let error = match expected {
                 Ok(expected)
                     if caller_state.resolve_named_mutex_authority(*actual) == Some(&expected)
-                        || (matches!(expected.resource(), CResource::MutexUse(_))
+                        || (matches!(expected.resource(), Resource::MutexUse(_))
                             && caller_state
                                 .resolve_named_mutex_authority(*actual)
                                 .is_some_and(|source| {
                                     match (source.resource(), expected.resource()) {
-                                        (
-                                            CResource::MutexLive(live),
-                                            CResource::MutexUse(usage),
-                                        ) => {
+                                        (Resource::MutexLive(live), Resource::MutexUse(usage)) => {
                                             live.mutex == usage.mutex
                                                 && live.epoch.is_some()
                                                 && usage.initialization.is_none_or(|generation| {
@@ -5377,8 +5369,8 @@ fn prepare_verified_function_call<'a>(
                                                 })
                                         }
                                         (
-                                            CResource::MutexUse(selected),
-                                            CResource::MutexUse(usage),
+                                            Resource::MutexUse(selected),
+                                            Resource::MutexUse(usage),
                                         ) => {
                                             selected.mutex == usage.mutex
                                                 && selected.initialization.is_some()
@@ -5392,14 +5384,14 @@ fn prepare_verified_function_call<'a>(
                 {
                     None
                 }
-                Ok(expected) => Some(CRuntimeError::MissingResource {
+                Ok(expected) => Some(RuntimeError::MissingResource {
                     resource: Box::new(expected),
                 }),
                 Err(error) => Some(error),
             };
             if let Some(error) = error {
-                return Ok(Err(CFunctionPath::new(
-                    CFunctionOutcome::RuntimeError(error),
+                return Ok(Err(FunctionPath::new(
+                    FunctionOutcome::RuntimeError(error),
                     arguments_path.facts,
                     argument_obligations,
                 )));
@@ -5444,8 +5436,8 @@ fn prepare_verified_function_call<'a>(
     )? {
         Ok(transfer) => transfer,
         Err(error) => {
-            return Ok(Err(CFunctionPath::new(
-                CFunctionOutcome::RuntimeError(error),
+            return Ok(Err(FunctionPath::new(
+                FunctionOutcome::RuntimeError(error),
                 facts,
                 argument_obligations,
             )));
@@ -5479,7 +5471,7 @@ fn prepare_verified_function_call<'a>(
             if caller_events.recognizes_population_authority(description) {
                 continue;
             }
-            let member = CResource::Composite {
+            let member = Resource::Composite {
                 name: description.family().to_owned(),
                 arguments: description.arguments().to_vec().into(),
             };
@@ -5541,8 +5533,8 @@ fn prepare_verified_function_call<'a>(
     ) {
         Ok(state) => state,
         Err(
-            CRuntimeError::FunctionContract(message)
-            | CRuntimeError::UnsuppliedResourceValue(message),
+            RuntimeError::FunctionContract(message)
+            | RuntimeError::UnsuppliedResourceValue(message),
         ) => {
             return Ok(Err(resource_call_failure(&message)));
         }
@@ -5612,7 +5604,7 @@ fn prepare_verified_function_call<'a>(
     }
     if let Some(selected) = resource_application {
         for parameter in selected.parameters.iter() {
-            if matches!(parameter.term(), CResourceTerm::MutexUse { .. }) {
+            if matches!(parameter.term(), ResourceTerm::MutexUse { .. }) {
                 continue;
             }
             let Some((formal, binder)) = parameter.mutex_authority_binding() else {
@@ -5652,7 +5644,7 @@ fn prepare_verified_function_call<'a>(
         .resources()
         .facts()
         .iter()
-        .any(|fact| matches!(fact.resource(), CResource::Composite { .. }))
+        .any(|fact| matches!(fact.resource(), Resource::Composite { .. }))
     {
         let definitions = contract_interface.composite_resource_definitions();
         let opened = {
@@ -5685,11 +5677,11 @@ fn prepare_verified_function_call<'a>(
         .iter()
         .chain(&transfer.consumed_inputs)
     {
-        if let CResource::Composite { name, arguments } | CResource::Token { name, arguments } =
+        if let Resource::Composite { name, arguments } | Resource::Token { name, arguments } =
             input.fact.resource()
             && caller_state.population_body_is_open(name, arguments)
         {
-            return Ok(Err(CFunctionPath::new(CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+            return Ok(Err(FunctionPath::new(FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
                     "population body is open; pass explicit body pieces instead of population membership".into(),
                 )), facts, obligations)));
         }
@@ -6039,8 +6031,8 @@ fn prepare_verified_function_call<'a>(
         match guard_context.decide(&order) {
             Some(true) => {}
             Some(false) => {
-                return Ok(Err(CFunctionPath::new(
-                    CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
+                return Ok(Err(FunctionPath::new(
+                    FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(format!(
                         "`{}` would be handed a range that ends before it starts; its \
                              `views` and `owns` bounds have to be in order at this call",
                         application.name
@@ -6067,8 +6059,8 @@ fn prepare_verified_function_call<'a>(
     // obligations must not be assumed to authorize this interface's effects
     // or make its guarantees available to another candidate.
     if require_established && obligations.len() != initial_obligation_count {
-        return Ok(Err(CFunctionPath::new(
-            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+        return Ok(Err(FunctionPath::new(
+            FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
                 "no callback contract has established preconditions".to_string(),
             )),
             facts,
@@ -6226,8 +6218,8 @@ fn prepare_verified_function_call<'a>(
         application.representation_copy.is_some(),
         &call_entry_assumptions,
     ) {
-        return Ok(Err(CFunctionPath::new(
-            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(message)),
+        return Ok(Err(FunctionPath::new(
+            FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(message)),
             facts,
             obligations,
         )));
@@ -6254,8 +6246,8 @@ fn prepare_verified_function_call<'a>(
     )? {
         Ok(projection) => projection,
         Err(message) => {
-            return Ok(Err(CFunctionPath::new(
-                CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
+            return Ok(Err(FunctionPath::new(
+                FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(format!(
                     "could not evaluate mutable footprint: {message}"
                 ))),
                 facts,
@@ -6271,8 +6263,8 @@ fn prepare_verified_function_call<'a>(
     if let Some(error) = mutable_ranges.iter().find_map(|range| {
         super::mutexes::storage_write_refusal(caller_state, range, &effective_assumptions)
     }) {
-        return Ok(Err(CFunctionPath::new(
-            CFunctionOutcome::RuntimeError(error),
+        return Ok(Err(FunctionPath::new(
+            FunctionOutcome::RuntimeError(error),
             facts,
             obligations,
         )));
@@ -6354,10 +6346,8 @@ fn prepare_verified_function_call<'a>(
                     }
                     CandidateMemoryRangeRelation::Disjoint => unreachable!(),
                 };
-                return Ok(Err(CFunctionPath::new(
-                    CFunctionOutcome::RuntimeError(CRuntimeError::LoanRefusal(Box::new(
-                        diagnostic,
-                    ))),
+                return Ok(Err(FunctionPath::new(
+                    FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(Box::new(diagnostic))),
                     facts,
                     obligations,
                 )));
@@ -6393,7 +6383,7 @@ fn prepare_verified_function_call<'a>(
         let mut bound = None;
         for input in &checked_transition_inputs {
             let selected = canonical.get(&input.fact).copied().unwrap_or(&input.fact);
-            if let CResourceFact::Own(resource, quantity) = selected {
+            if let ResourceFact::Own(resource, quantity) = selected {
                 if quantity.as_const() != Some(1) {
                     bound = None;
                     break;
@@ -6401,7 +6391,7 @@ fn prepare_verified_function_call<'a>(
                 crate::instrumentation::record_deterministic_work(1);
                 bound = Some(match bound {
                     None => resource.clone(),
-                    Some(previous) => CResource::star(previous, resource.clone()),
+                    Some(previous) => Resource::star(previous, resource.clone()),
                 });
             }
         }
@@ -6418,8 +6408,8 @@ fn prepare_verified_function_call<'a>(
         .iter()
         .find(|range| entry_state.memory.is_read_only_block(&range.base().block))
     {
-        return Ok(Err(CFunctionPath::new(
-            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
+        return Ok(Err(FunctionPath::new(
+            FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(format!(
                 "mutable footprint covers read-only storage `{}`",
                 range.base().block
             ))),
@@ -6451,9 +6441,9 @@ fn prepare_verified_function_call<'a>(
 /// parameter types contributes nothing.
 pub(super) fn contracts_from_facts(
     facts: impl Iterator<Item = (String, Proposition)>,
-    environment: &CExecutionEnvironment,
+    environment: &ExecutionEnvironment,
     function_type: &ProgramType,
-) -> Vec<CFunctionContract> {
+) -> Vec<FunctionContract> {
     facts
         .filter_map(|(name, fact)| {
             let contract = environment.get_function_contract(&name)?;
@@ -6476,12 +6466,12 @@ pub(super) fn contracts_from_facts(
 
 pub(super) fn execute_c_function_contracts_paths(
     caller_state: &ExecutionState,
-    contracts: &[&CFunctionContract],
+    contracts: &[&FunctionContract],
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
+    environment: &ExecutionEnvironment,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CFunctionPath>> {
+) -> ExecutionResult<Vec<FunctionPath>> {
     let selected = environment.selected_call_contract.as_deref();
     let contracts = contracts
         .iter()
@@ -6564,7 +6554,7 @@ pub(super) fn execute_c_function_contracts_paths(
     };
     let applications = contracts
         .iter()
-        .map(|contract| CFunctionContractApplication {
+        .map(|contract| FunctionContractApplication {
             pointer_result: None,
             name: contract.callee_name(),
             interface_name: contract.name(),
@@ -6589,7 +6579,7 @@ pub(super) fn execute_c_function_contracts_paths(
 
 #[derive(Debug)]
 struct ResourceCallApplication {
-    parameters: std::sync::Arc<[CResourceSpec]>,
+    parameters: std::sync::Arc<[ResourceSpec]>,
     bindings: std::sync::Arc<BTreeMap<Variable, Variable>>,
 }
 
@@ -6605,7 +6595,7 @@ impl ResourceCallApplication {
     /// binder the map omits is refused by the application engine, which
     /// checks completeness against the interface.
     fn bind(
-        parameters: Vec<CResourceSpec>,
+        parameters: Vec<ResourceSpec>,
         bindings: std::sync::Arc<BTreeMap<Variable, Variable>>,
         caller_state: &ExecutionState,
     ) -> Result<Self, &'static str> {
@@ -6667,10 +6657,10 @@ fn loadability_obligation_shape(proposition: &Proposition) -> bool {
 /// clause at it.
 fn call_value_arguments(
     function: &str,
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
     caller_state: &ExecutionState,
     entry_state: &ExecutionState,
-    environment: &CExecutionEnvironment,
+    environment: &ExecutionEnvironment,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<Vec<ProgramValue>, String>> {
@@ -6716,7 +6706,7 @@ fn call_value_arguments(
         };
         let clause = interface.resource_requires().iter().find_map(|spec| {
             match spec.term() {
-            CResourceTerm::Composite {
+            ResourceTerm::Composite {
                 name,
                 arguments,
                 argument_snapshots,
@@ -6761,7 +6751,7 @@ fn call_value_arguments(
                 )));
             }
         };
-        let CResource::Composite {
+        let Resource::Composite {
             arguments: probe_arguments,
             ..
         } = probe.resource()
@@ -6777,11 +6767,11 @@ fn call_value_arguments(
             }
             _ => left == right,
         };
-        let matching_values = |candidates: &mut dyn Iterator<Item = &CResourceFact>| {
+        let matching_values = |candidates: &mut dyn Iterator<Item = &ResourceFact>| {
             let mut found: Vec<ProgramValue> = Vec::new();
             for candidate in candidates {
                 crate::instrumentation::record_deterministic_work(1);
-                let CResource::Composite {
+                let Resource::Composite {
                     name: held,
                     arguments: held_arguments,
                 } = candidate.resource()
@@ -6859,9 +6849,9 @@ fn call_value_arguments(
     Ok(Ok(values))
 }
 
-fn resource_call_failure(message: &str) -> CFunctionPath {
-    CFunctionPath::new(
-        CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(message.into())),
+fn resource_call_failure(message: &str) -> FunctionPath {
+    FunctionPath::new(
+        FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(message.into())),
         vec![].into(),
         vec![],
     )
@@ -6900,7 +6890,7 @@ fn separation_requirement_parts_are_established(
 fn function_contract_requirement_is_proven(
     proposition: &Proposition,
     assumptions: &PureFactContext,
-    environment: &CExecutionEnvironment,
+    environment: &ExecutionEnvironment,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<bool> {
     match proposition {
@@ -6916,7 +6906,7 @@ fn function_contract_requirement_is_proven(
             )
         }
         Proposition::Predicate { name, arguments } => {
-            let Some(contract_name) = CFunctionContract::surface_name_from_predicate(name) else {
+            let Some(contract_name) = FunctionContract::surface_name_from_predicate(name) else {
                 return Ok(false);
             };
             let [
@@ -7016,7 +7006,7 @@ pub(crate) use named_contract_refinement::*;
 #[derive(Clone, Debug)]
 pub(crate) enum StorageWriteOutsideFootprint {
     Write { pointer: Pointer, bytes: u32 },
-    Range(CMemoryRange),
+    Range(MemoryRange),
 }
 
 /// Writes to file-scope or static storage that a checked path performs outside
@@ -7034,8 +7024,8 @@ pub(crate) fn storage_writes_outside_owned_footprint(
     entry: &ExecutionState,
     facts: &(impl ExecutionFactSource + ?Sized),
     assumptions: &PureFactContext,
-    transition_resources: Option<&[CCheckedResourceFact]>,
-    prepared_projection: Option<&CFunctionMemoryEffectProjection>,
+    transition_resources: Option<&[CheckedResourceFact]>,
+    prepared_projection: Option<&FunctionMemoryEffectProjection>,
 ) -> ExecutionResult<Option<Vec<StorageWriteOutsideFootprint>>> {
     let is_storage = |pointer: &Pointer| pointer.block.is_static_storage_block();
     let storage_writes: Vec<(Pointer, u32)> =
@@ -7043,7 +7033,7 @@ pub(crate) fn storage_writes_outside_owned_footprint(
             .into_iter()
             .filter(|(pointer, _)| is_storage(pointer))
             .collect();
-    let storage_summaries: Vec<&CMemoryRange> = facts
+    let storage_summaries: Vec<&MemoryRange> = facts
         .fact_iter()
         .filter_map(|fact| match fact.proposition() {
             Proposition::CMemoryEffectSummary { mutable_ranges, .. } => Some(mutable_ranges),
@@ -7094,9 +7084,9 @@ pub(crate) fn storage_writes_outside_owned_footprint(
         }) && !joined_owned
             .get_or_init(|| {
                 ResourceContext::new()
-                    .unchecked_with_facts(owned.iter().cloned().map(CResourceFact::own_memory))
+                    .unchecked_with_facts(owned.iter().cloned().map(ResourceFact::own_memory))
             })
-            .satisfies_fact(&CResourceFact::own_memory(range.clone()), assumptions)
+            .satisfies_fact(&ResourceFact::own_memory(range.clone()), assumptions)
         {
             outside.push(StorageWriteOutsideFootprint::Range(range.clone()));
         }
@@ -7107,10 +7097,10 @@ pub(crate) fn storage_writes_outside_owned_footprint(
 fn storage_write_within_owned_footprint(
     pointer: &Pointer,
     write_bytes: u32,
-    owned: &[CMemoryRange],
+    owned: &[MemoryRange],
     assumptions: &PureFactContext,
 ) -> bool {
-    let write = CMemoryRange::new_with_element_width(
+    let write = MemoryRange::new_with_element_width(
         pointer.clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(write_bytes),
@@ -7124,7 +7114,7 @@ fn storage_write_within_owned_footprint(
         }
         let (base, bytes) = range.byte_footprint();
         let owned_bytes =
-            CMemoryRange::new_with_element_width(base, MachineTerm::constant(0), bytes, 1);
+            MemoryRange::new_with_element_width(base, MachineTerm::constant(0), bytes, 1);
         super::assumptions::memory_range_shallowly_contained_with_facts(
             &write,
             &owned_bytes,
@@ -7153,7 +7143,7 @@ fn storage_write_within_owned_footprint(
 fn storage_write_within_owned_elements(
     pointer: &Pointer,
     write_bytes: u32,
-    range: &CMemoryRange,
+    range: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
     let width = range.element_width();
@@ -7285,11 +7275,11 @@ mod storage_write_footprint_tests;
 /// only source metadata used to construct the interface.
 pub(crate) fn project_contract_memory_effects(
     entry: &ExecutionState,
-    interface: &CFunctionContractInterface,
-    transition_resources: Option<&[CCheckedResourceFact]>,
+    interface: &FunctionContractInterface,
+    transition_resources: Option<&[CheckedResourceFact]>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<CFunctionMemoryEffectProjection, String>> {
+) -> ExecutionResult<Result<FunctionMemoryEffectProjection, String>> {
     project_contract_memory_effects_with_guard_policy(
         entry,
         interface,
@@ -7305,11 +7295,11 @@ pub(crate) fn project_contract_memory_effects(
 /// ordinary call projection keeps an undecided guard conservatively active.
 fn project_explicit_memory_segments(
     entry: &ExecutionState,
-    segments: &[CMemorySegment],
+    segments: &[MemorySegment],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
     require_decided_guards: bool,
-) -> ExecutionResult<Result<(Vec<CMemoryRange>, ExecutionFacts), String>> {
+) -> ExecutionResult<Result<(Vec<MemoryRange>, ExecutionFacts), String>> {
     let mut projection_assumptions = assumptions.clone();
     let mut ranges = BTreeSet::new();
     let mut evidence_facts = Vec::new();
@@ -7349,14 +7339,14 @@ fn project_explicit_memory_segments(
 /// This is the one derivation of a resource-derived write footprint, for a
 /// function's frame and a loop's declared frame alike; nothing lowered from
 /// source is a second source of it. Memory it cannot name is
-/// [`CMemoryRange::unnamed_footprint`]; `None` only when a family the fact
+/// [`MemoryRange::unnamed_footprint`]; `None` only when a family the fact
 /// reaches has no definition at all.
 pub(super) fn checked_owned_memory_ranges(
-    fact: &CResourceFact,
-    definitions: &[CCompositeResourceDefinition],
+    fact: &ResourceFact,
+    definitions: &[CompositeResourceDefinition],
     state: &ExecutionState,
     assumptions: &PureFactContext,
-) -> Option<Vec<CMemoryRange>> {
+) -> Option<Vec<MemoryRange>> {
     OwnedFootprintDerivation::new(definitions, state, assumptions).derive(fact)
 }
 
@@ -7382,7 +7372,7 @@ pub(super) fn assumed_mutex_input_reservations(
         ranges.extend(
             derivation
                 .derive(fact)
-                .unwrap_or_else(|| vec![CMemoryRange::unnamed_footprint()]),
+                .unwrap_or_else(|| vec![MemoryRange::unnamed_footprint()]),
         );
         let mut guards = OwnedFootprintDerivation::new(
             function.composite_resource_definitions(),
@@ -7394,7 +7384,7 @@ pub(super) fn assumed_mutex_input_reservations(
         guard_ranges.extend(
             guards
                 .derive(fact)
-                .unwrap_or_else(|| vec![CMemoryRange::unnamed_footprint()]),
+                .unwrap_or_else(|| vec![MemoryRange::unnamed_footprint()]),
         );
     }
     super::mutexes::MutexInputReservations::from_ranges_and_guards(ranges, guard_ranges)
@@ -7418,7 +7408,7 @@ pub(super) fn assumed_mutex_input_reservations(
 /// another transferred member may authorize the callee to change that body.
 pub(super) fn call_kept_ownership(
     residual: &ResourceContext,
-    definitions: &[CCompositeResourceDefinition],
+    definitions: &[CompositeResourceDefinition],
     state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> CallKeptOwnership {
@@ -7446,17 +7436,17 @@ pub(super) fn call_kept_ownership(
 /// The owned memory ranges of one held composite whose definition has an
 /// argument-direct body, opened one layer as a call's kept memory opens a
 /// composite. The body reads neither memory nor facts
-/// (`CCompositeResourceDefinition::has_argument_direct_body`), so the ranges
+/// (`CompositeResourceDefinition::has_argument_direct_body`), so the ranges
 /// are a function of the fact and are opened against empty ones.
 pub(in crate::kernel) fn argument_direct_composite_ranges(
-    fact: &CResourceFact,
-    definitions: &[CCompositeResourceDefinition],
-) -> Vec<CMemoryRange> {
+    fact: &ResourceFact,
+    definitions: &[CompositeResourceDefinition],
+) -> Vec<MemoryRange> {
     let assumptions = PureFactContext::new();
     expand_composites_for_frame(
         &ResourceContext::new_with_equalities(&assumptions).unchecked_with_fact(fact.clone()),
         definitions,
-        &CMemory::new(),
+        &Memory::new(),
         &assumptions,
     )
     .map(|expanded| owned_memory_ranges_of(&expanded))
@@ -7468,12 +7458,12 @@ pub(in crate::kernel) fn argument_direct_composite_ranges(
 /// custody and framing, not for a checked opening of a population body.
 fn expand_composites_for_frame(
     context: &ResourceContext,
-    definitions: &[CCompositeResourceDefinition],
-    memory: &CMemory,
+    definitions: &[CompositeResourceDefinition],
+    memory: &Memory,
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
     enum Visit {
-        Head(CResourceFact),
+        Head(ResourceFact),
         Leave(String),
     }
     let mut expanded = context.clone();
@@ -7481,7 +7471,7 @@ fn expand_composites_for_frame(
     let mut pending = context
         .facts()
         .iter()
-        .filter(|fact| matches!(fact.resource(), CResource::Composite { .. }))
+        .filter(|fact| matches!(fact.resource(), Resource::Composite { .. }))
         .cloned()
         .map(Visit::Head)
         .collect::<Vec<_>>();
@@ -7494,7 +7484,7 @@ fn expand_composites_for_frame(
             }
             Visit::Head(head) => head,
         };
-        let CResource::Composite { name, .. } = head.resource() else {
+        let Resource::Composite { name, .. } = head.resource() else {
             unreachable!()
         };
         let index = definitions
@@ -7529,7 +7519,7 @@ fn expand_composites_for_frame(
         pending.extend(
             children
                 .into_iter()
-                .filter(|child| matches!(child.resource(), CResource::Composite { .. }))
+                .filter(|child| matches!(child.resource(), Resource::Composite { .. }))
                 .map(Visit::Head),
         );
     }
@@ -7540,7 +7530,7 @@ fn expand_composites_for_frame(
 mod counted_membership_framing_tests;
 
 /// The owned memory ranges `context` holds directly, charged one unit each.
-fn owned_memory_ranges_of(context: &ResourceContext) -> Vec<CMemoryRange> {
+fn owned_memory_ranges_of(context: &ResourceContext) -> Vec<MemoryRange> {
     context
         .facts()
         .iter()
@@ -7556,12 +7546,12 @@ fn owned_memory_ranges_of(context: &ResourceContext) -> Vec<CMemoryRange> {
 /// unmatched body does. Keep only that exact owned head's ordinary bytes;
 /// nested instances, population authority and undecided arms stay folded.
 fn matched_instance_body_ownership(
-    fact: &CResourceFact,
-    definitions: &[CCompositeResourceDefinition],
+    fact: &ResourceFact,
+    definitions: &[CompositeResourceDefinition],
     state: &ExecutionState,
     assumptions: &PureFactContext,
-) -> Option<(Vec<CMemoryRange>, Vec<(ConditionTerm, bool)>)> {
-    let CResourceFact::Own(CResource::Instance(instance), _) = fact else {
+) -> Option<(Vec<MemoryRange>, Vec<(ConditionTerm, bool)>)> {
+    let ResourceFact::Own(Resource::Instance(instance), _) = fact else {
         return None;
     };
     let index = definitions
@@ -7581,7 +7571,7 @@ fn matched_instance_body_ownership(
         || !arm.contains.iter().all(|spec| {
             matches!(
                 spec.term(),
-                CResourceTerm::Memory(_) | CResourceTerm::Token { .. }
+                ResourceTerm::Memory(_) | ResourceTerm::Token { .. }
             )
         })
     {
@@ -7622,7 +7612,7 @@ fn matched_instance_body_ownership(
         .into_iter()
         .filter_map(|fact| match fact {
             Proposition::CResourceContains { child, .. } => match *child {
-                CResource::Memory(range) => Some(range),
+                Resource::Memory(range) => Some(range),
                 _ => None,
             },
             _ => None,
@@ -7645,13 +7635,13 @@ fn matched_instance_body_ownership(
 /// witness-free and owns something, and for a body that does not evaluate
 /// here. Charges one unit, plus the evaluation's own work.
 fn open_unmatched_instance_body(
-    fact: &CResourceFact,
-    definitions: &[CCompositeResourceDefinition],
+    fact: &ResourceFact,
+    definitions: &[CompositeResourceDefinition],
     state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
     crate::instrumentation::record_deterministic_work(1);
-    let CResource::Instance(instance) = fact.resource() else {
+    let Resource::Instance(instance) = fact.resource() else {
         return None;
     };
     let index = definitions
@@ -7688,7 +7678,7 @@ fn open_unmatched_instance_body(
     let expanded = if body_resources
         .facts()
         .iter()
-        .any(|fact| matches!(fact.resource(), CResource::Composite { .. }))
+        .any(|fact| matches!(fact.resource(), Resource::Composite { .. }))
     {
         expand_composites_for_frame(
             &body_resources,
@@ -7731,7 +7721,7 @@ fn open_unmatched_instance_body(
 /// cell's base are never visited.
 ///
 /// The caller assumes the result before framing the store and records it as
-/// a path fact, so the producer (`CMemory::without_possible_aliasing_cells`,
+/// a path fact, so the producer (`Memory::without_possible_aliasing_cells`,
 /// through its ownership-first rung and the composition rung of its ladder)
 /// and every route that later re-asks the store-versus-load question (the
 /// memory-DAG `Store` hop and both transport sites, through
@@ -7792,7 +7782,7 @@ pub(in crate::kernel) fn store_opened_instance_composition(
         .try_compose_with_facts_delaying_normalization(
             std::iter::once(write_member)
                 .chain(opened)
-                .map(CResourceFact::own_memory),
+                .map(ResourceFact::own_memory),
             assumptions,
         )
         .ok()
@@ -7800,7 +7790,7 @@ pub(in crate::kernel) fn store_opened_instance_composition(
 
 /// How much one owned-footprint derivation may visit: one unit per owned
 /// fact, opened body and child. A footprint that needs more is summarized by
-/// [`CMemoryRange::unnamed_footprint`], which is sound for every consumer.
+/// [`MemoryRange::unnamed_footprint`], which is sound for every consumer.
 const OWNED_FOOTPRINT_WORK_LIMIT: usize = 4096;
 
 /// The owned memory one held resource denotes, derived from its definitions
@@ -7827,11 +7817,11 @@ const OWNED_FOOTPRINT_WORK_LIMIT: usize = 4096;
 /// body, has no finite set of clause instances, and its footprint is every
 /// block reachable from its pointer arguments through the fields its body
 /// owns. Those blocks are not known, so the footprint is
-/// [`CMemoryRange::unnamed_footprint`]: every cell except the ones a rule that
+/// [`MemoryRange::unnamed_footprint`]: every cell except the ones a rule that
 /// does not read the footprint keeps (what the caller keeps owning across a
 /// call, what the function keeps owning across a loop). Which definitions
 /// reach unnamed memory is decided once per definition set
-/// ([`CCompositeResourceDefinition::owned_footprint_reaches_unnamed_memory`]),
+/// ([`CompositeResourceDefinition::owned_footprint_reaches_unnamed_memory`]),
 /// so a recursive family costs one unit however many nodes are live, and a
 /// finite chain of families costs one visit per layer.
 ///
@@ -7848,11 +7838,11 @@ struct OwnedFootprintDerivation<'a> {
     mutex_storage_bytes: Option<u32>,
     /// Project only held guards, not live/use authority, for abstract calls.
     mutex_guard_only: bool,
-    definitions: &'a [CCompositeResourceDefinition],
+    definitions: &'a [CompositeResourceDefinition],
     state: &'a ExecutionState,
     assumptions: &'a PureFactContext,
     evaluation_assumptions: PureFactContext,
-    ranges: Vec<CMemoryRange>,
+    ranges: Vec<MemoryRange>,
     reaches_unnamed: bool,
     undefined_family: bool,
     work: usize,
@@ -7864,11 +7854,11 @@ struct OwnedFootprintDerivation<'a> {
 /// One pending visit of [`OwnedFootprintDerivation`].
 enum OwnedFootprintTask<'a> {
     /// An owned fact a body evaluated to, or the held fact itself.
-    Fact(CResourceFact),
+    Fact(ResourceFact),
     /// A named child: its definition, its arguments evaluated at the state,
     /// and whichever of its fields the parent supplies.
     Instance {
-        definition: &'a CCompositeResourceDefinition,
+        definition: &'a CompositeResourceDefinition,
         arguments: Vec<AlgebraicValue>,
         fields: Vec<Option<AlgebraicValue>>,
     },
@@ -7876,7 +7866,7 @@ enum OwnedFootprintTask<'a> {
 
 impl<'a> OwnedFootprintDerivation<'a> {
     fn new(
-        definitions: &'a [CCompositeResourceDefinition],
+        definitions: &'a [CompositeResourceDefinition],
         state: &'a ExecutionState,
         assumptions: &'a PureFactContext,
     ) -> Self {
@@ -7901,7 +7891,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
     /// The footprint of `fact`, owned by the holder. `None` when a family
     /// it reaches has no definition in the set: the interface is malformed
     /// and the transition that needs the footprint is refused.
-    fn derive(mut self, fact: &CResourceFact) -> Option<Vec<CMemoryRange>> {
+    fn derive(mut self, fact: &ResourceFact) -> Option<Vec<MemoryRange>> {
         self.pending.push(OwnedFootprintTask::Fact(fact.clone()));
         while let Some(task) = self.pending.pop() {
             // Past the bound the footprint is unnamed memory, which covers
@@ -7930,19 +7920,19 @@ impl<'a> OwnedFootprintDerivation<'a> {
         // are.
         if self.mutex_storage_bytes.is_some() {
             if self.reaches_unnamed {
-                self.ranges.push(CMemoryRange::unnamed_footprint());
+                self.ranges.push(MemoryRange::unnamed_footprint());
             }
             return Some(self.ranges);
         }
         let mut ranges = match ResourceContext::new().try_compose_with_facts(
-            self.ranges.iter().cloned().map(CResourceFact::own_memory),
+            self.ranges.iter().cloned().map(ResourceFact::own_memory),
             self.assumptions,
         ) {
             Ok(normalized) => owned_memory_ranges_of(&normalized),
             Err(_) => self.ranges,
         };
         if self.reaches_unnamed {
-            ranges.push(CMemoryRange::unnamed_footprint());
+            ranges.push(MemoryRange::unnamed_footprint());
         }
         ranges.sort();
         ranges.dedup();
@@ -7960,7 +7950,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
         true
     }
 
-    fn definition(&self, name: &str) -> Option<&'a CCompositeResourceDefinition> {
+    fn definition(&self, name: &str) -> Option<&'a CompositeResourceDefinition> {
         let definitions = self.definitions;
         match definitions.binary_search_by(|definition| definition.name().cmp(name)) {
             Ok(index) => Some(&definitions[index]),
@@ -7976,7 +7966,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
     /// unnamed memory. A set installed through a contract interface flags
     /// every definition on a cycle of families; in a set assembled otherwise,
     /// a cycle through several families is cut by the work bound.
-    fn enters(&mut self, definition: &CCompositeResourceDefinition) -> bool {
+    fn enters(&mut self, definition: &CompositeResourceDefinition) -> bool {
         if self.mutex_storage_bytes.is_some() && !definition.contains_mutex_authority {
             return false;
         }
@@ -7987,23 +7977,20 @@ impl<'a> OwnedFootprintDerivation<'a> {
         true
     }
 
-    fn owned_fact(&mut self, fact: &CResourceFact) {
+    fn owned_fact(&mut self, fact: &ResourceFact) {
         if !fact.is_own() {
             return;
         }
         match fact.resource() {
-            CResource::Footprint(_)
-            | CResource::Parameter(_)
-            | CResource::Emp
-            | CResource::Star(_) => {
+            Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_) => {
                 self.reaches_unnamed = true;
             }
-            CResource::Memory(range) => {
+            Resource::Memory(range) => {
                 if self.mutex_storage_bytes.is_none() {
                     self.ranges.push(canonical_memory_range(range.clone()));
                 }
             }
-            CResource::Iterated(iterated) => {
+            Resource::Iterated(iterated) => {
                 if self.mutex_storage_bytes.is_none() {
                     self.ranges
                         .push(canonical_memory_range(iterated.spanning_range()));
@@ -8011,11 +7998,11 @@ impl<'a> OwnedFootprintDerivation<'a> {
             }
             // A token and a mutex guard own no bytes; a guard's guarded
             // resources are separate facts that reach here on their own.
-            CResource::PopulationAuthority(_) => {}
-            CResource::Token { .. } => {}
-            CResource::MutexUse(identity) if !self.mutex_guard_only => {
+            Resource::PopulationAuthority(_) => {}
+            Resource::Token { .. } => {}
+            Resource::MutexUse(identity) if !self.mutex_guard_only => {
                 if let Some(bytes) = self.mutex_storage_bytes {
-                    self.ranges.push(CMemoryRange::new_with_element_width(
+                    self.ranges.push(MemoryRange::new_with_element_width(
                         identity.mutex.clone(),
                         0u32.into(),
                         bytes.into(),
@@ -8023,9 +8010,9 @@ impl<'a> OwnedFootprintDerivation<'a> {
                     ));
                 }
             }
-            CResource::MutexGuard(identity) => {
+            Resource::MutexGuard(identity) => {
                 if let Some(bytes) = self.mutex_storage_bytes {
-                    self.ranges.push(CMemoryRange::new_with_element_width(
+                    self.ranges.push(MemoryRange::new_with_element_width(
                         identity.mutex.clone(),
                         0u32.into(),
                         bytes.into(),
@@ -8033,9 +8020,9 @@ impl<'a> OwnedFootprintDerivation<'a> {
                     ));
                 }
             }
-            CResource::MutexLive(identity) if !self.mutex_guard_only => {
+            Resource::MutexLive(identity) if !self.mutex_guard_only => {
                 if let Some(bytes) = self.mutex_storage_bytes {
-                    self.ranges.push(CMemoryRange::new_with_element_width(
+                    self.ranges.push(MemoryRange::new_with_element_width(
                         identity.mutex.clone(),
                         0u32.into(),
                         bytes.into(),
@@ -8043,9 +8030,9 @@ impl<'a> OwnedFootprintDerivation<'a> {
                     ));
                 }
             }
-            CResource::MutexUse(_) | CResource::Publication(_) | CResource::MutexLive(_) => {}
-            CResource::Composite { name, arguments } => self.composite(name, arguments),
-            CResource::Instance(instance) => {
+            Resource::MutexUse(_) | Resource::Publication(_) | Resource::MutexLive(_) => {}
+            Resource::Composite { name, arguments } => self.composite(name, arguments),
+            Resource::Instance(instance) => {
                 let Some(definition) = self.definition(instance.name()) else {
                     self.undefined_family = true;
                     return;
@@ -8067,7 +8054,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
 
     /// The parameters of `definition` bound to `arguments` in `evaluation`.
     fn bind_parameters(
-        definition: &CCompositeResourceDefinition,
+        definition: &CompositeResourceDefinition,
         arguments: &[AlgebraicValue],
         evaluation: &mut ExecutionState,
     ) -> bool {
@@ -8124,7 +8111,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
 
     fn instance(
         &mut self,
-        definition: &'a CCompositeResourceDefinition,
+        definition: &'a CompositeResourceDefinition,
         arguments: &[AlgebraicValue],
         fields: &[Option<AlgebraicValue>],
     ) {
@@ -8142,12 +8129,12 @@ impl<'a> OwnedFootprintDerivation<'a> {
         let mut evaluation = self.state.clone();
         evaluation.resources = ResourceContext::new_with_equalities(self.assumptions);
         if self.mutex_storage_bytes.is_some() {
-            evaluation.locals = CLocalEnvironment::default();
+            evaluation.locals = LocalEnvironment::default();
         }
         if definition.matched.is_some() {
             // An arm's C names are lexical parameters and constructor
             // bindings, never incidental locals of the function holding it.
-            evaluation.locals = CLocalEnvironment::default();
+            evaluation.locals = LocalEnvironment::default();
         }
         // Interpret logical parent fields without granting body ownership.
         if let Some(values) = fields.iter().cloned().collect::<Option<Vec<_>>>()
@@ -8160,7 +8147,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
             )
         {
             evaluation.instance_field_scope = ResourceContext::new()
-                .unchecked_with_fact(CResourceFact::own(CResource::Instance(instance)));
+                .unchecked_with_fact(ResourceFact::own(Resource::Instance(instance)));
             evaluation.resource_bindings = None;
         }
         for ((name, _), value) in schema.fields().iter().zip(fields) {
@@ -8220,11 +8207,11 @@ impl<'a> OwnedFootprintDerivation<'a> {
     /// decide it, and otherwise every arm, with no bindings.
     fn footprint_arms(
         &self,
-        definition: &'a CCompositeResourceDefinition,
-        matched: &'a CResourceMatchBody,
+        definition: &'a CompositeResourceDefinition,
+        matched: &'a ResourceMatchBody,
         arguments: &[AlgebraicValue],
         fields: &[Option<AlgebraicValue>],
-    ) -> Vec<(&'a CResourceMatchArm, Option<Vec<AlgebraicValue>>)> {
+    ) -> Vec<(&'a ResourceMatchArm, Option<Vec<AlgebraicValue>>)> {
         let constructor_arm = |variant: &str, fields: &[AlgebraicValue]| {
             matched
                 .arms
@@ -8269,13 +8256,13 @@ impl<'a> OwnedFootprintDerivation<'a> {
     #[allow(clippy::too_many_arguments)]
     fn body(
         &mut self,
-        definition: &'a CCompositeResourceDefinition,
+        definition: &'a CompositeResourceDefinition,
         mut evaluation: ExecutionState,
-        contains: &'a [CResourceSpec],
-        children: &'a [CResourceChildSpec],
+        contains: &'a [ResourceSpec],
+        children: &'a [ResourceChildSpec],
         fields: &[Option<AlgebraicValue>],
         constructor: Option<&[AlgebraicValue]>,
-        matched_arm: Option<&CResourceMatchArm>,
+        matched_arm: Option<&ResourceMatchArm>,
     ) {
         let mut budget = ExecutionBudget::beside_live_state();
         // An undecided guard counts the body as active: the footprint is an
@@ -8296,7 +8283,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
             // authority is likewise exclusive custody without bytes.
             if matches!(
                 spec.term(),
-                CResourceTerm::Token { .. } | CResourceTerm::PopulationAuthority { .. }
+                ResourceTerm::Token { .. } | ResourceTerm::PopulationAuthority { .. }
             ) {
                 continue;
             }
@@ -8362,7 +8349,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
                     let [path] = paths.as_slice() else {
                         return None;
                     };
-                    let CExpressionOutcome::Value(value) = &path.outcome else {
+                    let ExpressionOutcome::Value(value) = &path.outcome else {
                         return None;
                     };
                     coerce_c_function_argument_without_obligations(&value.native(), parameter)
@@ -8380,10 +8367,10 @@ impl<'a> OwnedFootprintDerivation<'a> {
                 .field_bindings
                 .iter()
                 .map(|source| match source {
-                    CResourceChildField::Constructor(index) => {
+                    ResourceChildField::Constructor(index) => {
                         constructor.and_then(|fields| fields.get(*index).cloned())
                     }
-                    CResourceChildField::Parent(index) => fields.get(*index).cloned().flatten(),
+                    ResourceChildField::Parent(index) => fields.get(*index).cloned().flatten(),
                 })
                 .collect::<Vec<_>>();
             self.pending.push(OwnedFootprintTask::Instance {
@@ -8397,12 +8384,12 @@ impl<'a> OwnedFootprintDerivation<'a> {
 
 pub(crate) fn project_contract_memory_effects_with_guard_policy(
     entry: &ExecutionState,
-    interface: &CFunctionContractInterface,
-    transition_resources: Option<&[CCheckedResourceFact]>,
+    interface: &FunctionContractInterface,
+    transition_resources: Option<&[CheckedResourceFact]>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
     require_decided_guards: bool,
-) -> ExecutionResult<Result<CFunctionMemoryEffectProjection, String>> {
+) -> ExecutionResult<Result<FunctionMemoryEffectProjection, String>> {
     if interface.resource_derived_mutable_frame() && interface.resource_derived_frame_mixed() {
         return Ok(Err(
             "resource-derived mutable frame mixes explicit effect segments".to_string(),
@@ -8435,9 +8422,9 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
     };
     if transition_resources.is_some_and(|resources| {
         resources.iter().any(|checked| {
-            checked.role == CResourceTransferRole::Produce
-                || checked.snapshot == CResourceSnapshot::Post
-                || (checked.fact.is_view() && checked.role != CResourceTransferRole::Borrow)
+            checked.role == ResourceTransferRole::Produce
+                || checked.snapshot == ResourceSnapshot::Post
+                || (checked.fact.is_view() && checked.role != ResourceTransferRole::Borrow)
         })
     }) {
         return Ok(Err(
@@ -8500,7 +8487,7 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
     };
     ranges.extend(explicit_ranges);
     evidence_facts.extend(explicit_evidence);
-    Ok(Ok(CFunctionMemoryEffectProjection {
+    Ok(Ok(FunctionMemoryEffectProjection {
         ranges: ranges.into_iter().collect(),
         evidence_facts: evidence_facts.into(),
         range_sources,
@@ -8550,7 +8537,7 @@ pub(crate) fn establish_resource_derived_loop_frames(
         Ok(projection) => projection,
         Err(message) => return Ok(Err(message)),
     };
-    fn rewrite(statement: &mut ProgramStatement, ranges: &[CMemoryRange]) {
+    fn rewrite(statement: &mut ProgramStatement, ranges: &[MemoryRange]) {
         match statement {
             ProgramStatement::Seq(statements) => {
                 *statements = statements.map(|statement| {
@@ -8573,7 +8560,7 @@ pub(crate) fn establish_resource_derived_loop_frames(
                 ..
             } => {
                 for check in effect_checks {
-                    if check.origin() == CLoopEffectOrigin::InheritedResourceDerived {
+                    if check.origin() == LoopEffectOrigin::InheritedResourceDerived {
                         *check = check.clone().with_validated_ranges(ranges.to_vec());
                     }
                 }
@@ -8620,7 +8607,7 @@ pub(crate) fn validate_resource_derived_loop_frames(
             } => {
                 effect_checks
                     .iter()
-                    .any(|check| check.origin() == CLoopEffectOrigin::InheritedResourceDerived)
+                    .any(|check| check.origin() == LoopEffectOrigin::InheritedResourceDerived)
                     || has_inherited_loop_frame(body)
             }
             ProgramStatement::Switch { cases, .. } => cases
@@ -8634,9 +8621,9 @@ pub(crate) fn validate_resource_derived_loop_frames(
         return Ok(Ok(()));
     }
     fn check_statement(statement: &ProgramStatement) -> ExecutionResult<Result<(), String>> {
-        let check = |checks: &[CLoopEffectCheck]| -> ExecutionResult<Result<(), String>> {
+        let check = |checks: &[LoopEffectCheck]| -> ExecutionResult<Result<(), String>> {
             for effect_check in checks {
-                if effect_check.origin() != CLoopEffectOrigin::InheritedResourceDerived {
+                if effect_check.origin() != LoopEffectOrigin::InheritedResourceDerived {
                     continue;
                 }
                 let Some(actual) = effect_check.validated_ranges() else {
@@ -8700,12 +8687,12 @@ pub(crate) fn validate_resource_derived_loop_frames(
 /// source with the enclosing conditions as guards on every segment beneath
 /// them; the kernel now reads the definitions instead, so the refusals those
 /// guards produced are unchanged.
-fn requirements_reach_a_guarded_composite(interface: &CFunctionContractInterface) -> bool {
-    fn composite_name(spec: &CResourceSpec) -> Option<&str> {
+fn requirements_reach_a_guarded_composite(interface: &FunctionContractInterface) -> bool {
+    fn composite_name(spec: &ResourceSpec) -> Option<&str> {
         match spec.term() {
-            CResourceTerm::Composite { name, .. } => Some(name),
-            CResourceTerm::Instance { resource, .. } => match resource.as_ref() {
-                CResourceTerm::Composite { name, .. } => Some(name),
+            ResourceTerm::Composite { name, .. } => Some(name),
+            ResourceTerm::Instance { resource, .. } => match resource.as_ref() {
+                ResourceTerm::Composite { name, .. } => Some(name),
                 _ => None,
             },
             _ => None,
@@ -8713,7 +8700,7 @@ fn requirements_reach_a_guarded_composite(interface: &CFunctionContractInterface
     }
     fn guarded(
         name: &str,
-        definitions: &[CCompositeResourceDefinition],
+        definitions: &[CompositeResourceDefinition],
         active: &mut BTreeSet<String>,
     ) -> bool {
         if !active.insert(name.to_string()) {
@@ -8727,7 +8714,7 @@ fn requirements_reach_a_guarded_composite(interface: &CFunctionContractInterface
                     || definition
                         .contains()
                         .iter()
-                        .filter(|spec| spec.access() == CResourceAccessMode::Own)
+                        .filter(|spec| spec.access() == ResourceAccessMode::Own)
                         .filter_map(composite_name)
                         .any(|child| guarded(child, definitions, active))
             });
@@ -8737,7 +8724,7 @@ fn requirements_reach_a_guarded_composite(interface: &CFunctionContractInterface
     interface
         .resource_requires()
         .iter()
-        .filter(|spec| spec.access() == CResourceAccessMode::Own)
+        .filter(|spec| spec.access() == ResourceAccessMode::Own)
         .filter_map(composite_name)
         .any(|name| {
             guarded(
@@ -8749,12 +8736,12 @@ fn requirements_reach_a_guarded_composite(interface: &CFunctionContractInterface
 }
 
 fn evaluate_contract_mutable_ranges_for_interface(
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
     entry: &ExecutionState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
     require_unguarded: bool,
-) -> ExecutionResult<Option<Vec<CMemoryRange>>> {
+) -> ExecutionResult<Option<Vec<MemoryRange>>> {
     if require_unguarded
         && (interface
             .contract_mutable()
@@ -8786,11 +8773,11 @@ fn evaluate_contract_mutable_ranges_for_interface(
 /// branch cannot come back carrying a proof search, but its behaviour is
 /// unobserved by both fixture harnesses.
 fn evaluate_decided_contract_mutable_ranges_for_interface(
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
     entry: &ExecutionState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Option<Vec<CMemoryRange>>> {
+) -> ExecutionResult<Option<Vec<MemoryRange>>> {
     let mut guard_assumptions = assumptions.clone();
     let Some(guards) = lower_refinement_mutable_guards_for_interface(
         interface,
@@ -8868,7 +8855,7 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
     obligations: &[ProofObligation],
     post_contract_state: &ExecutionState,
     entry_contract_state: &ExecutionState,
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
     ensures: impl Iterator<Item = &'a SpecProposition>,
     effective_assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -9185,7 +9172,7 @@ fn refuse_retiring_a_lent_allocation(
         LoanRefusalOperation::MemoryAccess,
     ) {
         Some(diagnostic) => Err(VerifiedAllocationDeltaError::Runtime(
-            CRuntimeError::LoanRefusal(Box::new(diagnostic)),
+            RuntimeError::LoanRefusal(Box::new(diagnostic)),
         )),
         None => Ok(()),
     }
@@ -9224,14 +9211,14 @@ pub(in crate::kernel) fn caller_resource_left_stale_by_retirement<'a>(
     base: &Pointer,
     bytes: &HeapExtent,
     assumptions: &PureFactContext,
-) -> Option<&'a CResourceFact> {
+) -> Option<&'a ResourceFact> {
     let mut lent_owners_cover_allocation = None;
     for resource in kept.facts_that_may_refer_to_memory_block(&base.block) {
         let owned_by_the_caller = resource.memory_own_range().is_some()
             && resource.has_proven_positive_quantity(assumptions)
             || resource.memory_view_range().is_some_and(|range| {
                 crate::instrumentation::record_deterministic_work(1);
-                kept.contains_exact_representation(&CResourceFact::own(CResource::Memory(
+                kept.contains_exact_representation(&ResourceFact::own(Resource::Memory(
                     range.clone(),
                 )))
             });
@@ -9266,22 +9253,22 @@ fn lent_owned_memory_covers_allocation(
         return lent.owns_storage_access(base, constant, assumptions);
     }
     let allocation = bytes.byte_range(base.clone());
-    lent.directly_supporting_fact(&CResourceFact::own_memory(allocation), assumptions)
+    lent.directly_supporting_fact(&ResourceFact::own_memory(allocation), assumptions)
         .is_some()
 }
 
 fn apply_verified_heap_allocation_delta(
-    mut memory: CMemory,
-    entry_memory: &CMemory,
+    mut memory: Memory,
+    entry_memory: &Memory,
     input_resources: &ResourceContext,
     preserved_caller_resources: &ResourceContext,
     output_resources: &ResourceContext,
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
     assumptions: &PureFactContext,
     ledger: Option<&LoanLedger>,
     mutex_state: &ExecutionState,
     output_state: &ExecutionState,
-) -> Result<(CMemory, ExecutionFacts, Vec<PointerBlock>), VerifiedAllocationDeltaError> {
+) -> Result<(Memory, ExecutionFacts, Vec<PointerBlock>), VerifiedAllocationDeltaError> {
     let mut effects = Vec::new();
     let mut retired_creations = Vec::new();
     // What the callee consumed is read where it was consumed: at the call's
@@ -9289,7 +9276,7 @@ fn apply_verified_heap_allocation_delta(
     // resources owned, so an allocation named through it at the post state
     // is not the allocation the caller handed over.
     let expand_allocations =
-        |resources: &ResourceContext, state: &ExecutionState, memory: &CMemory| {
+        |resources: &ResourceContext, state: &ExecutionState, memory: &Memory| {
             let projection_state = state
                 .clone()
                 .with_memory(memory.clone())
@@ -9303,12 +9290,12 @@ fn apply_verified_heap_allocation_delta(
         };
     let input =
         expand_allocations(input_resources, mutex_state, entry_memory).ok_or_else(|| {
-            VerifiedAllocationDeltaError::Runtime(CRuntimeError::FunctionContract(
+            VerifiedAllocationDeltaError::Runtime(RuntimeError::FunctionContract(
                 "could not inspect input allocation effects at call".to_string(),
             ))
         })?;
     let output = expand_allocations(output_resources, output_state, &memory).ok_or_else(|| {
-        VerifiedAllocationDeltaError::Runtime(CRuntimeError::FunctionContract(
+        VerifiedAllocationDeltaError::Runtime(RuntimeError::FunctionContract(
             "could not inspect output allocation effects at call".to_string(),
         ))
     })?;
@@ -9341,7 +9328,7 @@ fn apply_verified_heap_allocation_delta(
         ResourceContext::new()
     } else {
         expand_allocations(preserved_caller_resources, mutex_state, &memory).ok_or_else(|| {
-            VerifiedAllocationDeltaError::Runtime(CRuntimeError::FunctionContract(
+            VerifiedAllocationDeltaError::Runtime(RuntimeError::FunctionContract(
                 "could not inspect preserved caller allocation effects at call".to_string(),
             ))
         })?
@@ -9354,7 +9341,7 @@ fn apply_verified_heap_allocation_delta(
         .facts()
         .iter()
         .chain(preserved.facts())
-        .filter_map(CResourceFact::allocation_extent)
+        .filter_map(ResourceFact::allocation_extent)
         .map(|(base, bytes)| (base.pointer().clone(), bytes))
         .collect::<Vec<_>>();
 
@@ -9399,7 +9386,7 @@ fn apply_verified_heap_allocation_delta(
                     }
                     AllocationContinuity::CrossKind => {
                         return Err(VerifiedAllocationDeltaError::Runtime(
-                            CRuntimeError::FunctionContract(format!(
+                            RuntimeError::FunctionContract(format!(
                                 "the call consumes an allocation with {} byte count and returns \
                                  one that may be the same block with {} byte count; a heap \
                                  block's extent keeps one format",
@@ -9428,7 +9415,7 @@ fn apply_verified_heap_allocation_delta(
                     &allocation_assumptions,
                 ) {
                     return Err(VerifiedAllocationDeltaError::Runtime(
-                        CRuntimeError::StaleResourceAfterFree {
+                        RuntimeError::StaleResourceAfterFree {
                             resource: Box::new(resource.clone()),
                         },
                     ));
@@ -9466,7 +9453,7 @@ fn apply_verified_heap_allocation_delta(
             &allocation_assumptions,
         ) {
             return Err(VerifiedAllocationDeltaError::Runtime(
-                CRuntimeError::StaleResourceAfterFree {
+                RuntimeError::StaleResourceAfterFree {
                     resource: Box::new(resource.clone()),
                 },
             ));
@@ -9487,13 +9474,13 @@ fn apply_verified_heap_allocation_delta(
             memory = memory
                 .with_heap_allocation_claim(base.clone(), bytes.clone())
                 .ok_or(VerifiedAllocationDeltaError::Runtime(
-                    CRuntimeError::InvalidFree(CInvalidFree::NonHeapPointer),
+                    RuntimeError::InvalidFree(InvalidFree::NonHeapPointer),
                 ))?;
         }
         memory = memory
             .free_heap_block(&base, assumptions)
             .map_err(|error| {
-                VerifiedAllocationDeltaError::Runtime(CRuntimeError::InvalidFree(error))
+                VerifiedAllocationDeltaError::Runtime(RuntimeError::InvalidFree(error))
             })?;
         effects.push(ExecutionPureFact::internal(
             Proposition::CHeapAllocationFreed {
@@ -9526,7 +9513,7 @@ fn apply_verified_heap_allocation_delta(
         memory = memory
             .with_heap_allocation_claim(base.clone(), bytes)
             .ok_or_else(|| {
-                VerifiedAllocationDeltaError::Runtime(CRuntimeError::FunctionContract(
+                VerifiedAllocationDeltaError::Runtime(RuntimeError::FunctionContract(
                     "returned allocation conflicts with an existing or deallocated identity"
                         .to_string(),
                 ))
@@ -9568,7 +9555,7 @@ pub(crate) fn initialize_c_program_storage(
     for function in functions {
         state = initialize_c_function_globals_owned(state, &function, true);
         // Private source spellings are lexical bindings, not program globals.
-        state.locals = CLocalEnvironment::default();
+        state.locals = LocalEnvironment::default();
         if crate::instrumentation::deadline_exceeded() {
             return None;
         }
@@ -9587,7 +9574,7 @@ pub(crate) fn initialize_c_program_storage(
 /// block is one range of `count` struct-sized elements. Costs the block's
 /// runs and concrete cells, not its elements.
 fn periodic_struct_array_blocks(
-    memory: &CMemory,
+    memory: &Memory,
     constant_offset: impl Fn(&Pointer) -> u32,
 ) -> BTreeMap<PointerBlock, (u32, u32)> {
     // Each run and each concrete cell examined charges a unit. Nothing here
@@ -9655,7 +9642,7 @@ fn periodic_struct_array_blocks(
 /// Every visit charges one unit and is a checkpoint; `None` means a run
 /// limit stopped the partition.
 fn initial_static_resources(
-    memory: &CMemory,
+    memory: &Memory,
     mut count_visit: impl FnMut(),
 ) -> Option<ResourceContext> {
     let mut visit = || {
@@ -9754,7 +9741,7 @@ fn initial_static_resources(
             if visit() {
                 return None;
             }
-            let range = CMemoryRange::new_with_element_width(
+            let range = MemoryRange::new_with_element_width(
                 Pointer {
                     block: identity.clone(),
                     offset: PointerOffsetTerm::Constant(i64::from(start)),
@@ -9764,9 +9751,9 @@ fn initial_static_resources(
                 width,
             );
             resources = resources.unchecked_with_fact(if block.is_read_only() {
-                CResourceFact::view_memory(range)
+                ResourceFact::view_memory(range)
             } else {
-                CResourceFact::own_memory(range)
+                ResourceFact::own_memory(range)
             });
         }
     }
@@ -9785,11 +9772,11 @@ mod aggregate_union_copy_tests;
 fn evaluate_resource_population_body_resources(
     required_resources: &ResourceContext,
     callee_state: &ExecutionState,
-    definitions: &[CCompositeResourceDefinition],
+    definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
     include_ordinary: bool,
-) -> ExecutionResult<Result<ResourceContext, CRuntimeError>> {
+) -> ExecutionResult<Result<ResourceContext, RuntimeError>> {
     let mut body_resources = ResourceContext::new_with_equalities(assumptions);
     let evaluation_assumptions = assumptions
         .clone()
@@ -9797,21 +9784,20 @@ fn evaluate_resource_population_body_resources(
         .prefer_symbolic_external_loads();
     for required in required_resources.facts() {
         let (name, arguments) = match required.resource() {
-            CResource::Footprint(_)
-            | CResource::Parameter(_)
-            | CResource::Emp
-            | CResource::Star(_) => continue,
-            CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
+            Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_) => {
+                continue;
+            }
+            Resource::Composite { name, arguments } | Resource::Token { name, arguments } => {
                 (name, arguments)
             }
-            CResource::Memory(_)
-            | CResource::PopulationAuthority(_)
-            | CResource::Instance(_)
-            | CResource::MutexGuard(_)
-            | CResource::MutexLive(_)
-            | CResource::MutexUse(_)
-            | CResource::Publication(_)
-            | CResource::Iterated(_) => continue,
+            Resource::Memory(_)
+            | Resource::PopulationAuthority(_)
+            | Resource::Instance(_)
+            | Resource::MutexGuard(_)
+            | Resource::MutexLive(_)
+            | Resource::MutexUse(_)
+            | Resource::Publication(_)
+            | Resource::Iterated(_) => continue,
         };
         let Some(definition) = definitions
             .iter()
@@ -9823,17 +9809,17 @@ fn evaluate_resource_population_body_resources(
             continue;
         }
         if definition.parameters().len() != arguments.len() {
-            return Ok(Err(CRuntimeError::FunctionContract(format!(
+            return Ok(Err(RuntimeError::FunctionContract(format!(
                 "counted population `{name}` received the wrong number of arguments"
             ))));
         }
         let mut population_state = callee_state.clone();
         for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
             let Some(argument) = argument.as_c_value() else {
-                return Ok(Err(CRuntimeError::TypeMismatch));
+                return Ok(Err(RuntimeError::TypeMismatch));
             };
             if parameter.c_type() != argument.c_type() {
-                return Ok(Err(CRuntimeError::TypeMismatch));
+                return Ok(Err(RuntimeError::TypeMismatch));
             }
             population_state.locals.set_typed(
                 parameter.name().to_string(),
@@ -9847,7 +9833,7 @@ fn evaluate_resource_population_body_resources(
             &evaluation_assumptions,
             budget,
         ) else {
-            return Ok(Err(CRuntimeError::FunctionContract(format!(
+            return Ok(Err(RuntimeError::FunctionContract(format!(
                 "counted population `{name}` body condition is not decidable"
             ))));
         };
@@ -9903,7 +9889,7 @@ fn prepare_function_resource_transfer(
     budget: &mut ExecutionBudget,
     preserve_explicit_representation: bool,
     purpose: ResourceTransitionPurpose,
-) -> ExecutionResult<Result<CFunctionResourceTransfer, CRuntimeError>> {
+) -> ExecutionResult<Result<FunctionResourceTransfer, RuntimeError>> {
     prepare_contract_resource_transfer(
         caller_state,
         callee_state,
@@ -9929,12 +9915,12 @@ fn prepare_function_resource_transfer(
 /// opened, which keeps a recursive frontier an explicit refusal.
 fn candidate_planning_resources(
     caller_resources: &ResourceContext,
-    requirements: &[CCheckedResourceFact],
-    definitions: &[CCompositeResourceDefinition],
-    memory: &CMemory,
+    requirements: &[CheckedResourceFact],
+    definitions: &[CompositeResourceDefinition],
+    memory: &Memory,
     assumptions: &PureFactContext,
 ) -> ResourceContext {
-    let supported = |resources: &ResourceContext, requirement: &CCheckedResourceFact| {
+    let supported = |resources: &ResourceContext, requirement: &CheckedResourceFact| {
         resources
             .directly_supporting_owned_entry(&requirement.fact, assumptions)
             .is_some()
@@ -9952,7 +9938,7 @@ fn candidate_planning_resources(
         // down is opened to supply it, exactly as the definitional route
         // consumes it (the caller keeps the other pieces and refolds).
         if (requirement.fact.is_view()
-            && matches!(requirement.fact.resource(), CResource::Composite { .. }))
+            && matches!(requirement.fact.resource(), Resource::Composite { .. }))
             || supported(&resources, requirement)
         {
             continue;
@@ -9965,7 +9951,7 @@ fn candidate_planning_resources(
             .iter()
             .filter(|fact| {
                 fact.is_own()
-                    && matches!(fact.resource(), CResource::Composite { name, .. }
+                    && matches!(fact.resource(), Resource::Composite { name, .. }
                     if definitions.iter().any(|definition| {
                         definition.name() == name && !definition.is_recursive()
                     }))
@@ -9999,12 +9985,12 @@ struct CompositeViewAdapter {
     /// owners have been replaced by the head below.
     resources: ResourceContext,
     /// The owned composite the lend escrows.
-    head: CResourceFact,
+    head: ResourceFact,
     /// The viewed descriptions the loan permits beside its own head.
-    adapted: Vec<CResourceFact>,
+    adapted: Vec<ResourceFact>,
     /// What recovery hands back instead of the head, when the head was
     /// materialized for this call.
-    restored: Vec<CResourceFact>,
+    restored: Vec<ResourceFact>,
 }
 
 /// Back a viewed composite `C(args)` the caller does not own by an owned
@@ -10036,14 +10022,14 @@ struct CompositeViewAdapter {
 /// since a hold lives on the viewed piece an unfold hands it to.
 fn candidate_composite_view_adapter(
     resources: &ResourceContext,
-    required: &CResourceFact,
-    definitions: &[CCompositeResourceDefinition],
+    required: &ResourceFact,
+    definitions: &[CompositeResourceDefinition],
     caller_state: &ExecutionState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
     unestablished: &mut Option<UnestablishedCompositeFact>,
 ) -> ExecutionResult<Option<CompositeViewAdapter>> {
-    let CResource::Composite { name, arguments } = required.resource() else {
+    let Resource::Composite { name, arguments } = required.resource() else {
         return Ok(None);
     };
     let Some(definition) = definitions
@@ -10058,7 +10044,7 @@ fn candidate_composite_view_adapter(
     {
         return Ok(None);
     }
-    let head = CResourceFact::own(required.resource().clone());
+    let head = ResourceFact::own(required.resource().clone());
     let Some(frontier) = checked_one_level_frontier(&head, definitions, caller_state, assumptions)
     else {
         return Ok(None);
@@ -10071,7 +10057,7 @@ fn candidate_composite_view_adapter(
     if frontier.is_empty()
         || frontier
             .iter()
-            .any(|child| !child.is_own() || matches!(child.resource(), CResource::Instance(_)))
+            .any(|child| !child.is_own() || matches!(child.resource(), Resource::Instance(_)))
     {
         return Ok(None);
     }
@@ -10114,12 +10100,12 @@ fn candidate_composite_view_adapter(
     let owners = resources
         .facts()
         .iter()
-        .filter(|fact| fact.is_own() && matches!(fact.resource(), CResource::Composite { .. }))
+        .filter(|fact| fact.is_own() && matches!(fact.resource(), Resource::Composite { .. }))
         .cloned()
         .collect::<Vec<_>>();
     for owner in owners {
         crate::instrumentation::record_deterministic_work(1);
-        let CResource::Composite {
+        let Resource::Composite {
             name: owner_name, ..
         } = owner.resource()
         else {
@@ -10170,11 +10156,11 @@ fn candidate_composite_view_adapter(
 /// `project` use, so nothing enters a loan that the definition does not
 /// contain.
 pub(super) fn checked_one_level_frontier(
-    head: &CResourceFact,
-    definitions: &[CCompositeResourceDefinition],
+    head: &ResourceFact,
+    definitions: &[CompositeResourceDefinition],
     caller_state: &ExecutionState,
     assumptions: &PureFactContext,
-) -> Option<Vec<CResourceFact>> {
+) -> Option<Vec<ResourceFact>> {
     // Expand only the selected head. Checked construction attaches the trusted
     // equality graph before dependent children are added, without importing the
     // caller's ambient resources or changing the loan's backing judgment.
@@ -10196,8 +10182,8 @@ pub(super) fn checked_one_level_frontier(
 /// Consume the requested frontier from the owner's checked expansion alone.
 /// The residual is proof-local; the adapter escrows and recovers the owner head.
 pub(super) fn checked_frontier_coverage(
-    owner_frontier: Vec<CResourceFact>,
-    required: &[CResourceFact],
+    owner_frontier: Vec<ResourceFact>,
+    required: &[ResourceFact],
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
     // This whole input has already been checked by expansion. Checked
@@ -10216,7 +10202,7 @@ pub(super) fn checked_frontier_coverage(
 /// wider owned range is split rather than swallowed whole.
 fn remove_frontier(
     mut resources: ResourceContext,
-    frontier: &[CResourceFact],
+    frontier: &[ResourceFact],
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
     for piece in frontier {
@@ -10228,7 +10214,7 @@ fn remove_frontier(
 
 struct UnestablishedCompositeFact {
     proposition: Proposition,
-    source: Option<Box<CResourceBodyFactSource>>,
+    source: Option<Box<ResourceBodyFactSource>>,
 }
 
 /// Whether a composite definition's body facts already hold at the call.
@@ -10241,7 +10227,7 @@ struct UnestablishedCompositeFact {
 /// The first missing fact keeps its lowered judgment and written clause,
 /// with the call's argument bindings, for the assembly refusal.
 fn composite_definition_facts_hold(
-    definition: &CCompositeResourceDefinition,
+    definition: &CompositeResourceDefinition,
     arguments: &[AlgebraicValue],
     caller_state: &ExecutionState,
     assumptions: &PureFactContext,
@@ -10303,7 +10289,7 @@ fn composite_definition_facts_hold(
             || string_literal_fact_holds(&path.proposition, &mut Vec::new()))
         {
             let source = definition.fact_source_spelling(index).map(|spelling| {
-                Box::new(CResourceBodyFactSource {
+                Box::new(ResourceBodyFactSource {
                     spelling: spelling.to_owned(),
                     bindings: definition
                         .parameters()
@@ -10339,7 +10325,7 @@ fn composite_definition_facts_hold(
 /// the literal's bytes and checks those facts again. Every candidate value
 /// lies within the literal, since the definition's frontier covers it.
 fn string_literal_instance_values(
-    definition: &CCompositeResourceDefinition,
+    definition: &CompositeResourceDefinition,
     arguments: &[AlgebraicValue],
     position: usize,
     parameter_type: ProgramType,
@@ -10407,13 +10393,13 @@ fn string_literal_instance_constant(c_type: ProgramType, value: usize) -> Option
 /// bytes decide: a composite over read-only storage that holds by
 /// construction, such as `cstr_at(p, len)` with `p` into a literal.
 fn string_literal_composite_holds(
-    fact: &CResourceFact,
-    definitions: &[CCompositeResourceDefinition],
+    fact: &ResourceFact,
+    definitions: &[CompositeResourceDefinition],
     state: &ExecutionState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<bool> {
-    let CResource::Composite { name, arguments } = fact.resource() else {
+    let Resource::Composite { name, arguments } = fact.resource() else {
         return Ok(false);
     };
     let Some(definition) = definitions
@@ -10440,7 +10426,7 @@ fn string_literal_composite_holds(
     if !pointers_are_literal || !arguments.iter().any(literal_pointer) {
         return Ok(false);
     }
-    let owned = CResourceFact::own(fact.resource().clone());
+    let owned = ResourceFact::own(fact.resource().clone());
     let Some(frontier) = checked_one_level_frontier(&owned, definitions, state, assumptions) else {
         return Ok(false);
     };
@@ -10474,13 +10460,13 @@ fn string_literal_composite_holds(
 /// caller's state does not establish. The definition is restricted as for a
 /// literal's view.
 fn local_storage_composite_pieces(
-    fact: &CResourceFact,
-    definitions: &[CCompositeResourceDefinition],
+    fact: &ResourceFact,
+    definitions: &[CompositeResourceDefinition],
     state: &ExecutionState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Option<(Vec<CResourceFact>, Option<UnestablishedCompositeFact>)>> {
-    let CResource::Composite { name, arguments } = fact.resource() else {
+) -> ExecutionResult<Option<(Vec<ResourceFact>, Option<UnestablishedCompositeFact>)>> {
+    let Resource::Composite { name, arguments } = fact.resource() else {
         return Ok(None);
     };
     let Some(definition) = definitions
@@ -10496,7 +10482,7 @@ fn local_storage_composite_pieces(
     {
         return Ok(None);
     }
-    let owned = CResourceFact::own(fact.resource().clone());
+    let owned = ResourceFact::own(fact.resource().clone());
     let Some(frontier) = checked_one_level_frontier(&owned, definitions, state, assumptions) else {
         return Ok(None);
     };
@@ -10508,7 +10494,7 @@ fn local_storage_composite_pieces(
         if !range.base().block.is_local_block() {
             return Ok(None);
         }
-        pieces.push(CResourceFact::view_memory(range.clone()));
+        pieces.push(ResourceFact::view_memory(range.clone()));
     }
     if pieces.is_empty() {
         return Ok(None);
@@ -10618,7 +10604,7 @@ fn string_literal_fact_value(
                     offset: PointerOffsetTerm::Constant(offset),
                 };
                 return match memory.load(&cell) {
-                    CExpressionOutcome::Value(value)
+                    ExpressionOutcome::Value(value)
                         if value.c_type().byte_width() == value_type.byte_width() =>
                     {
                         Some(true)
@@ -10737,8 +10723,8 @@ impl ResourceTransitionPurpose {
 }
 
 fn spec_contains_mutex_authority(
-    interface: &CFunctionContractInterface,
-    spec: &CResourceSpec,
+    interface: &FunctionContractInterface,
+    spec: &ResourceSpec,
 ) -> bool {
     matches!(
         spec.family(),
@@ -10750,7 +10736,7 @@ fn spec_contains_mutex_authority(
     })
 }
 
-pub(crate) fn preserves_mutex_protocols(interface: &CFunctionContractInterface) -> bool {
+pub(crate) fn preserves_mutex_protocols(interface: &FunctionContractInterface) -> bool {
     interface
         .resource_requires()
         .iter()
@@ -10758,7 +10744,7 @@ pub(crate) fn preserves_mutex_protocols(interface: &CFunctionContractInterface) 
 }
 
 pub(crate) fn guard_contract_refusal(
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
 ) -> Option<&'static str> {
     match super::mutexes::helper_contracts::classify(interface) {
         Ok(Some(_)) => return None,
@@ -10777,14 +10763,14 @@ pub(crate) fn guard_contract_refusal(
                         | ResourceFamily::MutexGuard
                         | ResourceFamily::MutexLive
                         | ResourceFamily::MutexUse
-                ) || spec.role() != CResourceTransferRole::Borrow
+                ) || spec.role() != ResourceTransferRole::Borrow
                     || spec.is_view())
         })
         .then_some("mutex authority contracts currently require preserving owned inputs")
 }
 
-fn private_aggregate_storage_owner(slot: Pointer, layout: &CAggregateLayout) -> CResourceFact {
-    CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+fn private_aggregate_storage_owner(slot: Pointer, layout: &AggregateLayout) -> ResourceFact {
+    ResourceFact::own_memory(MemoryRange::new_with_element_width(
         slot,
         MachineTerm::constant(0),
         MachineTerm::constant(layout.size_bytes()),
@@ -10795,7 +10781,7 @@ fn private_aggregate_storage_owner(slot: Pointer, layout: &CAggregateLayout) -> 
 fn with_private_aggregate_parameter_owners(
     mut resources: ResourceContext,
     callee: &ExecutionState,
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
 ) -> ResourceContext {
     // Only the selected parameters, never the caller's unrelated frame.
     // Argument binding has already allocated each slot independently.
@@ -10817,12 +10803,12 @@ fn prepare_contract_resource_transfer(
     caller_state: &ExecutionState,
     callee_state: &ExecutionState,
     interface_name: &str,
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
     preserve_explicit_representation: bool,
     purpose: ResourceTransitionPurpose,
-) -> ExecutionResult<Result<CFunctionResourceTransfer, CRuntimeError>> {
+) -> ExecutionResult<Result<FunctionResourceTransfer, RuntimeError>> {
     let transfer = prepare_contract_resource_transfer_unexplained(
         caller_state,
         callee_state,
@@ -10839,15 +10825,15 @@ fn prepare_contract_resource_transfer(
     // named with both formats (D5). A wide range held in another element
     // width names the product that must not wrap.
     Ok(transfer.map_err(|error| match &error {
-        CRuntimeError::MissingResource { resource } => match resource.as_ref() {
-            CResourceFact::Own(CResource::Memory(range), _) => {
+        RuntimeError::MissingResource { resource } => match resource.as_ref() {
+            ResourceFact::Own(Resource::Memory(range), _) => {
                 super::mutexes::consumed_storage_refusal(caller_state, range, assumptions)
                     .or_else(|| {
                         caller_state
                             .resources
                             .wide_range_respelling_refusal(range, assumptions)
                             .map(|no_wrap| {
-                                CRuntimeError::WideRangeRespellingMayWrap(Box::new(no_wrap))
+                                RuntimeError::WideRangeRespellingMayWrap(Box::new(no_wrap))
                             })
                     })
                     .unwrap_or(error)
@@ -10870,16 +10856,16 @@ fn prepare_contract_resource_transfer(
 /// found by base through the context's argument index, as `free` finds it.
 pub(in crate::kernel) fn allocation_extent_kind_refusal(
     resources: &ResourceContext,
-    required: &CResourceFact,
+    required: &ResourceFact,
     assumptions: &PureFactContext,
-) -> Option<CRuntimeError> {
+) -> Option<RuntimeError> {
     let (required_base, required_extent) = required.allocation_extent()?;
     let query =
-        CResourceFact::own_designated_allocation(required_base.clone(), &HeapExtent::int32(0));
+        ResourceFact::own_designated_allocation(required_base.clone(), &HeapExtent::int32(0));
     let held_kind = resources
         .direct_match_candidates_for(&query, assumptions)
         .into_iter()
-        .filter_map(CResourceFact::allocation_extent)
+        .filter_map(ResourceFact::allocation_extent)
         .find(|(base, extent)| {
             extent.kind() != required_extent.kind()
                 && crate::kernel::resource_arguments_proven_equal(
@@ -10893,7 +10879,7 @@ pub(in crate::kernel) fn allocation_extent_kind_refusal(
                 )
         })
         .map(|(_, extent)| extent.kind())?;
-    Some(CRuntimeError::FunctionContract(format!(
+    Some(RuntimeError::FunctionContract(format!(
         "`allocation` states {} byte count, but the block's allocation token holds {} one: \
          a heap block's extent keeps the format of its size's C type, and an `allocation` of \
          the other format does not name it; state the byte count in the block's format",
@@ -10914,14 +10900,14 @@ fn prepare_contract_resource_transfer_unexplained(
     caller_state: &ExecutionState,
     callee_state: &ExecutionState,
     _interface_name: &str,
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
     preserve_explicit_representation: bool,
     purpose: ResourceTransitionPurpose,
-) -> ExecutionResult<Result<CFunctionResourceTransfer, CRuntimeError>> {
+) -> ExecutionResult<Result<FunctionResourceTransfer, RuntimeError>> {
     if let Some(message) = guard_contract_refusal(interface) {
-        return Ok(Err(CRuntimeError::FunctionContract(message.into())));
+        return Ok(Err(RuntimeError::FunctionContract(message.into())));
     }
     // Ordinary calls frame the caller's protocol ledgers through argument
     // binding and summary recovery. Their declared memory effects still pass
@@ -10937,21 +10923,21 @@ fn prepare_contract_resource_transfer_unexplained(
                 .is_some_and(super::mutexes::MutexLedger::has_any_mutex))
         && !preserves_mutex_protocols(interface)
     {
-        return Ok(Err(CRuntimeError::FunctionContract(
+        return Ok(Err(RuntimeError::FunctionContract(
             "calls with live mutex protocols require contract protocol effects".into(),
         )));
     }
     if purpose.lends()
         && caller_state.loan_ledger().is_some() != caller_state.loan_participant().is_some()
     {
-        return Ok(Err(CRuntimeError::LoanRefusal(Box::new(
+        return Ok(Err(RuntimeError::LoanRefusal(Box::new(
             LoanRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Plan),
         ))));
     }
     // In particular, preparing several pure callback interfaces must not
     // repeatedly enumerate the caller's unrelated resource frame.
     if interface.resource_requires().is_empty() && !preserve_explicit_representation {
-        return Ok(Ok(CFunctionResourceTransfer {
+        return Ok(Ok(FunctionResourceTransfer {
             helper_call: None,
             borrowed_inputs: Vec::new(),
             consumed_inputs: Vec::new(),
@@ -10975,7 +10961,7 @@ fn prepare_contract_resource_transfer_unexplained(
         && interface
             .composite_resource_definitions()
             .iter()
-            .any(CCompositeResourceDefinition::is_recursive);
+            .any(CompositeResourceDefinition::is_recursive);
     // At a function's own boundary, a checked unfold may already have spent
     // a declared named input before C execution. Its exact receipt supplies
     // only input-clause evaluation; it never restores the live resource state.
@@ -10988,10 +10974,10 @@ fn prepare_contract_resource_transfer_unexplained(
         && let Some(events) = &callee_state.population_effects.creation
     {
         for spec in interface.resource_requires() {
-            if spec.role() != CResourceTransferRole::Consume {
+            if spec.role() != ResourceTransferRole::Consume {
                 continue;
             }
-            let CResourceTerm::Instance {
+            let ResourceTerm::Instance {
                 identity,
                 schema,
                 resource: inner_term,
@@ -11006,10 +10992,10 @@ fn prepare_contract_resource_transfer_unexplained(
             {
                 continue;
             }
-            let inner = CResourceSpec::new(
+            let inner = ResourceSpec::new(
                 (**inner_term).clone(),
-                CResourceAccessMode::Own,
-                CResourceQuantity::One,
+                ResourceAccessMode::Own,
+                ResourceQuantity::One,
                 spec.role(),
                 spec.snapshot(),
             )
@@ -11028,7 +11014,7 @@ fn prepare_contract_resource_transfer_unexplained(
                 Ok(fact) => fact,
                 Err(error) => return Ok(Err(error)),
             };
-            let CResource::Composite { name, arguments } = fact.resource() else {
+            let Resource::Composite { name, arguments } = fact.resource() else {
                 continue;
             };
             let description =
@@ -11042,7 +11028,7 @@ fn prepare_contract_resource_transfer_unexplained(
             let Some(instance) = events.consumed_imported_instance(&description, actual) else {
                 continue;
             };
-            let fact = CResourceFact::own(CResource::Instance(instance.clone()));
+            let fact = ResourceFact::own(Resource::Instance(instance.clone()));
             input_evaluation_state.resources = match input_evaluation_state
                 .resources
                 .try_compose_with_fact(fact, assumptions)
@@ -11067,8 +11053,8 @@ fn prepare_contract_resource_transfer_unexplained(
             Err(error) => return Ok(Err(error)),
         };
     for checked in &checked_required_resources {
-        if checked.role == CResourceTransferRole::Consume
-            && let CResource::Instance(instance) = checked.fact.resource()
+        if checked.role == ResourceTransferRole::Consume
+            && let Resource::Instance(instance) = checked.fact.resource()
             && spent_named_inputs.contains(&instance.identity())
         {
             required_resources = required_resources
@@ -11085,7 +11071,7 @@ fn prepare_contract_resource_transfer_unexplained(
                 .position(|spec| std::ptr::eq(spec, effects[0].1))
         });
         for checked in &mut checked_required_resources {
-            let CResource::Composite { name, .. } = checked.fact.resource() else {
+            let Resource::Composite { name, .. } = checked.fact.resource() else {
                 continue;
             };
             let is_control =
@@ -11093,7 +11079,7 @@ fn prepare_contract_resource_transfer_unexplained(
                     .composite_resource_definition(name)
                     .is_some_and(|definition| {
                         definition.contains().iter().any(|child| {
-                            matches!(child.term(), CResourceTerm::PopulationAuthority { .. })
+                            matches!(child.term(), ResourceTerm::PopulationAuthority { .. })
                         })
                     });
             if caller_state
@@ -11114,7 +11100,7 @@ fn prepare_contract_resource_transfer_unexplained(
                     // require the full original input quantity below.
                     if quantity_input == checked.section_index && quantity_input.is_some() {
                         caller_state.resources().directly_supporting_fact(
-                            &CResourceFact::own(checked.fact.resource().clone()),
+                            &ResourceFact::own(checked.fact.resource().clone()),
                             assumptions,
                         )
                     } else {
@@ -11135,7 +11121,7 @@ fn prepare_contract_resource_transfer_unexplained(
                     continue;
                 }
             } else {
-                let CResource::Composite { name, arguments } = source.resource() else {
+                let Resource::Composite { name, arguments } = source.resource() else {
                     continue;
                 };
                 let description = ResourceDescription::new(
@@ -11152,10 +11138,10 @@ fn prepare_contract_resource_transfer_unexplained(
                     continue;
                 }
             }
-            let CResourceFact::Own(_, quantity) = &checked.fact else {
+            let ResourceFact::Own(_, quantity) = &checked.fact else {
                 continue;
             };
-            let canonical = CResourceFact::Own(source.resource().clone(), quantity.clone());
+            let canonical = ResourceFact::Own(source.resource().clone(), quantity.clone());
             if canonical == checked.fact {
                 continue;
             }
@@ -11185,7 +11171,7 @@ fn prepare_contract_resource_transfer_unexplained(
         let Some((formal, _)) = spec.mutex_authority_binding() else {
             continue;
         };
-        if !matches!(checked.fact.resource(), CResource::MutexUse(_)) {
+        if !matches!(checked.fact.resource(), Resource::MutexUse(_)) {
             continue;
         }
         let Some(actual) = callee_state
@@ -11197,7 +11183,7 @@ fn prepare_contract_resource_transfer_unexplained(
             continue;
         };
         let Some(source) = caller_state.resolve_named_mutex_authority(actual) else {
-            return Ok(Err(CRuntimeError::MissingResource {
+            return Ok(Err(RuntimeError::MissingResource {
                 resource: Box::new(checked.fact.clone()),
             }));
         };
@@ -11205,10 +11191,10 @@ fn prepare_contract_resource_transfer_unexplained(
     }
     let helper_contract = match super::mutexes::helper_contracts::classify(interface) {
         Ok(contract) => contract,
-        Err(message) => return Ok(Err(CRuntimeError::FunctionContract(message.into()))),
+        Err(message) => return Ok(Err(RuntimeError::FunctionContract(message.into()))),
     };
     if helper_contract.is_some() && purpose == ResourceTransitionPurpose::SuspendedWorker {
-        return Ok(Err(CRuntimeError::FunctionContract(
+        return Ok(Err(RuntimeError::FunctionContract(
             "mutex guards cannot transfer across a worker boundary".into(),
         )));
     }
@@ -11216,14 +11202,14 @@ fn prepare_contract_resource_transfer_unexplained(
         if let Some(contract) = helper_contract {
             let Some(checked) = checked_required_resources
                 .iter_mut()
-                .find(|checked| matches!(checked.fact.resource(), CResource::MutexUse(_)))
+                .find(|checked| matches!(checked.fact.resource(), Resource::MutexUse(_)))
             else {
-                return Ok(Err(CRuntimeError::FunctionContract(
+                return Ok(Err(RuntimeError::FunctionContract(
                     "mutex helper requires checked use authority".into(),
                 )));
             };
             let Some(selected) = checked.selected_mutex_source.as_ref() else {
-                return Ok(Err(CRuntimeError::FunctionContract(
+                return Ok(Err(RuntimeError::FunctionContract(
                     "mutex helper requires named access transport".into(),
                 )));
             };
@@ -11236,7 +11222,7 @@ fn prepare_contract_resource_transfer_unexplained(
                 contract.effect,
                 assumptions,
             ) {
-                let CResource::MutexUse(usage) = required.resource() else {
+                let Resource::MutexUse(usage) = required.resource() else {
                     unreachable!()
                 };
                 return Ok(Err(error.into_runtime_error(&usage.mutex)));
@@ -11252,7 +11238,7 @@ fn prepare_contract_resource_transfer_unexplained(
             };
             checked.fact = source.clone();
             let guard = checked_required_resources.iter().find_map(|checked| {
-                matches!(checked.fact.resource(), CResource::MutexGuard(_))
+                matches!(checked.fact.resource(), Resource::MutexGuard(_))
                     .then(|| checked.fact.clone())
             });
             Some(Arc::new(super::mutexes::helper_contracts::HelperCall {
@@ -11273,11 +11259,11 @@ fn prepare_contract_resource_transfer_unexplained(
     // produced input, or a post-snapshot requirement, is malformed and is
     // rejected before any residual or effect projection is built.
     if checked_required_resources.iter().any(|checked| {
-        checked.role == CResourceTransferRole::Produce
-            || checked.snapshot == CResourceSnapshot::Post
-            || (checked.fact.is_view() && checked.role != CResourceTransferRole::Borrow)
+        checked.role == ResourceTransferRole::Produce
+            || checked.snapshot == ResourceSnapshot::Post
+            || (checked.fact.is_view() && checked.role != ResourceTransferRole::Borrow)
     }) {
-        return Ok(Err(CRuntimeError::FunctionContract(
+        return Ok(Err(RuntimeError::FunctionContract(
             "resource requirement has an inconsistent transfer role".to_string(),
         )));
     }
@@ -11286,7 +11272,7 @@ fn prepare_contract_resource_transfer_unexplained(
     // remain blocked even when a worker outlives the call. Read-only storage
     // retains intrinsic read authority. An explicitly supplied owner or view
     // takes the ordinary lend/reborrow route, including stale-binding checks.
-    let unsupplied_local = |range: &CMemoryRange| {
+    let unsupplied_local = |range: &MemoryRange| {
         range.base().block.is_local_block()
             && callee_state.memory().has_block(&range.base().block)
             && !callee_state
@@ -11301,7 +11287,7 @@ fn prepare_contract_resource_transfer_unexplained(
         .filter(|requirement| {
             matches!(
                 requirement.fact.resource(),
-                CResource::Memory(range)
+                Resource::Memory(range)
                     if requirement.fact.is_view()
                         && (unsupplied_local(range)
                             || callee_state.memory().is_read_only_block(&range.base().block))
@@ -11367,7 +11353,7 @@ fn prepare_contract_resource_transfer_unexplained(
             // The caller holds the bytes but not a body fact: name it, as a
             // refused `fold` and an assembly from owned pieces do.
             if let Some(fact) = unestablished {
-                return Ok(Err(CRuntimeError::UnestablishedAssemblyFact {
+                return Ok(Err(RuntimeError::UnestablishedAssemblyFact {
                     assembled: Box::new(requirement.fact.clone()),
                     fact: Box::new(fact.proposition),
                     source: fact.source,
@@ -11375,9 +11361,9 @@ fn prepare_contract_resource_transfer_unexplained(
             }
             implicit_read_views.push(requirement.clone());
             for piece in pieces {
-                let piece = CCheckedResourceFact {
+                let piece = CheckedResourceFact {
                     fact: piece,
-                    role: CResourceTransferRole::Borrow,
+                    role: ResourceTransferRole::Borrow,
                     snapshot: requirement.snapshot,
                     clause_position: requirement.clause_position,
                     section_index: requirement.section_index,
@@ -11390,7 +11376,7 @@ fn prepare_contract_resource_transfer_unexplained(
         }
     }
     let (local_read_views, intrinsic_read_views): (Vec<_>, Vec<_>) = implicit_read_views.into_iter()
-        .partition(|requirement| matches!(requirement.fact.resource(), CResource::Memory(range)
+        .partition(|requirement| matches!(requirement.fact.resource(), Resource::Memory(range)
             if range.base().block.is_local_block() && !callee_state.memory().is_read_only_block(&range.base().block)));
     // A composite view whose checked body is empty on this path protects no
     // bytes and holds no token, so there is nothing to lend and nothing a
@@ -11404,7 +11390,7 @@ fn prepare_contract_resource_transfer_unexplained(
             .iter()
             .filter(|requirement| {
                 requirement.fact.is_view()
-                    && matches!(requirement.fact.resource(), CResource::Composite { .. })
+                    && matches!(requirement.fact.resource(), Resource::Composite { .. })
                     && expand_all_composite_resource_facts(
                         &ResourceContext::new_with_equalities(assumptions)
                             .unchecked_with_fact(requirement.fact.clone()),
@@ -11468,7 +11454,7 @@ fn prepare_contract_resource_transfer_unexplained(
             .iter()
             .filter(|requirement| {
                 requirement.fact.is_own()
-                    && matches!(requirement.fact.resource(), CResource::Composite { .. })
+                    && matches!(requirement.fact.resource(), Resource::Composite { .. })
                     && expand_all_composite_resource_facts(
                         &ResourceContext::new_with_equalities(assumptions)
                             .unchecked_with_fact(requirement.fact.clone()),
@@ -11518,7 +11504,7 @@ fn prepare_contract_resource_transfer_unexplained(
             _ => {
                 let ledger = LoanLedger::new();
                 let Ok(caller) = ledger.fresh_participant() else {
-                    return Ok(Err(CRuntimeError::FunctionContract(
+                    return Ok(Err(RuntimeError::FunctionContract(
                         "could not allocate stable-view caller participant".to_string(),
                     )));
                 };
@@ -11526,7 +11512,7 @@ fn prepare_contract_resource_transfer_unexplained(
             }
         };
         let Ok(callee) = ledger.fresh_participant() else {
-            return Ok(Err(CRuntimeError::FunctionContract(
+            return Ok(Err(RuntimeError::FunctionContract(
                 "could not allocate stable-view callee participant".to_string(),
             )));
         };
@@ -11535,12 +11521,12 @@ fn prepare_contract_resource_transfer_unexplained(
         let mut assembly_gaps = BTreeMap::new();
         let composite_backings = if stable_requirements.iter().any(|requirement| {
             requirement.fact.is_view()
-                && matches!(requirement.fact.resource(), CResource::Composite { .. })
+                && matches!(requirement.fact.resource(), Resource::Composite { .. })
         }) {
             let mut backings = BTreeMap::new();
             for requirement in stable_requirements.iter().filter(|requirement| {
                 requirement.fact.is_view()
-                    && matches!(requirement.fact.resource(), CResource::Composite { .. })
+                    && matches!(requirement.fact.resource(), Resource::Composite { .. })
             }) {
                 // Prefer the caller's own owner for this very composite.
                 // Only when there is none does the adapter look for another
@@ -11602,7 +11588,7 @@ fn prepare_contract_resource_transfer_unexplained(
                     caller_state.memory(),
                     assumptions,
                 ) else {
-                    return Ok(Err(CRuntimeError::FunctionContract(
+                    return Ok(Err(RuntimeError::FunctionContract(
                         "could not check the frontier of a composite view".to_string(),
                     )));
                 };
@@ -11612,9 +11598,9 @@ fn prepare_contract_resource_transfer_unexplained(
                 // with no byte backing, protected by the hold its head keeps.
                 if expanded_children
                     .iter()
-                    .any(|fact| matches!(fact.resource(), CResource::Instance(_)))
+                    .any(|fact| matches!(fact.resource(), Resource::Instance(_)))
                 {
-                    return Ok(Err(CRuntimeError::FunctionContract(
+                    return Ok(Err(RuntimeError::FunctionContract(
                         "an exclusive instance inside a composite view is unsupported".to_string(),
                     )));
                 }
@@ -11637,11 +11623,11 @@ fn prepare_contract_resource_transfer_unexplained(
                         .find(|definition| {
                             matches!(
                                 owned.resource(),
-                                CResource::Composite { name, .. } if definition.name() == name
+                                Resource::Composite { name, .. } if definition.name() == name
                             )
                         })
                 else {
-                    return Ok(Err(CRuntimeError::FunctionContract(
+                    return Ok(Err(RuntimeError::FunctionContract(
                         "composite loan definition is missing".to_string(),
                     )));
                 };
@@ -11649,7 +11635,7 @@ fn prepare_contract_resource_transfer_unexplained(
                 // re-asserted precisely as folded; that is sound only when
                 // everything a fact depends on is stable for the loan.
                 if !definition.facts_are_loan_stable() {
-                    return Ok(Err(CRuntimeError::FunctionContract(
+                    return Ok(Err(RuntimeError::FunctionContract(
                         "composite body facts depend on a resource count or an allocation-liveness claim, which a stable loan does not stabilize".to_string(),
                     )));
                 }
@@ -11660,7 +11646,7 @@ fn prepare_contract_resource_transfer_unexplained(
                     adapted,
                     restored,
                 ) else {
-                    return Ok(Err(CRuntimeError::FunctionContract(
+                    return Ok(Err(RuntimeError::FunctionContract(
                         "composite loan frontier is not a checked expansion".to_string(),
                     )));
                 };
@@ -11687,14 +11673,14 @@ fn prepare_contract_resource_transfer_unexplained(
                 if helper_call.is_some()
                     && (plan.has_stable_views() || !plan.transferred_holds.is_empty())
                 {
-                    return Ok(Err(CRuntimeError::FunctionContract(
+                    return Ok(Err(RuntimeError::FunctionContract(
                         "unsupported mutex helper call: stable views and borrowing resources are not supported".into())));
                 }
                 for use_plan in &plan.mutex_uses {
                     let fact = use_plan.source_resource();
                     let mutex = match fact.resource() {
-                        CResource::MutexUse(identity) => &identity.mutex,
-                        CResource::MutexLive(identity) => &identity.mutex,
+                        Resource::MutexUse(identity) => &identity.mutex,
+                        Resource::MutexLive(identity) => &identity.mutex,
                         _ => unreachable!("checked use call source"),
                     };
                     if let Some(error) = super::mutexes::acquisition_availability_refusal(
@@ -11711,8 +11697,8 @@ fn prepare_contract_resource_transfer_unexplained(
                             return Ok(Err(match error {
                                 super::loans::mutex_calls::MutexUseCallError::Unavailable(
                                     message,
-                                ) => CRuntimeError::FunctionContract(message.into()),
-                                _ => CRuntimeError::MissingResource {
+                                ) => RuntimeError::FunctionContract(message.into()),
+                                _ => RuntimeError::MissingResource {
                                     resource: Box::new(use_plan.source_resource().clone()),
                                 },
                             }));
@@ -11721,7 +11707,7 @@ fn prepare_contract_resource_transfer_unexplained(
                 }
                 for use_plan in &plan.mutex_uses {
                     if use_plan.check_protected_type(assumptions).is_err() {
-                        return Ok(Err(CRuntimeError::MissingResource {
+                        return Ok(Err(RuntimeError::MissingResource {
                             resource: Box::new(use_plan.required_resource()),
                         }));
                     }
@@ -11755,22 +11741,22 @@ fn prepare_contract_resource_transfer_unexplained(
                 ) {
                     return Ok(Err(match error {
                         super::loans::StableViewPlanError::MissingResource(resource) => {
-                            CRuntimeError::MissingResource {
+                            RuntimeError::MissingResource {
                                 resource: Box::new(resource),
                             }
                         }
                         error => error
                             .loan_diagnostic(LoanRefusalOperation::Plan)
-                            .map(|refusal| CRuntimeError::LoanRefusal(Box::new(refusal)))
+                            .map(|refusal| RuntimeError::LoanRefusal(Box::new(refusal)))
                             .unwrap_or_else(|| {
-                                CRuntimeError::FunctionContract(
+                                RuntimeError::FunctionContract(
                                     "local view loan could not be checked".to_string(),
                                 )
                             }),
                     }));
                 }
                 if let Err(error) = plan.recheck_entry(&ledger) {
-                    return Ok(Err(CRuntimeError::LoanRefusal(Box::new(
+                    return Ok(Err(RuntimeError::LoanRefusal(Box::new(
                         error.diagnostic(LoanRefusalOperation::Entry),
                     ))));
                 }
@@ -11784,7 +11770,7 @@ fn prepare_contract_resource_transfer_unexplained(
                 if let super::loans::StableViewPlanError::MissingResource(resource) = &error
                     && resource.is_own()
                 {
-                    return Ok(Err(CRuntimeError::MissingResource {
+                    return Ok(Err(RuntimeError::MissingResource {
                         resource: Box::new(resource.clone()),
                     }));
                 }
@@ -11794,16 +11780,16 @@ fn prepare_contract_resource_transfer_unexplained(
                 if let super::loans::StableViewPlanError::MissingResource(resource) = &error
                     && let Some(fact) = assembly_gaps.remove(resource)
                 {
-                    return Ok(Err(CRuntimeError::UnestablishedAssemblyFact {
+                    return Ok(Err(RuntimeError::UnestablishedAssemblyFact {
                         assembled: Box::new(resource.clone()),
                         fact: Box::new(fact.proposition),
                         source: fact.source,
                     }));
                 }
                 if let Some(diagnostic) = error.loan_diagnostic(LoanRefusalOperation::Plan) {
-                    return Ok(Err(CRuntimeError::LoanRefusal(Box::new(diagnostic))));
+                    return Ok(Err(RuntimeError::LoanRefusal(Box::new(diagnostic))));
                 }
-                return Ok(Err(CRuntimeError::FunctionContract(
+                return Ok(Err(RuntimeError::FunctionContract(
                     "stable-view call transition refused".to_string(),
                 )));
             }
@@ -11848,7 +11834,7 @@ fn prepare_contract_resource_transfer_unexplained(
                     assumptions,
                     LoanRefusalOperation::Plan,
                 ) {
-                    return Ok(Err(CRuntimeError::LoanRefusal(Box::new(diagnostic))));
+                    return Ok(Err(RuntimeError::LoanRefusal(Box::new(diagnostic))));
                 }
             }
         }
@@ -11865,7 +11851,7 @@ fn prepare_contract_resource_transfer_unexplained(
         )
     };
     let Some(canonical_resources) = canonical_resources else {
-        return Ok(Err(CRuntimeError::FunctionContract(format!(
+        return Ok(Err(RuntimeError::FunctionContract(format!(
             "could not expand required composite resources before call ({})",
             bounded_contract_resource_frontier(&required_resources)
         ))));
@@ -11974,11 +11960,11 @@ fn prepare_contract_resource_transfer_unexplained(
         // backed, not because the storage happens to be uninitialized.
         if matches!(
             intrinsic_view.fact.resource(),
-            CResource::Memory(range)
+            Resource::Memory(range)
                 if range.base().block.is_local_block()
                     && !local_view_range_within_block(range, callee_state.memory())
         ) {
-            return Ok(Err(CRuntimeError::MissingResource {
+            return Ok(Err(RuntimeError::MissingResource {
                 resource: Box::new(intrinsic_view.fact.clone()),
             }));
         }
@@ -12010,7 +11996,7 @@ fn prepare_contract_resource_transfer_unexplained(
             .resources()
             .facts()
             .iter()
-            .filter(|fact| matches!(fact, CResourceFact::View(CResource::Composite { .. })))
+            .filter(|fact| matches!(fact, ResourceFact::View(Resource::Composite { .. })))
             .cloned()
             .collect::<Vec<_>>();
         for composite in viewed_composites {
@@ -12061,7 +12047,7 @@ fn prepare_contract_resource_transfer_unexplained(
         // A range running past the block would otherwise let the callee read
         // whatever the caller keeps beyond it: `views a[0..3]` on an
         // `int32 b[2]` used to be discharged by the block merely existing.
-        if let CResourceFact::View(CResource::Memory(range)) = resource
+        if let ResourceFact::View(Resource::Memory(range)) = resource
             && range.base().block.is_local_block()
             && callee_state.memory().has_block(&range.base().block)
             && !callee_state
@@ -12078,7 +12064,7 @@ fn prepare_contract_resource_transfer_unexplained(
             caller_state.memory(),
             assumptions,
         ) else {
-            return Ok(Err(CRuntimeError::MissingResource {
+            return Ok(Err(RuntimeError::MissingResource {
                 resource: Box::new(resource.clone()),
             }));
         };
@@ -12095,7 +12081,7 @@ fn prepare_contract_resource_transfer_unexplained(
     }
     let borrowed_inputs = checked_required_resources
         .iter()
-        .filter(|checked| checked.role == CResourceTransferRole::Borrow)
+        .filter(|checked| checked.role == ResourceTransferRole::Borrow)
         .map(|checked| {
             let mut checked = checked.clone();
             if let Some(fact) = stable_view_plan
@@ -12113,10 +12099,10 @@ fn prepare_contract_resource_transfer_unexplained(
         && let Some(events) = &caller_state.population_effects.creation
     {
         for checked in &checked_required_resources {
-            if checked.role != CResourceTransferRole::Consume {
+            if checked.role != ResourceTransferRole::Consume {
                 continue;
             }
-            let CResource::Instance(instance) = checked.fact.resource() else {
+            let Resource::Instance(instance) = checked.fact.resource() else {
                 continue;
             };
             let description = ResourceDescription::from_instance(instance);
@@ -12126,9 +12112,9 @@ fn prepare_contract_resource_transfer_unexplained(
             let scope = events
                 .governing_authority(&description)
                 .expect("tracked named population");
-            let authority = CResourceFact::own(CResource::PopulationAuthority(scope));
+            let authority = ResourceFact::own(Resource::PopulationAuthority(scope));
             if !required_resources.satisfies_fact(&authority, assumptions) {
-                return Ok(Err(CRuntimeError::MissingResource {
+                return Ok(Err(RuntimeError::MissingResource {
                     resource: Box::new(authority),
                 }));
             }
@@ -12136,7 +12122,7 @@ fn prepare_contract_resource_transfer_unexplained(
     }
     let consumed_inputs = checked_required_resources
         .iter()
-        .filter(|checked| checked.role == CResourceTransferRole::Consume)
+        .filter(|checked| checked.role == ResourceTransferRole::Consume)
         .cloned()
         .collect();
     let mut canonical_borrowed_owners: Vec<_> = stable_view_plan
@@ -12148,7 +12134,7 @@ fn prepare_contract_resource_transfer_unexplained(
                 .zip(&plan.canonical_transferred_ownership)
         })
         .filter_map(|(checked, canonical)| {
-            (checked.role == CResourceTransferRole::Borrow)
+            (checked.role == ResourceTransferRole::Borrow)
                 .then(|| {
                     canonical
                         .clone()
@@ -12158,7 +12144,7 @@ fn prepare_contract_resource_transfer_unexplained(
         })
         .collect();
     canonical_borrowed_owners.extend(canonical_population_owners);
-    Ok(Ok(CFunctionResourceTransfer {
+    Ok(Ok(FunctionResourceTransfer {
         helper_call,
         borrowed_inputs,
         consumed_inputs,
@@ -12188,16 +12174,16 @@ fn prepare_contract_resource_transfer_unexplained(
 fn produced_memory_initialization(
     entry_state: &ExecutionState,
     post_state: &ExecutionState,
-    interface: &CFunctionContractInterface,
-    mut memory: CMemory,
+    interface: &FunctionContractInterface,
+    mut memory: Memory,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<CMemory, CRuntimeError>> {
+) -> ExecutionResult<Result<Memory, RuntimeError>> {
     for resource in interface.resource_ensures() {
         let Some(segment) = resource.term().memory_segment() else {
             continue;
         };
-        if resource.role() != CResourceTransferRole::Produce {
+        if resource.role() != ResourceTransferRole::Produce {
             continue;
         }
         if let Some(guard) = resource.guard() {
@@ -12211,7 +12197,7 @@ fn produced_memory_initialization(
                 Some(true) => {}
                 Some(false) => continue,
                 None => {
-                    return Ok(Err(CRuntimeError::FunctionContract(
+                    return Ok(Err(RuntimeError::FunctionContract(
                         "could not select a conditional resource effect: its pre-state condition is not proven"
                             .to_string(),
                     )));
@@ -12228,7 +12214,7 @@ fn produced_memory_initialization(
             Ok(fact) => fact,
             Err(error) => return Ok(Err(error)),
         };
-        let CResource::Memory(range) = fact.resource() else {
+        let Resource::Memory(range) = fact.resource() else {
             continue;
         };
         let extent = if range.wide_bounds().is_some() {
@@ -12243,7 +12229,7 @@ fn produced_memory_initialization(
         if segment.is_uninitialized() {
             memory = memory.with_uninitialized_object(
                 start,
-                extent.unwrap_or(CMemory::UNBOUNDED_UNWRITTEN_EXTENT),
+                extent.unwrap_or(Memory::UNBOUNDED_UNWRITTEN_EXTENT),
             );
             continue;
         }
@@ -12278,13 +12264,13 @@ fn produced_memory_initialization(
 /// [`evaluate_contract_return_resource_context`].
 pub(super) fn evaluate_function_return_resource_context(
     function: &ProgramFunction,
-    entry_clauses: &[CCheckedResourceFact],
+    entry_clauses: &[CheckedResourceFact],
     entry_state: &ExecutionState,
     post_state: &ExecutionState,
     count: usize,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<ResourceContext, CRuntimeError>> {
+) -> ExecutionResult<Result<ResourceContext, RuntimeError>> {
     evaluate_contract_return_resource_context(
         function.contract_interface(),
         &[],
@@ -12300,13 +12286,13 @@ pub(super) fn evaluate_function_return_resource_context(
 }
 
 type BorrowedResourceKey = (
-    CResourceTerm,
-    CResourceAccessMode,
-    CResourceQuantity,
-    CResourceSnapshot,
+    ResourceTerm,
+    ResourceAccessMode,
+    ResourceQuantity,
+    ResourceSnapshot,
 );
 
-fn borrowed_resource_key(resource: &CResourceSpec) -> BorrowedResourceKey {
+fn borrowed_resource_key(resource: &ResourceSpec) -> BorrowedResourceKey {
     (
         resource.term().clone(),
         resource.access(),
@@ -12324,17 +12310,17 @@ mod entry_borrow_return_tests;
 /// frame is visited for that purpose.
 #[allow(clippy::too_many_arguments)]
 fn evaluate_contract_return_resource_context(
-    interface: &CFunctionContractInterface,
-    canonical_borrowed_owners: &[(CResourceFact, CResourceFact)],
-    borrowed_inputs: &[CCheckedResourceFact],
-    entry_clauses: &[CCheckedResourceFact],
+    interface: &FunctionContractInterface,
+    canonical_borrowed_owners: &[(ResourceFact, ResourceFact)],
+    borrowed_inputs: &[CheckedResourceFact],
+    entry_clauses: &[CheckedResourceFact],
     entry_state: &ExecutionState,
     post_state: &ExecutionState,
     count: usize,
-    prepared_outputs: &[Option<CResourceFact>],
+    prepared_outputs: &[Option<ResourceFact>],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<ResourceContext, CRuntimeError>> {
+) -> ExecutionResult<Result<ResourceContext, RuntimeError>> {
     let mut context = ResourceContext::new_with_equalities(assumptions);
     // `owns` requirements that are returned as entry-snapshot borrows carry
     // caller identity in the checked transition. Re-evaluating an address
@@ -12345,7 +12331,7 @@ fn evaluate_contract_return_resource_context(
     // their ordinary evaluation path because their loan provenance is
     // reconstructed separately, and post-snapshot instances carry fresh
     // fields rather than an entry fact.
-    let mut canonical_by_checked = BTreeMap::<CResourceFact, VecDeque<CResourceFact>>::new();
+    let mut canonical_by_checked = BTreeMap::<ResourceFact, VecDeque<ResourceFact>>::new();
     for (checked, canonical) in canonical_borrowed_owners {
         canonical_by_checked
             .entry(checked.clone())
@@ -12357,10 +12343,10 @@ fn evaluate_contract_return_resource_context(
     // entry. Keep that evaluated fact by normalized term, in occurrence order,
     // rather than re-reading an unmaterialized field on return. The transfer
     // has already checked every fact placed here against caller ownership.
-    let mut entry_borrows = BTreeMap::<BorrowedResourceKey, VecDeque<CResourceFact>>::new();
+    let mut entry_borrows = BTreeMap::<BorrowedResourceKey, VecDeque<ResourceFact>>::new();
     for checked in borrowed_inputs {
-        if checked.role != CResourceTransferRole::Borrow
-            || checked.snapshot != CResourceSnapshot::Entry
+        if checked.role != ResourceTransferRole::Borrow
+            || checked.snapshot != ResourceSnapshot::Entry
             || !checked.fact.is_own()
         {
             continue;
@@ -12395,10 +12381,10 @@ fn evaluate_contract_return_resource_context(
         .iter()
         .take(count)
         .any(|resource| {
-            resource.snapshot() == CResourceSnapshot::Entry
+            resource.snapshot() == ResourceSnapshot::Entry
                 || resource
                     .declared_argument_snapshots()
-                    .is_some_and(|snapshots| snapshots.contains(&CResourceSnapshot::Entry))
+                    .is_some_and(|snapshots| snapshots.contains(&ResourceSnapshot::Entry))
         }) {
         let mut views = opened_composite_read_views(
             entry_state.resources(),
@@ -12431,7 +12417,7 @@ fn evaluate_contract_return_resource_context(
                 views.extend(
                     ranges
                         .into_iter()
-                        .map(|range| CResourceFact::View(CResource::Memory(range))),
+                        .map(|range| ResourceFact::View(Resource::Memory(range))),
                 );
             }
         }
@@ -12465,7 +12451,7 @@ fn evaluate_contract_return_resource_context(
         {
             let mut resources = entry_state_for_argument_reads.resources().clone();
             for checked in entry_clauses {
-                let CResource::Composite { name, .. } = checked.fact.resource() else {
+                let Resource::Composite { name, .. } = checked.fact.resource() else {
                     continue;
                 };
                 let Some(definition) = interface.composite_resource_definition(name) else {
@@ -12474,7 +12460,7 @@ fn evaluate_contract_return_resource_context(
                 if !definition
                     .contains()
                     .iter()
-                    .any(|child| matches!(child.term(), CResourceTerm::PopulationAuthority { .. }))
+                    .any(|child| matches!(child.term(), ResourceTerm::PopulationAuthority { .. }))
                 {
                     continue;
                 }
@@ -12487,12 +12473,12 @@ fn evaluate_contract_return_resource_context(
                     .checked_authority_wrapper_body(&checked.fact, definition, assumptions)
                 {
                     Ok(body) => body,
-                    Err(error) => return Ok(Err(CRuntimeError::FunctionContract(error))),
+                    Err(error) => return Ok(Err(RuntimeError::FunctionContract(error))),
                 };
                 let Some(without_head) =
                     resources.without_fact_incrementally(&checked.fact, assumptions)
                 else {
-                    return Ok(Err(CRuntimeError::MissingResource {
+                    return Ok(Err(RuntimeError::MissingResource {
                         resource: Box::new(checked.fact.clone()),
                     }));
                 };
@@ -12517,17 +12503,17 @@ fn evaluate_contract_return_resource_context(
     let consumed_control_frontier = {
         ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(
             entry_clauses.iter().filter_map(|checked| {
-                if checked.role != CResourceTransferRole::Consume {
+                if checked.role != ResourceTransferRole::Consume {
                     return None;
                 }
-                let CResource::Composite { name, .. } = checked.fact.resource() else {
+                let Resource::Composite { name, .. } = checked.fact.resource() else {
                     return None;
                 };
                 interface
                     .composite_resource_definition(name)
                     .filter(|definition| {
                         definition.contains().iter().any(|child| {
-                            matches!(child.term(), CResourceTerm::PopulationAuthority { .. })
+                            matches!(child.term(), ResourceTerm::PopulationAuthority { .. })
                         })
                     })
                     .map(|_| checked.fact.clone())
@@ -12546,7 +12532,7 @@ fn evaluate_contract_return_resource_context(
             .position(|spec| std::ptr::eq(spec, effects[0].1))?;
         let input = entry_clauses.iter().find(|checked| {
             checked.section_index == Some(input_index)
-                && checked.role == CResourceTransferRole::Consume
+                && checked.role == ResourceTransferRole::Consume
         })?;
         let canonical = canonical_by_checked
             .get(&input.fact)
@@ -12582,24 +12568,24 @@ fn evaluate_contract_return_resource_context(
     };
     let mut entry_supply: Option<ReturnSupply> = None;
     let mut post_supply: Option<ReturnSupply> = None;
-    type CanonicalOwners = BTreeMap<CResourceFact, VecDeque<CResourceFact>>;
+    type CanonicalOwners = BTreeMap<ResourceFact, VecDeque<ResourceFact>>;
     let mut evaluate_returned = |clause_index: usize,
-                                 resource: &CResourceSpec,
-                                 returned: &[CResourceFact],
+                                 resource: &ResourceSpec,
+                                 returned: &[ResourceFact],
                                  canonical_by_checked: &mut CanonicalOwners,
                                  budget: &mut ExecutionBudget|
-     -> ExecutionResult<Result<CResourceFact, CRuntimeError>> {
+     -> ExecutionResult<Result<ResourceFact, RuntimeError>> {
         if let Some(Some(prepared)) = prepared_outputs.get(clause_index) {
             return Ok(Ok(prepared.clone()));
         }
         // Snapshot selection is carried by the normalized specification.
         // A named instance uses post fields while retaining entry identity.
         let (state, cached) = match resource.snapshot() {
-            CResourceSnapshot::Entry => (entry_state, &mut entry_supply),
-            CResourceSnapshot::Current | CResourceSnapshot::Post => (post_state, &mut post_supply),
+            ResourceSnapshot::Entry => (entry_state, &mut entry_supply),
+            ResourceSnapshot::Current | ResourceSnapshot::Post => (post_state, &mut post_supply),
         };
         let cached = cached.get_or_insert_with(|| {
-            new_supply(state, resource.snapshot() == CResourceSnapshot::Entry)
+            new_supply(state, resource.snapshot() == ResourceSnapshot::Entry)
         });
         // A returned view or a clause with no checked entry borrow still
         // evaluates against the cells the contract makes readable. A
@@ -12611,9 +12597,9 @@ fn evaluate_contract_return_resource_context(
         for fact in &returned[cached.absorbed..] {
             let mut views = Vec::new();
             match fact.resource() {
-                CResource::Instance(_) if cached.supply.contains_exact_representation(fact) => {}
+                Resource::Instance(_) if cached.supply.contains_exact_representation(fact) => {}
                 resource => {
-                    if let CResource::Instance(instance) = resource
+                    if let Resource::Instance(instance) = resource
                         && !interface.composite_resource_definitions().is_empty()
                     {
                         views.extend(instance_arm_read_authority(
@@ -12656,24 +12642,24 @@ fn evaluate_contract_return_resource_context(
                 evaluated.resource(),
                 assumptions,
             ) {
-                return Ok(Err(CRuntimeError::FunctionContract(
+                return Ok(Err(RuntimeError::FunctionContract(
                     "quantity exchange must return members of the same population".into(),
                 )));
             }
-            CResourceFact::own_quantity(
+            ResourceFact::own_quantity(
                 population.clone(),
                 evaluated
                     .owned_quantity_term()
                     .expect("owned output")
                     .clone(),
             )
-        } else if resource.role() == CResourceTransferRole::Produce {
+        } else if resource.role() == ResourceTransferRole::Produce {
             match consumed_control_frontier.directly_supporting_fact(&evaluated, assumptions) {
                 Some(source) if source.is_own() => {
-                    let CResourceFact::Own(_, quantity) = &evaluated else {
+                    let ResourceFact::Own(_, quantity) = &evaluated else {
                         return Ok(Ok(evaluated));
                     };
-                    CResourceFact::Own(source.resource().clone(), quantity.clone())
+                    ResourceFact::Own(source.resource().clone(), quantity.clone())
                 }
                 _ => evaluated,
             }
@@ -12681,8 +12667,8 @@ fn evaluate_contract_return_resource_context(
             evaluated
         };
         Ok(Ok(
-            if resource.role() == CResourceTransferRole::Borrow
-                && resource.snapshot() == CResourceSnapshot::Entry
+            if resource.role() == ResourceTransferRole::Borrow
+                && resource.snapshot() == ResourceSnapshot::Entry
                 && !resource.is_view()
             {
                 canonical_by_checked
@@ -12697,8 +12683,8 @@ fn evaluate_contract_return_resource_context(
     // A clause whose address loads a cell a later returned clause supplies
     // waits for it: clause order does not decide what a contract returns,
     // just as it does not decide what it requires.
-    let mut deferred: Vec<(usize, &CResourceSpec, CRuntimeError)> = Vec::new();
-    let mut returned: Vec<CResourceFact> = Vec::new();
+    let mut deferred: Vec<(usize, &ResourceSpec, RuntimeError)> = Vec::new();
+    let mut returned: Vec<ResourceFact> = Vec::new();
     for (clause_index, resource) in interface.resource_ensures().iter().take(count).enumerate() {
         if let Some(guard) = resource.guard() {
             match evaluate_guarded_contract_condition_with_loop_entry(
@@ -12711,15 +12697,15 @@ fn evaluate_contract_return_resource_context(
                 Some(true) => {}
                 Some(false) => continue,
                 None => {
-                    return Ok(Err(CRuntimeError::FunctionContract(
+                    return Ok(Err(RuntimeError::FunctionContract(
                         "could not select a conditional resource effect: its pre-state condition is not proven"
                             .to_string(),
                     )))
                 }
             }
         }
-        let entry_borrow = (resource.role() == CResourceTransferRole::Borrow
-            && resource.snapshot() == CResourceSnapshot::Entry
+        let entry_borrow = (resource.role() == ResourceTransferRole::Borrow
+            && resource.snapshot() == ResourceSnapshot::Entry
             && !resource.is_view())
         .then(|| borrowed_resource_key(resource))
         .and_then(|key| entry_borrows.get_mut(&key))
@@ -12799,14 +12785,14 @@ fn evaluate_contract_return_resource_context(
 /// owned twice; a view grants a read and no more.
 fn opened_composite_read_views(
     resources: &ResourceContext,
-    definitions: &[CCompositeResourceDefinition],
-    memory: &CMemory,
+    definitions: &[CompositeResourceDefinition],
+    memory: &Memory,
     assumptions: &PureFactContext,
-) -> Vec<CResourceFact> {
+) -> Vec<ResourceFact> {
     if !resources
         .facts()
         .iter()
-        .any(|fact| fact.is_own() && matches!(fact.resource(), CResource::Composite { .. }))
+        .any(|fact| fact.is_own() && matches!(fact.resource(), Resource::Composite { .. }))
     {
         return Vec::new();
     }
@@ -12821,8 +12807,8 @@ fn opened_composite_read_views(
         .facts()
         .iter()
         .filter_map(|fact| match fact {
-            CResourceFact::Own(resource @ CResource::Memory(_), _) => {
-                Some(CResourceFact::View(resource.clone()))
+            ResourceFact::Own(resource @ Resource::Memory(_), _) => {
+                Some(ResourceFact::View(resource.clone()))
             }
             _ => None,
         })
@@ -12831,7 +12817,7 @@ fn opened_composite_read_views(
 
 /// The contract's own clauses a transfer checked at entry, lent and consumed
 /// alike: the siblings an entry-snapshot returned clause may read through.
-fn transfer_entry_clauses(transfer: &CFunctionResourceTransfer) -> Vec<CCheckedResourceFact> {
+fn transfer_entry_clauses(transfer: &FunctionResourceTransfer) -> Vec<CheckedResourceFact> {
     transfer
         .borrowed_inputs
         .iter()
@@ -12843,7 +12829,7 @@ fn transfer_entry_clauses(transfer: &CFunctionResourceTransfer) -> Vec<CCheckedR
 /// The owned facts a call's lend escrowed. They are not in the
 /// caller residual for the duration of the call, but recovery composes each
 /// one back, so a check on what the caller will hold has to read them.
-fn escrowed_owners(transfer: &CFunctionResourceTransfer) -> &[CResourceFact] {
+fn escrowed_owners(transfer: &FunctionResourceTransfer) -> &[ResourceFact] {
     transfer
         .stable_view_plan
         .as_ref()
@@ -12854,16 +12840,16 @@ fn escrowed_owners(transfer: &CFunctionResourceTransfer) -> &[CResourceFact] {
 #[allow(clippy::too_many_arguments)]
 fn evaluate_function_return_resources(
     caller_resources_after_requirements: &ResourceContext,
-    escrowed_owners: &[CResourceFact],
-    canonical_borrowed_owners: &[(CResourceFact, CResourceFact)],
-    borrowed_inputs: &[CCheckedResourceFact],
-    entry_clauses: &[CCheckedResourceFact],
+    escrowed_owners: &[ResourceFact],
+    canonical_borrowed_owners: &[(ResourceFact, ResourceFact)],
+    borrowed_inputs: &[CheckedResourceFact],
+    entry_clauses: &[CheckedResourceFact],
     entry_state: &ExecutionState,
     post_state: &ExecutionState,
     function: &ProgramFunction,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<ContractReturnResources, CRuntimeError>> {
+) -> ExecutionResult<Result<ContractReturnResources, RuntimeError>> {
     evaluate_contract_return_resources(
         caller_resources_after_requirements,
         escrowed_owners,
@@ -12884,19 +12870,19 @@ fn evaluate_function_return_resources(
 #[allow(clippy::too_many_arguments)]
 fn evaluate_contract_return_resources(
     caller_resources_after_requirements: &ResourceContext,
-    escrowed_owners: &[CResourceFact],
-    canonical_borrowed_owners: &[(CResourceFact, CResourceFact)],
-    borrowed_inputs: &[CCheckedResourceFact],
-    entry_clauses: &[CCheckedResourceFact],
+    escrowed_owners: &[ResourceFact],
+    canonical_borrowed_owners: &[(ResourceFact, ResourceFact)],
+    borrowed_inputs: &[CheckedResourceFact],
+    entry_clauses: &[CheckedResourceFact],
     entry_state: &ExecutionState,
     post_state: &ExecutionState,
     interface_name: &str,
-    interface: &CFunctionContractInterface,
-    prepared_outputs: &[Option<CResourceFact>],
+    interface: &FunctionContractInterface,
+    prepared_outputs: &[Option<ResourceFact>],
     composition: ReturnResourceComposition,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<ContractReturnResources, CRuntimeError>> {
+) -> ExecutionResult<Result<ContractReturnResources, RuntimeError>> {
     let ensured_resources = match crate::instrumentation::measure_operation(
         interface_name,
         "contract resource transition",
@@ -12990,7 +12976,7 @@ fn evaluate_contract_return_resources(
             Ok(resources) => resources,
             Err(error) => return Ok(Err(resource_context_runtime_error(error))),
         };
-    let mut source_ranks = BTreeMap::<CResourceFact, usize>::new();
+    let mut source_ranks = BTreeMap::<ResourceFact, usize>::new();
     let Some(projected_cores_by_support) = crate::instrumentation::measure_operation(
         interface_name,
         "contract resource transition",
@@ -13040,7 +13026,7 @@ fn evaluate_contract_return_resources(
                 .collect::<Option<Vec<_>>>()
         },
     ) else {
-        return Ok(Err(CRuntimeError::FunctionContract(format!(
+        return Ok(Err(RuntimeError::FunctionContract(format!(
             "could not expand ensured composite resources after call ({})",
             bounded_contract_resource_frontier(&ensured_resources)
         ))));
@@ -13051,7 +13037,7 @@ fn evaluate_contract_return_resources(
     // Record their exact support so consuming that ownership removes only
     // its projections through the reverse index.
     let mut destination_occurrences = std::collections::BTreeMap::<
-        CResourceFact,
+        ResourceFact,
         Vec<crate::kernel::primitives::ResourceOccurrenceId>,
     >::new();
     for (fact, occurrence) in inserted_ensured_occurrences {
@@ -13060,7 +13046,7 @@ fn evaluate_contract_return_resources(
             .or_default()
             .push(occurrence);
     }
-    let mut destination_source_ranks = std::collections::BTreeMap::<CResourceFact, usize>::new();
+    let mut destination_source_ranks = std::collections::BTreeMap::<ResourceFact, usize>::new();
     let mut destination_by_source_occurrence = std::collections::BTreeMap::new();
     for (support, source_occurrence, _, _) in &projected_cores_by_support {
         let rank = destination_source_ranks.entry(support.clone()).or_default();
@@ -13069,7 +13055,7 @@ fn evaluate_contract_return_resources(
             .and_then(|occurrences| occurrences.get(*rank))
             .copied()
         else {
-            return Ok(Err(CRuntimeError::FunctionContract(format!(
+            return Ok(Err(RuntimeError::FunctionContract(format!(
                 "ensured resource support `{}` was not preserved after call",
                 support.diagnostic_summary()
             ))));
@@ -13086,7 +13072,7 @@ fn evaluate_contract_return_resources(
         // population family, or of more than one unit, keep the observation
         // reading rather than an escaping loan.
         let is_population = match support.resource() {
-            CResource::Composite { name, .. } => {
+            Resource::Composite { name, .. } => {
                 support.owned_quantity_term() != Some(&MachineTerm::constant(1))
                     || post_state.observes_population_family(name)
                     || entry_state.observes_population_family(name)
@@ -13117,7 +13103,7 @@ fn evaluate_contract_return_resources(
             .get(&source_occurrence)
             .copied()
         else {
-            return Ok(Err(CRuntimeError::FunctionContract(format!(
+            return Ok(Err(RuntimeError::FunctionContract(format!(
                 "ensured resource support `{}` was not preserved after call",
                 support.diagnostic_summary()
             ))));
@@ -13148,8 +13134,8 @@ pub(crate) struct ContractReturnResources {
     /// The explicit output delta, without the caller's unrelated frame.
     pub(crate) output_resources: ResourceContext,
     pub(crate) return_resources: ResourceContext,
-    pub(crate) ensured_views: Vec<CResourceFact>,
-    pub(crate) produced_borrowing_pieces: Vec<(CResourceFact, CResourceFact)>,
+    pub(crate) ensured_views: Vec<ResourceFact>,
+    pub(crate) produced_borrowing_pieces: Vec<(ResourceFact, ResourceFact)>,
 }
 
 /// Checks every produced or ensured composite's body against the context it
@@ -13169,12 +13155,12 @@ pub(crate) struct ContractReturnResources {
 fn produced_composite_frontier_conflict(
     destination: &ResourceContext,
     ensured: &ResourceContext,
-    definitions: &[CCompositeResourceDefinition],
-    memory: &CMemory,
+    definitions: &[CompositeResourceDefinition],
+    memory: &Memory,
     assumptions: &PureFactContext,
-) -> Option<CRuntimeError> {
+) -> Option<RuntimeError> {
     for produced in ensured.facts() {
-        let CResource::Composite { name, .. } = produced.resource() else {
+        let Resource::Composite { name, .. } = produced.resource() else {
             continue;
         };
         if !produced.is_own() {
@@ -13201,10 +13187,10 @@ fn produced_composite_frontier_conflict(
             piece.is_own()
                 && matches!(
                     piece.resource(),
-                    CResource::Memory(_)
-                        | CResource::PopulationAuthority(_)
-                        | CResource::Instance(_)
-                        | CResource::Composite { .. }
+                    Resource::Memory(_)
+                        | Resource::PopulationAuthority(_)
+                        | Resource::Instance(_)
+                        | Resource::Composite { .. }
                 )
         }) {
             continue;
@@ -13220,7 +13206,7 @@ fn produced_composite_frontier_conflict(
             .and_then(MachineTerm::as_const)
             != Some(1)
         {
-            return Some(CRuntimeError::FunctionContract(format!(
+            return Some(RuntimeError::FunctionContract(format!(
                 "a produced quantity of `{name}` other than one owns memory in its \
                  body, so its units would own the same range more than once"
             )));
@@ -13247,7 +13233,7 @@ fn produced_composite_frontier_conflict(
             .unwrap_or(produced);
         let held =
             conflicting_destination_fact(destination, &error).unwrap_or_else(|| piece.clone());
-        return Some(CRuntimeError::ProducedCompositeOverlapsHeldResource {
+        return Some(RuntimeError::ProducedCompositeOverlapsHeldResource {
             produced: Box::new(produced.clone()),
             piece: Box::new(piece.clone()),
             held: Box::new(held),
@@ -13261,7 +13247,7 @@ fn produced_composite_frontier_conflict(
 fn conflicting_destination_fact(
     destination: &ResourceContext,
     error: &ResourceContextValidityError,
-) -> Option<CResourceFact> {
+) -> Option<ResourceFact> {
     match error {
         ResourceContextValidityError::InvalidExclusiveAccess(fact)
         | ResourceContextValidityError::DuplicateOwnedResourceFact(fact) => Some(fact.clone()),
@@ -13283,22 +13269,22 @@ fn conflicting_destination_fact(
 /// Whether a requirement asks for a quantity of a resource population other
 /// than the unit.
 ///
-/// Only `CResourceSpec::quantified` builds one, and only over a composite or
+/// Only `ResourceSpec::quantified` builds one, and only over a composite or
 /// token term, so this is exactly the `N of p` clause. It is not a claim
 /// about one owned entry: the caller holds a representative unit while the
 /// declared cardinality lives in the tracked population, so the count is
 /// decided by the counted-population transition and the definitional route,
 /// never by an exact-entry reservation.
-fn requirement_is_population_quantity(requirement: &CCheckedResourceFact) -> bool {
+fn requirement_is_population_quantity(requirement: &CheckedResourceFact) -> bool {
     matches!(
         requirement.fact.resource(),
-        CResource::Composite { .. } | CResource::Token { .. }
+        Resource::Composite { .. } | Resource::Token { .. }
     ) && requirement.fact.is_own()
         && requirement.fact.owned_quantity_term() != Some(&MachineTerm::constant(1))
 }
 
-fn resource_fact_composite_head(fact: &CResourceFact) -> Option<(bool, &str)> {
-    let CResource::Composite { name, .. } = fact.resource() else {
+fn resource_fact_composite_head(fact: &ResourceFact) -> Option<(bool, &str)> {
+    let Resource::Composite { name, .. } = fact.resource() else {
         return None;
     };
     Some((fact.is_own(), name))
@@ -13310,10 +13296,10 @@ pub(super) fn prepare_function_contract_entry_state_with_values(
     argument_values: &[ProgramValue],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<ExecutionState, CRuntimeError>> {
+) -> ExecutionResult<Result<ExecutionState, RuntimeError>> {
     let Some(callee_state) = bind_contract_proof_arguments(caller_state, function, argument_values)
     else {
-        return Ok(Err(CRuntimeError::FunctionContract(format!(
+        return Ok(Err(RuntimeError::FunctionContract(format!(
             "could not bind contract-entry arguments for {}",
             function.name()
         ))));
@@ -13352,7 +13338,7 @@ pub(super) fn prepare_function_contract_entry_state_with_values(
 /// are about to introduce it) is bound to a fresh symbolic pointer chosen
 /// deterministically from the variables already in use.
 pub(super) fn bind_composite_witnesses(
-    definition: &CCompositeResourceDefinition,
+    definition: &CompositeResourceDefinition,
     arguments: &[AlgebraicValue],
     state: &mut ExecutionState,
     assumptions: &PureFactContext,
@@ -13364,7 +13350,7 @@ pub(super) fn bind_composite_witnesses(
 /// [`bind_composite_witnesses`] with the held resource facts supplied
 /// separately, for callers whose evaluation state carries no resources.
 pub(super) fn bind_composite_witnesses_with_held(
-    definition: &CCompositeResourceDefinition,
+    definition: &CompositeResourceDefinition,
     arguments: &[AlgebraicValue],
     state: &mut ExecutionState,
     held: &ResourceContext,
@@ -13449,7 +13435,7 @@ pub(super) fn bind_composite_witnesses_with_held(
 /// the body would consume, if the body has such a clause and exactly one
 /// held fact of that composite exists.
 fn held_child_witness(
-    definition: &CCompositeResourceDefinition,
+    definition: &CompositeResourceDefinition,
     witness: &str,
     arguments: &[AlgebraicValue],
     resources: &ResourceContext,
@@ -13473,7 +13459,7 @@ fn held_child_witness(
         .facts()
         .iter()
         .filter_map(|fact| match fact.resource() {
-            CResource::Composite { name, arguments } if name == child_name => {
+            Resource::Composite { name, arguments } if name == child_name => {
                 match arguments.as_ref() {
                     [AlgebraicValue::C(ProgramValue::Pointer(pointer))] => {
                         Some(pointer.pointer().clone())
@@ -13522,7 +13508,7 @@ fn witness_origin_word<'a>(fact: &'a SpecProposition, witness: &str) -> Option<&
         }
         SpecProposition::Comparison {
             left,
-            operator: CComparisonOperator::Equal,
+            operator: ComparisonOperator::Equal,
             right,
         } => {
             if mentions_witness_address(right, witness) {
@@ -13546,7 +13532,7 @@ fn witness_origin_word<'a>(fact: &'a SpecProposition, witness: &str) -> Option<&
 pub enum ResourceRewriteRefusal {
     Message(&'static str),
     OwnedMessage(String),
-    BodyResourceMissing(Box<CResourceFact>),
+    BodyResourceMissing(Box<ResourceFact>),
     ChildArgumentNotEstablished {
         child: String,
         index: usize,
@@ -14062,7 +14048,7 @@ fn body_fact_is_established_through_a_pointer_alias(
 pub(crate) fn rewrite_resource_instance(
     state: &ExecutionState,
     instance: &ResourceInstance,
-    definition: &CCompositeResourceDefinition,
+    definition: &CompositeResourceDefinition,
     assumptions: &PureFactContext,
     unfold: bool,
 ) -> Result<(ExecutionState, Vec<Proposition>), ResourceRewriteRefusal> {
@@ -14083,10 +14069,10 @@ pub(crate) fn rewrite_resource_instance(
 /// declared resource is looked up in the registered definitions, so the
 /// child's own parameters and fields decide what the rewrite checks.
 pub(in crate::kernel) fn child_composite_definition<'a>(
-    definition: &'a CCompositeResourceDefinition,
-    definitions: &'a [CCompositeResourceDefinition],
-    child: &CResourceChildSpec,
-) -> Result<&'a CCompositeResourceDefinition, &'static str> {
+    definition: &'a CompositeResourceDefinition,
+    definitions: &'a [CompositeResourceDefinition],
+    child: &ResourceChildSpec,
+) -> Result<&'a CompositeResourceDefinition, &'static str> {
     if child.resource == definition.name() {
         return Ok(definition);
     }
@@ -14132,7 +14118,7 @@ pub(crate) fn arm_algebraic_payload_spelling<'a>(
 fn check_instance_resource_arguments(
     evaluation: &ExecutionState,
     instance: &ResourceInstance,
-    definition: &CCompositeResourceDefinition,
+    definition: &CompositeResourceDefinition,
     assumptions: &PureFactContext,
 ) -> Result<(), ResourceRewriteRefusal> {
     if instance.resource_arguments().len() != definition.resource_parameters().len() {
@@ -14168,7 +14154,7 @@ fn check_instance_resource_arguments(
                     super::api::describe_certification_runtime_error(&error)
                 ))
             })?;
-        let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = fact else {
+        let ResourceFact::Own(Resource::Composite { name, arguments }, quantity) = fact else {
             return Err("resource reference parameter requires an exclusive resource type".into());
         };
         let description = reference.description();
@@ -14204,8 +14190,8 @@ fn check_instance_resource_arguments(
 pub(crate) fn rewrite_resource_instance_selecting_children(
     state: &ExecutionState,
     instance: &ResourceInstance,
-    definition: &CCompositeResourceDefinition,
-    definitions: &[CCompositeResourceDefinition],
+    definition: &CompositeResourceDefinition,
+    definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
     unfold: bool,
     selected_children: Option<&[(String, Variable)]>,
@@ -14255,8 +14241,8 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
 pub(crate) fn selected_instance_child_names(
     state: &ExecutionState,
     instance: &ResourceInstance,
-    definition: &CCompositeResourceDefinition,
-    definitions: &[CCompositeResourceDefinition],
+    definition: &CompositeResourceDefinition,
+    definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
 ) -> Option<Vec<String>> {
     let children = if definition.matched.is_some() {
@@ -14294,8 +14280,8 @@ pub(crate) fn selected_instance_child_names(
 fn rewrite_resource_instance_selecting_children_unspelled(
     state: &ExecutionState,
     instance: &ResourceInstance,
-    definition: &CCompositeResourceDefinition,
-    definitions: &[CCompositeResourceDefinition],
+    definition: &CompositeResourceDefinition,
+    definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
     unfold: bool,
     selected_children: Option<&[(String, Variable)]>,
@@ -14321,7 +14307,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
         );
     }
     let folded_instance = instance.clone();
-    let folded = CResourceFact::own(CResource::Instance(folded_instance.clone()));
+    let folded = ResourceFact::own(Resource::Instance(folded_instance.clone()));
     if unfold {
         if state.resources.owned_instance(instance.identity) != Some(instance) {
             return Err("instance is not exclusively owned in folded form".into());
@@ -14502,7 +14488,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     if identities.len() != explicit_children.len() || identities.contains(&instance.identity) {
         return Err("child selection must name every selected arm child exactly once".into());
     }
-    let body_specs: &[CResourceSpec] = if active {
+    let body_specs: &[ResourceSpec] = if active {
         selected.map_or(&definition.contains, |arm| &arm.contains)
     } else {
         &[]
@@ -14516,7 +14502,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     let mut opening_facts = Vec::new();
     if unfold {
         for resource in body_specs {
-            let CResourceQuantity::Count(quantity) = resource.quantity() else {
+            let ResourceQuantity::Count(quantity) = resource.quantity() else {
                 continue;
             };
             // A false clause guard owns no quantity at all. Decide the
@@ -14580,7 +14566,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             .filter(|fact| match fact {
                 SpecProposition::Comparison {
                     left: SpecExpression::ProgramExpression(ProgramExpression::Variable(left)),
-                    operator: CComparisonOperator::Equal,
+                    operator: ComparisonOperator::Equal,
                     right: SpecExpression::ProgramExpression(ProgramExpression::Variable(right)),
                 } => {
                     evaluation
@@ -14619,14 +14605,14 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     // A contained authority is exclusive custody, not a readable footprint.
     // Name it from its declared type; the fold below consumes the caller's
     // actual authority, and an unfold returns the one this instance holds.
-    let (authority_specs, body_specs): (Vec<&CResourceSpec>, Vec<&CResourceSpec>) = body_specs
+    let (authority_specs, body_specs): (Vec<&ResourceSpec>, Vec<&ResourceSpec>) = body_specs
         .iter()
-        .partition(|spec| matches!(spec.term(), CResourceTerm::PopulationAuthority { .. }));
+        .partition(|spec| matches!(spec.term(), ResourceTerm::PopulationAuthority { .. }));
     let body_specs = body_specs.into_iter().cloned().collect::<Vec<_>>();
     let mut authorities = Vec::with_capacity(authority_specs.len());
     for spec in authority_specs {
-        if spec.access() != CResourceAccessMode::Own
-            || spec.quantity() != &CResourceQuantity::One
+        if spec.access() != ResourceAccessMode::Own
+            || spec.quantity() != &ResourceQuantity::One
             || spec.guard().is_some()
         {
             return Err("an instance body authority requires the creation ledger".into());
@@ -14645,7 +14631,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                 super::api::describe_certification_runtime_error(&error)
             ))
         })?;
-        let CResource::PopulationAuthority(description) = authority.resource() else {
+        let Resource::PopulationAuthority(description) = authority.resource() else {
             return Err("instance body authority is not a population authority".into());
         };
         if !state.recognizes_population_authority(description) {
@@ -14768,7 +14754,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                     return Err("recursive child argument requires a proved, readable expression");
                 }
                 match &paths[0].outcome {
-                    CExpressionOutcome::Value(value) => {
+                    ExpressionOutcome::Value(value) => {
                         let value = coerce_c_function_argument_without_obligations(
                             &value.native(),
                             parameter,
@@ -14800,8 +14786,8 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             .iter()
             .map(|source| {
                 match source {
-                    CResourceChildField::Constructor(index) => constructor_fields.get(*index),
-                    CResourceChildField::Parent(index) => instance.fields.get(*index),
+                    ResourceChildField::Constructor(index) => constructor_fields.get(*index),
+                    ResourceChildField::Parent(index) => instance.fields.get(*index),
                 }
                 .cloned()
                 .ok_or("invalid child field binding")
@@ -14893,7 +14879,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
         introduced_children.push(child_instance.clone());
         body = body
             .try_compose_into_valid_context_delaying_normalization(
-                [CResourceFact::own(CResource::Instance(
+                [ResourceFact::own(Resource::Instance(
                     child_instance.clone(),
                 ))],
                 assumptions,
@@ -14920,12 +14906,12 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             next.resources = next
                 .resources
                 .without_fact_incrementally(
-                    &CResourceFact::own(CResource::Instance(child.clone())),
+                    &ResourceFact::own(Resource::Instance(child.clone())),
                     assumptions,
                 )
                 .ok_or_else(|| {
-                    ResourceRewriteRefusal::BodyResourceMissing(Box::new(CResourceFact::own(
-                        CResource::Instance(child.clone()),
+                    ResourceRewriteRefusal::BodyResourceMissing(Box::new(ResourceFact::own(
+                        Resource::Instance(child.clone()),
                     )))
                 })?;
         }
@@ -14962,8 +14948,8 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     } else {
         body.facts()
             .iter()
-            .filter_map(CResourceFact::memory_own_range)
-            .map(|range| CResourceFact::view_memory(range.clone()))
+            .filter_map(ResourceFact::memory_own_range)
+            .map(|range| ResourceFact::view_memory(range.clone()))
             .collect::<Vec<_>>()
     };
     facts.push(Proposition::CResourceComposition(body));
@@ -15074,7 +15060,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     // or freed. These views belong to the constructed successor and travel
     // with the resource exchange's retained evidence.
     if !unfold && let Some(folded) = next.resources.owned_instance(instance.identity).cloned() {
-        let owner = CResourceFact::own(CResource::Instance(folded.clone()));
+        let owner = ResourceFact::own(Resource::Instance(folded.clone()));
         if let Some((occurrence, _)) = next.resources.unique_owned_occurrence_for_fact(&owner) {
             // The cells are the ones this fold just consumed: the body the
             // rewrite evaluated, with the selected arm's constructor
@@ -15145,7 +15131,7 @@ pub use instance_case_selection::*;
 pub(super) fn loop_instance_guard(
     state: &ExecutionState,
     instance: &ResourceInstance,
-    definitions: &[CCompositeResourceDefinition],
+    definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
 ) -> Result<Option<(Pointer, ConditionTerm)>, String> {
     let Ok(index) = definitions.binary_search_by(|d| {
@@ -15171,7 +15157,7 @@ pub(super) fn loop_instance_guard(
     let [spec] = definition.contains.as_slice() else {
         return Ok(None);
     };
-    let CResourceTerm::MutexGuard { mutex, snapshot } = spec.term() else {
+    let ResourceTerm::MutexGuard { mutex, snapshot } = spec.term() else {
         return Ok(None);
     };
     let Some(condition) = definition.condition() else {
@@ -15181,14 +15167,14 @@ pub(super) fn loop_instance_guard(
         || !definition.witnesses.is_empty()
         || definition.instance_schema.as_ref() != Some(instance.schema())
         || spec.guard().is_some()
-        || spec.access() != CResourceAccessMode::Own
-        || spec.quantity() != &CResourceQuantity::One
+        || spec.access() != ResourceAccessMode::Own
+        || spec.quantity() != &ResourceQuantity::One
         || !definition.facts.is_empty()
         || definition.recursive
         || definition.parameters.len() != instance.arguments().len()
-        || *snapshot != CResourceSnapshot::Current
-        || spec.snapshot() != CResourceSnapshot::Current
-        || spec.role() != CResourceTransferRole::Consume
+        || *snapshot != ResourceSnapshot::Current
+        || spec.snapshot() != ResourceSnapshot::Current
+        || spec.role() != ResourceTransferRole::Consume
     {
         return Err("conditional loop guard requires a direct guard resource body".into());
     }
@@ -15244,7 +15230,7 @@ pub(super) fn loop_instance_guard(
 pub(in crate::kernel) fn instance_body_guard_case(
     state: &ExecutionState,
     instance: &ResourceInstance,
-    definition: &CCompositeResourceDefinition,
+    definition: &CompositeResourceDefinition,
     assumptions: &PureFactContext,
 ) -> Option<bool> {
     let evaluation = instance_body_evaluation(state, instance, definition).ok()?;
@@ -15258,9 +15244,9 @@ pub(in crate::kernel) fn instance_body_guard_case(
 
 pub(super) fn expand_composite_resource_fact(
     context: &ResourceContext,
-    composite: &CResourceFact,
-    definitions: &[CCompositeResourceDefinition],
-    memory: &CMemory,
+    composite: &ResourceFact,
+    definitions: &[CompositeResourceDefinition],
+    memory: &Memory,
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
     expand_composite_resource_fact_with_children(
@@ -15279,9 +15265,9 @@ pub(super) fn expand_composite_resource_fact(
 /// from the definition and the current memory, never from the caller's
 /// ambient resource context or its own list of exposed facts (D2 law 10).
 pub(crate) fn checked_composite_projection_evidence(
-    viewed: &CResourceFact,
-    definitions: &[CCompositeResourceDefinition],
-    memory: &CMemory,
+    viewed: &ResourceFact,
+    definitions: &[CompositeResourceDefinition],
+    memory: &Memory,
     assumptions: &PureFactContext,
 ) -> Option<CompositeProjectionEvidence> {
     // Projection checks the selected head alone. Checked construction attaches
@@ -15304,12 +15290,12 @@ pub(crate) fn checked_composite_projection_evidence(
 
 pub(super) fn expand_composite_resource_fact_with_children(
     context: &ResourceContext,
-    composite: &CResourceFact,
-    definitions: &[CCompositeResourceDefinition],
-    memory: &CMemory,
+    composite: &ResourceFact,
+    definitions: &[CompositeResourceDefinition],
+    memory: &Memory,
     assumptions: &PureFactContext,
-) -> Option<(ResourceContext, Vec<CResourceFact>, Vec<CResourceFact>)> {
-    let CResource::Composite { name, arguments } = composite.resource() else {
+) -> Option<(ResourceContext, Vec<ResourceFact>, Vec<ResourceFact>)> {
+    let Resource::Composite { name, arguments } = composite.resource() else {
         return None;
     };
     let definition = &definitions[definitions
@@ -15433,7 +15419,7 @@ pub(super) fn expand_composite_resource_fact_with_children(
     } else {
         child_facts
             .iter()
-            .map(|fact| CResourceFact::View(fact.resource().clone()))
+            .map(|fact| ResourceFact::View(fact.resource().clone()))
             .collect()
     };
     let children = crate::instrumentation::measure_operation(
@@ -15449,7 +15435,7 @@ pub(super) fn expand_composite_resource_fact_with_children(
         children
             .facts()
             .iter()
-            .map(|fact| CResourceFact::View(fact.resource().clone()))
+            .map(|fact| ResourceFact::View(fact.resource().clone()))
             .collect()
     };
     let mut expanded = expansion_base.clone();
@@ -15510,13 +15496,13 @@ pub(super) fn expand_composite_resource_fact_with_children(
 
 fn resource_context_contains_exact_owned_fact(
     context: &ResourceContext,
-    required: &CResourceFact,
+    required: &ResourceFact,
     assumptions: &PureFactContext,
 ) -> bool {
     if !required.is_own() {
         return false;
     }
-    if let CResourceFact::Own(CResource::Memory(required_range), _) = required {
+    if let ResourceFact::Own(Resource::Memory(required_range), _) = required {
         // The pieces lying inside the required range start inside it, so
         // the address index's candidates for that range include them all.
         let exact_parts = context
@@ -15670,10 +15656,10 @@ pub(crate) fn evaluate_guarded_contract_condition_with_loop_entry(
 fn resource_spec_guard_is_active(
     entry_state: &ExecutionState,
     state: &ExecutionState,
-    resource: &CResourceSpec,
+    resource: &ResourceSpec,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<bool, CRuntimeError>> {
+) -> ExecutionResult<Result<bool, RuntimeError>> {
     let Some(guard) = resource.guard() else {
         return Ok(Ok(true));
     };
@@ -15685,7 +15671,7 @@ fn resource_spec_guard_is_active(
         budget,
     ) {
         Some(active) => Ok(Ok(active)),
-        None => Ok(Err(CRuntimeError::FunctionContract(
+        None => Ok(Err(RuntimeError::FunctionContract(
             "could not select a conditional resource effect: its pre-state condition is not proven"
                 .to_string(),
         ))),
@@ -15693,7 +15679,7 @@ fn resource_spec_guard_is_active(
 }
 
 fn evaluate_composite_resource_body_condition(
-    definition: &CCompositeResourceDefinition,
+    definition: &CompositeResourceDefinition,
     state: &ExecutionState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -15705,8 +15691,8 @@ fn evaluate_composite_resource_body_condition(
 
 pub(super) fn expand_all_composite_resource_facts(
     context: &ResourceContext,
-    definitions: &[CCompositeResourceDefinition],
-    memory: &CMemory,
+    definitions: &[CompositeResourceDefinition],
+    memory: &Memory,
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
     expand_all_composite_resource_facts_with_composites(context, definitions, memory, assumptions)
@@ -15717,10 +15703,10 @@ pub(super) fn expand_all_composite_resource_facts(
 /// the expansion opened, nested ones included.
 pub(super) fn expand_all_composite_resource_facts_with_composites(
     context: &ResourceContext,
-    definitions: &[CCompositeResourceDefinition],
-    memory: &CMemory,
+    definitions: &[CompositeResourceDefinition],
+    memory: &Memory,
     assumptions: &PureFactContext,
-) -> Option<(ResourceContext, Vec<CResourceFact>)> {
+) -> Option<(ResourceContext, Vec<ResourceFact>)> {
     let mut opened = Vec::new();
     let mut cached = context.clone();
     let supports = context
@@ -15766,14 +15752,14 @@ pub(super) fn expand_all_composite_resource_facts_with_composites(
 /// that child from a resource declaration.
 fn expand_checked_authority_controls(
     context: &ResourceContext,
-    definitions: &[CCompositeResourceDefinition],
+    definitions: &[CompositeResourceDefinition],
     state: &ExecutionState,
     assumptions: &PureFactContext,
-) -> Option<(ResourceContext, Vec<CResourceFact>)> {
+) -> Option<(ResourceContext, Vec<ResourceFact>)> {
     let mut expanded = context.clone();
     let mut controls = Vec::new();
     for fact in context.composite_facts() {
-        let CResource::Composite { name, .. } = fact.resource() else {
+        let Resource::Composite { name, .. } = fact.resource() else {
             continue;
         };
         let definition = definitions
@@ -15782,7 +15768,7 @@ fn expand_checked_authority_controls(
         if !definition
             .contains()
             .iter()
-            .any(|child| matches!(child.term(), CResourceTerm::PopulationAuthority { .. }))
+            .any(|child| matches!(child.term(), ResourceTerm::PopulationAuthority { .. }))
         {
             continue;
         }
@@ -15809,7 +15795,7 @@ fn expand_checked_authority_controls(
 
 pub(super) fn expand_all_composite_resource_facts_at_state(
     context: &ResourceContext,
-    definitions: &[CCompositeResourceDefinition],
+    definitions: &[CompositeResourceDefinition],
     state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
@@ -15822,8 +15808,8 @@ pub(super) fn expand_all_composite_resource_facts_at_state(
 /// decidable in the current contract path. Unknown branches remain folded.
 fn expand_decidable_composite_resource_frontier(
     context: &ResourceContext,
-    definitions: &[CCompositeResourceDefinition],
-    memory: &CMemory,
+    definitions: &[CompositeResourceDefinition],
+    memory: &Memory,
     assumptions: &PureFactContext,
 ) -> ResourceContext {
     let mut expanded = context.clone();
@@ -15832,7 +15818,7 @@ fn expand_decidable_composite_resource_frontier(
         context
             .facts()
             .iter()
-            .filter(|fact| matches!(fact.resource(), CResource::Composite { .. }))
+            .filter(|fact| matches!(fact.resource(), Resource::Composite { .. }))
             .cloned()
             .collect::<Vec<_>>(),
     );
@@ -15849,7 +15835,7 @@ fn expand_decidable_composite_resource_frontier(
             continue;
         }
         for child in next.facts().iter().filter(|fact| {
-            matches!(fact.resource(), CResource::Composite { .. }) && !seen.contains(*fact)
+            matches!(fact.resource(), Resource::Composite { .. }) && !seen.contains(*fact)
         }) {
             pending.push_back(child.clone());
         }
@@ -15862,9 +15848,9 @@ fn expand_decidable_composite_resource_frontier(
 /// unrelated and deeper recursive resources folded.
 pub(super) fn expose_composite_resource_fact(
     context: &ResourceContext,
-    target: &CResourceFact,
-    definitions: &[CCompositeResourceDefinition],
-    memory: &CMemory,
+    target: &ResourceFact,
+    definitions: &[CompositeResourceDefinition],
+    memory: &Memory,
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
     // Exposure unfolds composites until the target is held. A memory target
@@ -15899,7 +15885,7 @@ pub(super) fn expose_composite_resource_fact(
         let mut composites = context
             .facts()
             .iter()
-            .filter(|fact| matches!(fact.resource(), CResource::Composite { .. }))
+            .filter(|fact| matches!(fact.resource(), Resource::Composite { .. }))
             .cloned()
             .collect::<Vec<_>>();
         if let Some(required) = target.memory_range() {
@@ -15943,10 +15929,10 @@ pub(super) fn function_return_resources_definitionally_established(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
-    outcome: &CFunctionOutcome,
+    outcome: &FunctionOutcome,
     assumptions: &PureFactContext,
 ) -> bool {
-    let CFunctionOutcome::Return {
+    let FunctionOutcome::Return {
         value,
         state: return_state,
     } = outcome
@@ -16046,7 +16032,7 @@ pub(super) fn function_return_resources_definitionally_established(
         return false;
     };
     for fact in expected.facts() {
-        if let CResource::MutexUse(identity) = fact.resource() {
+        if let Resource::MutexUse(identity) = fact.resource() {
             let Some(binding) = identity.binding else {
                 return false;
             };
@@ -16098,16 +16084,16 @@ pub(super) fn jointly_consume_returned_resource_units(
     available: &ResourceContext,
     required: &ResourceContext,
     state: &ExecutionState,
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
     assumptions: &PureFactContext,
 ) -> bool {
     fn consume(
         available: ResourceContext,
-        required: &CResourceFact,
+        required: &ResourceFact,
         state: &ExecutionState,
-        interface: &CFunctionContractInterface,
+        interface: &FunctionContractInterface,
         assumptions: &PureFactContext,
-        active: &mut BTreeSet<CResourceFact>,
+        active: &mut BTreeSet<ResourceFact>,
     ) -> Option<ResourceContext> {
         // Views are duplicable; the caller already checked their complete
         // definitional validity before entering this quantity check.
@@ -16129,7 +16115,7 @@ pub(super) fn jointly_consume_returned_resource_units(
         {
             return Some(remaining);
         }
-        let CResourceFact::Own(CResource::Composite { name, .. }, quantity) = required else {
+        let ResourceFact::Own(Resource::Composite { name, .. }, quantity) = required else {
             return None;
         };
         // Authority populations hold ledger fragments and stay linear: a
@@ -16159,7 +16145,7 @@ pub(super) fn jointly_consume_returned_resource_units(
                 state.memory(),
                 assumptions,
             )?;
-            if !unit && expanded.facts().iter().any(CResourceFact::is_own) {
+            if !unit && expanded.facts().iter().any(ResourceFact::is_own) {
                 return None;
             }
             // An empty expansion cannot manufacture a missing unit. A
@@ -16194,13 +16180,13 @@ pub(super) fn jointly_consume_returned_resource_units(
 fn check_mutex_helper_body_return(
     entry: &ExecutionState,
     returned: &ExecutionState,
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> Result<(), CRuntimeError> {
+) -> Result<(), RuntimeError> {
     use super::mutexes::helper_contracts::{self, HelperEffect};
     let Some(contract) = helper_contracts::classify(interface)
-        .map_err(|message| CRuntimeError::FunctionContract(message.into()))?
+        .map_err(|message| RuntimeError::FunctionContract(message.into()))?
     else {
         return Ok(());
     };
@@ -16209,7 +16195,7 @@ fn check_mutex_helper_body_return(
             if !helper_contracts::same_export_permission(entry, returned)
                 || !helper_contracts::permits_return(returned)
             {
-                return Err(CRuntimeError::FunctionContract(
+                return Err(RuntimeError::FunctionContract(
                     "acquiring helper must return its owned acquired guard and lifetime dependency"
                         .into(),
                 ));
@@ -16223,12 +16209,12 @@ fn check_mutex_helper_body_return(
                 budget,
             )
             .map_err(|_| {
-                CRuntimeError::FunctionContract(
+                RuntimeError::FunctionContract(
                     "mutex helper output evaluation exceeded its budget".into(),
                 )
             })??;
             if expected != actual {
-                return Err(CRuntimeError::MissingResource {
+                return Err(RuntimeError::MissingResource {
                     resource: Box::new(expected),
                 });
             }
@@ -16239,7 +16225,7 @@ fn check_mutex_helper_body_return(
                 .as_ref()
                 .is_some_and(|held| held.has_local_hold(returned.loan_participant))
             {
-                return Err(CRuntimeError::FunctionContract(
+                return Err(RuntimeError::FunctionContract(
                     "releasing helper must discharge its consumed guard acquisition".into(),
                 ));
             }
@@ -16261,9 +16247,9 @@ fn check_mutex_helper_body_return(
 /// folded, so it needs no second check.
 pub(super) fn resource_context_satisfies_definitional_fact(
     available: &ResourceContext,
-    required: &CResourceFact,
-    definitions: &[CCompositeResourceDefinition],
-    memory: &CMemory,
+    required: &ResourceFact,
+    definitions: &[CompositeResourceDefinition],
+    memory: &Memory,
     assumptions: &PureFactContext,
 ) -> bool {
     if available.satisfies_fact(required, assumptions) {
@@ -16305,13 +16291,13 @@ pub(super) fn resource_context_satisfies_definitional_fact(
 /// and the proof answers with an explicit `fold`. A body whose guard is false
 /// at `memory` asserts nothing; an undecided guard refuses.
 pub(super) fn assembled_composite_body_facts_hold(
-    composite: &CResourceFact,
-    definitions: &[CCompositeResourceDefinition],
-    memory: &CMemory,
+    composite: &ResourceFact,
+    definitions: &[CompositeResourceDefinition],
+    memory: &Memory,
     resources: &ResourceContext,
     assumptions: &PureFactContext,
 ) -> bool {
-    let CResource::Composite { name, arguments } = composite.resource() else {
+    let Resource::Composite { name, arguments } = composite.resource() else {
         return true;
     };
     let Some(definition) = definitions
@@ -16379,7 +16365,7 @@ pub(super) fn assembled_composite_body_facts_hold(
 /// True when every element of a constant-bounded memory range is concretely
 /// loadable, so a view of it is represented by the materialized cells rather
 /// than a resource fact.
-fn view_range_concretely_loadable(memory: &CMemory, range: &CMemoryRange) -> bool {
+fn view_range_concretely_loadable(memory: &Memory, range: &MemoryRange) -> bool {
     let (Some(start), Some(end)) = (range.constant_start(), range.constant_end()) else {
         return false;
     };
@@ -16406,18 +16392,18 @@ fn view_range_concretely_loadable(memory: &CMemory, range: &CMemoryRange) -> boo
 
 fn consume_resource_fact_definitionally(
     available: &ResourceContext,
-    required: &CResourceFact,
-    definitions: &[CCompositeResourceDefinition],
-    memory: &CMemory,
+    required: &ResourceFact,
+    definitions: &[CompositeResourceDefinition],
+    memory: &Memory,
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
     fn consume(
         available: &ResourceContext,
-        required: &CResourceFact,
-        definitions: &[CCompositeResourceDefinition],
-        memory: &CMemory,
+        required: &ResourceFact,
+        definitions: &[CompositeResourceDefinition],
+        memory: &Memory,
         assumptions: &PureFactContext,
-        seen: &mut BTreeSet<(ResourceContext, CResourceFact)>,
+        seen: &mut BTreeSet<(ResourceContext, ResourceFact)>,
     ) -> Option<ResourceContext> {
         if !seen.insert((available.clone(), required.clone())) {
             return None;
@@ -16425,7 +16411,7 @@ fn consume_resource_fact_definitionally(
         // A view of memory the caller has concretely materialized is freely
         // satisfiable: read access is represented by the materialized cells,
         // mirroring the local-block view rule at call transfer.
-        if let CResourceFact::View(CResource::Memory(range)) = required
+        if let ResourceFact::View(Resource::Memory(range)) = required
             && view_range_concretely_loadable(memory, range)
         {
             return Some(available.clone());
@@ -16494,7 +16480,7 @@ fn consume_resource_fact_definitionally(
         for composite in available
             .facts()
             .iter()
-            .filter(|fact| matches!(fact.resource(), CResource::Composite { .. }))
+            .filter(|fact| matches!(fact.resource(), Resource::Composite { .. }))
         {
             let Some(expanded_available) = crate::instrumentation::measure_operation(
                 "kernel",
@@ -16539,8 +16525,8 @@ fn consume_resource_fact_definitionally(
 pub(super) fn resource_context_definitionally_contains(
     available: &ResourceContext,
     required: &ResourceContext,
-    definitions: &[CCompositeResourceDefinition],
-    memory: &CMemory,
+    definitions: &[CompositeResourceDefinition],
+    memory: &Memory,
     assumptions: &PureFactContext,
 ) -> bool {
     let mut remaining = available.clone();
@@ -16564,8 +16550,8 @@ pub(super) fn resource_context_definitionally_contains(
 pub(super) fn resource_contexts_definitionally_equivalent_by_consumption(
     left: &ResourceContext,
     right: &ResourceContext,
-    definitions: &[CCompositeResourceDefinition],
-    memory: &CMemory,
+    definitions: &[CompositeResourceDefinition],
+    memory: &Memory,
     assumptions: &PureFactContext,
 ) -> bool {
     resource_context_definitionally_contains(left, right, definitions, memory, assumptions)
@@ -16574,11 +16560,11 @@ pub(super) fn resource_contexts_definitionally_equivalent_by_consumption(
 
 pub(crate) fn evaluate_function_resource_context(
     state: &ExecutionState,
-    resources: &[CResourceSpec],
-    definitions: &[CCompositeResourceDefinition],
+    resources: &[ResourceSpec],
+    definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<ResourceContext, CRuntimeError>> {
+) -> ExecutionResult<Result<ResourceContext, RuntimeError>> {
     evaluate_function_resource_context_with_metadata(
         state,
         resources,
@@ -16595,11 +16581,11 @@ pub(crate) fn evaluate_function_resource_context(
 /// must use this provenance-bearing result.
 pub(crate) fn evaluate_function_resource_context_with_metadata(
     state: &ExecutionState,
-    resources: &[CResourceSpec],
-    definitions: &[CCompositeResourceDefinition],
+    resources: &[ResourceSpec],
+    definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<(ResourceContext, Vec<CCheckedResourceFact>), CRuntimeError>> {
+) -> ExecutionResult<Result<(ResourceContext, Vec<CheckedResourceFact>), RuntimeError>> {
     evaluate_function_resource_context_with_normalization(
         state,
         resources,
@@ -16614,10 +16600,10 @@ pub(crate) fn evaluate_function_resource_context_with_metadata(
 /// bindings before normalization can combine unbound views.
 pub(crate) fn evaluate_loop_resource_context(
     state: &ExecutionState,
-    resources: &[CResourceSpec],
+    resources: &[ResourceSpec],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<ResourceContext, CRuntimeError>> {
+) -> ExecutionResult<Result<ResourceContext, RuntimeError>> {
     evaluate_function_resource_context_with_entry_and_normalization(
         state,
         state,
@@ -16633,12 +16619,12 @@ pub(crate) fn evaluate_loop_resource_context(
 
 fn evaluate_function_resource_context_with_normalization(
     state: &ExecutionState,
-    resources: &[CResourceSpec],
-    definitions: &[CCompositeResourceDefinition],
+    resources: &[ResourceSpec],
+    definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
     normalize: bool,
-) -> ExecutionResult<Result<(ResourceContext, Vec<CCheckedResourceFact>), CRuntimeError>> {
+) -> ExecutionResult<Result<(ResourceContext, Vec<CheckedResourceFact>), RuntimeError>> {
     evaluate_function_resource_context_with_entry_and_normalization(
         state,
         state,
@@ -16654,13 +16640,13 @@ fn evaluate_function_resource_context_with_normalization(
 fn evaluate_function_resource_context_with_entry_and_normalization(
     entry_state: &ExecutionState,
     state: &ExecutionState,
-    resources: &[CResourceSpec],
-    definitions: &[CCompositeResourceDefinition],
+    resources: &[ResourceSpec],
+    definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
     normalize: bool,
     inherit_view_bindings: bool,
-) -> ExecutionResult<Result<(ResourceContext, Vec<CCheckedResourceFact>), CRuntimeError>> {
+) -> ExecutionResult<Result<(ResourceContext, Vec<CheckedResourceFact>), RuntimeError>> {
     // `entry_state` supplies only expressions explicitly marked `old(...)`;
     // `state` supplies current/post expressions and the section's resulting
     // resource context.  Keeping both states here prevents repeated lowering
@@ -16720,7 +16706,7 @@ fn evaluate_function_resource_context_with_entry_and_normalization(
 /// **The rule.** For each pair (an entry clause whose fact is owned, an entry
 /// clause whose fact is viewed) this produces the ordinary explicit separation
 /// `separate(memory(X), memory(Y))` — `Proposition::CResourceSeparate` over
-/// two `CResource::Memory` operands, exactly the proposition a written
+/// two `Resource::Memory` operands, exactly the proposition a written
 /// `requires separate(memory(a[0..n]), memory(g[0..1]))` lowers to. Nothing
 /// new is invented: the Store ladder already spends it at
 /// `memory_provenance::typed_store_separated_ranges_evidence`, and the caller
@@ -16765,7 +16751,7 @@ fn evaluate_function_resource_context_with_entry_and_normalization(
 ///   `memory_provenance::owned_composition_store_separated_evidence` already
 ///   (Route B), and duplicating it here would be a second spelling of one rule.
 /// - A clause that is not plain memory — a composite, a token, an instance —
-///   has no `CMemoryRange` to name, and `separate(memory(..), memory(..))`
+///   has no `MemoryRange` to name, and `separate(memory(..), memory(..))`
 ///   cannot express its footprint without expanding it. Such a pair is
 ///   skipped outright rather than approximated; `owns *r` is *not* one
 ///   of those, because `object(r)` lowers to the plain range `r[0..size/4]`.
@@ -16782,7 +16768,7 @@ fn evaluate_function_resource_context_with_entry_and_normalization(
 /// `memory_ranges_proven_overlapping`), so recording an answer those queries
 /// reach anyway buys nothing and is paid for on every query.
 pub(crate) fn contract_entry_partition_facts(
-    entry_clauses: &[CCheckedResourceFact],
+    entry_clauses: &[CheckedResourceFact],
 ) -> Vec<Proposition> {
     let transferred = entry_clauses
         .iter()
@@ -16804,8 +16790,8 @@ pub(crate) fn contract_entry_partition_facts(
                 continue;
             }
             let fact = Proposition::CResourceSeparate {
-                left: Box::new(CResource::Memory((*owned).clone())),
-                right: Box::new(CResource::Memory(viewed.clone())),
+                left: Box::new(Resource::Memory((*owned).clone())),
+                right: Box::new(Resource::Memory(viewed.clone())),
             };
             if seen.insert(fact.clone()) {
                 facts.push(fact);
@@ -16837,11 +16823,11 @@ pub(crate) fn contract_entry_partition_facts(
 fn evaluate_resource_clauses_against_whole_section(
     entry_state: &ExecutionState,
     state: &ExecutionState,
-    resources: &[CResourceSpec],
-    definitions: &[CCompositeResourceDefinition],
+    resources: &[ResourceSpec],
+    definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<Vec<CCheckedResourceFact>, CRuntimeError>> {
+) -> ExecutionResult<Result<Vec<CheckedResourceFact>, RuntimeError>> {
     evaluate_resource_clauses_in_section(
         entry_state,
         state,
@@ -16860,26 +16846,26 @@ fn evaluate_resource_clauses_against_whole_section(
 fn evaluate_resource_clauses_in_section(
     entry_state: &ExecutionState,
     state: &ExecutionState,
-    resources: &[CResourceSpec],
-    definitions: &[CCompositeResourceDefinition],
+    resources: &[ResourceSpec],
+    definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
     require_complete: bool,
-) -> ExecutionResult<Result<Vec<CCheckedResourceFact>, CRuntimeError>> {
+) -> ExecutionResult<Result<Vec<CheckedResourceFact>, RuntimeError>> {
     let selected_load_values = if definitions.is_empty() {
         BTreeMap::new()
     } else {
         selected_instance_resource_load_values(state, definitions, assumptions)
     };
-    let mut evaluated: Vec<Option<CResourceFact>> = vec![None; resources.len()];
+    let mut evaluated: Vec<Option<ResourceFact>> = vec![None; resources.len()];
     let mut active = vec![true; resources.len()];
-    let mut supplied: Vec<CResourceFact> = Vec::new();
+    let mut supplied: Vec<ResourceFact> = Vec::new();
     // Each successful clause extends a shared persistent prefix. Rebuilding
     // every earlier clause for each new one makes a flat contract quadratic.
     let mut evaluation_resources = state.resources().clone();
     evaluation_resources.capture_empty_memory_input(assumptions);
-    let mut failures: Vec<Option<CRuntimeError>> = vec![None; resources.len()];
-    let mut dependencies: Vec<Vec<CResourceFact>> = vec![Vec::new(); resources.len()];
+    let mut failures: Vec<Option<RuntimeError>> = vec![None; resources.len()];
+    let mut dependencies: Vec<Vec<ResourceFact>> = vec![Vec::new(); resources.len()];
     let mut waiters = ResourceClauseWaiterIndex::default();
     for (index, resource) in resources.iter().enumerate() {
         match resource_spec_guard_is_active(entry_state, state, resource, assumptions, budget)? {
@@ -16906,7 +16892,7 @@ fn evaluate_resource_clauses_in_section(
                 // The scratch prefix may already contain this exact owned
                 // instance. Repeating it makes identity lookup ambiguous;
                 // the final clause context still checks duplicate ownership.
-                if !matches!(resource.resource(), CResource::Instance(_))
+                if !matches!(resource.resource(), Resource::Instance(_))
                     || !evaluation_resources.contains_exact_representation(&resource)
                 {
                     evaluation_resources =
@@ -17019,7 +17005,7 @@ fn evaluate_resource_clauses_in_section(
     {
         let error = failures[index]
             .take()
-            .unwrap_or_else(|| CRuntimeError::FunctionContract("unevaluated".to_string()));
+            .unwrap_or_else(|| RuntimeError::FunctionContract("unevaluated".to_string()));
         let cycle = refused
             .is_none()
             .then(|| {
@@ -17046,7 +17032,7 @@ fn evaluate_resource_clauses_in_section(
         .into_iter()
         .enumerate()
         .filter_map(|(index, fact)| {
-            fact.map(|fact| CCheckedResourceFact {
+            fact.map(|fact| CheckedResourceFact {
                 fact,
                 role: resources[index].role(),
                 snapshot: resources[index].snapshot(),
@@ -17060,7 +17046,7 @@ fn evaluate_resource_clauses_in_section(
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum ResourceClauseDependencyKey {
-    Fact(CResourceFact),
+    Fact(ResourceFact),
     MemoryBase(Pointer),
     MemoryBlock(PointerBlock),
 }
@@ -17123,7 +17109,7 @@ struct ResourceClauseWaiterIndex {
 /// is deliberately conservative: ranges that cannot be normalized into the
 /// fixed 32-bit coordinate universe remain on the symbolic block/base path.
 fn resource_clause_concrete_memory_interval(
-    range: &CMemoryRange,
+    range: &MemoryRange,
 ) -> Option<(ResourceClauseIntervalSpace, i64, i64)> {
     let (start, end) = crate::kernel::primitives::concrete_memory_range_bounds(range)?;
     if start >= end {
@@ -17173,11 +17159,11 @@ mod resource_clause_worklist_tests;
 fn evaluate_resource_clause_with_dependencies(
     entry_state: &ExecutionState,
     state: &ExecutionState,
-    resource: &CResourceSpec,
+    resource: &ResourceSpec,
     selected_load_values: &BTreeMap<(Pointer, ProgramType), ProgramValue>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<(Result<CResourceFact, CRuntimeError>, Vec<CResourceFact>)> {
+) -> ExecutionResult<(Result<ResourceFact, RuntimeError>, Vec<ResourceFact>)> {
     #[cfg(test)]
     record_resource_clause_attempt();
     let (result, dependencies) = capture_resource_dependencies(|| {
@@ -17202,14 +17188,14 @@ fn evaluate_resource_clause_with_dependencies(
 /// evaluation frame and is never the section's result.
 pub(in crate::kernel) fn resource_clause_section_supply(
     state: &ExecutionState,
-    supplied: &[CResourceFact],
-    definitions: &[CCompositeResourceDefinition],
+    supplied: &[ResourceFact],
+    definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
 ) -> ResourceContext {
     let mut base = state.resources().clone();
     base.capture_empty_memory_input(assumptions);
     for fact in supplied {
-        if !matches!(fact.resource(), CResource::Instance(_))
+        if !matches!(fact.resource(), Resource::Instance(_))
             || !base.contains_exact_representation(fact)
         {
             base = base.unchecked_with_fact(fact.clone());
@@ -17224,7 +17210,7 @@ pub(in crate::kernel) fn resource_clause_section_supply(
     let mut views = supplied
         .iter()
         .filter_map(|fact| match fact.resource() {
-            CResource::Instance(instance) => Some(instance),
+            Resource::Instance(instance) => Some(instance),
             _ => None,
         })
         .flat_map(|instance| instance_arm_read_authority(instance, definitions, state, assumptions))
@@ -17265,7 +17251,7 @@ pub(in crate::kernel) fn resource_clause_section_supply(
             .into_iter()
             .filter(|fact| expanded.contains_exact_representation(fact))
             .filter_map(|fact| match fact.resource() {
-                CResource::Memory(range) => Some(CResourceFact::view_memory(range.clone())),
+                Resource::Memory(range) => Some(ResourceFact::view_memory(range.clone())),
                 _ => None,
             }),
     );
@@ -17283,7 +17269,7 @@ pub(in crate::kernel) fn resource_clause_section_supply(
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ArmPublication {
     pub model_facts: Vec<Proposition>,
-    pub views: Vec<CResourceFact>,
+    pub views: Vec<ResourceFact>,
     pub arm_facts: Vec<Proposition>,
 }
 
@@ -17309,7 +17295,7 @@ pub(crate) struct ArmPublication {
 /// its own arms. Nothing project-wide or path-wide is scanned.
 pub(crate) fn publish_instance_arms(
     context: &ResourceContext,
-    definitions: &[CCompositeResourceDefinition],
+    definitions: &[CompositeResourceDefinition],
     state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> ArmPublication {
@@ -17320,7 +17306,7 @@ pub(crate) fn publish_instance_arms(
         .facts()
         .iter()
         .filter_map(|fact| match fact.resource() {
-            CResource::Instance(instance) => Some(instance),
+            Resource::Instance(instance) => Some(instance),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -17366,10 +17352,10 @@ pub(crate) fn publish_instance_arms(
 /// than the arms of the frontier.
 fn instance_arm_views(
     context: &ResourceContext,
-    definitions: &[CCompositeResourceDefinition],
+    definitions: &[CompositeResourceDefinition],
     state: &ExecutionState,
     assumptions: &PureFactContext,
-) -> Vec<CResourceFact> {
+) -> Vec<ResourceFact> {
     if definitions.is_empty() {
         return Vec::new();
     }
@@ -17377,7 +17363,7 @@ fn instance_arm_views(
         .facts()
         .iter()
         .filter_map(|fact| match fact.resource() {
-            CResource::Instance(instance) => Some(instance),
+            Resource::Instance(instance) => Some(instance),
             _ => None,
         })
         .flat_map(|instance| instance_arm_read_authority(instance, definitions, state, assumptions))
@@ -17409,10 +17395,10 @@ fn instance_arm_views(
 /// nothing.
 pub(super) fn instance_arm_read_authority(
     instance: &ResourceInstance,
-    definitions: &[CCompositeResourceDefinition],
+    definitions: &[CompositeResourceDefinition],
     state: &ExecutionState,
     assumptions: &PureFactContext,
-) -> Vec<CResourceFact> {
+) -> Vec<ResourceFact> {
     let Ok(index) = definitions.binary_search_by(|definition| {
         crate::instrumentation::record_deterministic_work(1);
         definition.name().cmp(instance.name())
@@ -17437,7 +17423,7 @@ pub(super) fn instance_arm_read_authority(
     let Ok(evaluation) = instance_body_evaluation(state, instance, definition) else {
         return Vec::new();
     };
-    let mut common: Option<Vec<CResourceFact>> = None;
+    let mut common: Option<Vec<ResourceFact>> = None;
     for variant in &variants {
         let Some(arm) = body.arms.iter().find(|arm| &arm.variant == variant) else {
             return Vec::new();
@@ -17485,12 +17471,12 @@ pub(super) fn instance_arm_read_authority(
 /// a body never re-enters this publication and nothing outside the instance
 /// is visited.
 pub(crate) fn unmatched_instance_body_views(
-    fact: &CResourceFact,
-    definitions: &[CCompositeResourceDefinition],
+    fact: &ResourceFact,
+    definitions: &[CompositeResourceDefinition],
     state: &ExecutionState,
     assumptions: &PureFactContext,
-) -> Vec<CResourceFact> {
-    let CResource::Instance(instance) = fact.resource() else {
+) -> Vec<ResourceFact> {
+    let Resource::Instance(instance) = fact.resource() else {
         return Vec::new();
     };
     let Ok(index) =
@@ -17524,10 +17510,10 @@ pub(crate) fn unmatched_instance_body_views(
 /// body.
 fn resource_clause_memory_views(
     evaluation: &ExecutionState,
-    contains: &[CResourceSpec],
-    definitions: &[CCompositeResourceDefinition],
+    contains: &[ResourceSpec],
+    definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
-) -> Option<Vec<CResourceFact>> {
+) -> Option<Vec<ResourceFact>> {
     crate::instrumentation::record_deterministic_work(1);
     let evaluation_assumptions = assumptions
         .clone()
@@ -17551,7 +17537,7 @@ fn resource_clause_memory_views(
     let expanded = if body_resources
         .facts()
         .iter()
-        .any(|fact| matches!(fact.resource(), CResource::Composite { .. }))
+        .any(|fact| matches!(fact.resource(), Resource::Composite { .. }))
     {
         expand_all_composite_resource_facts(
             &body_resources,
@@ -17569,7 +17555,7 @@ fn resource_clause_memory_views(
             .facts()
             .iter()
             .filter_map(|fact| match fact.resource() {
-                CResource::Memory(range) => Some(CResourceFact::view_memory(range.clone())),
+                Resource::Memory(range) => Some(ResourceFact::view_memory(range.clone())),
                 _ => None,
             })
             .collect(),
@@ -17633,7 +17619,7 @@ fn refutation_of_body_fact(proposition: &Proposition) -> Option<Proposition> {
 /// directly for that instance alone.
 pub(in crate::kernel) fn instance_arm_model_facts(
     instance: &ResourceInstance,
-    definitions: &[CCompositeResourceDefinition],
+    definitions: &[CompositeResourceDefinition],
     state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> Vec<Proposition> {
@@ -17651,7 +17637,7 @@ pub(in crate::kernel) fn instance_arm_model_facts(
 /// decide about the instance's model.
 fn instance_arm_refutation_facts(
     instance: &ResourceInstance,
-    definitions: &[CCompositeResourceDefinition],
+    definitions: &[CompositeResourceDefinition],
     state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> Vec<Proposition> {
@@ -17699,7 +17685,7 @@ fn instance_arm_refutation_facts(
     {
         return Vec::new();
     }
-    let constructor = |arm: &CResourceMatchArm| {
+    let constructor = |arm: &ResourceMatchArm| {
         let term = AlgebraicTerm {
             algebraic_type: model.algebraic_type.clone(),
             node: AlgebraicTermNode::Constructor {
@@ -17712,7 +17698,7 @@ fn instance_arm_refutation_facts(
     // The body is evaluated, and arms are refuted, only for an answer this
     // call can still publish.
     let evaluated = std::cell::OnceCell::new();
-    let refuted = |arm: &CResourceMatchArm| -> Option<bool> {
+    let refuted = |arm: &ResourceMatchArm| -> Option<bool> {
         let (evaluation, evaluation_assumptions) = evaluated
             .get_or_init(|| {
                 instance_body_evaluation(state, instance, definition)
@@ -17785,7 +17771,7 @@ fn instance_arm_refutation_facts(
 /// failure is not a refutation: the arm simply publishes nothing.
 fn arm_is_refuted_by_a_binding_free_fact(
     evaluation: &ExecutionState,
-    arm: &CResourceMatchArm,
+    arm: &ResourceMatchArm,
     evaluation_assumptions: &PureFactContext,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -17810,7 +17796,7 @@ fn arm_is_refuted_by_a_binding_free_fact(
 /// Cost is this arm's own clauses. Nothing outside the arm is visited.
 fn arm_binding_free_facts<'a>(
     evaluation: &'a ExecutionState,
-    arm: &'a CResourceMatchArm,
+    arm: &'a ResourceMatchArm,
     evaluation_assumptions: &'a PureFactContext,
 ) -> impl Iterator<Item = Proposition> + 'a {
     let bound = arm.bindings.iter().cloned().collect::<BTreeSet<_>>();
@@ -17896,7 +17882,7 @@ fn arm_binding_free_facts<'a>(
 /// definition's own arm facts.
 fn instance_argument_class_facts(
     instance: &ResourceInstance,
-    definitions: &[CCompositeResourceDefinition],
+    definitions: &[CompositeResourceDefinition],
 ) -> Vec<Proposition> {
     let Some(definition) = definitions
         .iter()
@@ -17926,8 +17912,8 @@ fn instance_argument_class_facts(
 /// The pointer parameters of `definition` that every arm of `body` ties to a
 /// typed constructor binding of one class or to null, with that class.
 fn matched_argument_classes(
-    definition: &CCompositeResourceDefinition,
-    body: &CResourceMatchBody,
+    definition: &CompositeResourceDefinition,
+    body: &ResourceMatchBody,
 ) -> Vec<(usize, crate::kernel::effective_type::CAccessClass)> {
     fn variable(expression: &SpecExpression) -> Option<&str> {
         match expression {
@@ -17955,7 +17941,7 @@ fn matched_argument_classes(
                 for fact in &arm.facts {
                     let SpecProposition::Comparison {
                         left,
-                        operator: CComparisonOperator::Equal,
+                        operator: ComparisonOperator::Equal,
                         right,
                     } = fact
                     else {
@@ -18006,7 +17992,7 @@ fn matched_argument_classes(
 /// arm's own clauses.
 fn decided_instance_arm_facts(
     instance: &ResourceInstance,
-    definitions: &[CCompositeResourceDefinition],
+    definitions: &[CompositeResourceDefinition],
     state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> Vec<Proposition> {
@@ -18062,15 +18048,15 @@ fn spec_proposition_mentions_any_name(fact: &SpecProposition, names: &BTreeSet<S
 // initial supply and a newly resolved dependent clause publish the same
 // projections, even when generic ownership expansion cannot open its head.
 fn resource_clause_composite_memory_views(
-    fact: &CResourceFact,
-    definitions: &[CCompositeResourceDefinition],
+    fact: &ResourceFact,
+    definitions: &[CompositeResourceDefinition],
     state: &ExecutionState,
     assumptions: &PureFactContext,
-) -> Vec<CResourceFact> {
+) -> Vec<ResourceFact> {
     if !fact.is_view() && !fact.has_proven_positive_quantity(assumptions) {
         return Vec::new();
     }
-    let CResource::Composite { name, .. } = fact.resource() else {
+    let Resource::Composite { name, .. } = fact.resource() else {
         return Vec::new();
     };
     let Ok(index) = definitions.binary_search_by(|definition| {
@@ -18087,7 +18073,7 @@ fn resource_clause_composite_memory_views(
     )
     .unwrap_or_default()
     .into_iter()
-    .map(CResourceFact::view_memory)
+    .map(ResourceFact::view_memory)
     .collect()
 }
 
@@ -18098,11 +18084,11 @@ fn resource_clause_composite_memory_views(
 /// of rescanning the complete section after every successful retry.
 fn resource_clause_supply_with_fact(
     mut supply: ResourceContext,
-    fact: CResourceFact,
-    definitions: &[CCompositeResourceDefinition],
+    fact: ResourceFact,
+    definitions: &[CompositeResourceDefinition],
     state: &ExecutionState,
     assumptions: &PureFactContext,
-) -> (ResourceContext, Vec<CResourceFact>) {
+) -> (ResourceContext, Vec<ResourceFact>) {
     let memory = state.memory();
     let mut added = Vec::new();
     if !supply.facts().contains(&fact) {
@@ -18112,7 +18098,7 @@ fn resource_clause_supply_with_fact(
     if definitions.is_empty() {
         return (supply, added);
     }
-    if matches!(fact.resource(), CResource::Instance(_)) {
+    if matches!(fact.resource(), Resource::Instance(_)) {
         // A newly evaluated field-bearing instance publishes its unmatched
         // body's cells exactly as the section supply does for the instances
         // the first pass evaluated.
@@ -18124,7 +18110,7 @@ fn resource_clause_supply_with_fact(
         }
         return (supply, added);
     }
-    if !matches!(fact.resource(), CResource::Composite { .. }) {
+    if !matches!(fact.resource(), Resource::Composite { .. }) {
         return (supply, added);
     }
     for view in resource_clause_composite_memory_views(&fact, definitions, state, assumptions) {
@@ -18151,28 +18137,28 @@ fn resource_clause_supply_with_fact(
         };
         for child in children {
             match child.resource() {
-                CResource::Footprint(_)
-                | CResource::Parameter(_)
-                | CResource::Emp
-                | CResource::Star(_) => {}
-                CResource::Memory(range) => {
-                    let view = CResourceFact::view_memory(range.clone());
+                Resource::Footprint(_)
+                | Resource::Parameter(_)
+                | Resource::Emp
+                | Resource::Star(_) => {}
+                Resource::Memory(range) => {
+                    let view = ResourceFact::view_memory(range.clone());
                     if !supply.facts().contains(&view) {
                         supply = supply.unchecked_with_fact(view.clone());
                         added.push(view);
                     }
                 }
-                CResource::Composite { .. } => pending.push_back(child),
+                Resource::Composite { .. } => pending.push_back(child),
                 // Iterated ownership grants no read authority of its own: an
                 // element is read only after it is taken out.
-                CResource::Token { .. }
-                | CResource::PopulationAuthority(_)
-                | CResource::Instance(_)
-                | CResource::MutexGuard(_)
-                | CResource::MutexLive(_)
-                | CResource::MutexUse(_)
-                | CResource::Publication(_)
-                | CResource::Iterated(_) => {}
+                Resource::Token { .. }
+                | Resource::PopulationAuthority(_)
+                | Resource::Instance(_)
+                | Resource::MutexGuard(_)
+                | Resource::MutexLive(_)
+                | Resource::MutexUse(_)
+                | Resource::Publication(_)
+                | Resource::Iterated(_) => {}
             }
         }
     }
@@ -18207,27 +18193,27 @@ pub(crate) fn resource_clause_stall_note(index: usize, other: usize) -> String {
 /// identification available here, and it is enough for a user to find the
 /// clause. Structured errors already print the offending resource and are
 /// passed through unchanged.
-fn resource_clause_position(resources: &[CResourceSpec], index: usize) -> (usize, usize) {
+fn resource_clause_position(resources: &[ResourceSpec], index: usize) -> (usize, usize) {
     resources
         .get(index)
-        .and_then(CResourceSpec::clause_position)
+        .and_then(ResourceSpec::clause_position)
         .unwrap_or((index, resources.len()))
 }
 
-fn annotate_resource_clause_error(error: CRuntimeError, note: String) -> CRuntimeError {
+fn annotate_resource_clause_error(error: RuntimeError, note: String) -> RuntimeError {
     match error {
-        CRuntimeError::FunctionContract(message) => {
-            CRuntimeError::FunctionContract(format!("{message} ({note})"))
+        RuntimeError::FunctionContract(message) => {
+            RuntimeError::FunctionContract(format!("{message} ({note})"))
         }
-        CRuntimeError::UnsuppliedResourceValue(message) => {
-            CRuntimeError::UnsuppliedResourceValue(format!("{message} ({note})"))
+        RuntimeError::UnsuppliedResourceValue(message) => {
+            RuntimeError::UnsuppliedResourceValue(format!("{message} ({note})"))
         }
-        CRuntimeError::ContractResourceDiagnostic {
+        RuntimeError::ContractResourceDiagnostic {
             reason,
             held,
             required,
             memory,
-        } => CRuntimeError::ContractResourceDiagnostic {
+        } => RuntimeError::ContractResourceDiagnostic {
             reason: format!("{reason} ({note})"),
             held,
             required,
@@ -18238,10 +18224,10 @@ fn annotate_resource_clause_error(error: CRuntimeError, note: String) -> CRuntim
 }
 
 fn resource_clause_runtime_error(
-    error: CRuntimeError,
+    error: RuntimeError,
     index: usize,
-    resources: &[CResourceSpec],
-) -> CRuntimeError {
+    resources: &[ResourceSpec],
+) -> RuntimeError {
     let (index, total) = resource_clause_position(resources, index);
     annotate_resource_clause_error(error, resource_clause_position_note(index, total))
 }
@@ -18250,10 +18236,10 @@ fn resource_clause_runtime_error(
 /// only failure another clause's authority can repair. The evaluator reports
 /// a section that stalls on these as a pair; anything else is one clause's own
 /// problem.
-fn resource_clause_failure_awaits_supply(error: &CRuntimeError) -> bool {
+fn resource_clause_failure_awaits_supply(error: &RuntimeError) -> bool {
     match error {
-        CRuntimeError::ContractResourceDiagnostic { memory, .. } => memory.is_some(),
-        CRuntimeError::UnsuppliedResourceValue(_) => true,
+        RuntimeError::ContractResourceDiagnostic { memory, .. } => memory.is_some(),
+        RuntimeError::UnsuppliedResourceValue(_) => true,
         _ => false,
     }
 }
@@ -18265,35 +18251,35 @@ fn resource_clause_failure_awaits_supply(error: &CRuntimeError) -> bool {
 fn unevaluated_resource_value(
     refusal: &super::loops::ValueRefusal,
     message: String,
-) -> CRuntimeError {
+) -> RuntimeError {
     if refusal.is_undefined_behavior() {
-        CRuntimeError::FunctionContract(message)
+        RuntimeError::FunctionContract(message)
     } else {
-        CRuntimeError::UnsuppliedResourceValue(message)
+        RuntimeError::UnsuppliedResourceValue(message)
     }
 }
 
 fn resource_clause_cycle_runtime_error(
-    error: CRuntimeError,
+    error: RuntimeError,
     index: usize,
     other: usize,
-    resources: &[CResourceSpec],
-) -> CRuntimeError {
+    resources: &[ResourceSpec],
+) -> RuntimeError {
     let (index, _) = resource_clause_position(resources, index);
     let (other, _) = resource_clause_position(resources, other);
     annotate_resource_clause_error(error, resource_clause_stall_note(index, other))
 }
 
-fn resource_context_runtime_error(error: ResourceContextValidityError) -> CRuntimeError {
+fn resource_context_runtime_error(error: ResourceContextValidityError) -> RuntimeError {
     match error {
         ResourceContextValidityError::DuplicateOwnedResourceFact(resource) => {
-            CRuntimeError::DuplicateResource { resource: Box::new(resource) }
+            RuntimeError::DuplicateResource { resource: Box::new(resource) }
         }
-        ResourceContextValidityError::InvalidExclusiveAccess(_) => CRuntimeError::FunctionContract(
+        ResourceContextValidityError::InvalidExclusiveAccess(_) => RuntimeError::FunctionContract(
             "field-bearing resource instances and mutex guards require exclusive ownership with quantity one".into(),
         ),
         ResourceContextValidityError::OverlappingOwnedMemoryResources { left, right } => {
-            CRuntimeError::OverlappingOwnedMemoryResources {
+            RuntimeError::OverlappingOwnedMemoryResources {
                 left: Box::new(left),
                 right: Box::new(right),
             }
@@ -18305,8 +18291,8 @@ fn resource_context_runtime_error(error: ResourceContextValidityError) -> CRunti
 /// retained field scope may name a resource whose custody has moved elsewhere.
 pub(crate) fn evaluate_resource_reference_arguments(
     state: &ExecutionState,
-    spec: &CResourceSpec,
-) -> Result<Vec<ResourceReference>, CRuntimeError> {
+    spec: &ResourceSpec,
+) -> Result<Vec<ResourceReference>, RuntimeError> {
     spec.resource_arguments()
         .iter()
         .map(|identity| {
@@ -18314,7 +18300,7 @@ pub(crate) fn evaluate_resource_reference_arguments(
                 .resource_instance_fields(*identity)
                 .map(ResourceReference::from_instance)
                 .ok_or_else(|| {
-                    CRuntimeError::FunctionContract(
+                    RuntimeError::FunctionContract(
                         "resource argument does not name an available resource reference".into(),
                     )
                 })
@@ -18326,13 +18312,13 @@ pub(crate) fn evaluate_resource_reference_arguments(
 fn evaluate_resource_type(
     entry: &ExecutionState,
     state: &ExecutionState,
-    resource_type: &CResourceTypeSpec,
+    resource_type: &ResourceTypeSpec,
     allow_token: bool,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<ResourceDescription, CRuntimeError>> {
+) -> ExecutionResult<Result<ResourceDescription, RuntimeError>> {
     let invalid = || {
-        CRuntimeError::FunctionContract(if allow_token {
+        RuntimeError::FunctionContract(if allow_token {
             "population authority requires a declared resource type".into()
         } else {
             "mutex_use requires a field-bearing resource type".into()
@@ -18344,7 +18330,7 @@ fn evaluate_resource_type(
         return Ok(Err(invalid()));
     }
     let (family, name, arguments, argument_snapshots, parameter_types) = match spec.term() {
-        CResourceTerm::Composite {
+        ResourceTerm::Composite {
             name,
             arguments,
             argument_snapshots,
@@ -18356,7 +18342,7 @@ fn evaluate_resource_type(
             argument_snapshots,
             parameter_types,
         ),
-        CResourceTerm::Token {
+        ResourceTerm::Token {
             name,
             arguments,
             argument_snapshots,
@@ -18373,7 +18359,7 @@ fn evaluate_resource_type(
     let fact = match evaluate_function_declared_resource_spec(
         entry,
         state,
-        CResourceAccessMode::Own,
+        ResourceAccessMode::Own,
         family,
         name,
         arguments,
@@ -18388,7 +18374,7 @@ fn evaluate_resource_type(
         Err(error) => return Ok(Err(error)),
     };
     let (name, arguments) = match fact.resource() {
-        CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
+        Resource::Composite { name, arguments } | Resource::Token { name, arguments } => {
             (name, arguments)
         }
         _ => return Ok(Err(invalid())),
@@ -18406,17 +18392,17 @@ fn evaluate_resource_type(
 pub(crate) fn evaluate_population_authority_candidate(
     entry: &ExecutionState,
     state: &ExecutionState,
-    resource: &CResourceSpec,
+    resource: &ResourceSpec,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<CResourceFact, CRuntimeError>> {
-    let CResourceTerm::PopulationAuthority {
+) -> ExecutionResult<Result<ResourceFact, RuntimeError>> {
+    let ResourceTerm::PopulationAuthority {
         protected,
         population_arity,
         ..
     } = resource.term()
     else {
-        return Ok(Err(CRuntimeError::FunctionContract(
+        return Ok(Err(RuntimeError::FunctionContract(
             "expected a population authority resource".into(),
         )));
     };
@@ -18428,21 +18414,21 @@ pub(crate) fn evaluate_population_authority_candidate(
     let description = match population_arity {
         Some(arity) => match description.with_population_arity(*arity) {
             Ok(description) => description,
-            Err(message) => return Ok(Err(CRuntimeError::FunctionContract(message.into()))),
+            Err(message) => return Ok(Err(RuntimeError::FunctionContract(message.into()))),
         },
         None => description,
     };
-    Ok(Ok(CResourceFact::own(CResource::PopulationAuthority(
+    Ok(Ok(ResourceFact::own(Resource::PopulationAuthority(
         description,
     ))))
 }
 
 pub(super) fn evaluate_function_resource_spec(
     state: &ExecutionState,
-    resource: &CResourceSpec,
+    resource: &ResourceSpec,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<CResourceFact, CRuntimeError>> {
+) -> ExecutionResult<Result<ResourceFact, RuntimeError>> {
     evaluate_function_resource_spec_with_entry(state, state, resource, assumptions, budget)
 }
 
@@ -18485,7 +18471,7 @@ fn resolve_retained_aggregate_fields(
             ..
         } = expression
         && let Some((parameter, pointer)) = projection(pointer)
-        && let Some(CLocalBinding::AggregateObject { slot, .. }) = entry.locals.binding(parameter)
+        && let Some(LocalBinding::AggregateObject { slot, .. }) = entry.locals.binding(parameter)
         && !state.memory.has_block(&slot.block)
         && !matches!(
             value_type,
@@ -18586,10 +18572,10 @@ fn resolve_retained_aggregate_fields(
 pub(super) fn evaluate_function_resource_spec_with_entry(
     entry_state: &ExecutionState,
     state: &ExecutionState,
-    resource: &CResourceSpec,
+    resource: &ResourceSpec,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<CResourceFact, CRuntimeError>> {
+) -> ExecutionResult<Result<ResourceFact, RuntimeError>> {
     evaluate_function_resource_spec_with_entry_and_selected_loads(
         entry_state,
         state,
@@ -18603,20 +18589,20 @@ pub(super) fn evaluate_function_resource_spec_with_entry(
 fn evaluate_function_resource_spec_with_entry_and_selected_loads(
     entry_state: &ExecutionState,
     state: &ExecutionState,
-    resource: &CResourceSpec,
+    resource: &ResourceSpec,
     selected_load_values: &BTreeMap<(Pointer, ProgramType), ProgramValue>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<CResourceFact, CRuntimeError>> {
+) -> ExecutionResult<Result<ResourceFact, RuntimeError>> {
     if !resource.resource_arguments().is_empty()
-        && !matches!(resource.term(), CResourceTerm::Instance { .. })
+        && !matches!(resource.term(), ResourceTerm::Instance { .. })
     {
-        return Ok(Err(CRuntimeError::FunctionContract(
+        return Ok(Err(RuntimeError::FunctionContract(
             "resource reference arguments require an exclusive named instance".into(),
         )));
     }
     match resource.term() {
-        CResourceTerm::PopulationAuthority {
+        ResourceTerm::PopulationAuthority {
             protected,
             population_arity,
             ..
@@ -18636,15 +18622,15 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                 Some(arity) => match description.with_population_arity(*arity) {
                     Ok(description) => description,
                     Err(message) => {
-                        return Ok(Err(CRuntimeError::FunctionContract(message.into())));
+                        return Ok(Err(RuntimeError::FunctionContract(message.into())));
                     }
                 },
                 None => description,
             };
-            let owned = CResourceFact::own(CResource::PopulationAuthority(description.clone()));
-            if resource.role() == CResourceTransferRole::Borrow
-                && resource.access() == CResourceAccessMode::Own
-                && resource.quantity() == &CResourceQuantity::One
+            let owned = ResourceFact::own(Resource::PopulationAuthority(description.clone()));
+            if resource.role() == ResourceTransferRole::Borrow
+                && resource.access() == ResourceAccessMode::Own
+                && resource.quantity() == &ResourceQuantity::One
                 && state.recognizes_population_authority(&description)
                 && state.resources().satisfies_fact(&owned, assumptions)
             {
@@ -18653,15 +18639,15 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                 // standalone proof entry may recognize one opaque input.
                 Ok(Ok(owned))
             } else {
-                Ok(Err(CRuntimeError::FunctionContract(format!(
+                Ok(Err(RuntimeError::FunctionContract(format!(
                     "Requires owns authority({}(...))",
                     description.family(),
                 ))))
             }
         }
-        CResourceTerm::MutexGuard { mutex, snapshot } => {
+        ResourceTerm::MutexGuard { mutex, snapshot } => {
             let selected = match snapshot {
-                CResourceSnapshot::Entry => entry_state,
+                ResourceSnapshot::Entry => entry_state,
                 _ => state,
             };
             let value = evaluate_loop_effect_segment_value(
@@ -18672,32 +18658,32 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                 budget,
             )?;
             let Ok(ProgramValue::Pointer(pointer)) = value else {
-                return Ok(Err(CRuntimeError::FunctionContract(
+                return Ok(Err(RuntimeError::FunctionContract(
                     "mutex_guard expects a mutex pointer".into(),
                 )));
             };
             let acquisition_state = match resource.snapshot() {
-                CResourceSnapshot::Entry => entry_state,
+                ResourceSnapshot::Entry => entry_state,
                 _ => state,
             };
             Ok(
                 super::mutexes::guard_resource(acquisition_state, pointer.pointer(), false)
                     .ok_or_else(|| {
-                        if resource.role() == CResourceTransferRole::Borrow {
-                            CRuntimeError::MissingMutexGuard {
+                        if resource.role() == ResourceTransferRole::Borrow {
+                            RuntimeError::MissingMutexGuard {
                                 mutex: pointer.pointer().clone(),
                             }
                         } else {
-                            CRuntimeError::FunctionContract(
+                            RuntimeError::FunctionContract(
                                 "mutex_guard requires a live acquisition".into(),
                             )
                         }
                     }),
             )
         }
-        CResourceTerm::MutexLive { mutex, snapshot } => {
+        ResourceTerm::MutexLive { mutex, snapshot } => {
             let selected = match snapshot {
-                CResourceSnapshot::Entry => entry_state,
+                ResourceSnapshot::Entry => entry_state,
                 _ => state,
             };
             let value = evaluate_loop_effect_segment_value(
@@ -18708,36 +18694,36 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                 budget,
             )?;
             let Ok(ProgramValue::Pointer(pointer)) = value else {
-                return Ok(Err(CRuntimeError::FunctionContract(
+                return Ok(Err(RuntimeError::FunctionContract(
                     "mutex_live expects a mutex pointer".into(),
                 )));
             };
             let initialization_state = match resource.snapshot() {
-                CResourceSnapshot::Entry => entry_state,
+                ResourceSnapshot::Entry => entry_state,
                 _ => state,
             };
             Ok(
                 super::mutexes::live_resource(initialization_state, pointer.pointer(), false)
                     .ok_or_else(|| {
-                        if resource.role() == CResourceTransferRole::Borrow {
-                            CRuntimeError::MissingMutexLive {
+                        if resource.role() == ResourceTransferRole::Borrow {
+                            RuntimeError::MissingMutexLive {
                                 mutex: pointer.pointer().clone(),
                             }
                         } else {
-                            CRuntimeError::FunctionContract(
+                            RuntimeError::FunctionContract(
                                 "mutex_live requires a live initialization".into(),
                             )
                         }
                     }),
             )
         }
-        CResourceTerm::MutexUse {
+        ResourceTerm::MutexUse {
             mutex,
             snapshot,
             protected,
         } => {
             let selected = match snapshot {
-                CResourceSnapshot::Entry => entry_state,
+                ResourceSnapshot::Entry => entry_state,
                 _ => state,
             };
             let value = evaluate_loop_effect_segment_value(
@@ -18748,12 +18734,12 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                 budget,
             )?;
             let Ok(ProgramValue::Pointer(pointer)) = value else {
-                return Ok(Err(CRuntimeError::FunctionContract(
+                return Ok(Err(RuntimeError::FunctionContract(
                     "mutex_use expects a mutex pointer".into(),
                 )));
             };
             let initialization_state = match resource.snapshot() {
-                CResourceSnapshot::Entry => entry_state,
+                ResourceSnapshot::Entry => entry_state,
                 _ => state,
             };
             let mut fact = super::mutexes::use_resource(initialization_state, pointer.pointer());
@@ -18769,22 +18755,22 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                     Ok(description) => description,
                     Err(error) => return Ok(Err(error)),
                 };
-                let CResource::MutexUse(mut identity) = fact.resource().clone() else {
+                let Resource::MutexUse(mut identity) = fact.resource().clone() else {
                     unreachable!()
                 };
                 identity.protected = Some(description);
-                fact = CResourceFact::own(CResource::MutexUse(identity));
+                fact = ResourceFact::own(Resource::MutexUse(identity));
             }
             Ok(Ok(fact))
         }
-        CResourceTerm::Publication {
+        ResourceTerm::Publication {
             side,
             payload,
             flag,
             snapshot,
         } => {
             let selected = match snapshot {
-                CResourceSnapshot::Entry => entry_state,
+                ResourceSnapshot::Entry => entry_state,
                 _ => state,
             };
             let value = evaluate_loop_effect_segment_value(
@@ -18795,7 +18781,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                 budget,
             )?;
             let Ok(ProgramValue::Pointer(pointer)) = value else {
-                return Ok(Err(CRuntimeError::FunctionContract(format!(
+                return Ok(Err(RuntimeError::FunctionContract(format!(
                     "{} expects an atomic flag pointer",
                     side.keyword()
                 ))));
@@ -18811,7 +18797,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                 Ok(description) => description,
                 Err(error) => return Ok(Err(error)),
             };
-            Ok(Ok(CResourceFact::own(CResource::Publication(
+            Ok(Ok(ResourceFact::own(Resource::Publication(
                 PublicationRight {
                     side: *side,
                     flag: pointer.pointer().clone(),
@@ -18820,16 +18806,16 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                 },
             ))))
         }
-        CResourceTerm::Instance {
+        ResourceTerm::Instance {
             identity,
             schema,
             resource: inner_term,
             ..
         } => {
-            let inner = match CResourceSpec::new(
+            let inner = match ResourceSpec::new(
                 (**inner_term).clone(),
-                CResourceAccessMode::Own,
-                CResourceQuantity::One,
+                ResourceAccessMode::Own,
+                ResourceQuantity::One,
                 resource.role(),
                 resource.snapshot(),
             ) {
@@ -18838,7 +18824,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                     None => inner,
                 },
                 Err(error) => {
-                    return Ok(Err(CRuntimeError::FunctionContract(format!(
+                    return Ok(Err(RuntimeError::FunctionContract(format!(
                         "invalid named resource body: {error}"
                     ))));
                 }
@@ -18855,13 +18841,13 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                 Err(error) => return Ok(Err(error)),
             };
             let Some(instance) = state.owned_resource_instance(*identity) else {
-                return Ok(Err(CRuntimeError::FunctionContract(
+                return Ok(Err(RuntimeError::FunctionContract(
                     "named resource instance is not owned".into(),
                 )));
             };
-            let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = required
+            let ResourceFact::Own(Resource::Composite { name, arguments }, quantity) = required
             else {
-                return Ok(Err(CRuntimeError::FunctionContract(
+                return Ok(Err(RuntimeError::FunctionContract(
                     "named instance requires an owned resource definition".into(),
                 )));
             };
@@ -18896,25 +18882,23 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                     })
             };
             if let Some(reason) = mismatch {
-                return Ok(Err(CRuntimeError::ContractResourceDiagnostic {
+                return Ok(Err(RuntimeError::ContractResourceDiagnostic {
                     reason: format!(
                         "named resource instance does not match its contract: {reason}"
                     ),
-                    held: Some(Box::new(CResourceFact::own(CResource::Instance(
+                    held: Some(Box::new(ResourceFact::own(Resource::Instance(
                         instance.clone(),
                     )))),
-                    required: Box::new(CResourceFact::Own(
-                        CResource::Composite { name, arguments },
+                    required: Box::new(ResourceFact::Own(
+                        Resource::Composite { name, arguments },
                         quantity,
                     )),
                     memory: None,
                 }));
             }
-            Ok(Ok(CResourceFact::own(CResource::Instance(
-                instance.clone(),
-            ))))
+            Ok(Ok(ResourceFact::own(Resource::Instance(instance.clone()))))
         }
-        CResourceTerm::Iterated(spec) => {
+        ResourceTerm::Iterated(spec) => {
             let mut spec = (**spec).clone();
             for expression in spec.expressions_mut() {
                 resolve_retained_aggregate_fields(
@@ -18934,7 +18918,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                 budget,
             )?)
         }
-        CResourceTerm::Memory(segment) => {
+        ResourceTerm::Memory(segment) => {
             let element_width = segment.element_width();
             let mut segment = segment.clone();
             for expression in [&mut segment.base, &mut segment.start, &mut segment.end] {
@@ -18970,18 +18954,18 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
             }
             .into_range();
             Ok(Ok(if resource.is_view() {
-                CResourceFact::view_memory(range)
+                ResourceFact::view_memory(range)
             } else {
-                CResourceFact::own_memory(range)
+                ResourceFact::own_memory(range)
             }))
         }
-        CResourceTerm::Composite {
+        ResourceTerm::Composite {
             name,
             arguments,
             argument_snapshots,
             parameter_types,
         }
-        | CResourceTerm::Token {
+        | ResourceTerm::Token {
             name,
             arguments,
             argument_snapshots,
@@ -19005,17 +18989,17 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                 Ok(fact) => fact,
                 Err(error) => return Ok(Err(error)),
             };
-            if let CResourceQuantity::Count(quantity) = resource.quantity() {
-                if resource.access() != CResourceAccessMode::Own
-                    || name == CResourceFact::ALLOCATION_RESOURCE_NAME
+            if let ResourceQuantity::Count(quantity) = resource.quantity() {
+                if resource.access() != ResourceAccessMode::Own
+                    || name == ResourceFact::ALLOCATION_RESOURCE_NAME
                 {
-                    return Ok(Err(CRuntimeError::FunctionContract(
+                    return Ok(Err(RuntimeError::FunctionContract(
                         "symbolic quantities require owned user-declared resources".to_string(),
                     )));
                 }
                 let quantity_state = match resource.quantity_snapshot() {
-                    CResourceSnapshot::Entry => entry_state,
-                    CResourceSnapshot::Current | CResourceSnapshot::Post => state,
+                    ResourceSnapshot::Entry => entry_state,
+                    ResourceSnapshot::Current | ResourceSnapshot::Post => state,
                 };
                 let mut quantity = quantity.clone();
                 resolve_retained_aggregate_fields(
@@ -19044,19 +19028,19 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                         right: Box::new(MachineTerm::constant(0)),
                     },
                 ) {
-                    return Ok(Err(CRuntimeError::FunctionContract(
+                    return Ok(Err(RuntimeError::FunctionContract(
                         "declared resource quantity is not known nonnegative; state that the \
                          quantity expression is at least 0 as a requirement, an invariant, or a \
                          fact proved in scope"
                             .to_string(),
                     )));
                 }
-                let CResourceFact::Own(inner, _) = fact else {
-                    return Ok(Err(CRuntimeError::FunctionContract(
+                let ResourceFact::Own(inner, _) = fact else {
+                    return Ok(Err(RuntimeError::FunctionContract(
                         "declared resource quantity did not lower to owned authority".to_string(),
                     )));
                 };
-                fact = CResourceFact::own_quantity(inner, quantity);
+                fact = ResourceFact::own_quantity(inner, quantity);
             }
             Ok(Ok(fact))
         }
@@ -19068,13 +19052,13 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
 /// value, each read once in `state`. Nothing is enumerated.
 pub(super) fn evaluate_iterated_resource_spec(
     state: &ExecutionState,
-    spec: &crate::kernel::primitives::CIteratedSpec,
+    spec: &crate::kernel::primitives::IteratedSpec,
     view: bool,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<CResourceFact, CRuntimeError>> {
+) -> ExecutionResult<Result<ResourceFact, RuntimeError>> {
     let failure = |what: &str| {
-        Ok(Err(CRuntimeError::FunctionContract(format!(
+        Ok(Err(RuntimeError::FunctionContract(format!(
             "could not evaluate the {what} of the iterated ownership clause of `{}`",
             spec.owner
         ))))
@@ -19103,7 +19087,7 @@ pub(super) fn evaluate_iterated_resource_spec(
         Ok(ProgramValue::Int32(value)) => value,
         _ => return failure("guard value"),
     };
-    let Some(iterated) = crate::kernel::CIteratedMemory::new(
+    let Some(iterated) = crate::kernel::IteratedMemory::new(
         &spec.owner,
         element.base,
         spec.element.element_width,
@@ -19112,7 +19096,7 @@ pub(super) fn evaluate_iterated_resource_spec(
         spec.end_offset,
         element.start,
         element.end,
-        crate::kernel::CIteratedGuard::new(
+        crate::kernel::IteratedGuard::new(
             guard_base,
             spec.guard_cell_type,
             spec.guard_cell_width,
@@ -19122,11 +19106,11 @@ pub(super) fn evaluate_iterated_resource_spec(
     ) else {
         return failure("element shape");
     };
-    let resource = CResource::iterated(iterated);
+    let resource = Resource::iterated(iterated);
     Ok(Ok(if view {
-        CResourceFact::View(resource)
+        ResourceFact::View(resource)
     } else {
-        CResourceFact::own(resource)
+        ResourceFact::own(resource)
     }))
 }
 
@@ -19140,7 +19124,7 @@ fn evaluate_declared_quantity(
     quantity: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<MachineTerm, CRuntimeError>> {
+) -> ExecutionResult<Result<MachineTerm, RuntimeError>> {
     let mut diagnostic = None;
     Ok(
         match super::loops::evaluate_resource_argument_value(
@@ -19152,22 +19136,22 @@ fn evaluate_declared_quantity(
             &mut diagnostic,
         )? {
             Ok(ProgramValue::Int32(quantity)) => Ok(quantity),
-            Ok(_) => Err(CRuntimeError::FunctionContract(
+            Ok(_) => Err(RuntimeError::FunctionContract(
                 "declared resource quantity must evaluate to int32".to_string(),
             )),
             Err(message) => Err(match diagnostic {
-                Some(CRuntimeError::ContractResourceDiagnostic {
+                Some(RuntimeError::ContractResourceDiagnostic {
                     reason,
                     held,
                     required,
                     memory: _,
-                }) => CRuntimeError::ContractResourceDiagnostic {
+                }) => RuntimeError::ContractResourceDiagnostic {
                     reason,
                     held,
                     required,
                     memory: None,
                 },
-                _ => CRuntimeError::FunctionContract(message.into()),
+                _ => RuntimeError::FunctionContract(message.into()),
             }),
         },
     )
@@ -19179,15 +19163,15 @@ fn evaluate_declared_quantity(
 /// `evaluate_function_resource_spec` and must prove every condition.
 pub(crate) fn quantified_resource_requirement_assumptions(
     state: &ExecutionState,
-    resources: &[CResourceSpec],
-    definitions: &[CCompositeResourceDefinition],
+    resources: &[ResourceSpec],
+    definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<Vec<Proposition>, CRuntimeError>> {
+) -> ExecutionResult<Result<Vec<Proposition>, RuntimeError>> {
     let mut propositions = Vec::new();
     let mut quantity_read_state = None;
     for resource in resources {
-        let CResourceQuantity::Count(quantity) = resource.quantity() else {
+        let ResourceQuantity::Count(quantity) = resource.quantity() else {
             continue;
         };
         let mut evaluated = evaluate_declared_quantity(
@@ -19204,7 +19188,7 @@ pub(crate) fn quantified_resource_requirement_assumptions(
             // to read a quantity, or change the entry's actual ownership.
             let unquantified = resources
                 .iter()
-                .filter(|resource| !matches!(resource.quantity(), CResourceQuantity::Count(_)))
+                .filter(|resource| !matches!(resource.quantity(), ResourceQuantity::Count(_)))
                 .cloned()
                 .collect::<Vec<_>>();
             let supplied = evaluate_resource_clauses_against_whole_section(
@@ -19263,19 +19247,19 @@ mod quantified_entry_read_tests;
 fn evaluate_function_declared_resource_spec(
     entry_state: &ExecutionState,
     state: &ExecutionState,
-    access: CResourceAccessMode,
+    access: ResourceAccessMode,
     family: ResourceFamily,
     name: &str,
     arguments: &[ProgramExpression],
-    argument_snapshots: &[CResourceSnapshot],
+    argument_snapshots: &[ResourceSnapshot],
     parameter_types: &[ProgramType],
     source_arguments: Option<&[String]>,
     selected_load_values: &BTreeMap<(Pointer, ProgramType), ProgramValue>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<CResourceFact, CRuntimeError>> {
+) -> ExecutionResult<Result<ResourceFact, RuntimeError>> {
     if arguments.len() != parameter_types.len() || arguments.len() != argument_snapshots.len() {
-        return Ok(Err(CRuntimeError::FunctionContract(format!(
+        return Ok(Err(RuntimeError::FunctionContract(format!(
             "resource `{name}` received the wrong number of arguments"
         ))));
     }
@@ -19291,9 +19275,9 @@ fn evaluate_function_declared_resource_spec(
             // the read authority of the clause set's own folded instances;
             // an `old(..)` argument read at that same snapshot reads through
             // the same authority. The frame changes no cell.
-            CResourceSnapshot::Entry if state.memory() == entry_state.memory() => state,
-            CResourceSnapshot::Entry => entry_state,
-            CResourceSnapshot::Current | CResourceSnapshot::Post => state,
+            ResourceSnapshot::Entry if state.memory() == entry_state.memory() => state,
+            ResourceSnapshot::Entry => entry_state,
+            ResourceSnapshot::Current | ResourceSnapshot::Post => state,
         };
         let written = argument;
         let mut argument = argument.clone();
@@ -19306,7 +19290,7 @@ fn evaluate_function_declared_resource_spec(
             budget,
         )?;
         let argument = &argument;
-        let allocation_element_count = (name == CResourceFact::ALLOCATION_RESOURCE_NAME
+        let allocation_element_count = (name == ResourceFact::ALLOCATION_RESOURCE_NAME
             && index == 1)
             .then(|| match argument {
                 ProgramExpression::Multiply(left, right)
@@ -19365,7 +19349,7 @@ fn evaluate_function_declared_resource_spec(
             )? {
                 Ok(ProgramValue::Int32(count)) => count,
                 Ok(_) | Err(_) => {
-                    return Ok(Err(CRuntimeError::FunctionContract(format!(
+                    return Ok(Err(RuntimeError::FunctionContract(format!(
                         "resource `{name}` has an invalid allocation element count"
                     ))));
                 }
@@ -19390,7 +19374,7 @@ fn evaluate_function_declared_resource_spec(
             // consumed: a `const` unpack's lent view of the memory the
             // argument reads.
             if evaluated.is_err()
-                && matches!(argument_snapshot, CResourceSnapshot::Entry)
+                && matches!(argument_snapshot, ResourceSnapshot::Entry)
                 && !std::ptr::eq(argument_state, entry_state)
             {
                 let mut at_entry = written.clone();
@@ -19421,7 +19405,7 @@ fn evaluate_function_declared_resource_spec(
                     if let Some(mut diagnostic) = diagnostic {
                         if let (
                             Some(spelling),
-                            CRuntimeError::ContractResourceDiagnostic { reason, .. },
+                            RuntimeError::ContractResourceDiagnostic { reason, .. },
                         ) = (
                             source_arguments.and_then(|items| items.get(index)),
                             &mut diagnostic,
@@ -19432,8 +19416,8 @@ fn evaluate_function_declared_resource_spec(
                     }
                     if let Some(spelling) = source_arguments.and_then(|items| items.get(index)) {
                         let action = match access {
-                            CResourceAccessMode::Own => "owns",
-                            CResourceAccessMode::View => "views",
+                            ResourceAccessMode::Own => "owns",
+                            ResourceAccessMode::View => "views",
                         };
                         return Ok(Err(unevaluated_resource_value(
                             &error,
@@ -19450,10 +19434,10 @@ fn evaluate_function_declared_resource_spec(
                 }
             }
         };
-        let accepts_allocation_pointer = name == CResourceFact::ALLOCATION_RESOURCE_NAME
+        let accepts_allocation_pointer = name == ResourceFact::ALLOCATION_RESOURCE_NAME
             && index == 0
             && matches!(&value, ProgramValue::Pointer(pointer) if pointer.c_type().pointee_type().is_some());
-        let value = if name == CResourceFact::ALLOCATION_RESOURCE_NAME
+        let value = if name == ResourceFact::ALLOCATION_RESOURCE_NAME
             && index == 1
             && let ProgramValue::UInt64(bytes) = value.numeric_value()
         {
@@ -19465,14 +19449,14 @@ fn evaluate_function_declared_resource_spec(
             value
         };
         // A 64-bit `allocation` byte count is a `uint64` extent (D4).
-        let accepts_allocation_extent = name == CResourceFact::ALLOCATION_RESOURCE_NAME
+        let accepts_allocation_extent = name == ResourceFact::ALLOCATION_RESOURCE_NAME
             && index == 1
             && matches!(&value, ProgramValue::UInt64(_));
         if !accepts_allocation_pointer
             && !accepts_allocation_extent
             && !parameter_type.accepts(&value)
         {
-            return Ok(Err(CRuntimeError::FunctionContract(format!(
+            return Ok(Err(RuntimeError::FunctionContract(format!(
                 "resource `{name}` argument {index} has the wrong type"
             ))));
         }
@@ -19485,15 +19469,15 @@ fn evaluate_function_declared_resource_spec(
     }
     let resource = match family {
         ResourceFamily::Parameter => {
-            return Ok(Err(CRuntimeError::FunctionContract(
+            return Ok(Err(RuntimeError::FunctionContract(
                 "a resource descriptor carries no ownership".into(),
             )));
         }
-        ResourceFamily::Composite => CResource::Composite {
+        ResourceFamily::Composite => Resource::Composite {
             name: name.to_string(),
             arguments: values.into_iter().map(AlgebraicValue::C).collect(),
         },
-        ResourceFamily::Token => CResource::Token {
+        ResourceFamily::Token => Resource::Token {
             name: name.to_string(),
             arguments: values.into_iter().map(AlgebraicValue::C).collect(),
         },
@@ -19505,14 +19489,14 @@ fn evaluate_function_declared_resource_spec(
         | ResourceFamily::MutexUse
         | ResourceFamily::Publication
         | ResourceFamily::Iterated => {
-            return Ok(Err(CRuntimeError::FunctionContract(
+            return Ok(Err(RuntimeError::FunctionContract(
                 "declared resources cannot use the raw memory family".to_string(),
             )));
         }
     };
     Ok(Ok(match access {
-        CResourceAccessMode::Own => CResourceFact::own(resource),
-        CResourceAccessMode::View => CResourceFact::View(resource),
+        ResourceAccessMode::Own => ResourceFact::own(resource),
+        ResourceAccessMode::View => ResourceFact::View(resource),
     }))
 }
 
@@ -19537,7 +19521,7 @@ fn evaluate_function_declared_resource_spec(
 fn uint64_allocation_extent_argument(
     bytes: &MachineTerm,
     assumptions: &PureFactContext,
-) -> Result<ProgramValue, CRuntimeError> {
+) -> Result<ProgramValue, RuntimeError> {
     if let Some(constant) = bytes.uint64_as_const() {
         if (1..=i32::MAX as u64).contains(&constant) {
             return Ok(int32(MachineTerm::constant(constant as u32)));
@@ -19548,7 +19532,7 @@ fn uint64_allocation_extent_argument(
     {
         Ok(ProgramValue::UInt64(bytes.clone()))
     } else {
-        Err(CRuntimeError::FunctionContract(
+        Err(RuntimeError::FunctionContract(
             "resource `allocation` has a 64-bit byte count not proved to fit a heap block: \
              it needs `1 <= bytes <= PTRDIFF_MAX`, and a product `n * k` with a constant `k` \
              needs `1 <= n <= PTRDIFF_MAX / k`"
@@ -19557,24 +19541,24 @@ fn uint64_allocation_extent_argument(
     }
 }
 
-fn resource_fact_transfer_priority(resource: &CResourceFact) -> u8 {
+fn resource_fact_transfer_priority(resource: &ResourceFact) -> u8 {
     match resource {
-        CResourceFact::Own(
-            CResource::Footprint(_) | CResource::Parameter(_) | CResource::Emp | CResource::Star(_),
+        ResourceFact::Own(
+            Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_),
             _,
         ) => 2,
-        CResourceFact::View(_) => 0,
-        CResourceFact::Own(CResource::Memory(_), _) => 1,
-        CResourceFact::Own(
-            CResource::Composite { .. }
-            | CResource::Token { .. }
-            | CResource::PopulationAuthority(_)
-            | CResource::Instance(_)
-            | CResource::MutexGuard(_)
-            | CResource::MutexLive(_)
-            | CResource::MutexUse(_)
-            | CResource::Publication(_)
-            | CResource::Iterated(_),
+        ResourceFact::View(_) => 0,
+        ResourceFact::Own(Resource::Memory(_), _) => 1,
+        ResourceFact::Own(
+            Resource::Composite { .. }
+            | Resource::Token { .. }
+            | Resource::PopulationAuthority(_)
+            | Resource::Instance(_)
+            | Resource::MutexGuard(_)
+            | Resource::MutexLive(_)
+            | Resource::MutexUse(_)
+            | Resource::Publication(_)
+            | Resource::Iterated(_),
             _,
         ) => 2,
     }
@@ -19585,21 +19569,21 @@ fn unreturned_allocation_obligation(
     returned_resources: &ResourceContext,
     function: &ProgramFunction,
     assumptions: &PureFactContext,
-) -> Result<Option<(CResourceFact, Option<CResourceFact>)>, CRuntimeError> {
+) -> Result<Option<(ResourceFact, Option<ResourceFact>)>, RuntimeError> {
     let Some(actual) = expand_all_composite_resource_facts_at_state(
         actual_state.resources(),
         function.composite_resource_definitions(),
         actual_state,
         assumptions,
     ) else {
-        return Err(CRuntimeError::FunctionContract(
+        return Err(RuntimeError::FunctionContract(
             "could not inspect allocation obligations at function return".to_string(),
         ));
     };
     let mut checked_return_frontier = returned_resources.clone();
     {
         for fact in returned_resources.facts() {
-            let CResource::Composite { name, .. } = fact.resource() else {
+            let Resource::Composite { name, .. } = fact.resource() else {
                 continue;
             };
             let Some(definition) = function
@@ -19611,7 +19595,7 @@ fn unreturned_allocation_obligation(
             if !definition
                 .contains()
                 .iter()
-                .any(|child| matches!(child.term(), CResourceTerm::PopulationAuthority { .. }))
+                .any(|child| matches!(child.term(), ResourceTerm::PopulationAuthority { .. }))
             {
                 continue;
             }
@@ -19626,10 +19610,10 @@ fn unreturned_allocation_obligation(
             }
             actual_state
                 .checked_authority_wrapper_body(supporting, definition, assumptions)
-                .map_err(CRuntimeError::FunctionContract)?;
+                .map_err(RuntimeError::FunctionContract)?;
             checked_return_frontier = checked_return_frontier
                 .without_fact_incrementally(fact, assumptions)
-                .ok_or_else(|| CRuntimeError::MissingResource {
+                .ok_or_else(|| RuntimeError::MissingResource {
                     resource: Box::new(fact.clone()),
                 })?
                 .unchecked_with_fact(supporting.clone());
@@ -19639,7 +19623,7 @@ fn unreturned_allocation_obligation(
     let mut returned_read_state = actual_state.clone();
     {
         for fact in returned_resources.facts() {
-            let CResource::Composite { name, .. } = fact.resource() else {
+            let Resource::Composite { name, .. } = fact.resource() else {
                 continue;
             };
             let Some(definition) = function
@@ -19651,7 +19635,7 @@ fn unreturned_allocation_obligation(
             if !definition
                 .contains()
                 .iter()
-                .any(|child| matches!(child.term(), CResourceTerm::PopulationAuthority { .. }))
+                .any(|child| matches!(child.term(), ResourceTerm::PopulationAuthority { .. }))
                 || actual_state.resources().satisfies_fact(fact, assumptions)
             {
                 continue;
@@ -19660,7 +19644,7 @@ fn unreturned_allocation_obligation(
                 .clone()
                 .with_resource_context(actual.clone())
                 .checked_authority_wrapper_fold_preflight(fact, definition, assumptions)
-                .map_err(CRuntimeError::FunctionContract)?;
+                .map_err(RuntimeError::FunctionContract)?;
             returned_read_state =
                 returned_read_state.with_resource_context(returned_resources.clone());
         }
@@ -19672,7 +19656,7 @@ fn unreturned_allocation_obligation(
         assumptions,
     ) else {
         for fact in returned_resources.facts() {
-            let CResource::Composite { name, .. } = fact.resource() else {
+            let Resource::Composite { name, .. } = fact.resource() else {
                 continue;
             };
             let Some(definition) = function
@@ -19684,19 +19668,19 @@ fn unreturned_allocation_obligation(
             if definition
                 .contains()
                 .iter()
-                .any(|child| matches!(child.term(), CResourceTerm::PopulationAuthority { .. }))
+                .any(|child| matches!(child.term(), ResourceTerm::PopulationAuthority { .. }))
                 && let Err(reason) = returned_read_state.checked_authority_wrapper_body(
                     fact,
                     definition,
                     assumptions,
                 )
             {
-                return Err(CRuntimeError::FunctionContract(format!(
+                return Err(RuntimeError::FunctionContract(format!(
                     "could not inspect returned allocation obligations: control {name}: {reason}"
                 )));
             }
         }
-        return Err(CRuntimeError::FunctionContract(
+        return Err(RuntimeError::FunctionContract(
             "could not inspect returned allocation obligations".to_string(),
         ));
     };
@@ -19712,7 +19696,7 @@ fn unreturned_allocation_obligation(
         Ok(Ok(resources)) => resources,
         Ok(Err(error)) => return Err(error),
         Err(limit) => {
-            return Err(CRuntimeError::FunctionContract(format!(
+            return Err(RuntimeError::FunctionContract(format!(
                 "counted population allocation inspection stopped at {}",
                 limit.describe()
             )));
@@ -19752,10 +19736,10 @@ fn unreturned_allocation_obligation(
 /// not change verification.
 fn resource_fact_containing_allocation(
     state: &ExecutionState,
-    allocation: &CResourceFact,
+    allocation: &ResourceFact,
     function: &ProgramFunction,
     assumptions: &PureFactContext,
-) -> Option<CResourceFact> {
+) -> Option<ResourceFact> {
     state
         .resources()
         .facts()
@@ -19764,7 +19748,7 @@ fn resource_fact_containing_allocation(
             fact.is_own()
                 && matches!(
                     fact.resource(),
-                    CResource::Composite { .. } | CResource::Token { .. }
+                    Resource::Composite { .. } | Resource::Token { .. }
                 )
         })
         .find_map(|candidate| {
@@ -19808,7 +19792,10 @@ fn resource_fact_containing_allocation(
 /// namespace and owns no block.
 ///
 /// Bounded by this frame's own bindings; it reads no caller state.
-fn retired_automatic_creation_blocks(state: &ExecutionState, after: &CMemory) -> Vec<PointerBlock> {
+fn retired_automatistorage_creation_blocks(
+    state: &ExecutionState,
+    after: &Memory,
+) -> Vec<PointerBlock> {
     state
         .locals
         .slots()
@@ -19821,9 +19808,9 @@ type AutomaticLifetimeInput = (usize, usize, usize, usize, usize);
 
 struct AutomaticLifetimeRetirement {
     // Pin the input roots so their addresses cannot be reused during a session.
-    input: CMemory,
+    input: Memory,
     blocks: Vec<PointerBlock>,
-    after: CMemory,
+    after: Memory,
 }
 
 thread_local! {
@@ -19836,7 +19823,7 @@ pub(super) fn clear_automatic_lifetime_retirement() {
 
 /// Only the physical transition is reused. Callers check current loan,
 /// mutex, population and return-value restrictions before calling this.
-fn retire_automatic_lifetime_blocks(before: &CMemory, blocks: &[PointerBlock]) -> CMemory {
+fn retire_automatic_lifetime_blocks(before: &Memory, blocks: &[PointerBlock]) -> Memory {
     if blocks.is_empty() {
         return before.clone();
     }
@@ -19870,7 +19857,7 @@ fn retire_automatic_lifetime_blocks(before: &CMemory, blocks: &[PointerBlock]) -
     after
 }
 
-fn end_inline_frame_automatic_lifetimes(state: &ExecutionState) -> Result<CMemory, CRuntimeError> {
+fn end_inline_frame_automatic_lifetimes(state: &ExecutionState) -> Result<Memory, RuntimeError> {
     let memory = &state.memory;
     let mut blocks = Vec::new();
     let mut selected = BTreeSet::new();
@@ -19911,9 +19898,9 @@ fn end_inline_frame_automatic_lifetimes(state: &ExecutionState) -> Result<CMemor
 fn end_function_body_automatic_lifetimes(
     state: &ExecutionState,
     function: &ProgramFunction,
-    caller: &CMemory,
+    caller: &Memory,
     returned: Option<&ProgramValue>,
-) -> Result<CMemory, CRuntimeError> {
+) -> Result<Memory, RuntimeError> {
     let memory = &state.memory;
     let mut blocks = Vec::new();
     let mut selected = BTreeSet::new();
@@ -19959,7 +19946,7 @@ pub(in crate::kernel) fn function_exit_memory(
     callee_state: &ExecutionState,
     value: &ExecutionValue,
     function: &ProgramFunction,
-) -> CMemory {
+) -> Memory {
     if function.return_aggregate_layout().is_some() {
         return callee_state.memory.clone();
     }
@@ -19990,7 +19977,7 @@ pub(crate) fn unreturned_allocation_with_checked_returned_resources(
     returned_resources: &ResourceContext,
     assumptions: &PureFactContext,
     _budget: &mut ExecutionBudget,
-) -> Result<Option<crate::kernel::proof::LiveAllocationObligation>, CRuntimeError> {
+) -> Result<Option<crate::kernel::proof::LiveAllocationObligation>, RuntimeError> {
     let Some(argument_values) = arguments
         .iter()
         .map(|argument| match argument {
@@ -19999,12 +19986,12 @@ pub(crate) fn unreturned_allocation_with_checked_returned_resources(
         })
         .collect::<Option<Vec<_>>>()
     else {
-        return Err(CRuntimeError::FunctionContract(
+        return Err(RuntimeError::FunctionContract(
             "allocation-delta checking requires concrete symbolic contract arguments".to_string(),
         ));
     };
     let entry_state = bind_contract_proof_arguments(caller_state, function, &argument_values)
-        .ok_or(CRuntimeError::TypeMismatch)?;
+        .ok_or(RuntimeError::TypeMismatch)?;
     let mut output_state = with_contract_argument_views(state, function, &argument_values);
     if function.return_type() != ProgramType::Void {
         set_function_result(&mut output_state, function, value.clone());
@@ -20016,7 +20003,7 @@ pub(crate) fn unreturned_allocation_with_checked_returned_resources(
             .any(|definition| {
                 definition.contains().iter().any(|resource| {
                     resource.family() == ResourceFamily::Token
-                        && resource.declared_name() == Some(CResourceFact::ALLOCATION_RESOURCE_NAME)
+                        && resource.declared_name() == Some(ResourceFact::ALLOCATION_RESOURCE_NAME)
                 })
             });
     if !function_can_package_allocation
@@ -20034,7 +20021,7 @@ pub(crate) fn unreturned_allocation_with_checked_returned_resources(
         &output_state,
         assumptions,
     ) else {
-        return Err(CRuntimeError::FunctionContract(
+        return Err(RuntimeError::FunctionContract(
             "could not inspect allocation obligations at function return".to_string(),
         ));
     };
@@ -20051,7 +20038,7 @@ pub(crate) fn unreturned_allocation_with_checked_returned_resources(
     let borrowed = function
         .resource_requires()
         .iter()
-        .filter(|spec| spec.role() == CResourceTransferRole::Borrow)
+        .filter(|spec| spec.role() == ResourceTransferRole::Borrow)
         .cloned()
         .collect::<Vec<_>>();
     let returned = if borrowed.is_empty() {
@@ -20065,11 +20052,11 @@ pub(crate) fn unreturned_allocation_with_checked_returned_resources(
             &assumptions.clone().assume_entry_clause_extents(),
             &mut budget,
         )
-        .map_err(|limit| CRuntimeError::FunctionContract(limit.describe()))??;
+        .map_err(|limit| RuntimeError::FunctionContract(limit.describe()))??;
         returned_resources.clone().unchecked_with_facts(
             entry_clauses
                 .into_iter()
-                .filter(|checked| checked.role == CResourceTransferRole::Borrow)
+                .filter(|checked| checked.role == ResourceTransferRole::Borrow)
                 .map(|checked| checked.fact)
                 .filter(|fact| !returned_resources.satisfies_fact(fact, assumptions)),
         )
@@ -20092,8 +20079,7 @@ pub(crate) fn unreturned_allocation_at_function_exit(
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<Option<crate::kernel::proof::LiveAllocationObligation>, CRuntimeError>>
-{
+) -> ExecutionResult<Result<Option<crate::kernel::proof::LiveAllocationObligation>, RuntimeError>> {
     let function_can_package_allocation =
         function
             .composite_resource_definitions()
@@ -20101,7 +20087,7 @@ pub(crate) fn unreturned_allocation_at_function_exit(
             .any(|definition| {
                 definition.contains().iter().any(|resource| {
                     resource.family() == ResourceFamily::Token
-                        && resource.declared_name() == Some(CResourceFact::ALLOCATION_RESOURCE_NAME)
+                        && resource.declared_name() == Some(ResourceFact::ALLOCATION_RESOURCE_NAME)
                 })
             });
     if !function_can_package_allocation
@@ -20119,7 +20105,7 @@ pub(crate) fn unreturned_allocation_at_function_exit(
         state,
         assumptions,
     ) else {
-        return Ok(Err(CRuntimeError::FunctionContract(
+        return Ok(Err(RuntimeError::FunctionContract(
             "could not inspect allocation obligations at function exit".to_string(),
         )));
     };
@@ -20138,13 +20124,13 @@ pub(crate) fn unreturned_allocation_at_function_exit(
         })
         .collect::<Option<Vec<_>>>()
     else {
-        return Ok(Err(CRuntimeError::FunctionContract(
+        return Ok(Err(RuntimeError::FunctionContract(
             "allocation-delta checking requires concrete symbolic contract arguments".to_string(),
         )));
     };
     let Some(entry_state) = bind_contract_proof_arguments(caller_state, function, &argument_values)
     else {
-        return Ok(Err(CRuntimeError::TypeMismatch));
+        return Ok(Err(RuntimeError::TypeMismatch));
     };
     let mut output_state = with_contract_argument_views(state, function, &argument_values);
     if function.return_type() != ProgramType::Void {
@@ -20188,27 +20174,27 @@ pub(crate) fn unreturned_allocation_at_function_exit(
 fn function_outcome_from_body_changing_quantities(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
-    outcome: CStatementOutcome,
+    outcome: StatementOutcome,
     mut obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> ExecutionResult<(CFunctionOutcome, Vec<ProofObligation>)> {
+) -> ExecutionResult<(FunctionOutcome, Vec<ProofObligation>)> {
     if let Some(error) = exceptional_outcome_declaration_error(function, &outcome) {
-        return Ok((CFunctionOutcome::RuntimeError(error), obligations));
+        return Ok((FunctionOutcome::RuntimeError(error), obligations));
     }
-    if matches!(&outcome, CStatementOutcome::Throw { .. })
+    if matches!(&outcome, StatementOutcome::Throw { .. })
         && (!function.resource_requires().is_empty()
             || !function.resource_ensures().is_empty()
             || !function.resource_constructors().is_empty())
     {
         return Ok((
-            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+            FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
                 "exceptional outcomes with population transitions require an exceptional contract interface"
                     .to_string(),
             )),
             obligations,
         ));
     }
-    let CStatementOutcome::Return { value, mut state } = outcome else {
+    let StatementOutcome::Return { value, mut state } = outcome else {
         return Ok(function_outcome_from_body(
             caller_state,
             function,
@@ -20222,18 +20208,18 @@ fn function_outcome_from_body_changing_quantities(
         freed_pointer_return_conversion(&state, function, &value, assumptions)
     {
         return Ok((
-            CFunctionOutcome::UndefinedBehavior(undefined_behavior),
+            FunctionOutcome::UndefinedBehavior(undefined_behavior),
             obligations,
         ));
     }
     if let Some(refusal) = incompatible_pointer_return(&state, function, &value, assumptions) {
-        return Ok((CFunctionOutcome::RuntimeError(refusal), obligations));
+        return Ok((FunctionOutcome::RuntimeError(refusal), obligations));
     }
     let Some(value) =
         coerce_retained_function_return_value(value, function, &mut obligations, assumptions)
     else {
         return Ok((
-            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
+            FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(format!(
                 "{} {RETURN_TYPE_MISMATCH}",
                 function.name()
             ))),
@@ -20246,7 +20232,7 @@ fn function_outcome_from_body_changing_quantities(
     Ok(function_outcome_from_body(
         caller_state,
         function,
-        CStatementOutcome::Return { value, state },
+        StatementOutcome::Return { value, state },
         obligations,
         assumptions,
         None,
@@ -20257,28 +20243,28 @@ fn function_outcome_from_body_changing_quantities(
 fn function_outcome_from_body_with_resource_transfer(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
-    outcome: CStatementOutcome,
+    outcome: StatementOutcome,
     mut obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-    transfer: &CFunctionResourceTransfer,
+    transfer: &FunctionResourceTransfer,
     argument_values: &[ProgramValue],
     reestablish_population_invariants: bool,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<(
-    CFunctionOutcome,
+    FunctionOutcome,
     Vec<ProofObligation>,
     Option<Arc<CheckedLoanCallEvidence>>,
 )> {
     if let Some(error) = exceptional_outcome_declaration_error(function, &outcome) {
-        return Ok((CFunctionOutcome::RuntimeError(error), obligations, None));
+        return Ok((FunctionOutcome::RuntimeError(error), obligations, None));
     }
-    if matches!(&outcome, CStatementOutcome::Throw { .. })
+    if matches!(&outcome, StatementOutcome::Throw { .. })
         && (!function.resource_requires().is_empty()
             || !function.resource_ensures().is_empty()
             || !function.resource_constructors().is_empty())
     {
         return Ok((
-            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+            FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
                 "exceptional outcomes with resource transitions require an exceptional contract interface"
                     .to_string(),
             )),
@@ -20286,7 +20272,7 @@ fn function_outcome_from_body_with_resource_transfer(
             None,
         ));
     }
-    let CStatementOutcome::Return { value, mut state } = outcome else {
+    let StatementOutcome::Return { value, mut state } = outcome else {
         let (outcome, obligations) = function_outcome_from_body(
             caller_state,
             function,
@@ -20301,19 +20287,19 @@ fn function_outcome_from_body_with_resource_transfer(
         freed_pointer_return_conversion(&state, function, &value, assumptions)
     {
         return Ok((
-            CFunctionOutcome::UndefinedBehavior(undefined_behavior),
+            FunctionOutcome::UndefinedBehavior(undefined_behavior),
             obligations,
             None,
         ));
     }
     if let Some(refusal) = incompatible_pointer_return(&state, function, &value, assumptions) {
-        return Ok((CFunctionOutcome::RuntimeError(refusal), obligations, None));
+        return Ok((FunctionOutcome::RuntimeError(refusal), obligations, None));
     }
     let Some(value) =
         coerce_retained_function_return_value(value, function, &mut obligations, assumptions)
     else {
         return Ok((
-            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
+            FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(format!(
                 "{} {RETURN_TYPE_MISMATCH}",
                 function.name()
             ))),
@@ -20326,7 +20312,7 @@ fn function_outcome_from_body_with_resource_transfer(
         && let Some(error) =
             construction_return::complete_parameter(&state, function.contract_interface())
     {
-        return Ok((CFunctionOutcome::RuntimeError(error), obligations, None));
+        return Ok((FunctionOutcome::RuntimeError(error), obligations, None));
     }
 
     // A body return still names its aggregate source; copy it to the
@@ -20338,14 +20324,14 @@ fn function_outcome_from_body_with_resource_transfer(
             Ok(value) => value.into(),
             Err(AggregateReturnRefusal::UninitializedRead) => {
                 return Ok((
-                    CFunctionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead),
+                    FunctionOutcome::UndefinedBehavior(UndefinedBehavior::UninitializedRead),
                     obligations,
                     None,
                 ));
             }
             Err(AggregateReturnRefusal::InvalidValue) => {
                 return Ok((
-                    CFunctionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                    FunctionOutcome::RuntimeError(RuntimeError::TypeMismatch),
                     obligations,
                     None,
                 ));
@@ -20365,20 +20351,20 @@ fn function_outcome_from_body_with_resource_transfer(
         value.native_payload(),
     ) {
         Ok(memory) => memory,
-        Err(error) => return Ok((CFunctionOutcome::RuntimeError(error), obligations, None)),
+        Err(error) => return Ok((FunctionOutcome::RuntimeError(error), obligations, None)),
     };
-    let retired_creation_blocks = retired_automatic_creation_blocks(&state, &retired_memory);
+    let retired_creation_blocks = retired_automatistorage_creation_blocks(&state, &retired_memory);
     state.set_memory(retired_memory);
     for block in retired_creation_blocks {
         if let Err(error) = state.retire_population_storage(&block) {
-            return Ok((CFunctionOutcome::RuntimeError(error), obligations, None));
+            return Ok((FunctionOutcome::RuntimeError(error), obligations, None));
         }
     }
     let mut named_inputs = transfer
         .consumed_inputs
         .iter()
         .filter_map(|checked| match checked.fact.resource() {
-            CResource::Instance(instance) => Some(instance),
+            Resource::Instance(instance) => Some(instance),
             _ => None,
         })
         .peekable();
@@ -20400,12 +20386,12 @@ fn function_outcome_from_body_with_resource_transfer(
         });
     let imported_named_consumption = state.population_effects.creation.as_ref()
         .is_some_and(|events| transfer.consumed_inputs.iter().any(|checked| {
-            matches!(checked.fact.resource(), CResource::Instance(instance)
+            matches!(checked.fact.resource(), Resource::Instance(instance)
                 if events.recognizes_imported_population(&ResourceDescription::from_instance(instance)))
         }));
     if imported_named_consumption && !checked_named_deaths {
         return Ok((
-            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+            FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
                 "Requires a checked death for every consumed named member".into(),
             )),
             obligations,
@@ -20442,9 +20428,9 @@ fn function_outcome_from_body_with_resource_transfer(
         },
     )? {
         Ok(resources) => resources,
-        Err(CRuntimeError::TypeMismatch) => {
+        Err(RuntimeError::TypeMismatch) => {
             return Ok((
-                CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
+                FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(format!(
                     "could not evaluate {} return resources",
                     function.name()
                 ))),
@@ -20452,7 +20438,7 @@ fn function_outcome_from_body_with_resource_transfer(
                 None,
             ));
         }
-        Err(error) => return Ok((CFunctionOutcome::RuntimeError(error), obligations, None)),
+        Err(error) => return Ok((FunctionOutcome::RuntimeError(error), obligations, None)),
     };
     // Authority members require actual joint custody before output projection.
     if !jointly_consume_returned_resource_units(
@@ -20463,7 +20449,7 @@ fn function_outcome_from_body_with_resource_transfer(
         assumptions,
     ) {
         return Ok((
-            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+            FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
                 "function body does not yet establish its joint returned resource units".into(),
             )),
             obligations,
@@ -20483,7 +20469,7 @@ fn function_outcome_from_body_with_resource_transfer(
             &obligations,
         ) {
             Ok(recovered) => recovered,
-            Err(error) => return Ok((CFunctionOutcome::RuntimeError(error), obligations, None)),
+            Err(error) => return Ok((FunctionOutcome::RuntimeError(error), obligations, None)),
         };
 
     match crate::instrumentation::measure_operation(
@@ -20494,7 +20480,7 @@ fn function_outcome_from_body_with_resource_transfer(
     ) {
         Ok(Some((allocation, resource))) => {
             return Ok((
-                CFunctionOutcome::RuntimeError(CRuntimeError::LiveAllocationLeak {
+                FunctionOutcome::RuntimeError(RuntimeError::LiveAllocationLeak {
                     allocation: Box::new(allocation),
                     resource: resource.map(Box::new),
                 }),
@@ -20502,7 +20488,7 @@ fn function_outcome_from_body_with_resource_transfer(
                 None,
             ));
         }
-        Err(error) => return Ok((CFunctionOutcome::RuntimeError(error), obligations, None)),
+        Err(error) => return Ok((FunctionOutcome::RuntimeError(error), obligations, None)),
         Ok(None) => {}
     }
 
@@ -20532,7 +20518,7 @@ fn function_outcome_from_body_with_resource_transfer(
         Ok(state) => state,
         Err(error) => {
             return Ok((
-                CFunctionOutcome::RuntimeError(error),
+                FunctionOutcome::RuntimeError(error),
                 obligations,
                 loan_evidence,
             ));
@@ -20541,7 +20527,7 @@ fn function_outcome_from_body_with_resource_transfer(
     return_state.next_local_frame = state.next_local_frame;
     return_state.next_local_lifetime = state.next_local_lifetime;
     Ok((
-        CFunctionOutcome::Return {
+        FunctionOutcome::Return {
             value,
             state: Box::new(return_state),
         },
@@ -20551,9 +20537,9 @@ fn function_outcome_from_body_with_resource_transfer(
 }
 
 fn without_loan_evidence(
-    (outcome, obligations): (CFunctionOutcome, Vec<ProofObligation>),
+    (outcome, obligations): (FunctionOutcome, Vec<ProofObligation>),
 ) -> (
-    CFunctionOutcome,
+    FunctionOutcome,
     Vec<ProofObligation>,
     Option<Arc<CheckedLoanCallEvidence>>,
 ) {
@@ -20571,7 +20557,7 @@ pub(super) fn contract_exit_outcome(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
-    outcome: CStatementOutcome,
+    outcome: StatementOutcome,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -20579,11 +20565,11 @@ pub(super) fn contract_exit_outcome(
 ) -> ExecutionResult<
     Result<
         (
-            CFunctionOutcome,
+            FunctionOutcome,
             Vec<ProofObligation>,
             Option<Arc<CheckedLoanCallEvidence>>,
         ),
-        CRuntimeError,
+        RuntimeError,
     >,
 > {
     contract_exit_outcome_with_boundary_transfer(
@@ -20608,10 +20594,10 @@ pub(super) fn contract_exit_outcome(
 pub(crate) fn check_acquired_control_member_effects(
     entry: &ExecutionState,
     exit: &ExecutionState,
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<(), CRuntimeError>> {
+) -> ExecutionResult<Result<(), RuntimeError>> {
     let (Some(before), Some(after)) = (
         entry.population_effects.creation.as_ref(),
         exit.population_effects.creation.as_ref(),
@@ -20638,13 +20624,13 @@ pub(crate) fn check_acquired_control_member_effects(
             Err(error) => return Ok(Err(error)),
         };
         let governed = match fact.resource() {
-            CResource::Composite { name, arguments } => acquired.iter().any(|description| {
+            Resource::Composite { name, arguments } => acquired.iter().any(|description| {
                 description.family() == name && description.arguments() == arguments.as_ref()
             }),
             _ => false,
         };
         if !governed {
-            return Ok(Err(CRuntimeError::FunctionContract(
+            return Ok(Err(RuntimeError::FunctionContract(
                 "a locked helper's member must belong to the population whose control it acquires"
                     .into(),
             )));
@@ -20655,17 +20641,17 @@ pub(crate) fn check_acquired_control_member_effects(
         for (produce, spec) in interface
             .resource_requires()
             .iter()
-            .filter(|spec| spec.role() == CResourceTransferRole::Consume)
+            .filter(|spec| spec.role() == ResourceTransferRole::Consume)
             .map(|spec| (false, spec))
             .chain(
                 interface
                     .resource_ensures()
                     .iter()
-                    .filter(|spec| spec.role() == CResourceTransferRole::Produce)
+                    .filter(|spec| spec.role() == ResourceTransferRole::Produce)
                     .map(|spec| (true, spec)),
             )
         {
-            let CResourceTerm::Composite { name, .. } = spec.term() else {
+            let ResourceTerm::Composite { name, .. } = spec.term() else {
                 continue;
             };
             if name != description.family() {
@@ -20681,14 +20667,14 @@ pub(crate) fn check_acquired_control_member_effects(
                 Ok(fact) => fact,
                 Err(error) => return Ok(Err(error)),
             };
-            let CResource::Composite { arguments, .. } = fact.resource() else {
+            let Resource::Composite { arguments, .. } = fact.resource() else {
                 continue;
             };
             if arguments.as_ref() != description.arguments()
                 || fact.owned_quantity_term().and_then(MachineTerm::as_const) != Some(1)
                 || declared.replace(produce).is_some()
             {
-                return Ok(Err(CRuntimeError::FunctionContract(format!(
+                return Ok(Err(RuntimeError::FunctionContract(format!(
                     "a helper that acquires the control of {}(...) supports one produced or consumed member",
                     description.family()
                 ))));
@@ -20703,7 +20689,7 @@ pub(crate) fn check_acquired_control_member_effects(
         };
         if !matches {
             let family = description.family();
-            return Ok(Err(CRuntimeError::FunctionContract(match declared {
+            return Ok(Err(RuntimeError::FunctionContract(match declared {
                 Some(true) => format!(
                     "Requires produces {family}(...) to be created under the acquired authority"
                 ),
@@ -20723,7 +20709,7 @@ fn contract_exit_outcome_with_boundary_transfer(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
-    outcome: CStatementOutcome,
+    outcome: StatementOutcome,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -20732,18 +20718,18 @@ fn contract_exit_outcome_with_boundary_transfer(
 ) -> ExecutionResult<
     Result<
         (
-            CFunctionOutcome,
+            FunctionOutcome,
             Vec<ProofObligation>,
             Option<Arc<CheckedLoanCallEvidence>>,
         ),
-        CRuntimeError,
+        RuntimeError,
     >,
 > {
     if let Some(receipt) = checked_transfer
         && (purpose != ResourceTransitionPurpose::FunctionBoundary
             || !receipt.matches(caller_state, function, arguments))
     {
-        return Ok(Err(CRuntimeError::FunctionContract(
+        return Ok(Err(RuntimeError::FunctionContract(
             "function boundary resource receipt belongs to another entry".into(),
         )));
     }
@@ -20755,14 +20741,14 @@ fn contract_exit_outcome_with_boundary_transfer(
         })
         .collect::<Option<Vec<_>>>()
     else {
-        return Ok(Err(CRuntimeError::FunctionContract(
+        return Ok(Err(RuntimeError::FunctionContract(
             "contract exit rule requires symbolic value arguments".to_string(),
         )));
     };
     let outcome = complete_void_fallthrough(function, outcome);
-    if let CStatementOutcome::Return { state, .. } = &outcome {
+    if let StatementOutcome::Return { state, .. } = &outcome {
         let entry = bind_c_function_arguments(caller_state, function, &argument_values)
-            .ok_or(CRuntimeError::TypeMismatch);
+            .ok_or(RuntimeError::TypeMismatch);
         match entry.and_then(|entry| {
             check_mutex_helper_body_return(
                 &entry,
@@ -20781,7 +20767,7 @@ fn contract_exit_outcome_with_boundary_transfer(
     // composes its resources as it goes; compose the retained ones the same
     // way so the completed outcome is the canonical one certification compares.
     let outcome = match outcome {
-        CStatementOutcome::Return { value, mut state } => {
+        StatementOutcome::Return { value, mut state } => {
             if state.loan_view_bindings().iter().next().is_none() {
                 // Validate the retained partition, then normalize its representation.
                 // Re-inserting every fact into an empty context repeated all
@@ -20794,11 +20780,11 @@ fn contract_exit_outcome_with_boundary_transfer(
             } else if state.resources.validity_error(assumptions).is_some()
                 || !state.loan_bindings_are_consistent()
             {
-                return Ok(Err(CRuntimeError::FunctionContract(
+                return Ok(Err(RuntimeError::FunctionContract(
                     "stable-view return resources are not a valid bound context".to_string(),
                 )));
             }
-            CStatementOutcome::Return { value, state }
+            StatementOutcome::Return { value, state }
         }
         other => other,
     };
@@ -20807,7 +20793,7 @@ fn contract_exit_outcome_with_boundary_transfer(
     } else {
         let Some(callee) = bind_contract_proof_arguments(caller_state, function, &argument_values)
         else {
-            return Ok(Err(CRuntimeError::TypeMismatch));
+            return Ok(Err(RuntimeError::TypeMismatch));
         };
         callee
     };
@@ -20816,8 +20802,8 @@ fn contract_exit_outcome_with_boundary_transfer(
         || authority_final_release_contract(function.contract_interface())
         || authority_exchanges_member_contract(function.contract_interface())
     {
-        let CStatementOutcome::Return { state, .. } = &outcome else {
-            return Ok(Err(CRuntimeError::FunctionContract(
+        let StatementOutcome::Return { state, .. } = &outcome else {
+            return Ok(Err(RuntimeError::FunctionContract(
                 "population helper must return after its member transition".into(),
             )));
         };
@@ -20859,8 +20845,8 @@ fn contract_exit_outcome_with_boundary_transfer(
                     Err(error) => return Ok(Err(error)),
                 }
             };
-            let CResource::Composite { name, .. } = selected.resource() else {
-                return Ok(Err(CRuntimeError::FunctionContract(
+            let Resource::Composite { name, .. } = selected.resource() else {
+                return Ok(Err(RuntimeError::FunctionContract(
                     "final release requires a control resource".into(),
                 )));
             };
@@ -20873,7 +20859,7 @@ fn contract_exit_outcome_with_boundary_transfer(
                 assumptions,
             ) {
                 Ok(descriptions) => descriptions,
-                Err(error) => return Ok(Err(CRuntimeError::FunctionContract(error))),
+                Err(error) => return Ok(Err(RuntimeError::FunctionContract(error))),
             };
             for description in &descriptions {
                 if !state
@@ -20882,7 +20868,7 @@ fn contract_exit_outcome_with_boundary_transfer(
                     .as_ref()
                     .is_some_and(|events| events.checked_empty_population(description))
                 {
-                    return Ok(Err(CRuntimeError::FunctionContract(format!(
+                    return Ok(Err(RuntimeError::FunctionContract(format!(
                         "Requires consumes authority({}(...))",
                         description.family(),
                     ))));
@@ -20939,7 +20925,7 @@ fn contract_exit_outcome_with_boundary_transfer(
             };
             let expected_quantity = expected_member.owned_quantity_term().cloned();
             let expected_description = match expected_member.resource() {
-                CResource::Composite { name, arguments } => Some(ResourceDescription::new(
+                Resource::Composite { name, arguments } => Some(ResourceDescription::new(
                     name.clone(),
                     arguments.clone(),
                     ResourceFieldSchema::new(vec![]).expect("empty schema"),
@@ -21019,14 +21005,14 @@ fn contract_exit_outcome_with_boundary_transfer(
                 });
             if !exchanged {
                 let requirement = population_member_requirement(member_spec);
-                return Ok(Err(CRuntimeError::FunctionContract(format!(
+                return Ok(Err(RuntimeError::FunctionContract(format!(
                     "Requires {} {requirement}",
                     if produce { "produces" } else { "consumes" }
                 ))));
             }
         }
     }
-    if let CStatementOutcome::Return { state, .. } = &outcome
+    if let StatementOutcome::Return { state, .. } = &outcome
         && let Err(error) = check_acquired_control_member_effects(
             &callee_state,
             state,
@@ -21095,10 +21081,10 @@ fn contract_exit_outcome_with_boundary_transfer(
     }
 }
 
-pub(crate) fn is_deferred_conditional_resource_effect_error(error: &CRuntimeError) -> bool {
+pub(crate) fn is_deferred_conditional_resource_effect_error(error: &RuntimeError) -> bool {
     matches!(
         error,
-        CRuntimeError::FunctionContract(message)
+        RuntimeError::FunctionContract(message)
             if message == "could not select a conditional resource effect: its pre-state condition is not proven"
                 || message == "function body does not yet establish its joint returned resource units"
     )
@@ -21113,8 +21099,8 @@ pub(crate) fn checked_contract_exit_outcome_with_boundary_transfer(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
-    outcome: CStatementOutcome,
-    body_outcome: CFunctionOutcome,
+    outcome: StatementOutcome,
+    body_outcome: FunctionOutcome,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -21123,13 +21109,13 @@ pub(crate) fn checked_contract_exit_outcome_with_boundary_transfer(
 ) -> ExecutionResult<
     Result<
         (
-            CFunctionOutcome,
+            FunctionOutcome,
             Vec<ProofObligation>,
             Option<Arc<CheckedLoanCallEvidence>>,
             bool,
-            Option<CRuntimeError>,
+            Option<RuntimeError>,
         ),
-        CRuntimeError,
+        RuntimeError,
     >,
 > {
     let deferred_obligations = obligations.clone();
@@ -21145,7 +21131,7 @@ pub(crate) fn checked_contract_exit_outcome_with_boundary_transfer(
         checked_transfer,
     )? {
         Ok((outcome, obligations, loan_evidence)) => {
-            if let CFunctionOutcome::RuntimeError(error) = &outcome
+            if let FunctionOutcome::RuntimeError(error) = &outcome
                 && is_deferred_conditional_resource_effect_error(error)
             {
                 return Ok(Ok((
@@ -21176,27 +21162,27 @@ pub(crate) fn resolve_deferred_contract_exit(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
-    body_outcome: &CFunctionOutcome,
+    body_outcome: &FunctionOutcome,
     checked_transfer: Option<&CheckedBoundaryResourceTransfer>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<CFunctionOutcome, CRuntimeError>> {
+) -> ExecutionResult<Result<FunctionOutcome, RuntimeError>> {
     let statement_outcome = match body_outcome {
-        CFunctionOutcome::Return { value, state } => CStatementOutcome::Return {
+        FunctionOutcome::Return { value, state } => StatementOutcome::Return {
             value: value.clone(),
             state: state.clone(),
         },
-        CFunctionOutcome::Throw { value, state } => CStatementOutcome::Throw {
+        FunctionOutcome::Throw { value, state } => StatementOutcome::Throw {
             value: value.clone(),
             state: state.clone(),
         },
-        CFunctionOutcome::VerificationDiverges => {
-            return Ok(Ok(CFunctionOutcome::VerificationDiverges));
+        FunctionOutcome::VerificationDiverges => {
+            return Ok(Ok(FunctionOutcome::VerificationDiverges));
         }
-        CFunctionOutcome::UndefinedBehavior(error) => {
-            return Ok(Ok(CFunctionOutcome::UndefinedBehavior(error.clone())));
+        FunctionOutcome::UndefinedBehavior(error) => {
+            return Ok(Ok(FunctionOutcome::UndefinedBehavior(error.clone())));
         }
-        CFunctionOutcome::RuntimeError(error) => return Ok(Err(error.clone())),
+        FunctionOutcome::RuntimeError(error) => return Ok(Err(error.clone())),
     };
     match contract_exit_outcome_with_boundary_transfer(
         caller_state,
@@ -21218,17 +21204,17 @@ pub(super) fn apply_verified_contract_resource_transition(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
-    outcome: CFunctionOutcome,
+    outcome: FunctionOutcome,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<(CFunctionOutcome, Vec<ProofObligation>), CRuntimeError>> {
+) -> ExecutionResult<Result<(FunctionOutcome, Vec<ProofObligation>), RuntimeError>> {
     // As at call sites, the authority helper rules govern only contracts
     // that reach a population; an ordinary contract's exit transition folds
     // its produced composites by their definitions.
     if contract_reaches_population(function.contract_interface())
         && !authority_supports_resource_contract(function.contract_interface())
     {
-        return Ok(Err(CRuntimeError::FunctionContract(
+        return Ok(Err(RuntimeError::FunctionContract(
             "helper contract needs conserved owns resources, a checked consumes/produces effect, or a supported unit exchange".into(),
         )));
     }
@@ -21240,14 +21226,14 @@ pub(super) fn apply_verified_contract_resource_transition(
         })
         .collect::<Option<Vec<_>>>()
     else {
-        return Ok(Err(CRuntimeError::FunctionContract(
+        return Ok(Err(RuntimeError::FunctionContract(
             "contract resource transition requires symbolic value arguments".to_string(),
         )));
     };
     let Some(callee_state) =
         bind_contract_proof_arguments(caller_state, function, &argument_values)
     else {
-        return Ok(Err(CRuntimeError::TypeMismatch));
+        return Ok(Err(RuntimeError::TypeMismatch));
     };
     let transfer = match prepare_function_resource_transfer(
         caller_state,
@@ -21262,19 +21248,19 @@ pub(super) fn apply_verified_contract_resource_transition(
         Err(error) => return Ok(Err(error)),
     };
     let statement_outcome = match outcome {
-        CFunctionOutcome::Return { value, state } => CStatementOutcome::Return { value, state },
-        CFunctionOutcome::Throw { .. } => {
-            return Ok(Err(CRuntimeError::FunctionContract(
+        FunctionOutcome::Return { value, state } => StatementOutcome::Return { value, state },
+        FunctionOutcome::Throw { .. } => {
+            return Ok(Err(RuntimeError::FunctionContract(
                 "exceptional outcomes require an exceptional contract interface".to_string(),
             )));
         }
-        CFunctionOutcome::VerificationDiverges => {
-            return Ok(Ok((CFunctionOutcome::VerificationDiverges, Vec::new())));
+        FunctionOutcome::VerificationDiverges => {
+            return Ok(Ok((FunctionOutcome::VerificationDiverges, Vec::new())));
         }
-        CFunctionOutcome::UndefinedBehavior(error) => {
-            return Ok(Ok((CFunctionOutcome::UndefinedBehavior(error), Vec::new())));
+        FunctionOutcome::UndefinedBehavior(error) => {
+            return Ok(Ok((FunctionOutcome::UndefinedBehavior(error), Vec::new())));
         }
-        CFunctionOutcome::RuntimeError(error) => return Ok(Err(error)),
+        FunctionOutcome::RuntimeError(error) => return Ok(Err(error)),
     };
     let (outcome, obligations, _loan_evidence) = crate::instrumentation::measure_operation(
         function.name(),
@@ -21295,7 +21281,7 @@ pub(super) fn apply_verified_contract_resource_transition(
         },
     )?;
     match outcome {
-        CFunctionOutcome::RuntimeError(error) => Ok(Err(error)),
+        FunctionOutcome::RuntimeError(error) => Ok(Err(error)),
         outcome => Ok(Ok((outcome, obligations))),
     }
 }
@@ -21303,30 +21289,30 @@ pub(super) fn apply_verified_contract_resource_transition(
 pub(super) fn function_outcome_from_body(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
-    outcome: CStatementOutcome,
+    outcome: StatementOutcome,
     mut obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     return_resources: Option<&ResourceContext>,
-) -> (CFunctionOutcome, Vec<ProofObligation>) {
+) -> (FunctionOutcome, Vec<ProofObligation>) {
     match outcome {
-        CStatementOutcome::Return { value, mut state } => {
+        StatementOutcome::Return { value, mut state } => {
             if let Some(error) =
                 construction_return::complete_parameter(&state, function.contract_interface())
             {
-                return (CFunctionOutcome::RuntimeError(error), obligations);
+                return (FunctionOutcome::RuntimeError(error), obligations);
             }
             if let Some(undefined_behavior) =
                 freed_pointer_return_conversion(&state, function, &value, assumptions)
             {
                 return (
-                    CFunctionOutcome::UndefinedBehavior(undefined_behavior),
+                    FunctionOutcome::UndefinedBehavior(undefined_behavior),
                     obligations,
                 );
             }
             if let Some(refusal) =
                 incompatible_pointer_return(&state, function, &value, assumptions)
             {
-                return (CFunctionOutcome::RuntimeError(refusal), obligations);
+                return (FunctionOutcome::RuntimeError(refusal), obligations);
             }
             let Some(value) = coerce_retained_function_return_value(
                 value,
@@ -21335,7 +21321,7 @@ pub(super) fn function_outcome_from_body(
                 assumptions,
             ) else {
                 return (
-                    CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
+                    FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(format!(
                         "{} {RETURN_TYPE_MISMATCH}",
                         function.name()
                     ))),
@@ -21347,17 +21333,18 @@ pub(super) fn function_outcome_from_body(
                     Ok(value) => value.into(),
                     Err(AggregateReturnRefusal::UninitializedRead) => {
                         return (
-                            CFunctionOutcome::UndefinedBehavior(
-                                CUndefinedBehavior::UninitializedRead,
+                            FunctionOutcome::UndefinedBehavior(
+                                UndefinedBehavior::UninitializedRead,
                             ),
                             obligations,
                         );
                     }
                     Err(AggregateReturnRefusal::InvalidValue) => {
                         return (
-                            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
-                                format!("{} returned an invalid struct value", function.name()),
-                            )),
+                            FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(format!(
+                                "{} returned an invalid struct value",
+                                function.name()
+                            ))),
                             obligations,
                         );
                     }
@@ -21380,16 +21367,16 @@ pub(super) fn function_outcome_from_body(
             };
             let retired_creation_blocks = match retired_memory {
                 Ok(memory) => {
-                    let blocks = retired_automatic_creation_blocks(&state, &memory);
+                    let blocks = retired_automatistorage_creation_blocks(&state, &memory);
                     caller_state.set_memory(memory);
                     blocks
                 }
-                Err(error) => return (CFunctionOutcome::RuntimeError(error), obligations),
+                Err(error) => return (FunctionOutcome::RuntimeError(error), obligations),
             };
             let retired_creation =
                 match state.retired_population_creation_for_blocks(&retired_creation_blocks) {
                     Ok(creation) => creation,
-                    Err(error) => return (CFunctionOutcome::RuntimeError(error), obligations),
+                    Err(error) => return (FunctionOutcome::RuntimeError(error), obligations),
                 };
             if function.has_inline_body() {
                 // Inline bodies execute with a parameter-only local
@@ -21423,7 +21410,7 @@ pub(super) fn function_outcome_from_body(
                 };
                 crate::kernel::eval::retire_automatic_storage_owner(
                     &mut caller_state,
-                    &CMemoryRange::new_with_element_width(
+                    &MemoryRange::new_with_element_width(
                         Pointer {
                             block: block.clone(),
                             offset: PointerOffsetTerm::Constant(0),
@@ -21444,17 +21431,17 @@ pub(super) fn function_outcome_from_body(
             caller_state.next_local_frame = state.next_local_frame;
             caller_state.next_local_lifetime = state.next_local_lifetime;
             (
-                CFunctionOutcome::Return {
+                FunctionOutcome::Return {
                     value,
                     state: Box::new(caller_state),
                 },
                 obligations,
             )
         }
-        CStatementOutcome::Throw { value, state } => {
+        StatementOutcome::Throw { value, state } => {
             if !function.exceptional_signature().permits(&value.native()) {
                 return (
-                    CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
+                    FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(format!(
                         "{} produced an exceptional outcome not declared by its signature",
                         function.name()
                     ))),
@@ -21470,16 +21457,16 @@ pub(super) fn function_outcome_from_body(
             };
             let retired_creation_blocks = match retired_memory {
                 Ok(memory) => {
-                    let blocks = retired_automatic_creation_blocks(&state, &memory);
+                    let blocks = retired_automatistorage_creation_blocks(&state, &memory);
                     caller_state.set_memory(memory);
                     blocks
                 }
-                Err(error) => return (CFunctionOutcome::RuntimeError(error), obligations),
+                Err(error) => return (FunctionOutcome::RuntimeError(error), obligations),
             };
             let retired_creation =
                 match state.retired_population_creation_for_blocks(&retired_creation_blocks) {
                     Ok(creation) => creation,
-                    Err(error) => return (CFunctionOutcome::RuntimeError(error), obligations),
+                    Err(error) => return (FunctionOutcome::RuntimeError(error), obligations),
                 };
             caller_state.thread_ledger = state.thread_ledger.clone();
             caller_state.mutex_ledger = state.mutex_ledger.clone();
@@ -21504,7 +21491,7 @@ pub(super) fn function_outcome_from_body(
                 };
                 crate::kernel::eval::retire_automatic_storage_owner(
                     &mut caller_state,
-                    &CMemoryRange::new_with_element_width(
+                    &MemoryRange::new_with_element_width(
                         Pointer {
                             block: block.clone(),
                             offset: PointerOffsetTerm::Constant(0),
@@ -21525,45 +21512,45 @@ pub(super) fn function_outcome_from_body(
             caller_state.next_local_frame = state.next_local_frame;
             caller_state.next_local_lifetime = state.next_local_lifetime;
             (
-                CFunctionOutcome::Throw {
+                FunctionOutcome::Throw {
                     value,
                     state: Box::new(caller_state),
                 },
                 obligations,
             )
         }
-        CStatementOutcome::Normal(_) => (
-            CFunctionOutcome::RuntimeError(CRuntimeError::MissingReturn),
+        StatementOutcome::Normal(_) => (
+            FunctionOutcome::RuntimeError(RuntimeError::MissingReturn),
             obligations,
         ),
-        CStatementOutcome::Break(_)
-        | CStatementOutcome::Continue(_)
-        | CStatementOutcome::Jump { .. } => (
-            CFunctionOutcome::RuntimeError(CRuntimeError::MissingReturn),
+        StatementOutcome::Break(_)
+        | StatementOutcome::Continue(_)
+        | StatementOutcome::Jump { .. } => (
+            FunctionOutcome::RuntimeError(RuntimeError::MissingReturn),
             obligations,
         ),
-        CStatementOutcome::VerificationDiverges => {
-            (CFunctionOutcome::VerificationDiverges, obligations)
+        StatementOutcome::VerificationDiverges => {
+            (FunctionOutcome::VerificationDiverges, obligations)
         }
-        CStatementOutcome::UndefinedBehavior(undefined_behavior) => (
-            CFunctionOutcome::UndefinedBehavior(undefined_behavior),
+        StatementOutcome::UndefinedBehavior(undefined_behavior) => (
+            FunctionOutcome::UndefinedBehavior(undefined_behavior),
             obligations,
         ),
-        CStatementOutcome::RuntimeError(error) => {
-            (CFunctionOutcome::RuntimeError(error), obligations)
+        StatementOutcome::RuntimeError(error) => {
+            (FunctionOutcome::RuntimeError(error), obligations)
         }
     }
 }
 
 fn exceptional_outcome_declaration_error(
     function: &ProgramFunction,
-    outcome: &CStatementOutcome,
-) -> Option<CRuntimeError> {
-    let CStatementOutcome::Throw { value, .. } = outcome else {
+    outcome: &StatementOutcome,
+) -> Option<RuntimeError> {
+    let StatementOutcome::Throw { value, .. } = outcome else {
         return None;
     };
     (!function.exceptional_signature().permits(&value.native())).then(|| {
-        CRuntimeError::FunctionContract(format!(
+        RuntimeError::FunctionContract(format!(
             "{} produced an exceptional outcome not declared by its signature",
             function.name()
         ))

@@ -5,7 +5,7 @@ fn claim_closing_updates_only_selected_entries_and_preserves_forks() {
     for count in [16_usize, 64, 256, 512] {
         let outcome = outcome();
         let original = OutcomeClaimGoals::open(
-            (0..count).map(|index| (CFunctionContractClaimKey::Ensure(index), None)),
+            (0..count).map(|index| (FunctionContractClaimKey::Ensure(index), None)),
             false,
         );
         let ((closed, work), indexed_work) = crate::persistent::measure_persistent_work(|| {
@@ -13,7 +13,7 @@ fn claim_closing_updates_only_selected_entries_and_preserves_forks() {
                 let mut current = original.clone();
                 // Out-of-order closing must retain the first open source position.
                 for index in (0..count).rev() {
-                    let key = CFunctionContractClaimKey::Ensure(index);
+                    let key = FunctionContractClaimKey::Ensure(index);
                     assert_eq!(current.first_open_position(), Some(0));
                     current = current.close(&key, receipt(), &outcome.identity).unwrap();
                     assert!(current.evidence(&key).is_some());
@@ -31,12 +31,12 @@ fn claim_closing_updates_only_selected_entries_and_preserves_forks() {
         assert_eq!(original.first_open_position(), Some(0));
         assert!(
             original
-                .evidence(&CFunctionContractClaimKey::Ensure(count - 1))
+                .evidence(&FunctionContractClaimKey::Ensure(count - 1))
                 .is_none()
         );
         let sibling = original
             .close(
-                &CFunctionContractClaimKey::Ensure(0),
+                &FunctionContractClaimKey::Ensure(0),
                 receipt(),
                 &outcome.identity,
             )
@@ -44,24 +44,24 @@ fn claim_closing_updates_only_selected_entries_and_preserves_forks() {
         assert_eq!(sibling.first_open_position(), Some(1));
         assert!(
             sibling
-                .evidence(&CFunctionContractClaimKey::Ensure(count - 1))
+                .evidence(&FunctionContractClaimKey::Ensure(count - 1))
                 .is_none()
         );
         let (((), work), indexed_work) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
                 assert!(
                     closed
-                        .evidence(&CFunctionContractClaimKey::Ensure(count - 1))
+                        .evidence(&FunctionContractClaimKey::Ensure(count - 1))
                         .is_some()
                 );
                 assert!(
                     closed
-                        .evidence(&CFunctionContractClaimKey::Ensure(count))
+                        .evidence(&FunctionContractClaimKey::Ensure(count))
                         .is_none()
                 );
                 assert!(
                     closed
-                        .target(&CFunctionContractClaimKey::Ensure(count))
+                        .target(&FunctionContractClaimKey::Ensure(count))
                         .is_none()
                 );
             })
@@ -74,11 +74,11 @@ fn claim_closing_updates_only_selected_entries_and_preserves_forks() {
 #[test]
 fn outcome_goal_selection_ignores_closed_claims_and_unrelated_proof_facts() {
     let execution = closing_execution();
-    let context = crate::kernel::CContractClosingContext::new(&execution);
+    let context = crate::kernel::ContractClosingContext::new(&execution);
     let core = outcome();
     for count in [16, 64, 256, 512] {
         let mut claims = OutcomeClaimGoals::open(
-            (0..count).map(|index| (CFunctionContractClaimKey::Ensure(index), None)),
+            (0..count).map(|index| (FunctionContractClaimKey::Ensure(index), None)),
             false,
         );
         let mut goal =
@@ -89,13 +89,13 @@ fn outcome_goal_selection_ignores_closed_claims_and_unrelated_proof_facts() {
             goal.first_open_goal(),
             Ok(Some(OutcomeGoal::Claim {
                 position: 0,
-                key: CFunctionContractClaimKey::Ensure(0)
+                key: FunctionContractClaimKey::Ensure(0)
             }))
         );
         for index in 0..count {
             claims = claims
                 .close(
-                    &CFunctionContractClaimKey::Ensure(index),
+                    &FunctionContractClaimKey::Ensure(index),
                     receipt(),
                     &core.identity,
                 )
@@ -175,20 +175,20 @@ fn ordinary_closing_steps_ignore_unrelated_facts_and_closed_source_claims() {
     let mut baseline = None;
     for count in [16, 64, 256, 512] {
         let mut claims = OutcomeClaimGoals::open(
-            (0..count).map(|index| (CFunctionContractClaimKey::Ensure(index), None)),
+            (0..count).map(|index| (FunctionContractClaimKey::Ensure(index), None)),
             false,
         );
         for index in 0..count {
             claims = claims
                 .close(
-                    &CFunctionContractClaimKey::Ensure(index),
+                    &FunctionContractClaimKey::Ensure(index),
                     receipt(),
                     &core.identity,
                 )
                 .unwrap();
         }
         for (fact_count, facts) in &fact_sets {
-            let context = crate::kernel::CContractClosingContext::new(&execution);
+            let context = crate::kernel::ContractClosingContext::new(&execution);
             let original = context.open(0, &core);
             let (closed, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let mut closing = original.clone();

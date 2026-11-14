@@ -22,8 +22,8 @@ pub(in crate::kernel) enum ResolutionQuery {
     SnapshotsMatch(SharedMemory, SharedMemory, Pointer),
     CanonicalMemory(SharedMemory, Pointer),
     RangeDisjoint(Pointer, Pointer),
-    RangesSeparate(CMemoryRange, CMemoryRange),
-    RangeContained(CMemoryRange, CMemoryRange),
+    RangesSeparate(MemoryRange, MemoryRange),
+    RangeContained(MemoryRange, MemoryRange),
     PointerInRange(Pointer, Pointer, MachineTerm, MachineTerm, u32),
 }
 
@@ -153,7 +153,7 @@ const RESOLUTION_QUERY_MEMO_LIMIT: usize = 200_000;
 
 thread_local! {
     static CANONICAL_MEMORY_CACHE: std::cell::RefCell<
-        std::collections::HashMap<(super::SharedMemory, Pointer), CMemory>,
+        std::collections::HashMap<(super::SharedMemory, Pointer), Memory>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
     /// [`source_holds_cells_observable_by`], by interned snapshot and block.
     static SOURCE_OBSERVABLE_BY_BLOCK: std::cell::RefCell<
@@ -499,7 +499,7 @@ thread_local! {
 pub(crate) fn closure_memoized_fact_check(
     check: ClosureFactCheck,
     propositions: &[&Proposition],
-    after: Option<&CMemory>,
+    after: Option<&Memory>,
     assumptions: &PureFactContext,
     transitions: &(impl ExecutionFactSource + ?Sized),
     run: impl FnOnce() -> bool,
@@ -1950,7 +1950,7 @@ fn memory_resolution_uses_pointer_classes_across_blocks() {
 #[test]
 fn memory_resolution_graph_offsets_keep_load_snapshots_distinct() {
     let _session = crate::kernel::VerificationSession::enter();
-    let before = crate::kernel::intern_c_memory(CMemory::new().with_block("offset-load", 16));
+    let before = crate::kernel::intern_c_memory(Memory::new().with_block("offset-load", 16));
     let scalar = |id: u64| MachineTerm::Variable(Variable(95_000 + id));
     let address = |index| Pointer {
         block: "offset-load".into(),
@@ -2045,7 +2045,7 @@ fn pointer_with_exact_index_constants(pointer: &Pointer, assumptions: &PureFactC
 /// Resolve this address through exact cells, recorded scalar/pointer aliases,
 /// and the indexed interval of cells with the same base address.
 fn stored_value_at_equal_pointer(
-    memory: &CMemory,
+    memory: &Memory,
     pointer: &Pointer,
     assumptions: &PureFactContext,
 ) -> Option<ProgramValue> {
@@ -2596,7 +2596,7 @@ pub(in crate::kernel) fn c_values_proven_equal_for_memory_resolution(
 ///
 /// The object read under **its own name** is a different question, and not
 /// this filter's to answer. A scalar local's program-visible value lives in
-/// the `CLocalEnvironment` binding, which the callers of these two
+/// the `LocalEnvironment` binding, which the callers of these two
 /// comparisons either compare exactly as part of `ExecutionState` equality or do not
 /// ask about at all (an effect chain's two endpoints). A caller that needs the
 /// slot cell itself compares `ExecutionState::local_cell_values` beside the memory,
@@ -2608,8 +2608,8 @@ pub(in crate::kernel) fn local_block_no_pointer_can_reach(block: &PointerBlock) 
 }
 
 pub(in crate::kernel) fn memories_proven_equal_for_memory_resolution(
-    left: &CMemory,
-    right: &CMemory,
+    left: &Memory,
+    right: &Memory,
     assumptions: &PureFactContext,
 ) -> bool {
     if left == right {
@@ -2776,8 +2776,8 @@ pub(in crate::kernel) fn load_equality_lacks_recorded_evidence(
 }
 
 fn memory_snapshots_match_for_resolution(
-    left: &CMemory,
-    right: &CMemory,
+    left: &Memory,
+    right: &Memory,
     pointer: &Pointer,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -2860,11 +2860,11 @@ pub(in crate::kernel) fn cell_access_byte_width(value: &ProgramValue) -> u32 {
 /// stands in the widest scalar — over-stating a width can only shrink the
 /// separated set.
 pub(in crate::kernel) fn differing_cell_byte_width(
-    left: &CMemory,
-    right: &CMemory,
+    left: &Memory,
+    right: &Memory,
     cell_pointer: &Pointer,
 ) -> u32 {
-    let stored_width = |memory: &CMemory| {
+    let stored_width = |memory: &Memory| {
         memory
             .cells
             .get(cell_pointer)
@@ -2889,8 +2889,8 @@ pub(in crate::kernel) fn differing_cell_byte_width(
 /// for them; provable overlap and an unknown gap both mean the snapshots are
 /// not shown to agree.
 pub(in crate::kernel) fn differing_cell_bytes_miss_the_load(
-    left: &CMemory,
-    right: &CMemory,
+    left: &Memory,
+    right: &Memory,
     cell_pointer: &Pointer,
     load_pointer: &Pointer,
     load_bytes: u32,
@@ -2966,7 +2966,7 @@ fn cell_is_observable_by_load(cell_pointer: &Pointer, load: &Pointer) -> bool {
 /// it. That is a property of the whole program's source, which is why it may
 /// be spent with neither a pointer nor a fact context. Every other local stays
 /// in the comparison.
-fn snapshot_objects_agree(left: &CMemory, right: &CMemory, pointer: &Pointer) -> bool {
+fn snapshot_objects_agree(left: &Memory, right: &Memory, pointer: &Pointer) -> bool {
     let reachable = |block: &PointerBlock| !local_block_no_pointer_can_reach(block);
     // Every caller goes on to compare the two cell maps and treats an entry
     // neither side holds as agreement. That reading is only valid between
@@ -2993,13 +2993,13 @@ fn snapshot_objects_agree(left: &CMemory, right: &CMemory, pointer: &Pointer) ->
 /// looked at this map. Once a retired block's cells are gone the tombstone is
 /// the only record that its lifetime ended, and a load through a stale alias
 /// is exactly the load these comparisons are asked about;
-/// `memories_proven_equal_for_memory_resolution`, `CMemory`'s own `eq` and
+/// `memories_proven_equal_for_memory_resolution`, `Memory`'s own `eq` and
 /// `read_region_identity` all compare it.
 ///
 /// Two exclusions, both sound, and each catches what the other does not: this
 /// load's block is proven distinct from that object, or *no* pointer value in
 /// the program designates it.
-fn retirements_agree_for_load(left: &CMemory, right: &CMemory, pointer: &Pointer) -> bool {
+fn retirements_agree_for_load(left: &Memory, right: &Memory, pointer: &Pointer) -> bool {
     left.forgotten
         .ended_local_blocks
         .symmetric_difference(&right.forgotten.ended_local_blocks)
@@ -3010,8 +3010,8 @@ fn retirements_agree_for_load(left: &CMemory, right: &CMemory, pointer: &Pointer
 }
 
 pub(in crate::kernel) fn memory_snapshots_proven_equal_at_pointer(
-    left: &CMemory,
-    right: &CMemory,
+    left: &Memory,
+    right: &Memory,
     pointer: &Pointer,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -3019,8 +3019,8 @@ pub(in crate::kernel) fn memory_snapshots_proven_equal_at_pointer(
 }
 
 fn memory_has_materialized_load_from(
-    source: &CMemory,
-    materialized: &CMemory,
+    source: &Memory,
+    materialized: &Memory,
     pointer: &Pointer,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -3301,8 +3301,8 @@ pub(in crate::kernel) fn pointers_proven_equal_by_reasoning(
 }
 
 pub(in crate::kernel) fn memories_match_for_pointer_load(
-    left: &CMemory,
-    right: &CMemory,
+    left: &Memory,
+    right: &Memory,
     pointer: &Pointer,
 ) -> bool {
     if left == right {
@@ -3344,8 +3344,8 @@ pub(in crate::kernel) fn memories_match_for_pointer_load(
 /// [`CellStore::observable_runs_match`]: crate::kernel::primitives::CellStore::observable_runs_match
 fn observable_cells_match(
     candidates: &AliasCandidates,
-    left: &CMemory,
-    right: &CMemory,
+    left: &Memory,
+    right: &Memory,
     pointer: &Pointer,
 ) -> bool {
     let observable = |cell_pointer: &Pointer| cell_pointer.block.observable_by_load(&pointer.block);
@@ -3455,8 +3455,8 @@ fn observable_elements_match<K: BlockKeyed>(
 /// as cells. A never-address-taken local is the one safe omission: no pointer
 /// value in the program can designate it.
 fn observable_blocks_match_for_load(
-    left: &CMemory,
-    right: &CMemory,
+    left: &Memory,
+    right: &Memory,
     pointer: &Pointer,
     candidates: &AliasCandidates,
 ) -> bool {
@@ -3481,8 +3481,8 @@ fn observable_blocks_match_for_load(
 /// same observable-block question instead of requiring unrelated heap
 /// allocations to match.
 fn observable_heap_metadata_matches_for_load(
-    left: &CMemory,
-    right: &CMemory,
+    left: &Memory,
+    right: &Memory,
     pointer: &Pointer,
     candidates: &AliasCandidates,
 ) -> bool {
@@ -3527,7 +3527,7 @@ fn unrelated_forgotten_snapshots_do_not_prove_their_loads_equal() {
         block: "unrelated-forgotten".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let shell = CMemory::new().with_block("unrelated-forgotten", 4);
+    let shell = Memory::new().with_block("unrelated-forgotten", 4);
     let left_source = crate::kernel::intern_c_memory_ref(&shell.clone().store(
         pointer.clone(),
         ProgramValue::Int32(MachineTerm::constant(1)),
@@ -3554,7 +3554,7 @@ fn unrelated_forgotten_snapshots_do_not_prove_their_loads_equal() {
         "a cell-map match must not erase the identity of forgotten knowledge"
     );
 
-    let load = |memory: &CMemory| {
+    let load = |memory: &Memory| {
         MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory_ref(memory),
             Box::new(pointer.clone()),
@@ -3570,8 +3570,8 @@ fn unrelated_forgotten_snapshots_do_not_prove_their_loads_equal() {
 #[cfg(test)]
 #[test]
 fn unrelated_snapshots_do_not_erase_object_or_heap_state_visible_to_the_load() {
-    let loads_proven_equal = |left: &CMemory, right: &CMemory, pointer: &Pointer| {
-        let load = |memory: &CMemory| {
+    let loads_proven_equal = |left: &Memory, right: &Memory, pointer: &Pointer| {
+        let load = |memory: &Memory| {
             MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory_ref(memory),
                 Box::new(pointer.clone()),
@@ -3584,7 +3584,7 @@ fn unrelated_snapshots_do_not_erase_object_or_heap_state_visible_to_the_load() {
         block: PointerBlock::Symbolic(Variable(7_620_001)),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let bare = CMemory::new();
+    let bare = Memory::new();
     let with_global = bare
         .clone()
         .with_block_without_derivation("global:unrelated-snapshot", 4);
@@ -3601,7 +3601,7 @@ fn unrelated_snapshots_do_not_erase_object_or_heap_state_visible_to_the_load() {
         block: PointerBlock::Heap(7_620_002),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let heap_shell = CMemory::new().with_block_without_derivation(heap_pointer.block.clone(), 4);
+    let heap_shell = Memory::new().with_block_without_derivation(heap_pointer.block.clone(), 4);
     let mut uninitialized = heap_shell.clone();
     std::sync::Arc::make_mut(&mut uninitialized.heap)
         .live_allocations
@@ -3629,7 +3629,7 @@ fn unrelated_snapshots_do_not_erase_object_or_heap_state_visible_to_the_load() {
         block: "unrelated-concrete".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let concrete_memory = CMemory::new().with_block("unrelated-concrete", 4);
+    let concrete_memory = Memory::new().with_block("unrelated-concrete", 4);
     let mut with_unrelated_heap = concrete_memory.clone();
     std::sync::Arc::make_mut(&mut with_unrelated_heap.blocks)
         .insert(PointerBlock::Heap(7_620_003), MemoryBlock::new(4));
@@ -3689,9 +3689,9 @@ fn unrelated_snapshots_do_not_erase_object_or_heap_state_visible_to_the_load() {
 /// are global snapshot identities, so they remain observable at every
 /// non-local pointer until an explicit effect fact frames that pointer.
 pub(in crate::kernel) fn canonical_memory_for_pointer_load(
-    memory: &CMemory,
+    memory: &Memory,
     pointer: &Pointer,
-) -> CMemory {
+) -> Memory {
     // Canonicalization is assumption-free and deterministic, so memoize by
     // interned snapshot identity; the intern also dedups the key storage.
     let key = (super::intern_c_memory_ref(memory), pointer.clone());
@@ -3955,7 +3955,7 @@ pub(in crate::kernel) fn run_shape_representative(
 /// [`canonical_memory_for_pointer_load_uncached`] asks it of a cell: one
 /// answer per spelling shape where [`run_shape_representatives`] finds the
 /// slots uniform, and one per slot otherwise.
-fn run_materialization_sources(run: &crate::kernel::primitives::CellRun) -> Vec<Option<CMemory>> {
+fn run_materialization_sources(run: &crate::kernel::primitives::CellRun) -> Vec<Option<Memory>> {
     let slot_source = |index: u32| {
         let cell_pointer = run.slot_pointer(index);
         let value = run.value(index);
@@ -3989,7 +3989,7 @@ fn run_materialization_sources(run: &crate::kernel::primitives::CellRun) -> Vec<
     answers
 }
 
-fn canonical_memory_for_pointer_load_uncached(memory: &CMemory, pointer: &Pointer) -> CMemory {
+fn canonical_memory_for_pointer_load_uncached(memory: &Memory, pointer: &Pointer) -> Memory {
     // A snapshot met again while its own canonical form is being computed
     // is a cycle through the materialized cells and stands for itself.
     let Some(_query) = ResolutionQueryGuard::enter(ResolutionQuery::CanonicalMemory(
@@ -4418,7 +4418,7 @@ fn run_has_direct_store_separation(
     }
     // Cache retention is optional. Check only the selected endpoints; the
     // general membership evidence builder searches aliases after a miss.
-    let contains_access = |pointer: &Pointer, bytes: u32, range: &CMemoryRange| {
+    let contains_access = |pointer: &Pointer, bytes: u32, range: &MemoryRange| {
         let width = range.element_width();
         if bytes == 0 || width == 0 {
             return false;
@@ -4448,7 +4448,7 @@ fn run_has_direct_store_separation(
 
 /// Which of `run`'s live slots a store of `bytes` bytes at `pointer` leaves
 /// in place, and whether dropping the others forgot anything the store does
-/// not itself replace ([`CMemory::without_possible_aliasing_cells`]).
+/// not itself replace ([`Memory::without_possible_aliasing_cells`]).
 ///
 /// At a constant shift from the run's base the store's bytes decide it: a
 /// slot they meet is dropped, and forgotten unless the store covers all of
@@ -5197,8 +5197,8 @@ fn materialized_cell_source(cell_pointer: &Pointer, value: &ProgramValue) -> Opt
 /// would dominate a simple step's budget; a miss here is not a negative
 /// answer, because the full comparison still runs later in the same query.
 pub(in crate::kernel) fn memories_match_for_pointer_load_bounded_alias(
-    left: &CMemory,
-    right: &CMemory,
+    left: &Memory,
+    right: &Memory,
     pointer: &Pointer,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -5253,8 +5253,8 @@ pub(in crate::kernel) fn memories_match_for_pointer_load_bounded_alias(
 }
 
 pub(in crate::kernel) fn memories_match_for_pointer_load_under_assumptions(
-    left: &CMemory,
-    right: &CMemory,
+    left: &Memory,
+    right: &Memory,
     pointer: &Pointer,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -5296,8 +5296,8 @@ pub(in crate::kernel) fn memories_match_for_pointer_load_under_assumptions(
 }
 
 pub(in crate::kernel) fn memory_matches_effect_summary_endpoint(
-    expected: &CMemory,
-    actual: &CMemory,
+    expected: &Memory,
+    actual: &Memory,
     pointer: &Pointer,
 ) -> bool {
     expected == actual || memories_match_for_pointer_load(expected, actual, pointer)
@@ -5509,7 +5509,7 @@ fn external_load_projection_retains_aliases_across_cell_updates() {
         block,
         offset: PointerOffsetTerm::Constant(0),
     });
-    let mut memory = CMemory::new();
+    let mut memory = Memory::new();
     for pointer in &pointers {
         memory = memory.store(pointer.clone(), ProgramValue::Int32(7u32.into()));
     }
@@ -5561,7 +5561,7 @@ mod retained_endpoint_tests {
         let zero = MachineTerm::constant(0);
         let one = MachineTerm::constant(1);
         let p = Pointer::symbolic(Variable(993813));
-        let before = crate::kernel::intern_c_memory(CMemory::new());
+        let before = crate::kernel::intern_c_memory(Memory::new());
         let load = MachineTerm::MemoryLoad(before, Box::new(p), LoadKind::Int32);
         let terms = [
             x.clone(),
@@ -5661,7 +5661,7 @@ mod retained_run_access_tests {
                 4,
                 ProgramType::Int32,
                 8,
-                crate::kernel::intern_c_memory(CMemory::new()),
+                crate::kernel::intern_c_memory(Memory::new()),
                 crate::kernel::primitives::RunValueMode::Constant(ProgramValue::Int32(7u32.into())),
                 Default::default(),
             );

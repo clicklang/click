@@ -3,7 +3,7 @@
 //!
 //! `forall (k: int32) where lo <= k and k < hi { if g[k] == v { owns
 //! base[s * k + a..s * k + b]; } }` in a resource body lowers to one
-//! [`CIteratedMemory`]. The fact is never enumerated: every question about one
+//! [`IteratedMemory`]. The fact is never enumerated: every question about one
 //! element is answered from the index's range membership and the guard cell's
 //! value at that index, read from the current memory.
 //!
@@ -19,7 +19,7 @@ use super::*;
 
 /// The guard cell array and the comparison that selects an index.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct CIteratedGuard {
+pub struct IteratedGuard {
     /// Address of the guard cell at index 0.
     pub(in crate::kernel) base: Pointer,
     /// The C type of one guard cell (its loads are read at this type).
@@ -34,7 +34,7 @@ pub struct CIteratedGuard {
 /// The name of the resource definition whose clause formed a fact. It is
 /// presentation only: two definitions that declare the same clause over the
 /// same cells denote the same holding, so the label takes no part in
-/// equality, ordering, or hashing (as `CExpressionLoadSource` does not).
+/// equality, ordering, or hashing (as `ExpressionLoadSource` does not).
 #[derive(Clone, Debug)]
 pub struct IteratedOwnerLabel(Arc<str>);
 
@@ -64,7 +64,7 @@ impl PartialOrd for IteratedOwnerLabel {
 
 /// One held iterated-ownership fact.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct CIteratedMemory {
+pub struct IteratedMemory {
     /// The resource definition whose body declared the clause the fact was
     /// formed from, for diagnostics only.
     pub(in crate::kernel) owner: IteratedOwnerLabel,
@@ -80,14 +80,14 @@ pub struct CIteratedMemory {
     pub(in crate::kernel) end_offset: i32,
     pub(in crate::kernel) lower: MachineTerm,
     pub(in crate::kernel) upper: MachineTerm,
-    pub(in crate::kernel) guard: CIteratedGuard,
+    pub(in crate::kernel) guard: IteratedGuard,
     /// Indices about which the fact currently makes no claim, in the order
     /// they were opened. Only explicit proof steps and checked C stores add
     /// one, so the list is bounded by the proof's own operations.
     pub(in crate::kernel) holes: Arc<[MachineTerm]>,
 }
 
-impl CIteratedMemory {
+impl IteratedMemory {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         owner: &str,
@@ -98,7 +98,7 @@ impl CIteratedMemory {
         end_offset: i32,
         lower: MachineTerm,
         upper: MachineTerm,
-        guard: CIteratedGuard,
+        guard: IteratedGuard,
     ) -> Option<Self> {
         if stride == 0
             || element_width == 0
@@ -142,7 +142,7 @@ impl CIteratedMemory {
         &self.upper
     }
 
-    pub fn guard(&self) -> &CIteratedGuard {
+    pub fn guard(&self) -> &IteratedGuard {
         &self.guard
     }
 
@@ -159,8 +159,8 @@ impl CIteratedMemory {
     }
 
     /// The memory range element `index` covers.
-    pub(crate) fn element_range(&self, index: &MachineTerm) -> CMemoryRange {
-        CMemoryRange::new_with_element_width(
+    pub(crate) fn element_range(&self, index: &MachineTerm) -> MemoryRange {
+        MemoryRange::new_with_element_width(
             self.element_base.clone(),
             self.scaled(index, self.start_offset),
             self.scaled(index, self.end_offset),
@@ -171,10 +171,10 @@ impl CIteratedMemory {
     /// The memory range spanned by every element of `lo..hi`, when the
     /// elements tile it without gaps (`end_offset - start_offset ==
     /// stride`). This is the range `gather` consumes and `scatter` produces.
-    pub(crate) fn covering_range(&self) -> Option<CMemoryRange> {
+    pub(crate) fn covering_range(&self) -> Option<MemoryRange> {
         (i64::from(self.end_offset) - i64::from(self.start_offset) == i64::from(self.stride)).then(
             || {
-                CMemoryRange::new_with_element_width(
+                MemoryRange::new_with_element_width(
                     self.element_base.clone(),
                     self.scaled(&self.lower, self.start_offset),
                     self.scaled(&self.upper, self.start_offset),
@@ -188,10 +188,10 @@ impl CIteratedMemory {
     /// range when the elements tile it, otherwise the span from the first
     /// element's start to the last element's end. An upper bound on the
     /// memory the fact can ever hold, whatever its guards and holes say.
-    pub(crate) fn spanning_range(&self) -> CMemoryRange {
+    pub(crate) fn spanning_range(&self) -> MemoryRange {
         self.covering_range().unwrap_or_else(|| {
             let last = MachineTerm::subtract(self.upper.clone(), MachineTerm::constant(1));
-            CMemoryRange::new_with_element_width(
+            MemoryRange::new_with_element_width(
                 self.element_base.clone(),
                 self.scaled(&self.lower, self.start_offset),
                 self.scaled(&last, self.end_offset),
@@ -208,8 +208,8 @@ impl CIteratedMemory {
     }
 
     /// The guard cells of every index in the range.
-    pub(crate) fn guard_range(&self) -> CMemoryRange {
-        CMemoryRange::new_with_element_width(
+    pub(crate) fn guard_range(&self) -> MemoryRange {
+        MemoryRange::new_with_element_width(
             self.guard.base.clone(),
             self.lower.clone(),
             self.upper.clone(),
@@ -252,7 +252,7 @@ impl CIteratedMemory {
             end_offset: self.end_offset,
             lower: term(&self.lower),
             upper: term(&self.upper),
-            guard: CIteratedGuard {
+            guard: IteratedGuard {
                 base: pointer(&self.guard.base),
                 cell_type: self.guard.cell_type,
                 cell_width: self.guard.cell_width,
@@ -281,7 +281,7 @@ impl CIteratedMemory {
     }
 }
 
-impl CIteratedGuard {
+impl IteratedGuard {
     pub(crate) fn new(
         base: Pointer,
         cell_type: ProgramType,
@@ -311,7 +311,7 @@ impl CIteratedGuard {
     }
 }
 
-impl CIteratedSpec {
+impl IteratedSpec {
     /// Every C expression the clause carries: the element base, the index
     /// bounds, the guard base, and the guard value.
     pub(crate) fn expressions(&self) -> [&ProgramExpression; 5] {
@@ -331,7 +331,7 @@ impl CIteratedSpec {
     ) -> Self {
         Self {
             owner: self.owner.clone(),
-            element: CMemorySegment {
+            element: MemorySegment {
                 base: rewrite(&self.element.base),
                 start: rewrite(&self.element.start),
                 end: rewrite(&self.element.end),

@@ -364,11 +364,7 @@ fn failed_fixed_state_normalize_does_not_dump_internal_memory() {
         "{}",
         error.message()
     );
-    assert!(
-        !error.message().contains("CMemory {"),
-        "{}",
-        error.message()
-    );
+    assert!(!error.message().contains("Memory {"), "{}", error.message());
 }
 
 #[test]

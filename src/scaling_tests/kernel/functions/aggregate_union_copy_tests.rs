@@ -14,11 +14,11 @@ fn aggregate_argument_reads_require_authority_and_initialization_and_scale() {
             block: "aggregate-argument-source".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let layout = CAggregateLayout::new(
+        let layout = AggregateLayout::new(
             count * 4,
             4,
             (0..count)
-                .map(|i| CAggregateField::new(format!("field_{i}"), i * 4, ProgramType::Int32))
+                .map(|i| AggregateField::new(format!("field_{i}"), i * 4, ProgramType::Int32))
                 .collect(),
         );
         let parameters =
@@ -26,17 +26,17 @@ fn aggregate_argument_reads_require_authority_and_initialization_and_scale() {
                 .with_aggregate_layout(layout)];
         let values = [ProgramValue::pointer(source.clone())];
         let assumptions = PureFactContext::new();
-        let empty = CMemory::new().with_uninitialized_block(source.block.clone(), count * 4);
-        let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
-            CMemoryRange::new_with_element_width(source.clone(), 0.into(), (count * 4).into(), 1),
+        let empty = Memory::new().with_uninitialized_block(source.block.clone(), count * 4);
+        let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
+            MemoryRange::new_with_element_width(source.clone(), 0.into(), (count * 4).into(), 1),
         ));
         let unwritten = ExecutionState::new()
             .with_memory(empty.clone())
             .with_resource_context(resources.clone());
         assert!(matches!(
             aggregate_argument_read_refusal(&unwritten, &parameters, &values, &assumptions),
-            Some(CFunctionOutcome::UndefinedBehavior(
-                CUndefinedBehavior::UninitializedRead
+            Some(FunctionOutcome::UndefinedBehavior(
+                UndefinedBehavior::UninitializedRead
             ))
         ));
         let mut memory = empty;
@@ -46,8 +46,8 @@ fn aggregate_argument_reads_require_authority_and_initialization_and_scale() {
         let unreadable = ExecutionState::new().with_memory(memory);
         assert!(matches!(
             aggregate_argument_read_refusal(&unreadable, &parameters, &values, &assumptions),
-            Some(CFunctionOutcome::RuntimeError(
-                CRuntimeError::MissingResource { .. }
+            Some(FunctionOutcome::RuntimeError(
+                RuntimeError::MissingResource { .. }
             ))
         ));
         let readable = unreadable.with_resource_context(resources);
@@ -81,16 +81,16 @@ fn unsigned_aggregate_array_copies_preserve_values_and_scale() {
             block: "local:aggregate-array-target".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let layout = CAggregateLayout::new(
+        let layout = AggregateLayout::new(
             count * 4,
             4,
-            vec![CAggregateField::new(
+            vec![AggregateField::new(
                 "words",
                 0,
                 ProgramType::UInt32Array(count),
             )],
         );
-        let memory = CMemory::new()
+        let memory = Memory::new()
             .with_block(source.block.clone(), count * 4)
             .with_block(destination.block.clone(), count * 4)
             .write_scalar_array_region(
@@ -144,12 +144,12 @@ fn unsigned_aggregate_array_copies_preserve_values_and_scale() {
         assert!(unknown.known_value(&last).is_some());
         assert!(unknown.has_initialized_bytes_at(&destination, count * 4));
         samples.push(work);
-        let uninitialized = CMemory::new()
+        let uninitialized = Memory::new()
             .with_block(source.block.clone(), count * 4)
             .with_block(destination.block.clone(), count * 4);
         assert_eq!(
             copy_aggregate_fields_checked(uninitialized, &source, &destination, &layout).err(),
-            Some(CUndefinedBehavior::UninitializedRead)
+            Some(UndefinedBehavior::UninitializedRead)
         );
     }
     assert!(

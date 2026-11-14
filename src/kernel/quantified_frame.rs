@@ -381,12 +381,12 @@ mod wide_condition_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let assumptions = PureFactContext::new();
-        let before = CMemory::new().with_block("wide-equality-frame", 16);
+        let before = Memory::new().with_block("wide-equality-frame", 16);
         let after = before.clone().store(
             pointer.offset_by_bytes(8),
             ProgramValue::UInt64(MachineTerm::uint64_constant(3)),
         );
-        let load = |memory: &CMemory, kind| {
+        let load = |memory: &Memory, kind| {
             MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory_ref(memory),
                 Box::new(pointer.clone()),

@@ -41,7 +41,7 @@ fn focused_execute_handles_deep_branches_on_a_two_megabyte_stack() {
                     let functions = ClickFunctionEnvironment::new(&[]);
                     let theorems = TheoremEnvironment::new(&[]);
                     let resources = ResourceEnvironment::new(&[]);
-                    let environment = CExecutionEnvironment::new();
+                    let environment = ExecutionEnvironment::new();
                     let arguments = (0..depth)
                         .map(|i| {
                             ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Variable(

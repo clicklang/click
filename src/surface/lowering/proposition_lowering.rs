@@ -159,12 +159,12 @@ pub(in crate::surface) fn spec_range_membership_proposition(
     SpecProposition::And(
         Box::new(SpecProposition::Comparison {
             left: start,
-            operator: CComparisonOperator::LessEqual,
+            operator: KernelComparisonOperator::LessEqual,
             right: item.clone(),
         }),
         Box::new(SpecProposition::Comparison {
             left: item,
-            operator: CComparisonOperator::LessThan,
+            operator: KernelComparisonOperator::LessThan,
             right: end,
         }),
     )

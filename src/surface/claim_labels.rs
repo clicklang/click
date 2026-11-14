@@ -10,7 +10,7 @@
 //!
 //! The label is a display and lookup name only. The kernel identifies a
 //! claim by its position among the owner's flattened claims
-//! ([`crate::kernel::CFunctionContractClaimKey`]); a flattened aggregate
+//! ([`crate::kernel::FunctionContractClaimKey`]); a flattened aggregate
 //! clause gives several kernel claims the one label of the clause the author
 //! wrote.
 

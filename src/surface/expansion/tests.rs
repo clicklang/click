@@ -3787,7 +3787,7 @@ fn branch_transfers_cannot_claim_an_unreachable_return() {
         ProgramStatement::Break,
         ProgramStatement::Continue,
         ProgramStatement::Goto {
-            target: crate::kernel::CControlTargetId(7),
+            target: crate::kernel::ControlTargetId(7),
         },
         ProgramStatement::Throw(c_int32_literal(0)),
     ] {

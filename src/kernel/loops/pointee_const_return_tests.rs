@@ -15,21 +15,21 @@ fn pointee_const_return_rebinding_is_allowed_but_store_through_pointer_is_not() 
         false,
         true,
     );
-    let environment = CExecutionEnvironment::new();
+    let environment = ExecutionEnvironment::new();
     let paths = execute_c_statement_paths(
         &state,
         &c_assign("q", c_variable("p")),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&environment),
+        ExecutionContext::execute_bodies(&environment),
         &mut ExecutionBudget::default(),
     )
     .unwrap();
-    let CStatementOutcome::Normal(state) = &paths[0].outcome else {
+    let StatementOutcome::Normal(state) = &paths[0].outcome else {
         panic!("const pointee does not prohibit rebinding")
     };
     assert!(matches!(
         state.locals.binding("q"),
-        Some(CLocalBinding::Object {
+        Some(LocalBinding::Object {
             pointee_constant: true,
             ..
         })
@@ -38,13 +38,13 @@ fn pointee_const_return_rebinding_is_allowed_but_store_through_pointer_is_not() 
         state,
         &c_store(c_variable("q"), c_int32_literal(1)),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&environment),
+        ExecutionContext::execute_bodies(&environment),
         &mut ExecutionBudget::default(),
     )
     .unwrap();
     assert!(matches!(
         &paths[0].outcome,
-        CStatementOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory)
+        StatementOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory)
     ));
 }
 
@@ -61,25 +61,25 @@ fn pointee_const_return_inline_call_preserves_pointer_identity() {
     let value =
         ProgramValue::typed_pointer(Pointer::symbolic(Variable(917)), ProgramType::Int32Pointer);
     let state = ExecutionState::new().with_local("p", value.clone());
-    let environment = CExecutionEnvironment::new().with_function(function);
+    let environment = ExecutionEnvironment::new().with_function(function);
     let paths = execute_c_call_assign_paths(
         &state,
         "temporary",
         "view",
         &[c_variable("p")],
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment),
+        ExecutionContext::apply_verified_rules(&environment),
         &mut ExecutionBudget::default(),
     )
     .unwrap();
-    let CStatementOutcome::Normal(state) = &paths[0].outcome else {
+    let StatementOutcome::Normal(state) = &paths[0].outcome else {
         panic!("inline call must return")
     };
     let local_native_output_76 = state.locals.get_native("temporary");
     let result = local_native_output_76.as_deref().unwrap();
     assert!(matches!(result, ProgramValue::Pointer(pointer) if pointer.pointee_constant()));
     let equality =
-        c_value_comparison_proposition(result, CComparisonOperator::Equal, &value).unwrap();
+        c_value_comparison_proposition(result, ComparisonOperator::Equal, &value).unwrap();
     assert!(crate::kernel::search::ProofSearch::proves(
         &(PureFactContext::new()),
         &equality
@@ -97,19 +97,19 @@ fn pointee_const_return_direct_and_callback_calls_preserve_const() {
     )
     .with_return_pointee_constant(true);
     let function_type = function.function_pointer_type();
-    let environment = CExecutionEnvironment::new().with_function(function);
+    let environment = ExecutionEnvironment::new().with_function(function);
     let paths = execute_c_call_assign_paths(
         &ExecutionState::new(),
         "temporary",
         "text",
         &[],
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&environment),
+        ExecutionContext::execute_bodies(&environment),
         &mut ExecutionBudget::default(),
     )
     .unwrap();
-    assert!(matches!(&paths[0].outcome, CStatementOutcome::Normal(state)
-            if matches!(state.locals.binding("temporary"), Some(CLocalBinding::Object { pointee_constant: true, .. }))));
+    assert!(matches!(&paths[0].outcome, StatementOutcome::Normal(state)
+            if matches!(state.locals.binding("temporary"), Some(LocalBinding::Object { pointee_constant: true, .. }))));
     let state = ExecutionState::new().with_local(
         "callback",
         ProgramValue::typed_pointer(
@@ -126,12 +126,12 @@ fn pointee_const_return_direct_and_callback_calls_preserve_const() {
         "callback",
         &[],
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&environment),
+        ExecutionContext::execute_bodies(&environment),
         &mut ExecutionBudget::default(),
     )
     .unwrap();
-    assert!(matches!(&paths[0].outcome, CStatementOutcome::Normal(state)
-            if matches!(state.locals.binding("temporary"), Some(CLocalBinding::Object { pointee_constant: true, .. }))));
+    assert!(matches!(&paths[0].outcome, StatementOutcome::Normal(state)
+            if matches!(state.locals.binding("temporary"), Some(LocalBinding::Object { pointee_constant: true, .. }))));
 
     let state = state.with_local(
         "mutable",
@@ -143,13 +143,13 @@ fn pointee_const_return_direct_and_callback_calls_preserve_const() {
         "callback",
         &[],
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&environment),
+        ExecutionContext::execute_bodies(&environment),
         &mut ExecutionBudget::default(),
     )
     .unwrap();
     assert!(matches!(
         &paths[0].outcome,
-        CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch)
+        StatementOutcome::RuntimeError(RuntimeError::TypeMismatch)
     ));
 
     let incompatible = ProgramType::FunctionPointer(ProgramType::function_pointer_signature(
@@ -172,13 +172,13 @@ fn pointee_const_return_direct_and_callback_calls_preserve_const() {
         "callback",
         &[],
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&environment),
+        ExecutionContext::execute_bodies(&environment),
         &mut ExecutionBudget::default(),
     )
     .unwrap();
     assert!(matches!(
         &paths[0].outcome,
-        CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(_))
+        StatementOutcome::RuntimeError(RuntimeError::FunctionContract(_))
     ));
 }
 
@@ -215,7 +215,7 @@ fn pointee_const_return_assignment_preserves_destination_and_temporary_qualifier
                 );
                 if result.is_ok() {
                     assert!(
-                        matches!(state.locals.binding("text"), Some(CLocalBinding::Object { value, pointee_constant, .. })
+                        matches!(state.locals.binding("text"), Some(LocalBinding::Object { value, pointee_constant, .. })
                             if *pointee_constant == destination_const && value.pointer().is_some_and(|pointer| pointer.pointee_constant() == destination_const))
                     );
                 }
@@ -238,7 +238,7 @@ fn pointee_const_return_assignment_preserves_destination_and_temporary_qualifier
     );
     assert!(matches!(
         state.locals.binding("temporary"),
-        Some(CLocalBinding::Object {
+        Some(LocalBinding::Object {
             pointee_constant: true,
             ..
         })
@@ -261,7 +261,7 @@ fn call_result_cannot_overwrite_reserved_mutex_storage() {
             &mut Vec::new(),
             &PureFactContext::new()
         ),
-        Err(CRuntimeError::MutexStorageWrite { .. })
+        Err(RuntimeError::MutexStorageWrite { .. })
     ));
 }
 
@@ -275,7 +275,7 @@ fn pointee_const_return_symbolic_callback_checks_signature_and_destination() {
     )
     .with_return_pointee_constant(true)
     .with_contract(vec![], vec![], vec![], vec![], true);
-    let contract = CFunctionContract::new("View", template).unwrap();
+    let contract = FunctionContract::new("View", template).unwrap();
     let qualified = contract.function_pointer_type();
     let unqualified = ProgramType::FunctionPointer(ProgramType::function_pointer_signature(
         ProgramType::Int32Pointer,
@@ -295,7 +295,7 @@ fn pointee_const_return_symbolic_callback_checks_signature_and_destination() {
             Term::ProgramValue(value),
         ],
     });
-    let environment = CExecutionEnvironment::new().with_function_contract(contract);
+    let environment = ExecutionEnvironment::new().with_function_contract(contract);
     for (signature, mutable_destination) in
         [(qualified, false), (qualified, true), (unqualified, false)]
     {
@@ -317,17 +317,17 @@ fn pointee_const_return_symbolic_callback_checks_signature_and_destination() {
             "callback",
             &[],
             &assumptions,
-            CExecutionContext::execute_bodies(&environment),
+            ExecutionContext::execute_bodies(&environment),
             &mut ExecutionBudget::default(),
         )
         .unwrap();
         if signature == qualified && !mutable_destination {
-            assert!(matches!(&paths[0].outcome, CStatementOutcome::Normal(state)
-                    if matches!(state.locals.binding("temporary"), Some(CLocalBinding::Object { value, pointee_constant: true, .. }) if value.pointer().is_some_and(|pointer| pointer.pointee_constant()))));
+            assert!(matches!(&paths[0].outcome, StatementOutcome::Normal(state)
+                    if matches!(state.locals.binding("temporary"), Some(LocalBinding::Object { value, pointee_constant: true, .. }) if value.pointer().is_some_and(|pointer| pointer.pointee_constant()))));
         } else {
             assert!(matches!(
                 &paths[0].outcome,
-                CStatementOutcome::RuntimeError(_)
+                StatementOutcome::RuntimeError(_)
             ));
         }
     }

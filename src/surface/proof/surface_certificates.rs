@@ -4950,7 +4950,7 @@ mod selected_premise_tests {
         };
 
         let goal = Proposition::CMemoryLoadable {
-            memory: CMemory::new(),
+            memory: Memory::new(),
             base: Pointer {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::Constant(0),

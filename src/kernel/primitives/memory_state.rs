@@ -4,7 +4,7 @@ use crate::kernel::CheckedPopulationMemberExchange;
 use crate::kernel::ResourceDescription;
 #[cfg(test)]
 use crate::kernel::binary_node;
-use crate::kernel::population_authority::c_creation::is_external_population_anchor;
+use crate::kernel::population_authority::storage_creation::is_external_population_anchor;
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{binary_term, unary_term};
@@ -14,7 +14,7 @@ use crate::kernel::{
 };
 use std::fmt::Write;
 
-fn memory_havoc_write_set_identity(mutable_ranges: &[CMemoryRange]) -> String {
+fn memory_havoc_write_set_identity(mutable_ranges: &[MemoryRange]) -> String {
     let mut ranges = mutable_ranges
         .iter()
         .map(havoc_range_identity)
@@ -35,7 +35,7 @@ enum HavocIdentityTask {
     Bitvector(MachineTerm),
     Condition(ConditionTerm),
     FloatCondition {
-        condition: CFloatCondition,
+        condition: FloatCondition,
         is_float64: bool,
     },
     LeaveRegisteredLoad(Variable),
@@ -202,7 +202,7 @@ fn push_havoc_comparison(
     push_havoc_binary(identity, tasks, tag, left, right);
 }
 
-fn havoc_range_identity(range: &CMemoryRange) -> String {
+fn havoc_range_identity(range: &MemoryRange) -> String {
     // Keep traversal on an explicit stack so a valid deeply nested footprint
     // cannot overflow Rust's call stack. Strings are length-delimited where
     // their contents are unconstrained; fixed tags delimit every other node.
@@ -399,10 +399,10 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         right,
                     } => {
                         let tag = match operator {
-                            CFloatBinaryOperator::Add => "tf32a",
-                            CFloatBinaryOperator::Subtract => "tf32s",
-                            CFloatBinaryOperator::Multiply => "tf32m",
-                            CFloatBinaryOperator::Divide => "tf32d",
+                            FloatBinaryOperator::Add => "tf32a",
+                            FloatBinaryOperator::Subtract => "tf32s",
+                            FloatBinaryOperator::Multiply => "tf32m",
+                            FloatBinaryOperator::Divide => "tf32d",
                         };
                         push_havoc_binary(&mut identity, &mut tasks, tag, *left, *right);
                     }
@@ -412,10 +412,10 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         right,
                     } => {
                         let tag = match operator {
-                            CFloatBinaryOperator::Add => "tf64a",
-                            CFloatBinaryOperator::Subtract => "tf64s",
-                            CFloatBinaryOperator::Multiply => "tf64m",
-                            CFloatBinaryOperator::Divide => "tf64d",
+                            FloatBinaryOperator::Add => "tf64a",
+                            FloatBinaryOperator::Subtract => "tf64s",
+                            FloatBinaryOperator::Multiply => "tf64m",
+                            FloatBinaryOperator::Divide => "tf64d",
                         };
                         push_havoc_binary(&mut identity, &mut tasks, tag, *left, *right);
                     }
@@ -559,7 +559,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                 crate::instrumentation::record_deterministic_work(1);
                 let width = if is_float64 { "64" } else { "32" };
                 match condition {
-                    CFloatCondition::Comparison {
+                    FloatCondition::Comparison {
                         operator,
                         left,
                         right,
@@ -570,7 +570,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         tasks.push(HavocIdentityTask::Text(","));
                         tasks.push(HavocIdentityTask::Bitvector(*left));
                     }
-                    CFloatCondition::Classification {
+                    FloatCondition::Classification {
                         classification,
                         value,
                     } => {
@@ -699,12 +699,12 @@ mod call_havoc_local_retention_tests {
             block: block.clone(),
             offset: PointerOffsetTerm::Constant(offset),
         };
-        let before = CMemory::new()
+        let before = Memory::new()
             .with_block(block.clone(), 16)
             .store(at(0), ProgramValue::Int32(MachineTerm::constant(7)))
             .store(at(8), ProgramValue::Int32(MachineTerm::constant(1)))
             .store(at(12), ProgramValue::Int32(MachineTerm::constant(9)));
-        let range = CMemoryRange::new_with_element_width(at(8), 0u32.into(), 4u32.into(), 1);
+        let range = MemoryRange::new_with_element_width(at(8), 0u32.into(), 4u32.into(), 1);
         let facts = PureFactContext::new();
         let after = before.clone().with_call_memory_havoc(
             Variable(944_012),
@@ -742,10 +742,10 @@ mod call_havoc_local_retention_tests {
             block: "local:initialization".into(),
             offset: PointerOffsetTerm::Constant(offset),
         };
-        let before = CMemory::new()
+        let before = Memory::new()
             .with_block(at(0).block.clone(), 16)
             .store(at(0), ProgramValue::Int32(MachineTerm::constant(7)));
-        let range = CMemoryRange::new_with_element_width(at(0), 0u32.into(), 16u32.into(), 1);
+        let range = MemoryRange::new_with_element_width(at(0), 0u32.into(), 16u32.into(), 1);
         let facts = PureFactContext::new();
         let after = before.clone().with_call_memory_havoc(
             Variable(944_015),
@@ -800,7 +800,7 @@ mod call_havoc_local_retention_tests {
             block: "local:borrowed-union".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let before = CMemory::new()
+        let before = Memory::new()
             .with_block(pointer.block.clone(), 8)
             .store_union_views(
                 pointer.clone(),
@@ -812,7 +812,7 @@ mod call_havoc_local_retention_tests {
                 )],
             );
         let range =
-            CMemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), 4u32.into(), 1);
+            MemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), 4u32.into(), 1);
         let facts = PureFactContext::new();
         let after = before.clone().with_call_memory_havoc(
             Variable(944_013),
@@ -836,7 +836,7 @@ mod call_havoc_local_retention_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let alias = Pointer::symbolic(Variable(944_021));
-        let before = CMemory::new().with_block(pointer.block.clone(), 4).store(
+        let before = Memory::new().with_block(pointer.block.clone(), 4).store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(7)),
         );
@@ -844,7 +844,7 @@ mod call_havoc_local_retention_tests {
             ConditionTerm::pointer_equal(alias.clone(), pointer.offset_by_bytes(1)),
             true,
         );
-        let range = CMemoryRange::new_with_element_width(alias, 0u32.into(), 1u32.into(), 1);
+        let range = MemoryRange::new_with_element_width(alias, 0u32.into(), 1u32.into(), 1);
         let after = before.clone().with_call_memory_havoc(
             Variable(944_022),
             std::slice::from_ref(&range),
@@ -881,7 +881,7 @@ mod call_havoc_local_retention_tests {
             block: PointerBlock::Symbolic(Variable(944_001)),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let assumed_alias_range = CMemoryRange::new(
+        let assumed_alias_range = MemoryRange::new(
             symbolic.clone(),
             MachineTerm::constant(0),
             MachineTerm::constant(1),
@@ -890,7 +890,7 @@ mod call_havoc_local_retention_tests {
             ConditionTerm::pointer_equal(symbolic, local.clone()),
             true,
         ));
-        let unrelated_range = CMemoryRange::new(
+        let unrelated_range = MemoryRange::new(
             Pointer {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::Constant(0),
@@ -899,7 +899,7 @@ mod call_havoc_local_retention_tests {
             MachineTerm::constant(1),
         );
         let value = ProgramValue::Int32(MachineTerm::constant(41));
-        let before = CMemory::new()
+        let before = Memory::new()
             .with_block(local.block.clone(), 4)
             .store(local.clone(), value.clone());
 
@@ -963,11 +963,11 @@ mod call_havoc_union_view_tests {
                 ProgramValue::Int32(MachineTerm::constant(value)),
             )
         };
-        let before = CMemory::new()
+        let before = Memory::new()
             .with_block(block, 16)
             .store_union_views(written.clone(), 8, vec![view(&written, 3)])
             .store_union_views(sibling.clone(), 8, vec![view(&sibling, 5)]);
-        let range = CMemoryRange::new_with_element_width(
+        let range = MemoryRange::new_with_element_width(
             written.clone(),
             MachineTerm::constant(0),
             MachineTerm::constant(4),
@@ -1018,12 +1018,12 @@ mod forget_cached_values_tests {
         )
     }
 
-    fn zeroed_heap_with_cell() -> (CMemory, Pointer) {
+    fn zeroed_heap_with_cell() -> (Memory, Pointer) {
         let base = Pointer {
             block: PointerBlock::Heap(944_100),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let mut memory = CMemory::new().with_block(base.block.clone(), 8);
+        let mut memory = Memory::new().with_block(base.block.clone(), 8);
         let heap = std::sync::Arc::make_mut(&mut memory.heap);
         heap.live_allocations
             .insert(base.clone(), HeapExtent::int32(8));
@@ -1044,7 +1044,7 @@ mod forget_cached_values_tests {
             block: "local:loop-union-kept".into(),
             offset: PointerOffsetTerm::Constant(4),
         };
-        let before = CMemory::new()
+        let before = Memory::new()
             .with_block(written.block.clone(), 12)
             .with_block(preserved.block.clone(), 12)
             .store_union_views(written.clone(), 8, vec![int32_view(&written, 3)])
@@ -1099,7 +1099,7 @@ mod forget_cached_values_tests {
             block: base.block.clone(),
             offset: PointerOffsetTerm::Constant(offset),
         };
-        let mut memory = CMemory::new().with_block(base.block.clone(), 16);
+        let mut memory = Memory::new().with_block(base.block.clone(), 16);
         let heap = std::sync::Arc::make_mut(&mut memory.heap);
         heap.live_allocations
             .insert(base.clone(), HeapExtent::int32(16));
@@ -1137,7 +1137,7 @@ mod forget_cached_values_tests {
     #[test]
     fn interface_join_drops_a_zero_reading_one_arm_wrote_over() {
         let (wrote, base) = zeroed_heap_with_cell();
-        let mut untouched = CMemory::new().with_block(base.block.clone(), 8);
+        let mut untouched = Memory::new().with_block(base.block.clone(), 8);
         let heap = std::sync::Arc::make_mut(&mut untouched.heap);
         heap.live_allocations
             .insert(base.clone(), HeapExtent::int32(8));
@@ -1175,8 +1175,8 @@ mod havoc_identity_tests {
         })
     }
 
-    fn range(depth: usize, tail: u32) -> CMemoryRange {
-        CMemoryRange::new(
+    fn range(depth: usize, tail: u32) -> MemoryRange {
+        MemoryRange::new(
             Pointer {
                 block: "deep-havoc-range".into(),
                 offset: PointerOffsetTerm::Constant(0),
@@ -1196,7 +1196,7 @@ mod havoc_identity_tests {
         assert!(!first_identity.contains("depth-limit"));
         assert!(!second_identity.contains("depth-limit"));
 
-        let before = CMemory::new().with_block("deep-havoc-range", 4_096);
+        let before = Memory::new().with_block("deep-havoc-range", 4_096);
         let first = before.clone().with_call_memory_havoc(
             Variable(95_000),
             std::slice::from_ref(&first_range),
@@ -1233,7 +1233,7 @@ mod havoc_identity_tests {
     }
 }
 
-fn memory_havoc_write_set_fingerprint(mutable_ranges: &[CMemoryRange]) -> u32 {
+fn memory_havoc_write_set_fingerprint(mutable_ranges: &[MemoryRange]) -> u32 {
     use std::hash::{Hash, Hasher};
 
     // This compact marker fingerprint remains form-invariant across proof
@@ -1270,13 +1270,13 @@ pub(crate) fn resource_context_has_symbolic_range_read(
     assumptions: &PureFactContext,
 ) -> bool {
     let footprint =
-        CMemoryRange::new_with_element_width(base.clone(), 0u32.into(), bytes.clone(), 1);
+        MemoryRange::new_with_element_width(base.clone(), 0u32.into(), bytes.clone(), 1);
     resources
         .symbolic_range_read_supported(&footprint, assumptions, None)
         .unwrap_or(false)
 }
 
-impl CLocalEnvironment {
+impl LocalEnvironment {
     pub fn new() -> Self {
         Self::default()
     }
@@ -1309,7 +1309,7 @@ impl CLocalEnvironment {
             .get(&name)
             .expect("new logical binding")
             .clone();
-        if let CLocalBinding::Object {
+        if let LocalBinding::Object {
             storage_declared, ..
         } = &mut binding
         {
@@ -1351,9 +1351,9 @@ impl CLocalEnvironment {
         let slot = self
             .bindings
             .get(&name)
-            .map(CLocalBinding::slot)
+            .map(LocalBinding::slot)
             .cloned()
-            .unwrap_or_else(|| CMemory::local_pointer(&name));
+            .unwrap_or_else(|| Memory::local_pointer(&name));
         self.set_typed_qualified_with_all_qualifiers(
             name,
             value.retag_pointer(c_type),
@@ -1382,15 +1382,15 @@ impl CLocalEnvironment {
             binding.slot() == &slot
                 && matches!(
                     binding,
-                    CLocalBinding::Object {
+                    LocalBinding::Object {
                         storage_declared: true,
                         ..
-                    } | CLocalBinding::UninitializedObject { .. }
+                    } | LocalBinding::UninitializedObject { .. }
                 )
         });
         self.insert_binding(
             name,
-            CLocalBinding::Object {
+            LocalBinding::Object {
                 storage_declared,
                 value: value
                     .with_pointer_pointee_volatile(pointee_volatile)
@@ -1418,7 +1418,7 @@ impl CLocalEnvironment {
     ) {
         self.insert_binding(
             name.into(),
-            CLocalBinding::GlobalObject {
+            LocalBinding::GlobalObject {
                 c_type,
                 slot,
                 volatile,
@@ -1441,7 +1441,7 @@ impl CLocalEnvironment {
     ) {
         self.insert_binding(
             name.into(),
-            CLocalBinding::UninitializedObject {
+            LocalBinding::UninitializedObject {
                 c_type,
                 slot,
                 volatile,
@@ -1472,7 +1472,7 @@ impl CLocalEnvironment {
     ) {
         self.insert_binding(
             name.into(),
-            CLocalBinding::ArrayObject {
+            LocalBinding::ArrayObject {
                 element_type,
                 length,
                 slot,
@@ -1484,7 +1484,7 @@ impl CLocalEnvironment {
     pub(in crate::kernel) fn set_aggregate_object_at(
         &mut self,
         name: impl Into<String>,
-        layout: CAggregateLayout,
+        layout: AggregateLayout,
         slot: Pointer,
     ) {
         self.set_aggregate_object_at_with_constant(name, layout, slot, false);
@@ -1493,13 +1493,13 @@ impl CLocalEnvironment {
     pub(in crate::kernel) fn set_aggregate_object_at_with_constant(
         &mut self,
         name: impl Into<String>,
-        layout: CAggregateLayout,
+        layout: AggregateLayout,
         slot: Pointer,
         constant: bool,
     ) {
         self.insert_binding(
             name.into(),
-            CLocalBinding::AggregateObject {
+            LocalBinding::AggregateObject {
                 layout,
                 slot,
                 constant,
@@ -1533,21 +1533,21 @@ impl CLocalEnvironment {
         let name = name.into();
         let old = self.bindings.get(&name);
         let slot = old
-            .map(CLocalBinding::slot)
+            .map(LocalBinding::slot)
             .cloned()
-            .unwrap_or_else(|| CMemory::local_pointer(&name));
+            .unwrap_or_else(|| Memory::local_pointer(&name));
         let storage_declared = old.is_some_and(|binding| {
             matches!(
                 binding,
-                CLocalBinding::Object {
+                LocalBinding::Object {
                     storage_declared: true,
                     ..
-                } | CLocalBinding::UninitializedObject { .. }
+                } | LocalBinding::UninitializedObject { .. }
             )
         });
         self.insert_binding(
             name,
-            CLocalBinding::Object {
+            LocalBinding::Object {
                 storage_declared,
                 value,
                 c_type,
@@ -1563,11 +1563,11 @@ impl CLocalEnvironment {
     /// Borrow the exact retained value. Use `get_native` only at a native output boundary.
     pub fn get(&self, name: &str) -> Option<&StoredExecutionValue> {
         match self.bindings.get(name) {
-            Some(CLocalBinding::Object { value, .. }) => Some(value),
-            Some(CLocalBinding::UninitializedObject { .. })
-            | Some(CLocalBinding::GlobalObject { .. })
-            | Some(CLocalBinding::ArrayObject { .. })
-            | Some(CLocalBinding::AggregateObject { .. })
+            Some(LocalBinding::Object { value, .. }) => Some(value),
+            Some(LocalBinding::UninitializedObject { .. })
+            | Some(LocalBinding::GlobalObject { .. })
+            | Some(LocalBinding::ArrayObject { .. })
+            | Some(LocalBinding::AggregateObject { .. })
             | None => None,
         }
     }
@@ -1580,7 +1580,7 @@ impl CLocalEnvironment {
     /// Read one automatic array's metadata by name without scanning the frame.
     pub fn array_object_element_type(&self, name: &str) -> Option<ProgramType> {
         match self.bindings.get(name) {
-            Some(CLocalBinding::ArrayObject { element_type, .. }) => Some(*element_type),
+            Some(LocalBinding::ArrayObject { element_type, .. }) => Some(*element_type),
             _ => None,
         }
     }
@@ -1610,7 +1610,7 @@ impl CLocalEnvironment {
     pub fn is_uninitialized_object(&self, name: &str) -> bool {
         matches!(
             self.bindings.get(name),
-            Some(CLocalBinding::UninitializedObject { .. })
+            Some(LocalBinding::UninitializedObject { .. })
         )
     }
 
@@ -1619,36 +1619,36 @@ impl CLocalEnvironment {
         self.bindings
             .iter()
             .filter_map(|(name, binding)| match binding {
-                CLocalBinding::Object { value, .. } => Some((name.as_str(), value)),
-                CLocalBinding::UninitializedObject { .. }
-                | CLocalBinding::GlobalObject { .. }
-                | CLocalBinding::ArrayObject { .. }
-                | CLocalBinding::AggregateObject { .. } => None,
+                LocalBinding::Object { value, .. } => Some((name.as_str(), value)),
+                LocalBinding::UninitializedObject { .. }
+                | LocalBinding::GlobalObject { .. }
+                | LocalBinding::ArrayObject { .. }
+                | LocalBinding::AggregateObject { .. } => None,
             })
     }
 
     pub fn aggregate_object_values(
         &self,
-    ) -> impl Iterator<Item = (&str, &CAggregateLayout, &Pointer)> + '_ {
+    ) -> impl Iterator<Item = (&str, &AggregateLayout, &Pointer)> + '_ {
         self.bindings
             .iter()
             .filter_map(|(name, binding)| match binding {
-                CLocalBinding::AggregateObject { layout, slot, .. } => {
+                LocalBinding::AggregateObject { layout, slot, .. } => {
                     Some((name.as_str(), layout, slot))
                 }
-                CLocalBinding::Object { .. }
-                | CLocalBinding::UninitializedObject { .. }
-                | CLocalBinding::GlobalObject { .. }
-                | CLocalBinding::ArrayObject { .. } => None,
+                LocalBinding::Object { .. }
+                | LocalBinding::UninitializedObject { .. }
+                | LocalBinding::GlobalObject { .. }
+                | LocalBinding::ArrayObject { .. } => None,
             })
     }
 
     /// The type of the value local `name`'s object holds, and the object's
     /// address, for a local that keeps one value in memory
-    /// ([`CAggregateLayout::holding_value`]).
+    /// ([`AggregateLayout::holding_value`]).
     pub fn held_value_local(&self, name: &str) -> Option<(ProgramType, &Pointer)> {
         match self.bindings.get(name)? {
-            CLocalBinding::AggregateObject { layout, slot, .. } => {
+            LocalBinding::AggregateObject { layout, slot, .. } => {
                 Some((layout.value_type()?, slot))
             }
             _ => None,
@@ -1666,7 +1666,7 @@ impl CLocalEnvironment {
     /// `None` for an array whose elements have no pointer type of their own,
     /// as [`Self::array_object_values`] leaves it out.
     pub fn array_object_value(&self, name: &str) -> Option<(ProgramValue, ProgramType)> {
-        let CLocalBinding::ArrayObject {
+        let LocalBinding::ArrayObject {
             element_type,
             slot,
             constant,
@@ -1695,7 +1695,7 @@ impl CLocalEnvironment {
         self.bindings
             .iter()
             .filter_map(|(name, binding)| match binding {
-                CLocalBinding::ArrayObject {
+                LocalBinding::ArrayObject {
                     element_type,
                     slot,
                     constant,
@@ -1709,41 +1709,41 @@ impl CLocalEnvironment {
                     ),
                     *element_type,
                 )),
-                CLocalBinding::Object { .. }
-                | CLocalBinding::UninitializedObject { .. }
-                | CLocalBinding::GlobalObject { .. }
-                | CLocalBinding::AggregateObject { .. } => None,
+                LocalBinding::Object { .. }
+                | LocalBinding::UninitializedObject { .. }
+                | LocalBinding::GlobalObject { .. }
+                | LocalBinding::AggregateObject { .. } => None,
             })
     }
 
     pub(in crate::kernel) fn object_type(&self, name: &str) -> Option<ProgramType> {
         match self.binding(name) {
-            Some(CLocalBinding::Object { c_type, .. }) => Some(*c_type),
-            Some(CLocalBinding::UninitializedObject { c_type, .. }) => Some(*c_type),
-            Some(CLocalBinding::GlobalObject { c_type, .. }) => Some(*c_type),
-            Some(CLocalBinding::ArrayObject { element_type, .. }) => Some(*element_type),
+            Some(LocalBinding::Object { c_type, .. }) => Some(*c_type),
+            Some(LocalBinding::UninitializedObject { c_type, .. }) => Some(*c_type),
+            Some(LocalBinding::GlobalObject { c_type, .. }) => Some(*c_type),
+            Some(LocalBinding::ArrayObject { element_type, .. }) => Some(*element_type),
             None => None,
-            Some(CLocalBinding::AggregateObject { .. }) => None,
+            Some(LocalBinding::AggregateObject { .. }) => None,
         }
     }
 
     pub(crate) fn scalar_object_type(&self, name: &str) -> Option<ProgramType> {
         match self.binding(name) {
-            Some(CLocalBinding::Object { c_type, .. }) => Some(*c_type),
-            Some(CLocalBinding::UninitializedObject { c_type, .. }) => Some(*c_type),
-            Some(CLocalBinding::GlobalObject { .. }) => None,
-            Some(CLocalBinding::ArrayObject { .. })
-            | Some(CLocalBinding::AggregateObject { .. })
+            Some(LocalBinding::Object { c_type, .. }) => Some(*c_type),
+            Some(LocalBinding::UninitializedObject { c_type, .. }) => Some(*c_type),
+            Some(LocalBinding::GlobalObject { .. }) => None,
+            Some(LocalBinding::ArrayObject { .. })
+            | Some(LocalBinding::AggregateObject { .. })
             | None => None,
         }
     }
 
-    pub(in crate::kernel) fn binding(&self, name: &str) -> Option<&CLocalBinding> {
+    pub(in crate::kernel) fn binding(&self, name: &str) -> Option<&LocalBinding> {
         self.bindings.get(name)
     }
 
     pub(in crate::kernel) fn slot(&self, name: &str) -> Option<&Pointer> {
-        self.binding(name).map(CLocalBinding::slot)
+        self.binding(name).map(LocalBinding::slot)
     }
 
     pub(in crate::kernel) fn slots(&self) -> impl Iterator<Item = &Pointer> {
@@ -1764,7 +1764,7 @@ impl CLocalEnvironment {
         self.names_with_slot_in(block)
             .into_iter()
             .filter_map(|name| match self.binding(name)? {
-                CLocalBinding::ArrayObject {
+                LocalBinding::ArrayObject {
                     element_type, slot, ..
                 } => Some((name, *element_type, slot)),
                 _ => None,
@@ -1807,36 +1807,36 @@ impl CLocalEnvironment {
     }
 
     pub(in crate::kernel) fn is_array_object(&self, name: &str) -> bool {
-        matches!(self.binding(name), Some(CLocalBinding::ArrayObject { .. }))
+        matches!(self.binding(name), Some(LocalBinding::ArrayObject { .. }))
     }
 
     pub(in crate::kernel) fn is_global_object(&self, name: &str) -> bool {
-        matches!(self.binding(name), Some(CLocalBinding::GlobalObject { .. }))
+        matches!(self.binding(name), Some(LocalBinding::GlobalObject { .. }))
     }
 
     pub(in crate::kernel) fn is_aggregate_object(&self, name: &str) -> bool {
         matches!(
             self.binding(name),
-            Some(CLocalBinding::AggregateObject { .. })
+            Some(LocalBinding::AggregateObject { .. })
         )
     }
 
     pub(crate) fn aggregate_object_pointer(&self, name: &str) -> Option<&Pointer> {
         match self.binding(name) {
-            Some(CLocalBinding::AggregateObject { slot, .. }) => Some(slot),
+            Some(LocalBinding::AggregateObject { slot, .. }) => Some(slot),
             _ => None,
         }
     }
 
-    pub(crate) fn aggregate_layout(&self, name: &str) -> Option<&CAggregateLayout> {
+    pub(crate) fn aggregate_layout(&self, name: &str) -> Option<&AggregateLayout> {
         match self.binding(name) {
-            Some(CLocalBinding::AggregateObject { layout, .. }) => Some(layout),
+            Some(LocalBinding::AggregateObject { layout, .. }) => Some(layout),
             _ => None,
         }
     }
 }
 
-impl CLocalBinding {
+impl LocalBinding {
     pub(in crate::kernel) fn slot(&self) -> &Pointer {
         match self {
             Self::Object { slot, .. }
@@ -1848,16 +1848,16 @@ impl CLocalBinding {
     }
 }
 
-fn held_pointer_block(binding: &CLocalBinding) -> Option<&PointerBlock> {
-    let CLocalBinding::Object { value, .. } = binding else {
+fn held_pointer_block(binding: &LocalBinding) -> Option<&PointerBlock> {
+    let LocalBinding::Object { value, .. } = binding else {
         return None;
     };
     Some(&value.pointer()?.pointer().block)
 }
 
 /// The numeric value of a scalar of integer or truth type.
-fn held_integer_term(binding: &CLocalBinding) -> Option<&MachineTerm> {
-    let CLocalBinding::Object { value, .. } = binding else {
+fn held_integer_term(binding: &LocalBinding) -> Option<&MachineTerm> {
+    let LocalBinding::Object { value, .. } = binding else {
         return None;
     };
     match value.native_payload()?.numeric_value() {
@@ -1878,8 +1878,8 @@ fn held_integer_term(binding: &CLocalBinding) -> Option<&MachineTerm> {
 
 /// The specification value a local of an abstract type holds, when it is a
 /// named value: a Rust local holding an enum, a `Vec` or a library iterator.
-fn held_algebraic_value(binding: &CLocalBinding) -> Option<&AlgebraicTerm> {
-    let CLocalBinding::Object { value, .. } = binding else {
+fn held_algebraic_value(binding: &LocalBinding) -> Option<&AlgebraicTerm> {
+    let LocalBinding::Object { value, .. } = binding else {
         return None;
     };
     match value.native_payload()?.numeric_value() {
@@ -1903,8 +1903,8 @@ fn held_algebraic_fingerprint(term: &AlgebraicTerm) -> Option<u64> {
 
 /// The index key of what a binding holds: an integer term's fingerprint or
 /// a named specification value's. A lookup compares what it finds.
-fn held_fingerprint(binding: &CLocalBinding) -> Option<u64> {
-    if let CLocalBinding::Object { value, .. } = binding
+fn held_fingerprint(binding: &LocalBinding) -> Option<u64> {
+    if let LocalBinding::Object { value, .. } = binding
         && let Some(root) = value.shared()
     {
         return held_kernel_term_fingerprint(root);
@@ -2028,11 +2028,11 @@ fn held_kernel_term_fingerprint(term: &KernelTerm) -> Option<u64> {
     Some(hash.finish())
 }
 
-impl CLocalEnvironment {
+impl LocalEnvironment {
     /// An environment of these bindings and slots, with its held-term index
     /// built from the bindings.
     pub(in crate::kernel) fn from_parts(
-        bindings: crate::persistent::PersistentMap<String, CLocalBinding>,
+        bindings: crate::persistent::PersistentMap<String, LocalBinding>,
         slots: crate::persistent::PersistentMap<Pointer, String>,
     ) -> Self {
         let held_terms = bindings
@@ -2063,10 +2063,10 @@ impl CLocalEnvironment {
         }
     }
 
-    pub(in crate::kernel) fn insert_binding(&mut self, name: String, binding: CLocalBinding) {
+    pub(in crate::kernel) fn insert_binding(&mut self, name: String, binding: LocalBinding) {
         let slot = binding.slot().clone();
         let old = self.bindings.get(&name);
-        let old_slot = old.map(CLocalBinding::slot).cloned();
+        let old_slot = old.map(LocalBinding::slot).cloned();
         let old_held = old.and_then(held_fingerprint);
         let new_held = held_fingerprint(&binding);
         let old_block = old.and_then(held_pointer_block).cloned();
@@ -2215,7 +2215,7 @@ impl CLocalEnvironment {
                     .bindings
                     .get(name)
                     .and_then(|binding| match binding {
-                        CLocalBinding::Object { value, .. } => Some(value),
+                        LocalBinding::Object { value, .. } => Some(value),
                         _ => None,
                     })
                     .is_some_and(&mut matches)
@@ -2269,7 +2269,7 @@ impl CLocalEnvironment {
         earlier: Option<&'a Self>,
     ) -> Vec<(&'a str, &'a MachineTerm)> {
         let changed =
-            |name: &'a String, now: Option<&'a CLocalBinding>, before: Option<&CLocalBinding>| {
+            |name: &'a String, now: Option<&'a LocalBinding>, before: Option<&LocalBinding>| {
                 let held = held_integer_term(now?)?;
                 (before.and_then(held_integer_term) != Some(held)).then_some((name.as_str(), held))
             };
@@ -2297,8 +2297,8 @@ impl CLocalEnvironment {
         earlier: Option<&'a Self>,
     ) -> Vec<(&'a str, &'a PointerBlock)> {
         let changed = |name: &'a String,
-                       now: Option<&'a CLocalBinding>,
-                       before: Option<&CLocalBinding>| {
+                       now: Option<&'a LocalBinding>,
+                       before: Option<&LocalBinding>| {
             let block = held_pointer_block(now?)?;
             (before.and_then(held_pointer_block) != Some(block)).then_some((name.as_str(), block))
         };
@@ -2328,7 +2328,7 @@ impl CLocalEnvironment {
 
     /// Puts back a binding read from another environment with
     /// [`Self::binding`].
-    pub(in crate::kernel) fn restore_binding(&mut self, name: &str, binding: CLocalBinding) {
+    pub(in crate::kernel) fn restore_binding(&mut self, name: &str, binding: LocalBinding) {
         self.insert_binding(name.to_string(), binding);
     }
 
@@ -2336,7 +2336,7 @@ impl CLocalEnvironment {
     /// slot, type and qualifiers, so a read of it is refused. Returns whether
     /// the name held such an object.
     pub(in crate::kernel) fn forget_initialization(&mut self, name: &str) -> bool {
-        let Some(CLocalBinding::Object {
+        let Some(LocalBinding::Object {
             c_type,
             slot,
             volatile,
@@ -2350,7 +2350,7 @@ impl CLocalEnvironment {
         };
         self.insert_binding(
             name.to_string(),
-            CLocalBinding::UninitializedObject {
+            LocalBinding::UninitializedObject {
                 c_type,
                 slot,
                 volatile,
@@ -2429,7 +2429,7 @@ impl MemoryBlock {
 /// proven distinct from some mutable range's base. Every other cell is kept
 /// by the first rung of `range_proven_disjoint_from_pointer`, so the producer
 /// and the checker both visit these alone.
-fn call_havoc_candidates(mutable_ranges: &[CMemoryRange]) -> AliasCandidates {
+fn call_havoc_candidates(mutable_ranges: &[MemoryRange]) -> AliasCandidates {
     AliasCandidates::of_blocks(mutable_ranges.iter().map(|range| &range.base().block))
 }
 
@@ -2461,7 +2461,7 @@ pub(in crate::kernel) struct CallKeptOwnership {
 
 /// The kept memory a call havoc records on its edge: owned and viewed ranges,
 /// and the condition premises that place a cell in them. See
-/// [`CMemoryDerivation::CallHavoc`].
+/// [`MemoryDerivation::CallHavoc`].
 #[derive(Clone, Debug)]
 pub struct CallKeptRanges {
     ranges: ResourceContext,
@@ -2473,7 +2473,7 @@ pub struct CallKeptRanges {
     /// the call: the ranges a question about one address needs are opened
     /// from the residual's composites whose arguments can spell it
     /// ([`Self::range_holding`]), and the identity names the composites.
-    direct: Option<std::sync::Arc<Vec<CCompositeResourceDefinition>>>,
+    direct: Option<std::sync::Arc<Vec<CompositeResourceDefinition>>>,
     /// The caller's composition before transferring call inputs. Its flat
     /// owners exclude unchanged composite owners of the same bytes.
     caller_before_transfer: Option<ResourceContext>,
@@ -2485,14 +2485,14 @@ pub struct CallKeptRanges {
 #[derive(Debug)]
 struct KeptRangeSet {
     id: u64,
-    ranges: SnapshotMap<CMemoryRange, ()>,
+    ranges: SnapshotMap<MemoryRange, ()>,
     /// The residual's owned composites, with multiplicity, when some of
     /// their ranges are answered per address rather than listed in `ranges`.
-    composites: SnapshotMap<CResourceFact, usize>,
-    original_memory: SnapshotMap<CResourceFact, ()>,
-    introduced_composites: SnapshotMap<CResourceFact, usize>,
+    composites: SnapshotMap<ResourceFact, usize>,
+    original_memory: SnapshotMap<ResourceFact, ()>,
+    introduced_composites: SnapshotMap<ResourceFact, usize>,
     // Share the flat input index, including views, without enumerating it.
-    memory_inputs: SnapshotMap<CResourceFact, ()>,
+    memory_inputs: SnapshotMap<ResourceFact, ()>,
 }
 
 impl PartialEq for CallKeptRanges {
@@ -2503,8 +2503,8 @@ impl PartialEq for CallKeptRanges {
 impl Eq for CallKeptRanges {}
 
 fn intern_kept_range_set(
-    ranges: SnapshotMap<CMemoryRange, ()>,
-    composites: SnapshotMap<CResourceFact, usize>,
+    ranges: SnapshotMap<MemoryRange, ()>,
+    composites: SnapshotMap<ResourceFact, usize>,
 ) -> std::sync::Arc<KeptRangeSet> {
     intern_kept_range_set_with_exclusions(
         ranges,
@@ -2516,11 +2516,11 @@ fn intern_kept_range_set(
 }
 
 fn intern_kept_range_set_with_exclusions(
-    ranges: SnapshotMap<CMemoryRange, ()>,
-    composites: SnapshotMap<CResourceFact, usize>,
-    original_memory: SnapshotMap<CResourceFact, ()>,
-    introduced_composites: SnapshotMap<CResourceFact, usize>,
-    memory_inputs: SnapshotMap<CResourceFact, ()>,
+    ranges: SnapshotMap<MemoryRange, ()>,
+    composites: SnapshotMap<ResourceFact, usize>,
+    original_memory: SnapshotMap<ResourceFact, ()>,
+    introduced_composites: SnapshotMap<ResourceFact, usize>,
+    memory_inputs: SnapshotMap<ResourceFact, ()>,
 ) -> std::sync::Arc<KeptRangeSet> {
     let mut hash = std::collections::hash_map::DefaultHasher::new();
     std::hash::Hash::hash(&original_memory, &mut hash);
@@ -2541,8 +2541,8 @@ fn intern_kept_range_set_with_exclusions(
 
 #[cfg(test)]
 fn intern_kept_range_set_with_hash(
-    ranges: SnapshotMap<CMemoryRange, ()>,
-    composites: SnapshotMap<CResourceFact, usize>,
+    ranges: SnapshotMap<MemoryRange, ()>,
+    composites: SnapshotMap<ResourceFact, usize>,
     hash: u64,
 ) -> std::sync::Arc<KeptRangeSet> {
     intern_kept_range_set_with_exclusions_and_hash(
@@ -2556,11 +2556,11 @@ fn intern_kept_range_set_with_hash(
 }
 
 fn intern_kept_range_set_with_exclusions_and_hash(
-    ranges: SnapshotMap<CMemoryRange, ()>,
-    composites: SnapshotMap<CResourceFact, usize>,
-    original_memory: SnapshotMap<CResourceFact, ()>,
-    introduced_composites: SnapshotMap<CResourceFact, usize>,
-    memory_inputs: SnapshotMap<CResourceFact, ()>,
+    ranges: SnapshotMap<MemoryRange, ()>,
+    composites: SnapshotMap<ResourceFact, usize>,
+    original_memory: SnapshotMap<ResourceFact, ()>,
+    introduced_composites: SnapshotMap<ResourceFact, usize>,
+    memory_inputs: SnapshotMap<ResourceFact, ()>,
     hash: u64,
 ) -> std::sync::Arc<KeptRangeSet> {
     type Buckets = std::collections::HashMap<u64, Vec<std::sync::Weak<KeptRangeSet>>>;
@@ -2616,7 +2616,7 @@ impl CallKeptRanges {
     pub(in crate::kernel) fn new(
         ranges: ResourceContext,
         premises: Vec<(ConditionTerm, bool)>,
-        direct: Option<std::sync::Arc<Vec<CCompositeResourceDefinition>>>,
+        direct: Option<std::sync::Arc<Vec<CompositeResourceDefinition>>>,
     ) -> Self {
         let identity = intern_kept_range_set(
             ranges.flat_owned_memory_ranges().clone(),
@@ -2687,8 +2687,8 @@ impl CallKeptRanges {
 
     /// The ranges of `fact`, one of the residual's composites, when its
     /// family is argument-direct.
-    fn direct_ranges(&self, fact: &CResourceFact) -> Vec<CMemoryRange> {
-        let (Some(direct), CResource::Composite { name, .. }) = (&self.direct, fact.resource())
+    fn direct_ranges(&self, fact: &ResourceFact) -> Vec<MemoryRange> {
+        let (Some(direct), Resource::Composite { name, .. }) = (&self.direct, fact.resource())
         else {
             return Vec::new();
         };
@@ -2711,7 +2711,7 @@ impl CallKeptRanges {
             }
         }
         ResourceContext::new()
-            .unchecked_with_facts(ranges.keys().cloned().map(CResourceFact::own_memory))
+            .unchecked_with_facts(ranges.keys().cloned().map(ResourceFact::own_memory))
             .unchecked_with_facts(
                 self.identity
                     .memory_inputs
@@ -2749,9 +2749,9 @@ impl CallKeptRanges {
     /// The kept memory recorded on the call havoc edge that derived `after`,
     /// if that edge is one: what a call's effect summary may keep beside its
     /// declared write set.
-    pub(in crate::kernel) fn recorded_on(after: &CMemory) -> Option<Self> {
+    pub(in crate::kernel) fn recorded_on(after: &Memory) -> Option<Self> {
         let derivation = crate::kernel::intern_c_memory_ref(after).derivation()?;
-        let CMemoryDerivation::CallHavoc {
+        let MemoryDerivation::CallHavoc {
             kept_by_caller: Some(kept),
             ..
         } = &*derivation
@@ -2776,12 +2776,12 @@ impl CallKeptRanges {
 
     /// Whether `range` is kept: listed, or a range of an argument-direct
     /// composite whose arguments spell its base.
-    pub(in crate::kernel) fn contains_range(&self, range: &CMemoryRange) -> bool {
+    pub(in crate::kernel) fn contains_range(&self, range: &MemoryRange) -> bool {
         if self.identity.ranges.contains_key(range)
             || self
                 .identity
                 .memory_inputs
-                .contains_key(&CResourceFact::view_memory(range.clone()))
+                .contains_key(&ResourceFact::view_memory(range.clone()))
         {
             return true;
         }
@@ -2810,7 +2810,7 @@ impl CallKeptRanges {
         placement: Option<&PureFactContext>,
         pointer: &Pointer,
         bytes: u32,
-    ) -> Option<CMemoryRange> {
+    ) -> Option<MemoryRange> {
         let query = |ranges: &ResourceContext, include_views| {
             let context = placement.unwrap_or(assumptions);
             let place = || {
@@ -2857,7 +2857,7 @@ impl CallKeptRanges {
                                 .owned_memory_members_with_base(base)
                                 .any(|(_, range)| {
                                     original
-                                        .exact_resource_facts(&CResource::Memory(range.clone()))
+                                        .exact_resource_facts(&Resource::Memory(range.clone()))
                                         .into_iter()
                                         .any(|fact| fact.has_proven_positive_quantity(assumptions))
                                         && assumptions
@@ -2869,7 +2869,7 @@ impl CallKeptRanges {
                 } else {
                     residual
                 };
-                let opened = |facts: &mut dyn Iterator<Item = &CResourceFact>| {
+                let opened = |facts: &mut dyn Iterator<Item = &ResourceFact>| {
                     let mut seen = BTreeSet::new();
                     let mut ranges = Vec::new();
                     for fact in facts {
@@ -2878,7 +2878,7 @@ impl CallKeptRanges {
                         }
                     }
                     ResourceContext::new_with_equalities(assumptions)
-                        .unchecked_with_facts(ranges.into_iter().map(CResourceFact::own_memory))
+                        .unchecked_with_facts(ranges.into_iter().map(ResourceFact::own_memory))
                 };
                 query(
                     &opened(
@@ -2955,7 +2955,7 @@ impl CallKeptOwnership {
     /// bodies. The write-set marker spells both, so a content-equal snapshot
     /// whose edge was recorded first carries the same ones.
     pub(in crate::kernel) fn recorded_on(
-        after: &CMemory,
+        after: &Memory,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
         let kept = CallKeptRanges::recorded_on(after)?;
@@ -2973,7 +2973,7 @@ impl CallKeptOwnership {
         pointer: &Pointer,
         bytes: u32,
         assumptions: &PureFactContext,
-    ) -> Option<CMemoryRange> {
+    ) -> Option<MemoryRange> {
         self.opened
             .range_holding(assumptions, self.placement.as_ref(), pointer, bytes)
             .or_else(|| {
@@ -3012,7 +3012,7 @@ enum CallHavocCellRule {
 fn call_havoc_keeps_cell(
     pointer: &Pointer,
     value: &ProgramValue,
-    mutable_ranges: &[CMemoryRange],
+    mutable_ranges: &[MemoryRange],
     assumptions: &PureFactContext,
     kept: Option<&CallKeptOwnership>,
     preserve_local_slots: bool,
@@ -3072,7 +3072,7 @@ fn call_havoc_kept_ranges(kept: Option<&CallKeptOwnership>) -> Option<CallKeptRa
 
 fn call_write_set_marker(
     variable: u64,
-    mutable_ranges: &[CMemoryRange],
+    mutable_ranges: &[MemoryRange],
     kept_ranges: Option<&CallKeptRanges>,
 ) -> PointerBlock {
     let mut marker = format!(
@@ -3123,7 +3123,7 @@ fn loan_preserving_havoc_keeps_cell(
     preserved_blocks.contains_block(&pointer.block)
         || ledger.is_some_and(|ledger| {
             byte_width != 0
-                && ledger.has_indexed_memory_overlap(&CMemoryRange::new_with_element_width(
+                && ledger.has_indexed_memory_overlap(&MemoryRange::new_with_element_width(
                     pointer.clone(),
                     MachineTerm::constant(0),
                     MachineTerm::constant(byte_width),
@@ -3150,7 +3150,7 @@ fn loan_preserving_havoc_keeps_run(
     let Some(ledger) = ledger else {
         return (SlotSet::Nothing, exact);
     };
-    let whole = CMemoryRange::new_with_element_width(
+    let whole = MemoryRange::new_with_element_width(
         run.base().clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(
@@ -3225,7 +3225,7 @@ where
 
 /// The widest typed overlay recorded at each address, so that the loan
 /// question above covers every byte the cell can be read as.
-fn union_overlay_widths(memory: &CMemory) -> BTreeMap<Pointer, u32> {
+fn union_overlay_widths(memory: &Memory) -> BTreeMap<Pointer, u32> {
     let mut widths = BTreeMap::<Pointer, u32>::new();
     for (pointer, c_type) in memory.union_cells.keys() {
         widths
@@ -3302,14 +3302,14 @@ fn external_argument_offset_derives_from(base: &Pointer, pointer: &Pointer) -> b
 /// body fact applying a pure predicate to a pointer. The snapshot is empty, so
 /// nothing can be read through it by construction, and it is cached per thread
 /// so repeated uses share one storage root.
-pub fn value_independent_click_memory() -> CMemory {
+pub fn value_independent_click_memory() -> Memory {
     thread_local! {
-        static CANONICAL: CMemory = CMemory::new();
+        static CANONICAL: Memory = Memory::new();
     }
     CANONICAL.with(Clone::clone)
 }
 
-impl CMemory {
+impl Memory {
     pub fn new() -> Self {
         Self::default()
     }
@@ -3345,7 +3345,7 @@ impl CMemory {
         }
         let base = intern_derivation_base(&mut self);
         std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), MemoryBlock::new(size));
-        record_c_memory_derivation(&mut self, CMemoryDerivation::BlockDeclared { base, block });
+        record_c_memory_derivation(&mut self, MemoryDerivation::BlockDeclared { base, block });
         self
     }
 
@@ -3432,10 +3432,7 @@ impl CMemory {
         declaration.declared_class = Some(declared_class);
         declaration.read_only = read_only;
         std::sync::Arc::make_mut(&mut memory.blocks).insert(block.clone(), declaration);
-        record_c_memory_derivation(
-            &mut memory,
-            CMemoryDerivation::BlockDeclared { base, block },
-        );
+        record_c_memory_derivation(&mut memory, MemoryDerivation::BlockDeclared { base, block });
         memory
     }
 
@@ -3468,7 +3465,7 @@ impl CMemory {
         declaration.declared_class = declared_class
             .or_else(|| crate::kernel::effective_type::CAccessClass::of_kernel_type(c_type));
         std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), declaration);
-        record_c_memory_derivation(&mut self, CMemoryDerivation::BlockDeclared { base, block });
+        record_c_memory_derivation(&mut self, MemoryDerivation::BlockDeclared { base, block });
         self
     }
 
@@ -3487,7 +3484,7 @@ impl CMemory {
         std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), declaration);
         record_c_memory_derivation(
             &mut self,
-            CMemoryDerivation::BlockDeclared {
+            MemoryDerivation::BlockDeclared {
                 base,
                 block: block.clone(),
             },
@@ -3613,7 +3610,7 @@ impl CMemory {
         let base = intern_derivation_base(&mut self);
         std::sync::Arc::make_mut(&mut self.blocks)
             .insert(block.clone(), MemoryBlock::read_only(size));
-        record_c_memory_derivation(&mut self, CMemoryDerivation::BlockDeclared { base, block });
+        record_c_memory_derivation(&mut self, MemoryDerivation::BlockDeclared { base, block });
         self
     }
 
@@ -3704,7 +3701,7 @@ impl CMemory {
         }
         record_c_memory_derivation(
             &mut memory,
-            CMemoryDerivation::LocalLifetimeEnded {
+            MemoryDerivation::LocalLifetimeEnded {
                 base,
                 block: block.clone(),
             },
@@ -3716,7 +3713,7 @@ impl CMemory {
         self,
         pointer: &Pointer,
         assumptions: &PureFactContext,
-    ) -> Result<Self, CInvalidFree> {
+    ) -> Result<Self, InvalidFree> {
         self.free_heap_block_with_owned_frame(pointer, assumptions, &ResourceContext::new())
     }
 
@@ -3728,7 +3725,7 @@ impl CMemory {
         pointer: &Pointer,
         assumptions: &PureFactContext,
         kept_owners: &ResourceContext,
-    ) -> Result<Self, CInvalidFree> {
+    ) -> Result<Self, InvalidFree> {
         self.free_heap_block_and_owned_pointer_frames(pointer, assumptions, kept_owners)
             .map(|(memory, _)| memory)
     }
@@ -3741,7 +3738,7 @@ impl CMemory {
         pointer: &Pointer,
         assumptions: &PureFactContext,
         kept_owners: &ResourceContext,
-    ) -> Result<(Self, Vec<(Pointer, ProgramType)>), CInvalidFree> {
+    ) -> Result<(Self, Vec<(Pointer, ProgramType)>), InvalidFree> {
         // An aliased spelling of this allocation (a contract-returned pointer
         // proven equal to it, e.g. `ensures result == p`) is one address too.
         // Retiring through one identity has to retire it through both, else a
@@ -3755,7 +3752,7 @@ impl CMemory {
             }
         }
         if self.heap.deallocated_allocations.contains_key(pointer) {
-            return Err(CInvalidFree::DoubleFree);
+            return Err(InvalidFree::DoubleFree);
         }
         // Every heap entry and cell this free can retire is in a block not
         // proven distinct from the freed pointer's: `heap_allocation_may_
@@ -3767,9 +3764,9 @@ impl CMemory {
                 if candidates.any_entry(&self.heap.live_allocations, |base, _| {
                     heap_allocation_may_contain_pointer(base, pointer, assumptions)
                 }) {
-                    CInvalidFree::InteriorPointer
+                    InvalidFree::InteriorPointer
                 } else {
-                    CInvalidFree::NonHeapPointer
+                    InvalidFree::NonHeapPointer
                 },
             );
         }
@@ -3851,7 +3848,7 @@ impl CMemory {
         if let Some(base) = base {
             record_c_memory_derivation(
                 &mut self,
-                CMemoryDerivation::HeapFreed {
+                MemoryDerivation::HeapFreed {
                     base,
                     allocation_base: pointer.clone(),
                     bytes: bytes.bytes().clone(),
@@ -3919,7 +3916,7 @@ impl CMemory {
     /// where a callee or loop body may store, not where it did.
     fn forget_zeroed_allocations_written_by(
         &mut self,
-        mutable_ranges: &[CMemoryRange],
+        mutable_ranges: &[MemoryRange],
         assumptions: &PureFactContext,
     ) {
         if mutable_ranges.is_empty() {
@@ -4126,7 +4123,7 @@ impl CMemory {
                 if let Some(prior) = prior {
                     record_c_memory_derivation(
                         &mut self,
-                        CMemoryDerivation::ContractAllocationClaimsChanged { base: prior },
+                        MemoryDerivation::ContractAllocationClaimsChanged { base: prior },
                     );
                 }
                 Some(self)
@@ -4208,7 +4205,7 @@ impl CMemory {
         }
         record_c_memory_derivation(
             &mut self,
-            CMemoryDerivation::ContractAllocationRetired {
+            MemoryDerivation::ContractAllocationRetired {
                 base: prior,
                 allocation_base: base.clone(),
                 bytes: bytes.clone(),
@@ -4250,7 +4247,7 @@ impl CMemory {
         if let Some(prior) = prior {
             record_c_memory_derivation(
                 &mut self,
-                CMemoryDerivation::HeapAllocationPending {
+                MemoryDerivation::HeapAllocationPending {
                     base: prior,
                     allocation_base: base,
                     bytes: bytes.bytes().clone(),
@@ -4274,7 +4271,7 @@ impl CMemory {
             .pending_reallocations
             .insert(
                 base.clone(),
-                CPendingReallocation {
+                PendingReallocation {
                     old_pointer: old_pointer.clone(),
                     old_bytes: old_bytes.clone(),
                     zeroed_prefix,
@@ -4450,7 +4447,7 @@ impl CMemory {
             if let Some(prior) = prior {
                 record_c_memory_derivation(
                     &mut self,
-                    CMemoryDerivation::HeapAllocated {
+                    MemoryDerivation::HeapAllocated {
                         base: prior,
                         block: resolved_base.block.clone(),
                         bytes: bytes.bytes().clone(),
@@ -4460,7 +4457,7 @@ impl CMemory {
         } else if let Some(prior) = prior {
             record_c_memory_derivation(
                 &mut self,
-                CMemoryDerivation::HeapAllocationFailed { base: prior },
+                MemoryDerivation::HeapAllocationFailed { base: prior },
             );
         }
         Some((self, bytes, resolved_base))
@@ -4471,7 +4468,7 @@ impl CMemory {
         base: &Pointer,
         succeeds: bool,
         assumptions: &PureFactContext,
-    ) -> Option<(Self, HeapExtent, Pointer, CPendingReallocation)> {
+    ) -> Option<(Self, HeapExtent, Pointer, PendingReallocation)> {
         let diagnostic_base = self.clone();
         let pending = std::sync::Arc::make_mut(&mut self.heap)
             .pending_reallocations
@@ -4541,7 +4538,7 @@ impl CMemory {
         self,
         variable: Variable,
         preserved_blocks: &dyn BlockMembership,
-        mutable_ranges: Option<&[CMemoryRange]>,
+        mutable_ranges: Option<&[MemoryRange]>,
         ledger: Option<&crate::kernel::loans::LoanLedger>,
     ) -> Self {
         self.with_loop_memory_havoc_preserving_frame(
@@ -4557,7 +4554,7 @@ impl CMemory {
         mut self,
         variable: Variable,
         preserved_blocks: &dyn BlockMembership,
-        mutable_ranges: Option<&[CMemoryRange]>,
+        mutable_ranges: Option<&[MemoryRange]>,
         ledger: Option<&crate::kernel::loans::LoanLedger>,
         kept_by_function: Option<CallKeptRanges>,
     ) -> Self {
@@ -4594,7 +4591,7 @@ impl CMemory {
         if let Some(base) = base {
             record_c_memory_derivation(
                 &mut self,
-                CMemoryDerivation::LoopHavoc {
+                MemoryDerivation::LoopHavoc {
                     base,
                     variable,
                     mutable_ranges: mutable_ranges.map(|ranges| ranges.to_vec()),
@@ -4622,7 +4619,7 @@ impl CMemory {
         &mut self,
         preserved_blocks: &dyn BlockMembership,
         ledger: Option<&crate::kernel::loans::LoanLedger>,
-        agreeing: &[&CMemory],
+        agreeing: &[&Memory],
     ) {
         let union_widths = union_overlay_widths(self);
         let arm_overlays = agreeing
@@ -4708,7 +4705,7 @@ impl CMemory {
         self,
         variable: Variable,
         preserved_blocks: &dyn BlockMembership,
-        sibling_memories: &[&CMemory],
+        sibling_memories: &[&Memory],
     ) -> Result<Self, String> {
         self.with_interface_memory_havoc_preserving_loans(
             variable,
@@ -4722,7 +4719,7 @@ impl CMemory {
         mut self,
         variable: Variable,
         preserved_blocks: &dyn BlockMembership,
-        sibling_memories: &[&CMemory],
+        sibling_memories: &[&Memory],
         ledger: Option<&crate::kernel::loans::LoanLedger>,
     ) -> Result<Self, String> {
         let mut incoming = std::iter::once(&self)
@@ -4823,7 +4820,7 @@ impl CMemory {
         // until the join forgets it). This carries initialization, not a
         // value, so it remains useful after the join's conservative value
         // havoc. Cells of preserved blocks survive the join as cells.
-        let arm_initialized = |memory: &CMemory| {
+        let arm_initialized = |memory: &Memory| {
             let mut record = memory.heap.initialized.clone();
             let mut visited = 0usize;
             for (pointer, value) in local_block_entries(memory.cells.logical()) {
@@ -4957,7 +4954,7 @@ impl CMemory {
         // forgotten here. So a reading goes wherever *any* arm caches a value
         // the join forgets, which is also what keeps every arm's abstraction
         // the same one.
-        let forgotten_value_blocks = |memory: &CMemory| {
+        let forgotten_value_blocks = |memory: &Memory| {
             if zeroed_allocations.len() == 0 && zeroed_prefix_allocations.is_empty() {
                 return BTreeSet::new();
             }
@@ -5019,7 +5016,7 @@ impl CMemory {
                 arena_id: memory.arena_id(),
             })
             .collect();
-        self.heap = std::sync::Arc::new(CHeapMemory {
+        self.heap = std::sync::Arc::new(HeapMemory {
             live_allocations,
             deallocated_allocations,
             pending_allocations,
@@ -5036,7 +5033,7 @@ impl CMemory {
         self.forget_zero_readings_under(forgotten_blocks.iter());
         record_c_memory_derivation(
             &mut self,
-            CMemoryDerivation::BranchJoin {
+            MemoryDerivation::BranchJoin {
                 base: incoming[0].clone(),
                 incoming,
             },
@@ -5050,7 +5047,7 @@ impl CMemory {
     pub(in crate::kernel) fn with_storage_memory_havoc(
         self,
         variable: Variable,
-        mutable_ranges: &[CMemoryRange],
+        mutable_ranges: &[MemoryRange],
         assumptions: &PureFactContext,
     ) -> Self {
         self.with_memory_havoc(variable, mutable_ranges, assumptions, None, false)
@@ -5059,7 +5056,7 @@ impl CMemory {
     pub(in crate::kernel) fn with_call_memory_havoc(
         self,
         variable: Variable,
-        mutable_ranges: &[CMemoryRange],
+        mutable_ranges: &[MemoryRange],
         assumptions: &PureFactContext,
         kept: Option<&CallKeptOwnership>,
     ) -> Self {
@@ -5069,7 +5066,7 @@ impl CMemory {
     fn with_memory_havoc(
         mut self,
         variable: Variable,
-        mutable_ranges: &[CMemoryRange],
+        mutable_ranges: &[MemoryRange],
         assumptions: &PureFactContext,
         kept: Option<&CallKeptOwnership>,
         preserve_local_slots: bool,
@@ -5131,7 +5128,7 @@ impl CMemory {
         if let Some(base) = base {
             record_c_memory_derivation(
                 &mut self,
-                CMemoryDerivation::CallHavoc {
+                MemoryDerivation::CallHavoc {
                     base,
                     variable,
                     mutable_ranges: mutable_ranges.to_vec(),
@@ -5150,7 +5147,7 @@ impl CMemory {
     pub(in crate::kernel) fn matches_call_memory_havoc_result(
         &self,
         before: &Self,
-        mutable_ranges: &[CMemoryRange],
+        mutable_ranges: &[MemoryRange],
         assumptions: &PureFactContext,
         kept: Option<&CallKeptOwnership>,
     ) -> bool {
@@ -5234,7 +5231,7 @@ impl CMemory {
         crate::instrumentation::record_deterministic_work(visited);
         // The producer's heap: `before`'s, with the automatic values it
         // dropped recorded initialized, and without the zero readings under
-        // a dropped value or the write set ([`CMemory::forget_cached_values`]).
+        // a dropped value or the write set ([`Memory::forget_cached_values`]).
         let mut expected = before.clone();
         expected.record_dropped_local_cells(&dropped_initialized);
         expected.forget_zero_readings_under(
@@ -5297,7 +5294,7 @@ impl CMemory {
             );
             for index in first..count {
                 let pointer = run.slot_pointer(index);
-                if !matches!(self.load(&pointer), CExpressionOutcome::Value(_)) {
+                if !matches!(self.load(&pointer), ExpressionOutcome::Value(_)) {
                     self = self.store(pointer, run.value(index));
                 }
             }
@@ -5443,7 +5440,7 @@ impl CMemory {
             std::sync::Arc::make_mut(&mut self.cells).add_run(run.clone());
             record_c_memory_derivation(
                 &mut self,
-                CMemoryDerivation::CellsSeeded {
+                MemoryDerivation::CellsSeeded {
                     base: derivation_base,
                     run: std::sync::Arc::new(run),
                 },
@@ -5487,7 +5484,7 @@ impl CMemory {
         {
             return Err(self);
         }
-        let source = crate::kernel::intern_c_memory(CMemory::new());
+        let source = crate::kernel::intern_c_memory(Memory::new());
         Ok(self.with_run_of_cells(
             base,
             element_type.byte_width(),
@@ -5520,7 +5517,7 @@ impl CMemory {
     pub(crate) fn with_constant_runs(
         mut self,
         base: &Pointer,
-        runs: &[CConstantRun],
+        runs: &[ConstantRun],
     ) -> Result<Self, Self> {
         if matches!(base.block, PointerBlock::Heap(_))
             || !self.run_can_stand_for_cells_at(base)
@@ -5535,7 +5532,7 @@ impl CMemory {
         {
             return Err(self);
         }
-        let source = crate::kernel::intern_c_memory(CMemory::new());
+        let source = crate::kernel::intern_c_memory(Memory::new());
         for run in runs.iter().filter(|run| run.count > 0) {
             crate::instrumentation::record_deterministic_work(1);
             let run = CellRun::new_with_mode(
@@ -5551,7 +5548,7 @@ impl CMemory {
             std::sync::Arc::make_mut(&mut self.cells).add_run(run.clone());
             record_c_memory_derivation(
                 &mut self,
-                CMemoryDerivation::CellsSeeded {
+                MemoryDerivation::CellsSeeded {
                     base: derivation_base,
                     run: std::sync::Arc::new(run),
                 },
@@ -5569,7 +5566,7 @@ impl CMemory {
         count: u32,
         value: ProgramValue,
         copy: bool,
-    ) -> Result<Self, CRuntimeError> {
+    ) -> Result<Self, RuntimeError> {
         self.write_scalar_array_region(
             base,
             element_type,
@@ -5590,11 +5587,11 @@ impl CMemory {
         copy: bool,
         fresh: bool,
         assumptions: &PureFactContext,
-    ) -> Result<Self, CRuntimeError> {
+    ) -> Result<Self, RuntimeError> {
         let bytes = count
             .checked_mul(element_type.byte_width())
             .filter(|bytes| *bytes <= i32::MAX as u32)
-            .ok_or(CRuntimeError::TypeMismatch)?;
+            .ok_or(RuntimeError::TypeMismatch)?;
         let snapshot_copy = copy
             && matches!(&value, ProgramValue::Pointer(source) if
             !source.pointer().block.is_local_block()
@@ -5640,7 +5637,7 @@ impl CMemory {
                         .is_some()
                     || self.cells.runs_in_block(&base.block).next().is_some()))
         {
-            return Err(CRuntimeError::FunctionContract(
+            return Err(RuntimeError::FunctionContract(
                 "scalar-array write requires a valid aligned local region; fresh initialization requires complete empty storage".into(),
             ));
         }
@@ -5651,7 +5648,7 @@ impl CMemory {
         let mut cells = Vec::new();
         if copy {
             let ProgramValue::Pointer(pointer) = &value else {
-                return Err(CRuntimeError::TypeMismatch);
+                return Err(RuntimeError::TypeMismatch);
             };
             let pointer = pointer.pointer();
             if !valid_region(pointer)
@@ -5664,7 +5661,7 @@ impl CMemory {
                             .and_then(MachineTerm::as_const)
                             != Some(bytes)))
             {
-                return Err(CRuntimeError::FunctionContract(
+                return Err(RuntimeError::FunctionContract(
                     "scalar-array copy requires a valid aligned initialized local source region"
                         .into(),
                 ));
@@ -5677,7 +5674,7 @@ impl CMemory {
             let width = i64::from(element_type.byte_width());
             let mut covered = IndexIntervals::default();
             let invalid = |reason: &str| {
-                CRuntimeError::FunctionContract(format!(
+                RuntimeError::FunctionContract(format!(
                     "scalar-array copy requires complete represented scalar values: {reason}"
                 ))
             };
@@ -5778,7 +5775,7 @@ impl CMemory {
             }
         } else {
             if value.c_type() != element_type {
-                return Err(CRuntimeError::TypeMismatch);
+                return Err(RuntimeError::TypeMismatch);
             }
             spans.push((0, count, value));
         }
@@ -5801,7 +5798,7 @@ impl CMemory {
                 element_type.byte_width(),
                 element_type,
                 length,
-                crate::kernel::intern_c_memory(CMemory::new()),
+                crate::kernel::intern_c_memory(Memory::new()),
                 RunValueMode::Constant(value),
                 IndexIntervals::default(),
             );
@@ -5809,7 +5806,7 @@ impl CMemory {
             std::sync::Arc::make_mut(&mut self.cells).add_run(run.clone());
             record_c_memory_derivation(
                 &mut self,
-                CMemoryDerivation::CellsSeeded {
+                MemoryDerivation::CellsSeeded {
                     base: derivation_base,
                     run: std::sync::Arc::new(run),
                 },
@@ -5833,22 +5830,22 @@ impl CMemory {
         copy: bool,
         fresh: bool,
         assumptions: &PureFactContext,
-    ) -> Result<Self, CRuntimeError> {
+    ) -> Result<Self, RuntimeError> {
         let bytes = count
             .checked_mul(element.byte_width())
             .filter(|bytes| *bytes <= i32::MAX as u32)
-            .ok_or(CRuntimeError::TypeMismatch)?;
+            .ok_or(RuntimeError::TypeMismatch)?;
         if !matches!(
             element,
             ProgramType::Int32 | ProgramType::UInt8 | ProgramType::UInt32
         ) {
-            return Err(CRuntimeError::TypeMismatch);
+            return Err(RuntimeError::TypeMismatch);
         }
         if count == 0 {
             if (copy && !matches!(value, ProgramValue::Pointer(_)))
                 || (!copy && value.c_type() != element)
             {
-                return Err(CRuntimeError::TypeMismatch);
+                return Err(RuntimeError::TypeMismatch);
             }
             return Ok(self);
         }
@@ -5887,21 +5884,21 @@ impl CMemory {
                         .next()
                         .is_some()))
         {
-            return Err(CRuntimeError::FunctionContract("scalar-array snapshot requires valid aligned storage; fresh storage must be complete and empty".into()));
+            return Err(RuntimeError::FunctionContract("scalar-array snapshot requires valid aligned storage; fresh storage must be complete and empty".into()));
         }
         let snapshot = crate::kernel::intern_c_memory(self.clone());
         let mut captured_runs = Vec::new();
         let mut captured_cells = Vec::new();
         if copy {
             let ProgramValue::Pointer(pointer) = value else {
-                return Err(CRuntimeError::TypeMismatch);
+                return Err(RuntimeError::TypeMismatch);
             };
             let pointer = pointer.pointer();
             if !valid(pointer)
                 || (pointer.block.is_local_block()
                     && !self.has_initialized_bytes_under(pointer, bytes, assumptions))
             {
-                return Err(CRuntimeError::FunctionContract(
+                return Err(RuntimeError::FunctionContract(
                     "scalar-array snapshot requires a valid initialized source region".into(),
                 ));
             }
@@ -5916,10 +5913,10 @@ impl CMemory {
                 }
                 let delta = run_start
                     .checked_sub(start)
-                    .ok_or(CRuntimeError::TypeMismatch)?;
+                    .ok_or(RuntimeError::TypeMismatch)?;
                 let end = delta
                     .checked_add(i64::from(run.count()) * i64::from(run.element_width()))
-                    .ok_or(CRuntimeError::TypeMismatch)?;
+                    .ok_or(RuntimeError::TypeMismatch)?;
                 if end <= 0 || delta >= i64::from(bytes) {
                     continue;
                 }
@@ -5927,7 +5924,7 @@ impl CMemory {
                     || run.element_width() != element.byte_width()
                     || delta % width != 0
                 {
-                    return Err(CRuntimeError::TypeMismatch);
+                    return Err(RuntimeError::TypeMismatch);
                 }
                 for (low, high) in run.live_intervals().intervals() {
                     crate::instrumentation::record_deterministic_work(1);
@@ -5969,7 +5966,7 @@ impl CMemory {
                 }
                 let delta = cell_start
                     .checked_sub(start)
-                    .ok_or(CRuntimeError::TypeMismatch)?;
+                    .ok_or(RuntimeError::TypeMismatch)?;
                 if delta + i64::from(value.byte_width()) <= 0 || delta >= i64::from(bytes) {
                     continue;
                 }
@@ -5978,7 +5975,7 @@ impl CMemory {
                     || delta % width != 0
                     || value.c_type() != element
                 {
-                    return Err(CRuntimeError::TypeMismatch);
+                    return Err(RuntimeError::TypeMismatch);
                 }
                 let index = (delta / width) as u32;
                 represented.insert(index);
@@ -6002,14 +5999,14 @@ impl CMemory {
             }
         } else {
             if value.c_type() != element {
-                return Err(CRuntimeError::TypeMismatch);
+                return Err(RuntimeError::TypeMismatch);
             }
             captured_runs.push(CellRun::new_with_mode(
                 base.clone(),
                 element.byte_width(),
                 element,
                 count,
-                crate::kernel::intern_c_memory(CMemory::new()),
+                crate::kernel::intern_c_memory(Memory::new()),
                 RunValueMode::Constant(value),
                 IndexIntervals::default(),
             ));
@@ -6022,7 +6019,7 @@ impl CMemory {
             std::sync::Arc::make_mut(&mut self.cells).add_run(run.clone());
             record_c_memory_derivation(
                 &mut self,
-                CMemoryDerivation::CellsSeeded {
+                MemoryDerivation::CellsSeeded {
                     base: derivation_base,
                     run: std::sync::Arc::new(run),
                 },
@@ -6103,7 +6100,7 @@ impl CMemory {
         std::sync::Arc::make_mut(&mut self.cells).add_run(run.clone());
         record_c_memory_derivation(
             &mut self,
-            CMemoryDerivation::CellsSeeded {
+            MemoryDerivation::CellsSeeded {
                 base: derivation_base,
                 run: std::sync::Arc::new(run),
             },
@@ -6185,7 +6182,7 @@ impl CMemory {
         }
         let base = intern_derivation_base(&mut self);
         std::sync::Arc::make_mut(&mut self.cells).insert(pointer, value);
-        record_c_memory_derivation(&mut self, CMemoryDerivation::CellObserved { base });
+        record_c_memory_derivation(&mut self, MemoryDerivation::CellObserved { base });
         self
     }
 
@@ -6275,7 +6272,7 @@ impl CMemory {
         }
         record_c_memory_derivation(
             &mut self,
-            CMemoryDerivation::Store {
+            MemoryDerivation::Store {
                 base,
                 pointer,
                 value,
@@ -6284,10 +6281,10 @@ impl CMemory {
         self
     }
 
-    pub fn load(&self, pointer: &Pointer) -> CExpressionOutcome {
+    pub fn load(&self, pointer: &Pointer) -> ExpressionOutcome {
         match self.cells.get(pointer) {
-            Some(value) => CExpressionOutcome::Value(value),
-            None => CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory),
+            Some(value) => ExpressionOutcome::Value(value),
+            None => ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),
         }
     }
 
@@ -6710,7 +6707,7 @@ impl CMemory {
         // Nothing restores these cells — the copy could not carry the field —
         // so the result knows strictly less than its source and must not be
         // able to re-intern as a state that never knew it. See
-        // [`CMemory::mark_forgotten_from`].
+        // [`Memory::mark_forgotten_from`].
         if memory.cells.len() != self.cells.len()
             || memory.union_cells.len() != self.union_cells.len()
         {
@@ -6981,7 +6978,7 @@ impl CMemory {
                 .record(pointer, bytes);
             record_c_memory_derivation(
                 &mut self,
-                CMemoryDerivation::ObjectInitializationRecorded {
+                MemoryDerivation::ObjectInitializationRecorded {
                     base,
                     pointer: pointer.clone(),
                     bytes,
@@ -7059,7 +7056,7 @@ impl CMemory {
             memory.mark_forgotten_from(&base);
         }
         let base_id = base.arena_id();
-        record_c_memory_derivation(&mut memory, CMemoryDerivation::CellsForgotten { base });
+        record_c_memory_derivation(&mut memory, MemoryDerivation::CellsForgotten { base });
         debug_assert!(
             !lost_knowledge || intern_c_memory_ref(&memory).arena_id() > base_id,
             "a forget that lost knowledge landed on an older snapshot"
@@ -7731,7 +7728,7 @@ impl ExecutionState {
                 left.facts()
                     .iter()
                     .find(|fact| !right.facts().contains(fact))
-                    .map(CResourceFact::diagnostic_summary)
+                    .map(ResourceFact::diagnostic_summary)
             };
             return Some(match only_in(&self.resources, &other.resources) {
                 Some(fact) => format!("`{fact}` is held only before the rewrite"),
@@ -7827,9 +7824,9 @@ impl ExecutionState {
     pub fn with_aggregate_return_destination(
         mut self,
         pointer: Pointer,
-        layout: CAggregateLayout,
+        layout: AggregateLayout,
     ) -> Self {
-        self.aggregate_destination = Some(Arc::new(CAggregateDestination { pointer, layout }));
+        self.aggregate_destination = Some(Arc::new(AggregateDestination { pointer, layout }));
         self
     }
 
@@ -7928,7 +7925,7 @@ impl ExecutionState {
     pub(crate) fn resolve_named_mutex_authority(
         &self,
         identity: Variable,
-    ) -> Option<&CResourceFact> {
+    ) -> Option<&ResourceFact> {
         self.named_mutex_authorities
             .as_ref()?
             .resolve(identity, self)
@@ -7937,7 +7934,7 @@ impl ExecutionState {
     pub(in crate::kernel) fn bind_named_mutex_authority(
         mut self,
         identity: Variable,
-        fact: &CResourceFact,
+        fact: &ResourceFact,
     ) -> Result<Self, super::super::named_authority::NamedMutexAuthorityError> {
         let current = self
             .named_mutex_authorities
@@ -7952,7 +7949,7 @@ impl ExecutionState {
     pub(in crate::kernel) fn rebind_named_mutex_authority(
         mut self,
         identity: Variable,
-        expected: &CResourceFact,
+        expected: &ResourceFact,
     ) -> Result<Self, super::super::named_authority::NamedMutexAuthorityError> {
         let current = self
             .named_mutex_authorities
@@ -7965,8 +7962,8 @@ impl ExecutionState {
     pub(in crate::kernel) fn transport_named_mutex_use(
         mut self,
         identity: Variable,
-        source: &CResourceFact,
-        derived: &CResourceFact,
+        source: &ResourceFact,
+        derived: &ResourceFact,
     ) -> Result<Self, super::super::named_authority::NamedMutexAuthorityError> {
         let current = self
             .named_mutex_authorities
@@ -7989,7 +7986,7 @@ impl ExecutionState {
     pub(crate) fn with_population_creation_tracking(mut self) -> Self {
         if self.population_effects.creation.is_none() {
             Arc::make_mut(&mut self.population_effects).creation =
-                Some(super::super::population_authority::c_creation::CreationEvents::new());
+                Some(super::super::population_authority::storage_creation::CreationEvents::new());
         }
         self
     }
@@ -8045,10 +8042,10 @@ impl ExecutionState {
     /// population. Its observable entry total is arbitrary, with no creator right.
     pub(crate) fn import_opaque_population(
         &self,
-        authority: &CResourceFact,
+        authority: &ResourceFact,
         owned_members: u32,
     ) -> Result<Self, String> {
-        let CResourceFact::Own(CResource::PopulationAuthority(description), quantity) = authority
+        let ResourceFact::Own(Resource::PopulationAuthority(description), quantity) = authority
         else {
             return Err("opaque import requires owns authority(R(p))".into());
         };
@@ -8061,7 +8058,7 @@ impl ExecutionState {
             return Err("opaque import supports at most one declared member".into());
         }
         if owned_members == 1 {
-            let member = CResourceFact::own(CResource::Composite {
+            let member = ResourceFact::own(Resource::Composite {
                 name: description.family().to_owned(),
                 arguments: description.arguments().to_vec().into(),
             });
@@ -8083,9 +8080,9 @@ impl ExecutionState {
 
     pub(crate) fn import_opaque_population_inputs(
         &self,
-        authority: &CResourceFact,
+        authority: &ResourceFact,
     ) -> Result<Self, String> {
-        let CResource::PopulationAuthority(description) = authority.resource() else {
+        let Resource::PopulationAuthority(description) = authority.resource() else {
             return Err("population import requires authority".into());
         };
         if !description.schema().is_fieldless() {
@@ -8108,7 +8105,7 @@ impl ExecutionState {
             Arc::make_mut(&mut next.population_effects).creation = Some(events);
             return Ok(next);
         }
-        let member = CResourceFact::own(CResource::Composite {
+        let member = ResourceFact::own(Resource::Composite {
             name: description.family().to_owned(),
             arguments: description.arguments().to_vec().into(),
         });
@@ -8164,15 +8161,15 @@ impl ExecutionState {
     /// global entry total. No population creation occurs at helper entry.
     pub(crate) fn import_opaque_population_quantity(
         &self,
-        authority: &CResourceFact,
-        member: &CResourceFact,
+        authority: &ResourceFact,
+        member: &ResourceFact,
     ) -> Result<Self, String> {
-        let CResourceFact::Own(CResource::PopulationAuthority(description), authority_quantity) =
+        let ResourceFact::Own(Resource::PopulationAuthority(description), authority_quantity) =
             authority
         else {
             return Err("batch import requires owned authority".into());
         };
-        let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = member else {
+        let ResourceFact::Own(Resource::Composite { name, arguments }, quantity) = member else {
             return Err("batch import requires an owned declared member quantity".into());
         };
         if authority_quantity.as_const() != Some(1)
@@ -8201,13 +8198,13 @@ impl ExecutionState {
     /// wildcard helper entry. Neither input is a population creation event.
     pub(crate) fn import_opaque_wildcard_population(
         &self,
-        authority: &CResourceFact,
-        member: &CResourceFact,
+        authority: &ResourceFact,
+        member: &ResourceFact,
     ) -> Result<Self, String> {
-        let CResourceFact::Own(CResource::PopulationAuthority(scope), quantity) = authority else {
+        let ResourceFact::Own(Resource::PopulationAuthority(scope), quantity) = authority else {
             return Err("Requires owns authority(R(anchor, _))".into());
         };
-        let CResourceFact::Own(CResource::Composite { name, arguments }, member_quantity) = member
+        let ResourceFact::Own(Resource::Composite { name, arguments }, member_quantity) = member
         else {
             return Err("Requires owns R(anchor, member)".into());
         };
@@ -8237,9 +8234,9 @@ impl ExecutionState {
 
     pub(crate) fn import_opaque_wildcard_authority(
         &self,
-        authority: &CResourceFact,
+        authority: &ResourceFact,
     ) -> Result<Self, String> {
-        let CResourceFact::Own(CResource::PopulationAuthority(scope), quantity) = authority else {
+        let ResourceFact::Own(Resource::PopulationAuthority(scope), quantity) = authority else {
             return Err("Requires owns authority(R(anchor, _))".into());
         };
         if quantity.as_const() != Some(1)
@@ -8264,8 +8261,8 @@ impl ExecutionState {
 
     pub(crate) fn with_checked_current_control_wrapper(
         &self,
-        selected: &CResourceFact,
-        definition: &super::super::CCompositeResourceDefinition,
+        selected: &ResourceFact,
+        definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
     ) -> Result<Self, String> {
         let events = self
@@ -8293,8 +8290,8 @@ impl ExecutionState {
 
     /// Whether an exact resource belongs to an established or imported population.
     /// Wrapping such a resource's body must use the population exchange law.
-    pub(crate) fn tracks_authority_member(&self, selected: &CResourceFact) -> bool {
-        let CResource::Composite { name, arguments } = selected.resource() else {
+    pub(crate) fn tracks_authority_member(&self, selected: &ResourceFact) -> bool {
+        let Resource::Composite { name, arguments } = selected.resource() else {
             return false;
         };
         let description = super::super::ResourceDescription::new(
@@ -8316,8 +8313,8 @@ impl ExecutionState {
     /// resource-rewrite certificate independently checks the eventual exchange.
     pub(crate) fn checked_authority_wrapper_projection(
         &self,
-        selected: &CResourceFact,
-        definition: &super::super::CCompositeResourceDefinition,
+        selected: &ResourceFact,
+        definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
     ) -> Result<(ResourceContext, Vec<MachineTerm>), String> {
         self.authority_wrapper_fact_projection(selected, definition, assumptions, true)
@@ -8327,8 +8324,8 @@ impl ExecutionState {
     /// invariant. This projection grants custody reads and publishes no facts.
     pub(crate) fn checked_authority_wrapper_closing_projection(
         &self,
-        selected: &CResourceFact,
-        definition: &super::super::CCompositeResourceDefinition,
+        selected: &ResourceFact,
+        definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
     ) -> Result<(ResourceContext, Vec<MachineTerm>), String> {
         self.authority_wrapper_fact_projection(selected, definition, assumptions, false)
@@ -8336,8 +8333,8 @@ impl ExecutionState {
 
     fn authority_wrapper_fact_projection(
         &self,
-        selected: &CResourceFact,
-        definition: &super::super::CCompositeResourceDefinition,
+        selected: &ResourceFact,
+        definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
         require_folded: bool,
     ) -> Result<(ResourceContext, Vec<MachineTerm>), String> {
@@ -8365,10 +8362,10 @@ impl ExecutionState {
 
     pub(crate) fn checked_authority_wrapper_body(
         &self,
-        selected: &CResourceFact,
-        definition: &super::super::CCompositeResourceDefinition,
+        selected: &ResourceFact,
+        definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
-    ) -> Result<(Vec<CResourceFact>, Vec<MachineTerm>), String> {
+    ) -> Result<(Vec<ResourceFact>, Vec<MachineTerm>), String> {
         self.authority_wrapper_body(selected, definition, assumptions, true)
     }
 
@@ -8376,8 +8373,8 @@ impl ExecutionState {
     /// Unlike opening its body, this grants no ownership or count observations.
     pub(in crate::kernel) fn authority_wrapper_descriptions(
         &self,
-        selected: &CResourceFact,
-        definition: &super::super::CCompositeResourceDefinition,
+        selected: &ResourceFact,
+        definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
     ) -> Result<Vec<ResourceDescription>, String> {
         self.authority_wrapper_candidates(selected, definition, assumptions, false)
@@ -8389,8 +8386,8 @@ impl ExecutionState {
     /// fold whose body is not yet owned.
     pub(crate) fn checked_authority_wrapper_fold_preflight(
         &self,
-        selected: &CResourceFact,
-        definition: &super::super::CCompositeResourceDefinition,
+        selected: &ResourceFact,
+        definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
     ) -> Result<Vec<MachineTerm>, String> {
         let (_, count) = self.authority_wrapper_body(selected, definition, assumptions, false)?;
@@ -8399,11 +8396,11 @@ impl ExecutionState {
 
     fn authority_wrapper_body(
         &self,
-        selected: &CResourceFact,
-        definition: &super::super::CCompositeResourceDefinition,
+        selected: &ResourceFact,
+        definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
         require_folded: bool,
-    ) -> Result<(Vec<CResourceFact>, Vec<MachineTerm>), String> {
+    ) -> Result<(Vec<ResourceFact>, Vec<MachineTerm>), String> {
         let (children, descriptions) =
             self.authority_wrapper_candidates(selected, definition, assumptions, require_folded)?;
         let mut counts = Vec::with_capacity(descriptions.len());
@@ -8463,13 +8460,13 @@ impl ExecutionState {
     pub(crate) fn import_acquired_control_authorities(
         &self,
         instance: &super::super::ResourceInstance,
-        definition: &super::super::CCompositeResourceDefinition,
+        definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
     ) -> Result<Self, String> {
         if !definition.contains().iter().any(|spec| {
             matches!(
                 spec.term(),
-                super::super::CResourceTerm::PopulationAuthority { .. }
+                super::super::ResourceTerm::PopulationAuthority { .. }
             )
         }) {
             return Ok(self.clone());
@@ -8481,7 +8478,7 @@ impl ExecutionState {
         for spec in definition.contains() {
             if !matches!(
                 spec.term(),
-                super::super::CResourceTerm::PopulationAuthority { .. }
+                super::super::ResourceTerm::PopulationAuthority { .. }
             ) {
                 continue;
             }
@@ -8499,7 +8496,7 @@ impl ExecutionState {
                     crate::kernel::api::describe_certification_runtime_error(&error)
                 )
             })?;
-            let CResource::PopulationAuthority(description) = authority.resource() else {
+            let Resource::PopulationAuthority(description) = authority.resource() else {
                 return Err("the acquired control authority is not a population authority".into());
             };
             let events = next
@@ -8513,7 +8510,7 @@ impl ExecutionState {
                     description.family()
                 ));
             }
-            let member = CResourceFact::own(CResource::Composite {
+            let member = ResourceFact::own(Resource::Composite {
                 name: description.family().to_owned(),
                 arguments: description.arguments().to_vec().into(),
             });
@@ -8536,12 +8533,12 @@ impl ExecutionState {
     /// inputs; no direct authority or creator right is manufactured here.
     pub(crate) fn import_opaque_control_wrapper(
         &self,
-        selected: &CResourceFact,
-        definition: &super::super::CCompositeResourceDefinition,
+        selected: &ResourceFact,
+        definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
         wildcard_members: &std::collections::BTreeMap<
             super::super::ResourceDescription,
-            Vec<CResourceFact>,
+            Vec<ResourceFact>,
         >,
     ) -> Result<Self, String> {
         let events = self
@@ -8566,8 +8563,8 @@ impl ExecutionState {
     /// generic wrapper leaves the count arbitrary for the ledger to name.
     pub(in crate::kernel) fn checked_authority_wrapper_import_components(
         &self,
-        selected: &CResourceFact,
-        definition: &super::super::CCompositeResourceDefinition,
+        selected: &ResourceFact,
+        definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
     ) -> Result<Vec<(ResourceDescription, Option<MachineTerm>)>, String> {
         if !self.resources.contains_exact_representation(selected) {
@@ -8582,7 +8579,7 @@ impl ExecutionState {
                 return Err("control authority needs one pointer anchor".into());
             };
             let anchor = anchor_value.pointer().clone();
-            let CResourceFact::Own(CResource::Composite { arguments, .. }, _) = selected else {
+            let ResourceFact::Own(Resource::Composite { arguments, .. }, _) = selected else {
                 return Err("Requires owns control resource".into());
             };
             if arguments.as_ref() != description.arguments() || definition.parameters().len() != 1 {
@@ -8591,11 +8588,11 @@ impl ExecutionState {
             let parameter = definition.parameters()[0].name();
             let memory_cells = children
                 .iter()
-                .filter_map(CResourceFact::memory_own_range)
+                .filter_map(ResourceFact::memory_own_range)
                 .collect::<Vec<_>>();
             let allocations = children
                 .iter()
-                .filter_map(CResourceFact::allocation)
+                .filter_map(ResourceFact::allocation)
                 .collect::<Vec<_>>();
             let owns_counter = memory_cells.iter().any(|range| {
                 range.base() == &anchor
@@ -8646,7 +8643,7 @@ impl ExecutionState {
             let exact_count_fact = definition.facts().iter().any(|fact| {
                 matches!(fact, SpecProposition::Comparison {
             left,
-            operator: CComparisonOperator::Equal,
+            operator: ComparisonOperator::Equal,
             right,
         } if (is_counter_load(left) && is_population_count(right))
             || (is_population_count(left) && is_counter_load(right)))
@@ -8672,13 +8669,12 @@ impl ExecutionState {
 
     fn authority_wrapper_candidates(
         &self,
-        selected: &CResourceFact,
-        definition: &super::super::CCompositeResourceDefinition,
+        selected: &ResourceFact,
+        definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
         require_folded: bool,
-    ) -> Result<(Vec<CResourceFact>, Vec<ResourceDescription>), String> {
-        let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = selected
-        else {
+    ) -> Result<(Vec<ResourceFact>, Vec<ResourceDescription>), String> {
+        let ResourceFact::Own(Resource::Composite { name, arguments }, quantity) = selected else {
             return Err("Requires owns control resource".into());
         };
         if name != definition.name()
@@ -8717,15 +8713,15 @@ impl ExecutionState {
         let mut seen_authorities = std::collections::BTreeSet::new();
         let mut budget = ExecutionBudget::beside_live_state();
         for spec in definition.contains() {
-            if spec.access() != super::super::CResourceAccessMode::Own
-                || spec.quantity() != &super::super::CResourceQuantity::One
+            if spec.access() != super::super::ResourceAccessMode::Own
+                || spec.quantity() != &super::super::ResourceQuantity::One
                 || spec.guard().is_some()
                 || !spec.resource_arguments().is_empty()
             {
                 return Err("control body requires exact owned resources".into());
             }
             let child = match spec.term() {
-                super::super::CResourceTerm::PopulationAuthority { .. } => {
+                super::super::ResourceTerm::PopulationAuthority { .. } => {
                     if authorities.len() == 2 {
                         return Err(
                             "control body currently supports at most two authorities".into()
@@ -8741,7 +8737,7 @@ impl ExecutionState {
                     .map_err(|error| format!("control authority evaluation failed: {error}"))?
                     .map_err(|error| format!("control authority evaluation failed: {error}"))?
                 }
-                super::super::CResourceTerm::Memory(_) => {
+                super::super::ResourceTerm::Memory(_) => {
                     // The held control's body, as its fold established it
                     // (`assume_entry_clause_extents`).
                     super::super::functions::evaluate_function_resource_spec(
@@ -8753,8 +8749,8 @@ impl ExecutionState {
                     .map_err(|error| format!("control memory evaluation failed: {error}"))?
                     .map_err(|error| format!("control memory evaluation failed: {error}"))?
                 }
-                super::super::CResourceTerm::Token { name, .. }
-                    if name == CResourceFact::ALLOCATION_RESOURCE_NAME =>
+                super::super::ResourceTerm::Token { name, .. }
+                    if name == ResourceFact::ALLOCATION_RESOURCE_NAME =>
                 {
                     // The held control's body, as its fold established it
                     // (`assume_entry_clause_extents`).
@@ -8773,7 +8769,7 @@ impl ExecutionState {
                     );
                 }
             };
-            if let CResource::PopulationAuthority(description) = child.resource() {
+            if let Resource::PopulationAuthority(description) = child.resource() {
                 if !seen_authorities.insert(description.clone()) {
                     return Err("control body repeats a population authority".into());
                 }
@@ -8798,8 +8794,8 @@ impl ExecutionState {
                 "allocation"
             } else {
                 match missing.resource() {
-                    CResource::Memory(_) => "memory",
-                    CResource::PopulationAuthority(_) => "population authority",
+                    Resource::Memory(_) => "memory",
+                    Resource::PopulationAuthority(_) => "population authority",
                     _ => "resource",
                 }
             };
@@ -8839,7 +8835,7 @@ impl ExecutionState {
     /// checks exclusive possession of the visible fact.
     pub(crate) fn checked_population_authority_exchange(
         &self,
-        selected: &CResourceFact,
+        selected: &ResourceFact,
         establish: bool,
         assumptions: &PureFactContext,
     ) -> Result<(ExecutionState, CheckedPopulationAuthorityExchange), String> {
@@ -8850,7 +8846,7 @@ impl ExecutionState {
         {
             return Err("predicate count snapshots cannot change authority".into());
         }
-        let CResourceFact::Own(CResource::PopulationAuthority(description), quantity) = selected
+        let ResourceFact::Own(Resource::PopulationAuthority(description), quantity) = selected
         else {
             return Err("Requires owns authority(R(p))".into());
         };
@@ -8923,9 +8919,9 @@ impl ExecutionState {
     /// advance together.
     pub(crate) fn checked_population_member_exchange(
         &self,
-        selected: &CResourceFact,
+        selected: &ResourceFact,
         produce: bool,
-        definition: &super::super::CCompositeResourceDefinition,
+        definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
     ) -> Result<(ExecutionState, CheckedPopulationMemberExchange), String> {
         if self
@@ -8935,8 +8931,7 @@ impl ExecutionState {
         {
             return Err("predicate count snapshots cannot change membership".into());
         }
-        let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = selected
-        else {
+        let ResourceFact::Own(Resource::Composite { name, arguments }, quantity) = selected else {
             return Err("Requires owns R(p)".into());
         };
         if let Some(value) = quantity.as_const()
@@ -8962,11 +8957,11 @@ impl ExecutionState {
             || definition.contains().iter().any(|spec| {
                 !matches!(
                     spec.term(),
-                    super::super::CResourceTerm::Memory(_)
-                        | super::super::CResourceTerm::Token { .. }
-                        | super::super::CResourceTerm::Composite { .. }
-                ) || spec.access() != super::super::CResourceAccessMode::Own
-                    || spec.quantity() != &super::super::CResourceQuantity::One
+                    super::super::ResourceTerm::Memory(_)
+                        | super::super::ResourceTerm::Token { .. }
+                        | super::super::ResourceTerm::Composite { .. }
+                ) || spec.access() != super::super::ResourceAccessMode::Own
+                    || spec.quantity() != &super::super::ResourceQuantity::One
                     || spec.guard().is_some()
                     || !spec.resource_arguments().is_empty()
             })
@@ -9032,7 +9027,7 @@ impl ExecutionState {
                         .join(", ")
                 )
             })?;
-        let authority = CResourceFact::own(CResource::PopulationAuthority(governing.clone()));
+        let authority = ResourceFact::own(Resource::PopulationAuthority(governing.clone()));
         if !self.resources.satisfies_fact(&authority, assumptions) {
             return Err(format!("Requires owns authority({name}(p))"));
         }
@@ -9064,8 +9059,8 @@ impl ExecutionState {
         };
         for child in &body {
             let Some(range) = child.memory_own_range() else {
-                if let CResourceFact::Own(
-                    CResource::Token { .. } | CResource::Composite { .. },
+                if let ResourceFact::Own(
+                    Resource::Token { .. } | Resource::Composite { .. },
                     quantity,
                 ) = child
                     && quantity.as_const() == Some(1)
@@ -9165,7 +9160,7 @@ impl ExecutionState {
             .map_err(|error| {
                 if produce && governing.population_arity().is_some()
                     && events.observe_symbolic(&governing).is_some()
-                    && matches!(error, super::super::population_authority::c_creation::CreationRefusal::InvalidQuantity)
+                    && matches!(error, super::super::population_authority::storage_creation::CreationRefusal::InvalidQuantity)
                 {
                     format!("Requires defined(count({name}({}, {})) + 1)", definition.parameters().first().map_or("anchor", |parameter| parameter.name()),
                         std::iter::repeat_n("_", arguments.len() - 1).collect::<Vec<_>>().join(", "))
@@ -9202,13 +9197,13 @@ impl ExecutionState {
             let governing = events
                 .governing_authority(&description)
                 .ok_or("Requires a matching population authority")?;
-            let authority = CResourceFact::own(CResource::PopulationAuthority(governing.clone()));
+            let authority = ResourceFact::own(Resource::PopulationAuthority(governing.clone()));
             if !before.resources.satisfies_fact(&authority, assumptions) {
                 return Err(format!("Requires owns authority({}(...))", instance.name()));
             }
             let reference = super::super::ResourceReference::from_instance(instance);
             if events.recognizes_imported_population(&description) {
-                let owned = CResourceFact::own(CResource::Instance(instance.clone()));
+                let owned = ResourceFact::own(Resource::Instance(instance.clone()));
                 if !produce && !before.resources.satisfies_fact(&owned, assumptions) {
                     return Err("Requires owning the exact named member before consumption".into());
                 }
@@ -9266,10 +9261,10 @@ impl ExecutionState {
     pub(in crate::kernel) fn retire_population_storage(
         &mut self,
         block: &PointerBlock,
-    ) -> Result<(), CRuntimeError> {
+    ) -> Result<(), RuntimeError> {
         if let Some(events) = &self.population_effects.creation {
             let next = events.retired(block).map_err(|refusal| {
-                CRuntimeError::FunctionContract(format!(
+                RuntimeError::FunctionContract(format!(
                     "population authority prevents storage retirement: {refusal}"
                 ))
             })?;
@@ -9283,14 +9278,16 @@ impl ExecutionState {
     pub(in crate::kernel) fn retired_population_creation_for_blocks(
         &self,
         blocks: &[PointerBlock],
-    ) -> Result<Option<super::super::population_authority::c_creation::CreationEvents>, CRuntimeError>
-    {
+    ) -> Result<
+        Option<super::super::population_authority::storage_creation::CreationEvents>,
+        RuntimeError,
+    > {
         let Some(mut events) = self.population_effects.creation.clone() else {
             return Ok(None);
         };
         for block in blocks {
             events = events.retired(block).map_err(|refusal| {
-                CRuntimeError::FunctionContract(format!(
+                RuntimeError::FunctionContract(format!(
                     "population authority prevents storage retirement: {refusal}"
                 ))
             })?;
@@ -9301,13 +9298,13 @@ impl ExecutionState {
     pub(in crate::kernel) fn population_storage_retirement_refusal(
         &self,
         block: &PointerBlock,
-    ) -> Option<CRuntimeError> {
+    ) -> Option<RuntimeError> {
         self.population_effects
             .creation
             .as_ref()
             .and_then(|events| events.retirement_refusal(block))
             .map(|refusal| {
-                CRuntimeError::FunctionContract(format!(
+                RuntimeError::FunctionContract(format!(
                     "population authority prevents storage retirement: {refusal}"
                 ))
             })
@@ -9317,8 +9314,8 @@ impl ExecutionState {
     /// events produced by a body that actually executed.
     pub(in crate::kernel) fn restore_population_creation_after_call(
         &mut self,
-        caller: Option<&super::super::population_authority::c_creation::CreationEvents>,
-        callee: Option<&super::super::population_authority::c_creation::CreationEvents>,
+        caller: Option<&super::super::population_authority::storage_creation::CreationEvents>,
+        callee: Option<&super::super::population_authority::storage_creation::CreationEvents>,
     ) {
         let next = match (caller, callee) {
             (Some(caller), Some(callee)) => Some(callee.return_to(caller)),
@@ -9378,7 +9375,7 @@ impl ExecutionState {
         self
     }
 
-    pub fn with_memory(mut self, memory: CMemory) -> Self {
+    pub fn with_memory(mut self, memory: Memory) -> Self {
         self.set_memory(memory);
         self
     }
@@ -9391,7 +9388,7 @@ impl ExecutionState {
     /// writes, but using it for this proof representation step would discard
     /// unrelated resource views and make a resource rewrite appear to change
     /// more authority than its definition exchanges.
-    pub(crate) fn with_materialized_memory(mut self, memory: CMemory) -> Self {
+    pub(crate) fn with_materialized_memory(mut self, memory: Memory) -> Self {
         self.memory = memory;
         self
     }
@@ -9403,9 +9400,9 @@ impl ExecutionState {
     /// derived from `base` by persistent updates, as the abstractions of two
     /// arms are derived from the memory at their split. The memories are
     /// compared by what each changed from `base`
-    /// ([`CMemory::eq_relative_to`]), so the cost is the arms' changes; the
+    /// ([`Memory::eq_relative_to`]), so the cost is the arms' changes; the
     /// answer is exact whatever the memories share.
-    pub(crate) fn eq_with_memories_from(&self, other: &Self, base: &CMemory) -> bool {
+    pub(crate) fn eq_with_memories_from(&self, other: &Self, base: &Memory) -> bool {
         if !self.memory.eq_relative_to(&other.memory, base) {
             return false;
         }
@@ -9416,14 +9413,14 @@ impl ExecutionState {
         *self == other
     }
 
-    pub(crate) fn set_memory(&mut self, memory: CMemory) {
+    pub(crate) fn set_memory(&mut self, memory: Memory) {
         self.set_memory_with_checked_stores(memory, false);
     }
 
     /// [`Self::set_memory`] for the C store path, which has already applied
     /// the iterated-ownership store rule (`plan_iterated_guard_store`) to its
     /// one store. Every other transition keeps the conservative rule.
-    pub(crate) fn set_memory_with_checked_stores(&mut self, memory: CMemory, stores_checked: bool) {
+    pub(crate) fn set_memory_with_checked_stores(&mut self, memory: Memory, stores_checked: bool) {
         self.resources = self
             .resources
             .clone()
@@ -9523,7 +9520,7 @@ impl ExecutionState {
     /// access is permitted or no ledger is active.
     pub(crate) fn stable_loan_memory_access_refusal(
         &self,
-        range: &CMemoryRange,
+        range: &MemoryRange,
         assumptions: &PureFactContext,
         operation: crate::kernel::LoanRefusalOperation,
     ) -> Option<crate::kernel::LoanRefusalDiagnostic> {
@@ -9532,7 +9529,7 @@ impl ExecutionState {
             .and_then(|ledger| ledger.memory_access_refusal(range, assumptions, operation))
     }
 
-    pub fn locals(&self) -> &CLocalEnvironment {
+    pub fn locals(&self) -> &LocalEnvironment {
         &self.locals
     }
 
@@ -9554,7 +9551,7 @@ impl ExecutionState {
             .flatten()
     }
 
-    pub fn memory(&self) -> &CMemory {
+    pub fn memory(&self) -> &Memory {
         &self.memory
     }
 
@@ -9563,7 +9560,7 @@ impl ExecutionState {
     /// can change. Nothing when a stored slot's cell is not known.
     pub(crate) fn scalar_local_value(&self, name: &str) -> Option<ProgramValue> {
         match self.locals.binding(name)? {
-            CLocalBinding::Object {
+            LocalBinding::Object {
                 storage_declared: false,
                 value,
                 slot,
@@ -9572,7 +9569,7 @@ impl ExecutionState {
                 .memory
                 .known_value(slot)
                 .or_else(|| Some(value.clone().into_native())),
-            CLocalBinding::Object { slot, .. } => self.memory.known_value(slot),
+            LocalBinding::Object { slot, .. } => self.memory.known_value(slot),
             _ => None,
         }
     }
@@ -9657,7 +9654,7 @@ impl ExecutionState {
     /// address-backed cells. Ordinary function frames keep their own local
     /// environment, but inline bodies execute with a separate parameter
     /// environment while retaining the caller's memory.
-    pub(in crate::kernel) fn sync_scalar_locals_from_memory(&mut self, memory: &CMemory) {
+    pub(in crate::kernel) fn sync_scalar_locals_from_memory(&mut self, memory: &Memory) {
         let updates = self
             .locals
             .bindings
@@ -9665,7 +9662,7 @@ impl ExecutionState {
             .filter_map(|(name, binding)| {
                 let (c_type, slot, volatile, pointee_volatile, constant, pointee_constant) =
                     match binding {
-                        CLocalBinding::Object {
+                        LocalBinding::Object {
                             c_type,
                             slot,
                             volatile,
@@ -9674,7 +9671,7 @@ impl ExecutionState {
                             pointee_constant,
                             ..
                         }
-                        | CLocalBinding::UninitializedObject {
+                        | LocalBinding::UninitializedObject {
                             c_type,
                             slot,
                             volatile,
@@ -9690,9 +9687,9 @@ impl ExecutionState {
                             *constant,
                             *pointee_constant,
                         ),
-                        CLocalBinding::GlobalObject { .. }
-                        | CLocalBinding::ArrayObject { .. }
-                        | CLocalBinding::AggregateObject { .. } => return None,
+                        LocalBinding::GlobalObject { .. }
+                        | LocalBinding::ArrayObject { .. }
+                        | LocalBinding::AggregateObject { .. } => return None,
                     };
                 // A store through a pointer to the other signedness of the
                 // object's width wrote the same bits; the local reads them in
@@ -9701,7 +9698,7 @@ impl ExecutionState {
                     .known_value(&slot)
                     .and_then(|value| {
                         c_type.read_cell(&value).or_else(|| {
-                            (!matches!(binding, CLocalBinding::UninitializedObject { .. }))
+                            (!matches!(binding, LocalBinding::UninitializedObject { .. }))
                                 .then_some(value)
                         })
                     })
@@ -10058,7 +10055,7 @@ mod contract_retirement_tests {
                 true,
             ))
         });
-        let mut memory = CMemory::new()
+        let mut memory = Memory::new()
             .with_heap_allocation_claim(base.clone(), HeapExtent::int32(4))
             .expect("fresh input allocation");
         let heap = std::sync::Arc::make_mut(&mut memory.heap);
@@ -10096,7 +10093,7 @@ mod union_store_tests {
             block: PointerBlock::Concrete("local:u".to_string()),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let memory = CMemory::new()
+        let memory = Memory::new()
             .store_union(base.clone(), ProgramType::UInt8, crate::kernel::uint8(0xAA))
             .store_union(
                 base.clone(),
@@ -10130,7 +10127,7 @@ mod interface_join_tombstone_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         // Arm B kept it live.
-        let alive = CMemory::new()
+        let alive = Memory::new()
             .with_block(base.block.clone(), 8)
             .with_heap_allocation_claim(base.clone(), HeapExtent::int32(8))
             .expect("fresh allocation on arm B");
@@ -10177,12 +10174,12 @@ mod join_allocation_spelling_tests {
 
     /// Each arm holds its allocation live under its own spelling, so the
     /// join unions two live entries.
-    fn joined(p: &Pointer, q: &Pointer) -> CMemory {
-        let arm_a = CMemory::new()
+    fn joined(p: &Pointer, q: &Pointer) -> Memory {
+        let arm_a = Memory::new()
             .with_block(p.block.clone(), 8)
             .with_heap_allocation_claim(p.clone(), HeapExtent::int32(8))
             .expect("arm A claim");
-        let arm_b = CMemory::new()
+        let arm_b = Memory::new()
             .with_block(q.block.clone(), 8)
             .with_heap_allocation_claim(q.clone(), HeapExtent::int32(8))
             .expect("arm B claim");
@@ -10261,13 +10258,13 @@ mod join_allocation_spelling_tests {
             .expect("the second allocation frees");
         assert!(matches!(
             twice.free_heap_block(&q, &assumptions),
-            Err(CInvalidFree::DoubleFree)
+            Err(InvalidFree::DoubleFree)
         ));
     }
 }
 
 /// One cached value a forgetting transition is asked about
-/// ([`CMemory::forget_cached_values`]).
+/// ([`Memory::forget_cached_values`]).
 #[derive(Clone, Copy, Debug)]
 pub(super) enum CachedValue<'a> {
     /// A cell, or one slot of a run.
@@ -10344,7 +10341,7 @@ fn ask_every_slot(_: &CellRun) -> (SlotSet, crate::kernel::primitives::RuleAnswe
     )
 }
 
-/// Collects one dropped cell for [`CMemory::record_dropped_local_cells`],
+/// Collects one dropped cell for [`Memory::record_dropped_local_cells`],
 /// except from inside a debug self-check that re-asks a retain predicate:
 /// that would record, in a debug build only, cells a release build keeps
 /// by a whole-run answer.
@@ -10382,8 +10379,8 @@ mod initialization_record_tests {
         }
     }
 
-    fn written_pair(block: &str) -> CMemory {
-        CMemory::new()
+    fn written_pair(block: &str) -> Memory {
+        Memory::new()
             .with_block(block, 8)
             .store(
                 element(block, 0),
@@ -10395,7 +10392,7 @@ mod initialization_record_tests {
             )
     }
 
-    fn forgotten_pair(block: &str) -> CMemory {
+    fn forgotten_pair(block: &str) -> Memory {
         written_pair(block).without_possible_aliasing_cells(
             &unplaced(block),
             4,
@@ -10438,7 +10435,7 @@ mod initialization_record_tests {
         // One arm forgot both values but keeps their initialization; the
         // other still caches only the first element.
         let forgotten = forgotten_pair(block);
-        let first_only = CMemory::new().with_block(block, 8).store(
+        let first_only = Memory::new().with_block(block, 8).store(
             element(block, 0),
             ProgramValue::Int32(MachineTerm::constant(5)),
         );
@@ -10459,23 +10456,23 @@ mod initialization_record_tests {
     /// A fresh local block of `count` two-field structs (`stride` 8) or
     /// `count` int32s (`stride` 4), its zero contents seeded as constant runs
     /// with no initialization recorded, so only the runs say it was written.
-    fn zero_runs(block: &str, count: u32, stride: u32) -> CMemory {
+    fn zero_runs(block: &str, count: u32, stride: u32) -> Memory {
         let zero = ProgramValue::Int32(MachineTerm::constant(0));
         let runs = (0..stride / 4)
-            .map(|field| CConstantRun {
+            .map(|field| ConstantRun {
                 offset: 4 * field,
                 stride,
                 count,
                 value: zero.clone(),
             })
             .collect::<Vec<_>>();
-        CMemory::new()
+        Memory::new()
             .with_block(block, count * stride)
             .with_constant_runs(&element(block, 0), &runs)
             .expect("a fresh local block takes constant runs")
     }
 
-    fn loop_havoc(memory: CMemory, variable: u64) -> CMemory {
+    fn loop_havoc(memory: Memory, variable: u64) -> Memory {
         memory.with_loop_memory_havoc_preserving_loans(
             Variable(variable),
             &BTreeSet::new(),
@@ -10557,7 +10554,7 @@ mod initialization_record_tests {
         };
         assert!(written.has_initialized_bytes_under(&read, 4, &index_between(&index, 0, 1)));
         assert!(!written.has_initialized_bytes_under(&read, 4, &index_between(&index, 0, 2)));
-        let gap = CMemory::new()
+        let gap = Memory::new()
             .with_block(block, 12)
             .store(
                 element(block, 0),
@@ -10587,7 +10584,7 @@ mod local_variable_spelling_tests {
         let memory = state
             .memory()
             .clone()
-            .store(CMemory::local_pointer(name), value.clone());
+            .store(Memory::local_pointer(name), value.clone());
         state.with_local(name, value).with_memory(memory)
     }
 
@@ -10597,7 +10594,7 @@ mod local_variable_spelling_tests {
             PointerBlock::Symbolic(Variable(971_030)),
             PointerBlock::Symbolic(Variable(971_031)),
         ];
-        let mut locals = CLocalEnvironment::new();
+        let mut locals = LocalEnvironment::new();
         for step in 0..60usize {
             let name = format!("p{}", step % 7);
             if step % 5 == 0 {
@@ -10622,7 +10619,7 @@ mod local_variable_spelling_tests {
                 locals.restore_binding(&name, binding);
             }
             let rebuilt =
-                CLocalEnvironment::from_parts(locals.bindings.clone(), locals.slots.clone());
+                LocalEnvironment::from_parts(locals.bindings.clone(), locals.slots.clone());
             for block in &blocks {
                 let scanned = locals
                     .object_values()
@@ -10682,7 +10679,7 @@ mod local_variable_spelling_tests {
         }
         state = state.with_local(
             "pointer",
-            ProgramValue::pointer(CMemory::local_pointer("v0")),
+            ProgramValue::pointer(Memory::local_pointer("v0")),
         );
         for term in &terms {
             let scanned = state
@@ -10719,13 +10716,13 @@ mod local_variable_spelling_tests {
             state.local_name_holding_bitvector_variable(variable),
             Some("a")
         );
-        let pointer = CMemory::local_pointer("a");
+        let pointer = Memory::local_pointer("a");
         assert_eq!(
             state.local_name_holding_bitvector_variable_at(variable, &pointer),
             Some("a")
         );
         let state = state.clone().with_memory(state.memory().clone().store(
-            CMemory::local_pointer("a"),
+            Memory::local_pointer("a"),
             ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
         ));
         assert_eq!(
@@ -10738,7 +10735,7 @@ mod local_variable_spelling_tests {
             "a recorded address must still hold the atom in current memory"
         );
         let state = state.clone().with_memory(state.memory().clone().store(
-            CMemory::local_pointer("z"),
+            Memory::local_pointer("z"),
             ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
         ));
         assert_eq!(state.local_name_holding_bitvector_variable(variable), None);
@@ -10756,9 +10753,9 @@ mod local_variable_spelling_tests {
 mod kept_range_identity_tests {
     use super::*;
 
-    fn ranges(id: u64) -> SnapshotMap<CMemoryRange, ()> {
+    fn ranges(id: u64) -> SnapshotMap<MemoryRange, ()> {
         ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+            .unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
                 Pointer::symbolic(Variable(id)),
                 0.into(),
                 4.into(),
@@ -10784,7 +10781,7 @@ mod kept_range_identity_tests {
 
     #[test]
     fn kept_range_hash_collisions_distinguish_composite_exclusions() {
-        let composite = ResourceContext::new().unchecked_with_fact(CResourceFact::own_composite(
+        let composite = ResourceContext::new().unchecked_with_fact(ResourceFact::own_composite(
             "boxed".into(),
             vec![ProgramValue::pointer(Pointer::symbolic(Variable(9)))],
         ));
@@ -10799,7 +10796,7 @@ mod kept_range_identity_tests {
             )
         };
         let original = ResourceContext::new()
-            .unchecked_with_facts(ranges(8).keys().cloned().map(CResourceFact::own_memory));
+            .unchecked_with_facts(ranges(8).keys().cloned().map(ResourceFact::own_memory));
         let original = original.memory_input_facts();
         let plain = intern(SnapshotMap::new(), SnapshotMap::new());
         let excluded = intern(original.clone(), SnapshotMap::new());
@@ -10815,7 +10812,7 @@ mod kept_range_identity_tests {
     #[test]
     fn kept_range_hash_collisions_distinguish_surviving_views() {
         let range = ranges(7).keys().next().unwrap().clone();
-        let viewed = ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(range));
+        let viewed = ResourceContext::new().unchecked_with_fact(ResourceFact::view_memory(range));
         let intern = |inputs| {
             intern_kept_range_set_with_exclusions_and_hash(
                 SnapshotMap::new(),
@@ -10834,7 +10831,7 @@ mod kept_range_identity_tests {
 
     #[test]
     fn owned_range_index_keeps_duplicates_until_the_last_withdrawal() {
-        let fact = CResourceFact::own_memory(CMemoryRange::new(
+        let fact = ResourceFact::own_memory(MemoryRange::new(
             Pointer::symbolic(Variable(7)),
             0.into(),
             4.into(),

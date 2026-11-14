@@ -128,7 +128,7 @@ fn algebraic_constructor_injectivity_ignores_unrelated_facts() {
 fn function_contract_lookup_ignores_unrelated_pointer_facts() {
     fn contract_fact(name: &str, pointer: Pointer) -> Proposition {
         Proposition::Predicate {
-            name: CFunctionContract::predicate_name_for(name),
+            name: FunctionContract::predicate_name_for(name),
             arguments: vec![
                 Term::ExecutionState(Box::new(ExecutionState::new())),
                 Term::ProgramValue(ProgramValue::typed_pointer(
@@ -172,7 +172,7 @@ fn function_contract_lookup_ignores_unrelated_pointer_facts() {
 fn callback_contract_availability_uses_scoped_pointer_equality() {
     let c_type = ProgramType::FunctionPointer(CallbackSignature::from_encoded(90_000));
     let contract = |name: &str, pointer, state, c_type| Proposition::Predicate {
-        name: CFunctionContract::predicate_name_for(name),
+        name: FunctionContract::predicate_name_for(name),
         arguments: vec![
             Term::ExecutionState(Box::new(state)),
             Term::ProgramValue(ProgramValue::typed_pointer(pointer, c_type)),
@@ -636,7 +636,7 @@ fn forall_integer_instantiation_charges_shared_replacement_only_once() {
 
 #[test]
 fn loadability_same_base_extent_graph_queries_scale_without_fact_index() {
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let base = Pointer::symbolic(Variable(90_310));
     let var = |id| MachineTerm::Variable(Variable(id));
     let bytes = |value| MachineTerm::add(value, MachineTerm::constant(1));
@@ -786,7 +786,7 @@ fn increment_chain_add_work_does_not_grow_with_earlier_increments() {
         let [path] = paths.as_slice() else {
             panic!("increment {length} of a bounded base should not split: {paths:?}");
         };
-        let CExpressionOutcome::Value(ProgramValue::Int32(next)) = &path.outcome else {
+        let ExpressionOutcome::Value(ProgramValue::Int32(next)) = &path.outcome else {
             panic!(
                 "increment {length} should produce an int32: {:?}",
                 path.outcome
@@ -807,7 +807,7 @@ fn increment_chain_add_work_does_not_grow_with_earlier_increments() {
     assert!(
         paths.iter().any(|path| matches!(
             path.outcome,
-            CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::SignedOverflow)
+            ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::SignedOverflow)
         )),
         "an unbounded base must still owe the overflow"
     );
@@ -821,7 +821,7 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
     let samples = [16, 32, 64, 128]
         .into_iter()
         .map(|size| {
-            let memory = CMemory::new();
+            let memory = Memory::new();
             let data = Pointer {
                 block: "quantified-data".into(),
                 offset: PointerOffsetTerm::Constant(0),
@@ -983,7 +983,7 @@ fn theory_capable_order_endpoints_scale_near_linearly() {
                     offset: PointerOffsetTerm::Constant(0),
                 };
                 let load = MachineTerm::MemoryLoad(
-                    crate::kernel::intern_c_memory(CMemory::new()),
+                    crate::kernel::intern_c_memory(Memory::new()),
                     Box::new(cell),
                     crate::kernel::LoadKind::Int32,
                 );
@@ -1166,7 +1166,7 @@ fn guarded_implication_lookup_is_keyed_by_consequent_operands() {
 /// that snapshot is a memo hit, whatever the replacement.
 #[test]
 fn snapshot_substitution_of_an_absent_variable_is_memoized() {
-    let mut memory = CMemory::new();
+    let mut memory = Memory::new();
     for index in 0..64 {
         memory = memory.with_block(format!("snapshot-memo-{index}"), 4);
     }
@@ -1366,7 +1366,7 @@ fn pointer_association_selected_guard_work_ignores_ambient_facts() {
 
 #[test]
 fn native_loadability_window_query_work_ignores_unrelated_views() {
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let root = Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),
@@ -1420,7 +1420,7 @@ fn native_loadability_window_query_work_ignores_unrelated_views() {
 
 #[test]
 fn native_loadability_prefix_coverage_ignores_unrelated_addresses() {
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let base = Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),
@@ -1473,7 +1473,7 @@ fn native_loadability_prefix_coverage_ignores_unrelated_addresses() {
 
 #[test]
 fn native_loadability_queries_do_not_visit_unrelated_addresses() {
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let base = Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),
@@ -1608,7 +1608,7 @@ fn restricting_model_support_ignores_unselected_scalar_graph_edges() {
 
 #[test]
 fn call_input_retention_does_not_derive_memory_or_scan_unrelated_facts() {
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let base = Pointer {
         block: "retention_data".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -1722,7 +1722,7 @@ fn equality_aware_pointer_fact_queries_ignore_unrelated_facts_and_old_snapshots(
     let target = Pointer::symbolic_function(Variable(122_000));
     let alias = Pointer::symbolic_function(Variable(122_001));
     let fact = |pointer: Pointer, state: ExecutionState| Proposition::Predicate {
-        name: CFunctionContract::predicate_name_for("Selected"),
+        name: FunctionContract::predicate_name_for("Selected"),
         arguments: vec![
             Term::ExecutionState(Box::new(state)),
             Term::ProgramValue(ProgramValue::typed_pointer(
@@ -1746,7 +1746,7 @@ fn equality_aware_pointer_fact_queries_ignore_unrelated_facts_and_old_snapshots(
             context = context.assume_proposition(fact(
                 target.clone(),
                 ExecutionState::new()
-                    .with_memory(CMemory::new().with_block(format!("epoch-{index}"), 4)),
+                    .with_memory(Memory::new().with_block(format!("epoch-{index}"), 4)),
             ));
         }
         context = context.assume_condition(

@@ -535,7 +535,7 @@ predicate same_first(a: int32[], b: int32[]) {
 
 receives pure array refs for `a` and `b`. Each ref carries:
 
-- a `CMemory` value, the memory its reads are taken in
+- a `Memory` value, the memory its reads are taken in
 - a C pointer
 - an element type, currently `int32` or `uint8`
 

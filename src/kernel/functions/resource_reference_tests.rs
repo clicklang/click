@@ -17,27 +17,27 @@ fn cell(identity: u64, argument: u32) -> ResourceInstance {
     )
     .unwrap()
 }
-fn definition() -> CCompositeResourceDefinition {
-    let parameter = CResourceSpec::instance(
+fn definition() -> CompositeResourceDefinition {
+    let parameter = ResourceSpec::instance(
         Variable(90),
         "cell".into(),
         schema(),
-        CResourceSpec::declared(
+        ResourceSpec::declared(
             ResourceFamily::Composite,
-            CResourceAccessMode::Own,
+            ResourceAccessMode::Own,
             "cell".into(),
             vec![c_variable("p")],
             vec![ProgramType::Int32],
-            CResourceTransferRole::Borrow,
-            CResourceSnapshot::Current,
+            ResourceTransferRole::Borrow,
+            ResourceSnapshot::Current,
         )
         .unwrap(),
-        CResourceTransferRole::Borrow,
-        CResourceSnapshot::Current,
+        ResourceTransferRole::Borrow,
+        ResourceSnapshot::Current,
     )
     .unwrap()
     .with_source_arguments(vec!["p".into()]);
-    CCompositeResourceDefinition::new(
+    CompositeResourceDefinition::new(
         "wrapper",
         vec![c_parameter("p", ProgramType::Int32)],
         None,
@@ -135,17 +135,17 @@ fn replacement_reference_cannot_open_an_owned_wrapper() {
     );
 }
 
-fn owning_definition() -> CCompositeResourceDefinition {
-    definition().with_children(vec![CResourceChildSpec {
+fn owning_definition() -> CompositeResourceDefinition {
+    definition().with_children(vec![ResourceChildSpec {
         name: "cell".into(),
         resource: "cell".into(),
         binding: Variable(90),
         arguments: vec![SpecExpression::ProgramExpression(c_variable("p"))],
-        field_bindings: vec![CResourceChildField::Parent(0)],
+        field_bindings: vec![ResourceChildField::Parent(0)],
     }])
 }
-fn child_definition() -> CCompositeResourceDefinition {
-    CCompositeResourceDefinition::new(
+fn child_definition() -> CompositeResourceDefinition {
+    CompositeResourceDefinition::new(
         "cell",
         vec![c_parameter("p", ProgramType::Int32)],
         None,
@@ -162,7 +162,7 @@ fn owned_reference_uses_checked_child_custody_and_current_model() {
     resource.fields = child.fields.clone();
     let state = ExecutionState::new().with_resource_context(
         ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::own(CResource::Instance(child.clone()))),
+            .unchecked_with_fact(ResourceFact::own(Resource::Instance(child.clone()))),
     );
     let definition = owning_definition();
     let definitions = vec![child_definition(), definition.clone()];
@@ -213,7 +213,7 @@ fn owned_reference_rejects_substituting_a_different_child_occurrence() {
     resource.fields = child.fields.clone();
     let other = cell(11, 3);
     let state = ExecutionState::new().with_resource_context(
-        ResourceContext::new().unchecked_with_fact(CResourceFact::own(CResource::Instance(other))),
+        ResourceContext::new().unchecked_with_fact(ResourceFact::own(Resource::Instance(other))),
     );
     let definition = owning_definition();
     let definitions = vec![child_definition(), definition.clone()];
@@ -240,7 +240,7 @@ fn reference_does_not_restore_fields_observed_when_it_was_captured() {
     resource.fields = current.fields.clone();
     let state = ExecutionState::new().with_resource_context(
         ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::own(CResource::Instance(current.clone()))),
+            .unchecked_with_fact(ResourceFact::own(Resource::Instance(current.clone()))),
     );
     let definition = owning_definition();
     let definitions = vec![child_definition(), definition.clone()];
@@ -278,27 +278,27 @@ fn section_reference_lookup_does_not_duplicate_existing_owned_instances() {
     let record = wrapper(&child);
     let state =
         ExecutionState::new().with_resource_context(ResourceContext::new().unchecked_with_facts([
-            CResourceFact::own(CResource::Instance(child.clone())),
-            CResourceFact::own(CResource::Instance(record.clone())),
+            ResourceFact::own(Resource::Instance(child.clone())),
+            ResourceFact::own(Resource::Instance(record.clone())),
         ]));
     let named_spec = |instance: &ResourceInstance, references: Vec<Variable>| {
-        CResourceSpec::instance(
+        ResourceSpec::instance(
             instance.identity(),
             instance.name().into(),
             instance.schema().clone(),
-            CResourceSpec::declared(
+            ResourceSpec::declared(
                 ResourceFamily::Composite,
-                CResourceAccessMode::Own,
+                ResourceAccessMode::Own,
                 instance.name().into(),
                 vec![c_int32_literal(3)],
                 vec![ProgramType::Int32],
-                CResourceTransferRole::Borrow,
-                CResourceSnapshot::Current,
+                ResourceTransferRole::Borrow,
+                ResourceSnapshot::Current,
             )
             .unwrap()
             .with_resource_arguments(references),
-            CResourceTransferRole::Borrow,
-            CResourceSnapshot::Current,
+            ResourceTransferRole::Borrow,
+            ResourceSnapshot::Current,
         )
         .unwrap()
     };

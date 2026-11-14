@@ -4,7 +4,7 @@ A loop's `owns` clause takes its resource out of the enclosing resource
 context, exactly as a call takes a callee's requirement out of its caller's.
 The function only views `q[0..1]`, so the loop cannot own it. The refusal
 names the clause in the source's terms, `owns q[0..1]`, where it used to print
-the kernel's resource fact (`Own(Memory(CMemoryRange { base: Pointer { block:
+the kernel's resource fact (`Own(Memory(MemoryRange { base: Pointer { block:
 ExternalArgument, ... }))`).
 
 ```c filename=loop_owns_clause_requires_function_ownership.c

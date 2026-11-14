@@ -10,10 +10,10 @@ change which C programs Click accepts.
 
 ## Representation
 
-`SharedMemory` is the stable identity of an interned `CMemory` value. The
-arena assigns dense identifiers. A separately stored `CMemoryDerivation`
+`SharedMemory` is the stable identity of an interned `Memory` value. The
+arena assigns dense identifiers. A separately stored `MemoryDerivation`
 describes the edge from an already-interned parent to a child snapshot.
-Keeping provenance outside `CMemory` means that equality, hashing, and ordering
+Keeping provenance outside `Memory` means that equality, hashing, and ordering
 continue to describe memory values rather than the route used to produce them.
 
 Each map and set inside a snapshot (`blocks`, `cells`, `union_cells`, the
@@ -69,7 +69,7 @@ entry by entry; the recorded edges are unchanged. Because every result is
 derived from its base's canonical storage, a statement executed twice from
 one state (planned, then checked) is recognized as the base's recorded child
 before any structural lookup: the arena indexes each base's recorded children
-by content hash, and `CMemory::eq_relative_to` compares the two results'
+by content hash, and `Memory::eq_relative_to` compares the two results'
 changes from the base (`SnapshotMap::eq_relative_to`, which diffs against the
 base and so walks only the changed paths). The answer is exact whatever the
 snapshots share; only the cost depends on the sharing.
@@ -151,7 +151,7 @@ cell map that has forgotten a store looks exactly like the cell map before
 that store. After `a[i] = 7; a[j] = 0;` the second write drops the possibly
 aliasing `a[i]` cell and the map is empty again, as it was at function entry.
 
-So `CMemory` carries a `forgotten_from` mark: the interned identity of the
+So `Memory` carries a `forgotten_from` mark: the interned identity of the
 snapshot cached values were dropped from, part of equality, hashing, ordering
 and the interning key. A snapshot means "the memory the mark denotes, with
 these cells known on top of it", so two executions reaching the same cells
@@ -391,7 +391,7 @@ unrelated holdings or constructing pairwise separation facts.
 
 ## Range index domains
 
-`CMemoryRange` retains either signed `Int32` or unsigned `UInt64` bounds.
+`MemoryRange` retains either signed `Int32` or unsigned `UInt64` bounds.
 Its legacy `start()`, `end()` and `byte_footprint()` methods deliberately
 reject native ranges. Numeric consumers must dispatch on `int32_bounds()` /
 `wide_bounds()`: reading a native bound as a signed residue can frame a

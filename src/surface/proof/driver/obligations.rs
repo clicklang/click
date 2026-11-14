@@ -993,12 +993,12 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         loop_head_state: &ExecutionState,
         head_iterations: &crate::kernel::IntegerTerm,
         condition: &ProgramExpression,
-        invariant_checks: &[CLoopInvariantCheck],
-        ranking_measures: &[crate::kernel::CRankingComponent],
+        invariant_checks: &[LoopInvariantCheck],
+        ranking_measures: &[crate::kernel::RankingComponent],
         structural_measure: Option<&str>,
         invariant_surfaces: &[ClickProposition],
-        binders: &[crate::kernel::CLoopBinder],
-        composite_resource_definitions: &[CCompositeResourceDefinition],
+        binders: &[crate::kernel::LoopBinder],
+        composite_resource_definitions: &[CompositeResourceDefinition],
         do_while: bool,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         let driver_proof = self.proof;

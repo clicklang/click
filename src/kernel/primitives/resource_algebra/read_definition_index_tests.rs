@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn token_discovery_follows_a_producer_defined_pointer_read() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = crate::kernel::intern_c_memory(CMemory::new());
+    let memory = crate::kernel::intern_c_memory(Memory::new());
     let field = Pointer {
         block: "local:field".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -16,8 +16,8 @@ fn token_discovery_follows_a_producer_defined_pointer_read() {
         .register_pointer_read_definition(&value, &memory, &field);
     let wrap =
         |pointer| PointerValue::from_read(pointer, ProgramType::Int32Pointer, &memory, &field);
-    let held = CResourceFact::own_designated_allocation(wrap(read), &HeapExtent::int32(4));
-    let required = CResourceFact::own_designated_allocation(wrap(value), &HeapExtent::int32(4));
+    let held = ResourceFact::own_designated_allocation(wrap(read), &HeapExtent::int32(4));
+    let required = ResourceFact::own_designated_allocation(wrap(value), &HeapExtent::int32(4));
     assert!(
         resource_fact_entails(&held, &required, &facts),
         "the common matcher knows the producer definition"
@@ -35,8 +35,8 @@ fn class_candidates_follow_merges_and_removals_without_leaking_to_siblings() {
     let _session = crate::kernel::VerificationSession::enter();
     let base = Pointer::symbolic(Variable(976_100));
     let alias = Pointer::symbolic(Variable(976_101));
-    let held = CResourceFact::own_allocation(base.clone(), 4);
-    let required = CResourceFact::own_allocation(alias.clone(), 4);
+    let held = ResourceFact::own_allocation(base.clone(), 4);
+    let required = ResourceFact::own_allocation(alias.clone(), 4);
     let facts = PureFactContext::new();
     let resources = ResourceContext::new().unchecked_with_fact(held.clone());
     resources.synchronize_memory_equalities(&facts);
@@ -73,7 +73,7 @@ mod scaling_tests {
 #[test]
 fn definitions_registered_after_publication_select_existing_payloads() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = crate::kernel::intern_c_memory(CMemory::new());
+    let memory = crate::kernel::intern_c_memory(Memory::new());
     let field = Pointer {
         block: "local:late_field".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -81,9 +81,9 @@ fn definitions_registered_after_publication_select_existing_payloads() {
     let value = Pointer::symbolic(Variable(976_200));
     let read = Pointer::loaded_value(&memory, &field);
     let wrap = |p| PointerValue::from_read(p, ProgramType::Int32Pointer, &memory, &field);
-    let held = CResourceFact::own_designated_allocation(wrap(read), &HeapExtent::int32(4));
+    let held = ResourceFact::own_designated_allocation(wrap(read), &HeapExtent::int32(4));
     let required =
-        CResourceFact::own_designated_allocation(wrap(value.clone()), &HeapExtent::int32(4));
+        ResourceFact::own_designated_allocation(wrap(value.clone()), &HeapExtent::int32(4));
     let facts = PureFactContext::new();
     let resources = ResourceContext::new().unchecked_with_fact(held.clone());
     resources.synchronize_memory_equalities(&facts);
@@ -110,25 +110,25 @@ fn memory_direct_support_preserves_held_identity_and_authority() {
             let p = Pointer::symbolic(Variable(976_300));
             let range = |start: u32, end: u32| {
                 if native {
-                    CMemoryRange::new_wide(
+                    MemoryRange::new_wide(
                         p.clone(),
                         MachineTerm::uint64_constant(start.into()),
                         MachineTerm::uint64_constant(end.into()),
                         4,
                     )
                 } else {
-                    CMemoryRange::new(p.clone(), start.into(), end.into())
+                    MemoryRange::new(p.clone(), start.into(), end.into())
                 }
             };
             let held = if owned {
-                CResourceFact::own_memory(range(0, 4))
+                ResourceFact::own_memory(range(0, 4))
             } else {
-                CResourceFact::view_memory(range(0, 4))
+                ResourceFact::view_memory(range(0, 4))
             };
             let context =
                 ResourceContext::new_with_equalities(&facts).unchecked_with_fact(held.clone());
             context.synchronize_memory_equalities(&facts);
-            let required = CResourceFact::view_memory(range(1, 3).with_typed_carrier());
+            let required = ResourceFact::view_memory(range(1, 3).with_typed_carrier());
             for _ in 0..3 {
                 assert!(context.satisfies_fact(&required, &facts));
                 let remaining = context
@@ -146,16 +146,16 @@ fn memory_direct_support_preserves_held_identity_and_authority() {
                 );
                 assert_eq!(
                     context
-                        .directly_supporting_fact(&CResourceFact::own_memory(range(1, 3)), &facts)
+                        .directly_supporting_fact(&ResourceFact::own_memory(range(1, 3)), &facts)
                         .is_some(),
                     owned
                 );
                 assert!(
                     context
-                        .directly_supporting_fact(&CResourceFact::view_memory(range(0, 8)), &facts)
+                        .directly_supporting_fact(&ResourceFact::view_memory(range(0, 8)), &facts)
                         .is_none()
                 );
-                let wrong = CResourceFact::view_memory(
+                let wrong = ResourceFact::view_memory(
                     range(1, 3)
                         .with_designation(std::sync::Arc::new(Pointer::symbolic(Variable(976_301))))
                         .with_typed_carrier(),
@@ -179,7 +179,7 @@ fn memory_direct_support_preserves_held_identity_and_authority() {
             );
             for quantity in [0u32, u32::MAX] {
                 let invalid = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(
-                    CResourceFact::own_quantity(CResource::Memory(range(0, 4)), quantity.into()),
+                    ResourceFact::own_quantity(Resource::Memory(range(0, 4)), quantity.into()),
                 );
                 assert!(!invalid.satisfies_fact(&required, &facts));
                 assert!(
@@ -190,7 +190,7 @@ fn memory_direct_support_preserves_held_identity_and_authority() {
                 );
                 assert!(
                     invalid
-                        .directly_supporting_fact(&CResourceFact::own_memory(range(1, 3)), &facts)
+                        .directly_supporting_fact(&ResourceFact::own_memory(range(1, 3)), &facts)
                         .is_none()
                 );
             }

@@ -45,7 +45,7 @@ fn variable_collection_after_a_store_costs_the_store() {
         offset: PointerOffsetTerm::Constant(offset),
     };
     let samples = [16usize, 64, 256, 1024].map(|cells| {
-        let mut memory = CMemory::new().with_block("counted-history", 4 * cells as u32 + 8);
+        let mut memory = Memory::new().with_block("counted-history", 4 * cells as u32 + 8);
         for index in 0..cells {
             memory = memory.store(
                 at(4 * index as i64),
@@ -105,9 +105,9 @@ fn variable_collection_after_a_store_into_a_symbolic_array_costs_the_store() {
         let _session = crate::kernel::VerificationSession::enter();
         let size = 4 * elements;
         let source = crate::kernel::intern_c_memory(
-            CMemory::new().with_block_without_derivation(block.clone(), size),
+            Memory::new().with_block_without_derivation(block.clone(), size),
         );
-        let Ok(memory) = CMemory::new()
+        let Ok(memory) = Memory::new()
             .with_block("symbolic-array-history", size)
             .with_symbolic_storage_run(at(0), ProgramType::Int32, elements, source)
         else {

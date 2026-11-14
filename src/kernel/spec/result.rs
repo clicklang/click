@@ -109,7 +109,7 @@ impl SpecValue {
     }
     pub(super) fn comparison(
         &self,
-        op: CComparisonOperator,
+        op: ComparisonOperator,
         right: &Self,
     ) -> ExecutionResult<Option<Proposition>> {
         if let (Some((format, left)), Some((right_format, right))) =
@@ -124,13 +124,11 @@ impl SpecValue {
             )
         {
             let relation = match op {
-                CComparisonOperator::Equal | CComparisonOperator::NotEqual => {
-                    CompareRelation::Equal
-                }
-                CComparisonOperator::LessThan => CompareRelation::LessThan,
-                CComparisonOperator::LessEqual => CompareRelation::LessEqual,
-                CComparisonOperator::GreaterThan => CompareRelation::GreaterThan,
-                CComparisonOperator::GreaterEqual => CompareRelation::GreaterEqual,
+                ComparisonOperator::Equal | ComparisonOperator::NotEqual => CompareRelation::Equal,
+                ComparisonOperator::LessThan => CompareRelation::LessThan,
+                ComparisonOperator::LessEqual => CompareRelation::LessEqual,
+                ComparisonOperator::GreaterThan => CompareRelation::GreaterThan,
+                ComparisonOperator::GreaterEqual => CompareRelation::GreaterEqual,
             };
             return Ok(Some(Proposition::ConditionIs(
                 crate::kernel::machine_integer::comparison::condition_for_operand_views(
@@ -138,7 +136,7 @@ impl SpecValue {
                     relation,
                     [left, right],
                 ),
-                op != CComparisonOperator::NotEqual,
+                op != ComparisonOperator::NotEqual,
             )));
         }
         let left = self.native();

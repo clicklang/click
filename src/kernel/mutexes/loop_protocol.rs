@@ -341,10 +341,10 @@ mod loop_rule_tests {
     use crate::kernel::functions::{loop_instance_guard, rewrite_resource_instance};
     use crate::kernel::loops::{c_loop_binder_state_components_match_at_back_edge, c_loop_binders};
     use crate::kernel::{
-        CComparisonOperator, CCompositeResourceDefinition, CResourceAccessMode, CResourceQuantity,
-        CResourceSnapshot, CResourceSpec, CResourceTerm, CResourceTransferRole, PointerOffsetTerm,
-        ProgramExpression, ProgramType, ProgramValue, ResourceFamily, ResourceFieldSchema,
-        ResourceFieldType, ResourceInstance, SpecExpression, SpecProposition, Variable, c_variable,
+        ComparisonOperator, CompositeResourceDefinition, PointerOffsetTerm, ProgramExpression,
+        ProgramType, ProgramValue, ResourceAccessMode, ResourceFamily, ResourceFieldSchema,
+        ResourceFieldType, ResourceInstance, ResourceQuantity, ResourceSnapshot, ResourceSpec,
+        ResourceTerm, ResourceTransferRole, SpecExpression, SpecProposition, Variable, c_variable,
         int32,
     };
 
@@ -361,24 +361,24 @@ mod loop_rule_tests {
         )])
         .unwrap()
     }
-    fn definition() -> CCompositeResourceDefinition {
-        let guard = CResourceSpec::new(
-            CResourceTerm::MutexGuard {
+    fn definition() -> CompositeResourceDefinition {
+        let guard = ResourceSpec::new(
+            ResourceTerm::MutexGuard {
                 mutex: Box::new(ProgramExpression::Value(ProgramValue::pointer(address()))),
-                snapshot: CResourceSnapshot::Current,
+                snapshot: ResourceSnapshot::Current,
             },
-            CResourceAccessMode::Own,
-            CResourceQuantity::One,
-            CResourceTransferRole::Consume,
-            CResourceSnapshot::Current,
+            ResourceAccessMode::Own,
+            ResourceQuantity::One,
+            ResourceTransferRole::Consume,
+            ResourceSnapshot::Current,
         )
         .unwrap();
-        let mut definition = CCompositeResourceDefinition::new(
+        let mut definition = CompositeResourceDefinition::new(
             "loop_guard",
             vec![],
             Some(SpecProposition::Comparison {
                 left: SpecExpression::ProgramExpression(c_variable("parity")),
-                operator: CComparisonOperator::Equal,
+                operator: ComparisonOperator::Equal,
                 right: SpecExpression::Value(int32(1)),
             }),
             false,
@@ -399,27 +399,27 @@ mod loop_rule_tests {
         )
         .unwrap()
     }
-    fn binder() -> CResourceSpec {
-        CResourceSpec::instance(
+    fn binder() -> ResourceSpec {
+        ResourceSpec::instance(
             Variable(707),
             "guard".into(),
             schema(),
-            CResourceSpec::declared(
+            ResourceSpec::declared(
                 ResourceFamily::Composite,
-                CResourceAccessMode::Own,
+                ResourceAccessMode::Own,
                 "loop_guard".into(),
                 vec![],
                 vec![],
-                CResourceTransferRole::Borrow,
-                CResourceSnapshot::Current,
+                ResourceTransferRole::Borrow,
+                ResourceSnapshot::Current,
             )
             .unwrap(),
-            CResourceTransferRole::Borrow,
-            CResourceSnapshot::Current,
+            ResourceTransferRole::Borrow,
+            ResourceSnapshot::Current,
         )
         .unwrap()
     }
-    fn top_and_next() -> (ExecutionState, ExecutionState, CCompositeResourceDefinition) {
+    fn top_and_next() -> (ExecutionState, ExecutionState, CompositeResourceDefinition) {
         let definition = definition();
         let assumptions = PureFactContext::new();
         let initialized = MutexContext::new(ExecutionState::new())
@@ -553,36 +553,36 @@ mod loop_rule_tests {
         let mut candidate = definition.clone();
         candidate.facts.push(SpecProposition::Comparison {
             left: SpecExpression::Value(int32(0)),
-            operator: CComparisonOperator::Equal,
+            operator: ComparisonOperator::Equal,
             right: SpecExpression::Value(int32(1)),
         });
         invalid.push(candidate);
         for (role, snapshot, term_snapshot) in [
             (
-                CResourceTransferRole::Borrow,
-                CResourceSnapshot::Current,
-                CResourceSnapshot::Current,
+                ResourceTransferRole::Borrow,
+                ResourceSnapshot::Current,
+                ResourceSnapshot::Current,
             ),
             (
-                CResourceTransferRole::Consume,
-                CResourceSnapshot::Entry,
-                CResourceSnapshot::Current,
+                ResourceTransferRole::Consume,
+                ResourceSnapshot::Entry,
+                ResourceSnapshot::Current,
             ),
             (
-                CResourceTransferRole::Consume,
-                CResourceSnapshot::Current,
-                CResourceSnapshot::Entry,
+                ResourceTransferRole::Consume,
+                ResourceSnapshot::Current,
+                ResourceSnapshot::Entry,
             ),
         ] {
             let mut candidate = definition.clone();
             candidate.contains = vec![
-                CResourceSpec::new(
-                    CResourceTerm::MutexGuard {
+                ResourceSpec::new(
+                    ResourceTerm::MutexGuard {
                         mutex: Box::new(ProgramExpression::Value(ProgramValue::pointer(address()))),
                         snapshot: term_snapshot,
                     },
-                    CResourceAccessMode::Own,
-                    CResourceQuantity::One,
+                    ResourceAccessMode::Own,
+                    ResourceQuantity::One,
                     role,
                     snapshot,
                 )

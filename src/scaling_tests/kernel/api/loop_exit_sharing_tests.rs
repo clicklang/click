@@ -11,14 +11,14 @@ fn checked_loop_exit_copies_share_their_fact_storage() {
         let facts = vec![Proposition::ConditionIs(ConditionTerm::Constant(true), true); count];
         let state = ExecutionState::new();
         let (break_exit, break_work) = crate::instrumentation::measure_deterministic_work(|| {
-            CLoopBreakExit::new(state.clone(), facts.clone())
+            LoopBreakExit::new(state.clone(), facts.clone())
         });
         let (final_exit, final_work) = crate::instrumentation::measure_deterministic_work(|| {
-            CLoopFinalExitCandidate::new(state.clone(), facts.clone())
+            LoopFinalExitCandidate::new(state.clone(), facts.clone())
         });
         assert!(break_work >= count && break_work <= count * 4 + 32);
         assert!(final_work >= count && final_work <= count * 4 + 32);
-        let jump_exit = final_exit.clone().with_jump_target(CControlTargetId(2));
+        let jump_exit = final_exit.clone().with_jump_target(ControlTargetId(2));
         for _ in 0..16 {
             let copied_break = break_exit.clone();
             let copied_final = final_exit.clone();
@@ -33,7 +33,7 @@ fn checked_loop_exit_copies_share_their_fact_storage() {
             assert_eq!(copied_break.pure_facts(), facts);
             assert_eq!(copied_final.pure_facts(), facts);
             let copied_jump = jump_exit.clone();
-            assert_eq!(copied_jump.jump_target(), Some(CControlTargetId(2)));
+            assert_eq!(copied_jump.jump_target(), Some(ControlTargetId(2)));
             assert!(std::ptr::eq(
                 jump_exit.pure_facts(),
                 copied_jump.pure_facts()

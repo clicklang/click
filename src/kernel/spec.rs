@@ -38,8 +38,8 @@ pub(in crate::kernel) use shared_machine::{
 };
 pub(in crate::kernel) mod walk;
 
-type EvaluatedSpecResource = (CResource, ExecutionFacts, Vec<ProofObligation>);
-type SpecResourceBuilder = Box<dyn Fn(Vec<ProgramValue>) -> Option<CResource>>;
+type EvaluatedSpecResource = (Resource, ExecutionFacts, Vec<ProofObligation>);
+type SpecResourceBuilder = Box<dyn Fn(Vec<ProgramValue>) -> Option<Resource>>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct SpecPropositionPath {
@@ -481,7 +481,7 @@ pub(in crate::kernel) fn evaluate_resource_child_argument_paths(
     algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     integer_bindings: &BTreeMap<Variable, IntegerTerm>,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CExpressionPath<SpecValue>>> {
+) -> ExecutionResult<Vec<ExpressionPath<SpecValue>>> {
     if let SpecExpression::ProgramExpression(expression) = expression {
         let _specification = crate::kernel::eval::SpecificationReadScope::enter();
         return evaluate_expression_value_paths(state, expression, assumptions, budget);
@@ -512,8 +512,8 @@ pub(in crate::kernel) fn evaluate_resource_child_argument_paths(
     )?;
     Ok(paths
         .into_iter()
-        .map(|path| CExpressionPath {
-            outcome: CExpressionOutcome::Value(path.value),
+        .map(|path| ExpressionPath {
+            outcome: ExpressionOutcome::Value(path.value),
             facts: path.facts,
             obligations: path.obligations,
         })
@@ -1440,7 +1440,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     return Ok(Vec::new());
                 }
                 let (resource, path_facts, path_obligations) = paths.pop().unwrap();
-                let CResource::Memory(range) = resource else {
+                let Resource::Memory(range) = resource else {
                     return Ok(Vec::new());
                 };
                 let (pointer, bytes) = range.byte_footprint();
@@ -2984,17 +2984,15 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
             Term::Sequence(sequence) => sequence_contains_integer_variable(sequence, variable),
             Term::PointerOffset(offset) => integer_carrier_in_pointer_offset(offset, variable),
             Term::Algebraic(value) => integer_carrier_in_algebraic(value, variable),
-            Term::CExpressionOutcome(CExpressionOutcome::Value(value)) => {
+            Term::ExpressionOutcome(ExpressionOutcome::Value(value)) => {
                 integer_carrier_in_c_value(value, variable)
             }
             // A state or an execution outcome may carry a mathematical
             // machine conversion in a nested local.  Keep this conservative
             // rather than silently dropping the accumulator scope; memory
             // snapshots themselves remain opaque below.
-            Term::CStatementOutcome(_) | Term::CFunctionOutcome(_) | Term::ExecutionState(_) => {
-                true
-            }
-            Term::CExpressionOutcome(_) | Term::CMemory(_) => false,
+            Term::StatementOutcome(_) | Term::FunctionOutcome(_) | Term::ExecutionState(_) => true,
+            Term::ExpressionOutcome(_) | Term::Memory(_) => false,
         }
     }
 
@@ -3054,7 +3052,7 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
             pointer, outcome, ..
         } => {
             integer_carrier_in_pointer(pointer, variable)
-                || matches!(outcome, CExpressionOutcome::Value(value) if integer_carrier_in_c_value(value, variable))
+                || matches!(outcome, ExpressionOutcome::Value(value) if integer_carrier_in_c_value(value, variable))
         }
         Proposition::CMemoryCanStore { pointer, .. } => {
             integer_carrier_in_pointer(pointer, variable)
@@ -3102,7 +3100,7 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
         }
         // These proposition forms can contain machine payloads in their C
         // state/outcome terms.  A conservative answer prevents dropping a
-        // needed accumulator scope, while CMemory remains intentionally
+        // needed accumulator scope, while Memory remains intentionally
         // opaque in the explicit forms above.
         _ => true,
     }
@@ -3402,7 +3400,10 @@ mod integer_match_metadata_tests;
 
 fn rewrite_integer_match_typed_body(
     body: IntegerTerm,
-    c_replacements: &BTreeMap<Variable, crate::kernel::proof::term_rewrite::TypedCReplacement>,
+    c_replacements: &BTreeMap<
+        Variable,
+        crate::kernel::proof::term_rewrite::TypedProgramValueReplacement,
+    >,
     integer_replacements: &BTreeMap<Variable, IntegerTerm>,
     algebraic_replacements: &BTreeMap<Variable, AlgebraicTerm>,
 ) -> Option<IntegerTerm> {
@@ -3471,7 +3472,7 @@ fn rewrite_integer_match_typed_fields(
                     if c_replacements
                         .insert(
                             from,
-                            crate::kernel::proof::term_rewrite::TypedCReplacement::Bitvector(to),
+                            crate::kernel::proof::term_rewrite::TypedProgramValueReplacement::Bitvector(to),
                         )
                         .is_some()
                     {
@@ -3490,7 +3491,7 @@ fn rewrite_integer_match_typed_fields(
                     if c_replacements
                         .insert(
                             *from,
-                            crate::kernel::proof::term_rewrite::TypedCReplacement::Pointer(
+                            crate::kernel::proof::term_rewrite::TypedProgramValueReplacement::Pointer(
                                 to.clone(),
                             ),
                         )
@@ -4597,7 +4598,7 @@ fn lower_spec_sequence_membership_at_state_in(
                 .filter_map(|member| {
                     c_value_comparison_proposition(
                         &element_path.value.native(),
-                        CComparisonOperator::Equal,
+                        ComparisonOperator::Equal,
                         member,
                     )
                 })
@@ -4751,7 +4752,7 @@ pub(super) fn integer_sequence_element_equality(
     if left.c_type() != right.c_type() || !matches!(left, crate::kernel::integer64_c_value!(_)) {
         return None;
     }
-    c_value_comparison_proposition(left, CComparisonOperator::Equal, right)
+    c_value_comparison_proposition(left, ComparisonOperator::Equal, right)
 }
 
 fn evaluate_spec_sequence_at_state_in(
@@ -4885,7 +4886,7 @@ mod algebraic_term_tests;
 fn lower_spec_float_classification_proposition_at_state_in(
     scope: SpecScope<'_>,
     expression: &SpecExpression,
-    classification: CFloatClassification,
+    classification: FloatClassification,
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
@@ -4981,7 +4982,7 @@ fn evaluate_spec_resource_at_state_in(
         // would repeatedly copy the prefix of a long conjunction.
         let mut pending = vec![Some(resource)];
         let mut paths = vec![(
-            Vec::<CResource>::new(),
+            Vec::<Resource>::new(),
             ExecutionFacts::new(),
             Vec::<ProofObligation>::new(),
             assumptions.clone(),
@@ -4998,7 +4999,7 @@ fn evaluate_spec_resource_at_state_in(
                     for (stack, _, _, _) in &mut paths {
                         let right = stack.pop().expect("right conjunction operand");
                         let left = stack.pop().expect("left conjunction operand");
-                        stack.push(CResource::star(left, right));
+                        stack.push(Resource::star(left, right));
                     }
                 }
                 Some(leaf) => {
@@ -5055,7 +5056,7 @@ fn evaluate_spec_resource_at_state_in(
             let instance = state
                 .resource_instance_at_path(*identity, &[])
                 .ok_or(ExecutionLimit::ResourceFieldInstanceUnavailable)?;
-            let value = CResource::Instance(instance.clone());
+            let value = Resource::Instance(instance.clone());
             (vec![], Box::new(move |_| Some(value.clone())))
         }
         SpecResource::Value(value) => {
@@ -5079,7 +5080,7 @@ fn evaluate_spec_resource_at_state_in(
                         if crate::kernel::wide_range_bounds(start, end).is_some() =>
                     {
                         let (start, end) = crate::kernel::wide_range_bounds(start, end)?;
-                        Some(CResource::Memory(CMemoryRange::from_pointer_value_wide(
+                        Some(Resource::Memory(MemoryRange::from_pointer_value_wide(
                             base,
                             start,
                             end,
@@ -5090,7 +5091,7 @@ fn evaluate_spec_resource_at_state_in(
                         ProgramValue::Pointer(base),
                         ProgramValue::Int32(start),
                         ProgramValue::Int32(end),
-                    ] => Some(CResource::Memory(CMemoryRange::from_pointer_value(
+                    ] => Some(Resource::Memory(MemoryRange::from_pointer_value(
                         base,
                         start.clone(),
                         end.clone(),
@@ -5105,7 +5106,7 @@ fn evaluate_spec_resource_at_state_in(
                         ProgramValue::UInt64(end),
                     ] => {
                         let end = i32::try_from(end.uint64_as_const()?).ok()?;
-                        Some(CResource::Memory(CMemoryRange::from_pointer_value(
+                        Some(Resource::Memory(MemoryRange::from_pointer_value(
                             base,
                             start.clone(),
                             MachineTerm::constant(end as u32),
@@ -5121,7 +5122,7 @@ fn evaluate_spec_resource_at_state_in(
             (
                 arguments.clone(),
                 Box::new(move |arguments| {
-                    Some(CResource::Composite {
+                    Some(Resource::Composite {
                         name: name.clone(),
                         arguments: arguments.into_iter().map(AlgebraicValue::C).collect(),
                     })
@@ -5133,7 +5134,7 @@ fn evaluate_spec_resource_at_state_in(
             (
                 arguments.clone(),
                 Box::new(move |arguments| {
-                    Some(CResource::Token {
+                    Some(Resource::Token {
                         name: name.clone(),
                         arguments: arguments.into_iter().map(AlgebraicValue::C).collect(),
                     })
@@ -5187,7 +5188,7 @@ fn lower_spec_resource_relation_at_state_in(
     right: &SpecResource,
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
-    relation: impl Fn(CResource, CResource) -> Proposition,
+    relation: impl Fn(Resource, Resource) -> Proposition,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
     let mut paths = Vec::new();
     for (left, left_facts, left_obligations) in
@@ -5267,7 +5268,7 @@ fn lower_spec_memory_loadable_at_state_in(
             if crate::kernel::wide_range_bounds(start, end).is_some() =>
         {
             let (start, end) = crate::kernel::wide_range_bounds(start, end)?;
-            let range = CMemoryRange::new_wide(
+            let range = MemoryRange::new_wide(
                 Pointer {
                     block: base.block.clone(),
                     offset: crate::kernel::eval::canonical_offset_term(&base.offset),
@@ -5297,7 +5298,7 @@ fn lower_spec_memory_loadable_at_state_in(
             ProgramValue::Int32(int32_constant!(0)),
             ProgramValue::UInt64(end),
         ] => {
-            let range = CMemoryRange::new_wide(
+            let range = MemoryRange::new_wide(
                 Pointer {
                     block: base.block.clone(),
                     offset: crate::kernel::eval::canonical_offset_term(&base.offset),
@@ -5370,7 +5371,7 @@ fn lower_spec_memory_loadable_at_state_in(
                         // proof can write and a refusal can print.
                         let guards = if element_width > 1 {
                             crate::kernel::memory_range_extent_guards(
-                                &CMemoryRange::new_with_element_width(
+                                &MemoryRange::new_with_element_width(
                                     base.clone(),
                                     range_start.clone(),
                                     range_end.clone(),
@@ -5628,7 +5629,7 @@ fn lower_spec_disjunction_at_state_in(
 fn lower_spec_comparison_proposition_at_state_in(
     scope: SpecScope<'_>,
     left: &SpecExpression,
-    operator: CComparisonOperator,
+    operator: ComparisonOperator,
     right: &SpecExpression,
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
@@ -5637,13 +5638,13 @@ fn lower_spec_comparison_proposition_at_state_in(
         && left == right
         && matches!(
             operator,
-            CComparisonOperator::Equal | CComparisonOperator::NotEqual
+            ComparisonOperator::Equal | ComparisonOperator::NotEqual
         )
     {
         return Ok(vec![SpecPropositionPath {
             introductions: Vec::new(),
             proposition: Proposition::ConditionIs(
-                ConditionTerm::Constant(operator == CComparisonOperator::Equal),
+                ConditionTerm::Constant(operator == ComparisonOperator::Equal),
                 true,
             ),
             facts: Vec::new().into(),
@@ -5810,7 +5811,7 @@ fn lower_spec_predicate_proposition_at_state_in(
     // Keeping the uniform predicate state argument canonical lets a closed
     // pure theorem establish the same fact at every later application site.
     let predicate_state = if !resource_state_dependent
-        || CFunctionContract::surface_name_from_predicate(name).is_some()
+        || FunctionContract::surface_name_from_predicate(name).is_some()
     {
         ExecutionState::new()
     } else {
@@ -5872,7 +5873,7 @@ fn lower_spec_predicate_proposition_at_state_in(
                         }
                         SpecMemory::Fixed(memory) => memory,
                     };
-                    arguments.push(Term::CMemory(memory.clone()));
+                    arguments.push(Term::Memory(memory.clone()));
                 }
                 arguments.push(Term::ProgramValue(
                     argument_path.value.clone().into_native(),
@@ -6103,7 +6104,7 @@ fn apply_spec_cast(
     facts: ExecutionFacts,
     mut obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     // Rule C1: a specification `Bool`'s integer value at the
     // target's format, `b as F`.
     if let ProgramValue::Bool(term) = &value
@@ -6114,8 +6115,8 @@ fn apply_spec_cast(
             MachineTerm::bool_cast(format, condition.clone()),
         )
     {
-        return vec![CExpressionPath {
-            outcome: CExpressionOutcome::Value(cast),
+        return vec![ExpressionPath {
+            outcome: ExpressionOutcome::Value(cast),
             facts,
             obligations,
         }];
@@ -6130,9 +6131,9 @@ fn apply_spec_cast(
         &mut obligations,
         assumptions,
     )
-    .map(CExpressionOutcome::Value)
-    .unwrap_or_else(CExpressionOutcome::RuntimeError);
-    vec![CExpressionPath {
+    .map(ExpressionOutcome::Value)
+    .unwrap_or_else(ExpressionOutcome::RuntimeError);
+    vec![ExpressionPath {
         outcome,
         facts,
         obligations,
@@ -6164,7 +6165,7 @@ fn evaluate_spec_add_chain_paths_in(
                     {
                         budget
                             .dropped_runtime_error
-                            .get_or_insert(CRuntimeError::TypeMismatch);
+                            .get_or_insert(RuntimeError::TypeMismatch);
                         continue;
                     }
                     if !budget.machine_result_production_disabled
@@ -6407,13 +6408,13 @@ fn evaluate_resource_count_paths(
                 let owned_description = |candidate: &ResourceDescription| {
                     let candidate = creation.population_type_description(candidate);
                     let required =
-                        CResourceFact::own(CResource::PopulationAuthority(candidate.clone()));
+                        ResourceFact::own(Resource::PopulationAuthority(candidate.clone()));
                     state
                         .resources()
                         .directly_supporting_fact(&required, &path_assumptions)
                         .and_then(|fact| fact.owned_resource())
                         .and_then(|resource| match resource {
-                            CResource::PopulationAuthority(owned)
+                            Resource::PopulationAuthority(owned)
                                 if creation.owns_population_authority(owned) =>
                             {
                                 Some(owned.clone())
@@ -6449,7 +6450,7 @@ fn evaluate_resource_count_paths(
                     return Err(ExecutionLimit::AuthorityCountPendingLockedWorker);
                 }
                 let authority =
-                    CResourceFact::own(CResource::PopulationAuthority(description.clone()));
+                    ResourceFact::own(Resource::PopulationAuthority(description.clone()));
                 if !state
                     .resources
                     .satisfies_fact(&authority, &path_assumptions)
@@ -6642,7 +6643,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             let entry = loop_entry_state
                 .filter(|entry| entry.locals.aggregate_layout(parameter).is_some())
                 .unwrap_or(state);
-            let Some(CLocalBinding::AggregateObject { slot, .. }) = entry.locals.binding(parameter)
+            let Some(LocalBinding::AggregateObject { slot, .. }) = entry.locals.binding(parameter)
             else {
                 // Requirement setup can bind the caller's aggregate image as
                 // a plain pointer. It has no retired parameter value to expose.
@@ -7029,7 +7030,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
         // borrowed Rust `Vec` or iterator, is read as that value, as the
         // program reads it.
         SpecExpression::ProgramExpression(ProgramExpression::Variable(name))
-            if let Some(CLocalBinding::AggregateObject { slot, layout, .. }) =
+            if let Some(LocalBinding::AggregateObject { slot, layout, .. }) =
                 state.locals.binding(name)
                 && let Some(value_type @ ProgramType::Parameter(parameter)) =
                     layout.value_type() =>
@@ -7217,8 +7218,8 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     &facts,
                     &obligations,
                 )
-                .unwrap_or_else(|| CExpressionPath {
-                    outcome: CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                .unwrap_or_else(|| ExpressionPath {
+                    outcome: ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch),
                     facts,
                     obligations: obligations.clone(),
                 });
@@ -7284,7 +7285,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     facts,
                     obligations,
                     assumptions,
-                    CBitwiseOperation::And,
+                    BitwiseOperation::And,
                 )
             },
         )?,
@@ -7302,7 +7303,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     facts,
                     obligations,
                     assumptions,
-                    CBitwiseOperation::Or,
+                    BitwiseOperation::Or,
                 )
             },
         )?,
@@ -7320,7 +7321,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     facts,
                     obligations,
                     assumptions,
-                    CBitwiseOperation::Xor,
+                    BitwiseOperation::Xor,
                 )
             },
         )?,
@@ -7337,13 +7338,13 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                                 && (*target_type != ProgramType::VoidPointer
                                     || pointer.c_type().is_object_pointer()) =>
                         {
-                            CExpressionOutcome::Value(ProgramValue::Pointer(
+                            ExpressionOutcome::Value(ProgramValue::Pointer(
                                 pointer.with_type(*target_type),
                             ))
                         }
-                        _ => CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                        _ => ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch),
                     };
-                    vec![CExpressionPath {
+                    vec![ExpressionPath {
                         outcome,
                         facts,
                         obligations,
@@ -7403,8 +7404,8 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         |value, facts, obligations| match crate::kernel::eval::native_narrow_not(
                             format, &value,
                         ) {
-                            Some(value) => vec![CExpressionPath {
-                                outcome: CExpressionOutcome::Value(value),
+                            Some(value) => vec![ExpressionPath {
+                                outcome: ExpressionOutcome::Value(value),
                                 facts,
                                 obligations,
                             }],
@@ -7434,8 +7435,8 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     if let Some(value) =
                         crate::kernel::eval::native_narrow_binary(format, op, &left, &right)
                     {
-                        return vec![CExpressionPath {
-                            outcome: CExpressionOutcome::Value(value),
+                        return vec![ExpressionPath {
+                            outcome: ExpressionOutcome::Value(value),
                             facts,
                             obligations,
                         }];
@@ -7454,9 +7455,9 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         )
                     };
                     match op {
-                        MachineBinaryOp::BitwiseAnd => bitwise(CBitwiseOperation::And),
-                        MachineBinaryOp::BitwiseOr => bitwise(CBitwiseOperation::Or),
-                        MachineBinaryOp::BitwiseXor => bitwise(CBitwiseOperation::Xor),
+                        MachineBinaryOp::BitwiseAnd => bitwise(BitwiseOperation::And),
+                        MachineBinaryOp::BitwiseOr => bitwise(BitwiseOperation::Or),
+                        MachineBinaryOp::BitwiseXor => bitwise(BitwiseOperation::Xor),
                         MachineBinaryOp::Multiply => apply_spec_arithmetic(
                             op,
                             left,
@@ -7622,7 +7623,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     }
                     root(pointer).and_then(|name| {
                         let entry = loop_entry_state?;
-                        let CLocalBinding::AggregateObject { slot, .. } =
+                        let LocalBinding::AggregateObject { slot, .. } =
                             entry.locals.binding(name)?
                         else {
                             return None;
@@ -7914,7 +7915,7 @@ fn pure_pointer_result_class_from<'a>(
 pub(crate) fn refine_object_pointer_argument(
     value: &mut ProgramValue,
     object_class: &crate::kernel::effective_type::CAccessClass,
-    memory: &CMemory,
+    memory: &Memory,
     assumptions: &PureFactContext,
 ) -> bool {
     refine_object_pointer_argument_with_null(
@@ -7936,7 +7937,7 @@ pub(crate) fn refine_object_pointer_argument(
 pub(crate) fn refine_object_pointer_argument_using_facts(
     value: &mut ProgramValue,
     object_class: &crate::kernel::effective_type::CAccessClass,
-    memory: &CMemory,
+    memory: &Memory,
     assumptions: &PureFactContext,
 ) -> bool {
     refine_object_pointer_argument_with_null(
@@ -7956,7 +7957,7 @@ pub(crate) fn refine_object_pointer_argument_using_facts(
 fn refine_object_pointer_argument_with_null(
     value: &mut ProgramValue,
     object_class: &crate::kernel::effective_type::CAccessClass,
-    memory: &CMemory,
+    memory: &Memory,
     assumptions: &PureFactContext,
     proves_null: impl FnOnce(&PureFactContext, &Pointer) -> bool,
 ) -> bool {
@@ -8154,13 +8155,13 @@ fn evaluate_spec_pure_function_argument_paths_in(
 /// argument that is not a pointer at all keeps the live snapshot, which is
 /// always sound and merely as fragile as before; so does a block the walk
 /// cannot separate from anything, because it then crosses no edge.
-fn array_ref_argument_memory(memory: &CMemory, pointer: &ProgramValue) -> CMemory {
+fn array_ref_argument_memory(memory: &Memory, pointer: &ProgramValue) -> Memory {
     let ProgramValue::Pointer(pointer) = pointer else {
         return memory.clone();
     };
     let interned = crate::kernel::intern_c_memory(memory.clone());
     crate::kernel::resource_tracker::last_same_point(
-        crate::kernel::resource_tracker::Resource::Block(&pointer.pointer().block),
+        crate::kernel::resource_tracker::TrackedResource::Block(&pointer.pointer().block),
         &crate::kernel::resource_tracker::ProgramPoint::at(&interned),
     )
     .map(|point| point.memory().clone())
@@ -8277,7 +8278,7 @@ fn evaluate_spec_pointer_offset_paths_in(
 /// is intrinsically false. Keep that bound's diagnostic before path merging
 /// removes the impossible value path; otherwise lowering reports only zero
 /// paths, losing both the destination range and the constant that failed it.
-fn refuted_narrowing_error(obligations: &[ProofObligation]) -> Option<CRuntimeError> {
+fn refuted_narrowing_error(obligations: &[ProofObligation]) -> Option<RuntimeError> {
     for obligation in obligations {
         let Some(context) = obligation
             .context()
@@ -8374,7 +8375,7 @@ fn refuted_narrowing_error(obligations: &[ProofObligation]) -> Option<CRuntimeEr
             || "the range prerequisite is false".to_string(),
             |comparison| format!("{comparison} is false"),
         );
-        return Some(CRuntimeError::FunctionContract(format!(
+        return Some(RuntimeError::FunctionContract(format!(
             "{context}: {reason}"
         )));
     }
@@ -8389,7 +8390,7 @@ fn refuted_narrowing_error(obligations: &[ProofObligation]) -> Option<CRuntimeEr
 /// permits). Zero paths stays an ordinary answer here, since a requirement
 /// that lowers to no path is retained as an obligation downstream.
 fn spec_value_paths_in(
-    paths: Vec<CExpressionPath>,
+    paths: Vec<ExpressionPath>,
     budget: &mut SpecEvaluation<'_>,
 ) -> Vec<SpecExpressionPath> {
     let mut first_error = None;
@@ -8400,15 +8401,15 @@ fn spec_value_paths_in(
             continue;
         }
         match path.outcome {
-            CExpressionOutcome::Value(value) => values.push(SpecExpressionPath {
+            ExpressionOutcome::Value(value) => values.push(SpecExpressionPath {
                 value: value.into(),
                 facts: path.facts,
                 obligations: path.obligations,
             }),
-            CExpressionOutcome::RuntimeError(error) => {
+            ExpressionOutcome::RuntimeError(error) => {
                 first_error.get_or_insert(error);
             }
-            CExpressionOutcome::UndefinedBehavior(_) => {}
+            ExpressionOutcome::UndefinedBehavior(_) => {}
         }
     }
     if values.is_empty()
@@ -8460,8 +8461,8 @@ fn apply_spec_arithmetic(
         ExecutionFacts,
         Vec<ProofObligation>,
         &PureFactContext,
-    ) -> Vec<CExpressionPath>,
-) -> Vec<CExpressionPath> {
+    ) -> Vec<ExpressionPath>,
+) -> Vec<ExpressionPath> {
     apply_spec_arithmetic_with(
         op,
         SpecDivision::Total,
@@ -8489,8 +8490,8 @@ fn apply_spec_arithmetic_with(
         ExecutionFacts,
         Vec<ProofObligation>,
         &PureFactContext,
-    ) -> Vec<CExpressionPath>,
-) -> Vec<CExpressionPath> {
+    ) -> Vec<ExpressionPath>,
+) -> Vec<ExpressionPath> {
     if let Some(mut path) = crate::kernel::eval::apply_spec_machine_arithmetic(
         op,
         division,
@@ -8533,7 +8534,7 @@ fn evaluate_spec_scalar_binary_paths_in(
         ProgramValue,
         ExecutionFacts,
         Vec<ProofObligation>,
-    ) -> Vec<CExpressionPath>,
+    ) -> Vec<ExpressionPath>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
     let mut paths = Vec::new();
     for left_path in
@@ -8603,7 +8604,7 @@ fn evaluate_spec_scalar_unary_paths_in(
     expression: &SpecExpression,
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
-    apply: impl Fn(ProgramValue, ExecutionFacts, Vec<ProofObligation>) -> Vec<CExpressionPath>,
+    apply: impl Fn(ProgramValue, ExecutionFacts, Vec<ProofObligation>) -> Vec<ExpressionPath>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
     evaluate_spec_scalar_unary_paths_retaining_type_in(
         scope,
@@ -8625,7 +8626,7 @@ fn evaluate_spec_scalar_unary_paths_retaining_type_in(
     budget: &mut SpecEvaluation<'_>,
     retained_type: Option<ProgramType>,
     bitwise_not: Option<Option<MachineIntegerType>>,
-    apply: impl Fn(ProgramValue, ExecutionFacts, Vec<ProofObligation>) -> Vec<CExpressionPath>,
+    apply: impl Fn(ProgramValue, ExecutionFacts, Vec<ProofObligation>) -> Vec<ExpressionPath>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
     let mut paths = Vec::new();
     for mut path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
@@ -8648,7 +8649,7 @@ fn evaluate_spec_scalar_unary_paths_retaining_type_in(
         {
             budget
                 .dropped_runtime_error
-                .get_or_insert(CRuntimeError::TypeMismatch);
+                .get_or_insert(RuntimeError::TypeMismatch);
             continue;
         }
         if !budget.machine_result_production_disabled
@@ -9582,7 +9583,7 @@ fn bool_word_truth_proposition(word: &ProgramValue, value: bool) -> Option<Propo
 /// compared through that truth too, never as a raw word.
 fn bool_comparison_proposition(
     left: &ProgramValue,
-    operator: CComparisonOperator,
+    operator: ComparisonOperator,
     right: &ProgramValue,
 ) -> Option<ExecutionResult<Proposition>> {
     let is_bool = |value: &ProgramValue| matches!(value, ProgramValue::Bool(_));
@@ -9596,8 +9597,8 @@ fn bool_comparison_proposition(
         return None;
     }
     let equal = match operator {
-        CComparisonOperator::Equal => true,
-        CComparisonOperator::NotEqual => false,
+        ComparisonOperator::Equal => true,
+        ComparisonOperator::NotEqual => false,
         _ => return Some(Err(ExecutionLimit::BoolOrdered)),
     };
     let (ProgramValue::Bool(left_term), ProgramValue::Bool(right_term)) = (left, right) else {
@@ -9640,7 +9641,7 @@ fn bool_comparison_proposition(
 
 pub(super) fn c_value_comparison_proposition(
     left: &ProgramValue,
-    operator: CComparisonOperator,
+    operator: ComparisonOperator,
     right: &ProgramValue,
 ) -> Option<Proposition> {
     let left = left.numeric_value();
@@ -9651,12 +9652,12 @@ pub(super) fn c_value_comparison_proposition(
             if a.algebraic_type == b.algebraic_type
                 && matches!(
                     operator,
-                    CComparisonOperator::Equal | CComparisonOperator::NotEqual
+                    ComparisonOperator::Equal | ComparisonOperator::NotEqual
                 ) =>
         {
             return Some(Proposition::ConditionIs(
                 ConditionTerm::AlgebraicEqual(a.clone(), b.clone()),
-                operator == CComparisonOperator::Equal,
+                operator == ComparisonOperator::Equal,
             ));
         }
         (ProgramValue::Parameter(_), _) | (_, ProgramValue::Parameter(_)) => return None,
@@ -9668,13 +9669,13 @@ pub(super) fn c_value_comparison_proposition(
         && a.c_type().pointer_types_compatible(b.c_type())
         && matches!(
             operator,
-            CComparisonOperator::Equal | CComparisonOperator::NotEqual
+            ComparisonOperator::Equal | ComparisonOperator::NotEqual
         )
     {
         let condition = ConditionTerm::pointer_value_equal(a.clone(), b.clone());
         return Some(Proposition::ConditionIs(
             condition,
-            operator == CComparisonOperator::Equal,
+            operator == ComparisonOperator::Equal,
         ));
     }
     if matches!(left, ProgramValue::Int128(_) | ProgramValue::UInt128(_))
@@ -9720,28 +9721,28 @@ pub(super) fn c_value_comparison_proposition(
                 || right.is_null() =>
         {
             match operator {
-                CComparisonOperator::Equal => Some((
+                ComparisonOperator::Equal => Some((
                     pointer_equality_condition(left.pointer().clone(), right.pointer().clone()),
                     true,
                 )),
-                CComparisonOperator::NotEqual => Some((
+                ComparisonOperator::NotEqual => Some((
                     pointer_equality_condition(left.pointer().clone(), right.pointer().clone()),
                     false,
                 )),
-                CComparisonOperator::LessThan
-                | CComparisonOperator::LessEqual
-                | CComparisonOperator::GreaterThan
-                | CComparisonOperator::GreaterEqual
+                ComparisonOperator::LessThan
+                | ComparisonOperator::LessEqual
+                | ComparisonOperator::GreaterThan
+                | ComparisonOperator::GreaterEqual
                     if left.block == right.block =>
                 {
                     let left = byte_offset_from_pointer_offset(&left.offset)?;
                     let right = byte_offset_from_pointer_offset(&right.offset)?;
                     Some((pointer_order_condition(left, right, operator), true))
                 }
-                CComparisonOperator::LessThan
-                | CComparisonOperator::LessEqual
-                | CComparisonOperator::GreaterThan
-                | CComparisonOperator::GreaterEqual => None,
+                ComparisonOperator::LessThan
+                | ComparisonOperator::LessEqual
+                | ComparisonOperator::GreaterThan
+                | ComparisonOperator::GreaterEqual => None,
             }
         }
         (ProgramValue::Pointer(_), ProgramValue::Pointer(_)) => None,
@@ -9750,16 +9751,16 @@ pub(super) fn c_value_comparison_proposition(
             if bits.as_const() == Some(0) =>
         {
             match operator {
-                CComparisonOperator::Equal => {
+                ComparisonOperator::Equal => {
                     Some((pointer_is_null_condition(pointer.pointer().clone()), true))
                 }
-                CComparisonOperator::NotEqual => {
+                ComparisonOperator::NotEqual => {
                     Some((pointer_is_null_condition(pointer.pointer().clone()), false))
                 }
-                CComparisonOperator::LessThan
-                | CComparisonOperator::LessEqual
-                | CComparisonOperator::GreaterThan
-                | CComparisonOperator::GreaterEqual => None,
+                ComparisonOperator::LessThan
+                | ComparisonOperator::LessEqual
+                | ComparisonOperator::GreaterThan
+                | ComparisonOperator::GreaterEqual => None,
             }
         }
         _ => None,
@@ -9806,7 +9807,7 @@ pub(super) fn c_value_comparison_proposition(
         };
         return Some(Proposition::ConditionIs(
             condition,
-            !matches!(operator, CComparisonOperator::NotEqual),
+            !matches!(operator, ComparisonOperator::NotEqual),
         ));
     }
 
@@ -9814,38 +9815,38 @@ pub(super) fn c_value_comparison_proposition(
         let left = c_value_uint64_term(left)?;
         let right = c_value_uint64_term(right)?;
         let condition = match operator {
-            CComparisonOperator::Equal | CComparisonOperator::NotEqual => {
+            ComparisonOperator::Equal | ComparisonOperator::NotEqual => {
                 ConditionTerm::uint64_equal(left, right)
             }
-            CComparisonOperator::LessThan => ConditionTerm::uint64_less_than(left, right),
-            CComparisonOperator::LessEqual => ConditionTerm::uint64_less_equal(left, right),
-            CComparisonOperator::GreaterThan => ConditionTerm::uint64_greater_than(left, right),
-            CComparisonOperator::GreaterEqual => ConditionTerm::uint64_greater_equal(left, right),
+            ComparisonOperator::LessThan => ConditionTerm::uint64_less_than(left, right),
+            ComparisonOperator::LessEqual => ConditionTerm::uint64_less_equal(left, right),
+            ComparisonOperator::GreaterThan => ConditionTerm::uint64_greater_than(left, right),
+            ComparisonOperator::GreaterEqual => ConditionTerm::uint64_greater_equal(left, right),
         };
         return Some(Proposition::ConditionIs(
             condition,
-            !matches!(operator, CComparisonOperator::NotEqual),
+            !matches!(operator, ComparisonOperator::NotEqual),
         ));
     }
     if matches!(left, ProgramValue::Int64(_)) || matches!(right, ProgramValue::Int64(_)) {
         let left = c_value_int64_term(left)?;
         let right = c_value_int64_term(right)?;
         let condition = match operator {
-            CComparisonOperator::Equal | CComparisonOperator::NotEqual => {
+            ComparisonOperator::Equal | ComparisonOperator::NotEqual => {
                 ConditionTerm::int64_equal(left, right)
             }
-            CComparisonOperator::LessThan => ConditionTerm::int64_signed_less_than(left, right),
-            CComparisonOperator::LessEqual => ConditionTerm::int64_signed_less_equal(left, right),
-            CComparisonOperator::GreaterThan => {
+            ComparisonOperator::LessThan => ConditionTerm::int64_signed_less_than(left, right),
+            ComparisonOperator::LessEqual => ConditionTerm::int64_signed_less_equal(left, right),
+            ComparisonOperator::GreaterThan => {
                 ConditionTerm::int64_signed_greater_than(left, right)
             }
-            CComparisonOperator::GreaterEqual => {
+            ComparisonOperator::GreaterEqual => {
                 ConditionTerm::int64_signed_greater_equal(left, right)
             }
         };
         return Some(Proposition::ConditionIs(
             condition,
-            !matches!(operator, CComparisonOperator::NotEqual),
+            !matches!(operator, ComparisonOperator::NotEqual),
         ));
     }
 
@@ -9857,12 +9858,12 @@ pub(super) fn c_value_comparison_proposition(
     // C expression promotes narrow operands (`apply_c_comparison`).
     if let Some((format, a, b)) = native_narrow_comparison_operands(left, right) {
         let (relation, value) = match operator {
-            CComparisonOperator::Equal => (CompareRelation::Equal, true),
-            CComparisonOperator::NotEqual => (CompareRelation::Equal, false),
-            CComparisonOperator::LessThan => (CompareRelation::LessThan, true),
-            CComparisonOperator::LessEqual => (CompareRelation::LessEqual, true),
-            CComparisonOperator::GreaterThan => (CompareRelation::GreaterThan, true),
-            CComparisonOperator::GreaterEqual => (CompareRelation::GreaterEqual, true),
+            ComparisonOperator::Equal => (CompareRelation::Equal, true),
+            ComparisonOperator::NotEqual => (CompareRelation::Equal, false),
+            ComparisonOperator::LessThan => (CompareRelation::LessThan, true),
+            ComparisonOperator::LessEqual => (CompareRelation::LessEqual, true),
+            ComparisonOperator::GreaterThan => (CompareRelation::GreaterThan, true),
+            ComparisonOperator::GreaterEqual => (CompareRelation::GreaterEqual, true),
         };
         return Some(Proposition::ConditionIs(
             ConditionTerm::machine_compare(format, relation, a, b),
@@ -9883,15 +9884,15 @@ pub(super) fn c_value_comparison_proposition(
     let left = c_value_word32_term(left, format)?;
     let right = c_value_word32_term(right, format)?;
     let (condition, value) = match operator {
-        CComparisonOperator::Equal | CComparisonOperator::NotEqual => (
+        ComparisonOperator::Equal | ComparisonOperator::NotEqual => (
             if unsigned {
                 ConditionTerm::uint32_equal(left, right)
             } else {
                 ConditionTerm::equal(left, right)
             },
-            matches!(operator, CComparisonOperator::Equal),
+            matches!(operator, ComparisonOperator::Equal),
         ),
-        CComparisonOperator::LessThan => (
+        ComparisonOperator::LessThan => (
             if unsigned {
                 ConditionTerm::unsigned_less_than(left, right)
             } else {
@@ -9899,7 +9900,7 @@ pub(super) fn c_value_comparison_proposition(
             },
             true,
         ),
-        CComparisonOperator::LessEqual => (
+        ComparisonOperator::LessEqual => (
             if unsigned {
                 ConditionTerm::unsigned_less_equal(left, right)
             } else {
@@ -9907,7 +9908,7 @@ pub(super) fn c_value_comparison_proposition(
             },
             true,
         ),
-        CComparisonOperator::GreaterThan => (
+        ComparisonOperator::GreaterThan => (
             if unsigned {
                 ConditionTerm::unsigned_greater_than(left, right)
             } else {
@@ -9915,7 +9916,7 @@ pub(super) fn c_value_comparison_proposition(
             },
             true,
         ),
-        CComparisonOperator::GreaterEqual => (
+        ComparisonOperator::GreaterEqual => (
             if unsigned {
                 ConditionTerm::unsigned_greater_equal(left, right)
             } else {

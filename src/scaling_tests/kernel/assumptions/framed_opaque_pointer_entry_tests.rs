@@ -8,7 +8,7 @@ fn an_opaque_candidate_does_not_walk_its_unusable_memory_frame() {
             block: "opaque-frame".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let base = CMemory::new();
+        let base = Memory::new();
         let raw = Pointer::symbolic(Variable(995_080));
         let previous = PointerValue::new(
             Pointer::loaded_value(&intern_c_memory_ref(&base), &field),
@@ -90,7 +90,7 @@ fn framed_pointer_refusals_do_not_scan_same_address_sources() {
         );
         let mut facts = PureFactContext::new();
         for index in 0..size {
-            let memory = CMemory::new().store(
+            let memory = Memory::new().store(
                 field.offset_by_bytes(8),
                 ProgramValue::UInt64(MachineTerm::uint64_constant(index)),
             );
@@ -105,7 +105,7 @@ fn framed_pointer_refusals_do_not_scan_same_address_sources() {
             );
         }
         let current = PointerValue::new(
-            Pointer::loaded_value(&intern_c_memory_ref(&CMemory::new()), &field),
+            Pointer::loaded_value(&intern_c_memory_ref(&Memory::new()), &field),
             ProgramType::Int32Pointer,
         )
         .with_address(raw);

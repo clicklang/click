@@ -16,7 +16,7 @@ pub(super) struct ExclusiveCallBinding {
     // Only this call's selected memory reservations, including every support
     // when the planner joined several fragments. Sharing avoids copying them
     // when a sibling or nested call changes the persistent ledger.
-    pub(super) supports: Arc<[(CResourceFact, ResourceOccurrenceId)]>,
+    pub(super) supports: Arc<[(ResourceFact, ResourceOccurrenceId)]>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -72,7 +72,7 @@ impl LoanLedger {
         &self,
         caller: LoanParticipantId,
         callee: LoanParticipantId,
-        supports: Vec<(CResourceFact, ResourceOccurrenceId)>,
+        supports: Vec<(ResourceFact, ResourceOccurrenceId)>,
     ) -> Result<(ExclusiveCallBinding, CheckedLoanTransition), LoanRefusal> {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let id = NEXT
@@ -245,7 +245,7 @@ mod tests {
         ledger: &LoanLedger,
         caller: LoanParticipantId,
         callee: LoanParticipantId,
-        fact: CResourceFact,
+        fact: ResourceFact,
     ) -> StableViewTransferPlan {
         plan_stable_view_transfer(
             resources,
@@ -418,7 +418,7 @@ mod tests {
             .recover_stable_views(&facts, &BTreeMap::new(), &[])
             .unwrap();
         let mut moved = checked(memory(0, 4, true));
-        moved.role = CResourceTransferRole::Consume;
+        moved.role = ResourceTransferRole::Consume;
         let move_plan =
             plan_stable_view_transfer(&resources, &[moved], &facts, &ledger, owner, child).unwrap();
         assert!(move_plan.exclusive_call.is_none());

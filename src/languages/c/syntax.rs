@@ -153,7 +153,7 @@ pub struct C0Function {
     return_struct_name: Option<String>,
     /// A foreign opaque declaration can retain result construction without
     /// carrying an executable body. Ordinary C aggregate results use Copy.
-    aggregate_return_mode: crate::kernel::CAggregateReturnMode,
+    aggregate_return_mode: crate::kernel::AggregateReturnMode,
     return_pointer_struct_name: Option<String>,
     /// The C spelling used by a sidecar contract. Header-provided internal
     /// functions use a translation-unit-qualified kernel name in `name`.
@@ -191,7 +191,7 @@ pub struct C0Function {
     callback_statement_sources: std::sync::Arc<BTreeMap<String, C0Expression>>,
     /// Function-scope C label spellings resolved to kernel identities and
     /// executable statement indices after the complete body is parsed.
-    control_targets: BTreeMap<String, (crate::kernel::CControlTargetId, usize)>,
+    control_targets: BTreeMap<String, (crate::kernel::ControlTargetId, usize)>,
     structs: DeclarationMap<C0StructLayout>,
     enums: DeclarationMap<C0EnumDefinition>,
     unions: DeclarationMap<C0UnionLayout>,
@@ -285,8 +285,8 @@ impl C0StringLiteral {
 
     /// The kernel literal: its bytes stored as cells of the target's plain
     /// `char` representation.
-    pub fn to_kernel(&self) -> crate::kernel::CStringLiteral {
-        crate::kernel::CStringLiteral::new(self.name.clone(), self.bytes.clone())
+    pub fn to_kernel(&self) -> crate::kernel::StringLiteral {
+        crate::kernel::StringLiteral::new(self.name.clone(), self.bytes.clone())
             .with_element_type(self.plain_char.byte_type().to_kernel_type())
     }
 
@@ -475,7 +475,7 @@ impl C0Global {
         self
     }
 
-    pub(crate) fn to_kernel_global(&self) -> Option<crate::kernel::CGlobal> {
+    pub(crate) fn to_kernel_global(&self) -> Option<crate::kernel::Global> {
         let initializer = self.initializer.as_ref()?;
         let value = match self.c_type {
             C0Type::Float32 => match initializer {
@@ -498,8 +498,8 @@ impl C0Global {
     fn to_kernel_global_with_value(
         &self,
         value: crate::kernel::ProgramValue,
-    ) -> crate::kernel::CGlobal {
-        crate::kernel::CGlobal::new_with_kernel_name(
+    ) -> crate::kernel::Global {
+        crate::kernel::Global::new_with_kernel_name(
             self.name.clone(),
             self.kernel_name.clone(),
             self.c_type.to_kernel_type(),
@@ -551,7 +551,7 @@ pub struct C0GlobalArray {
     /// An externally linked pointer array lowered by its defining
     /// translation unit, whose element initializers may name objects private
     /// to that unit. Other units read this instead of re-evaluating them.
-    resolved: Option<crate::kernel::CGlobalArray>,
+    resolved: Option<crate::kernel::GlobalArray>,
     tentative: bool,
     file_static: bool,
     constant: bool,
@@ -618,7 +618,7 @@ impl C0GlobalArray {
     }
 
     /// This array as lowered by its defining translation unit.
-    pub(crate) fn with_resolved(mut self, resolved: crate::kernel::CGlobalArray) -> Self {
+    pub(crate) fn with_resolved(mut self, resolved: crate::kernel::GlobalArray) -> Self {
         self.resolved = Some(resolved);
         self
     }
@@ -721,9 +721,9 @@ impl C0GlobalArray {
 
     fn to_kernel_global_array_with_values(
         &self,
-        values: crate::kernel::CArrayContents,
-    ) -> crate::kernel::CGlobalArray {
-        crate::kernel::CGlobalArray::new_with_kernel_name(
+        values: crate::kernel::ArrayContents,
+    ) -> crate::kernel::GlobalArray {
+        crate::kernel::GlobalArray::new_with_kernel_name(
             self.name.clone(),
             self.kernel_name.clone(),
             self.element_type.to_kernel_type(),
@@ -898,14 +898,14 @@ impl C0GlobalAggregateArray {
 
     pub(crate) fn to_kernel_global_aggregate_array(
         &self,
-    ) -> Option<crate::kernel::CGlobalAggregateArray> {
+    ) -> Option<crate::kernel::GlobalAggregateArray> {
         let initializer = self.initializer.as_ref()?;
         let initializers = initializer
             .iter()
             .map(C0AggregateInitializer::to_kernel)
             .collect::<Option<Vec<_>>>()?;
         Some(
-            crate::kernel::CGlobalAggregateArray::new(
+            crate::kernel::GlobalAggregateArray::new(
                 self.name.clone(),
                 self.kernel_name.clone(),
                 self.layout.to_kernel_aggregate_layout(),
@@ -1020,14 +1020,14 @@ impl C0GlobalAggregate {
         self.initializer.as_deref()
     }
 
-    pub(crate) fn to_kernel_global_aggregate(&self) -> Option<crate::kernel::CGlobalAggregate> {
+    pub(crate) fn to_kernel_global_aggregate(&self) -> Option<crate::kernel::GlobalAggregate> {
         let initializer = self.initializer.as_ref()?;
         let initializers = initializer
             .iter()
             .map(C0AggregateInitializer::to_kernel)
             .collect::<Option<Vec<_>>>()?;
         self.defined.then(|| {
-            crate::kernel::CGlobalAggregate::new(
+            crate::kernel::GlobalAggregate::new(
                 self.name.clone(),
                 self.kernel_name.clone(),
                 self.layout.to_kernel_aggregate_layout(),
@@ -1405,9 +1405,9 @@ impl C0StaticArray {
 
     fn to_kernel_static_array_with_values(
         &self,
-        values: crate::kernel::CArrayContents,
-    ) -> crate::kernel::CStaticArray {
-        crate::kernel::CStaticArray::new(
+        values: crate::kernel::ArrayContents,
+    ) -> crate::kernel::StaticArray {
+        crate::kernel::StaticArray::new(
             self.source_name.clone(),
             self.kernel_name.clone(),
             self.element_type.to_kernel_type(),
@@ -1489,7 +1489,7 @@ impl C0StaticLocal {
         self
     }
 
-    pub(crate) fn to_kernel_static(&self) -> Option<crate::kernel::CStaticLocal> {
+    pub(crate) fn to_kernel_static(&self) -> Option<crate::kernel::StaticLocal> {
         let value = match self.c_type {
             C0Type::Float32 => match &self.initializer {
                 C0Expression::Float32Literal(bits) => {
@@ -1526,8 +1526,8 @@ impl C0StaticLocal {
     fn to_kernel_static_with_value(
         &self,
         value: crate::kernel::ProgramValue,
-    ) -> crate::kernel::CStaticLocal {
-        crate::kernel::CStaticLocal::new(
+    ) -> crate::kernel::StaticLocal {
+        crate::kernel::StaticLocal::new(
             self.source_name.clone(),
             self.kernel_name.clone(),
             self.c_type.to_kernel_type(),
@@ -1640,7 +1640,7 @@ impl C0ArrayInitializer {
     fn to_kernel_contents(
         &self,
         mut lower: impl FnMut(&C0Expression) -> Option<crate::kernel::ProgramValue>,
-    ) -> Option<crate::kernel::CArrayContents> {
+    ) -> Option<crate::kernel::ArrayContents> {
         let default = match (self.has_zero_elements(), self.elements.first()) {
             (false, Some((_, first))) => lower(first)?,
             _ => lower(&self.zero)?,
@@ -1653,7 +1653,7 @@ impl C0ArrayInitializer {
                 Some((*index, lower(value)?))
             })
             .collect::<Option<Vec<_>>>()?;
-        Some(crate::kernel::CArrayContents::new(
+        Some(crate::kernel::ArrayContents::new(
             self.length,
             default,
             elements,
@@ -1742,8 +1742,8 @@ impl C0ZeroFill {
             .collect()
     }
 
-    fn to_kernel(&self) -> crate::kernel::CZeroFill {
-        crate::kernel::CZeroFill::new(
+    fn to_kernel(&self) -> crate::kernel::ZeroFill {
+        crate::kernel::ZeroFill::new(
             self.stride,
             self.count,
             self.cells
@@ -1753,7 +1753,7 @@ impl C0ZeroFill {
                     else {
                         unreachable!("a zero fill holds only literal zero initializers")
                     };
-                    crate::kernel::CZeroCell::new(
+                    crate::kernel::ZeroCell::new(
                         *offset,
                         value_type.to_kernel_type(),
                         *pointee_constant,
@@ -1921,8 +1921,8 @@ impl C0StaticAggregateArray {
         self
     }
 
-    pub(crate) fn to_kernel_static_aggregate_array(&self) -> crate::kernel::CStaticAggregateArray {
-        crate::kernel::CStaticAggregateArray::new(
+    pub(crate) fn to_kernel_static_aggregate_array(&self) -> crate::kernel::StaticAggregateArray {
+        crate::kernel::StaticAggregateArray::new(
             self.source_name.clone(),
             self.kernel_name.clone(),
             self.layout.to_kernel_aggregate_layout(),
@@ -1984,8 +1984,8 @@ impl C0StaticAggregate {
         self
     }
 
-    pub(crate) fn to_kernel_static_aggregate(&self) -> crate::kernel::CStaticAggregate {
-        crate::kernel::CStaticAggregate::new(
+    pub(crate) fn to_kernel_static_aggregate(&self) -> crate::kernel::StaticAggregate {
+        crate::kernel::StaticAggregate::new(
             self.source_name.clone(),
             self.kernel_name.clone(),
             self.layout.to_kernel_aggregate_layout(),
@@ -2250,8 +2250,8 @@ impl C0AggregateInitializer {
         &self.value
     }
 
-    fn to_kernel(&self) -> Option<crate::kernel::CAggregateInitializer> {
-        Some(crate::kernel::CAggregateInitializer::new(
+    fn to_kernel(&self) -> Option<crate::kernel::AggregateInitializer> {
+        Some(crate::kernel::AggregateInitializer::new(
             self.offset_bytes,
             kernel_aggregate_initializer_value(self.c_type, &self.value)?,
         ))
@@ -3556,7 +3556,7 @@ impl C0Function {
             return_pointee_constant: false,
             return_reference: false,
             return_struct_name: None,
-            aggregate_return_mode: crate::kernel::CAggregateReturnMode::Copy,
+            aggregate_return_mode: crate::kernel::AggregateReturnMode::Copy,
             return_pointer_struct_name: None,
             source_name: name.clone(),
             name,
@@ -3733,12 +3733,12 @@ impl C0Function {
         match &self.prelowered_kernel_function {
             Some(function) => {
                 function.contract_interface().aggregate_return_mode()
-                    == crate::kernel::CAggregateReturnMode::Construction
+                    == crate::kernel::AggregateReturnMode::Construction
             }
             None => {
                 self.return_struct_name.is_some()
                     && self.aggregate_return_mode
-                        == crate::kernel::CAggregateReturnMode::Construction
+                        == crate::kernel::AggregateReturnMode::Construction
             }
         }
     }
@@ -3809,7 +3809,7 @@ impl C0Function {
 
     pub(crate) fn with_aggregate_return_mode(
         mut self,
-        mode: crate::kernel::CAggregateReturnMode,
+        mode: crate::kernel::AggregateReturnMode,
     ) -> Self {
         self.aggregate_return_mode = mode;
         self
@@ -3896,7 +3896,7 @@ impl C0Function {
 
     pub(crate) fn control_targets(
         &self,
-    ) -> &BTreeMap<String, (crate::kernel::CControlTargetId, usize)> {
+    ) -> &BTreeMap<String, (crate::kernel::ControlTargetId, usize)> {
         &self.control_targets
     }
 
@@ -3911,8 +3911,8 @@ impl C0Function {
     pub(crate) fn natural_control_loop(
         &self,
     ) -> Option<(
-        crate::kernel::CControlTargetId,
-        Option<crate::kernel::CControlTargetId>,
+        crate::kernel::ControlTargetId,
+        Option<crate::kernel::ControlTargetId>,
         usize,
     )> {
         let mut statements = Vec::new();
@@ -3996,7 +3996,7 @@ impl C0Function {
             let length = u32::try_from(literal.bytes().len()).ok()?;
             return Some(StaticAddress {
                 extent: None,
-                pointer: crate::kernel::CMemory::string_literal_pointer(
+                pointer: crate::kernel::Memory::string_literal_pointer(
                     &self.name,
                     literal.name(),
                     literal.bytes(),
@@ -4012,7 +4012,7 @@ impl C0Function {
         {
             return Some(StaticAddress {
                 extent: None,
-                pointer: crate::kernel::CMemory::global_pointer(global.kernel_name()),
+                pointer: crate::kernel::Memory::global_pointer(global.kernel_name()),
                 c_type: global.c_type(),
                 constant: global.is_constant(),
             });
@@ -4025,7 +4025,7 @@ impl C0Function {
             let c_type = global_array.complete_c_type()?;
             return Some(StaticAddress {
                 extent: None,
-                pointer: crate::kernel::CMemory::global_pointer(global_array.kernel_name()),
+                pointer: crate::kernel::Memory::global_pointer(global_array.kernel_name()),
                 c_type,
                 constant: global_array.is_constant(),
             });
@@ -4037,7 +4037,7 @@ impl C0Function {
         {
             return Some(StaticAddress {
                 extent: None,
-                pointer: crate::kernel::CMemory::global_pointer(global_aggregate.kernel_name()),
+                pointer: crate::kernel::Memory::global_pointer(global_aggregate.kernel_name()),
                 c_type: struct_value_type(global_aggregate.layout()),
                 constant: global_aggregate.is_constant(),
             });
@@ -4050,7 +4050,7 @@ impl C0Function {
             let c_type = global_aggregate_array.complete_c_type()?;
             return Some(StaticAddress {
                 extent: None,
-                pointer: crate::kernel::CMemory::global_pointer(
+                pointer: crate::kernel::Memory::global_pointer(
                     global_aggregate_array.kernel_name(),
                 ),
                 c_type,
@@ -4064,7 +4064,7 @@ impl C0Function {
         {
             return Some(StaticAddress {
                 extent: None,
-                pointer: crate::kernel::CMemory::static_pointer(
+                pointer: crate::kernel::Memory::static_pointer(
                     &self.name,
                     static_local.kernel_name(),
                 ),
@@ -4079,7 +4079,7 @@ impl C0Function {
         {
             return Some(StaticAddress {
                 extent: None,
-                pointer: crate::kernel::CMemory::static_pointer(
+                pointer: crate::kernel::Memory::static_pointer(
                     &self.name,
                     static_array.kernel_name(),
                 ),
@@ -4092,7 +4092,7 @@ impl C0Function {
         }) {
             return Some(StaticAddress {
                 extent: None,
-                pointer: crate::kernel::CMemory::static_pointer(
+                pointer: crate::kernel::Memory::static_pointer(
                     &self.name,
                     static_aggregate.kernel_name(),
                 ),
@@ -4108,7 +4108,7 @@ impl C0Function {
             })
             .map(|static_aggregate_array| StaticAddress {
                 extent: None,
-                pointer: crate::kernel::CMemory::static_pointer(
+                pointer: crate::kernel::Memory::static_pointer(
                     &self.name,
                     static_aggregate_array.kernel_name(),
                 ),
@@ -4282,7 +4282,7 @@ impl C0Function {
     pub(crate) fn resolve_linked_pointer_array(
         &self,
         array: &C0GlobalArray,
-    ) -> Result<Option<crate::kernel::CGlobalArray>, C0SyntaxError> {
+    ) -> Result<Option<crate::kernel::GlobalArray>, C0SyntaxError> {
         let Some(initializer) = array.initializer() else {
             return Ok(None);
         };
@@ -4344,7 +4344,7 @@ impl C0Function {
         Ok(())
     }
 
-    fn to_kernel_global(&self, global: &C0Global) -> Option<crate::kernel::CGlobal> {
+    fn to_kernel_global(&self, global: &C0Global) -> Option<crate::kernel::Global> {
         if let Some(value) = &global.resolved_address {
             return Some(global.to_kernel_global_with_value(value.clone()));
         }
@@ -4359,7 +4359,7 @@ impl C0Function {
         global.to_kernel_global()
     }
 
-    fn to_kernel_global_array(&self, array: &C0GlobalArray) -> Option<crate::kernel::CGlobalArray> {
+    fn to_kernel_global_array(&self, array: &C0GlobalArray) -> Option<crate::kernel::GlobalArray> {
         if let Some(resolved) = &array.resolved {
             return Some(resolved.clone());
         }
@@ -4370,7 +4370,7 @@ impl C0Function {
         Some(array.to_kernel_global_array_with_values(values))
     }
 
-    fn to_kernel_static_array(&self, array: &C0StaticArray) -> Option<crate::kernel::CStaticArray> {
+    fn to_kernel_static_array(&self, array: &C0StaticArray) -> Option<crate::kernel::StaticArray> {
         let values = array.initializer().to_kernel_contents(|initializer| {
             self.static_address_initializer_value(
                 array.element_type(),
@@ -4382,10 +4382,7 @@ impl C0Function {
         Some(array.to_kernel_static_array_with_values(values))
     }
 
-    fn to_kernel_static(
-        &self,
-        static_local: &C0StaticLocal,
-    ) -> Option<crate::kernel::CStaticLocal> {
+    fn to_kernel_static(&self, static_local: &C0StaticLocal) -> Option<crate::kernel::StaticLocal> {
         let initializer = static_local.initializer();
         if let Some(value) = self.static_address_initializer_value(
             static_local.c_type(),
@@ -4425,7 +4422,7 @@ impl C0Function {
                         .expect("validated label has a target record");
                     control_targets.insert(
                         *target,
-                        crate::kernel::CControlTarget {
+                        crate::kernel::ControlTarget {
                             statement_index: *statement_index,
                             remaining: remaining.clone(),
                         },
@@ -4462,10 +4459,10 @@ impl C0Function {
                 .expect("struct return has a parsed layout")
                 .to_kernel_aggregate_layout();
             function = match self.aggregate_return_mode {
-                crate::kernel::CAggregateReturnMode::Copy => {
+                crate::kernel::AggregateReturnMode::Copy => {
                     function.with_return_aggregate_layout(layout)
                 }
-                crate::kernel::CAggregateReturnMode::Construction => {
+                crate::kernel::AggregateReturnMode::Construction => {
                     function.with_construction_return(layout)
                 }
             };
@@ -4850,14 +4847,14 @@ impl C0StructLayout {
         self.alignment_bytes
     }
 
-    pub(crate) fn to_kernel_aggregate_layout(&self) -> crate::kernel::CAggregateLayout {
-        crate::kernel::CAggregateLayout::with_unions(
+    pub(crate) fn to_kernel_aggregate_layout(&self) -> crate::kernel::AggregateLayout {
+        crate::kernel::AggregateLayout::with_unions(
             self.size_bytes,
             self.alignment_bytes,
             self.aggregate_fields
                 .iter()
                 .map(|field| {
-                    crate::kernel::CAggregateField::new(
+                    crate::kernel::AggregateField::new(
                         &field.name,
                         field.offset_bytes,
                         field.c_type.to_kernel_type(),
@@ -4872,7 +4869,7 @@ impl C0StructLayout {
             self.aggregate_unions
                 .iter()
                 .map(|union| {
-                    crate::kernel::CAggregateUnion::new(
+                    crate::kernel::AggregateUnion::new(
                         &union.name,
                         union.offset_bytes,
                         union.size_bytes,
@@ -4880,7 +4877,7 @@ impl C0StructLayout {
                             .fields
                             .iter()
                             .map(|field| {
-                                crate::kernel::CAggregateUnionField::new(
+                                crate::kernel::AggregateUnionField::new(
                                     &field.name,
                                     field.offset_bytes,
                                     field.c_type.to_kernel_type(),
@@ -5721,7 +5718,7 @@ impl C0Statement {
 
     pub(crate) fn to_kernel_statement_with_control_targets(
         &self,
-        targets: &BTreeMap<String, (crate::kernel::CControlTargetId, usize)>,
+        targets: &BTreeMap<String, (crate::kernel::ControlTargetId, usize)>,
     ) -> crate::kernel::ProgramStatement {
         enum Task<'a> {
             Visit(&'a C0Statement),
@@ -5772,7 +5769,7 @@ impl C0Statement {
 
     fn to_kernel_statement_leaf(
         &self,
-        targets: &BTreeMap<String, (crate::kernel::CControlTargetId, usize)>,
+        targets: &BTreeMap<String, (crate::kernel::ControlTargetId, usize)>,
     ) -> crate::kernel::ProgramStatement {
         match self {
             Self::Skip => crate::kernel::c_skip(),
@@ -5954,16 +5951,16 @@ impl C0Statement {
             } => crate::kernel::c_update(
                 target.to_kernel_expression(),
                 match operator {
-                    C0UpdateOperator::Add => crate::kernel::CUpdateOperator::Add,
-                    C0UpdateOperator::Subtract => crate::kernel::CUpdateOperator::Subtract,
-                    C0UpdateOperator::Multiply => crate::kernel::CUpdateOperator::Multiply,
-                    C0UpdateOperator::Divide => crate::kernel::CUpdateOperator::Divide,
-                    C0UpdateOperator::Remainder => crate::kernel::CUpdateOperator::Remainder,
-                    C0UpdateOperator::ShiftLeft => crate::kernel::CUpdateOperator::ShiftLeft,
-                    C0UpdateOperator::ShiftRight => crate::kernel::CUpdateOperator::ShiftRight,
-                    C0UpdateOperator::BitwiseAnd => crate::kernel::CUpdateOperator::BitwiseAnd,
-                    C0UpdateOperator::BitwiseOr => crate::kernel::CUpdateOperator::BitwiseOr,
-                    C0UpdateOperator::BitwiseXor => crate::kernel::CUpdateOperator::BitwiseXor,
+                    C0UpdateOperator::Add => crate::kernel::UpdateOperator::Add,
+                    C0UpdateOperator::Subtract => crate::kernel::UpdateOperator::Subtract,
+                    C0UpdateOperator::Multiply => crate::kernel::UpdateOperator::Multiply,
+                    C0UpdateOperator::Divide => crate::kernel::UpdateOperator::Divide,
+                    C0UpdateOperator::Remainder => crate::kernel::UpdateOperator::Remainder,
+                    C0UpdateOperator::ShiftLeft => crate::kernel::UpdateOperator::ShiftLeft,
+                    C0UpdateOperator::ShiftRight => crate::kernel::UpdateOperator::ShiftRight,
+                    C0UpdateOperator::BitwiseAnd => crate::kernel::UpdateOperator::BitwiseAnd,
+                    C0UpdateOperator::BitwiseOr => crate::kernel::UpdateOperator::BitwiseOr,
+                    C0UpdateOperator::BitwiseXor => crate::kernel::UpdateOperator::BitwiseXor,
                 },
                 operand.to_kernel_expression(),
             ),
@@ -6006,7 +6003,7 @@ impl C0Statement {
                 expression.to_kernel_expression(),
                 cases
                     .iter()
-                    .map(|case| crate::kernel::CSwitchCase {
+                    .map(|case| crate::kernel::SwitchCase {
                         value: case.value,
                         body: Box::new(case.body.to_kernel_statement_with_control_targets(targets)),
                     })
@@ -6095,15 +6092,13 @@ impl C0Expression {
             } => crate::kernel::c_float_classification(
                 expression.lower_expression(),
                 match classification {
-                    C0FloatClassification::Finite => crate::kernel::CFloatClassification::Finite,
-                    C0FloatClassification::Infinite => {
-                        crate::kernel::CFloatClassification::Infinite
-                    }
-                    C0FloatClassification::Zero => crate::kernel::CFloatClassification::Zero,
+                    C0FloatClassification::Finite => crate::kernel::FloatClassification::Finite,
+                    C0FloatClassification::Infinite => crate::kernel::FloatClassification::Infinite,
+                    C0FloatClassification::Zero => crate::kernel::FloatClassification::Zero,
                     C0FloatClassification::Subnormal => {
-                        crate::kernel::CFloatClassification::Subnormal
+                        crate::kernel::FloatClassification::Subnormal
                     }
-                    C0FloatClassification::Nan => crate::kernel::CFloatClassification::Nan,
+                    C0FloatClassification::Nan => crate::kernel::FloatClassification::Nan,
                 },
             ),
             Self::AddressOf(target) => match target.as_ref() {
@@ -6723,7 +6718,7 @@ fn control_statement_error(
 /// one reducible natural-cycle exception checked below.
 fn validate_direct_forward_gotos(
     body: &C0Statement,
-) -> Result<BTreeMap<String, (crate::kernel::CControlTargetId, usize)>, C0SyntaxError> {
+) -> Result<BTreeMap<String, (crate::kernel::ControlTargetId, usize)>, C0SyntaxError> {
     fn first_control_position(statement: &C0Statement) -> Option<Option<SourcePosition>> {
         let mut pending = vec![statement];
         while let Some(statement) = pending.pop() {
@@ -6982,7 +6977,7 @@ fn validate_direct_forward_gotos(
     let mut targets = BTreeMap::new();
     for (ordinal, (name, (_, source_index, _))) in labels.iter().enumerate() {
         let identity = u32::try_from(ordinal)
-            .map(crate::kernel::CControlTargetId)
+            .map(crate::kernel::ControlTargetId)
             .map_err(|_| C0SyntaxError::new("too many control-flow labels"))?;
         targets.insert(name.clone(), (identity, *source_index));
     }
@@ -10741,7 +10736,7 @@ impl Parser {
             return_pointee_constant: header.return_pointee_constant,
             return_reference: false,
             return_struct_name: header.return_struct_name,
-            aggregate_return_mode: crate::kernel::CAggregateReturnMode::Copy,
+            aggregate_return_mode: crate::kernel::AggregateReturnMode::Copy,
             return_pointer_struct_name: header.return_pointer_struct_name,
             source_name: header.source_name,
             name: header.name,

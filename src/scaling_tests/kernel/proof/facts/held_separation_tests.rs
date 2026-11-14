@@ -11,7 +11,7 @@ fn held_separation_uses_only_the_selected_members() {
     let mut samples = Vec::new();
     for size in [4u64, 16, 64, 256] {
         let resources = ResourceContext::new()
-            .unchecked_with_facts((0..size).map(|index| CResourceFact::own(cell(index))));
+            .unchecked_with_facts((0..size).map(|index| ResourceFact::own(cell(index))));
         let state = ExecutionState::new().with_resource_context(resources);
         let facts = ProofFacts::default();
         let goal = separation(cell(size - 2), cell(size - 1));
@@ -37,7 +37,7 @@ fn held_field_separation_does_not_visit_unrelated_owners() {
         crate::kernel::clear_integer_bridge_memo();
         let state = ExecutionState::new().with_resource_context(
             ResourceContext::new().unchecked_with_facts(
-                (0..size).map(|index| CResourceFact::own(range(index, 0, 6, 4))),
+                (0..size).map(|index| ResourceFact::own(range(index, 0, 6, 4))),
             ),
         );
         let goal = separation(range(size - 2, 1, 2, 8), range(size - 1, 0, 1, 8));
@@ -65,7 +65,7 @@ fn held_separation_transitive_alias_uses_the_shared_resource_index() {
         // Keep term-bridge imports cold at every sample size.
         crate::kernel::clear_integer_bridge_memo();
         let pointer = |index| {
-            let CResource::Memory(range) = cell(index) else {
+            let Resource::Memory(range) = cell(index) else {
                 unreachable!()
             };
             range.base().clone()
@@ -78,7 +78,7 @@ fn held_separation_transitive_alias_uses_the_shared_resource_index() {
             facts = facts.with_fact(link(size + 10 + 2 * index, size + 11 + 2 * index));
         }
         let resources = ResourceContext::new_with_equalities(facts.assumptions())
-            .unchecked_with_facts((0..size).map(|index| CResourceFact::own(range(index, 0, 6, 4))));
+            .unchecked_with_facts((0..size).map(|index| ResourceFact::own(range(index, 0, 6, 4))));
         let state = ExecutionState::new().with_resource_context(resources);
         let goal = separation(range(size + 2, 1, 2, 8), range(1, 0, 1, 8));
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -104,9 +104,9 @@ fn exact_partition_assumption_ignores_unselected_members_and_refuses_two_views()
         let owned = cell(0);
         let viewed = cell(1);
         let resources = ResourceContext::new().unchecked_with_facts(
-            std::iter::once(CResourceFact::own(owned.clone()))
-                .chain(std::iter::once(CResourceFact::View(viewed.clone())))
-                .chain((2..count).map(|i| CResourceFact::View(cell(i)))),
+            std::iter::once(ResourceFact::own(owned.clone()))
+                .chain(std::iter::once(ResourceFact::View(viewed.clone())))
+                .chain((2..count).map(|i| ResourceFact::View(cell(i)))),
         );
         let goal = separation(owned.clone(), viewed.clone());
         let (_, cost) = crate::instrumentation::measure_deterministic_work(|| {
@@ -129,11 +129,11 @@ fn exact_partition_assumption_ignores_unselected_members_and_refuses_two_views()
 
 #[test]
 fn exact_partition_assumption_does_not_treat_supported_views_as_independent() {
-    let owner = CResourceFact::own(range(0, 0, 2, 4));
+    let owner = ResourceFact::own(range(0, 0, 2, 4));
     let projected = range(0, 0, 1, 4);
     let resources = ResourceContext::new()
         .unchecked_with_facts([owner.clone()])
-        .unchecked_with_supported_facts(&owner, [CResourceFact::View(projected.clone())]);
+        .unchecked_with_supported_facts(&owner, [ResourceFact::View(projected.clone())]);
     assert!(!resources.proves_exact_partition_separation(owner.resource(), &projected));
 }
 
@@ -166,7 +166,7 @@ fn partition_spatial_lookup_ignores_unrelated_owners() {
     let mut samples = Vec::new();
     for size in [4u64, 16, 64, 256] {
         let resources = ResourceContext::new()
-            .unchecked_with_facts((0..size).map(|i| CResourceFact::own(cell(i))));
+            .unchecked_with_facts((0..size).map(|i| ResourceFact::own(cell(i))));
         let (_, cost) = crate::instrumentation::measure_deterministic_work(|| {
             assert!(
                 resources.proves_exact_partition_separation(&alternate_carrier(cell(0)), &cell(1))

@@ -11,8 +11,8 @@ fn unannotated_loop_without_rule_keeps_unrolling_bound() {
             ExecutionState::new(),
             statement,
             PureFactContext::new(),
-            CExecutionEnvironment::new(),
-            CExecutionSemantics::APPLY_VERIFIED_RULES,
+            ExecutionEnvironment::new(),
+            ExecutionSemantics::APPLY_VERIFIED_RULES,
             &mut budget,
         );
     assert_eq!(execution.limit, Some(ExecutionLimit::LoopUnrolls));

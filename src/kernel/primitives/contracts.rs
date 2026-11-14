@@ -39,7 +39,7 @@ impl ProgramParameter {
         self.c_type
     }
 
-    pub fn aggregate_layout(&self) -> Option<&CAggregateLayout> {
+    pub fn aggregate_layout(&self) -> Option<&AggregateLayout> {
         self.aggregate_layout.as_ref()
     }
 
@@ -93,13 +93,13 @@ impl ProgramParameter {
         self.pointee_class.clone()
     }
 
-    pub fn with_aggregate_layout(mut self, layout: CAggregateLayout) -> Self {
+    pub fn with_aggregate_layout(mut self, layout: AggregateLayout) -> Self {
         self.aggregate_layout = Some(layout);
         self
     }
 }
 
-impl CGlobal {
+impl Global {
     pub fn new(name: impl Into<String>, c_type: ProgramType, initial_value: ProgramValue) -> Self {
         let name = name.into();
         Self::new_with_kernel_name(name.clone(), name, c_type, initial_value)
@@ -244,13 +244,13 @@ impl CGlobal {
     }
 }
 
-impl CGlobalArray {
+impl GlobalArray {
     pub fn new_with_kernel_name(
         source_name: impl Into<String>,
         kernel_name: impl Into<String>,
         element_type: ProgramType,
         length: u32,
-        initial_values: impl Into<CArrayContents>,
+        initial_values: impl Into<ArrayContents>,
     ) -> Self {
         assert!(
             matches!(
@@ -330,7 +330,7 @@ impl CGlobalArray {
         self.length
     }
 
-    pub fn initial_values(&self) -> &CArrayContents {
+    pub fn initial_values(&self) -> &ArrayContents {
         &self.initial_values
     }
 
@@ -344,12 +344,12 @@ impl CGlobalArray {
     }
 }
 
-impl CGlobalAggregate {
+impl GlobalAggregate {
     pub fn new(
         source_name: impl Into<String>,
         kernel_name: impl Into<String>,
-        layout: CAggregateLayout,
-        initializers: Vec<CAggregateInitializer>,
+        layout: AggregateLayout,
+        initializers: Vec<AggregateInitializer>,
     ) -> Self {
         assert!(
             layout.size_bytes() > 0,
@@ -392,11 +392,11 @@ impl CGlobalAggregate {
         &self.kernel_name
     }
 
-    pub fn layout(&self) -> &CAggregateLayout {
+    pub fn layout(&self) -> &AggregateLayout {
         &self.layout
     }
 
-    pub fn initializers(&self) -> &[CAggregateInitializer] {
+    pub fn initializers(&self) -> &[AggregateInitializer] {
         &self.initializers
     }
 
@@ -410,13 +410,13 @@ impl CGlobalAggregate {
     }
 }
 
-impl CGlobalAggregateArray {
+impl GlobalAggregateArray {
     pub fn new(
         source_name: impl Into<String>,
         kernel_name: impl Into<String>,
-        layout: CAggregateLayout,
+        layout: AggregateLayout,
         length: u32,
-        initializers: Vec<CAggregateInitializer>,
+        initializers: Vec<AggregateInitializer>,
     ) -> Self {
         assert!(
             length > 0,
@@ -464,7 +464,7 @@ impl CGlobalAggregateArray {
         &self.kernel_name
     }
 
-    pub fn layout(&self) -> &CAggregateLayout {
+    pub fn layout(&self) -> &AggregateLayout {
         &self.layout
     }
 
@@ -472,7 +472,7 @@ impl CGlobalAggregateArray {
         self.length
     }
 
-    pub fn initializers(&self) -> &[CAggregateInitializer] {
+    pub fn initializers(&self) -> &[AggregateInitializer] {
         &self.initializers
     }
 
@@ -486,7 +486,7 @@ impl CGlobalAggregateArray {
     }
 }
 
-impl CStaticLocal {
+impl StaticLocal {
     pub fn new(
         source_name: impl Into<String>,
         kernel_name: impl Into<String>,
@@ -602,13 +602,13 @@ impl CStaticLocal {
     }
 }
 
-impl CStaticArray {
+impl StaticArray {
     pub fn new(
         source_name: impl Into<String>,
         kernel_name: impl Into<String>,
         element_type: ProgramType,
         length: u32,
-        initial_values: impl Into<CArrayContents>,
+        initial_values: impl Into<ArrayContents>,
     ) -> Self {
         assert!(
             matches!(
@@ -668,7 +668,7 @@ impl CStaticArray {
         self.length
     }
 
-    pub fn initial_values(&self) -> &CArrayContents {
+    pub fn initial_values(&self) -> &ArrayContents {
         &self.initial_values
     }
 
@@ -682,12 +682,12 @@ impl CStaticArray {
     }
 }
 
-impl CStaticAggregate {
+impl StaticAggregate {
     pub fn new(
         source_name: impl Into<String>,
         kernel_name: impl Into<String>,
-        layout: CAggregateLayout,
-        initializers: Vec<CAggregateInitializer>,
+        layout: AggregateLayout,
+        initializers: Vec<AggregateInitializer>,
     ) -> Self {
         assert!(
             layout.size_bytes() > 0,
@@ -714,11 +714,11 @@ impl CStaticAggregate {
         &self.kernel_name
     }
 
-    pub fn layout(&self) -> &CAggregateLayout {
+    pub fn layout(&self) -> &AggregateLayout {
         &self.layout
     }
 
-    pub fn initializers(&self) -> &[CAggregateInitializer] {
+    pub fn initializers(&self) -> &[AggregateInitializer] {
         &self.initializers
     }
 
@@ -732,13 +732,13 @@ impl CStaticAggregate {
     }
 }
 
-impl CStaticAggregateArray {
+impl StaticAggregateArray {
     pub fn new(
         source_name: impl Into<String>,
         kernel_name: impl Into<String>,
-        layout: CAggregateLayout,
+        layout: AggregateLayout,
         length: u32,
-        initializers: Vec<CAggregateInitializer>,
+        initializers: Vec<AggregateInitializer>,
     ) -> Self {
         assert!(
             length > 0,
@@ -770,7 +770,7 @@ impl CStaticAggregateArray {
         &self.kernel_name
     }
 
-    pub fn layout(&self) -> &CAggregateLayout {
+    pub fn layout(&self) -> &AggregateLayout {
         &self.layout
     }
 
@@ -778,7 +778,7 @@ impl CStaticAggregateArray {
         self.length
     }
 
-    pub fn initializers(&self) -> &[CAggregateInitializer] {
+    pub fn initializers(&self) -> &[AggregateInitializer] {
         &self.initializers
     }
 
@@ -792,7 +792,7 @@ impl CStaticAggregateArray {
     }
 }
 
-impl CStringLiteral {
+impl StringLiteral {
     pub fn new(name: impl Into<String>, bytes: Vec<u8>) -> Self {
         assert_eq!(
             bytes.last(),
@@ -838,7 +838,7 @@ impl CStringLiteral {
     }
 }
 
-impl CFunctionContractInterface {
+impl FunctionContractInterface {
     pub(crate) fn new(return_type: ProgramType, parameters: Vec<ProgramParameter>) -> Self {
         Self {
             return_type,
@@ -847,9 +847,9 @@ impl CFunctionContractInterface {
             object_type_requirements: Default::default(),
             return_object_type_guarantee: None,
             return_aggregate_layout: None,
-            aggregate_return_mode: CAggregateReturnMode::Copy,
+            aggregate_return_mode: AggregateReturnMode::Copy,
             construction_parameter: None,
-            exceptional_signature: CExceptionalSignature::None,
+            exceptional_signature: ExceptionalSignature::None,
             parameters,
             proof_parameters: Default::default(),
             value_parameters: Vec::new(),
@@ -897,16 +897,16 @@ impl CFunctionContractInterface {
         self.return_pointee_class.clone()
     }
 
-    pub fn return_aggregate_layout(&self) -> Option<&CAggregateLayout> {
+    pub fn return_aggregate_layout(&self) -> Option<&AggregateLayout> {
         self.return_aggregate_layout.as_ref()
     }
 
-    pub fn aggregate_return_mode(&self) -> CAggregateReturnMode {
+    pub fn aggregate_return_mode(&self) -> AggregateReturnMode {
         self.aggregate_return_mode
     }
 
     /// An ordinary pointer parameter whose selected object is initialized on return.
-    pub fn construction_parameter(&self) -> Option<(usize, &CAggregateLayout)> {
+    pub fn construction_parameter(&self) -> Option<(usize, &AggregateLayout)> {
         self.construction_parameter
             .as_ref()
             .map(|(index, layout)| (*index, layout))
@@ -916,15 +916,15 @@ impl CFunctionContractInterface {
         &self.parameters
     }
 
-    pub(crate) fn exceptional_signature(&self) -> CExceptionalSignature {
+    pub(crate) fn exceptional_signature(&self) -> ExceptionalSignature {
         self.exceptional_signature
     }
 
-    pub(crate) fn proof_parameters(&self) -> &[CResourceSpec] {
+    pub(crate) fn proof_parameters(&self) -> &[ResourceSpec] {
         &self.proof_parameters
     }
 
-    pub(crate) fn with_proof_parameters(mut self, parameters: Vec<CResourceSpec>) -> Self {
+    pub(crate) fn with_proof_parameters(mut self, parameters: Vec<ResourceSpec>) -> Self {
         self.proof_parameters = parameters.into();
         self
     }
@@ -953,15 +953,15 @@ impl CFunctionContractInterface {
         Some(self)
     }
 
-    pub fn resource_requires(&self) -> &[CResourceSpec] {
+    pub fn resource_requires(&self) -> &[ResourceSpec] {
         &self.resource_requires
     }
 
-    pub fn resource_ensures(&self) -> &[CResourceSpec] {
+    pub fn resource_ensures(&self) -> &[ResourceSpec] {
         &self.resource_ensures
     }
 
-    pub fn resource_constructors(&self) -> &[CResourceSpec] {
+    pub fn resource_constructors(&self) -> &[ResourceSpec] {
         &self.resource_constructors
     }
 
@@ -970,7 +970,7 @@ impl CFunctionContractInterface {
     }
 
     /// The declared expression `decreases` measure, if the function has one.
-    pub fn recursion_measure(&self) -> Option<&[CRankingComponent]> {
+    pub fn recursion_measure(&self) -> Option<&[RankingComponent]> {
         (!self.recursion_measure.is_empty()).then_some(self.recursion_measure.as_slice())
     }
 
@@ -996,7 +996,7 @@ impl CFunctionContractInterface {
         self.resource_requires
             .iter()
             .find_map(|requirement| match requirement.term() {
-                CResourceTerm::Instance {
+                ResourceTerm::Instance {
                     identity,
                     binder: name,
                     ..
@@ -1024,7 +1024,7 @@ impl CFunctionContractInterface {
         &self.exceptional_ensures
     }
 
-    pub fn contract_mutable(&self) -> &[CMemorySegment] {
+    pub fn contract_mutable(&self) -> &[MemorySegment] {
         &self.contract_mutable
     }
 
@@ -1040,7 +1040,7 @@ impl CFunctionContractInterface {
         self.resource_derived_frame_mixed
     }
 
-    pub fn contract_claims(&self) -> &[CFunctionContractClaim] {
+    pub fn contract_claims(&self) -> &[FunctionContractClaim] {
         &self.contract_claims
     }
 
@@ -1058,7 +1058,7 @@ impl CFunctionContractInterface {
             return self.opaque_contract_supported();
         }
         self.opaque_contract_supported
-            && self.exceptional_signature == CExceptionalSignature::Int32
+            && self.exceptional_signature == ExceptionalSignature::Int32
             && self.proof_parameters.is_empty()
             && self.resource_requires.is_empty()
             && self.resource_ensures.is_empty()
@@ -1071,14 +1071,14 @@ impl CFunctionContractInterface {
             && self.predicate_unfoldings.is_empty()
     }
 
-    pub fn composite_resource_definitions(&self) -> &[CCompositeResourceDefinition] {
+    pub fn composite_resource_definitions(&self) -> &[CompositeResourceDefinition] {
         &self.composite_resource_definitions
     }
 
     pub(crate) fn composite_resource_definition(
         &self,
         name: &str,
-    ) -> Option<&CCompositeResourceDefinition> {
+    ) -> Option<&CompositeResourceDefinition> {
         self.composite_resource_definitions
             .binary_search_by(|definition| definition.name().cmp(name))
             .ok()
@@ -1092,7 +1092,7 @@ impl CFunctionContractInterface {
             .is_ok()
     }
 
-    pub fn predicate_unfoldings(&self) -> &[CPredicateUnfolding] {
+    pub fn predicate_unfoldings(&self) -> &[PredicateUnfolding] {
         &self.predicate_unfoldings
     }
 
@@ -1150,7 +1150,7 @@ impl CFunctionContractInterface {
     }
 
     pub(crate) fn has_compatible_signature_and_composite_vocabulary(&self, other: &Self) -> bool {
-        self.aggregate_return_mode == CAggregateReturnMode::Copy
+        self.aggregate_return_mode == AggregateReturnMode::Copy
             && self.construction_parameter.is_none()
             && self.return_type == other.return_type
             && self.return_pointee_constant == other.return_pointee_constant
@@ -1205,11 +1205,11 @@ impl ProgramFunction {
             source_body: body.clone(),
             body,
             control_targets: std::sync::Arc::new(BTreeMap::new()),
-            contract_interface: Arc::new(CFunctionContractInterface::new(return_type, parameters)),
+            contract_interface: Arc::new(FunctionContractInterface::new(return_type, parameters)),
             global_variables: Vec::new(),
             global_arrays: Vec::new(),
             static_variables: Vec::new(),
-            static_storage: std::sync::Arc::new(CFunctionStaticStorage {
+            static_storage: std::sync::Arc::new(FunctionStaticStorage {
                 static_arrays: Vec::new(),
                 global_aggregates: Vec::new(),
                 global_aggregate_arrays: Vec::new(),
@@ -1221,17 +1221,17 @@ impl ProgramFunction {
         }
     }
 
-    pub fn with_global_variables(mut self, global_variables: Vec<CGlobal>) -> Self {
+    pub fn with_global_variables(mut self, global_variables: Vec<Global>) -> Self {
         self.global_variables = global_variables;
         self
     }
 
-    pub fn with_global_arrays(mut self, global_arrays: Vec<CGlobalArray>) -> Self {
+    pub fn with_global_arrays(mut self, global_arrays: Vec<GlobalArray>) -> Self {
         self.global_arrays = global_arrays;
         self
     }
 
-    pub fn with_global_aggregates(mut self, global_aggregates: Vec<CGlobalAggregate>) -> Self {
+    pub fn with_global_aggregates(mut self, global_aggregates: Vec<GlobalAggregate>) -> Self {
         let mut static_storage = (*self.static_storage).clone();
         static_storage.global_aggregates = global_aggregates;
         self.static_storage = std::sync::Arc::new(static_storage);
@@ -1240,7 +1240,7 @@ impl ProgramFunction {
 
     pub fn with_global_aggregate_arrays(
         mut self,
-        global_aggregate_arrays: Vec<CGlobalAggregateArray>,
+        global_aggregate_arrays: Vec<GlobalAggregateArray>,
     ) -> Self {
         let mut static_storage = (*self.static_storage).clone();
         static_storage.global_aggregate_arrays = global_aggregate_arrays;
@@ -1248,19 +1248,19 @@ impl ProgramFunction {
         self
     }
 
-    pub fn with_static_variables(mut self, static_variables: Vec<CStaticLocal>) -> Self {
+    pub fn with_static_variables(mut self, static_variables: Vec<StaticLocal>) -> Self {
         self.static_variables = static_variables;
         self
     }
 
-    pub fn with_static_arrays(mut self, static_arrays: Vec<CStaticArray>) -> Self {
+    pub fn with_static_arrays(mut self, static_arrays: Vec<StaticArray>) -> Self {
         let mut static_storage = (*self.static_storage).clone();
         static_storage.static_arrays = static_arrays;
         self.static_storage = std::sync::Arc::new(static_storage);
         self
     }
 
-    pub fn with_static_aggregates(mut self, static_aggregates: Vec<CStaticAggregate>) -> Self {
+    pub fn with_static_aggregates(mut self, static_aggregates: Vec<StaticAggregate>) -> Self {
         let mut static_storage = (*self.static_storage).clone();
         static_storage.static_aggregates = static_aggregates;
         self.static_storage = std::sync::Arc::new(static_storage);
@@ -1269,7 +1269,7 @@ impl ProgramFunction {
 
     pub fn with_static_aggregate_arrays(
         mut self,
-        static_aggregate_arrays: Vec<CStaticAggregateArray>,
+        static_aggregate_arrays: Vec<StaticAggregateArray>,
     ) -> Self {
         let mut static_storage = (*self.static_storage).clone();
         static_storage.static_aggregate_arrays = static_aggregate_arrays;
@@ -1277,7 +1277,7 @@ impl ProgramFunction {
         self
     }
 
-    pub fn with_string_literals(mut self, string_literals: Vec<CStringLiteral>) -> Self {
+    pub fn with_string_literals(mut self, string_literals: Vec<StringLiteral>) -> Self {
         self.string_literals = string_literals;
         self
     }
@@ -1289,7 +1289,7 @@ impl ProgramFunction {
 
     pub(crate) fn with_control_targets(
         mut self,
-        control_targets: BTreeMap<CControlTargetId, CControlTarget>,
+        control_targets: BTreeMap<ControlTargetId, ControlTarget>,
     ) -> Self {
         self.control_targets = std::sync::Arc::new(control_targets);
         self
@@ -1300,7 +1300,7 @@ impl ProgramFunction {
         self
     }
 
-    pub(crate) fn control_target(&self, target: CControlTargetId) -> Option<&CControlTarget> {
+    pub(crate) fn control_target(&self, target: ControlTargetId) -> Option<&ControlTarget> {
         self.control_targets.get(&target)
     }
 
@@ -1348,15 +1348,15 @@ impl ProgramFunction {
 
     pub fn with_resource_summary(
         mut self,
-        requires: Vec<CResourceSpec>,
-        ensures: Vec<CResourceSpec>,
+        requires: Vec<ResourceSpec>,
+        ensures: Vec<ResourceSpec>,
     ) -> Self {
         Arc::make_mut(&mut self.contract_interface).resource_requires = requires;
         Arc::make_mut(&mut self.contract_interface).resource_ensures = ensures;
         self
     }
 
-    pub fn with_resource_constructors(mut self, constructors: Vec<CResourceSpec>) -> Self {
+    pub fn with_resource_constructors(mut self, constructors: Vec<ResourceSpec>) -> Self {
         Arc::make_mut(&mut self.contract_interface).resource_constructors = constructors;
         self
     }
@@ -1365,7 +1365,7 @@ impl ProgramFunction {
     /// into the exceptional channel yet.
     pub(crate) fn with_int32_exceptional_outcome(mut self) -> Self {
         Arc::make_mut(&mut self.contract_interface).exceptional_signature =
-            CExceptionalSignature::Int32;
+            ExceptionalSignature::Int32;
         self
     }
 
@@ -1382,8 +1382,8 @@ impl ProgramFunction {
         mut self,
         requires: Vec<SpecProposition>,
         ensures: Vec<SpecProposition>,
-        mutable: Vec<CMemorySegment>,
-        claims: Vec<CFunctionContractClaim>,
+        mutable: Vec<MemorySegment>,
+        claims: Vec<FunctionContractClaim>,
         opaque_supported: bool,
     ) -> Self {
         Arc::make_mut(&mut self.contract_interface).contract_requires = requires;
@@ -1407,7 +1407,7 @@ impl ProgramFunction {
     /// function's semantic identity: a verified rule, and every claim bound
     /// to it, names the function that declared the measure, and a function
     /// that declares none is a different `ProgramFunction`.
-    pub fn with_recursion_measure(mut self, measure: Vec<CRankingComponent>) -> Self {
+    pub fn with_recursion_measure(mut self, measure: Vec<RankingComponent>) -> Self {
         Arc::make_mut(&mut self.contract_interface).recursion_measure = measure;
         self
     }
@@ -1469,7 +1469,7 @@ impl ProgramFunction {
 
     pub fn with_composite_resource_definitions(
         mut self,
-        mut definitions: Vec<CCompositeResourceDefinition>,
+        mut definitions: Vec<CompositeResourceDefinition>,
     ) -> Self {
         definitions.sort_by(|left, right| left.name().cmp(right.name()));
         super::super::thread_confinement::propagate_thread_confinement(&mut definitions);
@@ -1481,7 +1481,7 @@ impl ProgramFunction {
     pub(crate) fn composite_resource_definition(
         &self,
         name: &str,
-    ) -> Option<&CCompositeResourceDefinition> {
+    ) -> Option<&CompositeResourceDefinition> {
         self.contract_interface.composite_resource_definition(name)
     }
 
@@ -1490,7 +1490,7 @@ impl ProgramFunction {
     pub(crate) fn proof_composite_resource_definition(
         &self,
         name: &str,
-    ) -> Option<&CCompositeResourceDefinition> {
+    ) -> Option<&CompositeResourceDefinition> {
         self.composite_resource_definition(name)
             .filter(|definition| !definition.is_sealed())
     }
@@ -1503,7 +1503,7 @@ impl ProgramFunction {
         self
     }
 
-    pub fn with_predicate_unfoldings(mut self, unfoldings: Vec<CPredicateUnfolding>) -> Self {
+    pub fn with_predicate_unfoldings(mut self, unfoldings: Vec<PredicateUnfolding>) -> Self {
         Arc::make_mut(&mut self.contract_interface).predicate_unfoldings = unfoldings;
         self
     }
@@ -1529,30 +1529,30 @@ impl ProgramFunction {
         self.contract_interface.return_pointee_is_constant()
     }
 
-    pub fn return_aggregate_layout(&self) -> Option<&CAggregateLayout> {
+    pub fn return_aggregate_layout(&self) -> Option<&AggregateLayout> {
         self.contract_interface.return_aggregate_layout()
     }
 
-    pub fn with_return_aggregate_layout(mut self, layout: CAggregateLayout) -> Self {
+    pub fn with_return_aggregate_layout(mut self, layout: AggregateLayout) -> Self {
         Arc::make_mut(&mut self.contract_interface).return_aggregate_layout = Some(layout);
         Arc::make_mut(&mut self.contract_interface).aggregate_return_mode =
-            CAggregateReturnMode::Copy;
+            AggregateReturnMode::Copy;
         self
     }
 
     /// Selects completion into a separately supplied call destination. The
     /// contract must describe its actual storage authority and write effects.
-    pub fn with_construction_return(mut self, layout: CAggregateLayout) -> Self {
+    pub fn with_construction_return(mut self, layout: AggregateLayout) -> Self {
         Arc::make_mut(&mut self.contract_interface).return_aggregate_layout = Some(layout);
         Arc::make_mut(&mut self.contract_interface).aggregate_return_mode =
-            CAggregateReturnMode::Construction;
+            AggregateReturnMode::Construction;
         self
     }
 
     /// Requires a nonthrowing void body to initialize the object named
     /// by this ordinary pointer parameter. Binding grants no storage or authority.
     /// Checked summaries retain the initialization established by the body.
-    pub fn with_construction_parameter(mut self, index: usize, layout: CAggregateLayout) -> Self {
+    pub fn with_construction_parameter(mut self, index: usize, layout: AggregateLayout) -> Self {
         Arc::make_mut(&mut self.contract_interface).construction_parameter = Some((index, layout));
         self
     }
@@ -1591,39 +1591,39 @@ impl ProgramFunction {
         Some(self)
     }
 
-    pub fn global_variables(&self) -> &[CGlobal] {
+    pub fn global_variables(&self) -> &[Global] {
         &self.global_variables
     }
 
-    pub fn global_arrays(&self) -> &[CGlobalArray] {
+    pub fn global_arrays(&self) -> &[GlobalArray] {
         &self.global_arrays
     }
 
-    pub fn global_aggregates(&self) -> &[CGlobalAggregate] {
+    pub fn global_aggregates(&self) -> &[GlobalAggregate] {
         self.static_storage.global_aggregates.as_slice()
     }
 
-    pub fn global_aggregate_arrays(&self) -> &[CGlobalAggregateArray] {
+    pub fn global_aggregate_arrays(&self) -> &[GlobalAggregateArray] {
         self.static_storage.global_aggregate_arrays.as_slice()
     }
 
-    pub fn static_variables(&self) -> &[CStaticLocal] {
+    pub fn static_variables(&self) -> &[StaticLocal] {
         &self.static_variables
     }
 
-    pub fn static_arrays(&self) -> &[CStaticArray] {
+    pub fn static_arrays(&self) -> &[StaticArray] {
         self.static_storage.static_arrays.as_slice()
     }
 
-    pub fn static_aggregates(&self) -> &[CStaticAggregate] {
+    pub fn static_aggregates(&self) -> &[StaticAggregate] {
         self.static_storage.static_aggregates.as_slice()
     }
 
-    pub fn static_aggregate_arrays(&self) -> &[CStaticAggregateArray] {
+    pub fn static_aggregate_arrays(&self) -> &[StaticAggregateArray] {
         self.static_storage.static_aggregate_arrays.as_slice()
     }
 
-    pub fn string_literals(&self) -> &[CStringLiteral] {
+    pub fn string_literals(&self) -> &[StringLiteral] {
         &self.string_literals
     }
 
@@ -1631,7 +1631,7 @@ impl ProgramFunction {
         self.contract_interface.function_pointer_type()
     }
 
-    pub(crate) fn exceptional_signature(&self) -> CExceptionalSignature {
+    pub(crate) fn exceptional_signature(&self) -> ExceptionalSignature {
         self.contract_interface.exceptional_signature()
     }
 
@@ -1643,15 +1643,15 @@ impl ProgramFunction {
         &self.source_body
     }
 
-    pub fn resource_requires(&self) -> &[CResourceSpec] {
+    pub fn resource_requires(&self) -> &[ResourceSpec] {
         self.contract_interface.resource_requires()
     }
 
-    pub fn resource_ensures(&self) -> &[CResourceSpec] {
+    pub fn resource_ensures(&self) -> &[ResourceSpec] {
         self.contract_interface.resource_ensures()
     }
 
-    pub fn resource_constructors(&self) -> &[CResourceSpec] {
+    pub fn resource_constructors(&self) -> &[ResourceSpec] {
         self.contract_interface.resource_constructors()
     }
 
@@ -1673,7 +1673,7 @@ impl ProgramFunction {
         self.contract_interface.exceptional_ensures()
     }
 
-    pub fn contract_mutable(&self) -> &[CMemorySegment] {
+    pub fn contract_mutable(&self) -> &[MemorySegment] {
         self.contract_interface.contract_mutable()
     }
 
@@ -1685,7 +1685,7 @@ impl ProgramFunction {
         self.contract_interface.resource_derived_mutable_frame()
     }
 
-    pub fn contract_claims(&self) -> &[CFunctionContractClaim] {
+    pub fn contract_claims(&self) -> &[FunctionContractClaim] {
         self.contract_interface.contract_claims()
     }
 
@@ -1697,7 +1697,7 @@ impl ProgramFunction {
     pub(crate) fn verified_direct_contract_supported(&self) -> bool {
         self.contract_interface.verified_direct_contract_supported()
             && (self.exceptional_signature().is_empty()
-                || self.exceptional_signature() == CExceptionalSignature::Int32)
+                || self.exceptional_signature() == ExceptionalSignature::Int32)
             && (!self.has_internal_exceptional_outcome()
                 || !self.exceptional_signature().is_empty())
     }
@@ -1706,22 +1706,22 @@ impl ProgramFunction {
         statement_contains_internal_throw(&self.body)
     }
 
-    pub fn composite_resource_definitions(&self) -> &[CCompositeResourceDefinition] {
+    pub fn composite_resource_definitions(&self) -> &[CompositeResourceDefinition] {
         self.contract_interface.composite_resource_definitions()
     }
 
-    pub fn predicate_unfoldings(&self) -> &[CPredicateUnfolding] {
+    pub fn predicate_unfoldings(&self) -> &[PredicateUnfolding] {
         self.contract_interface.predicate_unfoldings()
     }
 
     /// The body-independent contract carrier used by direct calls, callback
     /// applications, refinement, and certification.
-    pub fn contract_interface(&self) -> &CFunctionContractInterface {
+    pub fn contract_interface(&self) -> &FunctionContractInterface {
         &self.contract_interface
     }
 }
 
-impl CPredicateUnfolding {
+impl PredicateUnfolding {
     pub fn new(mut predicate: SpecProposition, body: SpecProposition) -> Self {
         if let SpecProposition::Predicate {
             resource_state_dependent,
@@ -1744,13 +1744,13 @@ impl CPredicateUnfolding {
     }
 }
 
-impl CCompositeResourceDefinition {
-    pub fn with_resource_parameters(mut self, parameters: Vec<CResourceSpec>) -> Self {
+impl CompositeResourceDefinition {
+    pub fn with_resource_parameters(mut self, parameters: Vec<ResourceSpec>) -> Self {
         self.resource_parameters = parameters;
         self
     }
 
-    pub fn resource_parameters(&self) -> &[CResourceSpec] {
+    pub fn resource_parameters(&self) -> &[ResourceSpec] {
         &self.resource_parameters
     }
 
@@ -1763,14 +1763,14 @@ impl CCompositeResourceDefinition {
         self.instance_schema.as_ref()
     }
 
-    pub(crate) fn with_resource_match_body(mut self, body: Option<CResourceMatchBody>) -> Self {
+    pub(crate) fn with_resource_match_body(mut self, body: Option<ResourceMatchBody>) -> Self {
         self.matched = body;
         self.thread_confined |= self.owns_population_authority();
         self
     }
 
     /// Named child instances of the unmatched body.
-    pub(crate) fn with_children(mut self, children: Vec<CResourceChildSpec>) -> Self {
+    pub(crate) fn with_children(mut self, children: Vec<ResourceChildSpec>) -> Self {
         self.children = children;
         self
     }
@@ -1779,7 +1779,7 @@ impl CCompositeResourceDefinition {
         parameters: Vec<ProgramParameter>,
         condition: Option<SpecProposition>,
         recursive: bool,
-        contains: Vec<CResourceSpec>,
+        contains: Vec<ResourceSpec>,
         facts: Vec<SpecProposition>,
     ) -> Self {
         let fact_source_indices = (0..facts.len()).collect();
@@ -1865,13 +1865,13 @@ impl CCompositeResourceDefinition {
     pub(in crate::kernel) fn has_fixed_exclusive_memory(&self) -> bool {
         self.witnesses.is_empty()
             && self.contains.iter().any(|child| {
-                if child.access() != CResourceAccessMode::Own
-                    || child.quantity() != &CResourceQuantity::One
+                if child.access() != ResourceAccessMode::Own
+                    || child.quantity() != &ResourceQuantity::One
                     || child.guard().is_some()
                 {
                     return false;
                 }
-                let CResourceTerm::Memory(segment) = child.term() else {
+                let ResourceTerm::Memory(segment) = child.term() else {
                     return false;
                 };
                 let ProgramExpression::Variable(parameter) = &segment.base else {
@@ -1931,11 +1931,11 @@ impl CCompositeResourceDefinition {
             && !self.owns_population_authority()
             && !self.contains.is_empty()
             && self.contains.iter().all(|child| {
-                let CResourceTerm::Memory(segment) = child.term() else {
+                let ResourceTerm::Memory(segment) = child.term() else {
                     return false;
                 };
-                child.access() == CResourceAccessMode::Own
-                    && child.quantity() == &CResourceQuantity::One
+                child.access() == ResourceAccessMode::Own
+                    && child.quantity() == &ResourceQuantity::One
                     && child.guard().is_none()
                     && child.resource_arguments().is_empty()
                     && segment.guard.is_none()
@@ -1991,7 +1991,7 @@ impl CCompositeResourceDefinition {
                     .flat_map(|body| body.arms.iter())
                     .flat_map(|arm| arm.contains.iter()),
             )
-            .any(|spec| matches!(spec.term(), CResourceTerm::PopulationAuthority { .. }))
+            .any(|spec| matches!(spec.term(), ResourceTerm::PopulationAuthority { .. }))
     }
 
     /// Marks a field-bearing abstract family, which no proof step folds,
@@ -2061,7 +2061,7 @@ impl CCompositeResourceDefinition {
         self.recursive || self.owns_population_authority()
     }
 
-    pub fn contains(&self) -> &[CResourceSpec] {
+    pub fn contains(&self) -> &[ResourceSpec] {
         &self.contains
     }
 
@@ -2071,35 +2071,35 @@ impl CCompositeResourceDefinition {
 }
 
 #[cfg(test)]
-impl CCompositeResourceDefinition {
+impl CompositeResourceDefinition {
     /// An authority control for kernel tests: the given body plus the owned
     /// authority over a bodyless `member` family, with facts that read counts.
     pub(crate) fn authority_control(
         name: impl Into<String>,
         parameters: Vec<ProgramParameter>,
         condition: Option<SpecProposition>,
-        mut contains: Vec<CResourceSpec>,
+        mut contains: Vec<ResourceSpec>,
         facts: Vec<SpecProposition>,
     ) -> Self {
         contains.push(
-            CResourceSpec::new(
-                CResourceTerm::PopulationAuthority {
+            ResourceSpec::new(
+                ResourceTerm::PopulationAuthority {
                     population_arity: None,
-                    protected: Box::new(CResourceTypeSpec {
-                        resource: Box::new(CResourceSpec::composite(
-                            CResourceAccessMode::Own,
+                    protected: Box::new(ResourceTypeSpec {
+                        resource: Box::new(ResourceSpec::composite(
+                            ResourceAccessMode::Own,
                             "member".into(),
                             vec![],
                             vec![],
                         )),
                         schema: ResourceFieldSchema::new(vec![]).expect("empty schema"),
                     }),
-                    snapshot: CResourceSnapshot::Current,
+                    snapshot: ResourceSnapshot::Current,
                 },
-                CResourceAccessMode::Own,
-                CResourceQuantity::One,
-                CResourceTransferRole::Consume,
-                CResourceSnapshot::Current,
+                ResourceAccessMode::Own,
+                ResourceQuantity::One,
+                ResourceTransferRole::Consume,
+                ResourceSnapshot::Current,
             )
             .expect("an owned authority is a valid resource clause"),
         );
@@ -2107,32 +2107,32 @@ impl CCompositeResourceDefinition {
     }
 }
 
-impl CFunctionContractClaim {
+impl FunctionContractClaim {
     pub fn body_safety() -> Self {
         Self {
-            key: CFunctionContractClaimKey::BodySafety,
-            target: CFunctionContractClaimTarget::BodySafety,
+            key: FunctionContractClaimKey::BodySafety,
+            target: FunctionContractClaimTarget::BodySafety,
         }
     }
 
     pub fn effect(index: usize) -> Self {
         Self {
-            key: CFunctionContractClaimKey::Effect(index),
-            target: CFunctionContractClaimTarget::Effect,
+            key: FunctionContractClaimKey::Effect(index),
+            target: FunctionContractClaimTarget::Effect,
         }
     }
 
     pub fn ensure_proposition(source_index: usize, contract_index: usize) -> Self {
         Self {
-            key: CFunctionContractClaimKey::Ensure(source_index),
-            target: CFunctionContractClaimTarget::EnsureProposition(contract_index),
+            key: FunctionContractClaimKey::Ensure(source_index),
+            target: FunctionContractClaimTarget::EnsureProposition(contract_index),
         }
     }
 
     pub fn ensure_resource(source_index: usize, resource_index: usize) -> Self {
         Self {
-            key: CFunctionContractClaimKey::Ensure(source_index),
-            target: CFunctionContractClaimTarget::EnsureResource(resource_index),
+            key: FunctionContractClaimKey::Ensure(source_index),
+            target: FunctionContractClaimTarget::EnsureResource(resource_index),
         }
     }
     pub(crate) fn exceptional_ensure_proposition(
@@ -2140,21 +2140,21 @@ impl CFunctionContractClaim {
         contract_index: usize,
     ) -> Self {
         Self {
-            key: CFunctionContractClaimKey::ExceptionalEnsure(source_index),
-            target: CFunctionContractClaimTarget::ExceptionalEnsureProposition(contract_index),
+            key: FunctionContractClaimKey::ExceptionalEnsure(source_index),
+            target: FunctionContractClaimTarget::ExceptionalEnsureProposition(contract_index),
         }
     }
 
-    pub fn key(&self) -> &CFunctionContractClaimKey {
+    pub fn key(&self) -> &FunctionContractClaimKey {
         &self.key
     }
 
-    pub fn target(&self) -> &CFunctionContractClaimTarget {
+    pub fn target(&self) -> &FunctionContractClaimTarget {
         &self.target
     }
 }
 
-impl CLoopInvariantCheck {
+impl LoopInvariantCheck {
     pub fn new(
         proposition: SpecProposition,
         entry_context: Option<String>,
@@ -2180,21 +2180,21 @@ impl CLoopInvariantCheck {
     }
 }
 
-impl CLoopEffectCheck {
-    pub fn new(effect: CLoopEffect, context: Option<String>) -> Self {
+impl LoopEffectCheck {
+    pub fn new(effect: LoopEffect, context: Option<String>) -> Self {
         Self {
             effect,
-            span: CLoopEffectSpan::Step,
+            span: LoopEffectSpan::Step,
             context,
-            origin: CLoopEffectOrigin::Unspecified,
+            origin: LoopEffectOrigin::Unspecified,
             validated_ranges: None,
         }
     }
 
     pub fn new_with_origin(
-        effect: CLoopEffect,
-        span: CLoopEffectSpan,
-        origin: CLoopEffectOrigin,
+        effect: LoopEffect,
+        span: LoopEffectSpan,
+        origin: LoopEffectOrigin,
         context: Option<String>,
     ) -> Self {
         Self {
@@ -2206,16 +2206,16 @@ impl CLoopEffectCheck {
         }
     }
 
-    pub(crate) fn with_validated_ranges(mut self, ranges: Vec<CMemoryRange>) -> Self {
+    pub(crate) fn with_validated_ranges(mut self, ranges: Vec<MemoryRange>) -> Self {
         self.validated_ranges = Some(ranges);
         self
     }
 
-    pub fn effect(&self) -> &CLoopEffect {
+    pub fn effect(&self) -> &LoopEffect {
         &self.effect
     }
 
-    pub fn span(&self) -> CLoopEffectSpan {
+    pub fn span(&self) -> LoopEffectSpan {
         self.span
     }
 
@@ -2223,16 +2223,16 @@ impl CLoopEffectCheck {
         self.context.as_deref()
     }
 
-    pub fn origin(&self) -> CLoopEffectOrigin {
+    pub fn origin(&self) -> LoopEffectOrigin {
         self.origin
     }
 
-    pub(crate) fn validated_ranges(&self) -> Option<&[CMemoryRange]> {
+    pub(crate) fn validated_ranges(&self) -> Option<&[MemoryRange]> {
         self.validated_ranges.as_deref()
     }
 }
 
-impl CMemorySegment {
+impl MemorySegment {
     pub fn new(base: ProgramExpression, start: ProgramExpression, end: ProgramExpression) -> Self {
         Self {
             base,
@@ -2282,7 +2282,7 @@ impl CMemorySegment {
     }
 }
 
-impl CMemoryRange {
+impl MemoryRange {
     /// Physical identity for separation only. This does not carry permission
     /// to access the bytes and must not be used for ownership or containment.
     pub(crate) fn spatial_key(&self) -> Self {
@@ -2509,7 +2509,7 @@ impl CMemoryRange {
     /// count is the unsigned 64-bit `(end - start) * width`, written by
     /// [`wide_loadable_byte_count`] and read back by
     /// [`wide_loadable_element_count`].
-    pub(crate) fn loadable_fact(&self, memory: &CMemory) -> Proposition {
+    pub(crate) fn loadable_fact(&self, memory: &Memory) -> Proposition {
         match self.wide_bounds() {
             None => {
                 let (base, bytes) = self.byte_footprint();
@@ -2557,7 +2557,7 @@ impl CMemoryRange {
 
     /// Returns this element-indexed range as a physical byte footprint.
     ///
-    /// `CMemoryRange` deliberately keeps its public bounds in element units:
+    /// `MemoryRange` deliberately keeps its public bounds in element units:
     /// those are the units used by resource clauses such as `p[0..n]`.
     /// Callers that need to compare the actual memory occupied by a range can
     /// use this bounded, derived view without introducing a second resource
@@ -2792,13 +2792,13 @@ impl CMemoryRange {
 }
 
 /// Whether a range or segment based at `base` is
-/// [`CMemoryRange::unnamed_footprint`]: the reserved block is spelled nowhere
+/// [`MemoryRange::unnamed_footprint`]: the reserved block is spelled nowhere
 /// else.
 pub(crate) fn is_unnamed_footprint_base(base: &Pointer) -> bool {
     base.block == super::PointerBlock::Symbolic(UNNAMED_FOOTPRINT_BLOCK)
 }
 
-/// The reserved symbolic block of [`CMemoryRange::unnamed_footprint`]. It is
+/// The reserved symbolic block of [`MemoryRange::unnamed_footprint`]. It is
 /// never allocated to a program value, so no fact constrains it.
 pub(crate) const UNNAMED_FOOTPRINT_BLOCK: super::Variable = super::Variable(u64::MAX - 0x666f_6f74);
 
@@ -2856,7 +2856,7 @@ pub(crate) fn memory_range_element_count_limit(element_width: u32) -> u32 {
 
 /// A range's element count as a term: the same difference
 /// [`memory_range_byte_count`] scales, unscaled.
-pub(crate) fn memory_range_element_count(range: &CMemoryRange) -> MachineTerm {
+pub(crate) fn memory_range_element_count(range: &MemoryRange) -> MachineTerm {
     canonical_subtract(range.end().clone(), range.start().clone())
 }
 
@@ -3131,7 +3131,7 @@ fn collect_stated_loadable_extent_guards(
 /// bound is equivalent to these signed count guards plus forward endpoints.
 /// Byte ranges can span more than `i32::MAX` elements and retain the exact
 /// endpoint form instead.
-pub(crate) fn memory_range_extent_guards(range: &CMemoryRange) -> Vec<Proposition> {
+pub(crate) fn memory_range_extent_guards(range: &MemoryRange) -> Vec<Proposition> {
     if let Some(guards) = wide_memory_range_extent_guards(range) {
         return guards;
     }
@@ -3269,7 +3269,7 @@ pub(crate) fn wide_loadable_element_count(bytes: &MachineTerm, width: u32) -> Op
 /// the range an exact byte offset. A contract that holds the range on entry
 /// is given both, as it is given the 32-bit guards of an `Int32` range; a
 /// caller supplying the range proves them.
-fn wide_memory_range_extent_guards(range: &CMemoryRange) -> Option<Vec<Proposition>> {
+fn wide_memory_range_extent_guards(range: &MemoryRange) -> Option<Vec<Proposition>> {
     let (start, end) = range.wide_bounds()?;
     let limit = i64::MAX as u64 / u64::from(range.element_width());
     Some(vec![
@@ -3286,7 +3286,7 @@ fn wide_memory_range_extent_guards(range: &CMemoryRange) -> Option<Vec<Propositi
 
 /// Equivalent forms retained with an actual held range. The original endpoint
 /// form serves memory reasoning; the signed form is available to proof text.
-pub(crate) fn memory_range_extent_guard_spellings(range: &CMemoryRange) -> Vec<Proposition> {
+pub(crate) fn memory_range_extent_guard_spellings(range: &MemoryRange) -> Vec<Proposition> {
     if let Some(guards) = wide_memory_range_extent_guards(range) {
         return guards;
     }
@@ -3305,7 +3305,7 @@ pub(crate) fn memory_range_extent_guard_spellings(range: &CMemoryRange) -> Vec<P
 
 /// Intrinsic bounds of a resource footprint whose admission was established.
 /// A merely stated viewability/separation condition grants no domain evidence.
-pub(crate) fn admitted_memory_range_extent_facts(range: &CMemoryRange) -> Vec<Proposition> {
+pub(crate) fn admitted_memory_range_extent_facts(range: &MemoryRange) -> Vec<Proposition> {
     let mut guards = memory_range_extent_guard_spellings(range);
     guards.extend(range.formation_coverage.iter().cloned());
     if range.typed_carrier
@@ -3366,7 +3366,7 @@ pub(crate) fn stated_separation_extent_guards(proposition: &Proposition) -> Vec<
 /// lowering that owes those guards reads the same ranges back so it can name
 /// a constant-invalid one in its refusal rather than reporting only that a
 /// path disappeared.
-fn stated_separation_memory_ranges(proposition: &Proposition) -> Vec<&CMemoryRange> {
+fn stated_separation_memory_ranges(proposition: &Proposition) -> Vec<&MemoryRange> {
     let mut ranges = Vec::new();
     collect_stated_separation_memory_ranges(proposition, &mut ranges);
     ranges
@@ -3374,7 +3374,7 @@ fn stated_separation_memory_ranges(proposition: &Proposition) -> Vec<&CMemoryRan
 
 fn collect_stated_separation_memory_ranges<'a>(
     proposition: &'a Proposition,
-    ranges: &mut Vec<&'a CMemoryRange>,
+    ranges: &mut Vec<&'a MemoryRange>,
 ) {
     match proposition {
         Proposition::And(left, right) => {
@@ -3386,8 +3386,8 @@ fn collect_stated_separation_memory_ranges<'a>(
             while let Some(resource) = pending.pop() {
                 crate::instrumentation::record_deterministic_work(1);
                 match resource {
-                    CResource::Memory(range) => ranges.push(range),
-                    CResource::Star(pair) => {
+                    Resource::Memory(range) => ranges.push(range),
+                    Resource::Star(pair) => {
                         pending.push(&pair.1);
                         pending.push(&pair.0);
                     }
@@ -3417,12 +3417,12 @@ pub(crate) fn memory_range_byte_count_guards(
     }
 }
 
-impl CFunctionSpecification {
+impl FunctionSpecification {
     pub fn new(
         state: ExecutionState,
         arguments: Vec<ProgramExpression>,
         requires: Vec<Proposition>,
-        outcome: CFunctionOutcome,
+        outcome: FunctionOutcome,
     ) -> Self {
         Self {
             state,
@@ -3444,15 +3444,15 @@ impl CFunctionSpecification {
         &self.requires
     }
 
-    pub fn outcome(&self) -> &CFunctionOutcome {
+    pub fn outcome(&self) -> &FunctionOutcome {
         &self.outcome
     }
 }
 
-impl CFunctionContract {
+impl FunctionContract {
     const PREDICATE_PREFIX: &'static str = "__click_function_contract::";
 
-    pub(crate) fn with_proof_parameters(mut self, parameters: Vec<CResourceSpec>) -> Self {
+    pub(crate) fn with_proof_parameters(mut self, parameters: Vec<ResourceSpec>) -> Self {
         self.interface = self.interface.with_proof_parameters(parameters);
         self
     }
@@ -3472,12 +3472,12 @@ impl CFunctionContract {
     fn from_interface_with_callee_name(
         name: String,
         callee_name: String,
-        interface: CFunctionContractInterface,
+        interface: FunctionContractInterface,
     ) -> Option<Self> {
         // A throwing interface is supported when its exceptional channel is
         // the checked scalar one with pure clauses.
         (interface.verified_direct_contract_supported()
-            && interface.aggregate_return_mode() == CAggregateReturnMode::Copy
+            && interface.aggregate_return_mode() == AggregateReturnMode::Copy
             && interface.construction_parameter().is_none()
             && interface.resource_constructors().is_empty()
             && !name.is_empty())
@@ -3548,7 +3548,7 @@ impl CFunctionContract {
         name.strip_prefix(Self::PREDICATE_PREFIX)
     }
 
-    pub(crate) fn proof_parameters(&self) -> &[CResourceSpec] {
+    pub(crate) fn proof_parameters(&self) -> &[ResourceSpec] {
         self.interface.proof_parameters()
     }
 
@@ -3598,7 +3598,7 @@ impl CFunctionContract {
     }
 
     /// The body-independent interface selected by this nominal contract.
-    pub fn interface(&self) -> &CFunctionContractInterface {
+    pub fn interface(&self) -> &FunctionContractInterface {
         &self.interface
     }
 }
@@ -3654,7 +3654,7 @@ fn statement_contains_internal_throw(statement: &ProgramStatement) -> bool {
     }
 }
 
-impl CExecutionEnvironment {
+impl ExecutionEnvironment {
     pub(crate) fn with_modeled_pthread_binding(
         mut self,
         binding: Option<crate::languages::c::thread_runtime::ModeledPthreadBinding>,
@@ -3665,7 +3665,7 @@ impl CExecutionEnvironment {
 
     pub(crate) fn with_modeled_mutex_definitions(
         mut self,
-        definitions: BTreeMap<String, CCompositeResourceDefinition>,
+        definitions: BTreeMap<String, CompositeResourceDefinition>,
     ) -> Self {
         self.modeled_mutex_definition_list = definitions.values().cloned().collect();
         self.modeled_mutex_definitions = std::sync::Arc::new(definitions);
@@ -3741,7 +3741,7 @@ impl CExecutionEnvironment {
         bindings: BTreeMap<Variable, Variable>,
         type_arguments: BTreeMap<Variable, crate::kernel::ResourceDescription>,
     ) -> Self {
-        self.selected_call_binders = Some(std::sync::Arc::new(CCallBinderTransport {
+        self.selected_call_binders = Some(std::sync::Arc::new(CallBinderTransport {
             function: std::sync::Arc::from(function),
             arity,
             bindings: std::sync::Arc::new(bindings),
@@ -3755,31 +3755,31 @@ impl CExecutionEnvironment {
 
     pub fn with_function(mut self, function: ProgramFunction) -> Self {
         std::sync::Arc::make_mut(&mut self.functions).insert(function.name().to_string(), function);
-        self.variable_index = CExecutionEnvironmentVariableIndex::default();
+        self.variable_index = ExecutionEnvironmentVariableIndex::default();
         self
     }
 
-    pub fn with_function_contract(mut self, contract: CFunctionContract) -> Self {
+    pub fn with_function_contract(mut self, contract: FunctionContract) -> Self {
         std::sync::Arc::make_mut(&mut self.function_contracts)
             .insert(contract.name().to_string(), contract);
-        self.variable_index = CExecutionEnvironmentVariableIndex::default();
+        self.variable_index = ExecutionEnvironmentVariableIndex::default();
         self
     }
 
-    pub(crate) fn get_function_contract(&self, name: &str) -> Option<&CFunctionContract> {
+    pub(crate) fn get_function_contract(&self, name: &str) -> Option<&FunctionContract> {
         self.function_contracts.get(name)
     }
 
-    pub fn with_external_function_rule(mut self, rule: CExternalFunctionRule) -> Self {
+    pub fn with_external_function_rule(mut self, rule: ExternalFunctionRule) -> Self {
         std::sync::Arc::make_mut(&mut self.external_function_rules)
             .insert(rule.function.name().to_string(), rule);
-        self.variable_index = CExecutionEnvironmentVariableIndex::default();
+        self.variable_index = ExecutionEnvironmentVariableIndex::default();
         self
     }
 
     pub(crate) fn without_external_function_rule(mut self, name: &str) -> Self {
         std::sync::Arc::make_mut(&mut self.external_function_rules).remove(name);
-        self.variable_index = CExecutionEnvironmentVariableIndex::default();
+        self.variable_index = ExecutionEnvironmentVariableIndex::default();
         self
     }
 
@@ -3798,26 +3798,26 @@ impl CExecutionEnvironment {
     pub(in crate::kernel) fn get_external_function_rule(
         &self,
         name: &str,
-    ) -> Option<&CExternalFunctionRule> {
+    ) -> Option<&ExternalFunctionRule> {
         self.external_function_rules.get(name)
     }
 
-    pub fn with_verified_function_rule(mut self, rule: CVerifiedFunctionRule) -> Self {
+    pub fn with_verified_function_rule(mut self, rule: VerifiedFunctionRule) -> Self {
         std::sync::Arc::make_mut(&mut self.verified_function_rules)
             .insert(rule.function.name().to_string(), rule);
-        self.variable_index = CExecutionEnvironmentVariableIndex::default();
+        self.variable_index = ExecutionEnvironmentVariableIndex::default();
         self
     }
 
     pub fn with_verified_function_termination_rules(
         mut self,
-        rules: impl IntoIterator<Item = CVerifiedFunctionTerminationRule>,
+        rules: impl IntoIterator<Item = VerifiedFunctionTerminationRule>,
     ) -> Self {
         for rule in rules {
             std::sync::Arc::make_mut(&mut self.verified_function_termination_rules)
                 .insert(rule.function.name().to_string(), rule);
         }
-        self.variable_index = CExecutionEnvironmentVariableIndex::default();
+        self.variable_index = ExecutionEnvironmentVariableIndex::default();
         self
     }
 
@@ -3827,31 +3827,31 @@ impl CExecutionEnvironment {
 
     pub fn without_verified_function_rule(mut self, name: &str) -> Self {
         std::sync::Arc::make_mut(&mut self.verified_function_rules).remove(name);
-        self.variable_index = CExecutionEnvironmentVariableIndex::default();
+        self.variable_index = ExecutionEnvironmentVariableIndex::default();
         self
     }
 
     pub(in crate::kernel) fn get_verified_function_rule(
         &self,
         name: &str,
-    ) -> Option<&CVerifiedFunctionRule> {
+    ) -> Option<&VerifiedFunctionRule> {
         self.verified_function_rules.get(name)
     }
 
     pub(in crate::kernel) fn get_verified_function_termination_rule(
         &self,
         name: &str,
-    ) -> Option<&CVerifiedFunctionTerminationRule> {
+    ) -> Option<&VerifiedFunctionTerminationRule> {
         self.verified_function_termination_rules.get(name)
     }
 
-    pub(crate) fn verified_function_rules(&self) -> Vec<CVerifiedFunctionRule> {
+    pub(crate) fn verified_function_rules(&self) -> Vec<VerifiedFunctionRule> {
         self.verified_function_rules.values().cloned().collect()
     }
 
     pub fn with_verified_loop_rules(
         mut self,
-        rules: impl IntoIterator<Item = CVerifiedLoopRule>,
+        rules: impl IntoIterator<Item = VerifiedLoopRule>,
     ) -> Self {
         // Loop rules keep their own variable indexes, so the environment's
         // index of its other parts stays valid.
@@ -3863,13 +3863,13 @@ impl CExecutionEnvironment {
 
     /// Installs the recursion anchor for the function being certified.
     ///
-    /// There is no public constructor for [`CRecursionAnchor`], so this is
+    /// There is no public constructor for [`RecursionAnchor`], so this is
     /// reached only through
     /// [`crate::kernel::c_execution_environment_with_recursion_anchor`],
     /// which derives the anchor from the function's own declared measure.
-    pub(in crate::kernel) fn with_recursion_anchor(mut self, anchor: CRecursionAnchor) -> Self {
+    pub(in crate::kernel) fn with_recursion_anchor(mut self, anchor: RecursionAnchor) -> Self {
         self.recursion_anchor = Some(std::sync::Arc::new(anchor));
-        self.variable_index = CExecutionEnvironmentVariableIndex::default();
+        self.variable_index = ExecutionEnvironmentVariableIndex::default();
         self
     }
 
@@ -3879,7 +3879,7 @@ impl CExecutionEnvironment {
     /// another.
     pub(crate) fn with_conditional_resource_cases(mut self) -> Self {
         self.allow_conditional_resource_cases = true;
-        self.variable_index = CExecutionEnvironmentVariableIndex::default();
+        self.variable_index = ExecutionEnvironmentVariableIndex::default();
         self
     }
 
@@ -3912,7 +3912,7 @@ impl CExecutionEnvironment {
         })
     }
 
-    pub(in crate::kernel) fn recursion_anchor(&self) -> Option<&CRecursionAnchor> {
+    pub(in crate::kernel) fn recursion_anchor(&self) -> Option<&RecursionAnchor> {
         self.recursion_anchor.as_deref()
     }
 
@@ -3920,7 +3920,7 @@ impl CExecutionEnvironment {
     /// which anchor it was produced under.
     pub(in crate::kernel) fn recursion_anchor_handle(
         &self,
-    ) -> Option<std::sync::Arc<CRecursionAnchor>> {
+    ) -> Option<std::sync::Arc<RecursionAnchor>> {
         self.recursion_anchor.clone()
     }
 
@@ -3962,7 +3962,7 @@ impl CExecutionEnvironment {
     /// different one, would let the summary swallow the call silently, so it
     /// does not apply here. A loop that does not call the anchored function
     /// owes nothing either way and is unaffected.
-    fn loop_rule_answers_for_recursion(&self, rule: &CVerifiedLoopRule) -> bool {
+    fn loop_rule_answers_for_recursion(&self, rule: &VerifiedLoopRule) -> bool {
         let Some(anchor) = self.recursion_anchor() else {
             return true;
         };
@@ -3992,7 +3992,7 @@ impl CExecutionEnvironment {
         state: &ExecutionState,
         statement: &ProgramStatement,
         assumptions: &PureFactContext,
-    ) -> Option<&CVerifiedLoopRule> {
+    ) -> Option<&VerifiedLoopRule> {
         self.verified_loop_rules.for_statement(statement).find(|rule| {
             // Every rule for this loop statement is a candidate, found through
             // the rules' statement index, in the order the rules were added.
@@ -4065,7 +4065,7 @@ impl CExecutionEnvironment {
     }
 }
 
-impl CVerifiedLoopRule {
+impl VerifiedLoopRule {
     pub(crate) fn loop_invariant_correspondence(
         &self,
         path_index: usize,
@@ -4096,14 +4096,14 @@ impl CVerifiedLoopRule {
 
     pub fn with_composite_resource_definitions(
         mut self,
-        definitions: impl IntoIterator<Item = CCompositeResourceDefinition>,
+        definitions: impl IntoIterator<Item = CompositeResourceDefinition>,
     ) -> Self {
         self.composite_resource_definitions.extend(definitions);
         self
     }
 }
 
-impl CTerminationError {
+impl TerminationError {
     pub fn message(&self) -> &str {
         &self.message
     }
@@ -4120,13 +4120,13 @@ impl CTerminationError {
     }
 }
 
-impl std::fmt::Display for CTerminationError {
+impl std::fmt::Display for TerminationError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.message.fmt(formatter)
     }
 }
 
-impl std::error::Error for CTerminationError {}
+impl std::error::Error for TerminationError {}
 
 #[cfg(test)]
 mod guarded_quantified_cell_tests {
@@ -4167,8 +4167,8 @@ mod guarded_quantified_cell_tests {
             right: Box::new(length.clone()),
         });
         assert_eq!(
-            CMemoryRange::guarded_quantified_cells(&wide_cell(&base), index(), &guard, 1),
-            Some(CMemoryRange::new_wide(
+            MemoryRange::guarded_quantified_cells(&wide_cell(&base), index(), &guard, 1),
+            Some(MemoryRange::new_wide(
                 base,
                 MachineTerm::uint64_constant(0),
                 length,
@@ -4190,7 +4190,7 @@ mod guarded_quantified_cell_tests {
             right: length.clone(),
         });
         assert_eq!(
-            CMemoryRange::guarded_quantified_cells(&cell, index(), &signed, 1),
+            MemoryRange::guarded_quantified_cells(&cell, index(), &signed, 1),
             None
         );
         // An upper bound that mentions the binder is not one fixed range.
@@ -4206,7 +4206,7 @@ mod guarded_quantified_cell_tests {
             }),
         });
         assert_eq!(
-            CMemoryRange::guarded_quantified_cells(&cell, index(), &circular, 1),
+            MemoryRange::guarded_quantified_cells(&cell, index(), &circular, 1),
             None
         );
         // A stride other than the read's width is not that range's element.
@@ -4217,7 +4217,7 @@ mod guarded_quantified_cell_tests {
             right: length,
         });
         assert_eq!(
-            CMemoryRange::guarded_quantified_cells(&cell, index(), &bound, 4),
+            MemoryRange::guarded_quantified_cells(&cell, index(), &bound, 4),
             None
         );
         // A base that moves with the binder is not one fixed range.
@@ -4226,7 +4226,7 @@ mod guarded_quantified_cell_tests {
             offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(index()), 1),
         });
         assert_eq!(
-            CMemoryRange::guarded_quantified_cells(&moving, index(), &bound, 1),
+            MemoryRange::guarded_quantified_cells(&moving, index(), &bound, 1),
             None
         );
     }

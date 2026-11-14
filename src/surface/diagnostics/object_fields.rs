@@ -265,7 +265,7 @@ pub(super) fn object_field_spelling(block: &str, offset: u32, width: u32) -> Opt
 }
 
 /// The declared object's name when a range covers exactly its complete ABI storage.
-pub(super) fn object_range_spelling(range: &CMemoryRange) -> Option<String> {
+pub(super) fn object_range_spelling(range: &MemoryRange) -> Option<String> {
     let PointerBlock::Concrete(block) = &range.base().block else {
         return None;
     };

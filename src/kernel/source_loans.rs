@@ -2,7 +2,7 @@
 //! Observation labels remain inert; these plans bind the actual IR operands.
 mod scopes;
 use super::*;
-pub use scopes::CScalarReferenceScope;
+pub use scopes::ScalarReferenceScope;
 pub(crate) use scopes::{ScalarReferenceScopeKey, ScalarReferenceScopePlan};
 use std::sync::Arc;
 
@@ -166,8 +166,8 @@ impl ScalarReferenceSourcePlan {
     }
 }
 
-pub(super) fn source_loan_error(error: loans::LoanRefusal) -> CRuntimeError {
-    CRuntimeError::LoanRefusal(Box::new(error.diagnostic(LoanRefusalOperation::Transition)))
+pub(super) fn source_loan_error(error: loans::LoanRefusal) -> RuntimeError {
+    RuntimeError::LoanRefusal(Box::new(error.diagnostic(LoanRefusalOperation::Transition)))
 }
 
 #[cfg(test)]
@@ -177,8 +177,8 @@ mod tests;
 /// lowering after its immutable-source frontier has been checked. The key is
 /// semantic identity; execution resolves only this invocation's live handle.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct CScalarReferenceEnd(Arc<ScalarReferencePlanKey>);
-impl CScalarReferenceEnd {
+pub struct ScalarReferenceEnd(Arc<ScalarReferencePlanKey>);
+impl ScalarReferenceEnd {
     pub(crate) fn new(key: ScalarReferencePlanKey) -> Self {
         Self(Arc::new(key))
     }

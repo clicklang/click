@@ -26,7 +26,7 @@ fn deep_canonicalization_preserves_numeric_load_and_copy_runs() {
         // A retained observable cell deliberately defeats the generic
         // uniform-source representative argument, even though every
         // minted numeric run value remains an atomic load variable.
-        let source = intern_c_memory(CMemory::new().store(base.clone(), crate::kernel::uint8(7)));
+        let source = intern_c_memory(Memory::new().store(base.clone(), crate::kernel::uint8(7)));
         for mode in [
             RunValueMode::Load,
             RunValueMode::Copy {
@@ -46,7 +46,7 @@ fn deep_canonicalization_preserves_numeric_load_and_copy_runs() {
                     mode.clone(),
                     holes,
                 );
-                let mut memory = CMemory::new();
+                let mut memory = Memory::new();
                 std::sync::Arc::make_mut(&mut memory.cells).add_run(run.clone());
                 let (canonical, work) = crate::instrumentation::measure_deterministic_work(|| {
                     canonical_c_memory_deep(&memory)

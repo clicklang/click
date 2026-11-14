@@ -7,24 +7,24 @@ fn local_pointer() -> Pointer {
     }
 }
 
-fn owned_cell_spec() -> CResourceSpec {
-    CResourceSpec::owned_memory(CMemorySegment::new(
+fn owned_cell_spec() -> ResourceSpec {
+    ResourceSpec::owned_memory(MemorySegment::new(
         c_variable("p"),
         c_int32_literal(0),
         c_int32_literal(1),
     ))
 }
 
-fn uninitialized_cell_spec() -> CResourceSpec {
-    CResourceSpec::owned_memory(
-        CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1))
+fn uninitialized_cell_spec() -> ResourceSpec {
+    ResourceSpec::owned_memory(
+        MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1))
             .with_uninitialized(true),
     )
 }
 
 fn caller_state(pointer: &Pointer) -> ExecutionState {
-    let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own(
-        CResource::Memory(CMemoryRange::new(
+    let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own(
+        Resource::Memory(MemoryRange::new(
             pointer.clone(),
             MachineTerm::constant(0),
             MachineTerm::constant(1),
@@ -32,7 +32,7 @@ fn caller_state(pointer: &Pointer) -> ExecutionState {
     ));
     ExecutionState::new()
         .with_population_creation_tracking()
-        .with_memory(CMemory::new().with_block(pointer.block.clone(), 4))
+        .with_memory(Memory::new().with_block(pointer.block.clone(), 4))
         .with_resource_context(resources)
 }
 
@@ -40,12 +40,12 @@ fn apply(
     function: ProgramFunction,
     state: &ExecutionState,
     pointer: &Pointer,
-) -> Vec<CFunctionPath> {
+) -> Vec<FunctionPath> {
     let environment =
-        CExecutionEnvironment::new().with_verified_function_rule(CVerifiedFunctionRule {
+        ExecutionEnvironment::new().with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: function.clone(),
-            loop_semantics: CLoopSemantics::Verify,
+            loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
             applied_tactics: Default::default(),
         });
@@ -54,7 +54,7 @@ fn apply(
         &function,
         &[c_pointer_value(pointer.clone())],
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment),
+        ExecutionContext::apply_verified_rules(&environment),
         &mut ExecutionBudget::new(),
     )
     .expect("verified call should execute")
@@ -73,8 +73,8 @@ fn an_owning_call_requires_the_caller_to_initialize_the_range() {
     let paths = apply(function, &caller_state(&pointer), &pointer);
     assert!(matches!(
         paths.as_slice(),
-        [CFunctionPath {
-            outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(message)),
+        [FunctionPath {
+            outcome: FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(message)),
             ..
         }] if message.contains("holds its range as initialized")
     ));
@@ -96,7 +96,7 @@ fn owned_write_keeps_an_uninitialized_output_writable() {
     .with_contract(
         Vec::new(),
         Vec::new(),
-        vec![CMemorySegment::new(
+        vec![MemorySegment::new(
             c_variable("p"),
             c_int32_literal(0),
             c_int32_literal(1),
@@ -107,8 +107,8 @@ fn owned_write_keeps_an_uninitialized_output_writable() {
     let paths = apply(function, &caller_state(&pointer), &pointer);
     assert!(matches!(
         paths.as_slice(),
-        [CFunctionPath {
-            outcome: CFunctionOutcome::Return { .. },
+        [FunctionPath {
+            outcome: FunctionOutcome::Return { .. },
             ..
         }]
     ));

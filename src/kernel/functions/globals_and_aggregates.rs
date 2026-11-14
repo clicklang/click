@@ -8,8 +8,7 @@ pub(super) fn initialize_c_function_globals_owned(
     initialize_missing_storage: bool,
 ) -> ExecutionState {
     for literal in function.string_literals() {
-        let slot =
-            CMemory::string_literal_pointer(function.name(), literal.name(), literal.bytes());
+        let slot = Memory::string_literal_pointer(function.name(), literal.name(), literal.bytes());
         if !state.memory.has_block(&slot.block) {
             state.set_memory(
                 state
@@ -36,7 +35,7 @@ pub(super) fn initialize_c_function_globals_owned(
             literal.bytes().len() as u32,
             slot.clone(),
         );
-        let literal_resource = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        let literal_resource = ResourceFact::own_memory(MemoryRange::new_with_element_width(
             slot,
             MachineTerm::constant(0),
             MachineTerm::constant(literal.bytes().len() as u32),
@@ -54,7 +53,7 @@ pub(super) fn initialize_c_function_globals_owned(
         }
     }
     for global in function.global_variables() {
-        let slot = CMemory::global_pointer(global.kernel_name());
+        let slot = Memory::global_pointer(global.kernel_name());
         register_block_alignment(&slot.block, global.c_type().abi_alignment());
         if !state.memory.has_block(&slot.block) {
             state.set_memory(state.memory.clone().with_classed_block_or_read_only(
@@ -116,7 +115,7 @@ pub(super) fn initialize_c_function_globals_owned(
         }
     }
     for global_array in function.global_arrays() {
-        let slot = CMemory::global_pointer(global_array.kernel_name());
+        let slot = Memory::global_pointer(global_array.kernel_name());
         register_block_alignment(&slot.block, global_array.element_type().abi_alignment());
         let bytes = global_array
             .length()
@@ -165,7 +164,7 @@ pub(super) fn initialize_c_function_globals_owned(
         }
     }
     for global_aggregate in function.global_aggregates() {
-        let slot = CMemory::global_pointer(global_aggregate.kernel_name());
+        let slot = Memory::global_pointer(global_aggregate.kernel_name());
         register_block_alignment(&slot.block, global_aggregate.layout().alignment_bytes());
         if !state.memory.has_block(&slot.block) {
             state.set_memory(state.memory.clone().with_classed_block_or_read_only(
@@ -211,7 +210,7 @@ pub(super) fn initialize_c_function_globals_owned(
         }
     }
     for global_aggregate_array in function.global_aggregate_arrays() {
-        let slot = CMemory::global_pointer(global_aggregate_array.kernel_name());
+        let slot = Memory::global_pointer(global_aggregate_array.kernel_name());
         register_block_alignment(
             &slot.block,
             global_aggregate_array.layout().alignment_bytes(),
@@ -270,7 +269,7 @@ pub(super) fn initialize_c_function_globals_owned(
         }
     }
     for static_local in function.static_variables() {
-        let slot = CMemory::static_pointer(function.name(), static_local.kernel_name());
+        let slot = Memory::static_pointer(function.name(), static_local.kernel_name());
         register_block_alignment(&slot.block, static_local.c_type().abi_alignment());
         if !state.memory.has_block(&slot.block) {
             state.set_memory(state.memory.clone().with_block_or_read_only(
@@ -342,7 +341,7 @@ pub(super) fn initialize_c_function_globals_owned(
         }
     }
     for static_array in function.static_arrays() {
-        let slot = CMemory::static_pointer(function.name(), static_array.kernel_name());
+        let slot = Memory::static_pointer(function.name(), static_array.kernel_name());
         register_block_alignment(&slot.block, static_array.element_type().abi_alignment());
         let bytes = static_array
             .length()
@@ -390,7 +389,7 @@ pub(super) fn initialize_c_function_globals_owned(
         }
     }
     for static_aggregate in function.static_aggregates() {
-        let slot = CMemory::static_pointer(function.name(), static_aggregate.kernel_name());
+        let slot = Memory::static_pointer(function.name(), static_aggregate.kernel_name());
         register_block_alignment(&slot.block, static_aggregate.layout().alignment_bytes());
         if !state.memory.has_block(&slot.block) {
             state.set_memory(state.memory.clone().with_block_or_read_only(
@@ -435,7 +434,7 @@ pub(super) fn initialize_c_function_globals_owned(
         }
     }
     for static_aggregate_array in function.static_aggregate_arrays() {
-        let slot = CMemory::static_pointer(function.name(), static_aggregate_array.kernel_name());
+        let slot = Memory::static_pointer(function.name(), static_aggregate_array.kernel_name());
         register_block_alignment(
             &slot.block,
             static_aggregate_array.layout().alignment_bytes(),
@@ -496,10 +495,10 @@ pub(super) fn initialize_c_function_globals_owned(
 }
 
 pub(super) fn materialize_symbolic_cell(
-    memory: CMemory,
+    memory: Memory,
     pointer: &Pointer,
     c_type: ProgramType,
-) -> CMemory {
+) -> Memory {
     let symbolic_base = symbolic_memory_base(&memory, pointer);
     if let Some(value) =
         crate::kernel::eval::symbolic_storage_cell_value(&symbolic_base, pointer, c_type, true)
@@ -522,13 +521,13 @@ pub(super) fn symbolic_pointer_placeholder(value: &ProgramValue, storage: &Point
 /// backing memory contains only the storage block, so resource lowering and
 /// ordinary function entry derive the same load identity even when the
 /// caller has not yet materialized the surrounding object.
-pub(in crate::kernel) fn symbolic_memory_base(memory: &CMemory, pointer: &Pointer) -> CMemory {
+pub(in crate::kernel) fn symbolic_memory_base(memory: &Memory, pointer: &Pointer) -> Memory {
     let size = memory
         .blocks
         .get(&pointer.block)
         .and_then(|block| block.size().as_const())
         .expect("symbolic static-storage block has a constant size");
-    let base = CMemory::new().with_block_without_derivation(pointer.block.clone(), size);
+    let base = Memory::new().with_block_without_derivation(pointer.block.clone(), size);
     // The base's block is the storage's, declared class included; otherwise
     // the storage's own snapshots and this base would name its loads apart.
     match memory.declared_class(pointer) {
@@ -542,15 +541,15 @@ pub(in crate::kernel) fn symbolic_memory_base(memory: &CMemory, pointer: &Pointe
 /// the elements the initializer wrote rather than the declared length: the
 /// elements holding the default are one constant [`CellRun`], and the
 /// written ones are stored over it. Where a run is refused
-/// ([`CMemory::with_constant_run`]) every element is stored one by one.
+/// ([`Memory::with_constant_run`]) every element is stored one by one.
 ///
 /// [`CellRun`]: crate::kernel::primitives::CellRun
 pub(super) fn store_array_contents(
-    mut memory: CMemory,
+    mut memory: Memory,
     base: &Pointer,
     element_type: ProgramType,
-    contents: &crate::kernel::CArrayContents,
-) -> CMemory {
+    contents: &crate::kernel::ArrayContents,
+) -> Memory {
     let element =
         |index: u32| base.offset_by_bytes(index.saturating_mul(element_type.byte_width()));
     if contents.has_default_elements() {
@@ -593,11 +592,11 @@ pub(super) fn store_array_contents(
 ///
 /// [`CellRun`]: crate::kernel::primitives::CellRun
 pub(super) fn materialize_symbolic_array(
-    mut memory: CMemory,
+    mut memory: Memory,
     base: &Pointer,
     element_type: ProgramType,
     length: u32,
-) -> CMemory {
+) -> Memory {
     // Only an element type with an entry value is a run's: the others leave
     // no cell.
     let has_value = element_type.is_pointer()
@@ -648,10 +647,10 @@ pub(super) fn materialize_symbolic_array(
 }
 
 pub(super) fn materialize_symbolic_aggregate_fields(
-    mut memory: CMemory,
+    mut memory: Memory,
     base: &Pointer,
-    layout: &CAggregateLayout,
-) -> CMemory {
+    layout: &AggregateLayout,
+) -> Memory {
     for field in layout.fields() {
         let field_base = base.offset_by_bytes(field.offset_bytes());
         match field.c_type() {
@@ -736,7 +735,7 @@ pub(super) fn symbolic_storage_has_value(c_type: ProgramType) -> bool {
 /// element of an inline scalar array field. `None` for a layout with unions
 /// or with a field kind that routine does not name this way.
 pub(super) fn symbolic_aggregate_cells(
-    layout: &CAggregateLayout,
+    layout: &AggregateLayout,
 ) -> Option<Vec<(u32, ProgramType)>> {
     if !layout.unions().is_empty() {
         return None;
@@ -784,11 +783,11 @@ pub(super) fn symbolic_aggregate_cells(
 ///
 /// [`CellRun`]: crate::kernel::primitives::CellRun
 pub(super) fn materialize_symbolic_aggregate_array(
-    mut memory: CMemory,
+    mut memory: Memory,
     base: &Pointer,
-    layout: &CAggregateLayout,
+    layout: &AggregateLayout,
     length: u32,
-) -> CMemory {
+) -> Memory {
     if let Some(cells) = symbolic_aggregate_cells(layout)
         && !cells.is_empty()
         && cells.len() <= length as usize
@@ -841,7 +840,7 @@ pub(super) fn materialize_symbolic_aggregate_array(
 /// the zero every element holds. A field kind with no modeled zero is left
 /// out, as it is left without a cell. Unions are not included.
 pub(super) fn aggregate_zero_fields(
-    layout: &CAggregateLayout,
+    layout: &AggregateLayout,
 ) -> Vec<(u32, u32, u32, ProgramValue)> {
     let mut zero_fields = Vec::with_capacity(layout.fields().len());
     for field in layout.fields() {
@@ -983,10 +982,10 @@ pub(super) fn aggregate_zero_fields(
 }
 
 pub(super) fn zero_aggregate_fields(
-    mut memory: CMemory,
+    mut memory: Memory,
     base: &Pointer,
-    layout: &CAggregateLayout,
-) -> CMemory {
+    layout: &AggregateLayout,
+) -> Memory {
     for (field_offset, element_count, element_width, zero) in aggregate_zero_fields(layout) {
         for index in 0..element_count {
             if crate::instrumentation::deadline_exceeded() {
@@ -1036,10 +1035,10 @@ pub(super) fn zero_union_member_value(c_type: ProgramType) -> Option<ProgramValu
 }
 
 pub(super) fn initialize_aggregate_fields(
-    mut memory: CMemory,
+    mut memory: Memory,
     base: &Pointer,
-    initializers: &[CAggregateInitializer],
-) -> CMemory {
+    initializers: &[AggregateInitializer],
+) -> Memory {
     for initializer in initializers {
         memory = memory.store(
             base.offset_by_bytes(initializer.offset_bytes()),
@@ -1058,9 +1057,9 @@ pub(super) fn initialize_aggregate_fields(
 /// struct count times the layout. `None` for a layout with unions, whose
 /// zero views are typed overlays a run does not stand for.
 pub(super) fn aggregate_array_zero_runs(
-    layout: &CAggregateLayout,
+    layout: &AggregateLayout,
     length: u32,
-) -> Option<Vec<CConstantRun>> {
+) -> Option<Vec<ConstantRun>> {
     if !layout.unions().is_empty() || layout.size_bytes() == 0 {
         return None;
     }
@@ -1074,7 +1073,7 @@ pub(super) fn aggregate_array_zero_runs(
                 if crate::instrumentation::deadline_exceeded() {
                     return None;
                 }
-                runs.push(CConstantRun {
+                runs.push(ConstantRun {
                     offset: field_offset.checked_add(index.checked_mul(element_width)?)?,
                     stride,
                     count: length,
@@ -1086,7 +1085,7 @@ pub(super) fn aggregate_array_zero_runs(
                 if crate::instrumentation::deadline_exceeded() {
                     return None;
                 }
-                runs.push(CConstantRun {
+                runs.push(ConstantRun {
                     offset: element.checked_mul(stride)?.checked_add(field_offset)?,
                     stride: element_width,
                     count: element_count,
@@ -1099,11 +1098,11 @@ pub(super) fn aggregate_array_zero_runs(
 }
 
 pub(super) fn zero_aggregate_array_fields(
-    mut memory: CMemory,
+    mut memory: Memory,
     base: &Pointer,
-    layout: &CAggregateLayout,
+    layout: &AggregateLayout,
     length: u32,
-) -> CMemory {
+) -> Memory {
     if let Some(runs) = aggregate_array_zero_runs(layout, length) {
         match memory.with_constant_runs(base, &runs) {
             Ok(filled) => return filled,
@@ -1137,7 +1136,7 @@ pub(super) fn zero_aggregate_array_fields(
 /// extent. One with symbolic bounds keeps the previous treatment: it is the
 /// caller's own stack object either way, and tightening that case belongs
 /// with the range-arithmetic work rather than here.
-pub(super) fn local_view_range_within_block(range: &CMemoryRange, memory: &CMemory) -> bool {
+pub(super) fn local_view_range_within_block(range: &MemoryRange, memory: &Memory) -> bool {
     // Signed, both endpoints. `as_const` answers `u32`, so a start of `-1`
     // arrived as `4294967295` and `end <= start` short-circuited to "in
     // bounds" for every range that begins below its block — the exact
@@ -1170,7 +1169,7 @@ pub(super) fn aggregate_argument_read_refusal(
     parameters: &[ProgramParameter],
     values: &[ProgramValue],
     assumptions: &PureFactContext,
-) -> Option<CFunctionOutcome> {
+) -> Option<FunctionOutcome> {
     for (parameter, value) in parameters.iter().zip(values) {
         let Some(layout) = parameter.aggregate_layout() else {
             continue;
@@ -1186,7 +1185,7 @@ pub(super) fn aggregate_argument_read_refusal(
             &[],
             assumptions,
         ) {
-            return Some(CFunctionOutcome::UndefinedBehavior(refusal));
+            return Some(FunctionOutcome::UndefinedBehavior(refusal));
         }
         // Actual calls use the same read boundary as ordinary aggregate
         // assignment. Entry images are evaluated values, not caller reads.
@@ -1196,15 +1195,15 @@ pub(super) fn aggregate_argument_read_refusal(
             layout,
             assumptions,
         ) {
-            return Some(CFunctionOutcome::RuntimeError(
-                CRuntimeError::MissingResource {
+            return Some(FunctionOutcome::RuntimeError(
+                RuntimeError::MissingResource {
                     resource: Box::new(resource),
                 },
             ));
         }
         if aggregate_copy_reads_uninitialized(&state.memory, source.pointer(), layout) {
-            return Some(CFunctionOutcome::UndefinedBehavior(
-                CUndefinedBehavior::UninitializedRead,
+            return Some(FunctionOutcome::UndefinedBehavior(
+                UndefinedBehavior::UninitializedRead,
             ));
         }
     }
@@ -1219,9 +1218,9 @@ pub(super) fn aggregate_argument_read_refusal(
 /// uninitialized read instead, matching what member-wise assignment reports
 /// through the ordinary load path.
 pub(super) fn aggregate_copy_reads_uninitialized(
-    memory: &CMemory,
+    memory: &Memory,
     source: &Pointer,
-    layout: &CAggregateLayout,
+    layout: &AggregateLayout,
 ) -> bool {
     // Mirror the carried-field classification in `copy_aggregate_fields`: a
     // field type this copy cannot carry drops the destination cells instead
@@ -1336,7 +1335,7 @@ pub(super) fn aggregate_copy_reads_uninitialized(
 /// anything else (external or symbolic memory) reads back as an unconstrained
 /// symbolic load rather than stale storage.
 pub(super) fn uninitialized_aggregate_copy_source_cell(
-    memory: &CMemory,
+    memory: &Memory,
     source_field: &Pointer,
     element_type: ProgramType,
 ) -> bool {
@@ -1373,7 +1372,7 @@ pub(super) fn uninitialized_aggregate_copy_source_cell(
 /// same: the copy carries its unknown value as the typed load of the source,
 /// as for external storage, so the destination is initialized too.
 pub(super) fn aggregate_copy_source_holds_nothing(
-    memory: &CMemory,
+    memory: &Memory,
     source_field: &Pointer,
     element_type: ProgramType,
 ) -> bool {
@@ -1392,13 +1391,13 @@ pub(super) fn aggregate_copy_source_holds_nothing(
 /// `copy_aggregate_fields` is deliberately module-private; new call sites in
 /// other modules must use this checked form.
 pub(in crate::kernel) fn copy_aggregate_fields_checked(
-    memory: CMemory,
+    memory: Memory,
     source: &Pointer,
     destination: &Pointer,
-    layout: &CAggregateLayout,
-) -> Result<CMemory, CUndefinedBehavior> {
+    layout: &AggregateLayout,
+) -> Result<Memory, UndefinedBehavior> {
     if aggregate_copy_reads_uninitialized(&memory, source, layout) {
-        return Err(CUndefinedBehavior::UninitializedRead);
+        return Err(UndefinedBehavior::UninitializedRead);
     }
     Ok(copy_aggregate_fields(memory, source, destination, layout))
 }
@@ -1408,11 +1407,11 @@ pub(in crate::kernel) fn copy_aggregate_fields_checked(
 // reported. Actual call arguments are checked before binding; entry proof
 // images use the raw form because their incoming aggregate values are evaluated.
 pub(super) fn copy_aggregate_fields(
-    mut memory: CMemory,
+    mut memory: Memory,
     source: &Pointer,
     destination: &Pointer,
-    layout: &CAggregateLayout,
-) -> CMemory {
+    layout: &AggregateLayout,
+) -> Memory {
     for field in layout.fields() {
         if let ProgramType::UInt32Array(count) = field.c_type() {
             let source_field = source.offset_by_bytes(field.offset_bytes());
@@ -1658,7 +1657,7 @@ pub(super) fn copy_aggregate_fields(
 }
 
 pub(super) fn copy_aggregate_union_member(
-    memory: &CMemory,
+    memory: &Memory,
     source_field: &Pointer,
     element_type: ProgramType,
 ) -> Option<ProgramValue> {

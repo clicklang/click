@@ -3745,7 +3745,7 @@ fn trace_statement_head(statement: &ProgramStatement) -> String {
 /// printer accepts an offset from any parameter, which can turn a `visited`
 /// view into `left[(v100002-v100000)..]` even though `visited` is available.
 fn trace_resource_fact(
-    fact: &CResourceFact,
+    fact: &ResourceFact,
     context: &ExecutionProofContext<'_>,
     reached: &ExecutionState,
 ) -> String {
@@ -4042,7 +4042,7 @@ fn trace_function_pointer_load(
     else {
         return None;
     };
-    let CStatementOutcome::Normal(after) = outcome else {
+    let StatementOutcome::Normal(after) = outcome else {
         return None;
     };
     let value = after.scalar_local_value(name)?;

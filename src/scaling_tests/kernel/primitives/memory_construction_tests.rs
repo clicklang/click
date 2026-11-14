@@ -9,7 +9,7 @@ fn construction_recording_cost_is_independent_of_snapshot_size() {
     let _session = crate::kernel::VerificationSession::enter();
     let mut costs = Vec::new();
     for size in [16, 64, 256, 1024] {
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         for i in 0..size {
             memory = memory.store(
                 Pointer {
@@ -20,7 +20,7 @@ fn construction_recording_cost_is_independent_of_snapshot_size() {
             );
         }
         let (_, cost) = crate::instrumentation::measure_deterministic_work(|| {
-            memory.record_diagnostic_transform("diagnostic test", vec![CMemory::new()], Vec::new());
+            memory.record_diagnostic_transform("diagnostic test", vec![Memory::new()], Vec::new());
         });
         costs.push(cost);
     }

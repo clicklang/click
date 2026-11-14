@@ -4008,13 +4008,13 @@ mod shared_read_equality_rule_tests {
             ConditionTerm::signed_less_than(read_index, write_index),
             true,
         );
-        let before = CMemory::new().with_block("selected-word", 64);
+        let before = Memory::new().with_block("selected-word", 64);
         let after = before.clone().store_with_context(
             written,
             ProgramValue::Int32(MachineTerm::constant(9)),
             &context,
         );
-        let read = |memory: CMemory, at: &Pointer| {
+        let read = |memory: Memory, at: &Pointer| {
             let memory = crate::kernel::intern_c_memory(memory);
             MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
                 &memory,
@@ -4122,7 +4122,7 @@ mod shared_read_order_bridge_tests {
         crate::kernel::eval::declare_load_access_width(&pointer, 4);
         let separation = ConditionTerm::signed_less_than(read_index, write_index);
         let separated = PureFactContext::new().assume_condition(separation, true);
-        let before = CMemory::new().with_block("order-read-bridge", 64);
+        let before = Memory::new().with_block("order-read-bridge", 64);
         let after = before.clone().store_with_context(
             write,
             ProgramValue::Int32(MachineTerm::constant(9)),

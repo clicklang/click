@@ -61,7 +61,7 @@ pub(super) fn describe_derivation_failure(
     proposition: &Proposition,
     available: &[Proposition],
     state: &ExecutionState,
-    environment: &CExecutionEnvironment,
+    environment: &ExecutionEnvironment,
     predicate_environment: Option<&PredicateEnvironment>,
 ) -> String {
     let (parameters, arguments) = crate::surface::diagnostics::local_naming_tables(state);
@@ -89,7 +89,7 @@ pub(super) fn describe_derivation_failure(
     } else if matches!(
         proposition,
         Proposition::Predicate { name, .. }
-            if crate::kernel::CFunctionContract::surface_name_from_predicate(name).is_some()
+            if crate::kernel::FunctionContract::surface_name_from_predicate(name).is_some()
     ) {
         // A named-contract prerequisite the kernel refused is where the
         // automatic formation route ends. Print the explicit theorem that
@@ -125,7 +125,7 @@ pub(super) fn describe_statement_prerequisite_failure(
     path_facts: &[Proposition],
     state: &ExecutionState,
     statement: &ProgramStatement,
-    environment: &CExecutionEnvironment,
+    environment: &ExecutionEnvironment,
     predicate_environment: Option<&PredicateEnvironment>,
 ) -> String {
     // The context records a path fact in derived forms too (an unsigned
@@ -342,12 +342,7 @@ pub(in crate::surface) fn asserted_condition_goal(
     evaluation
         .paths()
         .iter()
-        .filter(|path| {
-            matches!(
-                path.outcome(),
-                crate::kernel::CConditionOutcome::Value(true)
-            )
-        })
+        .filter(|path| matches!(path.outcome(), crate::kernel::ConditionOutcome::Value(true)))
         .find_map(|path| {
             path.facts()
                 .iter()

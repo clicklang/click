@@ -210,7 +210,7 @@ impl ResourceContext {
     pub(super) fn advance_observable_rekey(
         &mut self,
         previous: &std::sync::Arc<ResourceContextStorage>,
-        fact: &CResourceFact,
+        fact: &ResourceFact,
     ) {
         self.advance_observable_projection(previous, false, |_, composition| {
             if composition.storage.index.exact.contains_key(fact)
@@ -291,9 +291,9 @@ impl ResourceContext {
 mod tests {
     use super::*;
 
-    fn owner(name: &str) -> CResourceFact {
-        CResourceFact::own_memory(CMemoryRange::new(
-            CMemory::local_pointer(name),
+    fn owner(name: &str) -> ResourceFact {
+        ResourceFact::own_memory(MemoryRange::new(
+            Memory::local_pointer(name),
             0u32.into(),
             1u32.into(),
         ))
@@ -319,8 +319,8 @@ mod tests {
         crate::kernel::set_never_address_taken_locals(BTreeSet::from(["hidden".into()]));
         let hidden = owner("hidden");
         let addressed = owner("addressed");
-        let hidden_view = CResourceFact::view_token("hidden_view".into(), Vec::new());
-        let addressed_view = CResourceFact::view_token("addressed_view".into(), Vec::new());
+        let hidden_view = ResourceFact::view_token("hidden_view".into(), Vec::new());
+        let addressed_view = ResourceFact::view_token("addressed_view".into(), Vec::new());
         let root = ResourceContext::new().unchecked_with_fact(addressed.clone());
         check(&root);
         let private_branch = root
@@ -403,10 +403,12 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         crate::kernel::set_never_address_taken_locals(BTreeSet::from(["hidden".into()]));
         let addressed = owner("addressed");
-        let addressed_view = CResourceFact::view_token("addressed_view".into(), Vec::new());
-        let mut context = ResourceContext::new().unchecked_with_facts(
-            (0..64).map(|index| CResourceFact::own_token(format!("unrelated_{index}"), Vec::new())),
-        );
+        let addressed_view = ResourceFact::view_token("addressed_view".into(), Vec::new());
+        let mut context =
+            ResourceContext::new()
+                .unchecked_with_facts((0..64).map(|index| {
+                    ResourceFact::own_token(format!("unrelated_{index}"), Vec::new())
+                }));
         let shares_source = |context: &ResourceContext| {
             std::sync::Arc::ptr_eq(&context.observable_composition().storage, &context.storage)
         };

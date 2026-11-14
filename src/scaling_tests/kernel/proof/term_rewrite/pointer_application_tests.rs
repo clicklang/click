@@ -84,7 +84,7 @@ fn pure_pointer_legacy_scalar_substitution_visits_the_shared_dag_once() {
 #[test]
 fn full_pointer_substitution_visits_shared_read_origins_once() {
     let _session = VerificationSession::enter();
-    let memory = intern_c_memory(CMemory::new());
+    let memory = intern_c_memory(Memory::new());
     let p = PointerValue::new(Pointer::symbolic(Variable(810)), ProgramType::Int32Pointer);
     let q = PointerValue::new(Pointer::symbolic(Variable(811)), ProgramType::Int32Pointer);
     let mut costs = Vec::new();
@@ -121,7 +121,7 @@ fn full_pointer_resource_relationship_rewriting_scales_with_its_arguments() {
     let mut samples = Vec::new();
     for size in [16usize, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = intern_c_memory(CMemory::new());
+        let memory = intern_c_memory(Memory::new());
         let source = PointerValue::from_read(
             Pointer::symbolic(Variable(425_100)),
             ProgramType::Int32Pointer,
@@ -133,13 +133,13 @@ fn full_pointer_resource_relationship_rewriting_scales_with_its_arguments() {
             ProgramType::Int32Pointer,
         );
         let relationship = |value: &PointerValue| Proposition::CResourceSeparate {
-            left: Box::new(CResource::Memory(CMemoryRange::from_pointer_value(
+            left: Box::new(Resource::Memory(MemoryRange::from_pointer_value(
                 value,
                 0u32.into(),
                 1u32.into(),
                 4,
             ))),
-            right: Box::new(CResource::Composite {
+            right: Box::new(Resource::Composite {
                 name: "many".into(),
                 arguments: vec![AlgebraicValue::C(ProgramValue::Pointer(value.clone())); size]
                     .into(),

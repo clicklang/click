@@ -36,7 +36,7 @@ fn specification_pointer_values_do_not_adopt_fact_supplied_bounds() {
             assert_eq!(paths.len(), 1);
             assert_eq!(
                 paths[0].outcome,
-                CExpressionOutcome::Value(ProgramValue::Pointer(value.clone())),
+                ExpressionOutcome::Value(ProgramValue::Pointer(value.clone())),
                 "{expression:?}",
             );
         }
@@ -396,7 +396,7 @@ fn floating_point_constant_conversions_round_in_integer_space() {
             &Proposition::CExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: CExpressionOutcome::Value(expected),
+                outcome: ExpressionOutcome::Value(expected),
             }
         );
     }
@@ -430,7 +430,7 @@ fn floating_point_to_integer_conversion_truncates_and_rejects_invalid_values() {
             &Proposition::CExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: CExpressionOutcome::Value(expected),
+                outcome: ExpressionOutcome::Value(expected),
             }
         );
     }
@@ -448,7 +448,7 @@ fn floating_point_to_integer_conversion_truncates_and_rejects_invalid_values() {
             &Proposition::CExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                outcome: ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch),
             }
         );
     }
@@ -467,7 +467,7 @@ fn floating_point_conditions_follow_ieee_ordering_and_classification() {
             .peel_implications()
         {
             Proposition::CConditionEvaluates {
-                outcome: CConditionOutcome::Value(value),
+                outcome: ConditionOutcome::Value(value),
                 ..
             } => *value,
             proposition => panic!("unexpected concrete float condition {proposition:?}"),
@@ -529,19 +529,19 @@ fn floating_point_conditions_follow_ieee_ordering_and_classification() {
     );
 
     let classifications = [
-        (1.0f32.to_bits(), CFloatClassification::Finite),
-        (f32::INFINITY.to_bits(), CFloatClassification::Infinite),
-        (0, CFloatClassification::Zero),
-        (1, CFloatClassification::Subnormal),
-        (0x7fc0_0000, CFloatClassification::Nan),
+        (1.0f32.to_bits(), FloatClassification::Finite),
+        (f32::INFINITY.to_bits(), FloatClassification::Infinite),
+        (0, FloatClassification::Zero),
+        (1, FloatClassification::Subnormal),
+        (0x7fc0_0000, FloatClassification::Nan),
     ];
     for (bits, expected_classification) in classifications {
         for classification in [
-            CFloatClassification::Finite,
-            CFloatClassification::Infinite,
-            CFloatClassification::Zero,
-            CFloatClassification::Subnormal,
-            CFloatClassification::Nan,
+            FloatClassification::Finite,
+            FloatClassification::Infinite,
+            FloatClassification::Zero,
+            FloatClassification::Subnormal,
+            FloatClassification::Nan,
         ] {
             assert_eq!(
                 evaluate(c_float_classification(
@@ -549,14 +549,14 @@ fn floating_point_conditions_follow_ieee_ordering_and_classification() {
                     classification,
                 )),
                 match expected_classification {
-                    CFloatClassification::Finite => classification == CFloatClassification::Finite,
-                    CFloatClassification::Zero => matches!(
+                    FloatClassification::Finite => classification == FloatClassification::Finite,
+                    FloatClassification::Zero => matches!(
                         classification,
-                        CFloatClassification::Finite | CFloatClassification::Zero
+                        FloatClassification::Finite | FloatClassification::Zero
                     ),
-                    CFloatClassification::Subnormal => matches!(
+                    FloatClassification::Subnormal => matches!(
                         classification,
-                        CFloatClassification::Finite | CFloatClassification::Subnormal
+                        FloatClassification::Finite | FloatClassification::Subnormal
                     ),
                     _ => classification == expected_classification,
                 }
@@ -587,25 +587,25 @@ fn symbolic_floating_conditions_split_and_preserve_float_truthiness() {
             c_float32_literal(1.0f32.to_bits()),
         )),
         BTreeSet::from([
-            CConditionOutcome::Value(false),
-            CConditionOutcome::Value(true),
+            ConditionOutcome::Value(false),
+            ConditionOutcome::Value(true),
         ])
     );
     assert_eq!(
         outcomes(c_float_classification(
             c_variable("value"),
-            CFloatClassification::Nan,
+            FloatClassification::Nan,
         )),
         BTreeSet::from([
-            CConditionOutcome::Value(false),
-            CConditionOutcome::Value(true),
+            ConditionOutcome::Value(false),
+            ConditionOutcome::Value(true),
         ])
     );
     assert_eq!(
         outcomes(c_variable("value")),
         BTreeSet::from([
-            CConditionOutcome::Value(false),
-            CConditionOutcome::Value(true),
+            ConditionOutcome::Value(false),
+            ConditionOutcome::Value(true),
         ])
     );
 }
@@ -627,7 +627,7 @@ fn floating_point_arithmetic_rounds_both_widths_in_integer_space() {
             c_float32_literal(1.0f32.to_bits()),
             c_float32_literal(2.0f32.to_bits()),
         )),
-        CExpressionOutcome::Value(ProgramValue::Float32(MachineTerm::constant(
+        ExpressionOutcome::Value(ProgramValue::Float32(MachineTerm::constant(
             3.0f32.to_bits(),
         )))
     );
@@ -636,7 +636,7 @@ fn floating_point_arithmetic_rounds_both_widths_in_integer_space() {
             c_float32_literal(1.0f32.to_bits()),
             c_float32_literal(2.0f32.to_bits()),
         )),
-        CExpressionOutcome::Value(ProgramValue::Float32(MachineTerm::constant(
+        ExpressionOutcome::Value(ProgramValue::Float32(MachineTerm::constant(
             (-1.0f32).to_bits(),
         )))
     );
@@ -645,7 +645,7 @@ fn floating_point_arithmetic_rounds_both_widths_in_integer_space() {
             c_float32_literal(1.5f32.to_bits()),
             c_float32_literal(2.0f32.to_bits()),
         )),
-        CExpressionOutcome::Value(ProgramValue::Float32(MachineTerm::constant(
+        ExpressionOutcome::Value(ProgramValue::Float32(MachineTerm::constant(
             3.0f32.to_bits(),
         )))
     );
@@ -654,7 +654,7 @@ fn floating_point_arithmetic_rounds_both_widths_in_integer_space() {
             c_float32_literal(3.0f32.to_bits()),
             c_float32_literal(2.0f32.to_bits()),
         )),
-        CExpressionOutcome::Value(ProgramValue::Float32(MachineTerm::constant(
+        ExpressionOutcome::Value(ProgramValue::Float32(MachineTerm::constant(
             1.5f32.to_bits(),
         )))
     );
@@ -664,7 +664,7 @@ fn floating_point_arithmetic_rounds_both_widths_in_integer_space() {
             c_float64_literal(1.0f64.to_bits()),
             c_float64_literal(2.0f64.to_bits()),
         )),
-        CExpressionOutcome::Value(ProgramValue::Float64(MachineTerm::uint64_constant(
+        ExpressionOutcome::Value(ProgramValue::Float64(MachineTerm::uint64_constant(
             3.0f64.to_bits(),
         )))
     );
@@ -673,7 +673,7 @@ fn floating_point_arithmetic_rounds_both_widths_in_integer_space() {
             c_float64_literal(1.5f64.to_bits()),
             c_float64_literal(2.0f64.to_bits()),
         )),
-        CExpressionOutcome::Value(ProgramValue::Float64(MachineTerm::uint64_constant(
+        ExpressionOutcome::Value(ProgramValue::Float64(MachineTerm::uint64_constant(
             3.0f64.to_bits(),
         )))
     );
@@ -682,17 +682,17 @@ fn floating_point_arithmetic_rounds_both_widths_in_integer_space() {
             c_float64_literal(3.0f64.to_bits()),
             c_float64_literal(2.0f64.to_bits()),
         )),
-        CExpressionOutcome::Value(ProgramValue::Float64(MachineTerm::uint64_constant(
+        ExpressionOutcome::Value(ProgramValue::Float64(MachineTerm::uint64_constant(
             1.5f64.to_bits(),
         )))
     );
     assert_eq!(
         evaluate(c_float_negate(c_float32_literal(0x8000_0000))),
-        CExpressionOutcome::Value(ProgramValue::Float32(MachineTerm::constant(0)))
+        ExpressionOutcome::Value(ProgramValue::Float32(MachineTerm::constant(0)))
     );
     assert_eq!(
         evaluate(c_float_negate(c_float64_literal(0))),
-        CExpressionOutcome::Value(ProgramValue::Float64(MachineTerm::uint64_constant(
+        ExpressionOutcome::Value(ProgramValue::Float64(MachineTerm::uint64_constant(
             0x8000_0000_0000_0000,
         )))
     );
@@ -710,9 +710,9 @@ fn floating_point_arithmetic_preserves_ieee_exceptions_and_ties() {
         }
     };
     let f32_value =
-        |bits| CExpressionOutcome::Value(ProgramValue::Float32(MachineTerm::constant(bits)));
+        |bits| ExpressionOutcome::Value(ProgramValue::Float32(MachineTerm::constant(bits)));
     let f64_value =
-        |bits| CExpressionOutcome::Value(ProgramValue::Float64(MachineTerm::uint64_constant(bits)));
+        |bits| ExpressionOutcome::Value(ProgramValue::Float64(MachineTerm::uint64_constant(bits)));
 
     // The halfway case rounds to the even significand; an exact ulp reaches
     // the next representable value.
@@ -835,7 +835,7 @@ fn symbolic_floating_arithmetic_remains_typed_and_opaque() {
     let expression = c_add(c_variable("value"), c_float32_literal(1.0f32.to_bits()));
     let theorem = prove_c_expression_evaluation(state, expression).expect("symbolic float add");
     let Proposition::CExpressionEvaluates {
-        outcome: CExpressionOutcome::Value(ProgramValue::Float32(term)),
+        outcome: ExpressionOutcome::Value(ProgramValue::Float32(term)),
         ..
     } = theorem.proposition()
     else {
@@ -861,7 +861,7 @@ fn mixed_floating_arithmetic_promotes_to_the_wider_or_present_float_type() {
             c_float32_literal(1.5f32.to_bits()),
             c_float64_literal(2.0f64.to_bits()),
         )),
-        CExpressionOutcome::Value(ProgramValue::Float64(MachineTerm::uint64_constant(
+        ExpressionOutcome::Value(ProgramValue::Float64(MachineTerm::uint64_constant(
             3.5f64.to_bits(),
         )))
     );
@@ -870,7 +870,7 @@ fn mixed_floating_arithmetic_promotes_to_the_wider_or_present_float_type() {
             c_float32_literal(1.5f32.to_bits()),
             c_int32_literal(2)
         )),
-        CExpressionOutcome::Value(ProgramValue::Float32(MachineTerm::constant(
+        ExpressionOutcome::Value(ProgramValue::Float32(MachineTerm::constant(
             3.5f32.to_bits(),
         )))
     );
@@ -879,7 +879,7 @@ fn mixed_floating_arithmetic_promotes_to_the_wider_or_present_float_type() {
             c_float64_literal(1.0f64.to_bits()),
             c_int32_literal(2),
         )),
-        CExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::constant(1)))
+        ExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::constant(1)))
     );
 }
 
@@ -899,7 +899,7 @@ fn symbolic_float_conversions_remain_typed_and_float_to_integer_is_guarded() {
     )
     .expect("symbolic integer-to-float conversion should evaluate");
     let Proposition::CExpressionEvaluates {
-        outcome: CExpressionOutcome::Value(ProgramValue::Float64(term)),
+        outcome: ExpressionOutcome::Value(ProgramValue::Float64(term)),
         ..
     } = theorem.proposition()
     else {
@@ -913,7 +913,7 @@ fn symbolic_float_conversions_remain_typed_and_float_to_integer_is_guarded() {
     )
     .expect("symbolic float widening conversion should evaluate");
     let Proposition::CExpressionEvaluates {
-        outcome: CExpressionOutcome::Value(ProgramValue::Float64(term)),
+        outcome: ExpressionOutcome::Value(ProgramValue::Float64(term)),
         ..
     } = theorem.proposition()
     else {
@@ -931,7 +931,7 @@ fn symbolic_float_conversions_remain_typed_and_float_to_integer_is_guarded() {
     assert_eq!(paths.len(), 1);
     assert!(matches!(
         paths[0].outcome,
-        CExpressionOutcome::Value(ProgramValue::Int32(
+        ExpressionOutcome::Value(ProgramValue::Int32(
             MachineTerm::PureFunctionApplication { .. }
         ))
     ));
@@ -952,7 +952,7 @@ fn signed_add_overflow_is_native_undefined_behavior() {
         &Proposition::CExpressionEvaluates {
             state: Box::new(state),
             expression: c_add(c_int32_literal(2_147_483_647), c_int32_literal(1)),
-            outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::SignedOverflow),
+            outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::SignedOverflow),
         }
     );
 }
@@ -1027,14 +1027,14 @@ fn wide_shift_counts_are_checked_before_narrowing() {
                         assert!(
                             paths
                                 .iter()
-                                .any(|path| matches!(path.outcome, CExpressionOutcome::Value(_))),
+                                .any(|path| matches!(path.outcome, ExpressionOutcome::Value(_))),
                             "in-range count unexpectedly lost its value path"
                         );
                         assert!(
                             !paths.iter().any(|path| matches!(
                                 path.outcome,
-                                CExpressionOutcome::UndefinedBehavior(
-                                    CUndefinedBehavior::InvalidShift
+                                ExpressionOutcome::UndefinedBehavior(
+                                    UndefinedBehavior::InvalidShift
                                 )
                             )),
                             "in-range count was reported as undefined behavior"
@@ -1043,8 +1043,8 @@ fn wide_shift_counts_are_checked_before_narrowing() {
                         assert!(
                             paths.iter().any(|path| matches!(
                                 path.outcome,
-                                CExpressionOutcome::UndefinedBehavior(
-                                    CUndefinedBehavior::InvalidShift
+                                ExpressionOutcome::UndefinedBehavior(
+                                    UndefinedBehavior::InvalidShift
                                 )
                             )),
                             "left_shift={shift_left}, left64={left_is_64_bit}, unsigned_count={unsigned_count}: {paths:?}"
@@ -1052,7 +1052,7 @@ fn wide_shift_counts_are_checked_before_narrowing() {
                         assert!(
                             !paths
                                 .iter()
-                                .any(|path| matches!(path.outcome, CExpressionOutcome::Value(_))),
+                                .any(|path| matches!(path.outcome, ExpressionOutcome::Value(_))),
                             "an out-of-range 64-bit count must not be accepted via its low word"
                         );
                     }
@@ -1081,7 +1081,7 @@ fn condition_evaluation_certifies_c_truthiness_directly() {
         &Proposition::CConditionEvaluates {
             state: Box::new(state),
             condition,
-            outcome: CConditionOutcome::Value(true),
+            outcome: ConditionOutcome::Value(true),
         }
     );
 }
@@ -1105,7 +1105,7 @@ fn void_truthiness_is_an_explicit_type_error() {
         &Proposition::CConditionEvaluates {
             state: Box::new(state.clone()),
             condition,
-            outcome: CConditionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+            outcome: ConditionOutcome::RuntimeError(RuntimeError::TypeMismatch),
         }
     );
 
@@ -1121,7 +1121,7 @@ fn void_truthiness_is_an_explicit_type_error() {
             &Proposition::CExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                outcome: ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch),
             }
         );
     }
@@ -1133,7 +1133,7 @@ fn void_local_declaration_is_an_explicit_type_error() {
         &ExecutionState::new(),
         &c_declare("invalid", ProgramType::Void),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("invalid void declarations should execute to a type error");
@@ -1141,7 +1141,7 @@ fn void_local_declaration_is_an_explicit_type_error() {
     assert_eq!(paths.len(), 1);
     assert_eq!(
         &paths[0].outcome,
-        &CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch)
+        &StatementOutcome::RuntimeError(RuntimeError::TypeMismatch)
     );
 
     let paths = execute_c_statement_paths(
@@ -1152,14 +1152,14 @@ fn void_local_declaration_is_an_explicit_type_error() {
             ProgramStatement::Skip,
         ),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("a void condition should execute to a type error");
     assert_eq!(paths.len(), 1);
     assert_eq!(
         &paths[0].outcome,
-        &CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch)
+        &StatementOutcome::RuntimeError(RuntimeError::TypeMismatch)
     );
 }
 
@@ -1184,8 +1184,8 @@ fn symbolic_condition_evaluation_exposes_both_truthiness_paths() {
     assert_eq!(
         outcomes,
         BTreeSet::from([
-            CConditionOutcome::Value(false),
-            CConditionOutcome::Value(true),
+            ConditionOutcome::Value(false),
+            ConditionOutcome::Value(true),
         ])
     );
 }
@@ -1203,7 +1203,7 @@ fn int32_subtraction_is_native() {
         &Proposition::CStatementExecutes {
             state: Box::new(state.clone()),
             statement: Box::new(statement),
-            outcome: CStatementOutcome::Return {
+            outcome: StatementOutcome::Return {
                 value: int32(5).into(),
                 state: Box::new(state),
             },
@@ -1245,7 +1245,7 @@ fn signed_subtract_overflow_is_native_undefined_behavior() {
         &Proposition::CExpressionEvaluates {
             state: Box::new(state),
             expression: c_subtract(c_int32_literal(2_147_483_648), c_int32_literal(1)),
-            outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::SignedOverflow),
+            outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::SignedOverflow),
         }
     );
 }
@@ -1277,7 +1277,7 @@ fn int32_comparisons_return_c_int32_zero_or_one() {
             &Proposition::CExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: CExpressionOutcome::Value(expected),
+                outcome: ExpressionOutcome::Value(expected),
             }
         );
     }
@@ -1320,7 +1320,7 @@ fn pointer_equality_returns_c_int32_zero_or_one() {
             &Proposition::CExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: CExpressionOutcome::Value(expected),
+                outcome: ExpressionOutcome::Value(expected),
             }
         );
     }
@@ -1375,7 +1375,7 @@ fn explicit_wide_integer_pointer_cast_accepts_only_proven_null_without_origin() 
                     ProgramValue::typed_pointer(Pointer::null(), ProgramType::UInt8Pointer),
                 );
             } else {
-                assert!(matches!(cast, Err(CRuntimeError::PointerConversion(_))));
+                assert!(matches!(cast, Err(RuntimeError::PointerConversion(_))));
             }
             // An unknown integer must not acquire a pointer by leaving an
             // unproved null obligation behind.
@@ -1414,7 +1414,7 @@ fn pointer_cast_retags_the_view_but_pointer_type_mismatch_is_not_implicit() {
     let cast_theorem = prove_c_expression_evaluation(state.clone(), cast.clone())
         .expect("an explicit pointer cast should evaluate");
     let Proposition::CExpressionEvaluates {
-        outcome: CExpressionOutcome::Value(value),
+        outcome: ExpressionOutcome::Value(value),
         ..
     } = cast_theorem.proposition()
     else {
@@ -1458,7 +1458,7 @@ fn pointer_cast_retags_the_view_but_pointer_type_mismatch_is_not_implicit() {
         equality_theorem.proposition(),
         Proposition::CExpressionEvaluates {
             expression,
-            outcome: CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+            outcome: ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch),
             ..
         } if expression == &equality
     ));
@@ -1476,7 +1476,7 @@ fn spec_pointer_equality_lowers_to_a_pure_fact() {
     assert_eq!(
         c_value_comparison_proposition(
             &ProgramValue::pointer(left.clone()),
-            CComparisonOperator::Equal,
+            ComparisonOperator::Equal,
             &ProgramValue::pointer(right.clone()),
         ),
         Some(Proposition::ConditionIs(equality.clone(), true)),
@@ -1484,7 +1484,7 @@ fn spec_pointer_equality_lowers_to_a_pure_fact() {
     assert_eq!(
         c_value_comparison_proposition(
             &ProgramValue::pointer(left.clone()),
-            CComparisonOperator::NotEqual,
+            ComparisonOperator::NotEqual,
             &ProgramValue::pointer(right),
         ),
         Some(Proposition::ConditionIs(equality, false)),
@@ -1492,7 +1492,7 @@ fn spec_pointer_equality_lowers_to_a_pure_fact() {
     assert_eq!(
         c_value_comparison_proposition(
             &ProgramValue::pointer(left),
-            CComparisonOperator::LessThan,
+            ComparisonOperator::LessThan,
             &ProgramValue::Int32(MachineTerm::constant(0)),
         ),
         None,
@@ -1502,14 +1502,14 @@ fn spec_pointer_equality_lowers_to_a_pure_fact() {
 #[test]
 fn finite_float_context_proves_reflexive_comparisons() {
     let value = MachineTerm::Variable(Variable(22_102));
-    let finite = ConditionTerm::float64_classification(value.clone(), CFloatClassification::Finite);
+    let finite = ConditionTerm::float64_classification(value.clone(), FloatClassification::Finite);
     let assumptions = PureFactContext::new().assume_condition(finite, true);
 
     assert_eq!(
         assumptions.decide(&ConditionTerm::float64_compare(
             value.clone(),
             value.clone(),
-            CComparisonOperator::Equal,
+            ComparisonOperator::Equal,
         )),
         Some(true)
     );
@@ -1517,7 +1517,7 @@ fn finite_float_context_proves_reflexive_comparisons() {
         assumptions.decide(&ConditionTerm::float64_compare(
             value.clone(),
             value,
-            CComparisonOperator::NotEqual,
+            ComparisonOperator::NotEqual,
         )),
         Some(false)
     );
@@ -1526,7 +1526,7 @@ fn finite_float_context_proves_reflexive_comparisons() {
 #[test]
 fn finite_structural_float_read_proves_reflexive_comparison() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = crate::kernel::intern_c_memory(CMemory::new());
+    let memory = crate::kernel::intern_c_memory(Memory::new());
     let pointer = Pointer::symbolic(Variable(22_103));
     let value = crate::kernel::eval::scalar_read_for_exact_cell(
         &memory,
@@ -1534,14 +1534,14 @@ fn finite_structural_float_read_proves_reflexive_comparison() {
         crate::kernel::LoadKind::Float64,
         8,
     );
-    let finite = ConditionTerm::float64_classification(value.clone(), CFloatClassification::Finite);
+    let finite = ConditionTerm::float64_classification(value.clone(), FloatClassification::Finite);
     let assumptions = PureFactContext::new().assume_condition(finite.clone(), true);
     assert_eq!(assumptions.decide(&finite), Some(true), "held finiteness");
     assert_eq!(
         assumptions.decide(&ConditionTerm::float64_compare(
             value.clone(),
             value,
-            CComparisonOperator::Equal,
+            ComparisonOperator::Equal,
         )),
         Some(true)
     );
@@ -1560,7 +1560,7 @@ fn spec_pointer_order_lowers_same_block_offsets() {
     assert_eq!(
         c_value_comparison_proposition(
             &ProgramValue::pointer(left),
-            CComparisonOperator::LessThan,
+            ComparisonOperator::LessThan,
             &ProgramValue::pointer(right),
         ),
         Some(Proposition::ConditionIs(
@@ -1611,7 +1611,7 @@ fn pointer_equality_accepts_int32_zero_as_null_pointer_constant() {
             &Proposition::CExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: CExpressionOutcome::Value(expected),
+                outcome: ExpressionOutcome::Value(expected),
             }
         );
     }
@@ -1624,7 +1624,7 @@ fn pointer_equality_accepts_int32_zero_as_null_pointer_constant() {
         &Proposition::CExpressionEvaluates {
             state: Box::new(state),
             expression: invalid,
-            outcome: CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+            outcome: ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch),
         }
     );
 }
@@ -1677,7 +1677,7 @@ fn not_equal_and_not_return_c_int32_zero_or_one() {
             &Proposition::CExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: CExpressionOutcome::Value(expected),
+                outcome: ExpressionOutcome::Value(expected),
             }
         );
     }
@@ -1711,7 +1711,7 @@ fn logical_and_or_short_circuit_right_operand() {
             &Proposition::CExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: CExpressionOutcome::Value(expected),
+                outcome: ExpressionOutcome::Value(expected),
             }
         );
     }
@@ -1746,7 +1746,7 @@ fn void_pointer_dereferences_report_indeterminate_pointee_type() {
             &Proposition::CExpressionEvaluates {
                 state: Box::new(ExecutionState::new()),
                 expression,
-                outcome: CExpressionOutcome::RuntimeError(CRuntimeError::IndeterminatePointeeType,),
+                outcome: ExpressionOutcome::RuntimeError(RuntimeError::IndeterminatePointeeType,),
             }
         );
     }
@@ -1767,7 +1767,7 @@ fn captured_typed_pointer_load_requires_read_authority() {
         &Proposition::CExpressionEvaluates {
             state: Box::new(state),
             expression,
-            outcome: CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource {
+            outcome: ExpressionOutcome::RuntimeError(RuntimeError::MissingResource {
                 resource: Box::new(view_memory_fact(pointer, 0, 1)),
             }),
         }
@@ -1780,7 +1780,7 @@ fn captured_void_pointer_arithmetic_retains_the_gnu_byte_stride() {
         block: "bytes".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let state = ExecutionState::new().with_memory(CMemory::new().with_block("bytes", 8));
+    let state = ExecutionState::new().with_memory(Memory::new().with_block("bytes", 8));
     let value = || c_typed_pointer_value(pointer.clone(), ProgramType::VoidPointer);
     for expression in [
         c_add(value(), c_int32_literal(1)),
@@ -1793,7 +1793,7 @@ fn captured_void_pointer_arithmetic_retains_the_gnu_byte_stride() {
             &Proposition::CExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: CExpressionOutcome::Value(ProgramValue::typed_pointer(
+                outcome: ExpressionOutcome::Value(ProgramValue::typed_pointer(
                     pointer.offset_by_bytes(1),
                     ProgramType::VoidPointer,
                 )),
@@ -1827,7 +1827,7 @@ fn function_pointer_operations_report_indeterminate_pointee_type() {
             &Proposition::CExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: CExpressionOutcome::RuntimeError(CRuntimeError::IndeterminatePointeeType),
+                outcome: ExpressionOutcome::RuntimeError(RuntimeError::IndeterminatePointeeType),
             }
         );
     }
@@ -1871,7 +1871,7 @@ fn symbolic_pointer_equality_reports_branch_facts() {
         &Proposition::CStatementExecutes {
             state: Box::new(state.clone()),
             statement: Box::new(statement.clone()),
-            outcome: CStatementOutcome::Return {
+            outcome: StatementOutcome::Return {
                 value: int32(1).into(),
                 state: Box::new(state.clone()),
             },
@@ -1889,7 +1889,7 @@ fn symbolic_pointer_equality_reports_branch_facts() {
         &Proposition::CStatementExecutes {
             state: Box::new(state.clone()),
             statement: Box::new(statement),
-            outcome: CStatementOutcome::Return {
+            outcome: StatementOutcome::Return {
                 value: int32(0).into(),
                 state: Box::new(state),
             },
@@ -1914,7 +1914,7 @@ fn if_uses_c_int32_truthiness() {
         &Proposition::CStatementExecutes {
             state: Box::new(state.clone()),
             statement: Box::new(statement),
-            outcome: CStatementOutcome::Return {
+            outcome: StatementOutcome::Return {
                 value: int32(1).into(),
                 state: Box::new(state),
             },
@@ -1936,7 +1936,7 @@ fn if_uses_c_int32_truthiness() {
         &Proposition::CStatementExecutes {
             state: Box::new(state.clone()),
             statement: Box::new(statement),
-            outcome: CStatementOutcome::Return {
+            outcome: StatementOutcome::Return {
                 value: int32(0).into(),
                 state: Box::new(state),
             },
@@ -1958,7 +1958,7 @@ fn assignment_and_sequence_update_native_state() {
         &Proposition::CStatementExecutes {
             state: Box::new(state),
             statement: Box::new(statement),
-            outcome: CStatementOutcome::Return {
+            outcome: StatementOutcome::Return {
                 value: int32(2).into(),
                 state: Box::new(final_state),
             },
@@ -1986,7 +1986,7 @@ fn store_then_load_threads_native_memory() {
         )),
     );
     let final_state = ExecutionState::new()
-        .with_memory(CMemory::new().store(pointer.clone(), int32(9)))
+        .with_memory(Memory::new().store(pointer.clone(), int32(9)))
         .with_resource_context(resources);
     let theorem =
         prove_symbolic_c_execution(state.clone(), statement.clone(), PureFactContext::new())
@@ -1997,7 +1997,7 @@ fn store_then_load_threads_native_memory() {
         &Proposition::CStatementExecutes {
             state: Box::new(state),
             statement: Box::new(statement),
-            outcome: CStatementOutcome::Return {
+            outcome: StatementOutcome::Return {
                 value: int32(9).into(),
                 state: Box::new(final_state),
             },
@@ -2025,11 +2025,11 @@ fn viewed_memory_resource_permits_symbolic_external_load_from_incomplete_memory(
         &Proposition::CStatementExecutes {
             state: Box::new(state.clone()),
             statement: Box::new(statement),
-            outcome: CStatementOutcome::Return {
+            outcome: StatementOutcome::Return {
                 // The symbolic read is canonical at creation: its load
                 // variable, which names this load.
                 value: int32(crate::kernel::canonical_term(&MachineTerm::MemoryLoad(
-                    crate::kernel::intern_c_memory(CMemory::new()),
+                    crate::kernel::intern_c_memory(Memory::new()),
                     Box::new(pointer),
                     crate::kernel::LoadKind::Int32,
                 )))
@@ -2046,7 +2046,7 @@ fn block_backed_store_then_load_needs_no_memory_obligation() {
         block: "block".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = CMemory::new().with_block("block", 16);
+    let memory = Memory::new().with_block("block", 16);
     let resources = own_memory_context(pointer.clone(), 0, 1);
     let state = ExecutionState::new()
         .with_memory(memory.clone())
@@ -2074,7 +2074,7 @@ fn block_backed_store_then_load_needs_no_memory_obligation() {
         &Proposition::CStatementExecutes {
             state: Box::new(state),
             statement: Box::new(statement),
-            outcome: CStatementOutcome::Return {
+            outcome: StatementOutcome::Return {
                 value: int32(9).into(),
                 state: Box::new(final_state),
             },
@@ -2088,7 +2088,7 @@ fn block_backed_missing_load_returns_symbolic_value_without_obligation() {
         block: "block".into(),
         offset: PointerOffsetTerm::Constant(4),
     };
-    let memory = CMemory::new().with_block("block", 16);
+    let memory = Memory::new().with_block("block", 16);
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(pointer.clone()))
         .with_memory(memory.clone())
@@ -2103,7 +2103,7 @@ fn block_backed_missing_load_returns_symbolic_value_without_obligation() {
         &Proposition::CStatementExecutes {
             state: Box::new(state.clone()),
             statement: Box::new(statement),
-            outcome: CStatementOutcome::Return {
+            outcome: StatementOutcome::Return {
                 value: int32(crate::kernel::canonical_term(&MachineTerm::MemoryLoad(
                     crate::kernel::intern_c_memory(memory),
                     Box::new(pointer),
@@ -2126,7 +2126,7 @@ fn pointer_addition_scales_int32_offsets_for_loads() {
         block: "block".into(),
         offset: PointerOffsetTerm::Constant(4),
     };
-    let memory = CMemory::new()
+    let memory = Memory::new()
         .with_block("block", 16)
         .store(second.clone(), int32(23));
     let resources = view_memory_context(base.clone(), 1, 2);
@@ -2144,7 +2144,7 @@ fn pointer_addition_scales_int32_offsets_for_loads() {
         &Proposition::CStatementExecutes {
             state: Box::new(state),
             statement: Box::new(statement),
-            outcome: CStatementOutcome::Return {
+            outcome: StatementOutcome::Return {
                 value: int32(23).into(),
                 state: Box::new(
                     ExecutionState::new()
@@ -2156,7 +2156,7 @@ fn pointer_addition_scales_int32_offsets_for_loads() {
                             }),
                         )
                         .with_memory(
-                            CMemory::new()
+                            Memory::new()
                                 .with_block("block", 16)
                                 .store(second, int32(23),),
                         )
@@ -2175,7 +2175,7 @@ fn pointer_addition_rejects_an_int32_index_beyond_the_object() {
     };
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(base))
-        .with_memory(CMemory::new().with_block("array", 8));
+        .with_memory(Memory::new().with_block("array", 8));
     let expression = c_add(c_variable("p"), c_int32_literal(3));
 
     let theorem = prove_c_expression_evaluation(state.clone(), expression.clone())
@@ -2186,7 +2186,7 @@ fn pointer_addition_rejects_an_int32_index_beyond_the_object() {
         &Proposition::CExpressionEvaluates {
             state: Box::new(state),
             expression,
-            outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::PointerArithmetic),
+            outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::PointerArithmetic),
         }
     );
 }
@@ -2204,7 +2204,7 @@ fn uint64_pointer_index_bounds_use_the_full_value() {
     let mut state = ExecutionState::new()
         .with_local("array", ProgramValue::pointer(base.clone()))
         .with_local("index", ProgramValue::UInt64(index.clone()))
-        .with_memory(CMemory::new().with_block("bytes", 8));
+        .with_memory(Memory::new().with_block("bytes", 8));
     state.locals.set_typed(
         "array",
         ProgramValue::pointer(base),
@@ -2226,12 +2226,12 @@ fn uint64_pointer_index_bounds_use_the_full_value() {
 
     assert!(paths.iter().any(|path| matches!(
         path.outcome,
-        CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::PointerArithmetic)
+        ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::PointerArithmetic)
     )));
     assert!(
         !paths
             .iter()
-            .any(|path| matches!(path.outcome, CExpressionOutcome::Value(_)))
+            .any(|path| matches!(path.outcome, ExpressionOutcome::Value(_)))
     );
 }
 
@@ -2255,7 +2255,7 @@ fn pointer_index_sum_overflow_is_pointer_undefined_behavior() {
         &Proposition::CExpressionEvaluates {
             state: Box::new(state),
             expression,
-            outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::PointerArithmetic),
+            outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::PointerArithmetic),
         }
     );
 }
@@ -2283,7 +2283,7 @@ fn pointer_index_sum_overflow_is_undefined_for_a_uint8_pointer() {
         &Proposition::CExpressionEvaluates {
             state: Box::new(state),
             expression,
-            outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::PointerArithmetic,),
+            outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::PointerArithmetic,),
         }
     );
 }
@@ -2296,7 +2296,7 @@ fn pointer_addition_allows_the_one_past_int32_element() {
     };
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(base.clone()))
-        .with_memory(CMemory::new().with_block("array", 8));
+        .with_memory(Memory::new().with_block("array", 8));
     let expression = c_add(c_variable("p"), c_int32_literal(2));
     let result = Pointer {
         block: "array".into(),
@@ -2311,7 +2311,7 @@ fn pointer_addition_allows_the_one_past_int32_element() {
         &Proposition::CExpressionEvaluates {
             state: Box::new(state),
             expression,
-            outcome: CExpressionOutcome::Value(ProgramValue::pointer(result)),
+            outcome: ExpressionOutcome::Value(ProgramValue::pointer(result)),
         }
     );
 }
@@ -2324,7 +2324,7 @@ fn pointer_addition_rejects_a_uint8_index_beyond_the_object() {
     };
     let mut state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(base.clone()))
-        .with_memory(CMemory::new().with_block("bytes", 4));
+        .with_memory(Memory::new().with_block("bytes", 4));
     state
         .locals
         .set_typed("p", ProgramValue::pointer(base), ProgramType::UInt8Pointer);
@@ -2338,7 +2338,7 @@ fn pointer_addition_rejects_a_uint8_index_beyond_the_object() {
         &Proposition::CExpressionEvaluates {
             state: Box::new(state),
             expression,
-            outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::PointerArithmetic,),
+            outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::PointerArithmetic,),
         }
     );
 }
@@ -2351,7 +2351,7 @@ fn byte_offset_rejects_a_pointer_beyond_the_object() {
     };
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(base))
-        .with_memory(CMemory::new().with_block("object", 4));
+        .with_memory(Memory::new().with_block("object", 4));
     let expression = c_pointer_offset_bytes(c_variable("p"), 5);
 
     let theorem = prove_c_expression_evaluation(state.clone(), expression.clone())
@@ -2362,7 +2362,7 @@ fn byte_offset_rejects_a_pointer_beyond_the_object() {
         &Proposition::CExpressionEvaluates {
             state: Box::new(state),
             expression,
-            outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::PointerArithmetic,),
+            outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::PointerArithmetic,),
         }
     );
 }
@@ -2398,7 +2398,7 @@ fn pointer_relational_comparison_orders_same_block_elements() {
             &Proposition::CExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: CExpressionOutcome::Value(int32(expected)),
+                outcome: ExpressionOutcome::Value(int32(expected)),
             }
         );
     }
@@ -2427,7 +2427,7 @@ fn pointer_subtraction_returns_same_block_element_distance() {
         &Proposition::CExpressionEvaluates {
             state: Box::new(state),
             expression,
-            outcome: CExpressionOutcome::Value(int32(2)),
+            outcome: ExpressionOutcome::Value(int32(2)),
         }
     );
 }
@@ -2463,7 +2463,7 @@ fn uint8_pointer_subtraction_returns_byte_distance() {
         &Proposition::CExpressionEvaluates {
             state: Box::new(state),
             expression,
-            outcome: CExpressionOutcome::Value(int32(3)),
+            outcome: ExpressionOutcome::Value(int32(3)),
         }
     );
 }
@@ -2476,7 +2476,7 @@ fn pointer_subtraction_by_one_steps_back_one_element() {
     };
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(pointer))
-        .with_memory(CMemory::new().with_block("array", 12));
+        .with_memory(Memory::new().with_block("array", 12));
     let expression = c_subtract(c_variable("p"), c_int32_literal(1));
     let result = Pointer {
         block: "array".into(),
@@ -2491,7 +2491,7 @@ fn pointer_subtraction_by_one_steps_back_one_element() {
         &Proposition::CExpressionEvaluates {
             state: Box::new(state),
             expression,
-            outcome: CExpressionOutcome::Value(ProgramValue::pointer(result)),
+            outcome: ExpressionOutcome::Value(ProgramValue::pointer(result)),
         }
     );
 }
@@ -2519,7 +2519,7 @@ fn pointer_comparison_rejects_different_blocks_as_undefined_behavior() {
         &Proposition::CExpressionEvaluates {
             state: Box::new(state),
             expression,
-            outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::PointerArithmetic),
+            outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::PointerArithmetic),
         }
     );
 }
@@ -2547,7 +2547,7 @@ fn pointer_subtraction_rejects_different_blocks_as_undefined_behavior() {
         &Proposition::CExpressionEvaluates {
             state: Box::new(state),
             expression,
-            outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::PointerArithmetic),
+            outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::PointerArithmetic),
         }
     );
 }
@@ -2578,11 +2578,11 @@ fn pointer_order_and_subtraction_require_external_parameters_to_share_an_object(
         assert!(
             paths
                 .iter()
-                .any(|path| matches!(path.outcome, CExpressionOutcome::Value(_)))
+                .any(|path| matches!(path.outcome, ExpressionOutcome::Value(_)))
         );
         assert!(paths.iter().any(|path| matches!(
             path.outcome,
-            CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::PointerArithmetic)
+            ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::PointerArithmetic)
         )));
     }
 
@@ -2598,7 +2598,7 @@ fn pointer_order_and_subtraction_require_external_parameters_to_share_an_object(
         assert!(
             paths
                 .iter()
-                .all(|path| matches!(path.outcome, CExpressionOutcome::Value(_)))
+                .all(|path| matches!(path.outcome, ExpressionOutcome::Value(_)))
         );
     }
 }
@@ -2627,9 +2627,7 @@ fn null_pointers_have_no_object_provenance_for_ordering_or_subtraction() {
             &Proposition::CExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: CExpressionOutcome::UndefinedBehavior(
-                    CUndefinedBehavior::PointerArithmetic,
-                ),
+                outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::PointerArithmetic,),
             }
         );
     }
@@ -2646,7 +2644,7 @@ fn null_pointers_have_no_object_provenance_for_ordering_or_subtraction() {
         assert!(
             paths
                 .iter()
-                .all(|path| matches!(path.outcome, CExpressionOutcome::Value(_)))
+                .all(|path| matches!(path.outcome, ExpressionOutcome::Value(_)))
         );
     }
 }
@@ -2673,11 +2671,11 @@ fn an_external_pointer_does_not_share_an_object_with_itself_until_nonnull() {
         assert!(
             paths
                 .iter()
-                .any(|path| matches!(path.outcome, CExpressionOutcome::Value(_)))
+                .any(|path| matches!(path.outcome, ExpressionOutcome::Value(_)))
         );
         assert!(paths.iter().any(|path| matches!(
             path.outcome,
-            CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::PointerArithmetic)
+            ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::PointerArithmetic)
         )));
     }
 }
@@ -2708,7 +2706,7 @@ fn nonempty_loadability_establishes_external_pointer_object_provenance() {
         assert!(
             paths
                 .iter()
-                .all(|path| matches!(path.outcome, CExpressionOutcome::Value(_)))
+                .all(|path| matches!(path.outcome, ExpressionOutcome::Value(_)))
         );
     }
 
@@ -2719,7 +2717,7 @@ fn nonempty_loadability_establishes_external_pointer_object_provenance() {
         .expect("empty-viewable pointer operation should stay within its execution budget");
     assert!(paths.iter().any(|path| matches!(
         path.outcome,
-        CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::PointerArithmetic)
+        ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::PointerArithmetic)
     )));
 }
 
@@ -2760,7 +2758,7 @@ fn viewed_memory_resource_permits_pointer_addition_load_beyond_memory_block() {
         block: "block".into(),
         offset: PointerOffsetTerm::Constant(4),
     };
-    let memory = CMemory::new().with_block("block", 4);
+    let memory = Memory::new().with_block("block", 4);
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(base.clone()))
         .with_memory(memory.clone())
@@ -2776,7 +2774,7 @@ fn viewed_memory_resource_permits_pointer_addition_load_beyond_memory_block() {
         &Proposition::CStatementExecutes {
             state: Box::new(state.clone()),
             statement: Box::new(statement),
-            outcome: CStatementOutcome::Return {
+            outcome: StatementOutcome::Return {
                 value: int32(crate::kernel::canonical_term(&MachineTerm::MemoryLoad(
                     crate::kernel::intern_c_memory(memory),
                     Box::new(derived),
@@ -2795,7 +2793,7 @@ fn fixed_bound_store_loop_touches_only_valid_pointer_range() {
         block: "block".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = CMemory::new().with_block("block", 12);
+    let memory = Memory::new().with_block("block", 12);
     let resources = own_memory_context(base.clone(), 0, 3);
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(base.clone()))
@@ -2857,7 +2855,7 @@ fn fixed_bound_store_loop_touches_only_valid_pointer_range() {
         &Proposition::CStatementExecutes {
             state: Box::new(state),
             statement: Box::new(statement),
-            outcome: CStatementOutcome::Return {
+            outcome: StatementOutcome::Return {
                 value: int32(3).into(),
                 state: Box::new(final_state),
             },
@@ -2871,7 +2869,7 @@ fn symbolic_loadable_discharges_pointer_access_obligation() {
     let n = Variable(68);
     let i_bits = MachineTerm::Variable(i);
     let n_bits = MachineTerm::Variable(n);
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let base = Pointer {
         block: "array".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -3100,12 +3098,12 @@ fn relative_dependent_range_is_covered_by_owned_range() {
     };
     let backing_start = MachineTerm::subtract(backing.clone(), owner.clone());
     let indexed_start = MachineTerm::subtract(MachineTerm::add(backing, index.clone()), owner);
-    let available = CResourceFact::own_memory(CMemoryRange::new(
+    let available = ResourceFact::own_memory(MemoryRange::new(
         base.clone(),
         backing_start.clone(),
         MachineTerm::add(backing_start, capacity.clone()),
     ));
-    let required = CResourceFact::own_memory(CMemoryRange::new(
+    let required = ResourceFact::own_memory(MemoryRange::new(
         base,
         indexed_start.clone(),
         MachineTerm::add(indexed_start, MachineTerm::constant(1)),
@@ -3546,7 +3544,7 @@ fn signed_byte_arithmetic_promotes_with_range_facts() {
     assert!(
         matches!(
             paths[0].outcome,
-            CExpressionOutcome::Value(ProgramValue::Int32(_))
+            ExpressionOutcome::Value(ProgramValue::Int32(_))
         ),
         "{paths:?}"
     );
@@ -3558,7 +3556,7 @@ fn exact_signed_constant_bounds_preserve_frozen_load_identity() {
         block: "bounded".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = CMemory::new().with_block("bounded", 8);
+    let memory = Memory::new().with_block("bounded", 8);
     let load = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory(memory.clone()),
         Box::new(pointer.clone()),
@@ -3659,7 +3657,7 @@ fn exact_signed_mirror_normalization_checks_snapshot_address_and_selected_premis
         block: "mirror".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = CMemory::new().with_block("mirror", 8);
+    let memory = Memory::new().with_block("mirror", 8);
     let load = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory(memory.clone()),
         Box::new(pointer.clone()),
@@ -3731,7 +3729,7 @@ fn uint64_bit_reinterpretation_has_a_distinct_checked_cast_boundary() {
         assert!(matches!(
             theorem.proposition(),
             Proposition::CExpressionEvaluates {
-                outcome: CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                outcome: ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch),
                 ..
             }
         ));
@@ -3740,7 +3738,7 @@ fn uint64_bit_reinterpretation_has_a_distinct_checked_cast_boundary() {
         let expression = c_uint64_bits_to_int64(c_uint64_literal(bits));
         let theorem = prove_c_expression_evaluation(ExecutionState::new(), expression).unwrap();
         let Proposition::CExpressionEvaluates {
-            outcome: CExpressionOutcome::Value(ProgramValue::Int64(value)),
+            outcome: ExpressionOutcome::Value(ProgramValue::Int64(value)),
             ..
         } = theorem.proposition()
         else {
@@ -3753,7 +3751,7 @@ fn uint64_bit_reinterpretation_has_a_distinct_checked_cast_boundary() {
         if bits <= i64::MAX as u64 {
             let theorem = prove_c_expression_evaluation(ExecutionState::new(), ordinary).unwrap();
             let Proposition::CExpressionEvaluates {
-                outcome: CExpressionOutcome::Value(ProgramValue::Int64(value)),
+                outcome: ExpressionOutcome::Value(ProgramValue::Int64(value)),
                 ..
             } = theorem.proposition()
             else {
@@ -3833,7 +3831,7 @@ fn modulo_casts_are_explicit_integer_boundaries_and_preserve_operand_definedness
                     MachineIntegerConstant::from_unsigned(ty.format(), u128::from(flag)).unwrap(),
                 )
                 .unwrap();
-            assert_eq!(actual, CExpressionOutcome::Value(expected));
+            assert_eq!(actual, ExpressionOutcome::Value(expected));
         }
     }
     for expression in [
@@ -3854,13 +3852,13 @@ fn modulo_casts_are_explicit_integer_boundaries_and_preserve_operand_definedness
     ] {
         assert_eq!(
             outcome(expression),
-            CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch)
+            ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch)
         );
     }
     let overflow = c_add(c_int32_literal(i32::MAX as u32), c_int32_literal(1));
     assert!(matches!(
         outcome(c_integer_cast_modulo(overflow, ProgramType::UInt8)),
-        CExpressionOutcome::UndefinedBehavior(_)
+        ExpressionOutcome::UndefinedBehavior(_)
     ));
     // The explicit rule wraps; an ordinary C narrowing still requires bounds.
     assert_eq!(
@@ -3868,7 +3866,7 @@ fn modulo_casts_are_explicit_integer_boundaries_and_preserve_operand_definedness
             c_int64_literal(i64::MAX),
             ProgramType::Int32
         )),
-        CExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::constant(u32::MAX)))
+        ExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::constant(u32::MAX)))
     );
     assert!(
         prove_c_expression_evaluation(
@@ -3915,7 +3913,7 @@ fn a_modular_narrowing_files_its_range_and_no_identity_with_its_operand() {
             let [path] = paths.as_slice() else {
                 panic!("one path: {paths:?}");
             };
-            let CExpressionOutcome::Value(value) = &path.outcome else {
+            let ExpressionOutcome::Value(value) = &path.outcome else {
                 panic!("{index} -> {target:?}: {:?}", path.outcome);
             };
             assert!(
@@ -3985,7 +3983,7 @@ fn evaluated_pointer(state: &ExecutionState, expression: ProgramExpression) -> P
     let theorem = prove_c_expression_evaluation(state.clone(), expression)
         .expect("the pointer expression should evaluate");
     let Proposition::CExpressionEvaluates {
-        outcome: CExpressionOutcome::Value(ProgramValue::Pointer(value)),
+        outcome: ExpressionOutcome::Value(ProgramValue::Pointer(value)),
         ..
     } = theorem.proposition()
     else {
@@ -4155,11 +4153,11 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
     let a = Pointer::symbolic(Variable(22_111));
     let b = Pointer::symbolic(Variable(22_112));
     let stored = subobject_pointer(0, 0, 4);
-    let before_b = CMemory::new().store(a.clone(), ProgramValue::Pointer(stored.clone()));
+    let before_b = Memory::new().store(a.clone(), ProgramValue::Pointer(stored.clone()));
     let memory = before_b
         .clone()
         .store(b.clone(), ProgramValue::Pointer(stored.clone()));
-    let read = |memory: &CMemory, address: &Pointer| {
+    let read = |memory: &Memory, address: &Pointer| {
         PointerValue::from_read(
             stored.pointer().clone(),
             ProgramType::Int32Pointer,
@@ -4167,10 +4165,10 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
             address,
         )
     };
-    let separation = |left: CMemoryRange, right: CMemoryRange| {
+    let separation = |left: MemoryRange, right: MemoryRange| {
         crate::kernel::region_footprint::byte_premise(&Proposition::CResourceSeparate {
-            left: Box::new(CResource::Memory(left)),
-            right: Box::new(CResource::Memory(right)),
+            left: Box::new(Resource::Memory(left)),
+            right: Box::new(Resource::Memory(right)),
         })
         .unwrap()
     };
@@ -4205,7 +4203,7 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
         &stored,
     ));
     let c = Pointer::symbolic(Variable(22_113));
-    let before = CMemory::new();
+    let before = Memory::new();
     let original = read(&before, &c);
     let changed = before.clone().store(b.clone(), int32(1));
     let later = read(&changed, &c);
@@ -4240,7 +4238,7 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
     assert!(!context.pointer_designations_match(&first, &stored.clone().with_root_extent()));
     let partial = memory.store(a.clone().offset_by_bytes(4), int32(0));
     assert!(!context.pointer_designations_match(&read(&partial, &a), &stored));
-    let numeric = CMemory::new().store(
+    let numeric = Memory::new().store(
         a.clone(),
         ProgramValue::UInt64(MachineTerm::pointer_address(stored.pointer().clone())),
     );
@@ -4428,7 +4426,7 @@ fn specification_volatile_reads_do_not_create_execution_events() {
     let initial = ExecutionState::new()
         .with_resource_context(own_memory_context(pointer.clone(), 0, 1))
         .with_memory(
-            CMemory::new()
+            Memory::new()
                 .with_block("cell", 4)
                 .store(pointer.clone(), int32(7)),
         );
@@ -4464,7 +4462,7 @@ fn specification_volatile_reads_do_not_create_execution_events() {
         .expect("a specification must not allocate an execution event");
         assert_eq!(paths.len(), 1);
         assert!(
-            matches!(paths[0].outcome, CExpressionOutcome::Value(_)),
+            matches!(paths[0].outcome, ExpressionOutcome::Value(_)),
             "{expression:?}: {:?}",
             paths[0].outcome
         );
@@ -4508,7 +4506,7 @@ fn unsigned_division_reports_its_domain_even_when_already_known() {
             assert_eq!(paths.len(), 1, "one conditional successor, {known:?}");
             assert!(matches!(
                 paths[0].outcome,
-                CExpressionOutcome::Value(ProgramValue::UInt32(_))
+                ExpressionOutcome::Value(ProgramValue::UInt32(_))
             ));
             assert_eq!(
                 paths[0].obligations.len(),

@@ -19,8 +19,8 @@ mod observable;
 #[allow(clippy::enum_variant_names)]
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum CompositionQuery {
-    ResourcesSeparate(CResource, CResource),
-    RangesSeparate(CMemoryRange, CMemoryRange),
+    ResourcesSeparate(Resource, Resource),
+    RangesSeparate(MemoryRange, MemoryRange),
     PointersSeparate(Pointer, Pointer),
 }
 
@@ -60,7 +60,7 @@ impl Drop for ResourceCompositionQueryGuard {
 #[test]
 fn composition_query_guard_refuses_reentry_and_keeps_the_outer_query() {
     let range = |index: i64| {
-        CMemoryRange::new(
+        MemoryRange::new(
             Pointer {
                 block: "buffer".into(),
                 offset: PointerOffsetTerm::Constant(0),
@@ -131,7 +131,7 @@ fn remove_occurrence_index_entry<K: Ord + Clone>(
 }
 
 pub(crate) fn memory_interval_nodes(
-    range: &CMemoryRange,
+    range: &MemoryRange,
 ) -> Option<Vec<ResourceMemoryIntervalNode>> {
     let (start, end) = concrete_memory_range_bounds(range)?;
     memory_interval_nodes_for_coordinates(&range.base().block, start, end)
@@ -371,7 +371,7 @@ fn memory_base_variable(base: &Pointer) -> Option<Variable> {
     variable
 }
 
-fn owned_range_base_variable(range: &CMemoryRange) -> Option<Variable> {
+fn owned_range_base_variable(range: &MemoryRange) -> Option<Variable> {
     range.signed_constant_start()?;
     range.signed_constant_end()?;
     memory_base_variable(range.base())
@@ -379,9 +379,9 @@ fn owned_range_base_variable(range: &CMemoryRange) -> Option<Variable> {
 
 /// Exact byte coordinates relative to the base, for ordered neighbour probes
 /// and partition sweeps. Signed narrow bounds and unsigned native bounds both
-/// fit in i128 after multiplication by the u32 element width. Resource terms
+/// fit in i128 after multiplication by the u32 element width. TrackedResource terms
 /// themselves are unchanged; no machine-integer narrowing is involved.
-fn constant_relative_byte_endpoints(range: &CMemoryRange) -> (Option<i128>, Option<i128>) {
+fn constant_relative_byte_endpoints(range: &MemoryRange) -> (Option<i128>, Option<i128>) {
     let (start, end) = match range.wide_bounds() {
         Some((start, end)) => (
             start.uint64_as_const().map(i128::from),
@@ -400,7 +400,7 @@ fn constant_relative_byte_endpoints(range: &CMemoryRange) -> (Option<i128>, Opti
 /// Pointer construction combines trailing constant translations; peel just
 /// that explicit displacement, without traversing offsets or consulting facts.
 pub(in crate::kernel) fn constant_memory_coordinates(
-    range: &CMemoryRange,
+    range: &MemoryRange,
 ) -> Option<(Pointer, i128, i128)> {
     let (start, end) = constant_relative_byte_endpoints(range);
     let (start, end) = (start?, end?);
@@ -446,18 +446,18 @@ pub(super) fn remove_resource_index_entry<K: Ord + Clone>(
 }
 
 /// One fact's share of `ResourceContextIndex::fact_hash`.
-fn resource_fact_content_hash(fact: &CResourceFact) -> u64 {
+fn resource_fact_content_hash(fact: &ResourceFact) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     fact.hash(&mut hasher);
     hasher.finish()
 }
 
-fn spatial_memory_fact_key(fact: &CResourceFact) -> Option<CResourceFact> {
-    let resource = CResource::Memory(fact.memory_range()?.spatial_key());
+fn spatial_memory_fact_key(fact: &ResourceFact) -> Option<ResourceFact> {
+    let resource = Resource::Memory(fact.memory_range()?.spatial_key());
     Some(match fact {
-        CResourceFact::Own(_, units) => CResourceFact::Own(resource, units.clone()),
-        CResourceFact::View(_) => CResourceFact::View(resource),
+        ResourceFact::Own(_, units) => ResourceFact::Own(resource, units.clone()),
+        ResourceFact::View(_) => ResourceFact::View(resource),
     })
 }
 
@@ -478,7 +478,7 @@ impl ResourceContextIndex {
         }
     }
 
-    fn refresh_suspect_mutex_authority(&mut self, identity: CResource) {
+    fn refresh_suspect_mutex_authority(&mut self, identity: Resource) {
         let suspect = self
             .by_resource
             .get(&identity)
@@ -492,7 +492,7 @@ impl ResourceContextIndex {
         }
     }
 
-    fn with_inserted(&self, entry: ResourceEntryId, fact: &CResourceFact) -> Self {
+    fn with_inserted(&self, entry: ResourceEntryId, fact: &ResourceFact) -> Self {
         let mut result = self.clone();
         if fact.memory_range().is_some() && !self.exact.contains_key(fact) {
             result.memory_facts.insert(fact.clone(), ());
@@ -518,7 +518,7 @@ impl ResourceContextIndex {
                 result.owned_non_memory_entries = result.owned_non_memory_entries.with_value(entry);
             }
             result.owned_count += 1;
-            if let CResource::Composite { arguments, .. } = fact.resource() {
+            if let Resource::Composite { arguments, .. } = fact.resource() {
                 result.owned_composite_count += 1;
                 let count = result.owned_composite_facts.get(fact).copied().unwrap_or(0);
                 result.owned_composite_facts.insert(fact.clone(), count + 1);
@@ -536,28 +536,28 @@ impl ResourceContextIndex {
                 }
             }
         }
-        if let CResource::MutexGuard(identity) = fact.resource() {
+        if let Resource::MutexGuard(identity) = fact.resource() {
             result.mutex_authorities = insert_resource_index_entry(
                 &result.mutex_authorities,
                 (ResourceFamily::MutexGuard, identity.mutex.clone()),
                 entry,
             );
         }
-        if let CResource::MutexUse(identity) = fact.resource() {
+        if let Resource::MutexUse(identity) = fact.resource() {
             result.mutex_authorities = insert_resource_index_entry(
                 &result.mutex_authorities,
                 (ResourceFamily::MutexUse, identity.mutex.clone()),
                 entry,
             );
         }
-        if let CResource::MutexLive(identity) = fact.resource() {
+        if let Resource::MutexLive(identity) = fact.resource() {
             result.mutex_authorities = insert_resource_index_entry(
                 &result.mutex_authorities,
                 (ResourceFamily::MutexLive, identity.mutex.clone()),
                 entry,
             );
         }
-        if let CResource::Publication(right) = fact.resource() {
+        if let Resource::Publication(right) = fact.resource() {
             result.mutex_authorities = insert_resource_index_entry(
                 &result.mutex_authorities,
                 (ResourceFamily::Publication, right.flag.clone()),
@@ -568,7 +568,7 @@ impl ResourceContextIndex {
                     insert_resource_index_entry(&result.observed_publications, (), entry);
             }
         }
-        if let CResource::Instance(instance) = fact.resource() {
+        if let Resource::Instance(instance) = fact.resource() {
             result.instances =
                 insert_resource_index_entry(&result.instances, instance.identity, entry);
             if !fact.has_valid_exclusive_access() {
@@ -597,7 +597,7 @@ impl ResourceContextIndex {
                 }
             }
         }
-        if let CResource::Iterated(iterated) = fact.resource() {
+        if let Resource::Iterated(iterated) = fact.resource() {
             let [first, second] = iterated.blocks();
             result.iterated_by_block =
                 insert_resource_index_entry(&result.iterated_by_block, first.clone(), entry);
@@ -628,10 +628,10 @@ impl ResourceContextIndex {
         }
         if matches!(
             fact.resource(),
-            CResource::PopulationAuthority(_)
-                | CResource::MutexGuard(_)
-                | CResource::MutexLive(_)
-                | CResource::MutexUse(_)
+            Resource::PopulationAuthority(_)
+                | Resource::MutexGuard(_)
+                | Resource::MutexLive(_)
+                | Resource::MutexUse(_)
         ) {
             let identity = fact.resource();
             if !fact.has_valid_exclusive_access() {
@@ -731,8 +731,8 @@ impl ResourceContextIndex {
                 result.concrete_memory_by_base =
                     result.concrete_memory_by_base.with_inserted(base, count);
             }
-        } else if let CResource::Composite { name, arguments }
-        | CResource::Token { name, arguments } = fact.resource()
+        } else if let Resource::Composite { name, arguments }
+        | Resource::Token { name, arguments } = fact.resource()
         {
             result.exact_shapes = insert_resource_index_entry(
                 &result.exact_shapes,
@@ -748,7 +748,7 @@ impl ResourceContextIndex {
         result
     }
 
-    fn without_entry(&self, entry: ResourceEntryId, fact: &CResourceFact) -> Self {
+    fn without_entry(&self, entry: ResourceEntryId, fact: &ResourceFact) -> Self {
         let mut result = self.clone();
         if fact.memory_range().is_some()
             && self
@@ -789,7 +789,7 @@ impl ResourceContextIndex {
                     result.owned_non_memory_entries.without_value(&entry);
             }
             result.owned_count -= 1;
-            if let CResource::Composite { arguments, .. } = fact.resource() {
+            if let Resource::Composite { arguments, .. } = fact.resource() {
                 result.owned_composite_count -= 1;
                 let count = result
                     .owned_composite_facts
@@ -815,28 +815,28 @@ impl ResourceContextIndex {
                 }
             }
         }
-        if let CResource::MutexGuard(identity) = fact.resource() {
+        if let Resource::MutexGuard(identity) = fact.resource() {
             result.mutex_authorities = remove_resource_index_entry(
                 &result.mutex_authorities,
                 &(ResourceFamily::MutexGuard, identity.mutex.clone()),
                 entry,
             );
         }
-        if let CResource::MutexUse(identity) = fact.resource() {
+        if let Resource::MutexUse(identity) = fact.resource() {
             result.mutex_authorities = remove_resource_index_entry(
                 &result.mutex_authorities,
                 &(ResourceFamily::MutexUse, identity.mutex.clone()),
                 entry,
             );
         }
-        if let CResource::MutexLive(identity) = fact.resource() {
+        if let Resource::MutexLive(identity) = fact.resource() {
             result.mutex_authorities = remove_resource_index_entry(
                 &result.mutex_authorities,
                 &(ResourceFamily::MutexLive, identity.mutex.clone()),
                 entry,
             );
         }
-        if let CResource::Publication(right) = fact.resource() {
+        if let Resource::Publication(right) = fact.resource() {
             result.mutex_authorities = remove_resource_index_entry(
                 &result.mutex_authorities,
                 &(ResourceFamily::Publication, right.flag.clone()),
@@ -847,7 +847,7 @@ impl ResourceContextIndex {
                     remove_resource_index_entry(&result.observed_publications, &(), entry);
             }
         }
-        if let CResource::Instance(instance) = fact.resource() {
+        if let Resource::Instance(instance) = fact.resource() {
             result.instances =
                 remove_resource_index_entry(&result.instances, &instance.identity, entry);
             if !fact.has_valid_exclusive_access() {
@@ -882,7 +882,7 @@ impl ResourceContextIndex {
                 }
             }
         }
-        if let CResource::Iterated(iterated) = fact.resource() {
+        if let Resource::Iterated(iterated) = fact.resource() {
             let [first, second] = iterated.blocks();
             result.iterated_by_block =
                 remove_resource_index_entry(&result.iterated_by_block, first, entry);
@@ -924,10 +924,10 @@ impl ResourceContextIndex {
         }
         if matches!(
             fact.resource(),
-            CResource::PopulationAuthority(_)
-                | CResource::MutexGuard(_)
-                | CResource::MutexLive(_)
-                | CResource::MutexUse(_)
+            Resource::PopulationAuthority(_)
+                | Resource::MutexGuard(_)
+                | Resource::MutexLive(_)
+                | Resource::MutexUse(_)
         ) {
             let identity = fact.resource();
             if !fact.has_valid_exclusive_access() {
@@ -1023,8 +1023,8 @@ impl ResourceContextIndex {
                         .with_inserted(base, count - 1)
                 };
             }
-        } else if let CResource::Composite { name, arguments }
-        | CResource::Token { name, arguments } = fact.resource()
+        } else if let Resource::Composite { name, arguments }
+        | Resource::Token { name, arguments } = fact.resource()
         {
             result.exact_shapes = remove_resource_index_entry(
                 &result.exact_shapes,
@@ -1044,9 +1044,9 @@ impl ResourceContextIndex {
 /// Whether one recorded step can have written a projection's stated footprint.
 ///
 /// The per-step rule is the resource tracker's, asked about
-/// [`crate::kernel::resource_tracker::Resource::Ranges`] for a footprint the
+/// [`crate::kernel::resource_tracker::TrackedResource::Ranges`] for a footprint the
 /// kernel could name and
-/// [`crate::kernel::resource_tracker::Resource::AnyMemory`] for one it could
+/// [`crate::kernel::resource_tracker::TrackedResource::AnyMemory`] for one it could
 /// not, so a new step kind has one answer for a footprint rather than one per
 /// caller. A footprint with no memory in it is never touched and is not asked
 /// about at all.
@@ -1054,15 +1054,15 @@ impl ResourceContextIndex {
 /// step: the footprint arm reads none of it, and constructing an empty context
 /// inside this loop would be work the rule does not need.
 fn memory_derivation_affects_footprint(
-    derivation: &CMemoryDerivation,
+    derivation: &MemoryDerivation,
     produced: &crate::kernel::SharedMemory,
     footprint: &ResourceMemoryFootprint,
     evidence: &crate::kernel::resource_tracker::step_effect::Evidence<'_>,
 ) -> bool {
-    use crate::kernel::resource_tracker::{Resource, step_effect};
+    use crate::kernel::resource_tracker::{TrackedResource, step_effect};
     let resource = match footprint {
-        ResourceMemoryFootprint::Exact(ranges) => Resource::Ranges(ranges),
-        ResourceMemoryFootprint::Unknown => Resource::AnyMemory,
+        ResourceMemoryFootprint::Exact(ranges) => TrackedResource::Ranges(ranges),
+        ResourceMemoryFootprint::Unknown => TrackedResource::AnyMemory,
         ResourceMemoryFootprint::None => return false,
     };
     !matches!(
@@ -1097,7 +1097,7 @@ pub(in crate::kernel) fn byte_intervals_disjoint(
 }
 
 pub(in crate::kernel) fn memory_range_overlaps_pointer(
-    range: &CMemoryRange,
+    range: &MemoryRange,
     pointer: &Pointer,
     bytes: u32,
 ) -> bool {
@@ -1133,7 +1133,7 @@ pub(in crate::kernel) fn memory_range_overlaps_pointer(
 fn add_memory_interval_candidates(
     index: &PersistentMap<ResourceMemoryIntervalNode, ResourceOccurrenceIds>,
     subtree: &PersistentMap<ResourceMemoryIntervalNode, ResourceOccurrenceIds>,
-    range: &CMemoryRange,
+    range: &MemoryRange,
     occurrences: &mut ResourceOccurrenceIds,
 ) {
     let Some(query_nodes) = memory_interval_nodes(range) else {
@@ -1166,7 +1166,7 @@ fn add_memory_interval_candidates(
     }
 }
 
-pub(in crate::kernel) fn memory_ranges_overlap(left: &CMemoryRange, right: &CMemoryRange) -> bool {
+pub(in crate::kernel) fn memory_ranges_overlap(left: &MemoryRange, right: &MemoryRange) -> bool {
     if left.base().blocks_proven_distinct(right.base()) {
         return false;
     }
@@ -1182,7 +1182,7 @@ pub(in crate::kernel) fn memory_ranges_overlap(left: &CMemoryRange, right: &CMem
     left_start < right_end && right_start < left_end
 }
 
-pub(crate) fn concrete_memory_range_bounds(range: &CMemoryRange) -> Option<(i64, i64)> {
+pub(crate) fn concrete_memory_range_bounds(range: &MemoryRange) -> Option<(i64, i64)> {
     let base = range.base().offset.as_const()?;
     let start_elements = range.signed_constant_start()?;
     let end_elements = range.signed_constant_end()?;
@@ -1207,7 +1207,7 @@ pub(crate) fn concrete_memory_range_bounds(range: &CMemoryRange) -> Option<(i64,
     Some((start, end))
 }
 
-fn memory_footprint_for_fact(fact: &CResourceFact) -> ResourceMemoryFootprint {
+fn memory_footprint_for_fact(fact: &ResourceFact) -> ResourceMemoryFootprint {
     if let Some(range) = fact.memory_range() {
         let mut ranges = vec![range.clone()];
         let mut uncertain = false;
@@ -1241,7 +1241,7 @@ fn memory_footprint_for_fact(fact: &CResourceFact) -> ResourceMemoryFootprint {
     // lowering supplies those prerequisite ranges explicitly, treating it as
     // unknown is the only sound choice; it still remains independently
     // indexed from concrete sibling projections.
-    if matches!(fact.resource(), CResource::Composite { .. }) {
+    if matches!(fact.resource(), Resource::Composite { .. }) {
         ResourceMemoryFootprint::Unknown
     } else {
         ResourceMemoryFootprint::None
@@ -1256,9 +1256,9 @@ fn memory_footprint_for_fact(fact: &CResourceFact) -> ResourceMemoryFootprint {
 /// unknown footprint instead of escaping invalidation.
 fn collect_memory_load_ranges(
     offset: &PointerOffsetTerm,
-    ranges: &mut Vec<CMemoryRange>,
+    ranges: &mut Vec<MemoryRange>,
     uncertain: &mut bool,
-    source_snapshot: &mut Option<CMemorySnapshotIdentity>,
+    source_snapshot: &mut Option<MemorySnapshotIdentity>,
 ) {
     collect_memory_load_work(
         [MemoryLoadFootprintWork::Offset(offset, 0)],
@@ -1278,9 +1278,9 @@ enum MemoryLoadFootprintWork<'a> {
 
 fn collect_memory_load_ranges_from_term(
     term: &MachineTerm,
-    ranges: &mut Vec<CMemoryRange>,
+    ranges: &mut Vec<MemoryRange>,
     uncertain: &mut bool,
-    source_snapshot: &mut Option<CMemorySnapshotIdentity>,
+    source_snapshot: &mut Option<MemorySnapshotIdentity>,
 ) {
     collect_memory_load_work(
         [MemoryLoadFootprintWork::Term(term, 0)],
@@ -1292,9 +1292,9 @@ fn collect_memory_load_ranges_from_term(
 
 fn collect_memory_load_work<'a>(
     initial: impl IntoIterator<Item = MemoryLoadFootprintWork<'a>>,
-    ranges: &mut Vec<CMemoryRange>,
+    ranges: &mut Vec<MemoryRange>,
     uncertain: &mut bool,
-    source_snapshot: &mut Option<CMemorySnapshotIdentity>,
+    source_snapshot: &mut Option<MemorySnapshotIdentity>,
 ) {
     let mut work = initial.into_iter().collect::<Vec<_>>();
     let mut shared_seen = std::collections::HashSet::new();
@@ -1377,13 +1377,13 @@ fn collect_memory_load_work<'a>(
                             *uncertain = true;
                             continue;
                         }
-                        let snapshot = CMemorySnapshotIdentity::of(memory.memory());
+                        let snapshot = MemorySnapshotIdentity::of(memory.memory());
                         if source_snapshot.is_some_and(|previous| previous != snapshot) {
                             *uncertain = true;
                             continue;
                         }
                         *source_snapshot = Some(snapshot);
-                        ranges.push(CMemoryRange::new_with_element_width(
+                        ranges.push(MemoryRange::new_with_element_width(
                             pointer.as_ref().clone(),
                             MachineTerm::constant(0),
                             MachineTerm::constant(1),
@@ -1431,12 +1431,12 @@ impl MemorySplitOrigins {
 impl ResourceContext {
     fn exclusive_validity_error(
         &self,
-        fact: &CResourceFact,
+        fact: &ResourceFact,
     ) -> Option<ResourceContextValidityError> {
-        if let CResource::PopulationAuthority(_)
-        | CResource::MutexGuard(_)
-        | CResource::MutexLive(_)
-        | CResource::MutexUse(_) = fact.resource()
+        if let Resource::PopulationAuthority(_)
+        | Resource::MutexGuard(_)
+        | Resource::MutexLive(_)
+        | Resource::MutexUse(_) = fact.resource()
         {
             if !fact.has_valid_exclusive_access() {
                 return Some(ResourceContextValidityError::InvalidExclusiveAccess(
@@ -1453,7 +1453,7 @@ impl ResourceContext {
                 .then(|| ResourceContextValidityError::DuplicateOwnedResourceFact(fact.clone()));
         }
         let identity = match fact.resource() {
-            CResource::Instance(instance) => instance.identity,
+            Resource::Instance(instance) => instance.identity,
             _ => return None,
         };
         if !fact.has_valid_exclusive_access() {
@@ -1491,7 +1491,7 @@ impl ResourceContext {
         entries
             .iter()
             .filter_map(|entry| match self.fact(*entry) {
-                CResourceFact::Own(CResource::Instance(instance), quantity)
+                ResourceFact::Own(Resource::Instance(instance), quantity)
                     if quantity.as_const() == Some(1) =>
                 {
                     Some(instance)
@@ -1530,7 +1530,7 @@ impl ResourceContext {
         if entries.len() != 1 {
             return None;
         }
-        let CResourceFact::Own(CResource::Instance(instance), quantity) =
+        let ResourceFact::Own(Resource::Instance(instance), quantity) =
             self.fact(*entries.iter().next()?)
         else {
             return None;
@@ -1565,18 +1565,16 @@ impl ResourceContext {
         context
     }
 
-    pub(in crate::kernel) fn memory_input_facts(&self) -> &SnapshotMap<CResourceFact, ()> {
+    pub(in crate::kernel) fn memory_input_facts(&self) -> &SnapshotMap<ResourceFact, ()> {
         &self.storage.index.memory_facts
     }
 
     /// The owned facts of resources other than memory, each once.
-    pub(in crate::kernel) fn owned_non_memory_input_facts(
-        &self,
-    ) -> &SnapshotMap<CResourceFact, ()> {
+    pub(in crate::kernel) fn owned_non_memory_input_facts(&self) -> &SnapshotMap<ResourceFact, ()> {
         &self.storage.index.owned_non_memory_facts
     }
 
-    pub(in crate::kernel) fn flat_owned_memory_ranges(&self) -> &SnapshotMap<CMemoryRange, ()> {
+    pub(in crate::kernel) fn flat_owned_memory_ranges(&self) -> &SnapshotMap<MemoryRange, ()> {
         &self.storage.index.owned_memory_ranges
     }
 
@@ -1590,10 +1588,7 @@ impl ResourceContext {
 
     /// Direct occurrences of only the selected resource. Cached projections
     /// are not independent units and must not be counted or moved as such.
-    pub(in crate::kernel) fn exact_resource_facts(
-        &self,
-        resource: &CResource,
-    ) -> Vec<CResourceFact> {
+    pub(in crate::kernel) fn exact_resource_facts(&self, resource: &Resource) -> Vec<ResourceFact> {
         self.storage
             .index
             .by_resource
@@ -1616,19 +1611,19 @@ impl ResourceContext {
     /// projections are not independent members of the partition.
     pub(crate) fn proves_exact_partition_separation(
         &self,
-        left: &CResource,
-        right: &CResource,
+        left: &Resource,
+        right: &Resource,
     ) -> bool {
         #[cfg(test)]
         let _operation =
             crate::kernel::search::FastOperationScope::enter("exact partition separation");
         if left == right
-            || matches!((left, right), (CResource::Memory(a), CResource::Memory(b))
+            || matches!((left, right), (Resource::Memory(a), Resource::Memory(b))
             if a.spatial_key() == b.spatial_key())
         {
             return false;
         }
-        let direct = |fact: CResourceFact| {
+        let direct = |fact: ResourceFact| {
             let entry = if let Some(key) = spatial_memory_fact_key(&fact) {
                 self.storage.index.spatial_memory.get(&key)
             } else {
@@ -1644,16 +1639,16 @@ impl ResourceContext {
                             .contains_key(entry)
                 })
         };
-        let left_owned = direct(CResourceFact::own(left.clone()));
-        let right_owned = direct(CResourceFact::own(right.clone()));
-        (left_owned && (right_owned || direct(CResourceFact::View(right.clone()))))
-            || (right_owned && direct(CResourceFact::View(left.clone())))
+        let left_owned = direct(ResourceFact::own(left.clone()));
+        let right_owned = direct(ResourceFact::own(right.clone()));
+        (left_owned && (right_owned || direct(ResourceFact::View(right.clone()))))
+            || (right_owned && direct(ResourceFact::View(left.clone())))
     }
 
     /// Whether this snapshot contains the exact named representation.
     /// This does not use proof-aware entailment; representation-sensitive
     /// rewrites need the entry itself, not an entailed cached projection.
-    pub(crate) fn contains_exact_representation(&self, fact: &CResourceFact) -> bool {
+    pub(crate) fn contains_exact_representation(&self, fact: &ResourceFact) -> bool {
         self.storage.index.exact.contains_key(fact)
     }
 
@@ -1668,7 +1663,7 @@ impl ResourceContext {
         }
     }
 
-    pub(crate) fn changed_facts_since(&self, ancestor: &Self) -> Option<BTreeSet<CResourceFact>> {
+    pub(crate) fn changed_facts_since(&self, ancestor: &Self) -> Option<BTreeSet<ResourceFact>> {
         if !std::sync::Arc::ptr_eq(&self.storage.origin, &ancestor.storage.origin) {
             return None;
         }
@@ -1695,7 +1690,7 @@ impl ResourceContext {
     pub(in crate::kernel) fn changed_memory_inputs_from(
         &self,
         previous: &Self,
-    ) -> Option<Vec<CResourceFact>> {
+    ) -> Option<Vec<ResourceFact>> {
         self.changed_inputs_from(previous, |fact| fact.memory_range().is_some())
     }
 
@@ -1704,15 +1699,15 @@ impl ResourceContext {
     pub(in crate::kernel) fn changed_owned_inputs_from(
         &self,
         previous: &Self,
-    ) -> Option<Vec<CResourceFact>> {
-        self.changed_inputs_from(previous, CResourceFact::is_own)
+    ) -> Option<Vec<ResourceFact>> {
+        self.changed_inputs_from(previous, ResourceFact::is_own)
     }
 
     fn changed_inputs_from(
         &self,
         previous: &Self,
-        selected: impl Fn(&CResourceFact) -> bool,
-    ) -> Option<Vec<CResourceFact>> {
+        selected: impl Fn(&ResourceFact) -> bool,
+    ) -> Option<Vec<ResourceFact>> {
         if !std::sync::Arc::ptr_eq(&self.storage.origin, &previous.storage.origin) {
             return None;
         }
@@ -1777,7 +1772,7 @@ impl ResourceContext {
         for (occurrence, old, _) in &changes {
             crate::instrumentation::record_deterministic_work(1);
             if let Some(old) = old {
-                if let CResource::Instance(instance) = before.fact(*old).resource() {
+                if let Resource::Instance(instance) = before.fact(*old).resource() {
                     self.record_instance_consumption(
                         instance.identity(),
                         after.instance_consumption(instance.identity()).cloned(),
@@ -1800,7 +1795,7 @@ impl ResourceContext {
             let Some(entry) = new else {
                 continue;
             };
-            if let CResource::Instance(instance) = after.fact(entry).resource() {
+            if let Resource::Instance(instance) = after.fact(entry).resource() {
                 self.record_instance_consumption(
                     instance.identity(),
                     after.instance_consumption(instance.identity()).cloned(),
@@ -1851,7 +1846,7 @@ impl ResourceContext {
     }
 
     /// Exact multiplicity of one representation, for an opt-in proof trace.
-    pub(crate) fn exact_count(&self, fact: &CResourceFact) -> usize {
+    pub(crate) fn exact_count(&self, fact: &ResourceFact) -> usize {
         self.storage
             .index
             .exact
@@ -1895,7 +1890,7 @@ impl ResourceContext {
                     // it is derived.
                     let support = if matches!(
                         supported_by,
-                        Some(CResourceFact::Own(CResource::Instance(_), _))
+                        Some(ResourceFact::Own(Resource::Instance(_), _))
                     ) {
                         None
                     } else {
@@ -1963,10 +1958,10 @@ impl ResourceContext {
     ) -> Option<Self> {
         let mut changed = left.changed_facts_since(ancestor)?;
         changed.extend(right.changed_facts_since(ancestor)?);
-        let representations = |context: &Self, fact: &CResourceFact| {
+        let representations = |context: &Self, fact: &ResourceFact| {
             let mut explicit = 0usize;
             let mut supported = BTreeMap::<
-                (CResourceFact, ResourceOccurrenceId),
+                (ResourceFact, ResourceOccurrenceId),
                 (usize, Option<ResourceSupportMetadata>, bool),
             >::new();
             for entry in context
@@ -2261,7 +2256,7 @@ impl ResourceContext {
     /// Supplier lookups must use retained indexes rather than this iterator.
     pub(in crate::kernel) fn iter(
         &self,
-    ) -> impl DoubleEndedIterator<Item = &CResourceFact> + ExactSizeIterator {
+    ) -> impl DoubleEndedIterator<Item = &ResourceFact> + ExactSizeIterator {
         self.storage.facts.iter().map(|(_, fact)| fact)
     }
 
@@ -2269,11 +2264,11 @@ impl ResourceContext {
     pub(crate) fn diagnostic_facts(
         &self,
         limit: usize,
-    ) -> (usize, impl Iterator<Item = &CResourceFact>) {
+    ) -> (usize, impl Iterator<Item = &ResourceFact>) {
         (self.storage.facts.len(), self.iter().take(limit))
     }
 
-    fn fact(&self, entry: ResourceEntryId) -> &CResourceFact {
+    fn fact(&self, entry: ResourceEntryId) -> &ResourceFact {
         self.storage
             .facts
             .get(&entry)
@@ -2291,7 +2286,7 @@ impl ResourceContext {
     pub(crate) fn owned_occurrence_matches(
         &self,
         occurrence: ResourceOccurrenceId,
-        fact: &CResourceFact,
+        fact: &ResourceFact,
     ) -> bool {
         self.storage
             .entry_by_occurrence
@@ -2304,7 +2299,7 @@ impl ResourceContext {
     pub(crate) fn view_fact_at_occurrence(
         &self,
         occurrence: ResourceOccurrenceId,
-    ) -> Option<&CResourceFact> {
+    ) -> Option<&ResourceFact> {
         let entry = self.storage.entry_by_occurrence.get(&occurrence)?;
         let fact = self.storage.facts.get(entry)?;
         fact.is_view().then_some(fact)
@@ -2345,7 +2340,7 @@ impl ResourceContext {
             })
     }
 
-    fn support_cache_key(&self, entry: ResourceEntryId) -> (CResourceFact, usize) {
+    fn support_cache_key(&self, entry: ResourceEntryId) -> (ResourceFact, usize) {
         let fact = self.fact(entry).clone();
         let rank = self
             .storage
@@ -2360,11 +2355,11 @@ impl ResourceContext {
         (fact, rank)
     }
 
-    fn insert_fact(&mut self, fact: CResourceFact) {
+    fn insert_fact(&mut self, fact: ResourceFact) {
         self.insert_fact_with_support(fact, None);
     }
 
-    fn insert_fact_with_support(&mut self, fact: CResourceFact, support: Option<CResourceFact>) {
+    fn insert_fact_with_support(&mut self, fact: ResourceFact, support: Option<ResourceFact>) {
         let support_entry = support.as_ref().and_then(|support| {
             self.storage
                 .index
@@ -2382,8 +2377,8 @@ impl ResourceContext {
 
     fn insert_fact_with_support_occurrence(
         &mut self,
-        fact: CResourceFact,
-        support: Option<CResourceFact>,
+        fact: ResourceFact,
+        support: Option<ResourceFact>,
         support_occurrence: Option<ResourceOccurrenceId>,
     ) {
         self.insert_fact_with_support_occurrence_and_metadata(
@@ -2396,8 +2391,8 @@ impl ResourceContext {
 
     fn insert_fact_with_support_occurrence_and_metadata(
         &mut self,
-        fact: CResourceFact,
-        support: Option<CResourceFact>,
+        fact: ResourceFact,
+        support: Option<ResourceFact>,
         support_occurrence: Option<ResourceOccurrenceId>,
         support_metadata: Option<ResourceSupportMetadata>,
     ) {
@@ -2412,8 +2407,8 @@ impl ResourceContext {
 
     fn insert_fact_with_support_occurrence_and_metadata_at(
         &mut self,
-        fact: CResourceFact,
-        support: Option<CResourceFact>,
+        fact: ResourceFact,
+        support: Option<ResourceFact>,
         support_occurrence: Option<ResourceOccurrenceId>,
         support_metadata: Option<ResourceSupportMetadata>,
         occurrence_override: Option<ResourceOccurrenceId>,
@@ -2430,8 +2425,8 @@ impl ResourceContext {
 
     fn insert_fact_with_support_at_entry(
         &mut self,
-        fact: CResourceFact,
-        support: Option<CResourceFact>,
+        fact: ResourceFact,
+        support: Option<ResourceFact>,
         support_occurrence: Option<ResourceOccurrenceId>,
         support_metadata: Option<ResourceSupportMetadata>,
         occurrence_override: Option<ResourceOccurrenceId>,
@@ -2623,7 +2618,7 @@ impl ResourceContext {
         self.advance_published_resource_entries();
     }
 
-    fn remove_entry(&mut self, entry: ResourceEntryId) -> CResourceFact {
+    fn remove_entry(&mut self, entry: ResourceEntryId) -> ResourceFact {
         // Remove the complete support-descendant closure. An explicit stack
         // keeps work proportional to affected output, and the visited set
         // makes malformed cyclic evidence harmless.
@@ -2676,7 +2671,7 @@ impl ResourceContext {
         fact
     }
 
-    fn remove_entry_only(&mut self, entry: ResourceEntryId) -> CResourceFact {
+    fn remove_entry_only(&mut self, entry: ResourceEntryId) -> ResourceFact {
         let previous = self.storage.clone();
         let fact = self.fact(entry).clone();
         let support = self.storage.supported_by.get(&entry).cloned();
@@ -2842,7 +2837,7 @@ impl ResourceContext {
     /// an earlier equal authority changes the rank of every later equal
     /// authority; leaving the old `(fact, rank)` entries in place would let a
     /// later insertion inherit stale expansion evidence.
-    fn rekey_cached_support_entries(&mut self, fact: &CResourceFact) {
+    fn rekey_cached_support_entries(&mut self, fact: &ResourceFact) {
         let previous = self.storage.clone();
         let mut bucket = PersistentMap::default();
         let mut rank = 0usize;
@@ -2908,8 +2903,8 @@ impl ResourceContext {
 
     fn replace_facts(
         &mut self,
-        facts: impl IntoIterator<Item = (Option<ResourceOccurrenceId>, CResourceFact)>,
-        changed_facts: impl IntoIterator<Item = CResourceFact>,
+        facts: impl IntoIterator<Item = (Option<ResourceOccurrenceId>, ResourceFact)>,
+        changed_facts: impl IntoIterator<Item = ResourceFact>,
     ) {
         // Normalization rebuilds the indexed representation, but unchanged
         // facts keep their opaque authority occurrence. This lets the
@@ -2980,7 +2975,7 @@ impl ResourceContext {
     pub(in crate::kernel) fn owned_instances_with_pointer_argument<'a>(
         &'a self,
         base: &Pointer,
-    ) -> impl Iterator<Item = (u64, &'a CResourceFact)> + 'a {
+    ) -> impl Iterator<Item = (u64, &'a ResourceFact)> + 'a {
         crate::instrumentation::record_deterministic_work(1);
         self.storage
             .index
@@ -3000,7 +2995,7 @@ impl ResourceContext {
     pub(in crate::kernel) fn owned_composites_with_pointer_argument<'a>(
         &'a self,
         base: &Pointer,
-    ) -> impl Iterator<Item = &'a CResourceFact> + 'a {
+    ) -> impl Iterator<Item = &'a ResourceFact> + 'a {
         crate::instrumentation::record_deterministic_work(1);
         self.storage
             .index
@@ -3018,7 +3013,7 @@ impl ResourceContext {
     pub(in crate::kernel) fn owned_composites_with_argument_block<'a>(
         &'a self,
         block: &PointerBlock,
-    ) -> impl Iterator<Item = &'a CResourceFact> + 'a {
+    ) -> impl Iterator<Item = &'a ResourceFact> + 'a {
         crate::instrumentation::record_deterministic_work(1);
         self.storage
             .index
@@ -3034,7 +3029,7 @@ impl ResourceContext {
 
     /// The owned folded composites with their multiplicity, as one
     /// content-hashed persistent map.
-    pub(in crate::kernel) fn owned_composite_facts(&self) -> &SnapshotMap<CResourceFact, usize> {
+    pub(in crate::kernel) fn owned_composite_facts(&self) -> &SnapshotMap<ResourceFact, usize> {
         &self.storage.index.owned_composite_facts
     }
 
@@ -3043,7 +3038,7 @@ impl ResourceContext {
     /// facts.
     pub(in crate::kernel) fn owned_composite_families<'a>(
         &'a self,
-    ) -> impl Iterator<Item = (&'a str, impl Iterator<Item = &'a CResourceFact> + 'a)> + 'a {
+    ) -> impl Iterator<Item = (&'a str, impl Iterator<Item = &'a ResourceFact> + 'a)> + 'a {
         self.storage
             .index
             .exact_shapes
@@ -3075,7 +3070,7 @@ impl ResourceContext {
             .is_empty()
     }
 
-    /// The facts `CResourceFact::may_refer_to_memory_block` selects for
+    /// The facts `ResourceFact::may_refer_to_memory_block` selects for
     /// `block`, drawn from the indexes instead of a scan: the memory facts
     /// based in the block, then the composite facts with a pointer argument
     /// into it. Memory in other blocks, tokens and instances are never
@@ -3084,7 +3079,7 @@ impl ResourceContext {
     pub(in crate::kernel) fn facts_that_may_refer_to_memory_block<'a>(
         &'a self,
         block: &PointerBlock,
-    ) -> impl Iterator<Item = &'a CResourceFact> + use<'a> {
+    ) -> impl Iterator<Item = &'a ResourceFact> + use<'a> {
         let composite_block = block.clone();
         let composites = self
             .storage
@@ -3144,7 +3139,7 @@ impl ResourceContext {
     pub(in crate::kernel) fn memory_facts_in_block<'a>(
         &'a self,
         block: &PointerBlock,
-    ) -> impl Iterator<Item = &'a CResourceFact> + use<'a> {
+    ) -> impl Iterator<Item = &'a ResourceFact> + use<'a> {
         self.storage
             .index
             .memory_by_block
@@ -3160,7 +3155,7 @@ impl ResourceContext {
     pub(in crate::kernel) fn owned_memory_facts_in_block<'a>(
         &'a self,
         block: &PointerBlock,
-    ) -> impl Iterator<Item = &'a CResourceFact> + use<'a> {
+    ) -> impl Iterator<Item = &'a ResourceFact> + use<'a> {
         self.storage
             .index
             .owned_memory_by_block
@@ -3176,7 +3171,7 @@ impl ResourceContext {
     pub(in crate::kernel) fn iterated_facts_in_block<'a>(
         &'a self,
         block: &PointerBlock,
-    ) -> impl Iterator<Item = &'a CResourceFact> + use<'a> {
+    ) -> impl Iterator<Item = &'a ResourceFact> + use<'a> {
         self.storage
             .index
             .iterated_by_block
@@ -3189,7 +3184,7 @@ impl ResourceContext {
 
     /// Every iterated guarded-ownership fact held, each once, from the block
     /// index. Charges one work unit per fact visited.
-    pub(in crate::kernel) fn iterated_facts(&self) -> Vec<CResourceFact> {
+    pub(in crate::kernel) fn iterated_facts(&self) -> Vec<ResourceFact> {
         let mut entries = BTreeSet::new();
         for (_, bucket) in self.storage.index.iterated_by_block.iter() {
             for entry in bucket.iter() {
@@ -3214,8 +3209,8 @@ impl ResourceContext {
     /// enter the expensive memory-resolution comparator.
     pub(in crate::kernel) fn direct_match_candidates(
         &self,
-        fact: &CResourceFact,
-    ) -> impl Iterator<Item = &CResourceFact> {
+        fact: &ResourceFact,
+    ) -> impl Iterator<Item = &ResourceFact> {
         self.direct_match_candidate_positions(fact)
             .into_iter()
             .flat_map(ResourceEntryIds::iter)
@@ -3231,9 +3226,9 @@ impl ResourceContext {
     /// requirement is available.
     pub(crate) fn directly_supporting_fact(
         &self,
-        required: &CResourceFact,
+        required: &ResourceFact,
         assumptions: &PureFactContext,
-    ) -> Option<&CResourceFact> {
+    ) -> Option<&ResourceFact> {
         if let Some(range) = required.memory_range() {
             return self.directly_supporting_memory_fact(required, range, assumptions);
         }
@@ -3246,10 +3241,10 @@ impl ResourceContext {
     /// alignment or entailment check does not enumerate alternative suppliers.
     fn directly_supporting_memory_fact(
         &self,
-        required: &CResourceFact,
-        range: &CMemoryRange,
+        required: &ResourceFact,
+        range: &MemoryRange,
         assumptions: &PureFactContext,
-    ) -> Option<&CResourceFact> {
+    ) -> Option<&ResourceFact> {
         let candidates = self.memory_fact_candidates(range, required.is_own(), assumptions);
         let entry = candidates.entries.single_supplier()?;
         let aligned = candidates.requirement(entry, required)?;
@@ -3268,10 +3263,10 @@ impl ResourceContext {
     /// selection grants no authority: the caller checks the full arguments.
     pub(in crate::kernel) fn direct_match_candidates_for(
         &self,
-        fact: &CResourceFact,
+        fact: &ResourceFact,
         assumptions: &PureFactContext,
-    ) -> Vec<&CResourceFact> {
-        let (CResource::Composite { name, arguments } | CResource::Token { name, arguments }) =
+    ) -> Vec<&ResourceFact> {
+        let (Resource::Composite { name, arguments } | Resource::Token { name, arguments }) =
             fact.resource()
         else {
             return self.direct_match_candidates(fact).collect();
@@ -3322,33 +3317,33 @@ impl ResourceContext {
     /// visits every range in a shared block. Callers still check coverage.
     pub(in crate::kernel) fn owned_memory_candidates_for(
         &self,
-        range: &CMemoryRange,
+        range: &MemoryRange,
         assumptions: &PureFactContext,
-    ) -> Vec<CResourceFact> {
+    ) -> Vec<ResourceFact> {
         let candidates = self.memory_fact_candidates(range, true, assumptions);
         candidates
             .entries
             .iter()
             .map(|entry| self.fact(entry).clone())
-            .filter(CResourceFact::is_own)
+            .filter(ResourceFact::is_own)
             .collect()
     }
 
     /// Select a deterministic owned candidate from the pointer index. Multiple
     /// returned sibling shares are legitimate. This lookup grants no authority:
     /// callers must still check the selected loan, initialization, and type.
-    pub(crate) fn mutex_use_candidate_at(&self, pointer: &Pointer) -> Option<&CResourceFact> {
+    pub(crate) fn mutex_use_candidate_at(&self, pointer: &Pointer) -> Option<&ResourceFact> {
         let entries = self
             .storage
             .index
             .mutex_authorities
             .get(&(ResourceFamily::MutexUse, pointer.clone()))?;
         let fact = self.fact(*entries.iter().next()?);
-        matches!(fact, CResourceFact::Own(_, q) if q.as_const() == Some(1)).then_some(fact)
+        matches!(fact, ResourceFact::Own(_, q) if q.as_const() == Some(1)).then_some(fact)
     }
 
     #[cfg(test)]
-    pub(crate) fn mutex_use_at(&self, pointer: &Pointer) -> Option<&CResourceFact> {
+    pub(crate) fn mutex_use_at(&self, pointer: &Pointer) -> Option<&ResourceFact> {
         let entries = self
             .storage
             .index
@@ -3358,10 +3353,10 @@ impl ResourceContext {
             return None;
         }
         let fact = self.fact(*entries.iter().next()?);
-        matches!(fact, CResourceFact::Own(_, q) if q.as_const() == Some(1)).then_some(fact)
+        matches!(fact, ResourceFact::Own(_, q) if q.as_const() == Some(1)).then_some(fact)
     }
 
-    pub(crate) fn mutex_live_at(&self, pointer: &Pointer) -> Option<&CResourceFact> {
+    pub(crate) fn mutex_live_at(&self, pointer: &Pointer) -> Option<&ResourceFact> {
         let entries = self
             .storage
             .index
@@ -3371,7 +3366,7 @@ impl ResourceContext {
             return None;
         }
         let fact = self.fact(*entries.iter().next()?);
-        matches!(fact, CResourceFact::Own(_, q) if q.as_const() == Some(1)).then_some(fact)
+        matches!(fact, ResourceFact::Own(_, q) if q.as_const() == Some(1)).then_some(fact)
     }
 
     /// The owned publication right of `side` for the flag at `pointer`, found
@@ -3380,7 +3375,7 @@ impl ResourceContext {
         &self,
         side: super::PublicationSide,
         pointer: &Pointer,
-    ) -> Option<&CResourceFact> {
+    ) -> Option<&ResourceFact> {
         let entries = self
             .storage
             .index
@@ -3390,7 +3385,7 @@ impl ResourceContext {
             .iter()
             .map(|entry| self.fact(*entry))
             .filter(|fact| {
-                matches!(fact, CResourceFact::Own(CResource::Publication(right), q)
+                matches!(fact, ResourceFact::Own(Resource::Publication(right), q)
                 if right.side == side && q.as_const() == Some(1))
             });
         let fact = owned.next()?;
@@ -3407,7 +3402,7 @@ impl ResourceContext {
             .is_some_and(|entries| !entries.is_empty())
     }
 
-    pub(crate) fn observed_publication_rights(&self) -> Vec<CResourceFact> {
+    pub(crate) fn observed_publication_rights(&self) -> Vec<ResourceFact> {
         self.storage
             .index
             .observed_publications
@@ -3421,7 +3416,7 @@ impl ResourceContext {
             .unwrap_or_default()
     }
 
-    pub(crate) fn mutex_guard_at(&self, pointer: &Pointer) -> Option<&CResourceFact> {
+    pub(crate) fn mutex_guard_at(&self, pointer: &Pointer) -> Option<&ResourceFact> {
         let entries = self
             .storage
             .index
@@ -3431,7 +3426,7 @@ impl ResourceContext {
             return None;
         }
         let fact = self.fact(*entries.iter().next()?);
-        matches!(fact, CResourceFact::Own(_, q) if q.as_const() == Some(1)).then_some(fact)
+        matches!(fact, ResourceFact::Own(_, q) if q.as_const() == Some(1)).then_some(fact)
     }
 
     /// Select an exact owned occurrence for a fact-only API. Equal owned
@@ -3439,8 +3434,8 @@ impl ResourceContext {
     /// projection must reject an ambiguous value-only lookup.
     pub(crate) fn unique_owned_occurrence_for_fact(
         &self,
-        required: &CResourceFact,
-    ) -> Option<(ResourceOccurrenceId, &CResourceFact)> {
+        required: &ResourceFact,
+    ) -> Option<(ResourceOccurrenceId, &ResourceFact)> {
         let mut entries = self
             .storage
             .index
@@ -3486,7 +3481,7 @@ impl ResourceContext {
 
     pub(crate) fn owned_occurrences_for_fact(
         &self,
-        required: &CResourceFact,
+        required: &ResourceFact,
     ) -> Vec<ResourceOccurrenceId> {
         self.storage
             .index
@@ -3500,12 +3495,12 @@ impl ResourceContext {
     }
 
     /// Return every exact occurrence for a representation, including viewed
-    /// entries.  Resource rewrites use this only after inserting the exact
+    /// entries.  TrackedResource rewrites use this only after inserting the exact
     /// child representation, so the caller can attach a dependency to the
     /// returned opaque occurrence rather than guessing by value.
     pub(crate) fn occurrences_for_fact(
         &self,
-        required: &CResourceFact,
+        required: &ResourceFact,
     ) -> Vec<ResourceOccurrenceId> {
         self.storage
             .index
@@ -3523,26 +3518,26 @@ impl ResourceContext {
     /// recursive search through caller-controlled metadata.
     pub(crate) fn directly_supporting_owned_entry(
         &self,
-        required: &CResourceFact,
+        required: &ResourceFact,
         assumptions: &PureFactContext,
-    ) -> Option<(ResourceOccurrenceId, &CResourceFact)> {
+    ) -> Option<(ResourceOccurrenceId, &ResourceFact)> {
         self.directly_supporting_owned_entry_with_separation(required, assumptions, true)
     }
 
     pub(crate) fn directly_supporting_owned_entry_ignoring_separation(
         &self,
-        required: &CResourceFact,
+        required: &ResourceFact,
         assumptions: &PureFactContext,
-    ) -> Option<(ResourceOccurrenceId, &CResourceFact)> {
+    ) -> Option<(ResourceOccurrenceId, &ResourceFact)> {
         self.directly_supporting_owned_entry_with_separation(required, assumptions, false)
     }
 
     fn directly_supporting_owned_entry_with_separation(
         &self,
-        required: &CResourceFact,
+        required: &ResourceFact,
         assumptions: &PureFactContext,
         use_separation: bool,
-    ) -> Option<(ResourceOccurrenceId, &CResourceFact)> {
+    ) -> Option<(ResourceOccurrenceId, &ResourceFact)> {
         if let Some(range) = required.memory_range() {
             let candidates = self.memory_fact_candidates(range, true, assumptions);
             if let Some(entry) = candidates.entries.single_supplier() {
@@ -3594,16 +3589,16 @@ impl ResourceContext {
     /// a failed candidate never starts a search through alternative owners.
     fn direct_nonmemory_support_entry(
         &self,
-        required: &CResourceFact,
+        required: &ResourceFact,
         assumptions: &PureFactContext,
-    ) -> Option<(ResourceOccurrenceId, &CResourceFact)> {
+    ) -> Option<(ResourceOccurrenceId, &ResourceFact)> {
         crate::instrumentation::record_deterministic_work(1);
         let singleton = |entries: &ResourceEntryIds| {
             (entries.len() == 1).then(|| *entries.iter().next().expect("singleton entry"))
         };
         let unit_owner = required
             .is_view()
-            .then(|| CResourceFact::own(required.resource().clone()));
+            .then(|| ResourceFact::own(required.resource().clone()));
         let unit_owner_entries = unit_owner
             .as_ref()
             .and_then(|owner| self.storage.index.exact.get(owner));
@@ -3638,8 +3633,8 @@ impl ResourceContext {
     }
 
     fn memory_support_entails(
-        available: &CResourceFact,
-        required: &CResourceFact,
+        available: &ResourceFact,
+        required: &ResourceFact,
         assumptions: &PureFactContext,
         use_separation: bool,
     ) -> bool {
@@ -3660,7 +3655,7 @@ impl ResourceContext {
     pub(crate) fn owned_fact_for_occurrence(
         &self,
         occurrence: ResourceOccurrenceId,
-    ) -> Option<&CResourceFact> {
+    ) -> Option<&ResourceFact> {
         let entry = self.storage.entry_by_occurrence.get(&occurrence)?;
         let fact = self.storage.facts.get(entry)?;
         fact.is_own().then_some(fact)
@@ -3671,7 +3666,7 @@ impl ResourceContext {
     pub(crate) fn view_fact_for_occurrence(
         &self,
         occurrence: ResourceOccurrenceId,
-    ) -> Option<&CResourceFact> {
+    ) -> Option<&ResourceFact> {
         let entry = self.storage.entry_by_occurrence.get(&occurrence)?;
         let fact = self.storage.facts.get(entry)?;
         fact.is_view().then_some(fact)
@@ -3686,7 +3681,7 @@ impl ResourceContext {
     #[cfg(test)]
     pub(crate) fn reserve_owned_memory_fragments(
         self,
-        required: &CResourceFact,
+        required: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> Option<(Self, Vec<ResourceOccurrenceId>)> {
         self.reserve_owned_memory_fragments_impl(required, assumptions, None, false)
@@ -3696,7 +3691,7 @@ impl ResourceContext {
     /// can discard this result without changing its retained origin map.
     pub(crate) fn reserve_owned_memory_fragments_with_origins(
         self,
-        required: &CResourceFact,
+        required: &ResourceFact,
         assumptions: &PureFactContext,
         origins: &MemorySplitOrigins,
     ) -> Option<(Self, Vec<ResourceOccurrenceId>, MemorySplitOrigins)> {
@@ -3712,7 +3707,7 @@ impl ResourceContext {
 
     fn reserve_owned_memory_fragments_impl(
         mut self,
-        required: &CResourceFact,
+        required: &ResourceFact,
         assumptions: &PureFactContext,
         mut origins: Option<&mut MemorySplitOrigins>,
         establish_requested_carrier: bool,
@@ -3773,7 +3768,7 @@ impl ResourceContext {
             {
                 // Keep native suppliers in their original coordinates. Only
                 // concrete, aligned pieces are consumed; never narrow a bound.
-                let point = CMemoryRange::new_with_element_width(
+                let point = MemoryRange::new_with_element_width(
                     base,
                     0u32.into(),
                     1u32.into(),
@@ -3799,8 +3794,8 @@ impl ResourceContext {
                 if bytes == 0 || bytes % width != 0 {
                     return None;
                 }
-                let piece = CResourceFact::own_memory(
-                    CMemoryRange::new_wide(
+                let piece = ResourceFact::own_memory(
+                    MemoryRange::new_wide(
                         available.base().clone(),
                         MachineTerm::uint64_constant(at),
                         MachineTerm::uint64_constant(at.checked_add(bytes / width)?),
@@ -3811,7 +3806,7 @@ impl ResourceContext {
                 (i64::try_from(bytes).ok()?, piece)
             } else {
                 let point =
-                    CMemoryRange::new_with_element_width(base.clone(), 0u32.into(), 1u32.into(), 1);
+                    MemoryRange::new_with_element_width(base.clone(), 0u32.into(), 1u32.into(), 1);
                 let byte_available = byte_normalized_memory_range(available);
                 let at = exact_constant_base_delta(&byte_available, &point, Some(assumptions))?;
                 if cursor > 0 && at != byte_available.signed_constant_start()? {
@@ -3823,7 +3818,7 @@ impl ResourceContext {
                     .map(|bytes| bytes.min(end - cursor))
                     .filter(|bytes| *bytes > 0)
                     .and_then(|bytes| u32::try_from(bytes).ok())?;
-                let piece = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                let piece = ResourceFact::own_memory(MemoryRange::new_with_element_width(
                     base,
                     0u32.into(),
                     bytes.into(),
@@ -3854,7 +3849,7 @@ impl ResourceContext {
     /// search another candidate if the nominated entry is unsuitable.
     pub(crate) fn has_indexed_view_witness(
         &self,
-        required: &CResourceFact,
+        required: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> bool {
         self.indexed_view_witness(required, assumptions).is_some()
@@ -3862,7 +3857,7 @@ impl ResourceContext {
 
     pub(crate) fn indexed_view_witness(
         &self,
-        required: &CResourceFact,
+        required: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> Option<ResourceOccurrenceId> {
         if !required.is_view() || self.storage.index.owned_count == self.storage.facts.len() {
@@ -3890,7 +3885,7 @@ impl ResourceContext {
     /// this method never searches the loan ledger or unrelated frame entries.
     pub(crate) fn view_occurrences_for_fact(
         &self,
-        required: &CResourceFact,
+        required: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> Vec<ResourceOccurrenceId> {
         // With no viewed facts there is no possible view occurrence. Avoid
@@ -3935,9 +3930,9 @@ impl ResourceContext {
     /// evidence can validate the support relation without scanning the frame.
     pub(crate) fn has_supported_projection(
         &self,
-        fact: &CResourceFact,
+        fact: &ResourceFact,
         support_occurrence: ResourceOccurrenceId,
-        support: &CResourceFact,
+        support: &ResourceFact,
     ) -> bool {
         self.storage
             .index
@@ -3964,8 +3959,8 @@ impl ResourceContext {
     /// justified by equality alone would survive that owner's consumption.
     pub(crate) fn exact_projection_support(
         &self,
-        fact: &CResourceFact,
-    ) -> Option<(ResourceOccurrenceId, &CResourceFact)> {
+        fact: &ResourceFact,
+    ) -> Option<(ResourceOccurrenceId, &ResourceFact)> {
         self.storage
             .index
             .exact
@@ -3999,7 +3994,7 @@ impl ResourceContext {
     pub(crate) fn owned_projection_support(
         &self,
         occurrence: ResourceOccurrenceId,
-    ) -> Option<(ResourceOccurrenceId, &CResourceFact)> {
+    ) -> Option<(ResourceOccurrenceId, &ResourceFact)> {
         let entry = self.storage.entry_by_occurrence.get(&occurrence)?;
         let support = self.storage.supported_by.get(entry)?;
         let support_occurrence = *self.storage.support_occurrence_by_projection.get(entry)?;
@@ -4020,7 +4015,7 @@ impl ResourceContext {
     pub(crate) fn support_occurrence_is_live(
         &self,
         support_occurrence: ResourceOccurrenceId,
-        support: &CResourceFact,
+        support: &ResourceFact,
     ) -> bool {
         let Some(support_entry) = self.storage.entry_by_occurrence.get(&support_occurrence) else {
             return false;
@@ -4045,7 +4040,7 @@ impl ResourceContext {
     /// touched by a memory transition.  The transition is walked through the
     /// existing memory DAG; indexed block buckets bound the work to affected
     /// observations rather than the ambient resource frame.
-    pub(crate) fn invalidate_memory_support(mut self, before: &CMemory, after: &CMemory) -> Self {
+    pub(crate) fn invalidate_memory_support(mut self, before: &Memory, after: &Memory) -> Self {
         if before.diagnostic_identity() == after.diagnostic_identity()
             || self.storage.support_metadata_by_projection.is_empty()
         {
@@ -4124,8 +4119,8 @@ impl ResourceContext {
     /// facts filed under the written block.
     pub(crate) fn invalidate_iterated_facts(
         self,
-        before: &CMemory,
-        after: &CMemory,
+        before: &Memory,
+        after: &Memory,
         stores_checked: bool,
     ) -> Self {
         if !self.has_iterated_facts() || before.diagnostic_identity() == after.diagnostic_identity()
@@ -4150,7 +4145,7 @@ impl ResourceContext {
                 (Some(left), Some(right)) if left == right
             )
         };
-        let mut dropped = Vec::<CResourceFact>::new();
+        let mut dropped = Vec::<ResourceFact>::new();
         let facts_in_block = |context: &Self, block: &PointerBlock| {
             if memory_block_may_alias(block) {
                 context
@@ -4182,23 +4177,23 @@ impl ResourceContext {
             // A seeded run is the stores it stands for, each judged as one.
             let seeded = derivation.seeded_stores();
             let stores: Vec<(&Pointer, &ProgramValue)> = match (&*derivation, &seeded) {
-                (CMemoryDerivation::Store { pointer, value, .. }, _) => vec![(pointer, value)],
-                (CMemoryDerivation::CellsSeeded { .. }, Some(stores)) => stores
+                (MemoryDerivation::Store { pointer, value, .. }, _) => vec![(pointer, value)],
+                (MemoryDerivation::CellsSeeded { .. }, Some(stores)) => stores
                     .iter()
                     .map(|(pointer, value)| (pointer, value))
                     .collect(),
                 _ => Vec::new(),
             };
             match &*derivation {
-                CMemoryDerivation::Store { .. } | CMemoryDerivation::CellsSeeded { .. }
+                MemoryDerivation::Store { .. } | MemoryDerivation::CellsSeeded { .. }
                     if stores_checked => {}
-                CMemoryDerivation::Store { .. } | CMemoryDerivation::CellsSeeded { .. } => {
+                MemoryDerivation::Store { .. } | MemoryDerivation::CellsSeeded { .. } => {
                     for (pointer, value) in stores {
                         if unchanged_cell(pointer) {
                             continue;
                         }
                         for fact in facts_in_block(&self, &pointer.block) {
-                            let CResource::Iterated(iterated) = fact.resource() else {
+                            let Resource::Iterated(iterated) = fact.resource() else {
                                 continue;
                             };
                             let guard = iterated.guard();
@@ -4225,10 +4220,10 @@ impl ResourceContext {
                         }
                     }
                 }
-                CMemoryDerivation::CallHavoc { mutable_ranges, .. } => {
+                MemoryDerivation::CallHavoc { mutable_ranges, .. } => {
                     for range in mutable_ranges {
                         for fact in facts_in_block(&self, &range.base().block) {
-                            if let CResource::Iterated(iterated) = fact.resource()
+                            if let Resource::Iterated(iterated) = fact.resource()
                                 && (iterated.guard().base.block == range.base().block
                                     || memory_block_may_alias(&range.base().block))
                             {
@@ -4237,25 +4232,25 @@ impl ResourceContext {
                         }
                     }
                 }
-                CMemoryDerivation::HeapFreed {
+                MemoryDerivation::HeapFreed {
                     allocation_base, ..
                 }
-                | CMemoryDerivation::ContractAllocationRetired {
+                | MemoryDerivation::ContractAllocationRetired {
                     allocation_base, ..
                 } => dropped.extend(facts_in_block(&self, &allocation_base.block)),
-                CMemoryDerivation::LocalLifetimeEnded { block, .. } => {
+                MemoryDerivation::LocalLifetimeEnded { block, .. } => {
                     dropped.extend(facts_in_block(&self, block));
                 }
-                CMemoryDerivation::BranchJoin { .. }
-                | CMemoryDerivation::LoopHavoc { .. }
-                | CMemoryDerivation::BlockDeclared { .. }
-                | CMemoryDerivation::HeapAllocated { .. }
-                | CMemoryDerivation::HeapAllocationPending { .. }
-                | CMemoryDerivation::HeapAllocationFailed { .. }
-                | CMemoryDerivation::ContractAllocationClaimsChanged { .. }
-                | CMemoryDerivation::ObjectInitializationRecorded { .. }
-                | CMemoryDerivation::CellObserved { .. }
-                | CMemoryDerivation::CellsForgotten { .. } => {}
+                MemoryDerivation::BranchJoin { .. }
+                | MemoryDerivation::LoopHavoc { .. }
+                | MemoryDerivation::BlockDeclared { .. }
+                | MemoryDerivation::HeapAllocated { .. }
+                | MemoryDerivation::HeapAllocationPending { .. }
+                | MemoryDerivation::HeapAllocationFailed { .. }
+                | MemoryDerivation::ContractAllocationClaimsChanged { .. }
+                | MemoryDerivation::ObjectInitializationRecorded { .. }
+                | MemoryDerivation::CellObserved { .. }
+                | MemoryDerivation::CellsForgotten { .. } => {}
             }
             let base = derivation.base().clone();
             if step_after {
@@ -4276,7 +4271,7 @@ impl ResourceContext {
 
     fn entries_affected_by_memory_derivation(
         &self,
-        derivation: &CMemoryDerivation,
+        derivation: &MemoryDerivation,
     ) -> ResourceOccurrenceIds {
         let mut entries = self.storage.unknown_memory_support.clone();
         entries = self
@@ -4287,37 +4282,37 @@ impl ResourceContext {
                 entries.with_value(*occurrence)
             });
         let ambiguous_event = match derivation {
-            CMemoryDerivation::BranchJoin { .. } => true,
-            CMemoryDerivation::Store { pointer, .. } => memory_block_may_alias(&pointer.block),
-            CMemoryDerivation::CellsSeeded { run, .. } => memory_block_may_alias(&run.base().block),
-            CMemoryDerivation::CallHavoc { mutable_ranges, .. }
-            | CMemoryDerivation::LoopHavoc {
+            MemoryDerivation::BranchJoin { .. } => true,
+            MemoryDerivation::Store { pointer, .. } => memory_block_may_alias(&pointer.block),
+            MemoryDerivation::CellsSeeded { run, .. } => memory_block_may_alias(&run.base().block),
+            MemoryDerivation::CallHavoc { mutable_ranges, .. }
+            | MemoryDerivation::LoopHavoc {
                 mutable_ranges: Some(mutable_ranges),
                 ..
             } => mutable_ranges
                 .iter()
                 .any(|range| memory_block_may_alias(&range.base().block)),
-            CMemoryDerivation::HeapFreed {
+            MemoryDerivation::HeapFreed {
                 allocation_base, ..
             }
-            | CMemoryDerivation::ContractAllocationRetired {
+            | MemoryDerivation::ContractAllocationRetired {
                 allocation_base, ..
             }
-            | CMemoryDerivation::HeapAllocationPending {
+            | MemoryDerivation::HeapAllocationPending {
                 allocation_base, ..
             } => memory_block_may_alias(&allocation_base.block),
-            CMemoryDerivation::LocalLifetimeEnded { block, .. } => memory_block_may_alias(block),
-            CMemoryDerivation::LoopHavoc {
+            MemoryDerivation::LocalLifetimeEnded { block, .. } => memory_block_may_alias(block),
+            MemoryDerivation::LoopHavoc {
                 mutable_ranges: None,
                 ..
             }
-            | CMemoryDerivation::BlockDeclared { .. }
-            | CMemoryDerivation::HeapAllocated { .. }
-            | CMemoryDerivation::HeapAllocationFailed { .. }
-            | CMemoryDerivation::ContractAllocationClaimsChanged { .. }
-            | CMemoryDerivation::ObjectInitializationRecorded { .. }
-            | CMemoryDerivation::CellObserved { .. }
-            | CMemoryDerivation::CellsForgotten { .. } => false,
+            | MemoryDerivation::BlockDeclared { .. }
+            | MemoryDerivation::HeapAllocated { .. }
+            | MemoryDerivation::HeapAllocationFailed { .. }
+            | MemoryDerivation::ContractAllocationClaimsChanged { .. }
+            | MemoryDerivation::ObjectInitializationRecorded { .. }
+            | MemoryDerivation::CellObserved { .. }
+            | MemoryDerivation::CellsForgotten { .. } => false,
         };
         if ambiguous_event {
             for occurrence in self.storage.support_metadata_by_projection.keys() {
@@ -4326,15 +4321,15 @@ impl ResourceContext {
             }
         }
         match derivation {
-            CMemoryDerivation::Store { .. } | CMemoryDerivation::CellsSeeded { .. } => {
+            MemoryDerivation::Store { .. } | MemoryDerivation::CellsSeeded { .. } => {
                 let stores = match derivation {
-                    CMemoryDerivation::Store { pointer, value, .. } => {
+                    MemoryDerivation::Store { pointer, value, .. } => {
                         vec![(pointer.clone(), value.clone())]
                     }
                     _ => derivation.seeded_stores().expect("a CellsSeeded edge"),
                 };
                 for (pointer, value) in &stores {
-                    let write = CMemoryRange::new_with_element_width(
+                    let write = MemoryRange::new_with_element_width(
                         pointer.clone(),
                         MachineTerm::constant(0),
                         MachineTerm::constant(1),
@@ -4356,8 +4351,8 @@ impl ResourceContext {
                     }
                 }
             }
-            CMemoryDerivation::CallHavoc { mutable_ranges, .. }
-            | CMemoryDerivation::LoopHavoc {
+            MemoryDerivation::CallHavoc { mutable_ranges, .. }
+            | MemoryDerivation::LoopHavoc {
                 mutable_ranges: Some(mutable_ranges),
                 ..
             } => {
@@ -4380,18 +4375,18 @@ impl ResourceContext {
                     }
                 }
             }
-            CMemoryDerivation::HeapFreed {
+            MemoryDerivation::HeapFreed {
                 allocation_base,
                 bytes,
                 ..
             }
-            | CMemoryDerivation::ContractAllocationRetired {
+            | MemoryDerivation::ContractAllocationRetired {
                 allocation_base,
                 bytes,
                 ..
             } => {
                 if let Some(byte_count) = bytes.as_const() {
-                    let freed = CMemoryRange::new_with_element_width(
+                    let freed = MemoryRange::new_with_element_width(
                         allocation_base.clone(),
                         MachineTerm::constant(0),
                         MachineTerm::constant(byte_count),
@@ -4413,8 +4408,8 @@ impl ResourceContext {
                     }
                 }
             }
-            CMemoryDerivation::BranchJoin { .. }
-            | CMemoryDerivation::LoopHavoc {
+            MemoryDerivation::BranchJoin { .. }
+            | MemoryDerivation::LoopHavoc {
                 mutable_ranges: None,
                 ..
             } => {
@@ -4426,7 +4421,7 @@ impl ResourceContext {
                     entries = entries.with_value(*occurrence);
                 }
             }
-            CMemoryDerivation::LocalLifetimeEnded { block, .. } => {
+            MemoryDerivation::LocalLifetimeEnded { block, .. } => {
                 if memory_block_may_alias(block) {
                     for occurrence in self.storage.support_metadata_by_projection.keys() {
                         crate::instrumentation::record_deterministic_work(1);
@@ -4438,22 +4433,22 @@ impl ResourceContext {
                     }
                 }
             }
-            CMemoryDerivation::BlockDeclared { .. }
-            | CMemoryDerivation::HeapAllocated { .. }
-            | CMemoryDerivation::HeapAllocationPending { .. }
-            | CMemoryDerivation::HeapAllocationFailed { .. }
-            | CMemoryDerivation::ContractAllocationClaimsChanged { .. }
-            | CMemoryDerivation::ObjectInitializationRecorded { .. }
-            | CMemoryDerivation::CellObserved { .. }
-            | CMemoryDerivation::CellsForgotten { .. } => {}
+            MemoryDerivation::BlockDeclared { .. }
+            | MemoryDerivation::HeapAllocated { .. }
+            | MemoryDerivation::HeapAllocationPending { .. }
+            | MemoryDerivation::HeapAllocationFailed { .. }
+            | MemoryDerivation::ContractAllocationClaimsChanged { .. }
+            | MemoryDerivation::ObjectInitializationRecorded { .. }
+            | MemoryDerivation::CellObserved { .. }
+            | MemoryDerivation::CellsForgotten { .. } => {}
         }
         entries
     }
 
     pub(crate) fn proves_owned_resources_separate(
         &self,
-        left: &CResource,
-        right: &CResource,
+        left: &Resource,
+        right: &Resource,
         assumptions: &PureFactContext,
     ) -> bool {
         let Some(_guard) = ResourceCompositionQueryGuard::enter(
@@ -4464,27 +4459,27 @@ impl ResourceContext {
         // What an owner must entail to be the member a side names. A
         // field-bearing instance is only ever owned whole, so its family
         // has no view form and the question is ownership of that instance.
-        let named_member = |side: &CResource| match side {
-            CResource::Instance(_) => CResourceFact::own(side.clone()),
-            _ => CResourceFact::View(side.clone()),
+        let named_member = |side: &Resource| match side {
+            Resource::Instance(_) => ResourceFact::own(side.clone()),
+            _ => ResourceFact::View(side.clone()),
         };
         let left_view = named_member(left);
         let right_view = named_member(right);
-        if let (CResource::Memory(left), CResource::Memory(right)) = (left, right) {
+        if let (Resource::Memory(left), Resource::Memory(right)) = (left, right) {
             let left_positions = self.owned_memory_candidates_for_range(left, assumptions);
             let right_positions = self.owned_memory_candidates_for_range(right, assumptions);
             #[cfg(debug_assertions)]
             {
                 self.cross_check_owned_candidates(&left.base().block, &left_positions, |range| {
                     resource_fact_entails(
-                        &CResourceFact::own_memory(range.clone()),
+                        &ResourceFact::own_memory(range.clone()),
                         &left_view,
                         assumptions,
                     )
                 });
                 self.cross_check_owned_candidates(&right.base().block, &right_positions, |range| {
                     resource_fact_entails(
-                        &CResourceFact::own_memory(range.clone()),
+                        &ResourceFact::own_memory(range.clone()),
                         &right_view,
                         assumptions,
                     )
@@ -4541,8 +4536,8 @@ impl ResourceContext {
     /// for a pair without materializing any pair.
     fn owned_memory_member_containing(
         &self,
-        range: &CMemoryRange,
-    ) -> Option<(ResourceEntryId, &CMemoryRange)> {
+        range: &MemoryRange,
+    ) -> Option<(ResourceEntryId, &MemoryRange)> {
         self.storage
             .index
             .memory_by_block
@@ -4566,7 +4561,7 @@ impl ResourceContext {
     pub(in crate::kernel) fn owned_memory_members_with_base<'a>(
         &'a self,
         base: &Pointer,
-    ) -> impl Iterator<Item = (u64, &'a CMemoryRange)> + 'a {
+    ) -> impl Iterator<Item = (u64, &'a MemoryRange)> + 'a {
         crate::instrumentation::record_deterministic_work(1);
         self.storage
             .index
@@ -4588,7 +4583,7 @@ impl ResourceContext {
     pub(in crate::kernel) fn unique_owned_memory_member_with_base(
         &self,
         base: &Pointer,
-    ) -> Option<(u64, &CMemoryRange)> {
+    ) -> Option<(u64, &MemoryRange)> {
         crate::instrumentation::record_deterministic_work(1);
         let entries = self.storage.index.memory_by_base.get(base)?;
         if entries.len() != 1 {
@@ -4606,7 +4601,7 @@ impl ResourceContext {
         &self,
         base: &Pointer,
         include_views: bool,
-    ) -> Option<&CMemoryRange> {
+    ) -> Option<&MemoryRange> {
         crate::instrumentation::record_deterministic_work(1);
         let entries = self.storage.index.memory_by_base.get(base)?;
         if entries.len() != 1 {
@@ -4625,7 +4620,7 @@ impl ResourceContext {
         &'a self,
         base: &Pointer,
         include_views: bool,
-    ) -> impl Iterator<Item = (u64, &'a CMemoryRange)> + 'a {
+    ) -> impl Iterator<Item = (u64, &'a MemoryRange)> + 'a {
         crate::instrumentation::record_deterministic_work(1);
         self.storage
             .index
@@ -4650,7 +4645,7 @@ impl ResourceContext {
     pub(in crate::kernel) fn owned_memory_member_containing_pointer(
         &self,
         pointer: &Pointer,
-    ) -> Option<(ResourceEntryId, &CMemoryRange)> {
+    ) -> Option<(ResourceEntryId, &MemoryRange)> {
         self.storage
             .index
             .memory_by_block
@@ -4679,8 +4674,8 @@ impl ResourceContext {
     /// that the shortcut refused.
     pub(in crate::kernel) fn proves_owned_memory_ranges_separate_shallow(
         &self,
-        left: &CMemoryRange,
-        right: &CMemoryRange,
+        left: &MemoryRange,
+        right: &MemoryRange,
     ) -> bool {
         if string_literal_blocks_may_alias(&left.base().block, &right.base().block) {
             return false;
@@ -4759,7 +4754,7 @@ impl ResourceContext {
         let Some(first) = owned.next() else {
             return false;
         };
-        let concrete = |range: &CMemoryRange| {
+        let concrete = |range: &MemoryRange| {
             crate::instrumentation::record_deterministic_work(1);
             range.base() == first.base()
                 && range.constant_start().is_some()
@@ -4775,8 +4770,8 @@ impl ResourceContext {
         &self,
         pointer: &Pointer,
         borrowed: bool,
-        accepts: impl Fn(&CMemoryRange) -> bool,
-    ) -> Option<&CMemoryRange> {
+        accepts: impl Fn(&MemoryRange) -> bool,
+    ) -> Option<&MemoryRange> {
         let mut base = pointer.clone();
         loop {
             crate::instrumentation::record_deterministic_work(1);
@@ -4820,10 +4815,10 @@ impl ResourceContext {
     /// projections; observation alone never manufactures such a binding.
     pub(in crate::kernel) fn proves_borrow_partition_separate(
         &self,
-        left: &CMemoryRange,
-        right: &CMemoryRange,
+        left: &MemoryRange,
+        right: &MemoryRange,
     ) -> bool {
-        let holds = |range: &CMemoryRange, borrowed| {
+        let holds = |range: &MemoryRange, borrowed| {
             self.partition_memory_member_at(range.base(), borrowed, |member| member == range)
                 .is_some()
         };
@@ -4877,10 +4872,10 @@ impl ResourceContext {
         left_at: &Pointer,
         right_at: &Pointer,
         assumptions: &crate::kernel::PureFactContext,
-        mut left: impl FnMut(&CMemoryRange) -> bool,
-        mut right: impl FnMut(&CMemoryRange) -> bool,
-        mut admit: impl FnMut(&CMemoryRange, &CMemoryRange) -> bool,
-    ) -> Option<(&CMemoryRange, &CMemoryRange)> {
+        mut left: impl FnMut(&MemoryRange) -> bool,
+        mut right: impl FnMut(&MemoryRange) -> bool,
+        mut admit: impl FnMut(&MemoryRange, &MemoryRange) -> bool,
+    ) -> Option<(&MemoryRange, &MemoryRange)> {
         if left_block == right_block && !self.separates_owned_members_in_block(left_block)
             || string_literal_blocks_may_alias(left_block, right_block)
         {
@@ -4889,34 +4884,33 @@ impl ResourceContext {
         let mut left_answers = BTreeMap::<ResourceEntryId, bool>::new();
         let mut right_answers = BTreeMap::<ResourceEntryId, bool>::new();
         let ask = |answers: &mut BTreeMap<ResourceEntryId, bool>,
-                   accepts: &mut dyn FnMut(&CMemoryRange) -> bool,
+                   accepts: &mut dyn FnMut(&MemoryRange) -> bool,
                    entry: ResourceEntryId,
-                   range: &CMemoryRange| {
+                   range: &MemoryRange| {
             *answers.entry(entry).or_insert_with(|| accepts(range))
         };
-        let pair =
-            |lefts: &[(ResourceEntryId, &'_ CMemoryRange)],
-             rights: &[(ResourceEntryId, &'_ CMemoryRange)],
-             admit: &mut dyn FnMut(&CMemoryRange, &CMemoryRange) -> bool| {
-                for (left_entry, left_range) in lefts {
-                    for (right_entry, right_range) in rights {
-                        if left_entry == right_entry {
-                            continue;
-                        }
-                        crate::instrumentation::record_deterministic_work(1);
-                        if resources_structurally_separate(
-                            &CResource::Memory((*left_range).clone()),
-                            &CResource::Memory((*right_range).clone()),
-                        ) {
-                            continue;
-                        }
-                        if admit(left_range, right_range) {
-                            return Some((*left_entry, *right_entry));
-                        }
+        let pair = |lefts: &[(ResourceEntryId, &'_ MemoryRange)],
+                    rights: &[(ResourceEntryId, &'_ MemoryRange)],
+                    admit: &mut dyn FnMut(&MemoryRange, &MemoryRange) -> bool| {
+            for (left_entry, left_range) in lefts {
+                for (right_entry, right_range) in rights {
+                    if left_entry == right_entry {
+                        continue;
+                    }
+                    crate::instrumentation::record_deterministic_work(1);
+                    if resources_structurally_separate(
+                        &Resource::Memory((*left_range).clone()),
+                        &Resource::Memory((*right_range).clone()),
+                    ) {
+                        continue;
+                    }
+                    if admit(left_range, right_range) {
+                        return Some((*left_entry, *right_entry));
                     }
                 }
-                None
-            };
+            }
+            None
+        };
         let member = |entry: ResourceEntryId| {
             crate::instrumentation::record_deterministic_work(1);
             self.fact(entry)
@@ -4978,7 +4972,7 @@ impl ResourceContext {
         &self,
         block: &PointerBlock,
         candidates: &BTreeSet<ResourceEntryId>,
-        mut accepts: impl FnMut(&CMemoryRange) -> bool,
+        mut accepts: impl FnMut(&MemoryRange) -> bool,
     ) {
         if !crate::instrumentation::separation_candidate_cross_checks_enabled()
             || crate::instrumentation::in_uncharged_debug_check()
@@ -5090,7 +5084,7 @@ impl ResourceContext {
 
     fn owned_memory_candidates_for_range(
         &self,
-        range: &CMemoryRange,
+        range: &MemoryRange,
         assumptions: &PureFactContext,
     ) -> BTreeSet<ResourceEntryId> {
         if range.signed_constant_start().is_none() || range.signed_constant_end().is_none() {
@@ -5163,10 +5157,10 @@ impl ResourceContext {
     /// containment.
     pub(in crate::kernel) fn proves_owned_memory_ranges_separate_by(
         &self,
-        left: &CMemoryRange,
-        right: &CMemoryRange,
+        left: &MemoryRange,
+        right: &MemoryRange,
         assumptions: &PureFactContext,
-        contains: impl Fn(&CMemoryRange, &CMemoryRange) -> bool,
+        contains: impl Fn(&MemoryRange, &MemoryRange) -> bool,
     ) -> bool {
         let Some(_guard) = ResourceCompositionQueryGuard::enter(CompositionQuery::RangesSeparate(
             left.clone(),
@@ -5177,7 +5171,7 @@ impl ResourceContext {
         if string_literal_blocks_may_alias(&left.base().block, &right.base().block) {
             return false;
         }
-        let holds = |child: &CMemoryRange, entry: ResourceEntryId| {
+        let holds = |child: &MemoryRange, entry: ResourceEntryId| {
             self.fact(entry)
                 .memory_own_range()
                 .is_some_and(|available| contains(child, available))
@@ -5189,7 +5183,7 @@ impl ResourceContext {
         // the block instead would prove containment against each of them,
         // for every cell a call havoc examines. A member outside them is
         // not found, which only leaves the pair unproven, as before.
-        let containing = |child: &CMemoryRange| {
+        let containing = |child: &MemoryRange| {
             // Prefer the written root. A successful containment proof already
             // selects a member; spelling that address many other ways adds
             // no information needed for this query.
@@ -5239,12 +5233,12 @@ impl ResourceContext {
     /// interval coverage without enumerating unrelated members or pairs.
     pub(in crate::kernel) fn owned_memory_ranges_separate_from(
         &self,
-        target: &CMemoryRange,
-        other: &CMemoryRange,
+        target: &MemoryRange,
+        other: &MemoryRange,
         assumptions: &PureFactContext,
-        contains: impl Fn(&CResource, &CResource) -> bool,
-    ) -> Vec<CMemoryRange> {
-        let other_resource = CResource::Memory(other.clone());
+        contains: impl Fn(&Resource, &Resource) -> bool,
+    ) -> Vec<MemoryRange> {
+        let other_resource = Resource::Memory(other.clone());
         let candidates = self.owned_memory_candidates_for_range(other, assumptions);
         let excluded = candidates
             .iter()
@@ -5285,9 +5279,9 @@ impl ResourceContext {
     pub(in crate::kernel) fn owned_memory_ranges_separate_from_full_scan(
         &self,
         block: &PointerBlock,
-        other: &CResource,
-        contains: impl Fn(&CResource, &CResource) -> bool,
-    ) -> Vec<CMemoryRange> {
+        other: &Resource,
+        contains: impl Fn(&Resource, &Resource) -> bool,
+    ) -> Vec<MemoryRange> {
         let facts = self.iter().collect::<Vec<_>>();
         let excluded = facts
             .iter()
@@ -5316,7 +5310,7 @@ impl ResourceContext {
         &self,
         left: &Pointer,
         right: &Pointer,
-        contains: impl Fn(&Pointer, &CMemoryRange) -> bool,
+        contains: impl Fn(&Pointer, &MemoryRange) -> bool,
     ) -> bool {
         let Some(_guard) = ResourceCompositionQueryGuard::enter(
             CompositionQuery::PointersSeparate(left.clone(), right.clone()),
@@ -5350,10 +5344,10 @@ impl ResourceContext {
     /// store; it avoids materializing every pair in the composition.
     pub(in crate::kernel) fn proves_owned_range_separate_from_pointer_shallow(
         &self,
-        range: &CMemoryRange,
+        range: &MemoryRange,
         pointer: &Pointer,
         assumptions: &PureFactContext,
-        contains_pointer: impl Fn(&Pointer, &CMemoryRange) -> bool,
+        contains_pointer: impl Fn(&Pointer, &MemoryRange) -> bool,
     ) -> bool {
         self.proves_owned_range_separate_from_pointer_with(
             range,
@@ -5370,11 +5364,11 @@ impl ResourceContext {
     /// bounds rather than by constant difference alone).
     pub(in crate::kernel) fn proves_owned_range_separate_from_pointer_with(
         &self,
-        range: &CMemoryRange,
+        range: &MemoryRange,
         pointer: &Pointer,
         assumptions: &PureFactContext,
-        range_contained: impl Fn(&CMemoryRange, &CMemoryRange) -> bool,
-        contains_pointer: impl Fn(&Pointer, &CMemoryRange) -> bool,
+        range_contained: impl Fn(&MemoryRange, &MemoryRange) -> bool,
+        contains_pointer: impl Fn(&Pointer, &MemoryRange) -> bool,
     ) -> bool {
         if string_literal_blocks_may_alias(&range.base().block, &pointer.block) {
             return false;
@@ -5411,16 +5405,16 @@ impl ResourceContext {
         })
     }
 
-    fn direct_match_candidate_positions(&self, fact: &CResourceFact) -> Option<&ResourceEntryIds> {
+    fn direct_match_candidate_positions(&self, fact: &ResourceFact) -> Option<&ResourceEntryIds> {
         let index = &self.storage.index;
         match OwnedMemberKey::of(fact) {
             None => {
-                let CResource::Memory(range) = fact.resource() else {
+                let Resource::Memory(range) = fact.resource() else {
                     unreachable!("only memory has no member key")
                 };
                 index.memory_by_block.get(&range.base().block)
             }
-            Some(OwnedMemberKey::Resource(resource)) => index.by_resource.get(&resource),
+            Some(OwnedMemberKey::TrackedResource(resource)) => index.by_resource.get(&resource),
             Some(OwnedMemberKey::Instance(identity)) => index.instances.get(&identity),
             Some(OwnedMemberKey::IteratedBlock(block)) => index.iterated_by_block.get(&block),
             Some(OwnedMemberKey::Shape(family, name, arity)) => {
@@ -5437,7 +5431,7 @@ impl ResourceContext {
     /// producer assembling already selected facts should start with
     /// `new_with_equalities` so these deltas retain graph publication. This
     /// method never publishes an unrelated ambient input.
-    pub fn unchecked_with_fact(mut self, fact: CResourceFact) -> Self {
+    pub fn unchecked_with_fact(mut self, fact: ResourceFact) -> Self {
         self.insert_fact(fact);
         self
     }
@@ -5449,7 +5443,7 @@ impl ResourceContext {
     /// deltas preserve an existing graph attachment; they do not publish an
     /// unrelated ambient input. Start a fresh trusted assembly with
     /// `new_with_equalities`.
-    pub fn unchecked_with_facts(mut self, facts: impl IntoIterator<Item = CResourceFact>) -> Self {
+    pub fn unchecked_with_facts(mut self, facts: impl IntoIterator<Item = ResourceFact>) -> Self {
         for fact in facts {
             self.insert_fact(fact);
         }
@@ -5458,8 +5452,8 @@ impl ResourceContext {
 
     pub(crate) fn unchecked_with_facts_and_occurrences(
         mut self,
-        facts: impl IntoIterator<Item = CResourceFact>,
-    ) -> (Self, Vec<(CResourceFact, ResourceOccurrenceId)>) {
+        facts: impl IntoIterator<Item = ResourceFact>,
+    ) -> (Self, Vec<(ResourceFact, ResourceOccurrenceId)>) {
         let mut inserted = Vec::new();
         for fact in facts {
             let entry = self.storage.next_entry_id;
@@ -5476,8 +5470,8 @@ impl ResourceContext {
     #[cfg(test)]
     pub(crate) fn unchecked_with_supported_facts(
         self,
-        support: &CResourceFact,
-        facts: impl IntoIterator<Item = CResourceFact>,
+        support: &ResourceFact,
+        facts: impl IntoIterator<Item = ResourceFact>,
     ) -> Self {
         debug_assert!(support.is_own());
         debug_assert!(self.storage.index.exact.contains_key(support));
@@ -5500,8 +5494,8 @@ impl ResourceContext {
     pub(crate) fn unchecked_with_supported_facts_from_entry(
         self,
         support_entry: ResourceEntryId,
-        support: &CResourceFact,
-        facts: impl IntoIterator<Item = CResourceFact>,
+        support: &ResourceFact,
+        facts: impl IntoIterator<Item = ResourceFact>,
     ) -> Self {
         debug_assert!(support.is_own());
         debug_assert_eq!(self.fact(support_entry), support);
@@ -5513,8 +5507,8 @@ impl ResourceContext {
     pub(crate) fn unchecked_with_supported_facts_from_occurrence(
         mut self,
         support_occurrence: ResourceOccurrenceId,
-        support: &CResourceFact,
-        facts: impl IntoIterator<Item = CResourceFact>,
+        support: &ResourceFact,
+        facts: impl IntoIterator<Item = ResourceFact>,
     ) -> Self {
         debug_assert!(support.is_own());
         debug_assert!(
@@ -5540,9 +5534,9 @@ impl ResourceContext {
     pub(crate) fn unchecked_with_supported_facts_from_occurrence_with_memory(
         self,
         support_occurrence: ResourceOccurrenceId,
-        support: &CResourceFact,
-        facts: impl IntoIterator<Item = CResourceFact>,
-        memory: &CMemory,
+        support: &ResourceFact,
+        facts: impl IntoIterator<Item = ResourceFact>,
+        memory: &Memory,
     ) -> Self {
         self.unchecked_with_supported_facts_from_occurrence_with_memory_and_occurrences(
             support_occurrence,
@@ -5556,10 +5550,10 @@ impl ResourceContext {
     pub(crate) fn unchecked_with_supported_facts_from_occurrence_with_memory_and_occurrences(
         mut self,
         support_occurrence: ResourceOccurrenceId,
-        support: &CResourceFact,
-        facts: impl IntoIterator<Item = CResourceFact>,
-        memory: &CMemory,
-    ) -> (Self, Vec<(CResourceFact, ResourceOccurrenceId)>) {
+        support: &ResourceFact,
+        facts: impl IntoIterator<Item = ResourceFact>,
+        memory: &Memory,
+    ) -> (Self, Vec<(ResourceFact, ResourceOccurrenceId)>) {
         debug_assert!(support.is_own());
         debug_assert!(
             self.storage
@@ -5567,7 +5561,7 @@ impl ResourceContext {
                 .get(&support_occurrence)
                 .is_some_and(|entry| self.fact(*entry) == support)
         );
-        let memory_snapshot = CMemorySnapshotIdentity::of(memory);
+        let memory_snapshot = MemorySnapshotIdentity::of(memory);
         let mut inserted = Vec::new();
         for fact in facts {
             debug_assert!(fact.is_view());
@@ -5589,8 +5583,8 @@ impl ResourceContext {
     #[cfg(test)]
     pub(crate) fn with_cached_supported_expansion(
         self,
-        support: &CResourceFact,
-        expansion: Vec<CResourceFact>,
+        support: &ResourceFact,
+        expansion: Vec<ResourceFact>,
     ) -> Self {
         debug_assert!(support.is_own());
         debug_assert!(self.storage.index.exact.contains_key(support));
@@ -5603,8 +5597,8 @@ impl ResourceContext {
     pub(crate) fn with_cached_supported_expansion_for_occurrence(
         self,
         support_occurrence: ResourceOccurrenceId,
-        support: &CResourceFact,
-        expansion: Vec<CResourceFact>,
+        support: &ResourceFact,
+        expansion: Vec<ResourceFact>,
     ) -> Self {
         debug_assert!(
             self.storage
@@ -5622,8 +5616,8 @@ impl ResourceContext {
     fn with_cached_supported_expansion_arc(
         mut self,
         support_occurrence: ResourceOccurrenceId,
-        support: &CResourceFact,
-        expansion: std::sync::Arc<Vec<CResourceFact>>,
+        support: &ResourceFact,
+        expansion: std::sync::Arc<Vec<ResourceFact>>,
     ) -> Self {
         let previous = self.storage.clone();
         self.storage = std::sync::Arc::new(ResourceContextStorage {
@@ -5675,8 +5669,8 @@ impl ResourceContext {
     #[cfg(test)]
     pub(crate) fn cached_supported_expansion(
         &self,
-        support: &CResourceFact,
-    ) -> Option<&[CResourceFact]> {
+        support: &ResourceFact,
+    ) -> Option<&[ResourceFact]> {
         self.cached_expansion_for_fact(support)
             .map(|expansion| expansion.as_slice())
     }
@@ -5687,8 +5681,8 @@ impl ResourceContext {
     /// other authority's evidence.
     pub(crate) fn cached_supported_expansions(
         &self,
-        support: &CResourceFact,
-    ) -> Vec<(ResourceOccurrenceId, Vec<CResourceFact>)> {
+        support: &ResourceFact,
+    ) -> Vec<(ResourceOccurrenceId, Vec<ResourceFact>)> {
         self.storage
             .index
             .exact
@@ -5707,8 +5701,8 @@ impl ResourceContext {
     #[cfg(test)]
     fn cached_expansion_for_fact(
         &self,
-        support: &CResourceFact,
-    ) -> Option<&std::sync::Arc<Vec<CResourceFact>>> {
+        support: &ResourceFact,
+    ) -> Option<&std::sync::Arc<Vec<ResourceFact>>> {
         self.cached_expansion_with_occurrence_for_fact(support)
             .map(|(_, expansion)| expansion)
     }
@@ -5716,8 +5710,8 @@ impl ResourceContext {
     #[cfg(test)]
     fn cached_expansion_with_occurrence_for_fact(
         &self,
-        support: &CResourceFact,
-    ) -> Option<(ResourceOccurrenceId, &std::sync::Arc<Vec<CResourceFact>>)> {
+        support: &ResourceFact,
+    ) -> Option<(ResourceOccurrenceId, &std::sync::Arc<Vec<ResourceFact>>)> {
         let mut matches = self
             .storage
             .index
@@ -5820,9 +5814,9 @@ impl ResourceContext {
     /// certified body.
     pub(crate) fn cached_support_exposing_fact(
         &self,
-        target: &CResourceFact,
+        target: &ResourceFact,
         assumptions: &PureFactContext,
-    ) -> Option<&CResourceFact> {
+    ) -> Option<&ResourceFact> {
         let core = target.core_with_assumptions(assumptions)?;
         let entries = self.storage.index.exact.get(&core)?;
         entries
@@ -5842,7 +5836,7 @@ impl ResourceContext {
 
     pub fn try_compose_with_fact(
         self,
-        fact: CResourceFact,
+        fact: ResourceFact,
         assumptions: &PureFactContext,
     ) -> Result<Self, ResourceContextValidityError> {
         self.try_compose_with_facts(std::iter::once(fact), assumptions)
@@ -5850,7 +5844,7 @@ impl ResourceContext {
 
     pub fn try_compose_with_facts(
         self,
-        facts: impl IntoIterator<Item = CResourceFact>,
+        facts: impl IntoIterator<Item = ResourceFact>,
         assumptions: &PureFactContext,
     ) -> Result<Self, ResourceContextValidityError> {
         self.try_compose_with_facts_delaying_normalization(facts, assumptions)
@@ -5859,7 +5853,7 @@ impl ResourceContext {
 
     pub(crate) fn try_compose_with_facts_delaying_normalization(
         self,
-        facts: impl IntoIterator<Item = CResourceFact>,
+        facts: impl IntoIterator<Item = ResourceFact>,
         assumptions: &PureFactContext,
     ) -> Result<Self, ResourceContextValidityError> {
         self.try_compose_with_facts_delaying_normalization_with_occurrences(facts, assumptions)
@@ -5872,9 +5866,9 @@ impl ResourceContext {
     /// authority may already be live in the destination context.
     pub(crate) fn try_compose_with_facts_delaying_normalization_with_occurrences(
         mut self,
-        facts: impl IntoIterator<Item = CResourceFact>,
+        facts: impl IntoIterator<Item = ResourceFact>,
         assumptions: &PureFactContext,
-    ) -> Result<(Self, Vec<(CResourceFact, ResourceOccurrenceId)>), ResourceContextValidityError>
+    ) -> Result<(Self, Vec<(ResourceFact, ResourceOccurrenceId)>), ResourceContextValidityError>
     {
         // Construction owns initial attachment. In particular, prepare an
         // empty input before insertion so it shares the already closed graph;
@@ -5898,7 +5892,7 @@ impl ResourceContext {
 
     pub(crate) fn try_compose_with_fact_with_occurrence(
         self,
-        fact: CResourceFact,
+        fact: ResourceFact,
         assumptions: &PureFactContext,
     ) -> Result<(Self, Option<ResourceOccurrenceId>), ResourceContextValidityError> {
         let (context, mut inserted) = self
@@ -5922,7 +5916,7 @@ impl ResourceContext {
     /// only pairs that contain at least one newly added fact.
     pub(crate) fn try_compose_into_valid_context_delaying_normalization(
         self,
-        facts: impl IntoIterator<Item = CResourceFact>,
+        facts: impl IntoIterator<Item = ResourceFact>,
         assumptions: &PureFactContext,
     ) -> Result<Self, ResourceContextValidityError> {
         self.try_compose_into_valid_context_with_occurrences(facts, assumptions)
@@ -5932,7 +5926,7 @@ impl ResourceContext {
     pub(in crate::kernel) fn restore_call_borrows(
         transfer: crate::kernel::functions::ReturnedCallBorrows,
         assumptions: &PureFactContext,
-    ) -> Result<(Self, Vec<(CResourceFact, ResourceOccurrenceId)>), ResourceContextValidityError>
+    ) -> Result<(Self, Vec<(ResourceFact, ResourceOccurrenceId)>), ResourceContextValidityError>
     {
         #[cfg(test)]
         let _fast =
@@ -5966,13 +5960,13 @@ impl ResourceContext {
     pub(in crate::kernel) fn unfold_instance_body(
         self,
         instance: &ResourceInstance,
-        body: impl IntoIterator<Item = CResourceFact>,
+        body: impl IntoIterator<Item = ResourceFact>,
         assumptions: &PureFactContext,
     ) -> Result<Option<Self>, ResourceContextValidityError> {
         #[cfg(test)]
         let _fast =
             crate::kernel::search::FastOperationScope::enter("instance unfold frame replacement");
-        let parent = CResourceFact::own(CResource::Instance(instance.clone()));
+        let parent = ResourceFact::own(Resource::Instance(instance.clone()));
         let Some(mut next) = self.without_exact_representation(&parent) else {
             return Ok(None);
         };
@@ -5993,9 +5987,9 @@ impl ResourceContext {
 
     pub(crate) fn try_compose_into_valid_context_with_occurrences(
         mut self,
-        facts: impl IntoIterator<Item = CResourceFact>,
+        facts: impl IntoIterator<Item = ResourceFact>,
         assumptions: &PureFactContext,
-    ) -> Result<(Self, Vec<(CResourceFact, ResourceOccurrenceId)>), ResourceContextValidityError>
+    ) -> Result<(Self, Vec<(ResourceFact, ResourceOccurrenceId)>), ResourceContextValidityError>
     {
         if self.storage.facts.is_empty() {
             self.synchronize_memory_equalities(assumptions);
@@ -6135,7 +6129,7 @@ impl ResourceContext {
     /// prevents selection from hiding owners with symbolic coordinates.
     fn constant_owned_neighbors_at_exact_alias(
         &self,
-        range: &CMemoryRange,
+        range: &MemoryRange,
         alias: &Pointer,
     ) -> Option<BTreeSet<ResourceEntryId>> {
         let rebased = range.with_base(alias.clone());
@@ -6180,7 +6174,7 @@ impl ResourceContext {
     /// already covered that block another way.
     fn owned_validity_candidates(
         &self,
-        range: &CMemoryRange,
+        range: &MemoryRange,
         skip_block: Option<&PointerBlock>,
         assumptions: &PureFactContext,
     ) -> BTreeSet<ResourceEntryId> {
@@ -6202,7 +6196,7 @@ impl ResourceContext {
     /// caller frame is new information at installation time.
     pub(crate) fn try_compose_certified_group_into_valid_context_delaying_normalization(
         self,
-        facts: impl IntoIterator<Item = CResourceFact>,
+        facts: impl IntoIterator<Item = ResourceFact>,
         assumptions: &PureFactContext,
     ) -> Result<Self, ResourceContextValidityError> {
         self.try_compose_certified_group_into_valid_context_delaying_normalization_with_occurrences(
@@ -6214,9 +6208,9 @@ impl ResourceContext {
 
     pub(crate) fn try_compose_certified_group_into_valid_context_delaying_normalization_with_occurrences(
         self,
-        facts: impl IntoIterator<Item = CResourceFact>,
+        facts: impl IntoIterator<Item = ResourceFact>,
         assumptions: &PureFactContext,
-    ) -> Result<(Self, Vec<(CResourceFact, ResourceOccurrenceId)>), ResourceContextValidityError>
+    ) -> Result<(Self, Vec<(ResourceFact, ResourceOccurrenceId)>), ResourceContextValidityError>
     {
         if self.storage.facts.is_empty() {
             self.synchronize_memory_equalities(assumptions);
@@ -6238,19 +6232,19 @@ impl ResourceContext {
     /// canonical fact set ([`canonical_fact_set::CanonicalFactSet::syntax_ceiling`]).
     pub(in crate::kernel) fn syntax_ceiling(
         &self,
-        fact_ceiling: fn(&CResourceFact) -> canonical_fact_set::SyntaxCeiling,
+        fact_ceiling: fn(&ResourceFact) -> canonical_fact_set::SyntaxCeiling,
     ) -> canonical_fact_set::SyntaxCeiling {
         self.storage.index.canonical.syntax_ceiling(fact_ceiling)
     }
 
-    pub fn facts(&self) -> &[CResourceFact] {
+    pub fn facts(&self) -> &[ResourceFact] {
         self.storage
             .materialized
             .get_or_init(|| self.iter().cloned().collect())
     }
 
     /// Select folded composites without materializing unrelated memory facts.
-    pub(crate) fn composite_facts(&self) -> impl Iterator<Item = &CResourceFact> {
+    pub(crate) fn composite_facts(&self) -> impl Iterator<Item = &ResourceFact> {
         let entries = self
             .storage
             .index
@@ -6371,7 +6365,7 @@ impl ResourceContext {
                     .map(|(_, start, end, fact)| (start, end, fact))
                     .collect::<Vec<_>>();
                 ordered.sort_by_key(|(start, end, _)| (*start, *end));
-                let mut furthest: Option<(i128, &CResourceFact)> = None;
+                let mut furthest: Option<(i128, &ResourceFact)> = None;
                 for (_, end, fact) in ordered {
                     // A checkpoint, not only a charge: an exhausted run stops
                     // here with no proven overlap, as a limited `decide`
@@ -6535,7 +6529,7 @@ impl ResourceContext {
         }
     }
 
-    pub fn satisfies_fact(&self, fact: &CResourceFact, assumptions: &PureFactContext) -> bool {
+    pub fn satisfies_fact(&self, fact: &ResourceFact, assumptions: &PureFactContext) -> bool {
         if !fact.has_valid_exclusive_access() {
             return false;
         }
@@ -6686,7 +6680,7 @@ impl ResourceContext {
     /// proof.
     pub(in crate::kernel) fn satisfies_memory_fact_structurally(
         &self,
-        fact: &CResourceFact,
+        fact: &ResourceFact,
     ) -> bool {
         if self.storage.index.exact.contains_key(fact) {
             return true;
@@ -6796,7 +6790,7 @@ impl ResourceContext {
     /// with at most two re-spellings and one decision per product.
     pub(in crate::kernel) fn wide_range_respelling_refusal(
         &self,
-        required: &CMemoryRange,
+        required: &MemoryRange,
         assumptions: &PureFactContext,
     ) -> Option<crate::kernel::WideRangeNoWrap> {
         let entry = self
@@ -6829,7 +6823,7 @@ impl ResourceContext {
                 None => return None,
                 Some((count, factor)) => {
                     undecided.get_or_insert(crate::kernel::WideRangeNoWrap {
-                        range: CResourceFact::own_memory(source.clone()),
+                        range: ResourceFact::own_memory(source.clone()),
                         count,
                         factor,
                     });
@@ -6863,8 +6857,8 @@ impl ResourceContext {
         if designation.is_some_and(|d| !assumptions.access_designations_match(d, range)) {
             return false;
         }
-        let required = CResourceFact::view_memory(
-            CMemoryRange::new_with_element_width(address, 0u32.into(), bytes.into(), 1)
+        let required = ResourceFact::view_memory(
+            MemoryRange::new_with_element_width(address, 0u32.into(), bytes.into(), 1)
                 .with_carrier_of(range),
         );
         if resource_fact_entails(self.fact(entry), &required, assumptions) {
@@ -6915,7 +6909,7 @@ impl ResourceContext {
         designation: Option<(&Pointer, Option<&Pointer>)>,
         bytes: u32,
         assumptions: &PureFactContext,
-    ) -> Option<CResourceFact> {
+    ) -> Option<ResourceFact> {
         let entries = self.write_access(pointer, bytes, assumptions)?;
         let entry = entries.entry();
         crate::instrumentation::record_deterministic_work(1);
@@ -6927,8 +6921,8 @@ impl ResourceContext {
         if designation.is_some_and(|d| !assumptions.access_designations_match(d, range)) {
             return None;
         }
-        let aligned = CResourceFact::own_memory(
-            CMemoryRange::new_with_element_width(address, 0u32.into(), bytes.into(), 1)
+        let aligned = ResourceFact::own_memory(
+            MemoryRange::new_with_element_width(address, 0u32.into(), bytes.into(), 1)
                 .with_carrier_of(range),
         );
         if resource_fact_entails(self.fact(entry), &aligned, assumptions) {
@@ -6970,7 +6964,7 @@ impl ResourceContext {
         pointer: &Pointer,
         byte_width: u32,
         assumptions: &PureFactContext,
-    ) -> Option<&CMemoryRange> {
+    ) -> Option<&MemoryRange> {
         self.designated_memory_write_range(pointer, None, byte_width, assumptions)
     }
 
@@ -6980,7 +6974,7 @@ impl ResourceContext {
         designation: Option<(&Pointer, Option<&Pointer>)>,
         byte_width: u32,
         assumptions: &PureFactContext,
-    ) -> Option<&CMemoryRange> {
+    ) -> Option<&MemoryRange> {
         if let Some(entries) = self.write_access(pointer, byte_width, assumptions) {
             let entry = entries.entry();
             crate::instrumentation::record_deterministic_work(1);
@@ -7009,7 +7003,7 @@ impl ResourceContext {
         pointer: &Pointer,
         byte_width: u32,
         assumptions: &PureFactContext,
-    ) -> Option<(u64, &CMemoryRange)> {
+    ) -> Option<(u64, &MemoryRange)> {
         if let Some(entries) = self.write_access(pointer, byte_width, assumptions) {
             let entry = entries.entry();
             crate::instrumentation::record_deterministic_work(1);
@@ -7029,14 +7023,14 @@ impl ResourceContext {
         None
     }
 
-    pub fn without_fact(self, fact: &CResourceFact, assumptions: &PureFactContext) -> Option<Self> {
+    pub fn without_fact(self, fact: &ResourceFact, assumptions: &PureFactContext) -> Option<Self> {
         self.without_fact_delaying_normalization(fact, assumptions)
             .map(|context| context.normalized(assumptions))
     }
 
     pub(in crate::kernel) fn without_fact_delaying_normalization(
         mut self,
-        fact: &CResourceFact,
+        fact: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
         self.consume_fact_without_normalizing(fact, assumptions)
@@ -7049,7 +7043,7 @@ impl ResourceContext {
     /// persistent edits preserve this context's mutation ancestry.
     pub(crate) fn without_fact_incrementally(
         self,
-        fact: &CResourceFact,
+        fact: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
         self.without_fact_incrementally_impl(fact, assumptions, None)
@@ -7058,7 +7052,7 @@ impl ResourceContext {
     /// Commit split origins together with a successful persistent successor.
     pub(crate) fn without_fact_incrementally_with_origins(
         self,
-        fact: &CResourceFact,
+        fact: &ResourceFact,
         assumptions: &PureFactContext,
         origins: &mut MemorySplitOrigins,
     ) -> Option<Self> {
@@ -7075,7 +7069,7 @@ impl ResourceContext {
     pub(crate) fn without_selected_fact_with_origins(
         mut self,
         occurrence: ResourceOccurrenceId,
-        fact: &CResourceFact,
+        fact: &ResourceFact,
         assumptions: &PureFactContext,
         origins: &mut MemorySplitOrigins,
     ) -> Option<Self> {
@@ -7104,14 +7098,14 @@ impl ResourceContext {
 
     fn without_fact_incrementally_impl(
         self,
-        fact: &CResourceFact,
+        fact: &ResourceFact,
         assumptions: &PureFactContext,
         mut origins: Option<&mut MemorySplitOrigins>,
     ) -> Option<Self> {
         if !fact.has_valid_exclusive_access() {
             return None;
         }
-        let CResource::Memory(range) = fact.resource() else {
+        let Resource::Memory(range) = fact.resource() else {
             return self.without_fact_from_local_indexes(fact, assumptions);
         };
         if fact
@@ -7184,7 +7178,7 @@ impl ResourceContext {
     /// A gap ends the operation; no candidate frontier is collected or retried.
     fn consume_unit_owned_memory(
         mut self,
-        required: &CResourceFact,
+        required: &ResourceFact,
         assumptions: &PureFactContext,
         mut origins: Option<&mut MemorySplitOrigins>,
         establish_requested_carrier: bool,
@@ -7212,7 +7206,7 @@ impl ResourceContext {
                 && candidates.entries.single_supplier().is_some_and(|entry| {
                     self.fact(entry)
                         .memory_own_range()
-                        .is_some_and(CMemoryRange::has_symbolic_bounds)
+                        .is_some_and(MemoryRange::has_symbolic_bounds)
                 }))
         {
             return self.consume_symbolic_partition(required, assumptions, origins);
@@ -7230,7 +7224,7 @@ impl ResourceContext {
     /// Requests and their intermediate partition points may be symbolic.
     fn consume_symbolic_partition(
         mut self,
-        required: &CResourceFact,
+        required: &ResourceFact,
         assumptions: &PureFactContext,
         mut origins: Option<&mut MemorySplitOrigins>,
     ) -> Option<Self> {
@@ -7241,7 +7235,7 @@ impl ResourceContext {
         };
         let mut next = first;
         let mut visited = BTreeSet::new();
-        let mut joined: Option<CResourceFact> = None;
+        let mut joined: Option<ResourceFact> = None;
         loop {
             if !visited.insert(next) {
                 return None;
@@ -7263,7 +7257,7 @@ impl ResourceContext {
                         && selected.base() != range.base()
                         && constant_range_extent(selected).is_some() =>
                 {
-                    CResourceFact::own_memory(memory_range_rebased(
+                    ResourceFact::own_memory(memory_range_rebased(
                         selected,
                         range.base(),
                         assumptions,
@@ -7349,10 +7343,10 @@ impl ResourceContext {
             // already selected constant-size range; carrier checks remain in
             // the ordinary merge rule.
             let supplier = match &supplier {
-                CResourceFact::Own(CResource::Memory(range), quantity) => {
+                ResourceFact::Own(Resource::Memory(range), quantity) => {
                     memory_range_rebased(range, base, assumptions).map_or_else(
                         || supplier.clone(),
-                        |range| CResourceFact::Own(CResource::Memory(range), quantity.clone()),
+                        |range| ResourceFact::Own(Resource::Memory(range), quantity.clone()),
                     )
                 }
                 _ => supplier,
@@ -7364,7 +7358,7 @@ impl ResourceContext {
 
     fn without_fact_from_local_indexes(
         mut self,
-        fact: &CResourceFact,
+        fact: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
         debug_assert!(
@@ -7445,7 +7439,7 @@ impl ResourceContext {
     /// dropped with it, since the merged owner supplies the same view.
     pub(crate) fn rejoined_memory_around(
         mut self,
-        seeds: &[CResourceFact],
+        seeds: &[ResourceFact],
         assumptions: &PureFactContext,
     ) -> Self {
         for seed in seeds {
@@ -7485,7 +7479,7 @@ impl ResourceContext {
         &self,
         entry: ResourceEntryId,
         assumptions: &PureFactContext,
-    ) -> Option<(ResourceEntryId, CResourceFact)> {
+    ) -> Option<(ResourceEntryId, ResourceFact)> {
         let fact = self.fact(entry);
         let range = fact.memory_own_range()?;
         let (origin, start, end) = constant_memory_coordinates(range)?;
@@ -7515,11 +7509,11 @@ impl ResourceContext {
     fn supported_projection_pair(
         &self,
         entry: ResourceEntryId,
-        support: &CResourceFact,
+        support: &ResourceFact,
     ) -> (
         Option<ResourceOccurrenceId>,
-        CResourceFact,
-        CResourceFact,
+        ResourceFact,
+        ResourceFact,
         Option<ResourceSupportMetadata>,
     ) {
         (
@@ -7544,11 +7538,11 @@ impl ResourceContext {
         entry: ResourceEntryId,
         supported: &mut Vec<(
             Option<ResourceOccurrenceId>,
-            CResourceFact,
-            CResourceFact,
+            ResourceFact,
+            ResourceFact,
             Option<ResourceSupportMetadata>,
         )>,
-        expansions: &mut Vec<(ResourceOccurrenceId, Vec<CResourceFact>)>,
+        expansions: &mut Vec<(ResourceOccurrenceId, Vec<ResourceFact>)>,
     ) {
         let mut pending = vec![entry];
         let mut visited = BTreeSet::new();
@@ -7589,7 +7583,7 @@ impl ResourceContext {
     /// touch adjacent residual ranges in that block.
     pub(crate) fn normalized_around_facts(
         mut self,
-        seeds: &[CResourceFact],
+        seeds: &[ResourceFact],
         assumptions: &PureFactContext,
     ) -> Self {
         let supported = self.supported_projection_pairs();
@@ -7598,7 +7592,7 @@ impl ResourceContext {
         let mut memory_blocks = BTreeSet::new();
         for fact in seeds {
             match fact.resource() {
-                CResource::Memory(range) => {
+                Resource::Memory(range) => {
                     memory_blocks.insert(range.base().block.clone());
                 }
                 resource => {
@@ -7627,7 +7621,7 @@ impl ResourceContext {
                 .zip(entries.iter())
                 .filter(|(fact, _)| fact.is_own())
                 .fold(
-                    BTreeMap::<CResourceFact, Vec<ResourceOccurrenceId>>::new(),
+                    BTreeMap::<ResourceFact, Vec<ResourceOccurrenceId>>::new(),
                     |mut occurrences, (fact, entry)| {
                         occurrences
                             .entry(fact.clone())
@@ -7667,7 +7661,7 @@ impl ResourceContext {
             .restore_cached_support_expansions(expansions)
     }
 
-    pub(crate) fn without_exact_representation(mut self, fact: &CResourceFact) -> Option<Self> {
+    pub(crate) fn without_exact_representation(mut self, fact: &ResourceFact) -> Option<Self> {
         let entry = *self.storage.index.exact.get(fact)?.iter().next()?;
         self.remove_entry(entry);
         Some(self)
@@ -7678,7 +7672,7 @@ impl ResourceContext {
     /// resources are merged, normalize once at that point and retry it.
     pub fn without_facts(
         self,
-        facts: &[CResourceFact],
+        facts: &[ResourceFact],
         assumptions: &PureFactContext,
     ) -> Option<Self> {
         let mut context = self;
@@ -7696,7 +7690,7 @@ impl ResourceContext {
 
     fn consume_fact_without_normalizing(
         &mut self,
-        fact: &CResourceFact,
+        fact: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> bool {
         if !fact.has_valid_exclusive_access() {
@@ -7723,7 +7717,7 @@ impl ResourceContext {
                 .iter()
                 .copied()
                 .filter(|entry| !exact_candidates.contains(entry));
-            if let CResource::Memory(required_range) = fact.resource() {
+            if let Resource::Memory(required_range) = fact.resource() {
                 let remaining = remaining.collect::<Vec<_>>();
                 candidates.extend(remaining.iter().copied().filter(|entry| {
                     self.fact(*entry).memory_range().is_some_and(|available| {
@@ -7754,7 +7748,7 @@ impl ResourceContext {
 
     fn consume_fact_from_candidates(
         &mut self,
-        fact: &CResourceFact,
+        fact: &ResourceFact,
         assumptions: &PureFactContext,
         candidates: impl IntoIterator<Item = ResourceEntryId>,
     ) -> bool {
@@ -7763,7 +7757,7 @@ impl ResourceContext {
 
     fn consume_fact_from_candidates_with_origins(
         &mut self,
-        fact: &CResourceFact,
+        fact: &ResourceFact,
         assumptions: &PureFactContext,
         candidates: impl IntoIterator<Item = ResourceEntryId>,
         mut origins: Option<&mut MemorySplitOrigins>,
@@ -7839,7 +7833,7 @@ impl ResourceContext {
             .iter()
             .filter_map(|(entry, support)| {
                 crate::instrumentation::record_deterministic_work(1);
-                (matches!(support, CResourceFact::Own(CResource::Instance(_), _))
+                (matches!(support, ResourceFact::Own(Resource::Instance(_), _))
                     && self.fact(*entry).memory_view_range().is_some()
                     && self.loan_dependency(self.occurrence(*entry)).is_none())
                 .then_some(*entry)
@@ -7861,7 +7855,7 @@ impl ResourceContext {
             .iter()
             .filter_map(|(entry, support)| {
                 crate::instrumentation::record_deterministic_work(1);
-                let CResourceFact::View(CResource::Memory(range)) = self.fact(*entry) else {
+                let ResourceFact::View(Resource::Memory(range)) = self.fact(*entry) else {
                     return None;
                 };
                 let owned = support.memory_own_range()?;
@@ -8024,8 +8018,8 @@ impl ResourceContext {
         &self,
     ) -> Vec<(
         Option<ResourceOccurrenceId>,
-        CResourceFact,
-        CResourceFact,
+        ResourceFact,
+        ResourceFact,
         Option<ResourceSupportMetadata>,
     )> {
         self.storage
@@ -8052,8 +8046,8 @@ impl ResourceContext {
         mut self,
         supported: Vec<(
             Option<ResourceOccurrenceId>,
-            CResourceFact,
-            CResourceFact,
+            ResourceFact,
+            ResourceFact,
             Option<ResourceSupportMetadata>,
         )>,
     ) -> Self {
@@ -8085,7 +8079,7 @@ impl ResourceContext {
         self
     }
 
-    fn cached_support_expansions(&self) -> Vec<(ResourceOccurrenceId, Vec<CResourceFact>)> {
+    fn cached_support_expansions(&self) -> Vec<(ResourceOccurrenceId, Vec<ResourceFact>)> {
         self.storage
             .expansions_by_support_occurrence
             .iter()
@@ -8133,7 +8127,7 @@ impl ResourceContext {
 
     fn restore_cached_support_expansions(
         mut self,
-        expansions: Vec<(ResourceOccurrenceId, Vec<CResourceFact>)>,
+        expansions: Vec<(ResourceOccurrenceId, Vec<ResourceFact>)>,
     ) -> Self {
         for (support_occurrence, expansion) in expansions {
             let Some(entry) = self.storage.entry_by_occurrence.get(&support_occurrence) else {
@@ -8172,7 +8166,7 @@ fn wide_normalization_endpoint_key(view: MachineOperandView<'_>) -> WideNormaliz
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 enum ResourceNormalizationKey {
     Instance(Variable),
-    Resource(CResource),
+    TrackedResource(Resource),
     ExactShape(ResourceFamily, String, usize),
     /// A token or composite whose first argument is a pointer into a block
     /// proven distinct from every block but itself and a symbolic one.
@@ -8217,7 +8211,7 @@ enum ResourceNormalizationKey {
 /// `x + 1` meets the pieces of `x` it abuts. The key only proposes a pair;
 /// [`merge_memory_ranges`] decides it exactly.
 fn memory_normalization_position(
-    range: &CMemoryRange,
+    range: &MemoryRange,
     bound: MachineOperandView<'_>,
 ) -> SharedMachineIntegerTerm {
     let byte_position = || -> Option<SharedMachineIntegerTerm> {
@@ -8263,7 +8257,7 @@ fn memory_normalization_position(
 /// Element-unit keys alone cannot pair a returned scalar with bytewise padding.
 /// These keys only select candidates; merging still checks exact adjacency.
 fn memory_normalization_relative_byte_position(
-    range: &CMemoryRange,
+    range: &MemoryRange,
     bound: MachineOperandView<'_>,
 ) -> Option<i64> {
     let elements = crate::kernel::assumptions::signed_index_constant(bound)?;
@@ -8292,23 +8286,23 @@ struct ResourceNormalizationIndex {
 }
 
 impl ResourceNormalizationIndex {
-    fn keys(&self, fact: &CResourceFact) -> Vec<ResourceNormalizationKey> {
-        let mut keys = vec![ResourceNormalizationKey::Resource(fact.resource().clone())];
+    fn keys(&self, fact: &ResourceFact) -> Vec<ResourceNormalizationKey> {
+        let mut keys = vec![ResourceNormalizationKey::TrackedResource(
+            fact.resource().clone(),
+        )];
         match fact.resource() {
-            CResource::Footprint(_)
-            | CResource::Parameter(_)
-            | CResource::Emp
-            | CResource::Star(_) => {}
-            CResource::Instance(instance) => {
+            Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_) => {
+            }
+            Resource::Instance(instance) => {
                 keys.push(ResourceNormalizationKey::Instance(instance.identity))
             }
-            CResource::PopulationAuthority(_)
-            | CResource::Iterated(_)
-            | CResource::MutexGuard(_)
-            | CResource::MutexLive(_)
-            | CResource::MutexUse(_)
-            | CResource::Publication(_) => {}
-            CResource::Memory(range) if range.wide_bounds().is_some() => {
+            Resource::PopulationAuthority(_)
+            | Resource::Iterated(_)
+            | Resource::MutexGuard(_)
+            | Resource::MutexLive(_)
+            | Resource::MutexUse(_)
+            | Resource::Publication(_) => {}
+            Resource::Memory(range) if range.wide_bounds().is_some() => {
                 if let Some((base, start, end)) = native_wide_normalization_key(range) {
                     keys.push(ResourceNormalizationKey::MemoryNativeStart(
                         base.clone(),
@@ -8324,7 +8318,7 @@ impl ResourceNormalizationIndex {
                     ));
                 }
             }
-            CResource::Memory(range) => {
+            Resource::Memory(range) => {
                 // A window at a 64-bit index from its root, a piece a call
                 // handed back, also meets its wide neighbours there, and so
                 // does a constant piece at the root itself.
@@ -8377,7 +8371,7 @@ impl ResourceNormalizationIndex {
                     memory_normalization_position(range, MachineOperandView::Legacy(range.end())),
                 ));
             }
-            CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
+            Resource::Composite { name, arguments } | Resource::Token { name, arguments } => {
                 let shape = (fact.family(), name.clone(), arguments.len());
                 match normalization_anchor(arguments) {
                     Some(block) => {
@@ -8413,13 +8407,13 @@ impl ResourceNormalizationIndex {
         keys
     }
 
-    fn insert(&mut self, position: usize, fact: &CResourceFact) {
+    fn insert(&mut self, position: usize, fact: &ResourceFact) {
         for key in self.keys(fact) {
             self.positions.entry(key).or_default().insert(position);
         }
     }
 
-    fn remove(&mut self, position: usize, fact: &CResourceFact) {
+    fn remove(&mut self, position: usize, fact: &ResourceFact) {
         for key in self.keys(fact) {
             if let Some(positions) = self.positions.get_mut(&key) {
                 positions.remove(&position);
@@ -8442,25 +8436,25 @@ impl ResourceNormalizationIndex {
     fn candidates_after(
         &self,
         position: usize,
-        fact: &CResourceFact,
+        fact: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> Vec<usize> {
-        let mut keys = vec![ResourceNormalizationKey::Resource(fact.resource().clone())];
+        let mut keys = vec![ResourceNormalizationKey::TrackedResource(
+            fact.resource().clone(),
+        )];
         match fact.resource() {
-            CResource::Footprint(_)
-            | CResource::Parameter(_)
-            | CResource::Emp
-            | CResource::Star(_) => {}
-            CResource::Instance(instance) => {
+            Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_) => {
+            }
+            Resource::Instance(instance) => {
                 keys.push(ResourceNormalizationKey::Instance(instance.identity))
             }
-            CResource::PopulationAuthority(_)
-            | CResource::Iterated(_)
-            | CResource::MutexGuard(_)
-            | CResource::MutexLive(_)
-            | CResource::MutexUse(_)
-            | CResource::Publication(_) => {}
-            CResource::Memory(range) if range.wide_bounds().is_some() => {
+            Resource::PopulationAuthority(_)
+            | Resource::Iterated(_)
+            | Resource::MutexGuard(_)
+            | Resource::MutexLive(_)
+            | Resource::MutexUse(_)
+            | Resource::Publication(_) => {}
+            Resource::Memory(range) if range.wide_bounds().is_some() => {
                 if let Some((base, start, end)) = native_wide_normalization_key(range) {
                     keys.push(ResourceNormalizationKey::MemoryNativeEnd(
                         base.clone(),
@@ -8476,7 +8470,7 @@ impl ResourceNormalizationIndex {
                     ));
                 }
             }
-            CResource::Memory(range) => {
+            Resource::Memory(range) => {
                 if let Some((base, start, end)) = native_wide_normalization_key(range) {
                     keys.push(ResourceNormalizationKey::MemoryNativeEnd(
                         base.clone(),
@@ -8548,7 +8542,7 @@ impl ResourceNormalizationIndex {
                     }
                 }
             }
-            CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
+            Resource::Composite { name, arguments } | Resource::Token { name, arguments } => {
                 // Two facts of one shape merge only when their arguments are
                 // proven equal, and a pointer is never proven equal to one in
                 // a block proven distinct from its own. So an anchored fact
@@ -8664,7 +8658,7 @@ fn shape_root_key(
 /// are listed by block.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(in crate::kernel) enum OwnedMemberKey {
-    Resource(CResource),
+    TrackedResource(Resource),
     Instance(Variable),
     IteratedBlock(PointerBlock),
     Shape(ResourceFamily, String, usize),
@@ -8674,23 +8668,23 @@ pub(in crate::kernel) enum OwnedMemberKey {
 }
 
 impl OwnedMemberKey {
-    pub(in crate::kernel) fn of(fact: &CResourceFact) -> Option<Self> {
+    pub(in crate::kernel) fn of(fact: &ResourceFact) -> Option<Self> {
         Some(match fact.resource() {
-            resource @ (CResource::Footprint(_)
-            | CResource::Parameter(_)
-            | CResource::Emp
-            | CResource::Star(_)) => Self::Resource(resource.clone()),
-            CResource::Memory(_) => return None,
-            resource @ (CResource::PopulationAuthority(_)
-            | CResource::MutexGuard(_)
-            | CResource::MutexLive(_)
-            | CResource::MutexUse(_)
-            | CResource::Publication(_)) => Self::Resource(resource.clone()),
-            CResource::Instance(instance) => Self::Instance(instance.identity),
-            CResource::Iterated(iterated) => {
+            resource @ (Resource::Footprint(_)
+            | Resource::Parameter(_)
+            | Resource::Emp
+            | Resource::Star(_)) => Self::TrackedResource(resource.clone()),
+            Resource::Memory(_) => return None,
+            resource @ (Resource::PopulationAuthority(_)
+            | Resource::MutexGuard(_)
+            | Resource::MutexLive(_)
+            | Resource::MutexUse(_)
+            | Resource::Publication(_)) => Self::TrackedResource(resource.clone()),
+            Resource::Instance(instance) => Self::Instance(instance.identity),
+            Resource::Iterated(iterated) => {
                 Self::IteratedBlock(iterated.element_base.block.clone())
             }
-            CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
+            Resource::Composite { name, arguments } | Resource::Token { name, arguments } => {
                 Self::Shape(fact.family(), name.clone(), arguments.len())
             }
         })
@@ -8698,9 +8692,9 @@ impl OwnedMemberKey {
 
     /// The keys a composition is listed under for its owned member `fact`:
     /// its bucket and, for a token or composite, its shape and root too.
-    pub(in crate::kernel) fn listed(fact: &CResourceFact) -> Vec<Self> {
+    pub(in crate::kernel) fn listed(fact: &ResourceFact) -> Vec<Self> {
         let mut keys = Vec::from_iter(Self::of(fact));
-        if let CResource::Composite { name, arguments } | CResource::Token { name, arguments } =
+        if let Resource::Composite { name, arguments } | Resource::Token { name, arguments } =
             fact.resource()
         {
             keys.push(Self::ShapeRoot(shape_root_key(
@@ -8714,15 +8708,11 @@ impl OwnedMemberKey {
 
     /// The narrowest key a composition lists an owned member equal to
     /// `fact` under.
-    pub(in crate::kernel) fn exact(fact: &CResourceFact) -> Option<Self> {
+    pub(in crate::kernel) fn exact(fact: &ResourceFact) -> Option<Self> {
         match fact.resource() {
-            CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
-                Some(Self::ShapeRoot(shape_root_key(
-                    fact.family(),
-                    name,
-                    arguments,
-                )))
-            }
+            Resource::Composite { name, arguments } | Resource::Token { name, arguments } => Some(
+                Self::ShapeRoot(shape_root_key(fact.family(), name, arguments)),
+            ),
             _ => Self::of(fact),
         }
     }
@@ -8733,10 +8723,10 @@ impl OwnedMemberKey {
     /// of members whose first argument is not a pointer; other facts read
     /// their bucket.
     pub(in crate::kernel) fn probed(
-        view: &CResourceFact,
+        view: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> Vec<Self> {
-        let (CResource::Composite { name, arguments } | CResource::Token { name, arguments }) =
+        let (Resource::Composite { name, arguments } | Resource::Token { name, arguments }) =
             view.resource()
         else {
             return Vec::from_iter(Self::of(view));
@@ -8825,13 +8815,13 @@ fn resource_family_algebra(family: ResourceFamily) -> &'static dyn ResourceFamil
     algebra
 }
 
-pub(super) fn validate_resource_spec(spec: &CResourceSpec) -> Result<(), CResourceSpecError> {
+pub(super) fn validate_resource_spec(spec: &ResourceSpec) -> Result<(), ResourceSpecError> {
     resource_family_algebra(spec.family()).validate_spec(spec)
 }
 
 fn resource_fact_entails(
-    available: &CResourceFact,
-    required: &CResourceFact,
+    available: &ResourceFact,
+    required: &ResourceFact,
     assumptions: &PureFactContext,
 ) -> bool {
     available.family() == required.family()
@@ -8839,10 +8829,10 @@ fn resource_fact_entails(
 }
 
 fn normalize_resource_fact_pair(
-    left: &CResourceFact,
-    right: &CResourceFact,
+    left: &ResourceFact,
+    right: &ResourceFact,
     assumptions: &PureFactContext,
-) -> Option<CResourceFact> {
+) -> Option<ResourceFact> {
     if left.family() != right.family() {
         return None;
     }
@@ -8850,8 +8840,8 @@ fn normalize_resource_fact_pair(
 }
 
 fn memory_resource_fact_entails(
-    available: &CResourceFact,
-    required: &CResourceFact,
+    available: &ResourceFact,
+    required: &ResourceFact,
     assumptions: &PureFactContext,
 ) -> bool {
     if let (Some(available), Some(required)) = (available.memory_range(), required.memory_range())
@@ -8883,8 +8873,8 @@ fn memory_resource_fact_entails(
 }
 
 fn consume_memory_resource_fact(
-    available: &CResourceFact,
-    required: &CResourceFact,
+    available: &ResourceFact,
+    required: &ResourceFact,
     assumptions: &PureFactContext,
 ) -> Option<ResourceFactConsumption> {
     if let (Some(available), Some(required)) = (available.memory_range(), required.memory_range())
@@ -8930,7 +8920,7 @@ fn consume_memory_resource_fact(
         return Some(ResourceFactConsumption::Replace(
             split_memory_range(available, required, assumptions)?
                 .into_iter()
-                .map(CResourceFact::own_memory)
+                .map(ResourceFact::own_memory)
                 .collect(),
         ));
     }
@@ -8938,18 +8928,18 @@ fn consume_memory_resource_fact(
 }
 
 fn exact_resources_proven_equal(
-    left: &CResource,
-    right: &CResource,
+    left: &Resource,
+    right: &Resource,
     assumptions: &PureFactContext,
 ) -> bool {
     if left == right {
         return true;
     }
     match (left, right) {
-        (CResource::Iterated(left), CResource::Iterated(right)) => {
+        (Resource::Iterated(left), Resource::Iterated(right)) => {
             iterated_memories_proven_equal(left, right, assumptions)
         }
-        (CResource::Publication(left), CResource::Publication(right)) => {
+        (Resource::Publication(left), Resource::Publication(right)) => {
             let pointer = |pointer: &Pointer| -> AlgebraicValue {
                 ProgramValue::pointer(pointer.clone()).into()
             };
@@ -8972,7 +8962,7 @@ fn exact_resources_proven_equal(
                     .zip(right.payload.arguments())
                     .all(|(a, b)| crate::kernel::resource_arguments_proven_equal(a, b, assumptions))
         }
-        (CResource::Instance(left), CResource::Instance(right)) => {
+        (Resource::Instance(left), Resource::Instance(right)) => {
             left.identity == right.identity
                 && left.name == right.name
                 && left.schema == right.schema
@@ -8991,11 +8981,11 @@ fn exact_resources_proven_equal(
                     .all(|(a, b)| crate::kernel::resource_arguments_proven_equal(a, b, assumptions))
         }
         (
-            CResource::Composite {
+            Resource::Composite {
                 name: left_name,
                 arguments: left_arguments,
             },
-            CResource::Composite {
+            Resource::Composite {
                 name: right_name,
                 arguments: right_arguments,
             },
@@ -9008,11 +8998,11 @@ fn exact_resources_proven_equal(
                     .all(|(a, b)| crate::kernel::instance_arguments_proven_equal(a, b, assumptions))
         }
         (
-            CResource::Token {
+            Resource::Token {
                 name: left_name,
                 arguments: left_arguments,
             },
-            CResource::Token {
+            Resource::Token {
                 name: right_name,
                 arguments: right_arguments,
             },
@@ -9031,23 +9021,23 @@ fn exact_resources_proven_equal(
 }
 
 fn exact_resource_fact_entails(
-    available: &CResourceFact,
-    required: &CResourceFact,
+    available: &ResourceFact,
+    required: &ResourceFact,
     assumptions: &PureFactContext,
 ) -> bool {
     match (available, required) {
         (
-            CResourceFact::Own(available, available_quantity),
-            CResourceFact::Own(required, required_quantity),
+            ResourceFact::Own(available, available_quantity),
+            ResourceFact::Own(required, required_quantity),
         ) => {
             resource_quantity_at_least(available_quantity, required_quantity, assumptions)
                 && exact_resources_proven_equal(available, required, assumptions)
         }
-        (CResourceFact::Own(available, available_quantity), CResourceFact::View(required)) => {
+        (ResourceFact::Own(available, available_quantity), ResourceFact::View(required)) => {
             resource_quantity_is_positive(available_quantity, assumptions)
                 && exact_resources_proven_equal(available, required, assumptions)
         }
-        (CResourceFact::View(available), CResourceFact::View(required)) => {
+        (ResourceFact::View(available), ResourceFact::View(required)) => {
             exact_resources_proven_equal(available, required, assumptions)
         }
         _ => false,
@@ -9068,7 +9058,7 @@ fn exact_resource_fact_entails(
 /// Whether `range` is proved to name no cell: its two endpoints are the same
 /// term or proved equal.
 pub(in crate::kernel) fn memory_range_is_proven_empty(
-    range: &CMemoryRange,
+    range: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
     if let Some((start, end)) = range.wide_bounds() {
@@ -9195,13 +9185,13 @@ pub(in crate::kernel) fn population_quantity_sum(
 
 /// Only families with ordinary unit quantities participate. A memory share,
 /// an acquisition, or an authority cannot be added into a population unit.
-fn numeric_population_owned_units(fact: &CResourceFact) -> Option<u32> {
-    let CResourceFact::Own(resource, quantity) = fact else {
+fn numeric_population_owned_units(fact: &ResourceFact) -> Option<u32> {
+    let ResourceFact::Own(resource, quantity) = fact else {
         return None;
     };
     if !matches!(
         resource,
-        CResource::Composite { .. } | CResource::Token { .. }
+        Resource::Composite { .. } | Resource::Token { .. }
     ) {
         return None;
     }
@@ -9243,9 +9233,9 @@ mod zero_quantity_graph_tests {
         MachineTerm::Variable(Variable(id))
     }
 
-    fn required(quantity: MachineTerm) -> CResourceFact {
-        CResourceFact::own_quantity(
-            CResource::Composite {
+    fn required(quantity: MachineTerm) -> ResourceFact {
+        ResourceFact::own_quantity(
+            Resource::Composite {
                 name: "zero-quantity".into(),
                 arguments: Vec::new().into(),
             },
@@ -9271,7 +9261,7 @@ mod zero_quantity_graph_tests {
                 .is_empty()
         );
         let views = ResourceContext::new()
-            .unchecked_with_facts([CResourceFact::View(one.resource().clone()), one.clone()]);
+            .unchecked_with_facts([ResourceFact::View(one.resource().clone()), one.clone()]);
         assert!(!views.satisfies_fact(&two, &assumptions));
         let large = required(MachineTerm::constant(2_000_000_000));
         let oversized = ResourceContext::new().unchecked_with_facts([large.clone(), large]);
@@ -9285,7 +9275,7 @@ mod zero_quantity_graph_tests {
     #[test]
     fn zero_ownership_uses_graph_with_snapshot_scope() {
         let _session = crate::kernel::VerificationSession::enter();
-        let before = crate::kernel::intern_c_memory(CMemory::new().with_block("zero-quantity", 8));
+        let before = crate::kernel::intern_c_memory(Memory::new().with_block("zero-quantity", 8));
         let pointer = |index| Pointer {
             block: "zero-quantity".into(),
             offset: PointerOffsetTerm::scale_int32(index, 4),
@@ -9337,8 +9327,8 @@ mod zero_quantity_graph_tests {
 }
 
 fn consume_exact_resource_fact(
-    available: &CResourceFact,
-    required: &CResourceFact,
+    available: &ResourceFact,
+    required: &ResourceFact,
     assumptions: &PureFactContext,
 ) -> Option<ResourceFactConsumption> {
     if !exact_resource_fact_entails(available, required, assumptions) {
@@ -9357,10 +9347,10 @@ fn consume_exact_resource_fact(
     Some(if required.is_view() {
         ResourceFactConsumption::Preserve
     } else {
-        let CResourceFact::Own(available, available_quantity) = available else {
+        let ResourceFact::Own(available, available_quantity) = available else {
             unreachable!("owned exact requirement entailed by a viewed fact")
         };
-        let CResourceFact::Own(_, required_quantity) = required else {
+        let ResourceFact::Own(_, required_quantity) = required else {
             unreachable!("checked above")
         };
         let residual = MachineTerm::subtract(
@@ -9380,7 +9370,7 @@ fn consume_exact_resource_fact(
         ResourceFactConsumption::Replace(if residual_is_zero {
             Vec::new()
         } else {
-            vec![CResourceFact::own_quantity(available.clone(), residual)]
+            vec![ResourceFact::own_quantity(available.clone(), residual)]
         })
     })
 }
@@ -9405,21 +9395,21 @@ fn consume_exact_resource_fact(
 /// the merge safe: `normalize_pair` sees two bare facts and cannot tell a
 /// bound description from an unbound one.
 fn combine_exact_resource_facts(
-    left: &CResourceFact,
-    right: &CResourceFact,
+    left: &ResourceFact,
+    right: &ResourceFact,
     assumptions: &PureFactContext,
-) -> Option<CResourceFact> {
+) -> Option<ResourceFact> {
     match (left, right) {
-        (CResourceFact::Own(left, quantity), CResourceFact::View(right))
-        | (CResourceFact::View(right), CResourceFact::Own(left, quantity))
+        (ResourceFact::Own(left, quantity), ResourceFact::View(right))
+        | (ResourceFact::View(right), ResourceFact::Own(left, quantity))
             if exact_resources_proven_equal(left, right, assumptions) =>
         {
-            Some(CResourceFact::Own(left.clone(), quantity.clone()))
+            Some(ResourceFact::Own(left.clone(), quantity.clone()))
         }
-        (CResourceFact::View(left), CResourceFact::View(right))
+        (ResourceFact::View(left), ResourceFact::View(right))
             if exact_resources_proven_equal(left, right, assumptions) =>
         {
-            Some(CResourceFact::View(left.clone()))
+            Some(ResourceFact::View(left.clone()))
         }
         _ => None,
     }
@@ -9448,24 +9438,24 @@ fn combine_exact_resource_facts(
 /// The projection is not authority the callee could carry: it is read off
 /// ownership that stays where it is, so nothing survives the observing
 /// context.
-fn owner_observation_core(resource: &CResourceFact) -> Option<CResourceFact> {
+fn owner_observation_core(resource: &ResourceFact) -> Option<ResourceFact> {
     match resource {
-        CResourceFact::Own(resource, quantity) if constant_quantity_is_positive(quantity) => {
-            Some(CResourceFact::View(resource.clone()))
+        ResourceFact::Own(resource, quantity) if constant_quantity_is_positive(quantity) => {
+            Some(ResourceFact::View(resource.clone()))
         }
-        CResourceFact::Own(_, _) => None,
-        CResourceFact::View(resource) => Some(CResourceFact::View(resource.clone())),
+        ResourceFact::Own(_, _) => None,
+        ResourceFact::View(resource) => Some(ResourceFact::View(resource.clone())),
     }
 }
 
 /// Separation cases whose proof depends only on the resource constructors,
 /// not on ambient facts or the composition that happened to contain them.
 pub(in crate::kernel) fn resources_structurally_separate(
-    left: &CResource,
-    right: &CResource,
+    left: &Resource,
+    right: &Resource,
 ) -> bool {
     match (left, right) {
-        (CResource::Memory(left), CResource::Memory(right)) => {
+        (Resource::Memory(left), Resource::Memory(right)) => {
             left.base().blocks_proven_distinct(right.base())
                 || left.base() == right.base()
                     && matches!(
@@ -9500,8 +9490,8 @@ fn string_literal_blocks_may_alias(left: &PointerBlock, right: &PointerBlock) ->
 }
 
 fn pair_validity_error_with_separation(
-    left: &CResourceFact,
-    right: &CResourceFact,
+    left: &ResourceFact,
+    right: &ResourceFact,
     assumptions: &PureFactContext,
     use_separation: bool,
 ) -> Option<ResourceContextValidityError> {
@@ -9557,8 +9547,8 @@ impl ResourceFamilyAlgebra for MemoryResourceAlgebra {
     /// owner/owner.
     fn pair_validity_error(
         &self,
-        left: &CResourceFact,
-        right: &CResourceFact,
+        left: &ResourceFact,
+        right: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> Option<ResourceContextValidityError> {
         let (Some(left), Some(right)) = (left.memory_own_range(), right.memory_own_range()) else {
@@ -9577,8 +9567,8 @@ impl ResourceFamilyAlgebra for MemoryResourceAlgebra {
 
     fn entails(
         &self,
-        available: &CResourceFact,
-        required: &CResourceFact,
+        available: &ResourceFact,
+        required: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> bool {
         memory_resource_fact_entails(available, required, assumptions)
@@ -9586,8 +9576,8 @@ impl ResourceFamilyAlgebra for MemoryResourceAlgebra {
 
     fn consume(
         &self,
-        available: &CResourceFact,
-        required: &CResourceFact,
+        available: &ResourceFact,
+        required: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> Option<ResourceFactConsumption> {
         consume_memory_resource_fact(available, required, assumptions)
@@ -9595,14 +9585,14 @@ impl ResourceFamilyAlgebra for MemoryResourceAlgebra {
 
     fn normalize_pair(
         &self,
-        left: &CResourceFact,
-        right: &CResourceFact,
+        left: &ResourceFact,
+        right: &ResourceFact,
         assumptions: &PureFactContext,
-    ) -> Option<CResourceFact> {
+    ) -> Option<ResourceFact> {
         combine_memory_resource_facts(left, right, assumptions)
     }
 
-    fn core(&self, fact: &CResourceFact) -> Option<CResourceFact> {
+    fn core(&self, fact: &ResourceFact) -> Option<ResourceFact> {
         owner_observation_core(fact)
     }
 }
@@ -9616,8 +9606,8 @@ macro_rules! impl_exact_resource_algebra {
 
             fn pair_validity_error(
                 &self,
-                _left: &CResourceFact,
-                _right: &CResourceFact,
+                _left: &ResourceFact,
+                _right: &ResourceFact,
                 _assumptions: &PureFactContext,
             ) -> Option<ResourceContextValidityError> {
                 None
@@ -9625,8 +9615,8 @@ macro_rules! impl_exact_resource_algebra {
 
             fn entails(
                 &self,
-                available: &CResourceFact,
-                required: &CResourceFact,
+                available: &ResourceFact,
+                required: &ResourceFact,
                 assumptions: &PureFactContext,
             ) -> bool {
                 exact_resource_fact_entails(available, required, assumptions)
@@ -9634,8 +9624,8 @@ macro_rules! impl_exact_resource_algebra {
 
             fn consume(
                 &self,
-                available: &CResourceFact,
-                required: &CResourceFact,
+                available: &ResourceFact,
+                required: &ResourceFact,
                 assumptions: &PureFactContext,
             ) -> Option<ResourceFactConsumption> {
                 consume_exact_resource_fact(available, required, assumptions)
@@ -9643,20 +9633,20 @@ macro_rules! impl_exact_resource_algebra {
 
             fn normalize_pair(
                 &self,
-                left: &CResourceFact,
-                right: &CResourceFact,
+                left: &ResourceFact,
+                right: &ResourceFact,
                 assumptions: &PureFactContext,
-            ) -> Option<CResourceFact> {
+            ) -> Option<ResourceFact> {
                 match (left, right) {
                     (
-                        CResourceFact::Own(left, left_quantity),
-                        CResourceFact::Own(right, right_quantity),
+                        ResourceFact::Own(left, left_quantity),
+                        ResourceFact::Own(right, right_quantity),
                     ) if exact_resources_proven_equal(left, right, assumptions) => {
                         // A merge that cannot state the total exactly is
                         // declined rather than wrapped: leaving both facts
                         // in the state costs precision, and a wrapped
                         // quantity is a count that is not the population's.
-                        Some(CResourceFact::Own(
+                        Some(ResourceFact::Own(
                             left.clone(),
                             Box::new(population_quantity_sum(
                                 left_quantity,
@@ -9669,7 +9659,7 @@ macro_rules! impl_exact_resource_algebra {
                 }
             }
 
-            fn core(&self, fact: &CResourceFact) -> Option<CResourceFact> {
+            fn core(&self, fact: &ResourceFact) -> Option<ResourceFact> {
                 owner_observation_core(fact)
             }
         }
@@ -9685,12 +9675,12 @@ impl ResourceFamilyAlgebra for InstanceResourceAlgebra {
     }
     fn pair_validity_error(
         &self,
-        left: &CResourceFact,
-        right: &CResourceFact,
+        left: &ResourceFact,
+        right: &ResourceFact,
         _: &PureFactContext,
     ) -> Option<ResourceContextValidityError> {
         match (left.resource(), right.resource()) {
-            (CResource::Instance(a), CResource::Instance(b)) if a.identity == b.identity => Some(
+            (Resource::Instance(a), Resource::Instance(b)) if a.identity == b.identity => Some(
                 ResourceContextValidityError::DuplicateOwnedResourceFact(right.clone()),
             ),
             _ => None,
@@ -9698,17 +9688,17 @@ impl ResourceFamilyAlgebra for InstanceResourceAlgebra {
     }
     fn entails(
         &self,
-        available: &CResourceFact,
-        required: &CResourceFact,
+        available: &ResourceFact,
+        required: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> bool {
-        matches!((available,required),(CResourceFact::Own(_,a),CResourceFact::Own(_,b)) if a.as_const()==Some(1) && b.as_const()==Some(1))
+        matches!((available,required),(ResourceFact::Own(_,a),ResourceFact::Own(_,b)) if a.as_const()==Some(1) && b.as_const()==Some(1))
             && exact_resources_proven_equal(available.resource(), required.resource(), assumptions)
     }
     fn consume(
         &self,
-        available: &CResourceFact,
-        required: &CResourceFact,
+        available: &ResourceFact,
+        required: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> Option<ResourceFactConsumption> {
         self.entails(available, required, assumptions)
@@ -9716,13 +9706,13 @@ impl ResourceFamilyAlgebra for InstanceResourceAlgebra {
     }
     fn normalize_pair(
         &self,
-        _: &CResourceFact,
-        _: &CResourceFact,
+        _: &ResourceFact,
+        _: &ResourceFact,
         _: &PureFactContext,
-    ) -> Option<CResourceFact> {
+    ) -> Option<ResourceFact> {
         None
     }
-    fn core(&self, _: &CResourceFact) -> Option<CResourceFact> {
+    fn core(&self, _: &ResourceFact) -> Option<ResourceFact> {
         None
     }
 }
@@ -9733,32 +9723,30 @@ impl ResourceFamilyAlgebra for PopulationAuthorityResourceAlgebra {
     }
     fn pair_validity_error(
         &self,
-        left: &CResourceFact,
-        right: &CResourceFact,
+        left: &ResourceFact,
+        right: &ResourceFact,
         _: &PureFactContext,
     ) -> Option<ResourceContextValidityError> {
         match (left.resource(), right.resource()) {
-            (CResource::PopulationAuthority(a), CResource::PopulationAuthority(b)) if a == b => {
-                Some(ResourceContextValidityError::DuplicateOwnedResourceFact(
-                    right.clone(),
-                ))
-            }
+            (Resource::PopulationAuthority(a), Resource::PopulationAuthority(b)) if a == b => Some(
+                ResourceContextValidityError::DuplicateOwnedResourceFact(right.clone()),
+            ),
             _ => None,
         }
     }
     fn entails(
         &self,
-        available: &CResourceFact,
-        required: &CResourceFact,
+        available: &ResourceFact,
+        required: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> bool {
-        matches!((available,required),(CResourceFact::Own(_,a),CResourceFact::Own(_,b)) if a.as_const()==Some(1) && b.as_const()==Some(1))
+        matches!((available,required),(ResourceFact::Own(_,a),ResourceFact::Own(_,b)) if a.as_const()==Some(1) && b.as_const()==Some(1))
             && exact_resources_proven_equal(available.resource(), required.resource(), assumptions)
     }
     fn consume(
         &self,
-        available: &CResourceFact,
-        required: &CResourceFact,
+        available: &ResourceFact,
+        required: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> Option<ResourceFactConsumption> {
         self.entails(available, required, assumptions)
@@ -9766,13 +9754,13 @@ impl ResourceFamilyAlgebra for PopulationAuthorityResourceAlgebra {
     }
     fn normalize_pair(
         &self,
-        _: &CResourceFact,
-        _: &CResourceFact,
+        _: &ResourceFact,
+        _: &ResourceFact,
         _: &PureFactContext,
-    ) -> Option<CResourceFact> {
+    ) -> Option<ResourceFact> {
         None
     }
-    fn core(&self, _: &CResourceFact) -> Option<CResourceFact> {
+    fn core(&self, _: &ResourceFact) -> Option<ResourceFact> {
         None
     }
 }
@@ -9783,12 +9771,12 @@ impl ResourceFamilyAlgebra for MutexGuardResourceAlgebra {
     }
     fn pair_validity_error(
         &self,
-        left: &CResourceFact,
-        right: &CResourceFact,
+        left: &ResourceFact,
+        right: &ResourceFact,
         _: &PureFactContext,
     ) -> Option<ResourceContextValidityError> {
         match (left.resource(), right.resource()) {
-            (CResource::MutexGuard(a), CResource::MutexGuard(b)) if a == b => Some(
+            (Resource::MutexGuard(a), Resource::MutexGuard(b)) if a == b => Some(
                 ResourceContextValidityError::DuplicateOwnedResourceFact(right.clone()),
             ),
             _ => None,
@@ -9796,17 +9784,17 @@ impl ResourceFamilyAlgebra for MutexGuardResourceAlgebra {
     }
     fn entails(
         &self,
-        available: &CResourceFact,
-        required: &CResourceFact,
+        available: &ResourceFact,
+        required: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> bool {
-        matches!((available,required),(CResourceFact::Own(_,a),CResourceFact::Own(_,b)) if a.as_const()==Some(1) && b.as_const()==Some(1))
+        matches!((available,required),(ResourceFact::Own(_,a),ResourceFact::Own(_,b)) if a.as_const()==Some(1) && b.as_const()==Some(1))
             && exact_resources_proven_equal(available.resource(), required.resource(), assumptions)
     }
     fn consume(
         &self,
-        available: &CResourceFact,
-        required: &CResourceFact,
+        available: &ResourceFact,
+        required: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> Option<ResourceFactConsumption> {
         self.entails(available, required, assumptions)
@@ -9814,13 +9802,13 @@ impl ResourceFamilyAlgebra for MutexGuardResourceAlgebra {
     }
     fn normalize_pair(
         &self,
-        _: &CResourceFact,
-        _: &CResourceFact,
+        _: &ResourceFact,
+        _: &ResourceFact,
         _: &PureFactContext,
-    ) -> Option<CResourceFact> {
+    ) -> Option<ResourceFact> {
         None
     }
-    fn core(&self, _: &CResourceFact) -> Option<CResourceFact> {
+    fn core(&self, _: &ResourceFact) -> Option<ResourceFact> {
         None
     }
 }
@@ -9833,12 +9821,12 @@ impl ResourceFamilyAlgebra for PublicationResourceAlgebra {
     }
     fn pair_validity_error(
         &self,
-        left: &CResourceFact,
-        right: &CResourceFact,
+        left: &ResourceFact,
+        right: &ResourceFact,
         _: &PureFactContext,
     ) -> Option<ResourceContextValidityError> {
         match (left.resource(), right.resource()) {
-            (CResource::Publication(a), CResource::Publication(b))
+            (Resource::Publication(a), Resource::Publication(b))
                 if a.side == b.side && a.flag == b.flag =>
             {
                 Some(ResourceContextValidityError::DuplicateOwnedResourceFact(
@@ -9850,17 +9838,17 @@ impl ResourceFamilyAlgebra for PublicationResourceAlgebra {
     }
     fn entails(
         &self,
-        available: &CResourceFact,
-        required: &CResourceFact,
+        available: &ResourceFact,
+        required: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> bool {
-        matches!((available,required),(CResourceFact::Own(_,a),CResourceFact::Own(_,b)) if a.as_const()==Some(1) && b.as_const()==Some(1))
+        matches!((available,required),(ResourceFact::Own(_,a),ResourceFact::Own(_,b)) if a.as_const()==Some(1) && b.as_const()==Some(1))
             && exact_resources_proven_equal(available.resource(), required.resource(), assumptions)
     }
     fn consume(
         &self,
-        available: &CResourceFact,
-        required: &CResourceFact,
+        available: &ResourceFact,
+        required: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> Option<ResourceFactConsumption> {
         self.entails(available, required, assumptions)
@@ -9868,13 +9856,13 @@ impl ResourceFamilyAlgebra for PublicationResourceAlgebra {
     }
     fn normalize_pair(
         &self,
-        _: &CResourceFact,
-        _: &CResourceFact,
+        _: &ResourceFact,
+        _: &ResourceFact,
         _: &PureFactContext,
-    ) -> Option<CResourceFact> {
+    ) -> Option<ResourceFact> {
         None
     }
-    fn core(&self, _: &CResourceFact) -> Option<CResourceFact> {
+    fn core(&self, _: &ResourceFact) -> Option<ResourceFact> {
         None
     }
 }
@@ -9885,12 +9873,12 @@ impl ResourceFamilyAlgebra for MutexLiveResourceAlgebra {
     }
     fn pair_validity_error(
         &self,
-        left: &CResourceFact,
-        right: &CResourceFact,
+        left: &ResourceFact,
+        right: &ResourceFact,
         _: &PureFactContext,
     ) -> Option<ResourceContextValidityError> {
         match (left.resource(), right.resource()) {
-            (CResource::MutexLive(a), CResource::MutexLive(b)) if a == b => Some(
+            (Resource::MutexLive(a), Resource::MutexLive(b)) if a == b => Some(
                 ResourceContextValidityError::DuplicateOwnedResourceFact(right.clone()),
             ),
             _ => None,
@@ -9898,17 +9886,17 @@ impl ResourceFamilyAlgebra for MutexLiveResourceAlgebra {
     }
     fn entails(
         &self,
-        available: &CResourceFact,
-        required: &CResourceFact,
+        available: &ResourceFact,
+        required: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> bool {
-        matches!((available,required),(CResourceFact::Own(_,a),CResourceFact::Own(_,b)) if a.as_const()==Some(1) && b.as_const()==Some(1))
+        matches!((available,required),(ResourceFact::Own(_,a),ResourceFact::Own(_,b)) if a.as_const()==Some(1) && b.as_const()==Some(1))
             && exact_resources_proven_equal(available.resource(), required.resource(), assumptions)
     }
     fn consume(
         &self,
-        available: &CResourceFact,
-        required: &CResourceFact,
+        available: &ResourceFact,
+        required: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> Option<ResourceFactConsumption> {
         self.entails(available, required, assumptions)
@@ -9916,13 +9904,13 @@ impl ResourceFamilyAlgebra for MutexLiveResourceAlgebra {
     }
     fn normalize_pair(
         &self,
-        _: &CResourceFact,
-        _: &CResourceFact,
+        _: &ResourceFact,
+        _: &ResourceFact,
         _: &PureFactContext,
-    ) -> Option<CResourceFact> {
+    ) -> Option<ResourceFact> {
         None
     }
-    fn core(&self, _: &CResourceFact) -> Option<CResourceFact> {
+    fn core(&self, _: &ResourceFact) -> Option<ResourceFact> {
         None
     }
 }
@@ -9933,12 +9921,12 @@ impl ResourceFamilyAlgebra for MutexUseResourceAlgebra {
     }
     fn pair_validity_error(
         &self,
-        left: &CResourceFact,
-        right: &CResourceFact,
+        left: &ResourceFact,
+        right: &ResourceFact,
         _: &PureFactContext,
     ) -> Option<ResourceContextValidityError> {
         match (left.resource(), right.resource()) {
-            (CResource::MutexUse(a), CResource::MutexUse(b)) if a == b => Some(
+            (Resource::MutexUse(a), Resource::MutexUse(b)) if a == b => Some(
                 ResourceContextValidityError::DuplicateOwnedResourceFact(right.clone()),
             ),
             _ => None,
@@ -9946,17 +9934,17 @@ impl ResourceFamilyAlgebra for MutexUseResourceAlgebra {
     }
     fn entails(
         &self,
-        available: &CResourceFact,
-        required: &CResourceFact,
+        available: &ResourceFact,
+        required: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> bool {
-        matches!((available,required),(CResourceFact::Own(_,a),CResourceFact::Own(_,b)) if a.as_const()==Some(1) && b.as_const()==Some(1))
+        matches!((available,required),(ResourceFact::Own(_,a),ResourceFact::Own(_,b)) if a.as_const()==Some(1) && b.as_const()==Some(1))
             && exact_resources_proven_equal(available.resource(), required.resource(), assumptions)
     }
     fn consume(
         &self,
-        available: &CResourceFact,
-        required: &CResourceFact,
+        available: &ResourceFact,
+        required: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> Option<ResourceFactConsumption> {
         self.entails(available, required, assumptions)
@@ -9964,13 +9952,13 @@ impl ResourceFamilyAlgebra for MutexUseResourceAlgebra {
     }
     fn normalize_pair(
         &self,
-        _: &CResourceFact,
-        _: &CResourceFact,
+        _: &ResourceFact,
+        _: &ResourceFact,
         _: &PureFactContext,
-    ) -> Option<CResourceFact> {
+    ) -> Option<ResourceFact> {
         None
     }
-    fn core(&self, _: &CResourceFact) -> Option<CResourceFact> {
+    fn core(&self, _: &ResourceFact) -> Option<ResourceFact> {
         None
     }
 }
@@ -9981,34 +9969,34 @@ impl ResourceFamilyAlgebra for IteratedResourceAlgebra {
     }
     fn pair_validity_error(
         &self,
-        _: &CResourceFact,
-        _: &CResourceFact,
+        _: &ResourceFact,
+        _: &ResourceFact,
         _: &PureFactContext,
     ) -> Option<ResourceContextValidityError> {
         None
     }
     fn entails(
         &self,
-        available: &CResourceFact,
-        required: &CResourceFact,
+        available: &ResourceFact,
+        required: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> bool {
         let unit = |quantity: &MachineTerm| quantity.as_const() == Some(1);
         let shape = match (available, required) {
-            (CResourceFact::Own(_, available), CResourceFact::Own(_, required)) => {
+            (ResourceFact::Own(_, available), ResourceFact::Own(_, required)) => {
                 unit(available) && unit(required)
             }
-            (CResourceFact::Own(_, available), CResourceFact::View(_)) => unit(available),
-            (CResourceFact::View(_), CResourceFact::View(_)) => true,
-            (CResourceFact::View(_), CResourceFact::Own(..)) => false,
+            (ResourceFact::Own(_, available), ResourceFact::View(_)) => unit(available),
+            (ResourceFact::View(_), ResourceFact::View(_)) => true,
+            (ResourceFact::View(_), ResourceFact::Own(..)) => false,
         };
         shape
             && exact_resources_proven_equal(available.resource(), required.resource(), assumptions)
     }
     fn consume(
         &self,
-        available: &CResourceFact,
-        required: &CResourceFact,
+        available: &ResourceFact,
+        required: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> Option<ResourceFactConsumption> {
         self.entails(available, required, assumptions).then(|| {
@@ -10021,13 +10009,13 @@ impl ResourceFamilyAlgebra for IteratedResourceAlgebra {
     }
     fn normalize_pair(
         &self,
-        _: &CResourceFact,
-        _: &CResourceFact,
+        _: &ResourceFact,
+        _: &ResourceFact,
         _: &PureFactContext,
-    ) -> Option<CResourceFact> {
+    ) -> Option<ResourceFact> {
         None
     }
-    fn core(&self, _: &CResourceFact) -> Option<CResourceFact> {
+    fn core(&self, _: &ResourceFact) -> Option<ResourceFact> {
         None
     }
 }
@@ -10037,8 +10025,8 @@ impl ResourceFamilyAlgebra for IteratedResourceAlgebra {
 /// are compared in order; the checked operations keep them in the order
 /// they were opened.
 pub(in crate::kernel) fn iterated_memories_proven_equal(
-    left: &CIteratedMemory,
-    right: &CIteratedMemory,
+    left: &IteratedMemory,
+    right: &IteratedMemory,
     assumptions: &PureFactContext,
 ) -> bool {
     if left == right {
@@ -10076,29 +10064,29 @@ pub(in crate::kernel) fn iterated_memories_proven_equal(
             .all(|(a, b)| term_equal(a, b))
 }
 
-pub(super) fn resource_fact_read_core_range(resource: &CResourceFact) -> Option<CMemoryRange> {
+pub(super) fn resource_fact_read_core_range(resource: &ResourceFact) -> Option<MemoryRange> {
     match resource.core()? {
-        CResourceFact::View(
-            CResource::Footprint(_) | CResource::Parameter(_) | CResource::Emp | CResource::Star(_),
+        ResourceFact::View(
+            Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_),
         ) => None,
-        CResourceFact::View(CResource::Memory(range)) => Some(range),
-        CResourceFact::View(
-            CResource::Composite { .. }
-            | CResource::Token { .. }
-            | CResource::PopulationAuthority(_)
-            | CResource::Instance(_)
-            | CResource::MutexGuard(_)
-            | CResource::MutexLive(_)
-            | CResource::MutexUse(_)
-            | CResource::Publication(_)
-            | CResource::Iterated(_),
+        ResourceFact::View(Resource::Memory(range)) => Some(range),
+        ResourceFact::View(
+            Resource::Composite { .. }
+            | Resource::Token { .. }
+            | Resource::PopulationAuthority(_)
+            | Resource::Instance(_)
+            | Resource::MutexGuard(_)
+            | Resource::MutexLive(_)
+            | Resource::MutexUse(_)
+            | Resource::Publication(_)
+            | Resource::Iterated(_),
         )
-        | CResourceFact::Own(..) => None,
+        | ResourceFact::Own(..) => None,
     }
 }
 
 fn memory_resource_fact_permits_read(
-    resource: &CResourceFact,
+    resource: &ResourceFact,
     pointer: &Pointer,
     byte_width: u32,
     assumptions: &PureFactContext,
@@ -10119,21 +10107,21 @@ fn memory_resource_fact_permits_read(
 }
 
 fn memory_resource_fact_permits_write(
-    resource: &CResourceFact,
+    resource: &ResourceFact,
     pointer: &Pointer,
     byte_width: u32,
     assumptions: &PureFactContext,
 ) -> bool {
     match resource {
-        CResourceFact::Own(
-            CResource::Footprint(_) | CResource::Parameter(_) | CResource::Emp | CResource::Star(_),
+        ResourceFact::Own(
+            Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_),
             _,
         ) => false,
-        CResourceFact::Own(CResource::Memory(range), quantity) if range.wide_bounds().is_some() => {
+        ResourceFact::Own(Resource::Memory(range), quantity) if range.wide_bounds().is_some() => {
             resource_quantity_is_positive(quantity, assumptions)
                 && assumptions.pointer_access_in_wide_range(pointer, byte_width, range)
         }
-        CResourceFact::Own(CResource::Memory(range), quantity) => {
+        ResourceFact::Own(Resource::Memory(range), quantity) => {
             resource_quantity_is_positive(quantity, assumptions)
                 && assumptions.pointer_access_in_range(
                     pointer,
@@ -10144,19 +10132,19 @@ fn memory_resource_fact_permits_write(
                     range.element_width(),
                 )
         }
-        CResourceFact::Own(
-            CResource::Composite { .. }
-            | CResource::Token { .. }
-            | CResource::PopulationAuthority(_)
-            | CResource::Instance(_)
-            | CResource::MutexGuard(_)
-            | CResource::MutexLive(_)
-            | CResource::MutexUse(_)
-            | CResource::Publication(_)
-            | CResource::Iterated(_),
+        ResourceFact::Own(
+            Resource::Composite { .. }
+            | Resource::Token { .. }
+            | Resource::PopulationAuthority(_)
+            | Resource::Instance(_)
+            | Resource::MutexGuard(_)
+            | Resource::MutexLive(_)
+            | Resource::MutexUse(_)
+            | Resource::Publication(_)
+            | Resource::Iterated(_),
             _,
         )
-        | CResourceFact::View(_) => false,
+        | ResourceFact::View(_) => false,
     }
 }
 
@@ -10170,8 +10158,8 @@ fn owned_cell_access_uses_transitive_graph_address_equality() {
         pointer(91_102),
         pointer(91_103),
     );
-    let owner = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
-        CMemoryRange::new_with_element_width(a.clone(), 0u32.into(), 1u32.into(), 4),
+    let owner = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
+        MemoryRange::new_with_element_width(a.clone(), 0u32.into(), 1u32.into(), 4),
     ));
     let facts = PureFactContext::new()
         .assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true)
@@ -10310,14 +10298,14 @@ fn pointer_offsets_equal_with_load_bridging(
 /// A range as its physical byte footprint: width 1, based at its first byte.
 ///
 /// This is the shared spelling-independent form of a memory footprint (D6).
-/// [`CMemoryRange::byte_footprint`] already derives the pointer and the byte
+/// [`MemoryRange::byte_footprint`] already derives the pointer and the byte
 /// length, and `protected_range_proven_overlapping` in the loan oracle asks
 /// its question in exactly these terms; this helper keeps the memory family's
 /// relations on that one normalization rather than inventing a second.
 // Coverage, splitting and overlap all dispatch wide ranges before normalization.
-fn byte_normalized_memory_range(range: &CMemoryRange) -> CMemoryRange {
+fn byte_normalized_memory_range(range: &MemoryRange) -> MemoryRange {
     let (base, bytes) = range.byte_footprint();
-    CMemoryRange::new_with_element_width(base, MachineTerm::constant(0), bytes, 1)
+    MemoryRange::new_with_element_width(base, MachineTerm::constant(0), bytes, 1)
         .with_carrier_of(range)
 }
 
@@ -10331,7 +10319,7 @@ fn byte_normalized_memory_range(range: &CMemoryRange) -> CMemoryRange {
 /// base to the range's first byte and loses those relations. It succeeds only
 /// when the bounds are concrete and the byte offsets divide into whole
 /// `width` elements.
-fn memory_range_in_element_width(range: &CMemoryRange, width: u32) -> Option<CMemoryRange> {
+fn memory_range_in_element_width(range: &MemoryRange, width: u32) -> Option<MemoryRange> {
     if range.element_width() == width {
         return Some(range.clone());
     }
@@ -10345,7 +10333,7 @@ fn memory_range_in_element_width(range: &CMemoryRange, width: u32) -> Option<CMe
     let start = i32::try_from(start / target_width).ok()?;
     let end = i32::try_from(end / target_width).ok()?;
     Some(
-        CMemoryRange::new_with_element_width(
+        MemoryRange::new_with_element_width(
             range.base().clone(),
             MachineTerm::constant(start as u32),
             MachineTerm::constant(end as u32),
@@ -10359,7 +10347,7 @@ fn memory_range_in_element_width(range: &CMemoryRange, width: u32) -> Option<CMe
 /// conditions are decided: the respelled range and, for each symbolic
 /// endpoint `x` that was or became a product `x * m`, the pair `(x, m)`.
 pub(in crate::kernel) struct WideRangeRespelling {
-    pub(in crate::kernel) range: CMemoryRange,
+    pub(in crate::kernel) range: MemoryRange,
     pub(in crate::kernel) no_wrap: Vec<(MachineTerm, u64)>,
 }
 
@@ -10376,7 +10364,7 @@ pub(in crate::kernel) struct WideRangeRespelling {
 /// or an endpoint with no such reading. A wide range has no 32-bit byte count,
 /// so this is the only width conversion wide ranges have.
 pub(in crate::kernel) fn wide_memory_range_respelled(
-    range: &CMemoryRange,
+    range: &MemoryRange,
     width: u32,
 ) -> Option<WideRangeRespelling> {
     let (start, end) = range.wide_bounds()?;
@@ -10424,7 +10412,7 @@ pub(in crate::kernel) fn wide_memory_range_respelled(
     let start = convert(start)?;
     let end = convert(end)?;
     Some(WideRangeRespelling {
-        range: CMemoryRange::new_wide(range.base().clone(), start, end, width)
+        range: MemoryRange::new_wide(range.base().clone(), start, end, width)
             .with_carrier_of(range),
         no_wrap,
     })
@@ -10447,10 +10435,10 @@ pub(in crate::kernel) fn wide_respelling_no_wrap_condition(
 /// name the same bytes, so either may stand for the other in coverage and
 /// subtraction. One decision per symbolic endpoint; nothing is scanned.
 fn wide_memory_range_in_element_width(
-    range: &CMemoryRange,
+    range: &MemoryRange,
     width: u32,
     assumptions: &PureFactContext,
-) -> Option<CMemoryRange> {
+) -> Option<MemoryRange> {
     let respelled = wide_memory_range_respelled(range, width)?;
     respelled
         .no_wrap
@@ -10466,7 +10454,7 @@ fn wide_memory_range_in_element_width(
 pub(in crate::kernel) fn pointer_formation_in_range(
     pointer: &Pointer,
     operand: &Pointer,
-    range: &CMemoryRange,
+    range: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
     let width = range.element_width();
@@ -10483,7 +10471,7 @@ pub(in crate::kernel) fn pointer_formation_in_range(
         range.wide_bounds().and_then(|(start, end)| {
             let (start, end) = start.uint64_as_const().zip(end.uint64_as_const())?;
             (start <= end && end <= i32::MAX as u64 / u64::from(width)).then(|| {
-                CMemoryRange::new_with_element_width(
+                MemoryRange::new_with_element_width(
                     range.base().clone(),
                     MachineTerm::constant(start as u32),
                     MachineTerm::constant(end as u32),
@@ -10523,7 +10511,7 @@ pub(in crate::kernel) fn pointer_formation_in_range(
                     range.base(),
                     width,
                     bounds,
-                    &CMemoryRange::new_wide(base.clone(), start, end, width),
+                    &MemoryRange::new_wide(base.clone(), start, end, width),
                     assumptions,
                 )
             }
@@ -10560,8 +10548,8 @@ pub(in crate::kernel) fn pointer_formation_in_range(
 }
 
 pub(in crate::kernel) fn memory_range_covers(
-    available: &CMemoryRange,
-    required: &CMemoryRange,
+    available: &MemoryRange,
+    required: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
     memory_range_covers_by_routes(available, required, assumptions)
@@ -10571,8 +10559,8 @@ pub(in crate::kernel) fn memory_range_covers(
 /// Keep the exact byte displacement separate from the element index: a
 /// modular byte product cannot justify containment in a symbolic range.
 pub(in crate::kernel) fn memory_range_covers_interior_element(
-    available: &CMemoryRange,
-    required: &CMemoryRange,
+    available: &MemoryRange,
+    required: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
     if available.constant_start() != Some(0) {
@@ -10660,8 +10648,8 @@ pub(in crate::kernel) fn memory_range_covers_interior_element(
 /// which places the footprint's first byte over the struct count instead of
 /// comparing bytes with the wrapping product `m * k`.
 fn memory_range_covers_struct_array_field(
-    available: &CMemoryRange,
-    required: &CMemoryRange,
+    available: &MemoryRange,
+    required: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
     if required.wide_bounds().is_some() || available.wide_bounds().is_none() {
@@ -10684,8 +10672,8 @@ fn memory_range_covers_struct_array_field(
 /// are contradictory facts, under which either answer is sound, so asking
 /// would only walk the separation facts for nothing.
 fn memory_range_covers_by_routes(
-    available: &CMemoryRange,
-    required: &CMemoryRange,
+    available: &MemoryRange,
+    required: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
     if available.element_width() != required.element_width() {
@@ -10820,8 +10808,8 @@ pub(in crate::kernel) fn checked_shared_native_range_endpoint(
 /// `required.end <= available.end` are decided as 64-bit comparisons. Any
 /// other pairing is not covered.
 pub(in crate::kernel) fn wide_memory_range_covers(
-    available: &CMemoryRange,
-    required: &CMemoryRange,
+    available: &MemoryRange,
+    required: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
     if available.element_width() != required.element_width() {
@@ -10885,7 +10873,7 @@ fn wide_memory_range_covers_window(
     available_base: &Pointer,
     available_width: u32,
     available_bounds: [MachineOperandView<'_>; 2],
-    required: &CMemoryRange,
+    required: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
     let (first, last) = match required.wide_bounds() {
@@ -11015,8 +11003,8 @@ fn wide_memory_range_covers_window(
 /// unsigned 64-bit comparisons. An `Int32` range takes part through
 /// nonnegative constant bounds only. Anything undecided is not proven.
 pub(in crate::kernel) fn wide_memory_ranges_proven_overlapping(
-    left: &CMemoryRange,
-    right: &CMemoryRange,
+    left: &MemoryRange,
+    right: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
     // The neighbour index orders complete byte intervals, including mixed
@@ -11037,7 +11025,7 @@ pub(in crate::kernel) fn wide_memory_ranges_proven_overlapping(
     {
         return false;
     }
-    let bounds = |range: &CMemoryRange| match range.wide_bounds() {
+    let bounds = |range: &MemoryRange| match range.wide_bounds() {
         Some((start, end)) => Some((start.clone(), end.clone())),
         None => {
             let start = u64::try_from(range.signed_constant_start()?).ok()?;
@@ -11069,8 +11057,8 @@ pub(in crate::kernel) fn wide_memory_ranges_proven_overlapping(
 /// equal-width ranges that are not syntactically equal and not in provably
 /// distinct blocks. The caller applies the explicit-separation veto.
 fn memory_range_covered_by_some_route(
-    available: &CMemoryRange,
-    required: &CMemoryRange,
+    available: &MemoryRange,
+    required: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
     if available.wide_bounds().is_some() || required.wide_bounds().is_some() {
@@ -11130,39 +11118,39 @@ fn memory_range_covered_by_some_route(
     )
 }
 
-fn memory_resource_fact_range(fact: &CResourceFact) -> Option<&CMemoryRange> {
+fn memory_resource_fact_range(fact: &ResourceFact) -> Option<&MemoryRange> {
     match fact {
-        CResourceFact::Own(
-            CResource::Footprint(_) | CResource::Parameter(_) | CResource::Emp | CResource::Star(_),
+        ResourceFact::Own(
+            Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_),
             _,
         )
-        | CResourceFact::View(
-            CResource::Footprint(_) | CResource::Parameter(_) | CResource::Emp | CResource::Star(_),
+        | ResourceFact::View(
+            Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_),
         ) => None,
-        CResourceFact::Own(CResource::Memory(range), _)
-        | CResourceFact::View(CResource::Memory(range)) => Some(range),
-        CResourceFact::Own(
-            CResource::Composite { .. }
-            | CResource::Token { .. }
-            | CResource::PopulationAuthority(_)
-            | CResource::Instance(_)
-            | CResource::MutexGuard(_)
-            | CResource::MutexLive(_)
-            | CResource::MutexUse(_)
-            | CResource::Publication(_)
-            | CResource::Iterated(_),
+        ResourceFact::Own(Resource::Memory(range), _)
+        | ResourceFact::View(Resource::Memory(range)) => Some(range),
+        ResourceFact::Own(
+            Resource::Composite { .. }
+            | Resource::Token { .. }
+            | Resource::PopulationAuthority(_)
+            | Resource::Instance(_)
+            | Resource::MutexGuard(_)
+            | Resource::MutexLive(_)
+            | Resource::MutexUse(_)
+            | Resource::Publication(_)
+            | Resource::Iterated(_),
             _,
         )
-        | CResourceFact::View(
-            CResource::Composite { .. }
-            | CResource::Token { .. }
-            | CResource::PopulationAuthority(_)
-            | CResource::Instance(_)
-            | CResource::MutexGuard(_)
-            | CResource::MutexLive(_)
-            | CResource::MutexUse(_)
-            | CResource::Publication(_)
-            | CResource::Iterated(_),
+        | ResourceFact::View(
+            Resource::Composite { .. }
+            | Resource::Token { .. }
+            | Resource::PopulationAuthority(_)
+            | Resource::Instance(_)
+            | Resource::MutexGuard(_)
+            | Resource::MutexLive(_)
+            | Resource::MutexUse(_)
+            | Resource::Publication(_)
+            | Resource::Iterated(_),
         ) => None,
     }
 }
@@ -11170,8 +11158,8 @@ fn memory_resource_fact_range(fact: &CResourceFact) -> Option<&CMemoryRange> {
 /// A structurally known shorter footprint cannot supply the whole request,
 /// regardless of pointer spelling. Do not ask pointer/order reasoning to
 /// rediscover this refusal before composing selected adjacent pieces.
-fn memory_range_definitely_shorter(available: &CMemoryRange, required: &CMemoryRange) -> bool {
-    let bytes = |range: &CMemoryRange| -> Option<u64> {
+fn memory_range_definitely_shorter(available: &MemoryRange, required: &MemoryRange) -> bool {
+    let bytes = |range: &MemoryRange| -> Option<u64> {
         let (start, end) = range.int32_bounds()?;
         let count = MachineTerm::subtract(end.clone(), start.clone()).as_const()?;
         // Only use a representable nonnegative signed element count.
@@ -11190,7 +11178,7 @@ fn memory_range_definitely_shorter(available: &CMemoryRange, required: &CMemoryR
 /// does not carry, and `p[i32::MAX..i32::MIN]` is a forward range of exactly
 /// one element. Taking the count by the wrapping subtraction and the start by
 /// its signed value makes both exact, in `i64`, with nothing left modular.
-fn constant_range_extent(range: &CMemoryRange) -> Option<(i64, i64)> {
+fn constant_range_extent(range: &MemoryRange) -> Option<(i64, i64)> {
     let start = range.constant_start()? as i32;
     let end = range.constant_end()? as i32;
     Some((i64::from(start), i64::from(end.wrapping_sub(start))))
@@ -11230,8 +11218,8 @@ fn constant_extents_contain(
 /// value is part of the delta — which is why `exact_signed_constant` may be
 /// asked for it, and may not be asked for a residue.
 fn exact_constant_base_delta(
-    available: &CMemoryRange,
-    required: &CMemoryRange,
+    available: &MemoryRange,
+    required: &MemoryRange,
     assumptions: Option<&PureFactContext>,
 ) -> Option<i64> {
     let delta = required.base().exact_element_delta_from_base(
@@ -11265,8 +11253,8 @@ fn exact_constant_base_delta(
 /// settles it matters: `Some` is a short-circuit, and the routes below this one
 /// are the exact ones.
 fn memory_range_structurally_covers(
-    available: &CMemoryRange,
-    required: &CMemoryRange,
+    available: &MemoryRange,
+    required: &MemoryRange,
     assumptions: Option<&PureFactContext>,
 ) -> Option<bool> {
     if available.element_width() != required.element_width() {
@@ -11284,7 +11272,7 @@ fn memory_range_structurally_covers(
     )
 }
 
-fn memory_ranges_structurally_disjoint(left: &CMemoryRange, right: &CMemoryRange) -> bool {
+fn memory_ranges_structurally_disjoint(left: &MemoryRange, right: &MemoryRange) -> bool {
     if left.base().blocks_proven_distinct(right.base()) {
         return true;
     }
@@ -11411,7 +11399,7 @@ fn exact_shifted_endpoint(
 /// `p[1..n + 1]`, then meets its wide neighbour. Like the form itself, this
 /// only proposes a pair; [`merge_memory_ranges`] checks the merge.
 fn native_wide_normalization_key(
-    range: &CMemoryRange,
+    range: &MemoryRange,
 ) -> Option<(
     Pointer,
     WideNormalizationEndpointKey,
@@ -11462,7 +11450,7 @@ fn native_wide_normalization_key(
 /// part only at such a base and with nonnegative constant bounds. The form is
 /// a lookup key; the merge it proposes is checked by [`merge_memory_ranges`].
 pub(super) fn wide_normalization_form(
-    range: &CMemoryRange,
+    range: &MemoryRange,
 ) -> Option<(Pointer, SharedMachineIntegerTerm, SharedMachineIntegerTerm)> {
     let width = i64::from(range.element_width());
     let (root, index) = match &range.base().offset {
@@ -11521,7 +11509,7 @@ pub(super) fn wide_normalization_form(
 /// A range's bounds as retained unsigned 64-bit values. Signed endpoints
 /// participate only when their complete values fit in `0..=INT_MAX`.
 pub(in crate::kernel) fn shared_wide_range_bounds(
-    range: &CMemoryRange,
+    range: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> Option<(SharedMachineIntegerTerm, SharedMachineIntegerTerm)> {
     let retain = |value: &MachineTerm| {
@@ -11553,7 +11541,7 @@ pub(in crate::kernel) fn shared_wide_range_bounds(
 /// Held wide ranges bound each summand by `i64::MAX / width`, so the
 /// additions do not wrap. No temporary native range is constructed for a check.
 fn shared_rebased_wide_bounds(
-    range: &CMemoryRange,
+    range: &MemoryRange,
     base: &Pointer,
     assumptions: &PureFactContext,
 ) -> Option<(SharedMachineIntegerTerm, SharedMachineIntegerTerm)> {
@@ -11579,7 +11567,7 @@ fn shared_rebased_wide_bounds(
     Some((shifted(start), shifted(end)))
 }
 
-/// CMemoryRange still owns native endpoints. Convert only a final output;
+/// MemoryRange still owns native endpoints. Convert only a final output;
 /// neither range checks nor coordinate reconstruction call this adapter.
 fn wide_endpoint_output(endpoint: SharedMachineIntegerTerm) -> MachineTerm {
     endpoint
@@ -11589,10 +11577,10 @@ fn wide_endpoint_output(endpoint: SharedMachineIntegerTerm) -> MachineTerm {
 }
 
 pub(in crate::kernel) fn split_memory_range(
-    available: &CMemoryRange,
-    required: &CMemoryRange,
+    available: &MemoryRange,
+    required: &MemoryRange,
     assumptions: &PureFactContext,
-) -> Option<Vec<CMemoryRange>> {
+) -> Option<Vec<MemoryRange>> {
     if available.wide_bounds().is_some() || required.wide_bounds().is_some() {
         if available.element_width() != required.element_width() {
             // As coverage does: rewrite the requirement into the owner's
@@ -11655,7 +11643,7 @@ pub(in crate::kernel) fn split_memory_range(
         let mut residues = Vec::new();
         if !equal(&start, &first) {
             residues.push(
-                CMemoryRange::new_wide(
+                MemoryRange::new_wide(
                     available.base().clone(),
                     wide_endpoint_output(start),
                     wide_endpoint_output(first),
@@ -11666,7 +11654,7 @@ pub(in crate::kernel) fn split_memory_range(
         }
         if !equal(&last, &end) {
             residues.push(
-                CMemoryRange::new_wide(
+                MemoryRange::new_wide(
                     available.base().clone(),
                     wide_endpoint_output(last),
                     wide_endpoint_output(end),
@@ -11803,16 +11791,16 @@ pub(in crate::kernel) fn split_memory_range(
 }
 
 pub(crate) fn memory_ranges_proven_overlapping(
-    left: &CMemoryRange,
-    right: &CMemoryRange,
+    left: &MemoryRange,
+    right: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
     memory_ranges_proven_overlapping_with_separation(left, right, assumptions, true)
 }
 
 pub(crate) fn memory_ranges_proven_overlapping_ignoring_separation(
-    left: &CMemoryRange,
-    right: &CMemoryRange,
+    left: &MemoryRange,
+    right: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
     memory_ranges_proven_overlapping_with_separation(left, right, assumptions, false)
@@ -11821,8 +11809,8 @@ pub(crate) fn memory_ranges_proven_overlapping_ignoring_separation(
 /// Exact geometry in a shared coordinate system. None means the bases or
 /// bounds need other reasoning, not that the ranges are disjoint.
 pub(in crate::kernel) fn constant_memory_overlap(
-    left: &CMemoryRange,
-    right: &CMemoryRange,
+    left: &MemoryRange,
+    right: &MemoryRange,
 ) -> Option<bool> {
     let (left_origin, a, b) = constant_memory_coordinates(left)?;
     let (right_origin, c, d) = constant_memory_coordinates(right)?;
@@ -11830,8 +11818,8 @@ pub(in crate::kernel) fn constant_memory_overlap(
 }
 
 fn memory_ranges_proven_overlapping_with_separation(
-    left: &CMemoryRange,
-    right: &CMemoryRange,
+    left: &MemoryRange,
+    right: &MemoryRange,
     assumptions: &PureFactContext,
     use_separation: bool,
 ) -> bool {
@@ -11845,7 +11833,7 @@ fn memory_ranges_proven_overlapping_with_separation(
     // Two nonempty constant byte spans sharing their first address overlap,
     // even when a recorded equality translates one base (p == q + 8).
     // Query the selected endpoints, never spellings in either alias class.
-    let nonempty = |range: &CMemoryRange| {
+    let nonempty = |range: &MemoryRange| {
         let (start, end) = constant_relative_byte_endpoints(range);
         start.zip(end).is_some_and(|(start, end)| start < end)
     };
@@ -11873,14 +11861,14 @@ fn memory_ranges_proven_overlapping_with_separation(
 }
 
 fn memory_ranges_proven_overlapping_without_aliases(
-    left: &CMemoryRange,
-    right: &CMemoryRange,
+    left: &MemoryRange,
+    right: &MemoryRange,
     assumptions: &PureFactContext,
     use_separation: bool,
 ) -> bool {
     // Empty constant intervals own no bytes. This must agree with the
     // neighbour index, which omits them so they cannot hide an overlap.
-    let empty = |range: &CMemoryRange| {
+    let empty = |range: &MemoryRange| {
         let (start, end) = constant_relative_byte_endpoints(range);
         start.zip(end).is_some_and(|(start, end)| start >= end)
     };
@@ -11969,8 +11957,8 @@ fn memory_ranges_proven_overlapping_without_aliases(
 /// whose own end cleared `0`. A caller owning `p[0..1]` could hand `p[-1..0]`
 /// to a callee and have it written.
 fn memory_range_covers_with_exact_index(
-    available: &CMemoryRange,
-    required: &CMemoryRange,
+    available: &MemoryRange,
+    required: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
     let Some(delta) = exact_constant_base_delta(available, required, Some(assumptions)) else {
@@ -11985,7 +11973,7 @@ fn memory_range_covers_with_exact_index(
     constant_extents_contain(available, delta, required) == Some(true)
 }
 
-impl CResource {
+impl Resource {
     pub fn family(&self) -> ResourceFamily {
         match self {
             Self::Footprint(_) | Self::Parameter(_) | Self::Emp | Self::Star(_) => {
@@ -12006,13 +11994,13 @@ impl CResource {
     }
 }
 
-impl CResourceFact {
+impl ResourceFact {
     /// The fact's access and resource name in a diagnostic, as `owns
     /// pair(...)` or `views memory`.
     pub(crate) fn diagnostic_summary(&self) -> String {
         let access = if self.is_own() { "owns" } else { "views" };
         match self.resource() {
-            CResource::Composite { .. } | CResource::Token { .. } | CResource::Instance(_) => {
+            Resource::Composite { .. } | Resource::Token { .. } | Resource::Instance(_) => {
                 format!("{access} {}(...)", self.resource().diagnostic_name())
             }
             resource => format!("{access} {}", resource.diagnostic_name()),
@@ -12022,45 +12010,45 @@ impl CResourceFact {
     fn has_valid_exclusive_access(&self) -> bool {
         !matches!(
             self.resource(),
-            CResource::PopulationAuthority(_)
-                | CResource::Instance(_)
-                | CResource::MutexGuard(_)
-                | CResource::MutexLive(_)
-                | CResource::MutexUse(_)
-                | CResource::Publication(_)
+            Resource::PopulationAuthority(_)
+                | Resource::Instance(_)
+                | Resource::MutexGuard(_)
+                | Resource::MutexLive(_)
+                | Resource::MutexUse(_)
+                | Resource::Publication(_)
         ) || matches!(self, Self::Own(_, quantity) if quantity.as_const() == Some(1))
     }
 
     pub const ALLOCATION_RESOURCE_NAME: &'static str = "allocation";
 
-    pub fn own_memory(range: CMemoryRange) -> Self {
-        Self::own(CResource::Memory(range))
+    pub fn own_memory(range: MemoryRange) -> Self {
+        Self::own(Resource::Memory(range))
     }
 
-    pub fn view_memory(range: CMemoryRange) -> Self {
-        Self::View(CResource::Memory(range))
+    pub fn view_memory(range: MemoryRange) -> Self {
+        Self::View(Resource::Memory(range))
     }
 
     pub fn own_composite(name: String, arguments: Vec<ProgramValue>) -> Self {
         let arguments = arguments.into_iter().map(AlgebraicValue::C).collect();
-        Self::own(CResource::Composite { name, arguments })
+        Self::own(Resource::Composite { name, arguments })
     }
 
     pub fn view_composite(name: String, arguments: Vec<ProgramValue>) -> Self {
         let arguments = arguments.into_iter().map(AlgebraicValue::C).collect();
-        Self::View(CResource::Composite { name, arguments })
+        Self::View(Resource::Composite { name, arguments })
     }
 
     pub fn own_token(name: String, arguments: Vec<ProgramValue>) -> Self {
         let arguments = arguments.into_iter().map(AlgebraicValue::C).collect();
-        Self::own(CResource::Token { name, arguments })
+        Self::own(Resource::Token { name, arguments })
     }
 
-    pub fn own(resource: CResource) -> Self {
+    pub fn own(resource: Resource) -> Self {
         Self::Own(resource, Box::new(MachineTerm::constant(1)))
     }
 
-    pub fn own_quantity(resource: CResource, quantity: MachineTerm) -> Self {
+    pub fn own_quantity(resource: Resource, quantity: MachineTerm) -> Self {
         Self::Own(resource, Box::new(quantity))
     }
 
@@ -12113,9 +12101,9 @@ impl CResourceFact {
         let (base, bytes) = self.allocation_arguments()?;
         let range = match bytes {
             ProgramValue::Int32(bytes) => {
-                CMemoryRange::from_pointer_value(base, 0u32.into(), bytes.clone(), 1)
+                MemoryRange::from_pointer_value(base, 0u32.into(), bytes.clone(), 1)
             }
-            ProgramValue::UInt64(bytes) => CMemoryRange::from_pointer_value_wide(
+            ProgramValue::UInt64(bytes) => MemoryRange::from_pointer_value_wide(
                 base,
                 MachineTerm::uint64_constant(0),
                 bytes.clone(),
@@ -12148,7 +12136,7 @@ impl CResourceFact {
     }
 
     fn allocation_arguments(&self) -> Option<(&PointerValue, &ProgramValue)> {
-        let Self::Own(CResource::Token { name, arguments }, _) = self else {
+        let Self::Own(Resource::Token { name, arguments }, _) = self else {
             return None;
         };
         if name != Self::ALLOCATION_RESOURCE_NAME {
@@ -12166,14 +12154,14 @@ impl CResourceFact {
 
     pub(in crate::kernel) fn may_refer_to_memory_block(&self, block: &PointerBlock) -> bool {
         match self.resource() {
-        CResource::Footprint(_) | CResource::Parameter(_) | CResource::Emp | CResource::Star(_) => true,
-            CResource::Memory(range) => &range.base().block == block,
-            CResource::Composite { arguments, .. } => arguments.iter().any(
+        Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_) => true,
+            Resource::Memory(range) => &range.base().block == block,
+            Resource::Composite { arguments, .. } => arguments.iter().any(
                 |argument| matches!(argument, AlgebraicValue::C(ProgramValue::Pointer(pointer)) if &pointer.block == block),
             ),
-            CResource::Iterated(iterated) => iterated.blocks().contains(&block),
-            CResource::Token { .. } | CResource::PopulationAuthority(_)
-            | CResource::Instance(_) | CResource::MutexGuard(_) | CResource::MutexLive(_) | CResource::MutexUse(_) | CResource::Publication(_) => false,
+            Resource::Iterated(iterated) => iterated.blocks().contains(&block),
+            Resource::Token { .. } | Resource::PopulationAuthority(_)
+            | Resource::Instance(_) | Resource::MutexGuard(_) | Resource::MutexLive(_) | Resource::MutexUse(_) | Resource::Publication(_) => false,
         }
     }
 
@@ -12197,7 +12185,7 @@ impl CResourceFact {
             return false;
         };
         let allocation_memory =
-            CResource::Memory(bytes.range(base.clone(), element_count, element_width));
+            Resource::Memory(bytes.range(base.clone(), element_count, element_width));
         // Exact fact lookup, then the retained atomic separation checker.
         // The general prover added nothing here but its logical fallbacks
         // (context inconsistency, singleton substitution), which are proof
@@ -12211,10 +12199,10 @@ impl CResourceFact {
 
     pub fn view_token(name: String, arguments: Vec<ProgramValue>) -> Self {
         let arguments = arguments.into_iter().map(AlgebraicValue::C).collect();
-        Self::View(CResource::Token { name, arguments })
+        Self::View(Resource::Token { name, arguments })
     }
 
-    pub fn resource(&self) -> &CResource {
+    pub fn resource(&self) -> &Resource {
         match self {
             Self::Own(resource, _) | Self::View(resource) => resource,
         }
@@ -12247,11 +12235,11 @@ impl CResourceFact {
     pub fn core_with_assumptions(&self, assumptions: &PureFactContext) -> Option<Self> {
         if matches!(
             self.resource(),
-            CResource::PopulationAuthority(_)
-                | CResource::Instance(_)
-                | CResource::MutexGuard(_)
-                | CResource::MutexLive(_)
-                | CResource::MutexUse(_)
+            Resource::PopulationAuthority(_)
+                | Resource::Instance(_)
+                | Resource::MutexGuard(_)
+                | Resource::MutexLive(_)
+                | Resource::MutexUse(_)
         ) {
             return None;
         }
@@ -12266,101 +12254,89 @@ impl CResourceFact {
         }
     }
 
-    pub fn memory_own_range(&self) -> Option<&CMemoryRange> {
+    pub fn memory_own_range(&self) -> Option<&MemoryRange> {
         match self {
             Self::Own(
-                CResource::Footprint(_)
-                | CResource::Parameter(_)
-                | CResource::Emp
-                | CResource::Star(_),
+                Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_),
                 _,
             ) => None,
-            Self::Own(CResource::Memory(range), _) => Some(range),
+            Self::Own(Resource::Memory(range), _) => Some(range),
             Self::Own(
-                CResource::Composite { .. }
-                | CResource::Token { .. }
-                | CResource::PopulationAuthority(_)
-                | CResource::Instance(_)
-                | CResource::MutexGuard(_)
-                | CResource::MutexLive(_)
-                | CResource::MutexUse(_)
-                | CResource::Publication(_)
-                | CResource::Iterated(_),
+                Resource::Composite { .. }
+                | Resource::Token { .. }
+                | Resource::PopulationAuthority(_)
+                | Resource::Instance(_)
+                | Resource::MutexGuard(_)
+                | Resource::MutexLive(_)
+                | Resource::MutexUse(_)
+                | Resource::Publication(_)
+                | Resource::Iterated(_),
                 _,
             )
             | Self::View(_) => None,
         }
     }
 
-    pub fn memory_view_range(&self) -> Option<&CMemoryRange> {
+    pub fn memory_view_range(&self) -> Option<&MemoryRange> {
         match self {
             Self::View(
-                CResource::Footprint(_)
-                | CResource::Parameter(_)
-                | CResource::Emp
-                | CResource::Star(_),
+                Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_),
             ) => None,
-            Self::View(CResource::Memory(range)) => Some(range),
+            Self::View(Resource::Memory(range)) => Some(range),
             Self::View(
-                CResource::Composite { .. }
-                | CResource::Token { .. }
-                | CResource::PopulationAuthority(_)
-                | CResource::Instance(_)
-                | CResource::MutexGuard(_)
-                | CResource::MutexLive(_)
-                | CResource::MutexUse(_)
-                | CResource::Publication(_)
-                | CResource::Iterated(_),
+                Resource::Composite { .. }
+                | Resource::Token { .. }
+                | Resource::PopulationAuthority(_)
+                | Resource::Instance(_)
+                | Resource::MutexGuard(_)
+                | Resource::MutexLive(_)
+                | Resource::MutexUse(_)
+                | Resource::Publication(_)
+                | Resource::Iterated(_),
             )
             | Self::Own(..) => None,
         }
     }
 
-    pub fn memory_range(&self) -> Option<&CMemoryRange> {
+    pub fn memory_range(&self) -> Option<&MemoryRange> {
         match self {
             Self::Own(
-                CResource::Footprint(_)
-                | CResource::Parameter(_)
-                | CResource::Emp
-                | CResource::Star(_),
+                Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_),
                 _,
             )
             | Self::View(
-                CResource::Footprint(_)
-                | CResource::Parameter(_)
-                | CResource::Emp
-                | CResource::Star(_),
+                Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_),
             ) => None,
-            Self::Own(CResource::Memory(range), _) | Self::View(CResource::Memory(range)) => {
+            Self::Own(Resource::Memory(range), _) | Self::View(Resource::Memory(range)) => {
                 Some(range)
             }
             Self::Own(
-                CResource::Composite { .. }
-                | CResource::Token { .. }
-                | CResource::PopulationAuthority(_)
-                | CResource::Instance(_)
-                | CResource::MutexGuard(_)
-                | CResource::MutexLive(_)
-                | CResource::MutexUse(_)
-                | CResource::Publication(_)
-                | CResource::Iterated(_),
+                Resource::Composite { .. }
+                | Resource::Token { .. }
+                | Resource::PopulationAuthority(_)
+                | Resource::Instance(_)
+                | Resource::MutexGuard(_)
+                | Resource::MutexLive(_)
+                | Resource::MutexUse(_)
+                | Resource::Publication(_)
+                | Resource::Iterated(_),
                 _,
             )
             | Self::View(
-                CResource::Composite { .. }
-                | CResource::Token { .. }
-                | CResource::PopulationAuthority(_)
-                | CResource::Instance(_)
-                | CResource::MutexGuard(_)
-                | CResource::MutexLive(_)
-                | CResource::MutexUse(_)
-                | CResource::Publication(_)
-                | CResource::Iterated(_),
+                Resource::Composite { .. }
+                | Resource::Token { .. }
+                | Resource::PopulationAuthority(_)
+                | Resource::Instance(_)
+                | Resource::MutexGuard(_)
+                | Resource::MutexLive(_)
+                | Resource::MutexUse(_)
+                | Resource::Publication(_)
+                | Resource::Iterated(_),
             ) => None,
         }
     }
 
-    pub fn owned_resource(&self) -> Option<&CResource> {
+    pub fn owned_resource(&self) -> Option<&Resource> {
         match self {
             Self::Own(resource, _) => Some(resource),
             Self::View(_) => None,
@@ -12394,10 +12370,10 @@ impl CResourceFact {
 /// first. See [`combine_exact_resource_facts`] for the full argument; the
 /// same guard covers both families.
 fn combine_memory_resource_facts(
-    left: &CResourceFact,
-    right: &CResourceFact,
+    left: &ResourceFact,
+    right: &ResourceFact,
     assumptions: &PureFactContext,
-) -> Option<CResourceFact> {
+) -> Option<ResourceFact> {
     if let (Some(left_range), Some(right_range)) = (
         memory_resource_fact_range(left),
         memory_resource_fact_range(right),
@@ -12410,19 +12386,19 @@ fn combine_memory_resource_facts(
     // reasoning can revisit the full history of a loaded base.
     match (left, right) {
         (
-            CResourceFact::View(CResource::Memory(left)),
-            CResourceFact::View(CResource::Memory(right)),
+            ResourceFact::View(Resource::Memory(left)),
+            ResourceFact::View(Resource::Memory(right)),
         ) => {
             if let Some(merged) = merge_memory_ranges(left, right, assumptions) {
-                return Some(CResourceFact::view_memory(merged));
+                return Some(ResourceFact::view_memory(merged));
             }
         }
         (
-            CResourceFact::Own(CResource::Memory(left), _),
-            CResourceFact::Own(CResource::Memory(right), _),
+            ResourceFact::Own(Resource::Memory(left), _),
+            ResourceFact::Own(Resource::Memory(right), _),
         ) => {
             if let Some(merged) = merge_memory_ranges(left, right, assumptions) {
-                return Some(CResourceFact::own_memory(merged));
+                return Some(ResourceFact::own_memory(merged));
             }
         }
         _ => {}
@@ -12431,23 +12407,23 @@ fn combine_memory_resource_facts(
         _ if memory_resource_fact_entails(left, right, assumptions) => Some(left.clone()),
         _ if memory_resource_fact_entails(right, left, assumptions) => Some(right.clone()),
         (
-            CResourceFact::View(CResource::Memory(left)),
-            CResourceFact::View(CResource::Memory(right)),
-        ) => merge_memory_ranges(left, right, assumptions).map(CResourceFact::view_memory),
+            ResourceFact::View(Resource::Memory(left)),
+            ResourceFact::View(Resource::Memory(right)),
+        ) => merge_memory_ranges(left, right, assumptions).map(ResourceFact::view_memory),
         (
-            CResourceFact::Own(CResource::Memory(left), _),
-            CResourceFact::Own(CResource::Memory(right), _),
-        ) => merge_memory_ranges(left, right, assumptions).map(CResourceFact::own_memory),
+            ResourceFact::Own(Resource::Memory(left), _),
+            ResourceFact::Own(Resource::Memory(right), _),
+        ) => merge_memory_ranges(left, right, assumptions).map(ResourceFact::own_memory),
         _ => None,
     }
 }
 
 /// Joins two abutting ranges named through one designation.
 fn merge_memory_ranges(
-    left: &CMemoryRange,
-    right: &CMemoryRange,
+    left: &MemoryRange,
+    right: &MemoryRange,
     assumptions: &PureFactContext,
-) -> Option<CMemoryRange> {
+) -> Option<MemoryRange> {
     if !assumptions.designations_equal(&left.designation, &right.designation)
         || !match (
             left.opaque_extent.as_deref(),
@@ -12464,10 +12440,10 @@ fn merge_memory_ranges(
 }
 
 fn merge_abutting_memory_ranges(
-    left: &CMemoryRange,
-    right: &CMemoryRange,
+    left: &MemoryRange,
+    right: &MemoryRange,
     assumptions: &PureFactContext,
-) -> Option<CMemoryRange> {
+) -> Option<MemoryRange> {
     if left.wide_bounds().is_some() || right.wide_bounds().is_some() {
         if left.element_width() != right.element_width() {
             return None;
@@ -12504,7 +12480,7 @@ fn merge_abutting_memory_ranges(
                 )) == Some(true)
         };
         let output = |start, end| {
-            CMemoryRange::new_wide(
+            MemoryRange::new_wide(
                 base.clone(),
                 wide_endpoint_output(start),
                 wide_endpoint_output(end),
@@ -12544,7 +12520,7 @@ fn merge_abutting_memory_ranges(
         || bitvector_terms_proven_equal(left.end(), right.start(), assumptions)
     {
         return Some(
-            CMemoryRange::new_with_element_width(
+            MemoryRange::new_with_element_width(
                 left.base().clone(),
                 left.start().clone(),
                 right.end().clone(),
@@ -12557,7 +12533,7 @@ fn merge_abutting_memory_ranges(
         || bitvector_terms_proven_equal(right.end(), left.start(), assumptions)
     {
         return Some(
-            CMemoryRange::new_with_element_width(
+            MemoryRange::new_with_element_width(
                 left.base().clone(),
                 right.start().clone(),
                 left.end().clone(),
@@ -12581,10 +12557,10 @@ fn merge_abutting_memory_ranges(
 /// wrap. The restated end is the start plus the same length, which the
 /// wrapping difference preserves.
 fn memory_range_rebased(
-    range: &CMemoryRange,
+    range: &MemoryRange,
     base: &Pointer,
     assumptions: &PureFactContext,
-) -> Option<CMemoryRange> {
+) -> Option<MemoryRange> {
     let (start, count) = constant_range_extent(range)?;
     let delta = range.base().exact_element_delta_from_base(
         base,
@@ -12604,7 +12580,7 @@ fn memory_range_rebased(
         MachineTerm::constant(i32::try_from(count).ok()? as u32),
     );
     Some(
-        CMemoryRange::new_with_element_width(base.clone(), start, end, range.element_width())
+        MemoryRange::new_with_element_width(base.clone(), start, end, range.element_width())
             .with_carrier_of(range),
     )
 }
@@ -12625,7 +12601,7 @@ mod support_removal_tests {
     #[test]
     fn frame_exchange_refuses_duplicate_authority_and_unrelated_histories() {
         let assumptions = PureFactContext::new();
-        let authority = CResourceFact::own_memory(CMemoryRange::new(
+        let authority = ResourceFact::own_memory(MemoryRange::new(
             Pointer {
                 block: "frame".into(),
                 offset: PointerOffsetTerm::Constant(0),
@@ -12651,8 +12627,8 @@ mod support_removal_tests {
     #[test]
     fn frame_exchange_does_not_turn_derived_projections_into_authority() {
         let assumptions = PureFactContext::new();
-        let owner = CResourceFact::own_composite("owner".into(), Vec::new());
-        let projection = CResourceFact::view_token("projection".into(), Vec::new());
+        let owner = ResourceFact::own_composite("owner".into(), Vec::new());
+        let projection = ResourceFact::view_token("projection".into(), Vec::new());
         let body = ResourceContext::new().unchecked_with_fact(owner.clone());
         let exit = body
             .clone()
@@ -12670,8 +12646,8 @@ mod support_removal_tests {
         let endpoint =
             |variable| MachineTerm::add(MachineTerm::Variable(variable), MachineTerm::constant(1));
         let base = Pointer::symbolic(Variable(90_012));
-        let left = CMemoryRange::new(base.clone(), MachineTerm::constant(0), endpoint(a));
-        let right = CMemoryRange::new(base.clone(), endpoint(b), MachineTerm::constant(16));
+        let left = MemoryRange::new(base.clone(), MachineTerm::constant(0), endpoint(a));
+        let right = MemoryRange::new(base.clone(), endpoint(b), MachineTerm::constant(16));
         let premise = ConditionTerm::equal(MachineTerm::Variable(a), MachineTerm::Variable(b));
         let parent = PureFactContext::new();
         let branch = parent.clone().assume_condition(premise.clone(), true);
@@ -12679,7 +12655,7 @@ mod support_removal_tests {
         PureFactContext::reset_bitvector_equality_index_fact_visits();
         assert_eq!(
             merge_memory_ranges(&left, &right, &branch),
-            Some(CMemoryRange::new(
+            Some(MemoryRange::new(
                 base,
                 MachineTerm::constant(0),
                 MachineTerm::constant(16),
@@ -12691,7 +12667,7 @@ mod support_removal_tests {
 
     #[test]
     fn concrete_interval_rejects_exclusive_end_outside_shared_coordinate_space() {
-        let range = CMemoryRange::new(
+        let range = MemoryRange::new(
             Pointer {
                 block: "boundary".into(),
                 offset: PointerOffsetTerm::Constant(1),
@@ -12712,7 +12688,7 @@ mod support_removal_tests {
             block: "typed-loads".into(),
             offset: PointerOffsetTerm::Constant(8),
         };
-        let memory = CMemory::new()
+        let memory = Memory::new()
             .with_block("typed-loads", 24)
             .store(short_pointer.clone(), int16(0))
             .store(
@@ -12729,7 +12705,7 @@ mod support_removal_tests {
             Box::new(wide_pointer.clone()),
             crate::kernel::LoadKind::Float64,
         );
-        let fact = CResourceFact::view_memory(CMemoryRange::new(
+        let fact = ResourceFact::view_memory(MemoryRange::new(
             Pointer {
                 block: "result".into(),
                 offset: PointerOffsetTerm::Constant(0),
@@ -12758,7 +12734,7 @@ mod support_removal_tests {
             block: "mixed-loads".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let first = CMemory::new()
+        let first = Memory::new()
             .with_block("mixed-loads", 8)
             .store(pointer.clone(), int16(0));
         let second = first.clone().store(pointer.clone(), int16(1));
@@ -12772,7 +12748,7 @@ mod support_removal_tests {
             Box::new(pointer),
             crate::kernel::LoadKind::Int32,
         );
-        let fact = CResourceFact::view_memory(CMemoryRange::new(
+        let fact = ResourceFact::view_memory(MemoryRange::new(
             Pointer {
                 block: "mixed-result".into(),
                 offset: PointerOffsetTerm::Constant(0),
@@ -12792,7 +12768,7 @@ mod support_removal_tests {
             block: "deep-load".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let memory = CMemory::new()
+        let memory = Memory::new()
             .with_block("deep-load", 8)
             .store(pointer.clone(), int16(0));
         let load = MachineTerm::MemoryLoad(
@@ -12809,7 +12785,7 @@ mod support_removal_tests {
                 Box::new(MachineTerm::constant(0))
             );
         }
-        let fact = CResourceFact::view_memory(CMemoryRange::new(
+        let fact = ResourceFact::view_memory(MemoryRange::new(
             Pointer {
                 block: "deep-result".into(),
                 offset: PointerOffsetTerm::Constant(0),
@@ -12825,9 +12801,9 @@ mod support_removal_tests {
 
     #[test]
     fn removing_support_cascades_through_nested_projection_chain() {
-        let parent = CResourceFact::own_composite("parent".into(), Vec::new());
-        let child = CResourceFact::view_token("child".into(), Vec::new());
-        let grandchild = CResourceFact::view_token("grandchild".into(), Vec::new());
+        let parent = ResourceFact::own_composite("parent".into(), Vec::new());
+        let child = ResourceFact::view_token("child".into(), Vec::new());
+        let grandchild = ResourceFact::view_token("grandchild".into(), Vec::new());
         let mut context = ResourceContext::new().unchecked_with_fact(parent.clone());
         let parent_entry = *context
             .storage
@@ -12871,8 +12847,8 @@ mod support_removal_tests {
 
     #[test]
     fn removing_cyclic_support_graph_terminates_and_cleans_all_nodes() {
-        let left = CResourceFact::view_token("left".into(), Vec::new());
-        let right = CResourceFact::view_token("right".into(), Vec::new());
+        let left = ResourceFact::view_token("left".into(), Vec::new());
+        let right = ResourceFact::view_token("right".into(), Vec::new());
         let mut context = ResourceContext::new().unchecked_with_fact(left.clone());
         let left_entry = *context
             .storage
@@ -12923,9 +12899,9 @@ fn symbolic_struct_coverage_uses_exact_element_indices() {
     let base = Pointer::symbolic(Variable(99_300));
     let i = MachineTerm::Variable(Variable(99_301));
     let n = MachineTerm::Variable(Variable(99_302));
-    let owned = CMemoryRange::new_with_element_width(base.clone(), 0u32.into(), n.clone(), 16);
+    let owned = MemoryRange::new_with_element_width(base.clone(), 0u32.into(), n.clone(), 16);
     let required = |pointer: Pointer, bytes| {
-        CMemoryRange::new_with_element_width(pointer, 0u32.into(), bytes, 1)
+        MemoryRange::new_with_element_width(pointer, 0u32.into(), bytes, 1)
     };
     let lower = PureFactContext::new().assume_condition(
         ConditionTerm::signed_less_equal(0u32.into(), i.clone()),
@@ -12996,7 +12972,7 @@ impl ReservedLocalScalarOwner {
     pub(in crate::kernel) fn matches(
         &self,
         occurrence: ResourceOccurrenceId,
-        fact: &CResourceFact,
+        fact: &ResourceFact,
     ) -> bool {
         self.occurrence == occurrence && self.fact == *fact
     }
@@ -13052,11 +13028,11 @@ fn absent_view_queries_ignore_owned_frames_and_track_view_lifecycle() {
         block: "local:selected-view".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let required = CResourceFact::view_memory(CMemoryRange::new(pointer, 0u32.into(), 1u32.into()));
+    let required = ResourceFact::view_memory(MemoryRange::new(pointer, 0u32.into(), 1u32.into()));
     for size in [0, 16, 64, 256] {
         let mut owned = ResourceContext::new();
         for index in 0..size {
-            owned = owned.unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+            owned = owned.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
                 Pointer {
                     block: format!("local:unrelated-view-owner-{index}").into(),
                     offset: PointerOffsetTerm::Constant(0),
@@ -13211,13 +13187,13 @@ mod shared_wide_bound_tests {
         };
         let length = MachineTerm::Variable(Variable(1018501));
         let low = MachineTerm::uint32_from_64(length.clone());
-        let narrow = CMemoryRange::new_with_element_width(
+        let narrow = MemoryRange::new_with_element_width(
             base.clone(),
             MachineTerm::constant(0),
             MachineTerm::add(low.clone(), MachineTerm::constant(1)),
             1,
         );
-        let wide = CMemoryRange::new_wide(
+        let wide = MemoryRange::new_wide(
             base.clone(),
             MachineTerm::uint64_constant(0),
             MachineTerm::uint64_add(length.clone(), MachineTerm::uint64_constant(1)),
@@ -13263,7 +13239,7 @@ mod shared_wide_bound_tests {
         };
         let big = 1u64 << 40;
         let range = |start, end| {
-            CMemoryRange::new_wide(
+            MemoryRange::new_wide(
                 base.clone(),
                 MachineTerm::uint64_constant(start),
                 MachineTerm::uint64_constant(end),
