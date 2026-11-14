@@ -105,7 +105,9 @@ pub(crate) enum SnapshotBlindFloatConditionKey {
 #[allow(dead_code)]
 mod fold_keys;
 mod match_keys;
+mod pointer_keys;
 mod snapshot_operands;
+use pointer_keys::Canonical;
 use snapshot_operands::SnapshotBlindBitvectorKey;
 
 pub(crate) fn clear_snapshot_operand_keys() {
@@ -169,8 +171,8 @@ enum SnapshotBlindPointerBlockKey {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub(crate) enum SnapshotBlindPointerOffsetKey {
-    Add(Box<Self>, Box<Self>),
+pub(crate) enum SnapshotBlindPointerOffsetNode {
+    Add(SnapshotBlindPointerOffsetKey, SnapshotBlindPointerOffsetKey),
     Int32Scaled {
         value: SnapshotBlindBitvectorKey,
         byte_width: i64,
@@ -249,7 +251,10 @@ impl SnapshotBlindPointerKey {
     }
 }
 
-impl SnapshotBlindPointerOffsetKey {
+type SnapshotBlindPointerOffsetKey = Canonical<SnapshotBlindPointerOffsetNode>;
+type AlphaPointerOffsetKey = Canonical<AlphaPointerOffsetNode>;
+
+impl SnapshotBlindPointerOffsetNode {
     fn requires_checked_match(&self) -> bool {
         match self {
             Self::Add(left, right) => {
@@ -571,13 +576,13 @@ fn snapshot_blind_pointer_key(pointer: &Pointer) -> SnapshotBlindPointerKey {
 }
 
 fn snapshot_blind_pointer_offset_key(offset: &PointerOffsetTerm) -> SnapshotBlindPointerOffsetKey {
-    match offset {
-        PointerOffsetTerm::Add(left, right) => SnapshotBlindPointerOffsetKey::Add(
-            Box::new(snapshot_blind_pointer_offset_key(left)),
-            Box::new(snapshot_blind_pointer_offset_key(right)),
+    Canonical::new(match offset {
+        PointerOffsetTerm::Add(left, right) => SnapshotBlindPointerOffsetNode::Add(
+            snapshot_blind_pointer_offset_key(left),
+            snapshot_blind_pointer_offset_key(right),
         ),
         PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-            SnapshotBlindPointerOffsetKey::Int32Scaled {
+            SnapshotBlindPointerOffsetNode::Int32Scaled {
                 value: snapshot_operands::operand(value.operand_view()),
                 byte_width: *byte_width,
             }
@@ -586,13 +591,13 @@ fn snapshot_blind_pointer_offset_key(offset: &PointerOffsetTerm) -> SnapshotBlin
             value,
             byte_width,
             unsigned,
-        } => SnapshotBlindPointerOffsetKey::Int64Scaled {
+        } => SnapshotBlindPointerOffsetNode::Int64Scaled {
             value: snapshot_operands::operand(value.operand_view()),
             byte_width: *byte_width,
             unsigned: *unsigned,
         },
-        offset => SnapshotBlindPointerOffsetKey::Exact(offset.clone()),
-    }
+        offset => SnapshotBlindPointerOffsetNode::Exact(offset.clone()),
+    })
 }
 
 /// Alpha-invariant key for the quantified logical/condition fragment used by
@@ -876,7 +881,7 @@ enum AlphaProgramValueKey {
         extent_known: bool,
         opaque_extent: Option<AlphaPointerKey>,
         /// The subobject extent's start key and byte width.
-        extent: Option<(AlphaPointerKey, AlphaBitvectorKey)>,
+        extent: Option<(AlphaPointerKey, AlphaMachineKey)>,
     },
 }
 
@@ -970,17 +975,17 @@ impl Hash for AlphaSnapshotKey {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-enum AlphaPointerOffsetKey {
+enum AlphaPointerOffsetNode {
     Constant(i64),
     Variable(AlphaVariableKey),
-    Add(Box<Self>, Box<Self>),
+    Add(AlphaPointerOffsetKey, AlphaPointerOffsetKey),
     RegisteredLoad(AlphaRegisteredLoadId),
     Int32Scaled {
-        value: AlphaMachineKey,
+        value: Canonical<AlphaMachineKey>,
         byte_width: i64,
     },
     Int64Scaled {
-        value: AlphaMachineKey,
+        value: Canonical<AlphaMachineKey>,
         byte_width: i64,
         unsigned: bool,
     },
@@ -2005,8 +2010,8 @@ fn alpha_pointer_offset_key_with_bindings<const ALLOW_LOADS: bool>(
     next_binder: &mut usize,
 ) -> Option<AlphaPointerOffsetKey> {
     alpha_work_checkpoint(bindings, 1)?;
-    Some(match offset {
-        PointerOffsetTerm::Constant(value) => AlphaPointerOffsetKey::Constant(*value),
+    Some(Canonical::new(match offset {
+        PointerOffsetTerm::Constant(value) => AlphaPointerOffsetNode::Constant(*value),
         PointerOffsetTerm::Variable(variable)
             if bindings.snapshot_aware
                 && crate::kernel::is_load_variable(variable)
@@ -2017,34 +2022,26 @@ fn alpha_pointer_offset_key_with_bindings<const ALLOW_LOADS: bool>(
                 bindings,
                 next_binder,
             )?;
-            AlphaPointerOffsetKey::RegisteredLoad(load_id)
+            AlphaPointerOffsetNode::RegisteredLoad(load_id)
         }
         PointerOffsetTerm::Variable(variable) => {
-            AlphaPointerOffsetKey::Variable(alpha_variable_key_with_bindings::<ALLOW_LOADS>(
+            AlphaPointerOffsetNode::Variable(alpha_variable_key_with_bindings::<ALLOW_LOADS>(
                 *variable,
                 bindings,
                 &bindings.bitvector,
             )?)
         }
-        PointerOffsetTerm::Add(left, right) => AlphaPointerOffsetKey::Add(
-            Box::new(alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(
-                left,
-                bindings,
-                next_binder,
-            )?),
-            Box::new(alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(
-                right,
-                bindings,
-                next_binder,
-            )?),
+        PointerOffsetTerm::Add(left, right) => AlphaPointerOffsetNode::Add(
+            alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(left, bindings, next_binder)?,
+            alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(right, bindings, next_binder)?,
         ),
         PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-            AlphaPointerOffsetKey::Int32Scaled {
-                value: alpha_machine_key::<ALLOW_LOADS>(
+            AlphaPointerOffsetNode::Int32Scaled {
+                value: Canonical::new(alpha_machine_key::<ALLOW_LOADS>(
                     value.operand_view(),
                     bindings,
                     next_binder,
-                )?,
+                )?),
                 byte_width: *byte_width,
             }
         }
@@ -2052,21 +2049,24 @@ fn alpha_pointer_offset_key_with_bindings<const ALLOW_LOADS: bool>(
             value,
             byte_width,
             unsigned,
-        } => AlphaPointerOffsetKey::Int64Scaled {
-            value: alpha_machine_key::<ALLOW_LOADS>(value.operand_view(), bindings, next_binder)?,
+        } => AlphaPointerOffsetNode::Int64Scaled {
+            value: Canonical::new(alpha_machine_key::<ALLOW_LOADS>(
+                value.operand_view(),
+                bindings,
+                next_binder,
+            )?),
             byte_width: *byte_width,
             unsigned: *unsigned,
         },
-    })
+    }))
 }
 
-fn alpha_pointer_key_with_bindings<const ALLOW_LOADS: bool>(
-    pointer: &Pointer,
+fn alpha_pointer_block_key<const ALLOW_LOADS: bool>(
+    block: &PointerBlock,
     bindings: &mut AlphaBindings,
     next_binder: &mut usize,
-) -> Option<AlphaPointerKey> {
-    alpha_work_checkpoint(bindings, 1)?;
-    let block = match &pointer.block {
+) -> Option<AlphaPointerBlockKey> {
+    Some(match block {
         // Keyed as the scalar and algebraic applications are, argument by
         // argument: a quantified fact is found only by its key, so a block
         // with none would hide every universal over a pointer result.
@@ -2133,7 +2133,16 @@ fn alpha_pointer_key_with_bindings<const ALLOW_LOADS: bool>(
         PointerBlock::LoadedPointer(identity) => AlphaPointerBlockKey::LoadedPointer(*identity),
         PointerBlock::Heap(identity) => AlphaPointerBlockKey::Heap(*identity),
         PointerBlock::Temporary(identity) => AlphaPointerBlockKey::Temporary(*identity),
-    };
+    })
+}
+
+fn alpha_pointer_key_with_bindings<const ALLOW_LOADS: bool>(
+    pointer: &Pointer,
+    bindings: &mut AlphaBindings,
+    next_binder: &mut usize,
+) -> Option<AlphaPointerKey> {
+    alpha_work_checkpoint(bindings, 1)?;
+    let block = alpha_pointer_block_key::<ALLOW_LOADS>(&pointer.block, bindings, next_binder)?;
     Some(AlphaPointerKey {
         block,
         offset: alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(
@@ -2191,8 +2200,8 @@ fn alpha_program_value_key_with_bindings<const ALLOW_LOADS: bool>(
                         bindings,
                         next_binder,
                     )?,
-                    alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
-                        &extent.width,
+                    alpha_machine_key::<ALLOW_LOADS>(
+                        crate::kernel::MachineOperandView::Legacy(&extent.width),
                         bindings,
                         next_binder,
                     )?,

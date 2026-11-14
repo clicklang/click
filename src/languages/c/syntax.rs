@@ -2510,6 +2510,9 @@ pub enum C0Statement {
     Assign {
         name: String,
         expression: C0Expression,
+        /// Leaves the target's value from before this assignment as the
+        /// result of step N: the value of a postfix `p++`.
+        prior_result: Option<u32>,
         /// Where the source statement was written; see [`C0Site`].
         site: C0Site,
     },
@@ -2521,7 +2524,7 @@ pub enum C0Statement {
         site: C0Site,
     },
     /// A call inside an expression of the statement that follows it. Its
-    /// result is that statement's `C0Expression::CallResult { call, .. }`,
+    /// result is that statement's `C0Expression::StepResult { step, .. }`,
     /// never a variable.
     CallResult {
         call: u32,
@@ -2711,23 +2714,23 @@ pub struct C0ClassedType {
 pub enum C0Expression {
     Void,
     Variable(String),
-    /// A C function call that is still embedded in an expression. The
-    /// parser lowers these to `CallAssign` statements before the AST reaches
-    /// the kernel, so the kernel continues to execute calls only as checked
-    /// statement transitions. The position identifies the source call site
-    /// for diagnostics emitted while performing that lowering.
-    /// The result of a call this expression's statement made in its own
-    /// step, `C0Statement::CallResult { call, .. }`: the term the call
-    /// returned, with the callee's declared result type.
-    CallResult {
-        call: u32,
-        function_name: String,
-        /// The callee's declared result type; `None` when the callee is
-        /// declared only later in the translation unit, or not at all.
+    /// The result of a step this expression's statement made: the term a
+    /// call step (`C0Statement::CallResult`) returned, or the value an
+    /// assignment step with `prior_result` replaced, with its C type.
+    StepResult {
+        step: u32,
+        origin: crate::kernel::StepOrigin,
+        /// The result's C type; `None` for a call whose callee is declared
+        /// only later in the translation unit, or not at all.
         interface_type: Option<InterfaceType>,
         pointee_constant: bool,
         struct_name: Option<String>,
     },
+    /// A C function call that is still embedded in an expression. The
+    /// parser lowers it to a call step before the AST reaches the kernel,
+    /// so the kernel executes calls only as checked statement transitions.
+    /// The position identifies the source call site for diagnostics emitted
+    /// while performing that lowering.
     Call {
         function_name: String,
         arguments: Vec<C0Expression>,
@@ -4063,8 +4066,16 @@ impl C0Statement {
                 )
             }
             Self::Assign {
-                name, expression, ..
-            } => crate::kernel::program_assign(name.clone(), expression.to_kernel_expression()),
+                name,
+                expression,
+                prior_result,
+                ..
+            } => crate::kernel::ProgramStatement::Assign {
+                name: name.clone(),
+                expression: expression.to_kernel_expression(),
+                source: Default::default(),
+                prior_result: *prior_result,
+            },
             Self::CallAssign {
                 target,
                 function_name,
@@ -4266,13 +4277,9 @@ impl C0Expression {
 
     fn lower_expression(&self) -> crate::kernel::ProgramExpression {
         match self {
-            Self::CallResult {
-                call,
-                function_name,
-                ..
-            } => crate::kernel::ProgramExpression::CallResult {
-                call: *call,
-                function_name: function_name.clone(),
+            Self::StepResult { step, origin, .. } => crate::kernel::ProgramExpression::StepResult {
+                step: *step,
+                origin: origin.clone(),
             },
             Self::Void => crate::kernel::program_void_value(),
             Self::Variable(name) => crate::kernel::program_expression::variable(name.clone()),
@@ -5972,7 +5979,7 @@ fn evaluate_static_integer_expression(
         C0Expression::CheckedArrayIndex { index, .. } => evaluate_static_integer_expression(index),
         C0Expression::Void
         | C0Expression::Variable(_)
-        | C0Expression::CallResult { .. }
+        | C0Expression::StepResult { .. }
         | C0Expression::Call { .. }
         | C0Expression::IndirectCall { .. }
         | C0Expression::Assignment { .. }
@@ -6742,7 +6749,7 @@ fn contains_aggregate_value(expression: &C0Expression) -> bool {
         }
         C0Expression::Void
         | C0Expression::Variable(_)
-        | C0Expression::CallResult { .. }
+        | C0Expression::StepResult { .. }
         | C0Expression::FunctionAddress(_)
         | C0Expression::Int32Literal(_)
         | C0Expression::UInt8Literal(_)
@@ -7065,7 +7072,7 @@ struct Parser {
     next_scoped_name: u32,
     next_synthesized_call: u32,
     /// The number the next call inside an expression gets: its result is
-    /// `C0Expression::CallResult` with that number.
+    /// `C0Expression::StepResult` with that number.
     next_call_result: u32,
     callback_statement_sources: imbl::OrdMap<String, C0Expression>,
     next_synthesized_aggregate: u32,
@@ -11747,6 +11754,7 @@ impl Parser {
                         name: kernel_name,
                         expression,
                         site: C0Site::NONE,
+                        prior_result: None,
                     }),
                 )
             } else {
@@ -12094,6 +12102,7 @@ impl Parser {
                                 name,
                                 expression,
                                 site: C0Site::NONE,
+                                prior_result: None,
                             }),
                         )
                     }
@@ -12125,6 +12134,7 @@ impl Parser {
                                 name,
                                 expression,
                                 site: C0Site::NONE,
+                                prior_result: None,
                             }),
                         )
                     }
@@ -12673,6 +12683,7 @@ impl Parser {
                     name,
                     expression,
                     site: C0Site::NONE,
+                    prior_result: None,
                 }),
             ));
             if self.peek() != Some(&Token::Comma) {
@@ -12705,6 +12716,7 @@ impl Parser {
             name,
             expression,
             site: C0Site::NONE,
+            prior_result: None,
         })
     }
 
@@ -12905,6 +12917,7 @@ impl Parser {
             name,
             expression,
             site: C0Site::NONE,
+            prior_result: None,
         })
     }
 
@@ -13164,6 +13177,7 @@ impl Parser {
                         name: target,
                         expression: value,
                         site: C0Site::NONE,
+                        prior_result: None,
                     });
                 }
             }
@@ -13419,7 +13433,7 @@ impl Parser {
 
     fn aggregate_struct_name(&self, expression: &C0Expression) -> Option<String> {
         match expression {
-            C0Expression::CallResult { .. } => None,
+            C0Expression::StepResult { .. } => None,
             C0Expression::Variable(name) => self.variable_struct_values.get(name).cloned(),
             C0Expression::Call { function_name, .. } => self
                 .function_declaration(function_name)
@@ -13507,7 +13521,7 @@ impl Parser {
             | C0Expression::AddressOf(_)
             | C0Expression::Void
             | C0Expression::Variable(_)
-            | C0Expression::CallResult { .. }
+            | C0Expression::StepResult { .. }
             | C0Expression::FunctionAddress(_)
             | C0Expression::Int32Literal(_)
             | C0Expression::UInt8Literal(_)
@@ -13850,7 +13864,7 @@ impl Parser {
                 }
                 C0Expression::Void
                 | C0Expression::Variable(_)
-                | C0Expression::CallResult { .. }
+                | C0Expression::StepResult { .. }
                 | C0Expression::FunctionAddress(_)
                 | C0Expression::Int32Literal(_)
                 | C0Expression::UInt8Literal(_)
@@ -13912,7 +13926,7 @@ impl Parser {
                 }
                 C0Expression::Void
                 | C0Expression::Variable(_)
-                | C0Expression::CallResult { .. }
+                | C0Expression::StepResult { .. }
                 | C0Expression::FunctionAddress(_)
                 | C0Expression::Int32Literal(_)
                 | C0Expression::UInt8Literal(_)
@@ -13944,7 +13958,7 @@ impl Parser {
         match expression {
             // A call's result is the term the call returned: nothing the
             // statement does afterwards changes it.
-            C0Expression::CallResult { .. } => false,
+            C0Expression::StepResult { .. } => false,
             C0Expression::Void
             | C0Expression::Call { .. }
             | C0Expression::IndirectCall { .. }
@@ -14337,6 +14351,7 @@ impl Parser {
                 name,
                 expression,
                 site,
+                prior_result,
             } => {
                 let expression = self.convert_struct_array_decay(&name, expression);
                 let (prefix, expression) = self.lower_expression_calls(expression)?;
@@ -14346,6 +14361,7 @@ impl Parser {
                         name,
                         expression,
                         site,
+                        prior_result,
                     },
                 ))
             }
@@ -14419,6 +14435,7 @@ impl Parser {
                     name: callback_name.clone(),
                     expression: function,
                     site: site.clone(),
+                    prior_result: None,
                 });
                 prefix.push(C0Statement::Call {
                     function_name: callback_name,
@@ -14875,6 +14892,7 @@ impl Parser {
                 name: snapshot.clone(),
                 expression: C0Expression::Variable(name.clone()),
                 site: C0Site::NONE,
+                prior_result: None,
             });
             checks.push(C0Statement::Assert {
                 condition: C0Expression::Equal(
@@ -14926,22 +14944,11 @@ impl Parser {
                 pointee_constant,
                 ..
             } => {
-                let temporary = self.fresh_synthesized_call_name();
-                self.variable_types
-                    .insert(temporary.clone(), interface_type);
-                if let Some(struct_name) = struct_name {
-                    self.variable_structs.insert(temporary.clone(), struct_name);
-                }
-                if pointee_constant {
-                    self.variable_pointee_constants.insert(temporary.clone());
-                }
-                let operand = C0Expression::Variable(if result_is_updated {
-                    name.clone()
-                } else {
-                    temporary.clone()
-                });
+                // The update is an assignment step of its own. `++x` is the
+                // value `x` holds after it; `x++` the value it held before,
+                // which the step keeps as its result.
                 let update = self.scale_struct_pointer_arithmetic(
-                    operand,
+                    C0Expression::Variable(name.clone()),
                     C0Expression::Int32Literal(1),
                     if increment {
                         C0Expression::Add
@@ -14949,86 +14956,45 @@ impl Parser {
                         C0Expression::Subtract
                     },
                 )?;
-                let (capture, assignment) = if result_is_updated {
-                    (update, C0Expression::Variable(temporary.clone()))
-                } else {
-                    (C0Expression::Variable(name.clone()), update)
+                let step = (!result_is_updated).then(|| {
+                    let step = self.next_call_result;
+                    self.next_call_result = self.next_call_result.saturating_add(1);
+                    step
+                });
+                let value = match step {
+                    Some(step) => C0Expression::StepResult {
+                        step,
+                        origin: crate::kernel::StepOrigin::Prior(name.clone()),
+                        interface_type: Some(interface_type),
+                        pointee_constant,
+                        struct_name,
+                    },
+                    None => C0Expression::Variable(name.clone()),
                 };
                 Ok((
-                    vec![
-                        C0Statement::Declare {
-                            interface_type,
-                            name: temporary.clone(),
-                            volatile: false,
-                            pointee_volatile: false,
-                            constant: false,
-                            pointee_constant,
-                            initializer: None,
-                            zero_fill: None,
-                            declared_class: None,
-                            site: C0Site::NONE,
-                        },
-                        C0Statement::Assign {
-                            name: temporary.clone(),
-                            expression: capture,
-                            site: C0Site::NONE,
-                        },
-                        C0Statement::Assign {
-                            name,
-                            expression: assignment,
-                            site: C0Site::NONE,
-                        },
-                    ],
-                    C0Expression::Variable(temporary),
+                    vec![C0Statement::Assign {
+                        name,
+                        expression: update,
+                        prior_result: step,
+                        site: C0Site::NONE,
+                    }],
+                    value,
                 ))
             }
-            C0Expression::Assignment {
-                name,
-                value,
-                interface_type,
-                struct_name,
-                pointee_constant,
-                ..
-            } => {
+            C0Expression::Assignment { name, value, .. } => {
                 let value = self.convert_struct_array_decay(&name, *value);
                 let (mut prefix, value) = self.lower_expression_calls(value)?;
-                let temporary = self.fresh_synthesized_call_name();
-                self.variable_types
-                    .insert(temporary.clone(), interface_type);
-                if let Some(struct_name) = &struct_name {
-                    self.variable_structs
-                        .insert(temporary.clone(), struct_name.clone());
-                }
-                if pointee_constant {
-                    self.variable_pointee_constants.insert(temporary.clone());
-                }
-                prefix.push(C0Statement::Declare {
-                    interface_type,
-                    name: temporary.clone(),
-                    volatile: false,
-                    pointee_volatile: false,
-                    constant: false,
-                    pointee_constant,
-                    initializer: None,
-                    zero_fill: None,
-                    declared_class: None,
-                    site: C0Site::NONE,
-                });
-                // Conversion happens once when the typed temporary receives
-                // the right operand. The target and expression result then
-                // use that converted value without reevaluating the operand
-                // or rereading a possibly volatile target.
+                // The assignment is a step of its own; the expression's value
+                // is the target's value after it, which C gives the
+                // assignment (C11 6.5.16p3). A volatile target is read again,
+                // which may give any value, as C permits.
                 prefix.push(C0Statement::Assign {
-                    name: temporary.clone(),
+                    name: name.clone(),
                     expression: value,
                     site: C0Site::NONE,
+                    prior_result: None,
                 });
-                prefix.push(C0Statement::Assign {
-                    name,
-                    expression: C0Expression::Variable(temporary.clone()),
-                    site: C0Site::NONE,
-                });
-                Ok((prefix, C0Expression::Variable(temporary)))
+                Ok((prefix, C0Expression::Variable(name)))
             }
             C0Expression::Call {
                 function_name,
@@ -15098,9 +15064,9 @@ impl Parser {
                 });
                 Ok((
                     prefix,
-                    C0Expression::CallResult {
-                        call,
-                        function_name,
+                    C0Expression::StepResult {
+                        step: call,
+                        origin: crate::kernel::StepOrigin::Call(function_name),
                         interface_type,
                         pointee_constant,
                         struct_name,
@@ -15207,6 +15173,7 @@ impl Parser {
                         name: target.clone(),
                         expression: then_branch,
                         site: C0Site::NONE,
+                        prior_result: None,
                     },
                 );
                 let else_statement = prepend_statements(
@@ -15215,6 +15182,7 @@ impl Parser {
                         name: target.clone(),
                         expression: else_branch,
                         site: C0Site::NONE,
+                        prior_result: None,
                     },
                 );
                 // A conditional branch may not execute, so the result needs a
@@ -15281,6 +15249,7 @@ impl Parser {
                     name: target.clone(),
                     expression: value,
                     site: C0Site::NONE,
+                    prior_result: None,
                 });
                 Ok((prefix, C0Expression::Variable(target)))
             }
@@ -15395,6 +15364,7 @@ impl Parser {
                     name: temporary.clone(),
                     expression: value,
                     site: C0Site::NONE,
+                    prior_result: None,
                 });
                 prefix.push(C0Statement::SequentialStore {
                     target,
@@ -15579,6 +15549,7 @@ impl Parser {
             name: callback_name.clone(),
             expression: function,
             site: C0Site::NONE,
+            prior_result: None,
         });
         let (call_prefix, result) = self.lower_expression_calls(C0Expression::Call {
             function_name: callback_name,
@@ -15651,6 +15622,7 @@ impl Parser {
             name: target.clone(),
             expression: normalized_right,
             site: C0Site::NONE,
+            prior_result: None,
         };
         let (then_branch, else_branch) = if is_and {
             (
@@ -15659,6 +15631,7 @@ impl Parser {
                     name: target.clone(),
                     expression: C0Expression::Int32Literal(0),
                     site: C0Site::NONE,
+                    prior_result: None,
                 },
             )
         } else {
@@ -15667,6 +15640,7 @@ impl Parser {
                     name: target.clone(),
                     expression: C0Expression::Int32Literal(1),
                     site: C0Site::NONE,
+                    prior_result: None,
                 },
                 prepend_statements(right_prefix, assign_right),
             )
@@ -16539,6 +16513,7 @@ impl Parser {
                 name: temporary,
                 expression: value,
                 site: C0Site::NONE,
+                prior_result: None,
             });
         }
         Ok(balanced_statement_sequence(statements).unwrap_or(C0Statement::Skip))
@@ -17428,7 +17403,7 @@ impl Parser {
 
     fn expression_is_float(&self, expression: &C0Expression) -> bool {
         match expression {
-            C0Expression::CallResult { interface_type, .. } => {
+            C0Expression::StepResult { interface_type, .. } => {
                 matches!(
                     interface_type,
                     Some(InterfaceType::Float32 | InterfaceType::Float64)
@@ -17810,7 +17785,7 @@ impl Parser {
     /// same kernel byte type. This only inspects the expression being checked.
     fn source_expression_type(&self, expression: &C0Expression) -> Option<InterfaceType> {
         match expression {
-            C0Expression::CallResult { interface_type, .. } => *interface_type,
+            C0Expression::StepResult { interface_type, .. } => *interface_type,
             C0Expression::Variable(name) => {
                 let interface_type = self.variable_types.get(name).copied()?;
                 if self.string_literal_names.contains(name) {
@@ -20029,7 +20004,7 @@ fn first_embedded_call_position(expression: &C0Expression) -> Option<SourcePosit
         C0Expression::CheckedArrayIndex { index, .. } => first_embedded_call_position(index),
         C0Expression::Void
         | C0Expression::Variable(_)
-        | C0Expression::CallResult { .. }
+        | C0Expression::StepResult { .. }
         | C0Expression::FunctionAddress(_)
         | C0Expression::Int32Literal(_)
         | C0Expression::UInt8Literal(_)
@@ -20123,7 +20098,7 @@ fn first_assignment_position(expression: &C0Expression) -> Option<SourcePosition
         }
         C0Expression::Void
         | C0Expression::Variable(_)
-        | C0Expression::CallResult { .. }
+        | C0Expression::StepResult { .. }
         | C0Expression::FunctionAddress(_)
         | C0Expression::Int32Literal(_)
         | C0Expression::UInt8Literal(_)
@@ -20159,7 +20134,7 @@ fn expression_reads_runtime_value(expression: &C0Expression) -> bool {
         | C0Expression::SizeOfUnion { .. }
         | C0Expression::SizeOfType { .. } => false,
         C0Expression::Variable(_)
-        | C0Expression::CallResult { .. }
+        | C0Expression::StepResult { .. }
         | C0Expression::Call { .. }
         | C0Expression::IndirectCall { .. }
         | C0Expression::StatementExpression { .. }

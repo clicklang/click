@@ -2795,7 +2795,7 @@ fn collect_resource_fact_reads_from_program_expression(
         ProgramExpression::Value(_)
         | ProgramExpression::Variable(_)
         | ProgramExpression::FunctionAddress(_)
-        | ProgramExpression::CallResult { .. } => {}
+        | ProgramExpression::StepResult { .. } => {}
         ProgramExpression::Cast { expression, .. } => {
             collect_resource_fact_reads_from_program_expression(expression, reads);
         }

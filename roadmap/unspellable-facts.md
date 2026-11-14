@@ -256,6 +256,22 @@ complete words require the same complete-read evidence. All memos are local to
 one snapshot/context pair. Native block atoms and one-node scaled adapters remain
 explicit compatibility boundaries; shared expression trees are never exported.
 
+7g prepares native/shared snapshot and alpha keys for complete pointers. Offset
+keys use compact child identities, cache checked-match requirements, and visit
+shared offset DAGs without expanding trees. Numeric alpha keys are reused within
+the selected binder context; registered-load traversal keeps the existing depth,
+snapshot and refusal policies. Matching keys do not coalesce exact pointer
+payloads or supply access evidence. Live pointer producer activation remains in
+the later slices.
+
+7h shares the existing origin, extent, access and complete-read fallback policy
+between native and common pointer views. Existing checked relations remain the
+authority; numeric address aliases cannot supply designation or root-extent
+evidence. Shared load-atom comparison visits offset pairs once, preserves the
+narrow/wide distinction, and consults load authority even for identical narrow
+read roots. Native graph/read adapters remain at the producer compatibility
+boundary; no new index, search or evidence rule is introduced.
+
 ## Chunk 6: folds, binders and algebraic matches
 
 Delivered one PR per subchunk, in sequence, preparing scoped consumers and Surface

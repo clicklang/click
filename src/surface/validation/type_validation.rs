@@ -3581,7 +3581,7 @@ fn validate_pointer_cast_operands(
         ProgramExpression::Value(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::Variable(_)
-        | ProgramExpression::CallResult { .. } => Ok(()),
+        | ProgramExpression::StepResult { .. } => Ok(()),
         ProgramExpression::FloatNegate(inner)
         | ProgramExpression::FloatClassification {
             expression: inner, ..
@@ -3773,7 +3773,7 @@ pub(in crate::surface) fn infer_program_expression_type(
         ProgramExpression::AddressOf(_)
         | ProgramExpression::CheckedObjectAddress(_)
         | ProgramExpression::FunctionAddress(_)
-        | ProgramExpression::CallResult { .. } => None,
+        | ProgramExpression::StepResult { .. } => None,
         ProgramExpression::PointerOffsetBytes { pointer, .. }
         | ProgramExpression::Subobject { pointer, .. } => {
             infer_program_expression_type(pointer, variables)

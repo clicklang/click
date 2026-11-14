@@ -469,20 +469,29 @@ impl ContractExitObligations {
         {
             return Ok(Vec::new());
         }
+        let independent_cases;
         let cases = if deferred {
-            contract_resource_condition_cases(
-                &context.caller,
-                &context.function,
-                &context.arguments,
-                &context.entry_assumptions,
-            )
-            .ok_or_else(|| {
-                ContractClosingRefusal::Resource(
-                    "could not create the conditional resource obligations".into(),
+            if let Some(entry) = &execution.prepared_entry_cases {
+                &entry.guard_cases
+            } else {
+                // The independent conditional execution API has no opened
+                // contract proof. Keep its existing entry-validation route.
+                independent_cases = contract_resource_condition_cases(
+                    &context.caller,
+                    &context.function,
+                    &context.arguments,
+                    &context.entry_assumptions,
                 )
-            })?
+                .ok_or_else(|| {
+                    ContractClosingRefusal::Resource(
+                        "could not create the conditional resource obligations".into(),
+                    )
+                })?;
+                &independent_cases
+            }
         } else {
-            vec![vec![]]
+            independent_cases = vec![vec![]];
+            &independent_cases
         };
         let checked_outcome = if outcome.is_exceptional {
             FunctionOutcome::Throw {
@@ -511,8 +520,8 @@ impl ContractExitObligations {
         let mut effect_paths = Vec::new();
         for case in cases {
             let mut path = path.clone();
-            path.assumptions = assumptions_with_propositions(&path.assumptions, &case);
-            let post = assumptions_with_propositions(facts.assumptions(), &case);
+            path.assumptions = assumptions_with_propositions(&path.assumptions, case);
+            let post = assumptions_with_propositions(facts.assumptions(), case);
             if post.has_retained_contradiction() {
                 continue;
             }

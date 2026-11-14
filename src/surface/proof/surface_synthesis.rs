@@ -5904,11 +5904,11 @@ fn state_call_result(
     state: &ExecutionState,
     matches: impl Fn(&ProgramValue) -> bool,
 ) -> Option<ContractExpression> {
-    let (call, _) = state.call_results.as_ref()?.iter().find(|(_, value)| {
+    let (step, _) = state.step_results.as_ref()?.iter().find(|(_, value)| {
         crate::instrumentation::record_deterministic_work(1);
         matches(value)
     })?;
-    crate::surface::diagnostics::call_step_region(*call).map(ContractExpression::RegionResult)
+    crate::surface::diagnostics::step_result_expression(*step)
 }
 
 /// `<region>.result` for a call's result temporary `local`, which no source

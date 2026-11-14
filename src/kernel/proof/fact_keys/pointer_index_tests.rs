@@ -120,12 +120,12 @@ fn pointer_index_keys_match_native_arithmetic_and_opaque_binders() {
                     4,
                     ty == MachineIntegerType::UInt64,
                 ));
-                let (SnapshotBlindPointerOffsetKey::Int32Scaled { value: actual, .. }
-                | SnapshotBlindPointerOffsetKey::Int64Scaled { value: actual, .. }) = key
+                let (SnapshotBlindPointerOffsetNode::Int32Scaled { value: actual, .. }
+                | SnapshotBlindPointerOffsetNode::Int64Scaled { value: actual, .. }) = key.node()
                 else {
                     panic!("scaled key")
                 };
-                assert_eq!(actual, expected_snapshot);
+                assert_eq!(actual, &expected_snapshot);
                 assert!(
                     proposition_identity_key(&fact(offset(
                         value,

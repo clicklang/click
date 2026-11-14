@@ -872,7 +872,7 @@ fn walk_execution_state<S: VariableSubstitution + ?Sized>(
         .map(|(pointer, name)| (s.local_slot(pointer), name.clone()))
         .collect();
     ExecutionState {
-        call_results: state.call_results.as_ref().map(|results| {
+        step_results: state.step_results.as_ref().map(|results| {
             std::sync::Arc::new(
                 results
                     .iter()
@@ -963,10 +963,12 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             name,
             expression,
             source,
+            prior_result,
         } => ProgramStatement::Assign {
             source: source.clone(),
             name: name.clone(),
             expression: s.program_expression(expression),
+            prior_result: *prior_result,
         },
         ProgramStatement::CallAssign {
             target,
@@ -2635,7 +2637,7 @@ fn collect_program_expression_bound_variables(
         ProgramExpression::Value(value) => collect_program_value_bound_variables(value, variables),
         ProgramExpression::Variable(_)
         | ProgramExpression::FunctionAddress(_)
-        | ProgramExpression::CallResult { .. } => {}
+        | ProgramExpression::StepResult { .. } => {}
         ProgramExpression::Cast { expression, .. } => {
             collect_program_expression_bound_variables(expression, variables);
         }
@@ -4704,7 +4706,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_program_expression(
         ProgramExpression::FunctionAddress(name) => {
             ProgramExpression::FunctionAddress(name.clone())
         }
-        ProgramExpression::CallResult { .. } => expression.clone(),
+        ProgramExpression::StepResult { .. } => expression.clone(),
         ProgramExpression::Cast {
             expression,
             target_type,
@@ -6525,7 +6527,7 @@ fn substitute_pointer_variable_in_program_expression(
         ),
         ProgramExpression::Variable(_)
         | ProgramExpression::FunctionAddress(_)
-        | ProgramExpression::CallResult { .. } => expression.clone(),
+        | ProgramExpression::StepResult { .. } => expression.clone(),
         ProgramExpression::Cast {
             expression,
             target_type,
