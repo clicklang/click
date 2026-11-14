@@ -5102,7 +5102,8 @@ fn selected_post_execution_transport_emits_an_explicit_certificate() {
     let expanded =
         expand_c0_tactic_source_at(click_source, &[("identity.c", c_source)], line, column)
             .expect("selected post-execution transport should expand after finalization");
-    assert!(expanded.contains("transport(result == x, result == x) using {"));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("assumption();"), "{expanded}");
     verify_c0_sources(&expanded, &[("identity.c", c_source)])
         .expect("post-execution transport certificate should check");
 }
@@ -5928,7 +5929,7 @@ fn source_expansion_preserves_proof_marks() {
 
 #[test]
 #[ignore = "nightly: 0.7s in the parallel gate"]
-fn marked_constant_store_transport_retains_load_identity() {
+fn marked_constant_store_transport_expands_to_known_fact_lookup() {
     let touch_c = r#"
         struct cell { int32 value; int32 other; };
 
@@ -6008,15 +6009,17 @@ fn marked_constant_store_transport_retains_load_identity() {
     let expanded =
         expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("the marked transport should expand and check");
+    assert!(!expanded.contains("transport("), "{expanded}");
     assert!(
-        expanded
-            .contains("transport(at(after_write, owner->value == 11), owner->value == 11) using {")
+        expanded.contains("have owner->value == 11 by {"),
+        "{expanded}"
     );
+    assert!(expanded.contains("assumption();"), "{expanded}");
     verify_c0_sources(&expanded, &sources).expect("the expanded marked transport should check");
 
     let corrupted = expanded.replacen(
-        "owner->value == 11) using {",
-        "owner->value == 12) using {",
+        "have owner->value == 11 by {",
+        "have owner->value == 12 by {",
         1,
     );
     assert_ne!(
@@ -6025,6 +6028,14 @@ fn marked_constant_store_transport_retains_load_identity() {
     );
     let corrupted_result = { verify_c0_sources(&corrupted, &sources) };
     corrupted_result.expect_err("tampering with the transport target must invalidate the proof");
+
+    let fully_expanded = expand_function_proof_source(click_source, &sources, "pipeline")
+        .expect("the complete marked proof should expand");
+    assert!(!fully_expanded.contains("transport("), "{fully_expanded}");
+    without_implicit_solve_for_claim("pipeline.contract", || {
+        verify_c0_sources(&fully_expanded, &sources).map_err(|error| error.report())
+    })
+    .expect("the expanded marked proof should replay with implicit solving disabled");
 
     let mutating_c = touch_c.replace("owner->other = 0;", "owner->value = 0;");
     let mutating_click = click_source.replace(
@@ -6086,12 +6097,8 @@ fn post_execution_store_transport_expands_from_the_recorded_store_equation() {
     let expanded =
         expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("the store transport should expand from its recorded equation");
-    assert!(expanded.contains("transport(") && expanded.contains("using {"));
-    assert_eq!(
-        expanded.matches("at(region(0).exit, p[0]) == 7").count(),
-        1,
-        "the transport source must not be duplicated as an auxiliary premise:\n{expanded}"
-    );
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("assumption();"), "{expanded}");
     verify_c0_sources(&expanded, &sources)
         .expect("the expanded store transport certificate should check from a fresh parse");
 }
@@ -9215,7 +9222,7 @@ fn restricted_solve_inside_have_expands_to_graph_normalization() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_48")]
-fn restricted_solve_expands_loadable_subrange_to_explicit_transport() {
+fn restricted_solve_expands_computed_subrange_to_ordinary_steps() {
     let c_source = r#"
         int32 read_at(int32 data[], int32 index, int32 length) {
             return data[index];
@@ -9270,33 +9277,26 @@ fn restricted_solve_expands_loadable_subrange_to_explicit_transport() {
         .map(|relative| expanded_have_start + relative)
         .unwrap();
     let expanded_have = &expanded[expanded_have_start..expanded_have_end];
+    assert!(!expanded_have.contains("transport("), "{expanded_have}");
+    assert!(expanded_have.contains("subrange"), "{expanded_have}");
     assert!(
-        expanded_have.contains(
-            "transport(viewable(data[0..length]), viewable(data[index..(index + 1)])) using"
-        ),
+        expanded_have.contains("int32_add_to_integer"),
         "{expanded_have}"
-    );
-    assert!(expanded_have.contains("0 <= index;"), "{expanded_have}");
-    assert!(expanded_have.contains("index < length;"), "{expanded_have}");
-    let normalized_have = expanded_have
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert_eq!(
-        normalized_have,
-        "have viewable(data[index..(index + 1)]) by {\n\
-         transport(viewable(data[0..length]), viewable(data[index..(index + 1)])) using {\n\
-         viewable(data[0..length]);\n\
-         0 <= index;\n\
-         index < length;\n\
-         };\n\
-         }"
     );
     assert!(!expanded_have.contains("solve() using"), "{expanded_have}");
     assert!(!expanded_have.contains("derive using"), "{expanded_have}");
-    verify_c0_sources(&expanded, &sources).expect("explicit viewability transport should check");
+    verify_c0_sources(&expanded, &sources).expect("ordinary view restriction should check");
+    let fully_expanded = expand_function_proof_source(click_source, &sources, "read_at").unwrap();
+    assert!(!fully_expanded.contains("transport("), "{fully_expanded}");
+    without_implicit_solve_for_claim("read_at.contract", || {
+        verify_c0_sources(&fully_expanded, &sources).map_err(|error| error.report())
+    })
+    .expect("computed endpoint restriction replays without implicit solve");
+    for missing in ["requires 0 <= index;", "requires index < length;"] {
+        let refused = fully_expanded.replace(missing, "");
+        assert_ne!(refused, fully_expanded);
+        assert!(verify_c0_sources(&refused, &sources).is_err(), "{missing}");
+    }
 }
 
 #[test]
@@ -10597,7 +10597,7 @@ fn linear_open_retains_a_direct_bare_theorem_application() {
 
 #[test]
 #[ignore = "nightly: 0.5s in the parallel gate"]
-fn linear_open_retains_a_direct_bare_fact_transport() {
+fn linear_open_expands_known_transport_to_assumption() {
     let c_source = r#"
         int32 set_second_return_first(int32 p[2]) {
             p[1] = 9;
@@ -10638,9 +10638,9 @@ fn linear_open_retains_a_direct_bare_fact_transport() {
                     open.tactics.as_slice(),
                     [
                         ProofTactic::Step,
-                        ProofTactic::TransportUsing { premises, .. },
+                        ProofTactic::Have(have),
                         ProofTactic::Step,
-                    ] if !premises.is_empty()
+                    ] if matches!(&have.proof, SourceProof::Script(steps) if matches!(steps.as_slice(), [ProofTactic::Assumption]))
                 )
         ),
         "{tactics:#?}"
@@ -10652,8 +10652,12 @@ fn linear_open_retains_a_direct_bare_fact_transport() {
         CProofClaim::Grouped,
     )
     .expect("the retained open-scope transport should expand");
-    verify_c0_sources(&expanded, &[("set_second_return_first.c", c_source)])
-        .expect("the explicit open-scope transport should independently re-derive");
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("set_second_return_first.contract", || {
+        verify_c0_sources(&expanded, &[("set_second_return_first.c", c_source)])
+            .map_err(|error| error.report())
+    })
+    .expect("the ordinary open-scope proof should replay without implicit solving");
 }
 
 #[test]
@@ -11381,7 +11385,7 @@ fn branch_join_retains_a_bare_fact_transport_in_its_continuation() {
             [
                 ProofTactic::Step,
                 ProofTactic::Branch(branch),
-                ProofTactic::TransportUsing { premises, .. },
+                ProofTactic::Have(_),
                 ProofTactic::Step,
                 ..
             ] if matches!(
@@ -11393,7 +11397,7 @@ fn branch_join_retains_a_bare_fact_transport_in_its_continuation() {
                 )
                 && matches!(branch.then_tactics.as_slice(), [ProofTactic::Step])
                 && matches!(branch.else_tactics.as_slice(), [ProofTactic::Step])
-                && !premises.is_empty()
+
         ),
         "{tactics:#?}"
     );
@@ -11404,6 +11408,12 @@ fn branch_join_retains_a_bare_fact_transport_in_its_continuation() {
         CProofClaim::Grouped,
     )
     .expect("the retained common fact transport should expand");
+    assert!(
+        !expanded
+            .lines()
+            .any(|line| line.trim_start().starts_with("transport(")),
+        "{expanded}"
+    );
     verify_c0_sources(&expanded, &[("choose_bound_transport.c", c_source)])
         .expect("the explicit common transport step should independently re-derive");
 }
@@ -11745,12 +11755,12 @@ fn branch_arms_retain_bare_fact_transports_on_proof() {
             Some(ProofTactic::Branch(branch))
                 if matches!(
                     branch.then_tactics.as_slice(),
-                    [ProofTactic::Step, ProofTactic::TransportUsing { premises, .. }]
-                        if !premises.is_empty()
+                    [ProofTactic::Step, ProofTactic::Have(_)]
+
                 ) && matches!(
                     branch.else_tactics.as_slice(),
-                    [ProofTactic::Step, ProofTactic::TransportUsing { premises, .. }]
-                        if !premises.is_empty()
+                    [ProofTactic::Step, ProofTactic::Have(_)]
+
                 )
         ),
         "{tactics:#?}"
@@ -11762,6 +11772,7 @@ fn branch_arms_retain_bare_fact_transports_on_proof() {
         CProofClaim::Grouped,
     )
     .expect("the retained branch transports should expand");
+    assert!(!expanded.contains("transport("), "{expanded}");
     verify_c0_sources(&expanded, &[("set_choice_return_first.c", c_source)])
         .expect("the explicit branch transports should independently re-derive");
 }
@@ -14792,21 +14803,30 @@ fn source_expander_derives_separation_from_call_postconditions() {
         .expect("bounded call ranges should verify before expansion");
     let expanded = expand_c0_tactic_source_at(click_source, &c_sources, line, column)
         .expect("call postconditions should expand into an explicit separation derivation");
-    // Reuse the separation fact at the call snapshot instead of requiring
-    // the expander to rediscover it through individual field rewrites.
-    let separation = "separate(memory(*right), memory(left->data[0..left->len]))";
-    let anchored = format!("at(region(2).entry, {separation})");
-    let compact = expanded.split_whitespace().collect::<Vec<_>>().join(" ");
-    assert!(
-        compact.contains(&format!(
-            "transport({anchored}, {separation}) using {{ {anchored}; }};"
-        )),
-        "the separation transport must cite its call-snapshot premise: {expanded}"
-    );
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("rewrite("), "{expanded}");
     assert!(!expanded.contains("load_int32_pointer"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c0_sources(&expanded, &c_sources)
         .expect("the expanded separation derivation should check");
+    let fully_expanded = expand_function_proof_source(click_source, &c_sources, "pipeline")
+        .expect("the complete call-separation proof should expand");
+    assert!(!fully_expanded.contains("transport("), "{fully_expanded}");
+    without_implicit_solve_for_claim("pipeline.contract", || {
+        verify_c0_sources(&fully_expanded, &c_sources).map_err(|error| error.report())
+    })
+    .expect("the ordinary separation proof should replay without implicit solving");
+    for missing in [
+        "ensures owner->data == data;",
+        "ensures owner->len == length;",
+    ] {
+        let without_postcondition = expanded.replace(missing, "");
+        assert_ne!(without_postcondition, expanded);
+        assert!(
+            verify_c0_sources(&without_postcondition, &c_sources).is_err(),
+            "the generated rewrite must require {missing}"
+        );
+    }
 }
 
 #[test]
@@ -20204,7 +20224,8 @@ fn ambiguous_view_bucket_search_expands_to_selected_transport() {
     verify_click_theorems(source).expect("search should select a covering view");
     let expanded = expand_c0_claim_source_by_label(source, &[], "choose_view.ensures_0")
         .expect("the selected view should expand");
-    assert!(expanded.contains("transport("), "{expanded}");
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("viewable_restrict"), "{expanded}");
     assert!(expanded.contains("using {"), "{expanded}");
     assert!(!expanded.contains("solve("), "{expanded}");
     without_implicit_solve(|| verify_click_theorems(&expanded))
@@ -20231,7 +20252,8 @@ fn alias_view_selection_expands_to_explicit_equality_and_transport() {
     let expanded = expand_c0_claim_source_by_label(source, &[], "alias_view.ensures_0")
         .expect("alias selection must have an explicit proof");
     assert!(!expanded.contains("solve("), "{expanded}");
-    assert!(expanded.contains("transport("), "{expanded}");
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("viewable_restrict"), "{expanded}");
     assert!(expanded.contains("using {"), "{expanded}");
     without_implicit_solve(|| verify_click_theorems(&expanded))
         .expect("selected aliases must check without implicit search");
@@ -21608,7 +21630,7 @@ test_batches! {
     ],
     expansion_batch_48: [
         restricted_solve_inside_have_expands_to_graph_normalization,
-        restricted_solve_expands_loadable_subrange_to_explicit_transport,
+        restricted_solve_expands_computed_subrange_to_ordinary_steps,
         restricted_solve_rewrites_pointer_aliases_inside_memory_loads,
         post_execution_restricted_solve_expands_without_derive,
     ],
@@ -22154,6 +22176,26 @@ fn unsigned_division_domain_expands_to_an_explicit_step_proof() {
 }
 
 #[test]
+fn symbolic_view_restriction_expands_to_library_steps() {
+    let source = r#"
+        theorem restrict_view(data: int32[], lo: int32, hi: int32, end: int32) {
+            requires viewable(data[0..end]);
+            requires 0 <= lo;
+            requires lo < hi;
+            requires hi < end;
+            ensures viewable(data[lo..hi]) by { solve(); }
+        }
+    "#;
+    let expanded = expand_c0_claim_source_by_label(source, &[], "restrict_view.ensures_0").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("subrange"), "{expanded}");
+    assert!(expanded.contains("viewable_restrict"), "{expanded}");
+    without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+    let missing = expanded.replace("requires lo < hi;", "");
+    assert!(without_implicit_solve(|| verify_click_theorems(&missing)).is_err());
+}
+
+#[test]
 fn rewritten_concrete_range_fold_expands_and_replays() {
     let source = r#"
         theorem fold_rewrite(n: int32) {
@@ -22167,4 +22209,54 @@ fn rewritten_concrete_range_fold_expands_and_replays() {
     verify_click_theorems(source).unwrap();
     let expanded = expand_c0_claim_source_by_label(source, &[], "fold_rewrite.ensures_0").unwrap();
     without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+}
+
+#[test]
+#[ignore = "nightly: native view expansion, cold replay, and missing-bound controls"]
+fn native_byte_count_view_restrictions_expand_to_resource_laws() {
+    for (element, proof) in [
+        (
+            "uint8",
+            "solve() using { viewable(p[0u64..length]); hi <= length; }",
+        ),
+        ("uint32", "solve()"),
+    ] {
+        let source = format!(
+            r#"
+            theorem restrict_view(p: {element}*, length: uint64, hi: uint64) {{
+                requires viewable(p[0u64..length]);
+                requires hi <= length;
+                ensures viewable(p[0u64..hi]) by {{ {proof}; }}
+            }}
+        "#
+        );
+        let expanded = expand_c0_claim_source_by_label(&source, &[], "restrict_view.ensures_0")
+            .unwrap_or_else(|error| panic!("{element}: {}", error.report()));
+        assert!(!expanded.contains("transport("), "{expanded}");
+        assert!(expanded.contains("subrange"), "{expanded}");
+        assert!(expanded.contains("viewable_restrict"), "{expanded}");
+        without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+        let missing = expanded.replace("requires hi <= length;", "");
+        assert_ne!(missing, expanded);
+        assert!(without_implicit_solve(|| verify_click_theorems(&missing)).is_err());
+    }
+}
+
+#[test]
+fn computed_subtraction_view_restriction_expands_to_library_steps() {
+    let source = r#"
+        theorem restrict_view(data: int32[], index: int32, length: int32) {
+            requires viewable(data[0..length]);
+            requires 0 <= index;
+            requires index < length;
+            ensures viewable(data[index..length - 1]) by { solve(); }
+        }
+    "#;
+    let expanded = expand_c0_claim_source_by_label(source, &[], "restrict_view.ensures_0").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("int32_subtract_to_integer"), "{expanded}");
+    assert!(expanded.contains("subrange"), "{expanded}");
+    without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+    let missing = expanded.replace("requires index < length;", "");
+    assert!(without_implicit_solve(|| verify_click_theorems(&missing)).is_err());
 }

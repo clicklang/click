@@ -71,8 +71,11 @@ pub(crate) use contracts::{
 mod integer;
 pub(crate) use integer::WeakIntegerTerm;
 mod kernel_term;
+#[cfg(test)]
+pub(crate) use kernel_term::KernelMatchArm;
 pub(crate) use kernel_term::{
-    KernelFold, KernelFoldIndex, KernelTermExport, KernelTermImport, clear_integer_bridge_memo,
+    KernelFold, KernelFoldIndex, KernelMatch, KernelTermExport, KernelTermImport,
+    clear_integer_bridge_memo,
 };
 pub use kernel_term::{
     KernelIntegerOperator, KernelLegacyTerm, KernelMachineLiteral, KernelTerm, KernelTermNode,

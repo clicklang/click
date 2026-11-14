@@ -4374,16 +4374,25 @@ pub(super) fn finish_ordered_proof<'a>(
                                         "`{proof_label}` path {path_index}, tactic {tactic_index}: the typed outcome goal for this path is unavailable"
                                     )));
                                 };
-                                let [checked_source, checked_target] = checked_facts.as_slice()
-                                else {
-                                    return Err(ClickError::new(format!(
-                                        "`{proof_label}` path {path_index}, tactic {tactic_index}: checked transport did not retain its source and target"
-                                    )));
-                                };
-                                outcome_surface_propositions
-                                    .record_lowering(source, checked_source)?;
-                                outcome_surface_propositions
-                                    .record_lowering(target, checked_target)?;
+                                // Ordinary `have` publication retains its target;
+                                // the legacy transport transition retains both ends.
+                                match checked_facts.as_slice() {
+                                    [checked_source, checked_target] => {
+                                        outcome_surface_propositions
+                                            .record_lowering(source, checked_source)?;
+                                        outcome_surface_propositions
+                                            .record_lowering(target, checked_target)?;
+                                    }
+                                    [checked_target] => {
+                                        outcome_surface_propositions
+                                            .record_lowering(target, checked_target)?;
+                                    }
+                                    _ => {
+                                        return Err(ClickError::new(format!(
+                                            "`{proof_label}` path {path_index}, tactic {tactic_index}: checked transport did not retain its target"
+                                        )));
+                                    }
+                                }
                                 for tactic in certificate.to_proof_tactics() {
                                     record_post_execution_surface_tactic(
                                         &mut path_surface_post_tactics,

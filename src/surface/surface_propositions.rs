@@ -1149,6 +1149,25 @@ impl SurfacePropositionMap {
             })
     }
 
+    /// Recorded atoms with a written enclosing clause, including clauses
+    /// such as separation that also lower to formation requirements. This
+    /// enumerates existing syntax records for smart planning; it builds no
+    /// reasoning context and publishes no facts.
+    pub(in crate::surface) fn requirement_kernel_atoms_for_search(
+        &self,
+    ) -> impl Iterator<Item = &Proposition> {
+        self.storage
+            .kernel_atoms
+            .iter()
+            .take_while(|_| !crate::instrumentation::deadline_exceeded())
+            .filter_map(|(atom, (id, _))| {
+                crate::instrumentation::record_deterministic_work(1);
+                (self.storage.by_kernel.contains_key(id)
+                    || self.storage.by_conjunct.contains_key(id))
+                .then_some(atom.as_ref())
+            })
+    }
+
     pub fn available_kernel(
         &self,
         surface: &ClickProposition,

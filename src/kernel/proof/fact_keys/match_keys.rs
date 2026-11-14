@@ -7,7 +7,7 @@ use crate::kernel::proof::term_rewrite::{BindingCarrier, binding_variable};
 pub(super) struct Arm {
     variant: String,
     types: Vec<crate::kernel::AlgebraicValueType>,
-    body: AlphaBitvectorKey,
+    body: AlphaMachineKey,
 }
 
 pub(super) fn machine<const ALLOW_LOADS: bool>(
@@ -16,10 +16,36 @@ pub(super) fn machine<const ALLOW_LOADS: bool>(
     bindings: &mut AlphaBindings,
     next_binder: &mut usize,
 ) -> Option<AlphaBitvectorKey> {
+    machine_arms::<ALLOW_LOADS>(
+        scrutinee,
+        arms.iter().map(|arm| {
+            (
+                arm.variant.as_str(),
+                arm.bindings.as_slice(),
+                crate::kernel::MachineOperandView::Legacy(&arm.body),
+            )
+        }),
+        bindings,
+        next_binder,
+    )
+}
+
+fn machine_arms<'a, const ALLOW_LOADS: bool>(
+    scrutinee: &AlgebraicTerm,
+    arms: impl ExactSizeIterator<
+        Item = (
+            &'a str,
+            &'a [crate::kernel::AlgebraicValue],
+            crate::kernel::MachineOperandView<'a>,
+        ),
+    >,
+    bindings: &mut AlphaBindings,
+    next_binder: &mut usize,
+) -> Option<AlphaBitvectorKey> {
     let scrutinee =
         alpha_algebraic_key_with_bindings::<ALLOW_LOADS>(scrutinee, bindings, next_binder)?;
     let mut keys = Vec::with_capacity(arms.len());
-    for arm in arms {
+    for (variant, declarations, body) in arms {
         alpha_work_checkpoint(bindings, 1)?;
         let outer_next = *next_binder;
         let outer_scopes = (bindings.integer_scope, bindings.bitvector_scope);
@@ -27,10 +53,10 @@ pub(super) fn machine<const ALLOW_LOADS: bool>(
         bindings.next_scope_id = scope.checked_add(1)?;
         bindings.integer_scope = scope;
         bindings.bitvector_scope = scope;
-        let mut changes = Vec::with_capacity(arm.bindings.len());
+        let mut changes = Vec::with_capacity(declarations.len());
         let result = (|| {
-            let mut types = Vec::with_capacity(arm.bindings.len());
-            for binding in &arm.bindings {
+            let mut types = Vec::with_capacity(declarations.len());
+            for binding in declarations {
                 alpha_work_checkpoint(bindings, 1)?;
                 let (carrier, variable) = binding_variable(binding)?;
                 let ordinal = *next_binder;
@@ -43,10 +69,9 @@ pub(super) fn machine<const ALLOW_LOADS: bool>(
                 changes.push((carrier, variable, map.insert(variable, ordinal)));
                 types.push(binding.value_type());
             }
-            let body =
-                alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(&arm.body, bindings, next_binder)?;
+            let body = alpha_machine_key::<ALLOW_LOADS>(body, bindings, next_binder)?;
             Some(Arm {
-                variant: arm.variant.clone(),
+                variant: variant.into(),
                 types,
                 body,
             })
@@ -68,6 +93,67 @@ pub(super) fn machine<const ALLOW_LOADS: bool>(
         keys.push(result?);
     }
     Some(AlphaBitvectorKey::AlgebraicMatch(Box::new(scrutinee), keys))
+}
+
+#[allow(dead_code)] // Activated with common match roots in 6l.
+pub(super) fn retained_machine<const ALLOW_LOADS: bool>(
+    matched: &crate::kernel::KernelMatch,
+    bindings: &mut AlphaBindings,
+    next_binder: &mut usize,
+) -> Option<AlphaBitvectorKey> {
+    let mut export = crate::kernel::KernelTermExport::default();
+    let PureFunctionArgument::Algebraic(scrutinee) = export.argument(&matched.arguments[0]).ok()?
+    else {
+        return None;
+    };
+    let declarations = matched
+        .arms
+        .iter()
+        .map(|arm| arm.export_bindings(&mut export))
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    machine_arms::<ALLOW_LOADS>(
+        &scrutinee,
+        matched
+            .arms
+            .iter()
+            .zip(&declarations)
+            .zip(&matched.arguments[1..])
+            .map(|((arm, declarations), body)| {
+                (
+                    arm.variant.as_str(),
+                    declarations.as_slice(),
+                    crate::kernel::MachineOperandView::Shared(body),
+                )
+            }),
+        bindings,
+        next_binder,
+    )
+}
+
+#[allow(dead_code)] // Activated with common match roots in 6l.
+pub(crate) fn retained_alpha_equivalent(
+    left: &crate::kernel::KernelMatch,
+    right: &crate::kernel::KernelMatch,
+) -> Option<bool> {
+    if left.result_type != right.result_type {
+        return Some(false);
+    }
+    fn key(matched: &crate::kernel::KernelMatch) -> Option<(AlphaBitvectorKey, usize)> {
+        let crate::kernel::KernelType::C(ty) = matched.result_type else {
+            return None;
+        };
+        crate::kernel::MachineIntegerType::from_c_type(ty)?;
+        let mut bindings = fold_keys::bindings();
+        let key = retained_machine::<false>(matched, &mut bindings, &mut 0)?;
+        Some((key, bindings.work_units))
+    }
+    let (left, lw) = key(left)?;
+    let (right, rw) = key(right)?;
+    if crate::instrumentation::deadline_exceeded_with_work(lw.saturating_add(rw)) {
+        return None;
+    }
+    Some(left == right)
 }
 
 #[cfg(test)]
@@ -130,6 +216,33 @@ mod tests {
             key(&with_free_algebraic(100)),
             key(&with_free_algebraic(200))
         );
+    }
+
+    #[test]
+    fn common_match_alpha_keys_agree_with_native_scopes() {
+        use crate::kernel::{KernelMatch, KernelTermImport, MachineIntegerType};
+        let left = selected_match(100, 2);
+        let mut changed = selected_match(200, 2);
+        let MachineTerm::AlgebraicMatch { arms, .. } = &mut changed else {
+            unreachable!()
+        };
+        arms[1].body = MachineTerm::Variable(Variable(100));
+        for right in [selected_match(200, 2), changed] {
+            let expected = key(&left).unwrap() == key(&right).unwrap();
+            let a = KernelMatch::import_machine(
+                &mut KernelTermImport::default(),
+                MachineIntegerType::Int32,
+                &left,
+            )
+            .unwrap();
+            let b = KernelMatch::import_machine(
+                &mut KernelTermImport::default(),
+                MachineIntegerType::Int32,
+                &right,
+            )
+            .unwrap();
+            assert_eq!(retained_alpha_equivalent(&a, &b), Some(expected));
+        }
     }
 
     mod scaling_tests {
