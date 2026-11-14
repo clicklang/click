@@ -323,3 +323,32 @@ fn a_symbolic_aggregate_array_at_function_entry_costs_the_same_whatever_its_leng
          work, cell entries, load identities named): {samples:?}"
     );
 }
+
+/// An entry after another context declared the same global array from a
+/// different base costs the same whatever the array's length, and is one
+/// run: the second declaration is accepted rather than falling back to one
+/// cell per element.
+#[test]
+fn a_symbolic_global_array_declared_from_another_base_costs_the_same_whatever_its_length() {
+    let samples = [8u32, 1_000, 1_000_000].map(|length| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = CMemory::global_pointer("buf");
+        let other = another_context_base(CType::Int32, length);
+        assert!(crate::kernel::eval::declare_symbolic_array_access_widths(
+            &other, &base, 4, length, 4
+        ));
+        let function = function_with_global_array(CType::Int32, length);
+        let (entry, work) = crate::instrumentation::measure_deterministic_work(|| {
+            initialize_c_function_globals(&CState::new(), &function)
+        });
+        (length, work, entry.memory().cells.representation_len())
+    });
+    assert!(
+        samples.windows(2).all(|pair| pair[0].1 == pair[1].1),
+        "entry work depends on the array's length: {samples:?}"
+    );
+    assert!(
+        samples.iter().all(|(_, _, entries)| *entries == 1),
+        "entry is one run: {samples:?}"
+    );
+}
