@@ -229,7 +229,7 @@ fn coordinate_reconstruction_keeps_the_selected_read_snapshot() {
     );
     let mut results = vec![];
     for memory in [before, after] {
-        let memory = crate::kernel::intern_c_memory(memory);
+        let memory = crate::kernel::intern_memory(memory);
         let read =
             MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), LoadKind::Bits64);
         let offset = PointerOffsetTerm::Int64Scaled {

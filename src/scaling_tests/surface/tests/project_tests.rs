@@ -20,7 +20,7 @@ fn step_result_binding_work_scales_with_assigned_values() {
         source.push_str("return x;}");
         proof.push_str("have value_0==0 by {solve();} step(); solve();}");
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            verify_c0_sources(&proof, &[("assign.c", source.as_str())])
+            verify_c_sources(&proof, &[("assign.c", source.as_str())])
         });
         result.unwrap();
         assert!(work > 0);

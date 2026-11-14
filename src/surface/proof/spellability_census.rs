@@ -107,7 +107,7 @@ fn condition_kind(condition: &ConditionTerm) -> String {
         } else {
             "Compare"
         };
-        return format!("{kind}({} {})", op.format().name(), op.c_symbol());
+        return format!("{kind}({} {})", op.format().name(), op.program_symbol());
     }
     let debug = format!("{condition:?}");
     debug
@@ -174,7 +174,7 @@ mod tests {
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
         let lines = capture(|| {
-            let error = crate::surface::verify_c0_sources(
+            let error = crate::surface::verify_c_sources(
                 fixture.click_source.as_deref().unwrap(),
                 &sources,
             )
@@ -240,7 +240,7 @@ mod tests {
             "    have p->left == p->left;\n    step();\n    solve();",
         );
         let lines = capture(|| {
-            let error = crate::surface::verify_c0_sources(
+            let error = crate::surface::verify_c_sources(
                 &click,
                 &[("a_join_forgets_a_cell_the_arms_disagree_on.c", c)],
             )
@@ -287,7 +287,7 @@ void keep(int32* p) {
 }
 "#;
         let lines = capture(|| {
-            crate::surface::verify_c0_sources(source, &[("keep.c", "void keep(int32 *p) {}")])
+            crate::surface::verify_c_sources(source, &[("keep.c", "void keep(int32 *p) {}")])
                 .unwrap();
         });
         let facts = lines
@@ -386,7 +386,7 @@ theorem only_element(v: int32, x: int32) {
     ensures v == x;
 }
 "#;
-        let expanded = crate::surface::expansion::expand_c0_claim_source_by_label(
+        let expanded = crate::surface::expansion::expand_c_claim_source_by_label(
             source,
             &[],
             "only_element.ensures_0",
@@ -435,7 +435,7 @@ theorem only_element(v: int32, x: int32) {
             .split("```")
             .next()
             .unwrap();
-        let expanded = crate::surface::expansion::expand_c0_claim_source_by_label(
+        let expanded = crate::surface::expansion::expand_c_claim_source_by_label(
             source,
             &[],
             "chosen_positive.ensures_0",
@@ -524,7 +524,7 @@ void set(int32* a, int32 i, int32 j) {
 }
 "#;
         let lines = capture(|| {
-            crate::surface::verify_c0_sources(click, &[("set.c", c)]).unwrap();
+            crate::surface::verify_c_sources(click, &[("set.c", c)]).unwrap();
         });
         let rewritten = lines
             .iter()
@@ -565,7 +565,7 @@ void bump(struct cell* p) {
 }
 "#;
         let lines = capture(|| {
-            crate::surface::verify_c0_sources(click, &[("f.c", c)]).unwrap();
+            crate::surface::verify_c_sources(click, &[("f.c", c)]).unwrap();
         });
         let unfold_facts = lines
             .iter()
@@ -609,7 +609,7 @@ void pack(struct node* p, struct node* id) {
 }
 "#;
         let lines = capture(|| {
-            crate::surface::verify_c0_sources(click, &[("f.c", c)]).unwrap();
+            crate::surface::verify_c_sources(click, &[("f.c", c)]).unwrap();
         });
         // The arm binder `model_id` names the only spelling of this range.
         let binder_fact = lines
@@ -647,7 +647,7 @@ theorem add3_adds_four() {
 }
 "#;
         let lines = capture(|| {
-            let _ = crate::surface::verify_c0_sources(click, &[("f.c", c)]);
+            let _ = crate::surface::verify_c_sources(click, &[("f.c", c)]);
         });
         let rewritten_goals = lines
             .iter()
@@ -678,7 +678,7 @@ theorem add3_adds_four() {
         );
         let guarded = Proposition::ForAll {
             var: Variable(1),
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(Proposition::Implies(
                 Box::new(atom.clone()),
                 Box::new(atom.clone()),

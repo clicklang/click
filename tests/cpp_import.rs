@@ -5,19 +5,19 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use click::cli::{CInput, parse_mdtest, read_c_inputs, read_click_project};
+use click::cli::{VerificationInput, parse_mdtest, read_click_project, read_verification_inputs};
 use click::kernel::{
     ExecutionState, FunctionOutcome, MachineTerm, Memory, MemoryRange, Pointer, PointerOffsetTerm,
     ProgramExpression, ProgramStatement, ProgramType, Proposition, PureFactContext,
-    ResourceContext, ResourceFact, UndefinedBehavior, c_typed_pointer_value, int32,
-    prove_symbolic_c_function_execution,
+    ResourceContext, ResourceFact, UndefinedBehavior, int32,
+    prove_symbolic_program_function_execution,
 };
 use click::languages::cpp::{
     CppBinaryOperator, CppCallArgument, CppCleanup, CppExceptionBehavior, CppExpression,
     CppFunctionKind, CppInitializer, CppProjection, CppStatement, CppType, lower_import,
 };
 use click::surface::{
-    C0VerificationSession, VerifiedClaim, expand_project_claim_source_by_label,
+    ProgramVerificationSession, VerifiedClaim, expand_project_claim_source_by_label,
     expand_project_tactic_source_at, project_smart_tactic_source_sites,
     project_tactic_source_position, verify_program_prepared_project,
 };
@@ -96,7 +96,7 @@ int32 probe() { ensures result == 11; }
         let rewritten = parsed.with_entry_source(expanded.clone());
         verify_program_prepared_project(&rewritten, &import).unwrap();
         let (session, _) =
-            C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
+            ProgramVerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
         let position = project_tactic_source_position(
             &rewritten,
             &ProgramInputs::program(&import),
@@ -206,7 +206,7 @@ int32 probe(struct View& input) {
         verify_program_prepared_project(&parsed.with_entry_source(expanded.clone()), &import)
             .unwrap();
         let (session, _) =
-            C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
+            ProgramVerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
         let rewritten = parsed.with_entry_source(expanded.clone());
         let position = project_tactic_source_position(
             &rewritten,
@@ -1820,8 +1820,8 @@ fn clang_export_is_deterministic_typed_and_loads_without_clang() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after locking");
     let sidecar = project.directory.join("demo.click");
     fs::write(&sidecar, SIDECAR).unwrap();
-    let CInput::PreparedProgram(import) =
-        read_c_inputs(&sidecar, SIDECAR).expect("locked loading must not execute Clang")
+    let VerificationInput::PreparedProgram(import) =
+        read_verification_inputs(&sidecar, SIDECAR).expect("locked loading must not execute Clang")
     else {
         panic!("language=c++ must select the C++ prepared-input path")
     };
@@ -2031,8 +2031,9 @@ fn included_header_definition_is_selected_locked_and_validated() {
     fs::write(&sidecar, &sidecar_source).unwrap();
     project.adopt();
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
-    let inputs = read_c_inputs(&sidecar, &sidecar_source).expect("load the header import offline");
-    let CInput::PreparedProgram(import) = inputs else {
+    let inputs = read_verification_inputs(&sidecar, &sidecar_source)
+        .expect("load the header import offline");
+    let VerificationInput::PreparedProgram(import) = inputs else {
         panic!("language=c++ must select the C++ prepared-input path")
     };
     let click_project = read_click_project(&sidecar, &sidecar_source).unwrap();
@@ -2097,9 +2098,9 @@ fn exception_enabled_profile_verifies_a_checked_normal_only_header_graph() {
     fs::write(&sidecar, &sidecar_source).unwrap();
     project.adopt();
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
-    let inputs = read_c_inputs(&sidecar, &sidecar_source)
+    let inputs = read_verification_inputs(&sidecar, &sidecar_source)
         .expect("load the exception-enabled header import offline");
-    let CInput::PreparedProgram(import) = inputs else {
+    let VerificationInput::PreparedProgram(import) = inputs else {
         panic!("language=c++ must select the C++ prepared-input path")
     };
     let click_project = read_click_project(&sidecar, &sidecar_source).unwrap();
@@ -2205,8 +2206,9 @@ fn scalar_int32_profile_propagates_a_modular_throw_past_a_normal_call_continuati
     .expect("expand the caller's exceptional proof");
     let rewritten = click_project.with_entry_source(expanded.clone());
     // Session construction cold-verifies this complete program once.
-    let (session, _) = C0VerificationSession::new_program_prepared_project(&rewritten, &prepared)
-        .expect("retain the expanded scalar exception environment");
+    let (session, _) =
+        ProgramVerificationSession::new_program_prepared_project(&rewritten, &prepared)
+            .expect("retain the expanded scalar exception environment");
     let site = project_tactic_source_position(
         &rewritten,
         &ProgramInputs::program(&prepared),
@@ -2316,8 +2318,9 @@ fn scalar_int32_profile_catches_a_modular_throw_with_a_typed_payload() {
     );
     let rewritten = click_project.with_entry_source(expanded.clone());
     // Session construction cold-verifies this complete program once.
-    let (session, _) = C0VerificationSession::new_program_prepared_project(&rewritten, &prepared)
-        .expect("retain the expanded handler environment");
+    let (session, _) =
+        ProgramVerificationSession::new_program_prepared_project(&rewritten, &prepared)
+            .expect("retain the expanded handler environment");
     let site = project_tactic_source_position(
         &rewritten,
         &ProgramInputs::program(&prepared),
@@ -2437,7 +2440,7 @@ fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
         .expect("the expanded mixed outcome proof must reverify");
     // Session construction cold-verifies this complete program once.
     let (session, _) =
-        C0VerificationSession::new_program_prepared_project(&click_project, &prepared)
+        ProgramVerificationSession::new_program_prepared_project(&click_project, &prepared)
             .expect("retain the mixed outcome verification environment");
     let site = project_tactic_source_position(
         &rewritten,
@@ -2536,7 +2539,7 @@ int32 caller(bool fail) { ensures result == 7; }
     verify_program_prepared_project(&rewritten, &import).unwrap();
     // Session construction cold-verifies this complete program once.
     let (session, _) =
-        C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
+        ProgramVerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
     let position = project_tactic_source_position(
         &rewritten,
         &ProgramInputs::program(&import),
@@ -3504,8 +3507,9 @@ fn locked_cpp_function_verifies_through_the_shared_sidecar_path_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
-    let inputs = read_c_inputs(&sidecar, &click_source).expect("load the locked sidecar input");
-    let CInput::PreparedProgram(import) = inputs else {
+    let inputs =
+        read_verification_inputs(&sidecar, &click_source).expect("load the locked sidecar input");
+    let VerificationInput::PreparedProgram(import) = inputs else {
         panic!("language=c++ must select the C++ prepared-input path")
     };
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
@@ -3572,8 +3576,8 @@ fn locked_cpp_branch_and_early_return_verify_through_the_shared_sidecar_path() {
 
     project.adopt();
     let click_source = fs::read_to_string(&sidecar).unwrap();
-    let inputs = read_c_inputs(&sidecar, &click_source).unwrap();
-    let CInput::PreparedProgram(import) = inputs else {
+    let inputs = read_verification_inputs(&sidecar, &click_source).unwrap();
+    let VerificationInput::PreparedProgram(import) = inputs else {
         panic!("language=c++ must select the C++ prepared-input path")
     };
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
@@ -3606,7 +3610,7 @@ fn locked_cpp_branch_and_early_return_verify_through_the_shared_sidecar_path() {
         .expect("the expanded branch proof must reverify");
     // Construction checks the same complete original and returns its claim metadata.
     let (session, verified) =
-        C0VerificationSession::new_program_prepared_project(&click_project, &import)
+        ProgramVerificationSession::new_program_prepared_project(&click_project, &import)
             .expect("retain the original branch verification environment");
     assert_eq!(
         verified
@@ -3676,8 +3680,8 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
 
     project.adopt();
     let click_source = fs::read_to_string(&sidecar).unwrap();
-    let inputs = read_c_inputs(&sidecar, &click_source).unwrap();
-    let CInput::PreparedProgram(import) = inputs else {
+    let inputs = read_verification_inputs(&sidecar, &click_source).unwrap();
+    let VerificationInput::PreparedProgram(import) = inputs else {
         panic!("language=c++ must select the C++ prepared-input path")
     };
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
@@ -3710,7 +3714,7 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
         .expect("the expanded const-reference proof must reverify");
     // Construction checks the same complete original and returns its claim metadata.
     let (session, verified) =
-        C0VerificationSession::new_program_prepared_project(&click_project, &import)
+        ProgramVerificationSession::new_program_prepared_project(&click_project, &import)
             .expect("retain the const-reference verification environment");
     assert_eq!(
         verified
@@ -4031,7 +4035,7 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
         .expect("the expanded modular C++ proof must reverify");
     // Construction checks the same complete original and returns its claim metadata.
     let (session, verified) =
-        C0VerificationSession::new_program_prepared_project(&click_project, &import)
+        ProgramVerificationSession::new_program_prepared_project(&click_project, &import)
             .expect("retain the modular C++ verification environment");
     assert_eq!(verified.len(), 6);
 
@@ -4142,7 +4146,7 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
         .expect("the expanded scalar-local proof must reverify");
     // Construction checks the same complete original and returns its claim metadata.
     let (session, verified) =
-        C0VerificationSession::new_program_prepared_project(&click_project, &import)
+        ProgramVerificationSession::new_program_prepared_project(&click_project, &import)
             .expect("retain the scalar-local verification environment");
     assert_eq!(verified.len(), 5);
 
@@ -4971,8 +4975,9 @@ fn modular_caller_observes_captured_result_and_restored_entry_value() {
     verify_program_prepared_project(&rewritten, &import)
         .expect("the expanded RAII caller proof must reverify");
     // Session construction cold-verifies this complete program once.
-    let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
-        .expect("retain the caller's original verification environment");
+    let (session, _) =
+        ProgramVerificationSession::new_program_prepared_project(&click_project, &import)
+            .expect("retain the caller's original verification environment");
     let next = project_tactic_source_position(
         &rewritten,
         &ProgramInputs::program(&import),
@@ -5567,8 +5572,9 @@ fn conditional_construction_cleans_up_only_the_constructed_arm() {
     verify_program_prepared_project(&rewritten, &import)
         .expect("the fully expanded conditional-construction proof must reverify");
     // Session construction cold-verifies this complete program once.
-    let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
-        .expect("retain the original conditional-construction verification environment");
+    let (session, _) =
+        ProgramVerificationSession::new_program_prepared_project(&click_project, &import)
+            .expect("retain the original conditional-construction verification environment");
     let next = project_tactic_source_position(
         &rewritten,
         &ProgramInputs::program(&import),
@@ -6007,8 +6013,9 @@ fn cpp_profile_expansion_and_audit_session_share_the_locked_input() {
     let rewritten = click_project.with_entry_source(expanded.clone());
     verify_program_prepared_project(&rewritten, &import).expect("expanded proof must reverify");
 
-    let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
-        .expect("start the retained audit session");
+    let (session, _) =
+        ProgramVerificationSession::new_program_prepared_project(&click_project, &import)
+            .expect("start the retained audit session");
     let next = project_tactic_source_position(
         &rewritten,
         &ProgramInputs::program(&import),
@@ -6183,7 +6190,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
             MachineTerm::constant(0),
             MachineTerm::constant(1),
         )));
-    let arguments = vec![c_typed_pointer_value(
+    let arguments = vec![click::kernel::program_expression::typed_pointer_value(
         pointer.clone(),
         ProgramType::Int32Pointer,
     )];
@@ -6193,7 +6200,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
     let expected_state = ExecutionState::new()
         .with_memory(Memory::new().store(pointer.clone(), int32(42)))
         .with_resource_context(resources.clone());
-    let theorem = prove_symbolic_c_function_execution(
+    let theorem = prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -6202,7 +6209,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
     .expect("the lowered reference function should execute");
     assert_eq!(
         theorem.proposition(),
-        &Proposition::CFunctionExecutes {
+        &Proposition::ProgramFunctionExecutes {
             state: Box::new(state),
             function: Box::new(function.clone()),
             arguments: arguments.clone(),
@@ -6216,7 +6223,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
     let max_state = ExecutionState::new()
         .with_memory(Memory::new().store(pointer, int32(i32::MAX as u32)))
         .with_resource_context(resources);
-    let overflow = prove_symbolic_c_function_execution(
+    let overflow = prove_symbolic_program_function_execution(
         max_state.clone(),
         function.clone(),
         arguments.clone(),
@@ -6225,7 +6232,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
     .expect("concrete signed overflow should produce a checked outcome");
     assert_eq!(
         overflow.proposition(),
-        &Proposition::CFunctionExecutes {
+        &Proposition::ProgramFunctionExecutes {
             state: Box::new(max_state),
             function: Box::new(function.clone()),
             arguments,
@@ -7042,7 +7049,7 @@ fn ordinary_value_methods_import_with_const_receiver_and_mixed_width_fields() {
             .expect("expanded method proof reverifies");
         // Session construction cold-verifies this complete program once.
         let (session, _) =
-            C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
+            ProgramVerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
         let next_sites =
             project_smart_tactic_source_sites(&rewritten, &ProgramInputs::program(&import))
                 .unwrap();
@@ -7168,8 +7175,9 @@ fn check_claim_certificate(
         None => sites.first().expect("the sidecar has an automated claim"),
     };
     let claim = &first.claim_label;
-    let (session, verified) = C0VerificationSession::new_program_prepared_project(&parsed, import)
-        .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
+    let (session, verified) =
+        ProgramVerificationSession::new_program_prepared_project(&parsed, import)
+            .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
     assert!(!verified.is_empty());
     let expanded =
         click::surface::expand_verified_function_claim_source_by_label(&source, &verified, claim)
@@ -7258,7 +7266,7 @@ fn check_sidecar_tactic_with_tools(
         )
     });
     let (session, _) =
-        C0VerificationSession::new_program_prepared_project(&parsed, import).unwrap();
+        ProgramVerificationSession::new_program_prepared_project(&parsed, import).unwrap();
     // The expansion may leave the claim no smart tactic; its first written
     // tactic selects it.
     let position = project_tactic_source_position(
@@ -13414,7 +13422,7 @@ ensures round_down == false implies (to_integer(result) + -1) * to_integer(d) < 
             sites.first().unwrap()
         };
         let (session, verified) =
-            C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
+            ProgramVerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
         // Spell both claims before any cold check resets the certificate tables.
         let expanded = click::surface::expand_verified_function_claim_source_by_label(
             &proof,
@@ -16095,7 +16103,7 @@ theorem read_application() executes read(const struct State& state) {
     verify_program_prepared_project(&rewritten, &import).unwrap();
     // Session construction cold-verifies this complete program once.
     let (session, _) =
-        C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
+        ProgramVerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
     let position = project_tactic_source_position(
         &rewritten,
         &ProgramInputs::program(&import),
@@ -17571,7 +17579,7 @@ uint64 probe(int32* p, uint64 n) {
     .unwrap();
     verify_program_prepared_project(&whole.with_entry_source(expanded), &import).unwrap();
     let (session, _) =
-        C0VerificationSession::new_program_prepared_project(&whole, &import).unwrap();
+        ProgramVerificationSession::new_program_prepared_project(&whole, &import).unwrap();
     let position = project_tactic_source_position(
         &whole,
         &ProgramInputs::program(&import),
@@ -17734,7 +17742,7 @@ uint64 probe(struct View& view, uint64 n) {
     .unwrap();
     verify_program_prepared_project(&whole.with_entry_source(expanded), &import).unwrap();
     let (session, _) =
-        C0VerificationSession::new_program_prepared_project(&whole, &import).unwrap();
+        ProgramVerificationSession::new_program_prepared_project(&whole, &import).unwrap();
     let position = project_tactic_source_position(
         &whole,
         &ProgramInputs::program(&import),
@@ -19057,7 +19065,7 @@ fn virtual_dispatch_refuses_construction_recursion_and_other_class_shapes() {
     let project = Project::with_fixture("shapes.cpp", "total", VIRTUAL_SOURCE);
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let error = C0VerificationSession::new_program_prepared(
+    let error = ProgramVerificationSession::new_program_prepared(
         r#"verifying "shapes.cpp";
 extern int Shape::area(int scale) const {
     requires 0 <= scale and scale <= 1000;
@@ -19114,7 +19122,7 @@ fn bound_class_object_call_obligations_expand_and_cold_replay() {
         fs::write(&sidecar, &source).unwrap();
         let parsed = read_click_project(&sidecar, &source).unwrap();
         let (session, verified) =
-            C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
+            ProgramVerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
         let expanded = click::surface::expand_verified_function_claim_source_by_label(
             &source,
             &verified,
@@ -19201,7 +19209,7 @@ int total(const Shape& shape, int scale) {
         ),
     ] {
         let sidecar = sidecar.replacen(from, to, 1);
-        let error = C0VerificationSession::new_program_prepared(&sidecar, &import)
+        let error = ProgramVerificationSession::new_program_prepared(&sidecar, &import)
             .err()
             .expect("the override must be refused");
         let rendered = click::surface::display_source_names(&format!("{error:?}")).into_owned();
@@ -19246,7 +19254,7 @@ fn class_bool_member_whole_certificate_preserves_every_return_case() {
         let sites = project_smart_tactic_source_sites(&parsed, &inputs).unwrap();
         let claim = sites[0].claim_label.clone();
         let (session, verified) =
-            C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
+            ProgramVerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
         let expanded = click::surface::expand_verified_function_claim_source_by_label(
             sidecar, &verified, &claim,
         )

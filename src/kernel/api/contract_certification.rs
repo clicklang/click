@@ -25,7 +25,7 @@ pub(crate) fn contract_resource_condition_cases(
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
 ) -> Option<Vec<Vec<Proposition>>> {
-    let entry_state = c_function_entry_state(caller_state, function, arguments)?;
+    let entry_state = program_function_entry_state(caller_state, function, arguments)?;
     let mut budget = ExecutionBudget::beside_live_state();
     let required_resources = evaluate_function_resource_context(
         &entry_state,
@@ -63,7 +63,7 @@ pub(crate) fn contract_resource_condition_cases(
             .iter()
             .zip(resource_arguments.iter())
         {
-            let value = value.as_c_value()?;
+            let value = value.as_program_value()?;
             if parameter.c_type() != value.c_type() {
                 return None;
             }
@@ -293,7 +293,7 @@ fn split_additive_constant(term: Operand<'_>) -> (SharedMachineIntegerTerm, u32)
 /// assumptions state the loadability exactly, the memory holds the cells, or
 /// the resources permit the read. A load under a premise is judged with the
 /// premise assumed; a quantified load is left to certification.
-pub fn c_state_justifies_loadability_obligation(
+pub fn execution_state_justifies_loadability_obligation(
     state: &ExecutionState,
     obligation: &Proposition,
     assumptions: &PureFactContext,
@@ -303,13 +303,13 @@ pub fn c_state_justifies_loadability_obligation(
             let assumptions = assumptions
                 .clone()
                 .assume_proposition(premise.as_ref().clone());
-            c_state_justifies_loadability_obligation(state, body, &assumptions)
+            execution_state_justifies_loadability_obligation(state, body, &assumptions)
         }
         Proposition::And(left, right) => {
-            c_state_justifies_loadability_obligation(state, left, assumptions)
-                && c_state_justifies_loadability_obligation(state, right, assumptions)
+            execution_state_justifies_loadability_obligation(state, left, assumptions)
+                && execution_state_justifies_loadability_obligation(state, right, assumptions)
         }
-        Proposition::CMemoryReadDefined {
+        Proposition::MemoryReadDefined {
             memory,
             pointer,
             value_type,
@@ -317,19 +317,19 @@ pub fn c_state_justifies_loadability_obligation(
             if assumptions.proves_exact(obligation) {
                 return true;
             }
-            let loadable = Proposition::CMemoryLoadable {
+            let loadable = Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: pointer.clone(),
                 bytes: MachineTerm::constant(value_type.byte_width()),
                 wide: false,
             };
-            c_state_justifies_loadability_obligation(state, &loadable, assumptions)
+            execution_state_justifies_loadability_obligation(state, &loadable, assumptions)
                 && assumptions
                     .clone()
                     .assume_proposition(loadable)
                     .proves_memory_read_defined(memory, pointer, *value_type)
         }
-        Proposition::CMemoryLoadable {
+        Proposition::MemoryLoadable {
             memory,
             base,
             bytes,
@@ -396,26 +396,26 @@ fn symbolic_base_aliases_a_held_cell(
 /// Reject a read of freed memory unless a checked path fact proves that the
 /// guard containing the read is false. The guarded obligation itself remains
 /// subject to ordinary certification.
-pub fn c_loadability_obligation_impossible_with_assumptions(
+pub fn program_loadability_obligation_impossible_with_assumptions(
     obligation: &Proposition,
     assumptions: &PureFactContext,
 ) -> bool {
     match obligation {
         Proposition::Implies(premise, body) => {
-            c_loadability_obligation_impossible_with_assumptions(body, assumptions)
+            program_loadability_obligation_impossible_with_assumptions(body, assumptions)
                 && !crate::kernel::PureFactContext::settles_exactly(
                     assumptions,
                     &negate_contract_case_proposition(premise),
                 )
         }
         Proposition::ForAll { body, .. } | Proposition::Exists { body, .. } => {
-            c_loadability_obligation_impossible_with_assumptions(body, assumptions)
+            program_loadability_obligation_impossible_with_assumptions(body, assumptions)
         }
         Proposition::And(left, right) => {
-            c_loadability_obligation_impossible_with_assumptions(left, assumptions)
-                || c_loadability_obligation_impossible_with_assumptions(right, assumptions)
+            program_loadability_obligation_impossible_with_assumptions(left, assumptions)
+                || program_loadability_obligation_impossible_with_assumptions(right, assumptions)
         }
-        Proposition::CMemoryLoadable { memory, base, .. } => {
+        Proposition::MemoryLoadable { memory, base, .. } => {
             memory.is_ended_local_address(base)
                 || memory.is_deallocated_heap_address(base, &PureFactContext::new())
                 || memory.freed_heap_allocation_may_contain(base, &PureFactContext::new())
@@ -425,7 +425,7 @@ pub fn c_loadability_obligation_impossible_with_assumptions(
 }
 
 pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Proposition) -> bool {
-    let Proposition::CMemoryLoadable {
+    let Proposition::MemoryLoadable {
         memory,
         base,
         bytes,
@@ -443,7 +443,7 @@ pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Propositio
         || assumptions
             .memory_loadable_candidates_for_base(base)
             .any(|fact| {
-                let Proposition::CMemoryLoadable {
+                let Proposition::MemoryLoadable {
                     memory: fact_memory,
                     base: fact_base,
                     bytes: fact_bytes,
@@ -465,8 +465,8 @@ pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Propositio
                         base,
                         assumptions,
                     )
-                    && !c_memories_canonically_equal(fact_memory, memory)
-                    && !c_memories_connected_by_effects(fact_memory, memory, assumptions)
+                    && !memories_canonically_equal(fact_memory, memory)
+                    && !memories_connected_by_effects(fact_memory, memory, assumptions)
                 {
                     return false;
                 }
@@ -688,7 +688,7 @@ fn collect_shallow_operand_variables(term: Operand<'_>, variables: &mut BTreeSet
 /// assumed span.
 fn forall_loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Proposition) -> bool {
     let Proposition::ForAll {
-        sort: Sort::CInt32 | Sort::Bitvector32,
+        sort: Sort::ProgramInt32 | Sort::Bitvector32,
         body,
         ..
     } = goal
@@ -701,7 +701,7 @@ fn forall_loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Proposi
         proposition_conjuncts(premise, &mut premises);
         conclusion = rest.as_ref();
     }
-    if !matches!(conclusion, Proposition::CMemoryLoadable { .. }) {
+    if !matches!(conclusion, Proposition::MemoryLoadable { .. }) {
         return false;
     }
     let premise_assumptions = assumptions_with_propositions(assumptions, &premises);
@@ -769,7 +769,7 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
             }
             let Proposition::ForAll {
                 var: fact_var,
-                sort: Sort::CInt32 | Sort::Bitvector32,
+                sort: Sort::ProgramInt32 | Sort::Bitvector32,
                 body,
                 ..
             } = fact
@@ -793,7 +793,7 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
                         body,
                         *fact_var,
                         target_var,
-                        &Sort::CInt32,
+                        &Sort::ProgramInt32,
                     ) else {
                         return false;
                     };
@@ -805,7 +805,7 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
                     });
                     premises_hold
                         && match conclusion {
-                            Proposition::CMemoryLoadable {
+                            Proposition::MemoryLoadable {
                                 memory: fact_memory,
                                 base: fact_base,
                                 bytes,
@@ -1198,7 +1198,7 @@ impl ContractEntry {
     /// Whether `proposition` is the loadability of memory the entry's
     /// resources hold.
     fn resources_supply(&self, proposition: &Proposition) -> bool {
-        matches!(proposition, Proposition::CMemoryLoadable { .. })
+        matches!(proposition, Proposition::MemoryLoadable { .. })
             && resources_certify_loadability(
                 &self.resource_state,
                 self.resource_state.resources(),
@@ -1210,13 +1210,13 @@ impl ContractEntry {
 
 /// Builds the contract entry of `function` called with `arguments` at
 /// `caller_state`, or says why the contract has none.
-pub fn c_function_contract_entry(
+pub fn program_function_contract_entry(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
 ) -> Result<ContractEntry, String> {
     let (assumptions, facts, resource_state) =
-        c_function_contract_entry_facts(caller_state, function, arguments)?;
+        program_function_contract_entry_facts(caller_state, function, arguments)?;
     let predicate_bodies = function
         .contract_requires()
         .iter()
@@ -1245,7 +1245,7 @@ pub fn c_function_contract_entry(
     // identity whose instantiated body and side obligations the entry proves
     // holds with it, and is the form a proof names.
     let mut identities = Vec::new();
-    if let Some(entry_state) = c_function_entry_state(caller_state, function, arguments) {
+    if let Some(entry_state) = program_function_entry_state(caller_state, function, arguments) {
         let mut budget = ExecutionBudget::for_new_execution();
         for unfolding in function.predicate_unfoldings() {
             let Some((predicate, body)) = instantiate_contract_predicate_unfolding(
@@ -1287,7 +1287,7 @@ pub fn c_function_contract_entry(
 /// why it could not. The failure text is reported to the user: certification
 /// with no paths and no reason is a dead end for whoever wrote the contract,
 /// so every exit below names what stopped it.
-fn c_function_contract_entry_facts(
+fn program_function_contract_entry_facts(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
@@ -1300,7 +1300,8 @@ fn c_function_contract_entry_facts(
         return Err(message.into());
     }
     let mut budget = ExecutionBudget::beside_live_state();
-    let Some(mut entry_state) = c_function_entry_state(caller_state, function, arguments) else {
+    let Some(mut entry_state) = program_function_entry_state(caller_state, function, arguments)
+    else {
         return Err("could not build the contract entry state from the call arguments".to_string());
     };
     if function
@@ -1407,7 +1408,7 @@ fn c_function_contract_entry_facts(
     // parameter is a value of its own format, whose range is the format's.
     for argument in arguments {
         if let ProgramExpression::Value(value) = argument
-            && let Some(facts) = c_bool_cast_range_facts(value)
+            && let Some(facts) = program_bool_cast_range_facts(value)
         {
             for fact in facts {
                 assumptions =
@@ -1632,7 +1633,7 @@ fn c_function_contract_entry_facts(
         assumptions = entry_facts.assume(
             assumptions,
             ContractEntryFactOrigin::ClauseLoadable,
-            Proposition::CMemoryLoadable {
+            Proposition::MemoryLoadable {
                 memory: entry_state.memory().clone(),
                 base: range
                     .base()
@@ -1865,7 +1866,7 @@ fn c_function_contract_entry_facts(
         let Some(mut arguments) = arguments
             .iter()
             .map(|argument| {
-                let AlgebraicValue::C(value) = argument else {
+                let AlgebraicValue::Program(value) = argument else {
                     return None;
                 };
                 Some(Some(SpecExpression::Value(value.clone())))
@@ -2092,7 +2093,7 @@ pub(super) fn instantiate_contract_predicate_unfolding_with_obligations(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn prove_symbolic_c_function_verification_paths(
+pub(super) fn prove_symbolic_program_function_verification_paths(
     state: ExecutionState,
     function: ProgramFunction,
     arguments: Vec<ProgramExpression>,
@@ -2109,10 +2110,10 @@ pub(super) fn prove_symbolic_c_function_verification_paths(
         "kernel variable collection",
         || {
             let mut existing = BTreeSet::new();
-            collect_c_state_bitvector_variables(&state, &mut existing);
-            collect_c_function_bitvector_variables(&function, &mut existing);
+            collect_execution_state_bitvector_variables(&state, &mut existing);
+            collect_program_function_bitvector_variables(&function, &mut existing);
             for argument in &arguments {
-                collect_c_expression_bitvector_variables(argument, &mut existing);
+                collect_program_expression_bitvector_variables(argument, &mut existing);
             }
             collect_assumption_variables(&assumptions, &mut existing);
             collect_execution_environment_variables(&environment, &mut existing);
@@ -2125,7 +2126,7 @@ pub(super) fn prove_symbolic_c_function_verification_paths(
         "independent kernel execution",
         "verification path execution",
         || {
-            execute_c_function_verification_paths(
+            execute_program_function_verification_paths(
                 &state,
                 &function,
                 &arguments,
@@ -2156,7 +2157,7 @@ pub(super) fn prove_symbolic_c_function_verification_paths(
                 .map(|path| {
                     let effect_facts = memory_effect_execution_facts(&path.facts);
                     let facts = public_execution_pure_facts(&path.facts);
-                    let proposition = Proposition::CFunctionVerifies {
+                    let proposition = Proposition::ProgramFunctionVerifies {
                         state: Box::new(state.clone()),
                         function: Box::new(function.clone()),
                         arguments: arguments.clone(),
@@ -2188,7 +2189,7 @@ pub(super) fn prove_symbolic_c_function_verification_paths(
     SymbolicExecution { paths, limit: None }
 }
 
-pub fn c_function_execution_candidates_from_outcomes(
+pub fn program_function_execution_candidates_from_outcomes(
     state: ExecutionState,
     function: ProgramFunction,
     arguments: Vec<ProgramExpression>,
@@ -2198,7 +2199,7 @@ pub fn c_function_execution_candidates_from_outcomes(
         Vec<ProofObligation>,
     )>,
 ) -> FunctionExecutionCandidates {
-    c_function_execution_candidates_from_outcomes_with_loan_evidence(
+    program_function_execution_candidates_from_outcomes_with_loan_evidence(
         state,
         function,
         arguments,
@@ -2216,7 +2217,7 @@ pub fn c_function_execution_candidates_from_outcomes(
     )
 }
 
-pub(crate) fn c_function_execution_candidates_from_outcomes_with_loan_evidence(
+pub(crate) fn program_function_execution_candidates_from_outcomes_with_loan_evidence(
     state: ExecutionState,
     function: ProgramFunction,
     arguments: Vec<ProgramExpression>,
@@ -2244,12 +2245,12 @@ pub(crate) fn c_function_execution_candidates_from_outcomes_with_loan_evidence(
             }
         })
         .collect();
-    c_function_execution_candidates_from_retained_paths(state, function, arguments, paths)
+    program_function_execution_candidates_from_retained_paths(state, function, arguments, paths)
 }
 
 /// Re-publish immutable untrusted candidates without copying their outcome
 /// states or re-classifying their already partitioned fact streams.
-pub(crate) fn c_function_execution_candidates_from_retained_paths(
+pub(crate) fn program_function_execution_candidates_from_retained_paths(
     state: ExecutionState,
     function: ProgramFunction,
     arguments: Vec<ProgramExpression>,
@@ -2313,7 +2314,7 @@ fn execution_effects_are_public_first(facts: &ExecutionFacts) -> bool {
 /// before publishing a fresh outcome. Preserve re-publication's public-then-
 /// private effect order without re-classifying the complete guard stream.
 /// All certification remains independent.
-pub(crate) fn c_function_execution_candidate_with_additional_facts(
+pub(crate) fn program_function_execution_candidate_with_additional_facts(
     candidate: &FunctionExecutionCandidate,
     additional: &ExecutionFacts,
 ) -> FunctionExecutionCandidate {
@@ -2341,7 +2342,7 @@ pub(crate) fn c_function_execution_candidate_with_additional_facts(
     }
 }
 
-pub fn prove_c_function_satisfies_specification_from_symbolic_path(
+pub fn prove_program_function_satisfies_specification_from_symbolic_path(
     function: ProgramFunction,
     specification: FunctionSpecification,
     path: &SymbolicExecutionPath,
@@ -2353,13 +2354,13 @@ pub fn prove_c_function_satisfies_specification_from_symbolic_path(
         proved = body;
     }
     let (state, proved_function, arguments, outcome, verifies) = match proved {
-        Proposition::CFunctionExecutes {
+        Proposition::ProgramFunctionExecutes {
             state,
             function,
             arguments,
             outcome,
         } => (state, function, arguments, outcome, false),
-        Proposition::CFunctionVerifies {
+        Proposition::ProgramFunctionVerifies {
             state,
             function,
             arguments,
@@ -2377,12 +2378,12 @@ pub fn prove_c_function_satisfies_specification_from_symbolic_path(
 
     let requires = specification.requires().to_vec();
     let conclusion = if verifies {
-        Proposition::CFunctionPartiallySatisfiesSpecification {
+        Proposition::ProgramFunctionPartiallySatisfiesSpecification {
             function: Box::new(function),
             specification: Box::new(specification),
         }
     } else {
-        Proposition::CFunctionSatisfiesSpecification {
+        Proposition::ProgramFunctionSatisfiesSpecification {
             function: Box::new(function),
             specification: Box::new(specification),
         }
@@ -2417,13 +2418,13 @@ fn certified_function_path_parts<'a>(
         proposition = body;
     }
     let (state, proved_function, arguments, outcome) = match proposition {
-        Proposition::CFunctionExecutes {
+        Proposition::ProgramFunctionExecutes {
             state,
             function,
             arguments,
             outcome,
         }
-        | Proposition::CFunctionVerifies {
+        | Proposition::ProgramFunctionVerifies {
             state,
             function,
             arguments,
@@ -2503,11 +2504,11 @@ pub(in crate::kernel) fn resource_contexts_definitionally_equal_with_definitions
             if left_quantity == right_quantity =>
         {
             crate::kernel::assumptions::resources_equal_ignoring_memories(left, right)
-                && c_resources_directly_match(left, right, assumptions)
+                && resources_directly_match(left, right, assumptions)
         }
         (ResourceFact::View(left), ResourceFact::View(right)) => {
             crate::kernel::assumptions::resources_equal_ignoring_memories(left, right)
-                && c_resources_directly_match(left, right, assumptions)
+                && resources_directly_match(left, right, assumptions)
         }
         _ => false,
     };
@@ -2669,10 +2670,15 @@ fn freshen_proposition_bodies(
     right_body: &Proposition,
 ) -> (Proposition, Proposition) {
     let fresh = fresh_alpha_comparison_variable(left_body, right_body, left_binder, right_binder);
-    if matches!(sort, Sort::CPointer(_) | Sort::CObjectPointer(_, _)) {
+    if matches!(
+        sort,
+        Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _)
+    ) {
         let pointer = match sort {
-            Sort::CPointer(ProgramType::FunctionPointer(_)) => Pointer::symbolic_function(fresh),
-            Sort::CPointer(_) | Sort::CObjectPointer(_, _) => Pointer::symbolic(fresh),
+            Sort::ProgramPointer(ProgramType::FunctionPointer(_)) => {
+                Pointer::symbolic_function(fresh)
+            }
+            Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _) => Pointer::symbolic(fresh),
             _ => unreachable!("pointer freshening only handles pointer sorts"),
         };
         (
@@ -2720,12 +2726,17 @@ pub(crate) fn substitute_quantified_body_capture_free(
         return None;
     }
     Some(
-        if matches!(sort, Sort::CPointer(_) | Sort::CObjectPointer(_, _)) {
+        if matches!(
+            sort,
+            Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _)
+        ) {
             let pointer = match sort {
-                Sort::CPointer(ProgramType::FunctionPointer(_)) => {
+                Sort::ProgramPointer(ProgramType::FunctionPointer(_)) => {
                     Pointer::symbolic_function(target)
                 }
-                Sort::CPointer(_) | Sort::CObjectPointer(_, _) => Pointer::symbolic(target),
+                Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _) => {
+                    Pointer::symbolic(target)
+                }
                 _ => unreachable!("pointer substitution only handles pointer sorts"),
             };
             substitute_pointer_variable_in_proposition(body, binder, &pointer)
@@ -2807,13 +2818,13 @@ pub(crate) fn propositions_alpha_equivalent(left: &Proposition, right: &Proposit
             Proposition::Equal(Term::Algebraic(bl), Term::Algebraic(br)),
         ) => retained_syntax::algebraic_equal(al, bl) && retained_syntax::algebraic_equal(ar, br),
         (
-            Proposition::CMemoryLoadable {
+            Proposition::MemoryLoadable {
                 memory: left_memory,
                 base: left_base,
                 bytes: left_bytes,
                 wide: false,
             },
-            Proposition::CMemoryLoadable {
+            Proposition::MemoryLoadable {
                 memory: right_memory,
                 base: right_base,
                 bytes: right_bytes,
@@ -2942,7 +2953,7 @@ pub(crate) fn condition_holds_by_instantiated_fact(
         "certification proof: quantified condition facts",
         || {
             // Only a universal concluding a condition of this shape can
-            // state it (`c_condition_facts_equivalent_for_memory_resolution`
+            // state it (`program_condition_facts_equivalent_for_memory_resolution`
             // relates one relation to itself).
             assumptions
                 .universals_concluding(
@@ -2963,7 +2974,7 @@ pub(crate) fn condition_holds_by_instantiated_fact(
                                 return false;
                             };
                             *instance_value == value
-                                && c_condition_facts_equivalent_for_memory_resolution(
+                                && program_condition_facts_equivalent_for_memory_resolution(
                                     body,
                                     &Proposition::ConditionIs(condition.clone(), value),
                                     assumptions,
@@ -3237,7 +3248,7 @@ pub(super) fn resources_certify_loadability(
         }
         _ => {}
     }
-    let Proposition::CMemoryLoadable {
+    let Proposition::MemoryLoadable {
         memory,
         base,
         bytes,
@@ -3294,7 +3305,7 @@ mod shared_contract_operand_tests {
             SharedMachineIntegerTerm::index(
                 MachineIntegerType::Int32,
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_c_memory(memory),
+                    crate::kernel::intern_memory(memory),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Int32,
                 ),
@@ -3337,7 +3348,7 @@ mod shared_contract_operand_tests {
                     ProgramValue::Int32(MachineTerm::Variable(Variable(id))),
                 );
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(memory),
+                crate::kernel::intern_memory(memory),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             )

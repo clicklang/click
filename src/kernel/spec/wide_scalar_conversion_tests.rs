@@ -6,12 +6,12 @@ fn wide_multiply_integer_capture_requires_both_native_product_bounds() {
     let product = IntegerTerm::multiply(
         IntegerTerm::from_machine(
             MachineIntegerType::Int128,
-            c_value_bitvector_term(&left).unwrap(),
+            program_value_bitvector_term(&left).unwrap(),
         )
         .unwrap(),
         IntegerTerm::from_machine(
             MachineIntegerType::Int128,
-            c_value_bitvector_term(&right).unwrap(),
+            program_value_bitvector_term(&right).unwrap(),
         )
         .unwrap(),
     );
@@ -20,7 +20,7 @@ fn wide_multiply_integer_capture_requires_both_native_product_bounds() {
         ConditionTerm::integer_greater_equal(product.clone(), IntegerTerm::constant(min)),
         ConditionTerm::integer_less_equal(product.clone(), IntegerTerm::constant(max)),
     ];
-    let native = c_multiply(
+    let native = crate::kernel::program_expression::multiply(
         ProgramExpression::Value(left),
         ProgramExpression::Value(right),
     );
@@ -70,7 +70,10 @@ fn wide_multiply_integer_capture_requires_both_native_product_bounds() {
         }
     }
     let overflow = SpecIntegerExpression::FromMachine(Box::new(SpecExpression::ProgramExpression(
-        c_multiply(c_int128_literal(i128::MIN), c_int128_literal(-1)),
+        crate::kernel::program_expression::multiply(
+            crate::kernel::program_expression::int128_literal(i128::MIN),
+            crate::kernel::program_expression::int128_literal(-1),
+        ),
     )));
     assert!(
         capture_spec_integer_value(

@@ -65,7 +65,7 @@ pub(super) fn record(memory: &Memory, address: &Pointer, value: &ProgramValue) {
     };
     crate::instrumentation::record_deterministic_work(1);
     let kind = kind.key();
-    let memory = crate::kernel::intern_c_memory_ref(memory);
+    let memory = crate::kernel::intern_memory_ref(memory);
     READS.with(|reads| {
         let mut slot = reads.borrow_mut();
         let reads = slot.as_mut().expect("active typed read scope");
@@ -93,7 +93,7 @@ pub(in crate::kernel) fn get(
             .borrow()
             .as_ref()?
             .get(&(
-                crate::kernel::intern_c_memory_ref(memory),
+                crate::kernel::intern_memory_ref(memory),
                 address.clone(),
                 kind.key(),
             ))

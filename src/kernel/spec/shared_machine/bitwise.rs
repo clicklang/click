@@ -13,7 +13,7 @@ fn constant(format: MachineIntegerType, bits: u64) -> KernelTerm {
     KernelTerm::retained_native_machine_operand(format, &value)
 }
 fn bits(value: &KernelTerm) -> Option<u64> {
-    let KernelType::C(ty) = value.ty() else {
+    let KernelType::Program(ty) = value.ty() else {
         return None;
     };
     let format = MachineIntegerType::from_c_type(*ty)?;

@@ -57,7 +57,7 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
         let member_spec = ResourceSpec::composite(
             ResourceAccessMode::Own,
             "member".into(),
-            vec![c_variable("p")],
+            vec![crate::kernel::program_expression::variable("p")],
             vec![ProgramType::Int32Pointer],
         );
         let authority_spec = ResourceSpec::new(
@@ -78,7 +78,7 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
         let consumed = ResourceSpec::new(
             member_spec.term().clone(),
             ResourceAccessMode::Own,
-            ResourceQuantity::Count(c_int32_literal(amount)),
+            ResourceQuantity::Count(crate::kernel::program_expression::int32_literal(amount)),
             ResourceTransferRole::Consume,
             ResourceSnapshot::Entry,
         )
@@ -86,16 +86,16 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
         let produced = ResourceSpec::new(
             member_spec.term().clone(),
             ResourceAccessMode::Own,
-            ResourceQuantity::Count(c_int32_literal(amount - 1)),
+            ResourceQuantity::Count(crate::kernel::program_expression::int32_literal(amount - 1)),
             ResourceTransferRole::Produce,
             ResourceSnapshot::Post,
         )
         .unwrap();
-        let function = c_function(
+        let function = program_function(
             ProgramType::Void,
             "shrink",
-            vec![c_parameter("p", ProgramType::Int32Pointer)],
-            c_return(c_void_value()),
+            vec![program_parameter("p", ProgramType::Int32Pointer)],
+            program_return(program_void_value()),
         )
         .with_resource_summary(
             vec![authority_spec.clone(), consumed],
@@ -103,7 +103,7 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
         )
         .with_composite_resource_definitions(vec![CompositeResourceDefinition::new(
             "member",
-            vec![c_parameter("p", ProgramType::Int32Pointer)],
+            vec![program_parameter("p", ProgramType::Int32Pointer)],
             None,
             false,
             vec![],
@@ -209,7 +209,7 @@ fn contained_transfer_frontier_scales_with_selected_depth_and_indexed_definition
     let definition = |name: String, next: Option<String>| {
         CompositeResourceDefinition::new(
             name,
-            vec![c_parameter("p", ProgramType::Int32Pointer)],
+            vec![program_parameter("p", ProgramType::Int32Pointer)],
             None,
             false,
             next.into_iter()
@@ -217,7 +217,7 @@ fn contained_transfer_frontier_scales_with_selected_depth_and_indexed_definition
                     ResourceSpec::composite(
                         ResourceAccessMode::Own,
                         next,
-                        vec![c_variable("p")],
+                        vec![crate::kernel::program_expression::variable("p")],
                         vec![ProgramType::Int32Pointer],
                     )
                 })
@@ -279,10 +279,10 @@ fn contained_transfer_frontier_scales_with_selected_depth_and_indexed_definition
 #[test]
 fn boundary_receipt_rejects_other_callers_functions_and_arguments() {
     let caller = ExecutionState::new().with_local("kept", int32(7));
-    let function = Arc::new(c_function(
+    let function = Arc::new(program_function(
         ProgramType::Void,
         "entry_receipt",
-        vec![c_parameter("value", ProgramType::Int32)],
+        vec![program_parameter("value", ProgramType::Int32)],
         ProgramStatement::Skip,
     ));
     let arguments = vec![ProgramExpression::Value(int32(3))];
@@ -355,9 +355,9 @@ fn boundary_receipt_rejects_other_callers_functions_and_arguments() {
 fn authority_helper_rejects_resource_constructors() {
     let mut interface = FunctionContractInterface::new(ProgramType::Int32, Vec::new());
     interface.resource_constructors = vec![ResourceSpec::owned_memory(MemorySegment::new(
-        c_int32_literal(0),
-        c_int32_literal(0),
-        c_int32_literal(1),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(1),
     ))];
     assert!(!authority_preserves_resource_contract(&interface));
 }
@@ -376,13 +376,13 @@ fn assumed_authority_contracts_preserve_named_identity_without_lifecycle_rights(
     let identity = Variable::allocate_fresh().unwrap();
     let schema = ResourceFieldSchema::new(vec![(
         "serial".into(),
-        ResourceFieldType::C(ProgramType::Int32),
+        ResourceFieldType::Program(ProgramType::Int32),
     )])
     .unwrap();
     let member = ResourceSpec::composite(
         ResourceAccessMode::Own,
         "ticket".into(),
-        vec![c_variable("p")],
+        vec![crate::kernel::program_expression::variable("p")],
         vec![ProgramType::Int32Pointer],
     );
     let named = ResourceSpec::instance(
@@ -443,7 +443,7 @@ fn companion_interface(member_family: &str) -> FunctionContractInterface {
     let member = ResourceSpec::composite(
         ResourceAccessMode::Own,
         member_family.into(),
-        vec![c_variable("p")],
+        vec![crate::kernel::program_expression::variable("p")],
         vec![ProgramType::Int32Pointer],
     );
     let authority = ResourceSpec::new(
@@ -462,9 +462,9 @@ fn companion_interface(member_family: &str) -> FunctionContractInterface {
     )
     .unwrap();
     let memory = ResourceSpec::owned_memory(MemorySegment::new(
-        c_variable("slot"),
-        c_int32_literal(0),
-        c_int32_literal(1),
+        crate::kernel::program_expression::variable("slot"),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(1),
     ));
     let parent = ResourceSpec::instance(
         Variable(991_010),
@@ -473,14 +473,14 @@ fn companion_interface(member_family: &str) -> FunctionContractInterface {
         ResourceSpec::composite(
             ResourceAccessMode::Own,
             "parent".into(),
-            vec![c_variable("slot")],
+            vec![crate::kernel::program_expression::variable("slot")],
             vec![ProgramType::Int32Pointer],
         ),
         ResourceTransferRole::Produce,
         ResourceSnapshot::Post,
     )
     .unwrap();
-    c_function(
+    program_function(
         ProgramType::Void,
         "retain_with_companions",
         vec![],
@@ -518,7 +518,10 @@ fn member_move_admission_requires_two_scoped_authorities_and_one_unchanged_membe
         ResourceSpec::composite(
             ResourceAccessMode::Own,
             "slot".into(),
-            vec![c_variable(anchor), c_variable(trailing)],
+            vec![
+                crate::kernel::program_expression::variable(anchor),
+                crate::kernel::program_expression::variable(trailing),
+            ],
             vec![ProgramType::Int32Pointer, ProgramType::Int32Pointer],
         )
     };
@@ -530,7 +533,7 @@ fn member_move_admission_requires_two_scoped_authorities_and_one_unchanged_membe
                     resource: Box::new(ResourceSpec::composite(
                         ResourceAccessMode::Own,
                         "slot".into(),
-                        vec![c_variable(anchor)],
+                        vec![crate::kernel::program_expression::variable(anchor)],
                         vec![ProgramType::Int32Pointer],
                     )),
                     schema: ResourceFieldSchema::new(vec![]).unwrap(),
@@ -546,7 +549,7 @@ fn member_move_admission_requires_two_scoped_authorities_and_one_unchanged_membe
     };
     let source = authority("source");
     let destination = authority("destination");
-    let interface = c_function(ProgramType::Void, "move", vec![], ProgramStatement::Skip)
+    let interface = program_function(ProgramType::Void, "move", vec![], ProgramStatement::Skip)
         .with_resource_summary(
             vec![
                 source.clone(),
@@ -594,7 +597,10 @@ fn family_exchange_admission_requires_both_exact_authorities_and_one_effect_each
         ResourceSpec::new(
             ResourceTerm::PopulationAuthority {
                 protected: Box::new(ResourceTypeSpec {
-                    resource: Box::new(member(name, vec![c_variable("pool")])),
+                    resource: Box::new(member(
+                        name,
+                        vec![crate::kernel::program_expression::variable("pool")],
+                    )),
                     schema: ResourceFieldSchema::new(vec![]).unwrap(),
                 }),
                 population_arity: arity,
@@ -609,7 +615,7 @@ fn family_exchange_admission_requires_both_exact_authorities_and_one_effect_each
     };
     let capacity = authority("capacity", None);
     let item = authority("item", Some(2));
-    let interface = c_function(
+    let interface = program_function(
         ProgramType::Void,
         "checkout",
         vec![],
@@ -619,13 +625,23 @@ fn family_exchange_admission_requires_both_exact_authorities_and_one_effect_each
         vec![
             capacity.clone(),
             item.clone(),
-            member("capacity", vec![c_variable("pool")]).with_role(ResourceTransferRole::Consume),
+            member(
+                "capacity",
+                vec![crate::kernel::program_expression::variable("pool")],
+            )
+            .with_role(ResourceTransferRole::Consume),
         ],
         vec![
             capacity,
             item,
-            member("item", vec![c_variable("pool"), c_variable("p")])
-                .with_role(ResourceTransferRole::Produce),
+            member(
+                "item",
+                vec![
+                    crate::kernel::program_expression::variable("pool"),
+                    crate::kernel::program_expression::variable("p"),
+                ],
+            )
+            .with_role(ResourceTransferRole::Produce),
         ],
     )
     .contract_interface()
@@ -650,17 +666,23 @@ fn family_exchange_admission_requires_both_exact_authorities_and_one_effect_each
         .push(duplicate.resource_ensures[2].clone());
     assert!(!authority_supports_resource_contract(&duplicate));
     let mut wrong_anchor = interface;
-    wrong_anchor.resource_ensures[2] = member("item", vec![c_variable("other"), c_variable("p")])
-        .with_role(ResourceTransferRole::Produce);
+    wrong_anchor.resource_ensures[2] = member(
+        "item",
+        vec![
+            crate::kernel::program_expression::variable("other"),
+            crate::kernel::program_expression::variable("p"),
+        ],
+    )
+    .with_role(ResourceTransferRole::Produce);
     assert!(!authority_supports_resource_contract(&wrong_anchor));
 }
 
 #[test]
 fn four_effect_exchange_admission_checks_every_scope_quantity_and_exact_identity() {
     let member = |family: &str, anchor: &str, item: bool| {
-        let mut arguments = vec![c_variable(anchor)];
+        let mut arguments = vec![crate::kernel::program_expression::variable(anchor)];
         if item {
-            arguments.push(c_variable("p"));
+            arguments.push(crate::kernel::program_expression::variable("p"));
         }
         let types = vec![ProgramType::Int32Pointer; arguments.len()];
         ResourceSpec::composite(ResourceAccessMode::Own, family.into(), arguments, types)
@@ -698,7 +720,7 @@ fn four_effect_exchange_admission_checks_every_scope_quantity_and_exact_identity
         member("item", "destination", true).with_role(ResourceTransferRole::Produce),
         member("slot", "source", false).with_role(ResourceTransferRole::Produce),
     ]);
-    let interface = c_function(
+    let interface = program_function(
         ProgramType::Void,
         "exchange",
         vec![],
@@ -733,7 +755,7 @@ fn four_effect_exchange_admission_checks_every_scope_quantity_and_exact_identity
         nonunit.resource_ensures[index] = ResourceSpec::new(
             original.term().clone(),
             original.access(),
-            ResourceQuantity::Count(c_int32_literal(2)),
+            ResourceQuantity::Count(crate::kernel::program_expression::int32_literal(2)),
             original.role(),
             original.snapshot(),
         )
@@ -744,7 +766,10 @@ fn four_effect_exchange_admission_checks_every_scope_quantity_and_exact_identity
     changed_item.resource_ensures[4] = ResourceSpec::composite(
         ResourceAccessMode::Own,
         "item".into(),
-        vec![c_variable("destination"), c_variable("q")],
+        vec![
+            crate::kernel::program_expression::variable("destination"),
+            crate::kernel::program_expression::variable("q"),
+        ],
         vec![ProgramType::Int32Pointer; 2],
     )
     .with_role(ResourceTransferRole::Produce);
@@ -766,7 +791,7 @@ fn two_control_births_require_each_scope_return_and_unit_effect() {
         ResourceSpec::composite(
             ResourceAccessMode::Own,
             name.into(),
-            vec![c_variable(anchor)],
+            vec![crate::kernel::program_expression::variable(anchor)],
             vec![ProgramType::Int32Pointer],
         )
     };
@@ -788,7 +813,7 @@ fn two_control_births_require_each_scope_return_and_unit_effect() {
     let definition = |name: &str| {
         CompositeResourceDefinition::new(
             name,
-            vec![c_parameter("p", ProgramType::Int32Pointer)],
+            vec![program_parameter("p", ProgramType::Int32Pointer)],
             None,
             false,
             vec![authority.clone()],
@@ -798,7 +823,7 @@ fn two_control_births_require_each_scope_return_and_unit_effect() {
     let input = |anchor| composite("storage", anchor).with_role(ResourceTransferRole::Consume);
     let output = |anchor| composite("control", anchor).with_role(ResourceTransferRole::Produce);
     let birth = |anchor| composite("slot", anchor).with_role(ResourceTransferRole::Produce);
-    let interface = c_function(ProgramType::Void, "pair", vec![], ProgramStatement::Skip)
+    let interface = program_function(ProgramType::Void, "pair", vec![], ProgramStatement::Skip)
         .with_resource_summary(
             vec![input("first"), input("second")],
             vec![
@@ -833,7 +858,7 @@ fn two_control_births_require_each_scope_return_and_unit_effect() {
         nonunit.resource_ensures[index] = ResourceSpec::new(
             old.term().clone(),
             old.access(),
-            ResourceQuantity::Count(c_int32_literal(2)),
+            ResourceQuantity::Count(crate::kernel::program_expression::int32_literal(2)),
             old.role(),
             old.snapshot(),
         )
@@ -866,7 +891,7 @@ fn member_effect_requires_its_own_authority_family() {
     interface.resource_ensures[1] = ResourceSpec::composite(
         ResourceAccessMode::Own,
         "different".into(),
-        vec![c_variable("p")],
+        vec![crate::kernel::program_expression::variable("p")],
         vec![ProgramType::Int32Pointer],
     )
     .with_role(ResourceTransferRole::Produce);
@@ -881,7 +906,7 @@ fn effect_cannot_hide_an_unprotected_composite_birth() {
         ResourceSpec::composite(
             ResourceAccessMode::Own,
             "unprotected".into(),
-            vec![c_variable("p")],
+            vec![crate::kernel::program_expression::variable("p")],
             vec![ProgramType::Int32Pointer],
         )
         .with_role(ResourceTransferRole::Produce),

@@ -191,7 +191,7 @@ mod tests {
 
     fn imported(body: ProgramStatement) -> C0Function {
         C0Function::external(C0Type::Void, "imported".into(), vec![])
-            .with_prelowered_kernel_function(c_function(
+            .with_prelowered_kernel_function(program_function(
                 ProgramType::Void,
                 "imported",
                 vec![],
@@ -203,18 +203,18 @@ mod tests {
     // C bodies, and array/aggregate names already expose their storage address.
     #[test]
     fn imported_addressability_tracks_captures_escapes_and_arrays() {
-        let first = imported(c_seq(
-            c_declare("capture", ProgramType::Int32Pointer),
-            c_seq(
-                c_declare("escaped", ProgramType::Int32),
-                c_declare("array", ProgramType::Int32Array(2)),
+        let first = imported(program_seq(
+            program_declare("capture", ProgramType::Int32Pointer),
+            program_seq(
+                program_declare("escaped", ProgramType::Int32),
+                program_declare("array", ProgramType::Int32Array(2)),
             ),
         ));
-        let second = imported(c_call(
+        let second = imported(program_call(
             "callee",
-            vec![ProgramExpression::AddressOf(Box::new(c_variable(
-                "escaped",
-            )))],
+            vec![ProgramExpression::AddressOf(Box::new(
+                crate::kernel::program_expression::variable("escaped"),
+            ))],
         ));
         let summary = summarize_address_taken([&first, &second]);
         assert!(summary.never_taken().contains("capture"));
@@ -224,9 +224,9 @@ mod tests {
 
     #[test]
     fn opaque_imported_pointer_literals_disable_the_bundle_summary() {
-        let function = imported(c_seq(
-            c_declare("capture", ProgramType::Int32),
-            c_return(c_pointer_value(Pointer {
+        let function = imported(program_seq(
+            program_declare("capture", ProgramType::Int32),
+            program_return(crate::kernel::program_expression::pointer_value(Pointer {
                 block: "local:capture".into(),
                 offset: PointerOffsetTerm::Constant(0),
             })),

@@ -250,7 +250,7 @@ fn snapshot_blind_same_bucket_lookup_scales_without_deep_dedup() {
                 // premises: each read may consistently equal zero.
                 ProgramValue::Int32(MachineTerm::Variable(Variable(986_000 + value as u64))),
             );
-            memories.push(crate::kernel::intern_c_memory(memory));
+            memories.push(crate::kernel::intern_memory(memory));
         }
         let load = |memory: &crate::kernel::SharedMemory| {
             MachineTerm::MemoryLoad(
@@ -396,7 +396,8 @@ fn exact_call_lookup_retains_shared_argument_prefixes() {
     for depth in [16, 64, 256] {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(998_900));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(998_900));
         for _ in 0..depth {
             root = KernelTerm::machine_binary_shared(
                 format,

@@ -5,8 +5,8 @@ use crate::kernel::uint64_constant;
 use num_bigint::BigInt;
 
 fn evaluated(expression: ProgramExpression) -> ExpressionOutcome {
-    let theorem = prove_c_expression_evaluation(ExecutionState::new(), expression).unwrap();
-    let Proposition::CExpressionEvaluates { outcome, .. } = theorem.proposition() else {
+    let theorem = prove_program_expression_evaluation(ExecutionState::new(), expression).unwrap();
+    let Proposition::ProgramExpressionEvaluates { outcome, .. } = theorem.proposition() else {
         panic!("expected expression evaluation");
     };
     outcome.clone()
@@ -43,7 +43,7 @@ fn wide_scalar_literals_preserve_full_payload_and_exact_integer_observations() {
         );
     }
     assert_eq!(
-        evaluated(c_int128_literal(i128::MIN)),
+        evaluated(crate::kernel::program_expression::int128_literal(i128::MIN)),
         evaluated(ProgramExpression::Value(
             MachineIntegerType::Int128
                 .constant_value(
@@ -57,7 +57,9 @@ fn wide_scalar_literals_preserve_full_payload_and_exact_integer_observations() {
         ))
     );
     assert_eq!(
-        evaluated(c_uint128_literal(u128::MAX)),
+        evaluated(crate::kernel::program_expression::uint128_literal(
+            u128::MAX
+        )),
         evaluated(ProgramExpression::Value(
             MachineIntegerType::UInt128
                 .constant_value(
@@ -75,18 +77,28 @@ fn wide_scalar_literals_preserve_full_payload_and_exact_integer_observations() {
 #[test]
 fn wide_scalar_locals_declare_assign_and_return_without_word_truncation() {
     for (ty, literal) in [
-        (ProgramType::Int128, c_int128_literal(i128::MIN)),
-        (ProgramType::UInt128, c_uint128_literal(u128::MAX)),
+        (
+            ProgramType::Int128,
+            crate::kernel::program_expression::int128_literal(i128::MIN),
+        ),
+        (
+            ProgramType::UInt128,
+            crate::kernel::program_expression::uint128_literal(u128::MAX),
+        ),
     ] {
         let ExpressionOutcome::Value(expected) = evaluated(literal.clone()) else {
             unreachable!()
         };
-        let statement = c_seq(
-            c_declare("wide", ty),
-            c_seq(c_assign("wide", literal), c_return(c_variable("wide"))),
+        let statement = program_seq(
+            program_declare("wide", ty),
+            program_seq(
+                program_assign("wide", literal),
+                program_return(crate::kernel::program_expression::variable("wide")),
+            ),
         );
-        let theorem = prove_c_statement_execution(ExecutionState::new(), statement).unwrap();
-        let Proposition::CStatementExecutes { outcome, .. } = theorem.proposition() else {
+        let theorem =
+            prove_execution_statement_execution(ExecutionState::new(), statement).unwrap();
+        let Proposition::ProgramStatementExecutes { outcome, .. } = theorem.proposition() else {
             unreachable!()
         };
         let StatementOutcome::Return { value, state } = outcome else {
@@ -103,8 +115,12 @@ fn wide_scalar_symbolic_identity_substitution_and_observation_preserve_type() {
         let variable = Variable(148_001);
         let value = symbolic_call_result(ty.c_type(), variable);
         let state = ExecutionState::new().with_local("wide", value.clone());
-        let theorem = prove_c_expression_evaluation(state, c_variable("wide")).unwrap();
-        let Proposition::CExpressionEvaluates { outcome, .. } = theorem.proposition() else {
+        let theorem = prove_program_expression_evaluation(
+            state,
+            crate::kernel::program_expression::variable("wide"),
+        )
+        .unwrap();
+        let Proposition::ProgramExpressionEvaluates { outcome, .. } = theorem.proposition() else {
             unreachable!()
         };
         assert_eq!(outcome, &ExpressionOutcome::Value(value.clone()));
@@ -117,7 +133,7 @@ fn wide_scalar_symbolic_identity_substitution_and_observation_preserve_type() {
         let (min, max) = ty.format().bounds();
         for integer in [min, max] {
             let constant = MachineIntegerConstant::from_integer(ty.format(), &integer).unwrap();
-            let substituted = substitute_bitvector_variable_in_c_value(
+            let substituted = substitute_bitvector_variable_in_program_value(
                 &value,
                 variable,
                 &ty.constant_term(constant).unwrap(),
@@ -167,9 +183,18 @@ fn wide_scalar_rejects_legacy_carriers_and_unsupported_arithmetic() {
         }
     }
     for expression in [
-        c_add(c_int128_literal(1), c_int128_literal(2)),
-        c_multiply(c_uint128_literal(1), c_uint128_literal(2)),
-        c_subtract(c_int128_literal(1), c_int128_literal(2)),
+        crate::kernel::program_expression::add(
+            crate::kernel::program_expression::int128_literal(1),
+            crate::kernel::program_expression::int128_literal(2),
+        ),
+        crate::kernel::program_expression::multiply(
+            crate::kernel::program_expression::uint128_literal(1),
+            crate::kernel::program_expression::uint128_literal(2),
+        ),
+        crate::kernel::program_expression::subtract(
+            crate::kernel::program_expression::int128_literal(1),
+            crate::kernel::program_expression::int128_literal(2),
+        ),
     ] {
         assert_mismatch(expression);
     }
@@ -188,14 +213,23 @@ fn wide_scalar_rejects_legacy_carriers_and_unsupported_arithmetic() {
 #[test]
 fn wide_scalar_truthiness_uses_all_bits_and_retains_symbolic_guards() {
     for (expression, expected) in [
-        (c_uint128_literal(0), 1),
-        (c_uint128_literal(1u128 << 64), 0),
-        (c_uint128_literal(u128::MAX), 0),
-        (c_int128_literal(i128::MIN), 0),
-        (c_int128_literal(0), 1),
+        (crate::kernel::program_expression::uint128_literal(0), 1),
+        (
+            crate::kernel::program_expression::uint128_literal(1u128 << 64),
+            0,
+        ),
+        (
+            crate::kernel::program_expression::uint128_literal(u128::MAX),
+            0,
+        ),
+        (
+            crate::kernel::program_expression::int128_literal(i128::MIN),
+            0,
+        ),
+        (crate::kernel::program_expression::int128_literal(0), 1),
     ] {
         assert_eq!(
-            evaluated(c_not(expression)),
+            evaluated(crate::kernel::program_expression::not(expression)),
             ExpressionOutcome::Value(int32(expected))
         );
     }
@@ -203,12 +237,13 @@ fn wide_scalar_truthiness_uses_all_bits_and_retains_symbolic_guards() {
         "wide",
         symbolic_call_result(ProgramType::UInt128, Variable(148_004)),
     );
-    let expression = c_not(c_variable("wide"));
-    let paths = evaluate_c_expression_paths(
+    let expression =
+        crate::kernel::program_expression::not(crate::kernel::program_expression::variable("wide"));
+    let paths = evaluate_program_expression_paths(
         &state,
         &expression,
         &PureFactContext::new(),
-        &mut ExecutionBudget::for_c_expression(&expression),
+        &mut ExecutionBudget::for_program_expression(&expression),
     )
     .unwrap();
     assert_eq!(paths.len(), 2);
@@ -227,13 +262,25 @@ fn wide_scalar_truthiness_uses_all_bits_and_retains_symbolic_guards() {
 #[test]
 fn wide_scalar_boolean_cast_observes_high_bits_without_narrowing() {
     for (input, expected) in [
-        (c_uint128_literal(0), 0),
-        (c_uint128_literal(1u128 << 64), 1),
-        (c_uint128_literal(u128::MAX), 1),
-        (c_int128_literal(i128::MIN), 1),
+        (crate::kernel::program_expression::uint128_literal(0), 0),
+        (
+            crate::kernel::program_expression::uint128_literal(1u128 << 64),
+            1,
+        ),
+        (
+            crate::kernel::program_expression::uint128_literal(u128::MAX),
+            1,
+        ),
+        (
+            crate::kernel::program_expression::int128_literal(i128::MIN),
+            1,
+        ),
     ] {
         assert_eq!(
-            evaluated(c_cast(input, ProgramType::Bool)),
+            evaluated(crate::kernel::program_expression::cast(
+                input,
+                ProgramType::Bool
+            )),
             ExpressionOutcome::Value(ProgramValue::bool_constant(expected == 1))
         );
     }
@@ -242,25 +289,31 @@ fn wide_scalar_boolean_cast_observes_high_bits_without_narrowing() {
 #[test]
 fn wide_scalar_function_parameters_and_returns_keep_caller_storage() {
     for (ty, argument) in [
-        (ProgramType::Int128, c_int128_literal(i128::MIN)),
-        (ProgramType::UInt128, c_uint128_literal(u128::MAX)),
+        (
+            ProgramType::Int128,
+            crate::kernel::program_expression::int128_literal(i128::MIN),
+        ),
+        (
+            ProgramType::UInt128,
+            crate::kernel::program_expression::uint128_literal(u128::MAX),
+        ),
     ] {
-        let function = c_function(
+        let function = program_function(
             ty,
             "wide_identity",
-            vec![c_parameter("input", ty)],
-            c_return(c_variable("input")),
+            vec![program_parameter("input", ty)],
+            program_return(crate::kernel::program_expression::variable("input")),
         );
         let state = ExecutionState::new().with_local("caller", int32(99));
         let expected = evaluated(argument.clone());
-        let theorem = prove_symbolic_c_function_execution(
+        let theorem = prove_symbolic_program_function_execution(
             state.clone(),
             function,
             vec![argument],
             PureFactContext::new(),
         )
         .unwrap();
-        let Proposition::CFunctionExecutes { outcome, .. } = theorem.proposition() else {
+        let Proposition::ProgramFunctionExecutes { outcome, .. } = theorem.proposition() else {
             unreachable!()
         };
         let FunctionOutcome::Return {
@@ -329,51 +382,70 @@ fn wide_cast_widening_preserves_integer_observation_but_narrowing_does_not() {
 #[test]
 fn wide_cast_runtime_preserves_modulo_policy_and_operand_definedness() {
     assert_eq!(
-        evaluated(c_integer_cast_modulo(
-            c_int128_literal(-1),
+        evaluated(crate::kernel::program_expression::integer_cast_modulo(
+            crate::kernel::program_expression::int128_literal(-1),
             ProgramType::UInt64
         )),
-        evaluated(c_uint64_literal(u64::MAX))
+        evaluated(crate::kernel::program_expression::uint64_literal(u64::MAX))
     );
     assert_eq!(
-        evaluated(c_integer_cast_modulo(
-            c_uint128_literal(u128::MAX),
+        evaluated(crate::kernel::program_expression::integer_cast_modulo(
+            crate::kernel::program_expression::uint128_literal(u128::MAX),
             ProgramType::Int64
         )),
-        evaluated(c_int64_literal(-1))
+        evaluated(crate::kernel::program_expression::int64_literal(-1))
     );
     assert_eq!(
-        evaluated(c_integer_cast_modulo(
-            c_int64_literal(-1),
+        evaluated(crate::kernel::program_expression::integer_cast_modulo(
+            crate::kernel::program_expression::int64_literal(-1),
             ProgramType::UInt128
         )),
-        evaluated(c_uint128_literal(u128::MAX))
+        evaluated(crate::kernel::program_expression::uint128_literal(
+            u128::MAX
+        ))
     );
     assert_eq!(
-        evaluated(c_cast(c_uint64_literal(u64::MAX), ProgramType::Int128)),
-        evaluated(c_int128_literal(i128::from(u64::MAX)))
+        evaluated(crate::kernel::program_expression::cast(
+            crate::kernel::program_expression::uint64_literal(u64::MAX),
+            ProgramType::Int128
+        )),
+        evaluated(crate::kernel::program_expression::int128_literal(
+            i128::from(u64::MAX)
+        ))
     );
     assert_eq!(
-        evaluated(c_cast(c_int128_literal(-1), ProgramType::UInt64)),
-        evaluated(c_uint64_literal(u64::MAX))
+        evaluated(crate::kernel::program_expression::cast(
+            crate::kernel::program_expression::int128_literal(-1),
+            ProgramType::UInt64
+        )),
+        evaluated(crate::kernel::program_expression::uint64_literal(u64::MAX))
     );
     assert!(
-        prove_c_expression_evaluation(
+        prove_program_expression_evaluation(
             ExecutionState::new(),
-            c_cast(c_uint128_literal(u128::MAX), ProgramType::Int64),
+            crate::kernel::program_expression::cast(
+                crate::kernel::program_expression::uint128_literal(u128::MAX),
+                ProgramType::Int64
+            ),
         )
         .is_none()
     );
     assert!(matches!(
-        evaluated(c_integer_cast_modulo(
-            c_divide(c_int64_literal(1), c_int64_literal(0)),
+        evaluated(crate::kernel::program_expression::integer_cast_modulo(
+            crate::kernel::program_expression::divide(
+                crate::kernel::program_expression::int64_literal(1),
+                crate::kernel::program_expression::int64_literal(0)
+            ),
             ProgramType::Int128
         )),
         ExpressionOutcome::UndefinedBehavior(_)
     ));
     assert!(matches!(
-        evaluated(c_integer_cast_modulo(
-            c_add(c_int64_literal(i64::MAX), c_int64_literal(1)),
+        evaluated(crate::kernel::program_expression::integer_cast_modulo(
+            crate::kernel::program_expression::add(
+                crate::kernel::program_expression::int64_literal(i64::MAX),
+                crate::kernel::program_expression::int64_literal(1)
+            ),
             ProgramType::Int128
         )),
         ExpressionOutcome::UndefinedBehavior(_)
@@ -384,7 +456,7 @@ fn wide_cast_runtime_preserves_modulo_policy_and_operand_definedness() {
 fn wide_cast_specification_signed_narrowing_keeps_both_range_obligations() {
     let mut none = Vec::new();
     assert!(
-        crate::kernel::eval::coerce_c_value_to_type(
+        crate::kernel::eval::coerce_program_value_to_type(
             ProgramValue::Int128(MachineTerm::Variable(Variable(149_005))),
             ProgramType::Int64,
             &mut none,
@@ -394,9 +466,9 @@ fn wide_cast_specification_signed_narrowing_keeps_both_range_obligations() {
             && none.is_empty()
     );
     // A specification's conversion owes the range; C's owes nothing.
-    let coerce_c_value_to_type =
+    let coerce_program_value_to_type =
         |value, target, obligations: &mut Vec<ProofObligation>, assumptions: &PureFactContext| {
-            crate::kernel::eval::coerce_c_value_to_type_as(
+            crate::kernel::eval::coerce_program_value_to_type_as(
                 value,
                 target,
                 crate::kernel::eval::IntegerConversion::Checked,
@@ -406,7 +478,7 @@ fn wide_cast_specification_signed_narrowing_keeps_both_range_obligations() {
         };
     let value = ProgramValue::Int128(MachineTerm::Variable(Variable(149_005)));
     let mut obligations = Vec::new();
-    let result = coerce_c_value_to_type(
+    let result = coerce_program_value_to_type(
         value,
         ProgramType::Int64,
         &mut obligations,
@@ -440,7 +512,7 @@ fn wide_cast_specification_signed_narrowing_keeps_both_range_obligations() {
             assumptions = assumptions.assume_condition(condition.clone(), true);
         }
         let mut remaining = Vec::new();
-        let result = coerce_c_value_to_type(
+        let result = coerce_program_value_to_type(
             ProgramValue::Int128(MachineTerm::Variable(Variable(149_005))),
             ProgramType::Int64,
             &mut remaining,
@@ -459,25 +531,25 @@ fn wide_cast_specification_signed_narrowing_keeps_both_range_obligations() {
 
 #[test]
 fn wide_cast_function_argument_widens_and_return_narrows_without_truncating_early() {
-    let function = c_function(
+    let function = program_function(
         ProgramType::UInt64,
         "wide_cast_call",
-        vec![c_parameter("input", ProgramType::Int128)],
-        c_return(c_integer_cast_modulo(
-            c_variable("input"),
+        vec![program_parameter("input", ProgramType::Int128)],
+        program_return(crate::kernel::program_expression::integer_cast_modulo(
+            crate::kernel::program_expression::variable("input"),
             ProgramType::UInt64,
         )),
     );
-    let theorem = prove_symbolic_c_function_execution(
+    let theorem = prove_symbolic_program_function_execution(
         ExecutionState::new(),
         function,
-        vec![c_int64_literal(-1)],
+        vec![crate::kernel::program_expression::int64_literal(-1)],
         PureFactContext::new(),
     )
     .unwrap();
     assert!(matches!(
         theorem.proposition(),
-        Proposition::CFunctionExecutes {
+        Proposition::ProgramFunctionExecutes {
             outcome: FunctionOutcome::Return {
                 value,
                 ..
@@ -553,7 +625,7 @@ fn wide_cast_canonicalization_keeps_source_load_width_and_memory_dependencies() 
         pointer.clone(),
         ProgramValue::Int32(MachineTerm::constant((-1i32) as u32)),
     );
-    let load = MachineTerm::MemoryLoad(intern_c_memory(memory), Box::new(pointer), LoadKind::Int32);
+    let load = MachineTerm::MemoryLoad(intern_memory(memory), Box::new(pointer), LoadKind::Int32);
     let wide = MachineTerm::machine_integer_cast(
         MachineIntegerType::Int32,
         MachineIntegerType::Int128,
@@ -575,7 +647,7 @@ fn uint64_to_int64_specification_cast_requires_exact_representable_range() {
     let bits = MachineTerm::Variable(Variable(149_100));
     let mut none = Vec::new();
     assert_eq!(
-        crate::kernel::eval::coerce_c_value_to_type(
+        crate::kernel::eval::coerce_program_value_to_type(
             ProgramValue::UInt64(bits.clone()),
             ProgramType::Int64,
             &mut none,
@@ -585,9 +657,9 @@ fn uint64_to_int64_specification_cast_requires_exact_representable_range() {
     );
     assert!(none.is_empty());
     // A specification's conversion owes the range; C's owes nothing.
-    let coerce_c_value_to_type =
+    let coerce_program_value_to_type =
         |value, target, obligations: &mut Vec<ProofObligation>, assumptions: &PureFactContext| {
-            crate::kernel::eval::coerce_c_value_to_type_as(
+            crate::kernel::eval::coerce_program_value_to_type_as(
                 value,
                 target,
                 crate::kernel::eval::IntegerConversion::Checked,
@@ -603,7 +675,7 @@ fn uint64_to_int64_specification_cast_requires_exact_representable_range() {
         true,
     );
     let mut obligations = Vec::new();
-    let result = coerce_c_value_to_type(
+    let result = coerce_program_value_to_type(
         ProgramValue::UInt64(bits.clone()),
         ProgramType::Int64,
         &mut obligations,
@@ -620,7 +692,7 @@ fn uint64_to_int64_specification_cast_requires_exact_representable_range() {
     let assumptions = PureFactContext::new().assume_proposition(bound);
     let mut remaining = Vec::new();
     assert_eq!(
-        coerce_c_value_to_type(
+        coerce_program_value_to_type(
             ProgramValue::UInt64(bits.clone()),
             ProgramType::Int64,
             &mut remaining,
@@ -637,7 +709,7 @@ fn uint64_to_int64_specification_cast_requires_exact_representable_range() {
         true,
     );
     let mut remaining = Vec::new();
-    coerce_c_value_to_type(
+    coerce_program_value_to_type(
         ProgramValue::UInt64(bits),
         ProgramType::Int64,
         &mut remaining,
@@ -647,25 +719,35 @@ fn uint64_to_int64_specification_cast_requires_exact_representable_range() {
     assert_eq!(remaining.len(), 1);
     for value in [0, 1, i64::MAX as u64] {
         assert_eq!(
-            evaluated(c_cast(c_uint64_literal(value), ProgramType::Int64)),
-            evaluated(c_int64_literal(value as i64))
+            evaluated(crate::kernel::program_expression::cast(
+                crate::kernel::program_expression::uint64_literal(value),
+                ProgramType::Int64
+            )),
+            evaluated(crate::kernel::program_expression::int64_literal(
+                value as i64
+            ))
         );
     }
     for value in [(i64::MAX as u64) + 1, u64::MAX] {
         assert!(
-            prove_c_expression_evaluation(
+            prove_program_expression_evaluation(
                 ExecutionState::new(),
-                c_cast(c_uint64_literal(value), ProgramType::Int64),
+                crate::kernel::program_expression::cast(
+                    crate::kernel::program_expression::uint64_literal(value),
+                    ProgramType::Int64
+                ),
             )
             .is_none(),
             "an out-of-range checked cast cannot discharge its range obligation"
         );
         assert_eq!(
-            evaluated(c_integer_cast_modulo(
-                c_uint64_literal(value),
+            evaluated(crate::kernel::program_expression::integer_cast_modulo(
+                crate::kernel::program_expression::uint64_literal(value),
                 ProgramType::Int64
             )),
-            evaluated(c_int64_literal(value as i64))
+            evaluated(crate::kernel::program_expression::int64_literal(
+                value as i64
+            ))
         );
     }
 }
@@ -687,7 +769,7 @@ fn wide_cached_load_canonicalization_preserves_kind_and_all_bits() {
         } else {
             ProgramValue::UInt64(bits.clone())
         };
-        let memory = intern_c_memory(
+        let memory = intern_memory(
             Memory::new()
                 .with_block("wide-cached-read", 8)
                 .store(pointer.clone(), value),
@@ -701,7 +783,7 @@ fn wide_cached_load_canonicalization_preserves_kind_and_all_bits() {
             crate::kernel::api::canonicalize_atomic_loads(&load(LoadKind::Int32)),
             bits
         );
-        let overwritten = intern_c_memory(
+        let overwritten = intern_memory(
             memory
                 .as_ref()
                 .clone()

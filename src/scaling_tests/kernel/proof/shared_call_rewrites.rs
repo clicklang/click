@@ -4,7 +4,8 @@ fn common_call_rewrite_visits_shared_arguments_once() {
     for size in [16, 64, 256] {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(995870));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(995870));
         for _ in 0..size {
             let child = call(format, root);
             root = KernelTerm::machine_binary_shared(

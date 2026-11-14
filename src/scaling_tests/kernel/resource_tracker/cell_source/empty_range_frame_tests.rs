@@ -18,7 +18,7 @@ fn empty_range_frames_ignore_related_and_unrelated_separation_candidates() {
                 } else {
                     Pointer::symbolic(Variable(9_953_000 + index))
                 };
-                context = context.assume_proposition(Proposition::CResourceSeparate {
+                context = context.assume_proposition(Proposition::ResourceSeparate {
                     left: Box::new(Resource::Memory(MemoryRange::new(
                         candidate_base,
                         ((index * 2) as u32).into(),

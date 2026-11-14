@@ -88,7 +88,7 @@ pub(crate) use memory_loads::load_variable_for_term;
 pub(crate) use memory_loads::loaded_pointer_predates_block;
 pub(crate) use memory_loads::offsets_have_same_canonical_form;
 pub(crate) use memory_loads::proposition_mentions_scalar_read;
-pub(crate) use memory_loads::read_over_write_c_value;
+pub(crate) use memory_loads::read_over_write_program_value;
 pub(in crate::kernel) use memory_loads::record_load_access_width;
 #[cfg(test)]
 pub(crate) use memory_loads::record_load_variable_defining_fact;
@@ -116,7 +116,7 @@ pub(in crate::kernel) use memory_loads::{
 };
 pub(crate) use memory_loads::{canonical_cell_load, canonical_form_of_load};
 pub(super) use memory_loads::{
-    canonical_offset_term, evaluate_c_memory_load_paths, evaluate_logical_memory_load_paths,
+    canonical_offset_term, evaluate_logical_memory_load_paths, evaluate_memory_load_paths,
     evaluate_spec_memory_load_paths, symbolic_load_value,
 };
 pub(crate) use memory_loads::{
@@ -140,18 +140,20 @@ pub(crate) use memory_loads::{
 };
 pub(super) use operators::pointer_offset_by_bytes_paths;
 pub(super) use operators::*;
-pub(super) use statements::execute_c_realloc_assign_paths;
 #[cfg(test)]
-pub(super) use statements::execute_c_statement;
+pub(super) use statements::execute_execution_statement;
+pub(super) use statements::execute_program_realloc_assign_paths;
 pub(super) use statements::memory_write_permission_outcome;
 pub(crate) use statements::resolve_pending_heap_allocations;
 pub(super) use statements::{
-    StatementJudgment, execute_c_statement_paths, execute_statement_paths,
+    StatementJudgment, execute_execution_statement_paths, execute_statement_paths,
     execute_statement_paths_with_prefix, paths_after_scope_exit, scope_declared_names,
 };
 pub(super) use statements::{sync_retained_stack_local, sync_stack_local};
 
-pub(crate) use memory_loads::{pointer_read_over_immediate_store, pointer_read_over_write_c_value};
+pub(crate) use memory_loads::{
+    pointer_read_over_immediate_store, pointer_read_over_write_program_value,
+};
 
 pub(crate) use memory_loads::loaded_pointer_stored_block;
 

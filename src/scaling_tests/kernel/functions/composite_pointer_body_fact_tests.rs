@@ -280,15 +280,19 @@ fn binding_free_scalar_facts_do_not_prepare_unused_arm_memory() {
                             Pointer::symbolic(Variable(719_000 + index)),
                             ProgramType::Int32Pointer,
                         )),
-                        c_int32_literal(0),
-                        c_int32_literal(1),
+                        crate::kernel::program_expression::int32_literal(0),
+                        crate::kernel::program_expression::int32_literal(1),
                     ))
                 })
                 .collect(),
             facts: vec![SpecProposition::Comparison {
-                left: SpecExpression::ProgramExpression(c_variable("p")),
+                left: SpecExpression::ProgramExpression(
+                    crate::kernel::program_expression::variable("p"),
+                ),
                 operator: ComparisonOperator::NotEqual,
-                right: SpecExpression::ProgramExpression(c_int32_literal(0)),
+                right: SpecExpression::ProgramExpression(
+                    crate::kernel::program_expression::int32_literal(0),
+                ),
             }],
         };
         let (facts, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -321,23 +325,29 @@ fn arm_refutation_stops_before_unneeded_memory_facts() {
                             Pointer::symbolic(Variable(719_000 + index)),
                             ProgramType::Int32Pointer,
                         )),
-                        c_int32_literal(0),
-                        c_int32_literal(1),
+                        crate::kernel::program_expression::int32_literal(0),
+                        crate::kernel::program_expression::int32_literal(1),
                     ))
                 })
                 .collect(),
             facts: vec![
                 SpecProposition::Comparison {
-                    left: SpecExpression::ProgramExpression(c_variable("p")),
+                    left: SpecExpression::ProgramExpression(
+                        crate::kernel::program_expression::variable("p"),
+                    ),
                     operator: ComparisonOperator::NotEqual,
-                    right: SpecExpression::ProgramExpression(c_int32_literal(0)),
+                    right: SpecExpression::ProgramExpression(
+                        crate::kernel::program_expression::int32_literal(0),
+                    ),
                 },
                 SpecProposition::Comparison {
                     left: SpecExpression::ProgramExpression(ProgramExpression::Load(Box::new(
-                        c_variable("p"),
+                        crate::kernel::program_expression::variable("p"),
                     ))),
                     operator: ComparisonOperator::Equal,
-                    right: SpecExpression::ProgramExpression(c_int32_literal(0)),
+                    right: SpecExpression::ProgramExpression(
+                        crate::kernel::program_expression::int32_literal(0),
+                    ),
                 },
             ],
         };
@@ -370,15 +380,15 @@ fn numeric_resource_facts_do_not_repeat_the_canonical_read_walk() {
             .prefer_symbolic_external_loads();
         let definition = CompositeResourceDefinition::new(
             "unrelated_word",
-            vec![c_parameter("slot", ProgramType::UInt64Pointer)],
+            vec![program_parameter("slot", ProgramType::UInt64Pointer)],
             None,
             false,
             vec![ResourceSpec::owned_memory(MemorySegment {
                 uninitialized: false,
                 value_runs: Default::default(),
-                base: c_variable("slot"),
-                start: c_int32_literal(0),
-                end: c_int32_literal(1),
+                base: crate::kernel::program_expression::variable("slot"),
+                start: crate::kernel::program_expression::int32_literal(0),
+                end: crate::kernel::program_expression::int32_literal(1),
                 element_width: 8,
                 guard: None,
             })],
@@ -418,7 +428,7 @@ fn numeric_resource_facts_do_not_repeat_the_canonical_read_walk() {
         // so the canonical walk cannot be warmed by the preceding measurement.
         let (_, canonical_work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::memory_provenance::canonicalize_atomic_loads(&MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory_ref(&memory),
+                crate::kernel::intern_memory_ref(&memory),
                 Box::new(input(719_104)),
                 LoadKind::Bits64,
             ))
@@ -436,15 +446,15 @@ fn numeric_resource_facts_do_not_repeat_the_canonical_read_walk() {
             contains: vec![ResourceSpec::owned_memory(MemorySegment {
                 uninitialized: false,
                 value_runs: Default::default(),
-                base: c_variable("p"),
-                start: c_int32_literal(0),
-                end: c_int32_literal(1),
+                base: crate::kernel::program_expression::variable("p"),
+                start: crate::kernel::program_expression::int32_literal(0),
+                end: crate::kernel::program_expression::int32_literal(1),
                 element_width: 8,
                 guard: None,
             })],
             facts: vec![SpecProposition::Comparison {
                 left: SpecExpression::ProgramExpression(ProgramExpression::Load(Box::new(
-                    c_variable("p"),
+                    crate::kernel::program_expression::variable("p"),
                 ))),
                 operator: ComparisonOperator::Equal,
                 right: SpecExpression::ProgramExpression(ProgramExpression::Value(

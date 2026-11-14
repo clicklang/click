@@ -4,7 +4,7 @@ use super::*;
 fn authority_refuses_calls_that_reach_a_population() {
     let authority = ExecutionState::new().with_population_creation_tracking();
     let call = |helper: &ProgramFunction| {
-        execute_c_function_call_paths(
+        execute_program_function_call_paths(
             &authority,
             helper,
             &[],
@@ -25,13 +25,13 @@ fn authority_refuses_calls_that_reach_a_population() {
     };
 
     // A helper whose contract moves no resource reaches no population.
-    let ordinary = c_function(ProgramType::Void, "helper", vec![], ProgramStatement::Skip);
+    let ordinary = program_function(ProgramType::Void, "helper", vec![], ProgramStatement::Skip);
     assert!(!contract_reaches_population(ordinary.contract_interface()));
     assert!(!refused(&call(&ordinary)));
 
     // An abstract token may be an authorized member, so an unadmitted
     // contract producing one is refused.
-    let minting = c_function(ProgramType::Void, "mint", vec![], ProgramStatement::Skip)
+    let minting = program_function(ProgramType::Void, "mint", vec![], ProgramStatement::Skip)
         .with_resource_summary(
             vec![],
             vec![ResourceSpec::token(
@@ -66,11 +66,11 @@ fn unused_creation_ledgers_compare_equal_and_used_ones_do_not() {
 
 #[test]
 fn ended_automatic_storage_retires_creation_evidence() {
-    let function = c_function(
+    let function = program_function(
         ProgramType::Int32,
         "scope",
         vec![],
-        c_return(c_int32_literal(0)),
+        program_return(crate::kernel::program_expression::int32_literal(0)),
     );
     for name in ["frame:holder", "lifetime:holder"] {
         let mut state = ExecutionState::new()

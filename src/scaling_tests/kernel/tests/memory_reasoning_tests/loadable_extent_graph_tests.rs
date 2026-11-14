@@ -10,7 +10,7 @@ fn direct_loadable_extent_graph_queries_scale_without_fact_index() {
         let memory = Memory::new();
         let base = Pointer::symbolic(Variable(9_320_010));
         let range_bytes = extent(var(0));
-        let fact = Proposition::CMemoryLoadable {
+        let fact = Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
             bytes: range_bytes.clone(),
@@ -51,7 +51,7 @@ fn direct_loadable_extent_graph_queries_scale_without_fact_index() {
 #[test]
 fn filing_a_loadable_fact_in_a_fork_shares_every_other_block() {
     let memory = Memory::new();
-    let loadable = |id: u64| Proposition::CMemoryLoadable {
+    let loadable = |id: u64| Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: Pointer::symbolic(Variable(9_330_000 + id)),
         bytes: extent(var(id)),
@@ -107,7 +107,7 @@ fn filing_a_load_condition_in_a_fork_shares_every_other_load() {
     let load_condition = |id: u64| {
         ConditionTerm::float64_compare(
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(Memory::new()),
+                crate::kernel::intern_memory(Memory::new()),
                 Box::new(pointer(id)),
                 crate::kernel::LoadKind::Float64,
             ),
@@ -157,7 +157,7 @@ fn filing_a_load_condition_in_a_fork_shares_every_other_load() {
 #[test]
 fn integer_read_facts_do_not_grow_load_time_transport_work() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = crate::kernel::intern_c_memory(Memory::new());
+    let memory = crate::kernel::intern_memory(Memory::new());
     let pointer = Pointer::symbolic(Variable(9_330_000));
     let read = MachineTerm::MemoryLoad(
         memory,

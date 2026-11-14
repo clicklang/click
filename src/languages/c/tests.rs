@@ -613,10 +613,10 @@ int32 run(int32 value) {
     assert!(rendered.contains("SequentialRead"));
     let kernel_rendered = format!("{:?}", functions[0].body_kernel_statement());
     assert!(kernel_rendered.contains("volatile: true"));
-    let execution = crate::kernel::prove_symbolic_c_function_execution_paths(
+    let execution = crate::kernel::prove_symbolic_program_function_execution_paths(
         crate::kernel::ExecutionState::new(),
         functions[0].to_kernel_function(),
-        vec![crate::kernel::c_int32_literal(1)],
+        vec![crate::kernel::program_expression::int32_literal(1)],
         crate::kernel::PureFactContext::new(),
     );
     assert_eq!(execution.paths().len(), 1);
@@ -987,7 +987,7 @@ fn c0_plain_char_qualified_pointee_casts_preserve_read_only_views() {
         )
     ));
 
-    crate::surface::verify_c0_sources(
+    crate::surface::verify_c_sources(
         r#"
         target "x86_64-unknown-linux-gnu";
         mode "kernel";
@@ -1053,7 +1053,7 @@ fn c0_function_declarations_reject_conflicting_pointee_const_parameters() {
 
 #[test]
 fn c0_plain_char_unsigned_promotion_verifies() {
-    crate::surface::verify_c0_sources(
+    crate::surface::verify_c_sources(
         r#"
         target "x86_64-unknown-linux-gnu";
         mode "kernel";
@@ -1080,7 +1080,7 @@ fn c0_plain_char_explicit_byte_pointer_casts_preserve_source_identity() {
             matches!(function.body(), C0Statement::Return(C0Expression::Cast { c_type, .. }, _) if *c_type == expected)
         );
     }
-    crate::surface::verify_c0_sources(
+    crate::surface::verify_c_sources(
         r#"
         target "x86_64-unknown-linux-gnu";
         mode "kernel";
@@ -1094,7 +1094,7 @@ fn c0_plain_char_explicit_byte_pointer_casts_preserve_source_identity() {
 
 #[test]
 fn c0_plain_char_cross_file_signatures_remain_distinct() {
-    crate::surface::verify_c0_sources(
+    crate::surface::verify_c_sources(
         r#"
         verifying "a.c";
         verifying "b.c";
@@ -1155,10 +1155,10 @@ fn c0_small_volatile_model_preserves_metadata_and_access_facts() {
             })
             .collect::<Vec<_>>()
     };
-    let execution = crate::kernel::prove_symbolic_c_function_execution_paths(
+    let execution = crate::kernel::prove_symbolic_program_function_execution_paths(
         crate::kernel::ExecutionState::new(),
         kernel,
-        vec![crate::kernel::c_int32_literal(7)],
+        vec![crate::kernel::program_expression::int32_literal(7)],
         crate::kernel::PureFactContext::new(),
     );
     assert_eq!(execution.paths().len(), 1);
@@ -1166,7 +1166,7 @@ fn c0_small_volatile_model_preserves_metadata_and_access_facts() {
     assert_eq!(accesses.len(), 2);
     assert_ne!(accesses[0], accesses[1]);
 
-    let global_execution = crate::kernel::prove_symbolic_c_function_execution_paths(
+    let global_execution = crate::kernel::prove_symbolic_program_function_execution_paths(
         crate::kernel::ExecutionState::new(),
         functions[1].to_kernel_function(),
         Vec::new(),
@@ -1187,7 +1187,7 @@ fn c0_small_volatile_model_preserves_metadata_and_access_facts() {
             .is_volatile()
     );
     assert!(static_function.to_kernel_function().static_variables()[0].is_volatile());
-    let static_execution = crate::kernel::prove_symbolic_c_function_execution_paths(
+    let static_execution = crate::kernel::prove_symbolic_program_function_execution_paths(
         crate::kernel::ExecutionState::new(),
         static_function.to_kernel_function(),
         Vec::new(),
@@ -1273,7 +1273,7 @@ fn c0_pointer_volatile_accesses_preserve_pointee_metadata_and_order() {
     assert!(!kernel_parameter.is_volatile());
     assert!(kernel_parameter.pointee_is_volatile());
 
-    let execution = crate::kernel::prove_symbolic_c_function_execution_paths(
+    let execution = crate::kernel::prove_symbolic_program_function_execution_paths(
         crate::kernel::ExecutionState::new(),
         functions[0].to_kernel_function(),
         Vec::new(),
@@ -1335,7 +1335,7 @@ fn c0_pointer_object_volatile_accesses_preserve_pointer_provenance() {
         node_pointer.clone(),
         crate::kernel::ProgramType::Int32Pointer,
     );
-    let direct_execution = crate::kernel::prove_symbolic_c_function_execution_paths(
+    let direct_execution = crate::kernel::prove_symbolic_program_function_execution_paths(
         crate::kernel::ExecutionState::new(),
         functions[0].to_kernel_function(),
         vec![crate::kernel::ProgramExpression::Value(
@@ -1359,7 +1359,7 @@ fn c0_pointer_object_volatile_accesses_preserve_pointer_provenance() {
         .count();
     assert_eq!(direct_accesses, 2);
 
-    let indirect_execution = crate::kernel::prove_symbolic_c_function_execution_paths(
+    let indirect_execution = crate::kernel::prove_symbolic_program_function_execution_paths(
         crate::kernel::ExecutionState::new(),
         functions[1].to_kernel_function(),
         vec![crate::kernel::ProgramExpression::Value(node)],
@@ -1389,7 +1389,7 @@ fn c0_pointer_object_volatile_accesses_preserve_pointer_provenance() {
     while let crate::kernel::Proposition::Implies(_, body) = proposition {
         proposition = body;
     }
-    let crate::kernel::Proposition::CFunctionExecutes {
+    let crate::kernel::Proposition::ProgramFunctionExecutes {
         outcome:
             crate::kernel::FunctionOutcome::Return {
                 value: retained_result,
@@ -2146,7 +2146,7 @@ fn c0_preserves_const_aggregate_global_and_static_objects() {
 
 #[test]
 fn c0_const_aggregate_extern_declarations_must_match_definitions() {
-    let error = crate::surface::verify_c0_sources(
+    let error = crate::surface::verify_c_sources(
         r#"
         verifying "state.c";
         verifying "reader.c";
@@ -2960,7 +2960,7 @@ fn c0_rejects_unsupported_inferred_file_scope_array_forms() {
 
 #[test]
 fn c0_links_incomplete_extern_arrays_to_complete_definitions() {
-    crate::surface::verify_c0_sources(
+    crate::surface::verify_c_sources(
         r#"
         verifying "reader.c";
         verifying "definitions.c";
@@ -3003,7 +3003,7 @@ fn c0_links_incomplete_extern_arrays_to_complete_definitions() {
 
 #[test]
 fn c0_links_incomplete_tentative_array_to_complete_tentative_definition() {
-    crate::surface::verify_c0_sources(
+    crate::surface::verify_c_sources(
         r#"
         verifying "reader.c";
         verifying "definitions.c";
@@ -3912,7 +3912,7 @@ fn c0_statement_expressions_preserve_order_and_value() {
     assert!(debug_body.contains("Assign"), "{debug_body}");
     assert!(debug_body.contains("value"), "{debug_body}");
 
-    crate::surface::verify_c0_sources(
+    crate::surface::verify_c_sources(
         r#"
         verifying "statement-expression.c";
         int32 run() { ensures result == 4; }
@@ -5217,18 +5217,18 @@ fn c0_syntax_models_missing_else_and_empty_statements_as_skip() {
 #[test]
 fn kernel_skip_preserves_state_without_facts_or_obligations() {
     let state = crate::kernel::ExecutionState::new();
-    let theorem = crate::kernel::prove_symbolic_c_execution(
+    let theorem = crate::kernel::prove_symbolic_program_execution(
         state.clone(),
-        crate::kernel::c_skip(),
+        crate::kernel::program_skip(),
         crate::kernel::PureFactContext::new(),
     )
     .expect("skip should execute");
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CStatementExecutes {
+        &crate::kernel::Proposition::ProgramStatementExecutes {
             state: Box::new(state.clone()),
-            statement: Box::new(crate::kernel::c_skip()),
+            statement: Box::new(crate::kernel::program_skip()),
             outcome: crate::kernel::StatementOutcome::Normal(Box::new(state)),
         }
     );
@@ -5440,7 +5440,7 @@ fn c0_unary_minus_preserves_signed_overflow_semantics() {
         "value",
         crate::kernel::int32(crate::kernel::MachineTerm::constant(0x8000_0000)),
     );
-    let theorem = crate::kernel::prove_symbolic_c_execution(
+    let theorem = crate::kernel::prove_symbolic_program_execution(
         state.clone(),
         function.body_kernel_statement(),
         crate::kernel::PureFactContext::new(),
@@ -5452,7 +5452,7 @@ fn c0_unary_minus_preserves_signed_overflow_semantics() {
     }
     assert!(matches!(
         proposition,
-        crate::kernel::Proposition::CStatementExecutes {
+        crate::kernel::Proposition::ProgramStatementExecutes {
             outcome: crate::kernel::StatementOutcome::UndefinedBehavior(
                 crate::kernel::UndefinedBehavior::SignedOverflow
             ),
@@ -5624,8 +5624,8 @@ fn c0_embedded_struct_field_access_lowers_to_nested_scalar_offset() {
                 ),
         )
         .with_resource_context(resources);
-    let arguments = vec![crate::kernel::c_pointer_value(packet)];
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let arguments = vec![crate::kernel::program_expression::pointer_value(packet)];
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -5635,7 +5635,7 @@ fn c0_embedded_struct_field_access_lowers_to_nested_scalar_offset() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -6006,7 +6006,7 @@ fn c0_tagged_union_member_addresses_preserve_member_type_and_offset() {
         block: "packet".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         crate::kernel::ExecutionState::new().with_memory(
             crate::kernel::Memory::new().with_classed_block(
                 "packet".into(),
@@ -6015,11 +6015,11 @@ fn c0_tagged_union_member_addresses_preserve_member_type_and_offset() {
             ),
         ),
         address_pointer,
-        vec![crate::kernel::c_pointer_value(packet)],
+        vec![crate::kernel::program_expression::pointer_value(packet)],
         Default::default(),
     )
     .expect("pointer-valued union member address should execute");
-    let crate::kernel::Proposition::CFunctionExecutes {
+    let crate::kernel::Proposition::ProgramFunctionExecutes {
         outcome: crate::kernel::FunctionOutcome::Return { value, .. },
         ..
     } = theorem.proposition()
@@ -6212,8 +6212,8 @@ fn c0_enum_field_comparison_lowers_named_constant() {
         )
         .with_resource_context(resources.clone());
     let final_state = state.clone();
-    let arguments = vec![crate::kernel::c_pointer_value(packet)];
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let arguments = vec![crate::kernel::program_expression::pointer_value(packet)];
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -6223,7 +6223,7 @@ fn c0_enum_field_comparison_lowers_named_constant() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -6589,19 +6589,21 @@ fn c0_syntax_accepts_sizeof_for_scalar_and_pointer_types() {
     let kernel_expression = expression.to_kernel_expression();
     assert_eq!(
         kernel_expression,
-        crate::kernel::c_source_integer_conversion(crate::kernel::c_cast(
-            crate::kernel::c_add(
-                crate::kernel::c_add(
-                    crate::kernel::c_add(
-                        crate::kernel::c_uint64_literal(4),
-                        crate::kernel::c_uint64_literal(1),
+        crate::kernel::program_expression::c_source_integer_conversion(
+            crate::kernel::program_expression::cast(
+                crate::kernel::program_expression::add(
+                    crate::kernel::program_expression::add(
+                        crate::kernel::program_expression::add(
+                            crate::kernel::program_expression::uint64_literal(4),
+                            crate::kernel::program_expression::uint64_literal(1),
+                        ),
+                        crate::kernel::program_expression::uint64_literal(8),
                     ),
-                    crate::kernel::c_uint64_literal(8),
+                    crate::kernel::program_expression::uint64_literal(8),
                 ),
-                crate::kernel::c_uint64_literal(8),
-            ),
-            crate::kernel::ProgramType::Int32,
-        ))
+                crate::kernel::ProgramType::Int32,
+            )
+        )
     );
 }
 
@@ -6667,7 +6669,7 @@ fn c0_chained_field_load_executes_through_typed_pointer_memory() {
         .with_local("root", crate::kernel::ProgramValue::pointer(root))
         .with_memory(memory)
         .with_resource_context(resources);
-    let theorem = crate::kernel::prove_symbolic_c_execution(
+    let theorem = crate::kernel::prove_symbolic_program_execution(
         state,
         function.body_kernel_statement(),
         crate::kernel::PureFactContext::new(),
@@ -6679,7 +6681,7 @@ fn c0_chained_field_load_executes_through_typed_pointer_memory() {
     }
     assert!(matches!(
         proposition,
-        crate::kernel::Proposition::CStatementExecutes {
+        crate::kernel::Proposition::ProgramStatementExecutes {
             outcome: crate::kernel::StatementOutcome::Return {
                 value,
                 ..
@@ -6768,26 +6770,31 @@ fn c0_syntax_targets_kernel_max_body() {
     .expect("max should parse");
     let statement = function.body_kernel_statement();
 
-    assert_eq!(statement, crate::kernel::c_max_body());
+    assert_eq!(statement, crate::kernel::program_max_body());
 
     let a = crate::kernel::Variable(30);
     let b = crate::kernel::Variable(31);
     let a_bits = crate::kernel::MachineTerm::Variable(a);
     let b_bits = crate::kernel::MachineTerm::Variable(b);
-    let condition = crate::kernel::c_max_lt_condition(a_bits.clone(), b_bits.clone());
-    let state =
-        crate::kernel::c_max_state(crate::kernel::int32(a_bits), crate::kernel::int32(b_bits));
+    let condition = crate::kernel::program_max_lt_condition(a_bits.clone(), b_bits.clone());
+    let state = crate::kernel::program_max_state(
+        crate::kernel::int32(a_bits),
+        crate::kernel::int32(b_bits),
+    );
     let assumptions =
         crate::kernel::PureFactContext::new().assume_condition(condition.clone(), true);
-    let theorem =
-        crate::kernel::prove_symbolic_c_execution(state.clone(), statement.clone(), assumptions)
-            .expect("parsed max should symbolically execute");
+    let theorem = crate::kernel::prove_symbolic_program_execution(
+        state.clone(),
+        statement.clone(),
+        assumptions,
+    )
+    .expect("parsed max should symbolically execute");
 
     assert_eq!(
         theorem.proposition(),
         &crate::kernel::Proposition::Implies(
             Box::new(crate::kernel::Proposition::ConditionIs(condition, true)),
-            Box::new(crate::kernel::Proposition::CStatementExecutes {
+            Box::new(crate::kernel::Proposition::ProgramStatementExecutes {
                 state: Box::new(state.clone()),
                 statement: Box::new(statement),
                 outcome: crate::kernel::StatementOutcome::Return {
@@ -6815,14 +6822,14 @@ fn c0_syntax_targets_kernel_max_function_call() {
     .expect("max should parse");
     let function = function.to_kernel_function();
 
-    assert_eq!(function, crate::kernel::c_max_function());
+    assert_eq!(function, crate::kernel::program_max_function());
 
     let state = crate::kernel::ExecutionState::new();
     let arguments = vec![
-        crate::kernel::c_int32_literal(0),
-        crate::kernel::c_int32_literal(1),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(1),
     ];
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -6832,7 +6839,7 @@ fn c0_syntax_targets_kernel_max_function_call() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state.clone()),
             function: Box::new(function),
             arguments,
@@ -6858,7 +6865,7 @@ fn c0_syntax_targets_kernel_assignment_and_sequence() {
     let statement = function.body_kernel_statement();
     let initial = crate::kernel::ExecutionState::new().with_local("x", crate::kernel::int32(1));
     let final_state = crate::kernel::ExecutionState::new().with_local("x", crate::kernel::int32(2));
-    let theorem = crate::kernel::prove_symbolic_c_execution(
+    let theorem = crate::kernel::prove_symbolic_program_execution(
         initial.clone(),
         statement.clone(),
         Default::default(),
@@ -6867,7 +6874,7 @@ fn c0_syntax_targets_kernel_assignment_and_sequence() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CStatementExecutes {
+        &crate::kernel::Proposition::ProgramStatementExecutes {
             state: Box::new(initial),
             statement: Box::new(statement),
             outcome: crate::kernel::StatementOutcome::Return {
@@ -6891,8 +6898,8 @@ fn c0_syntax_targets_kernel_assignment_function_call() {
     .expect("assignment function should parse");
     let function = function.to_kernel_function();
     let state = crate::kernel::ExecutionState::new().with_local("caller", crate::kernel::int32(5));
-    let arguments = vec![crate::kernel::c_int32_literal(1)];
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let arguments = vec![crate::kernel::program_expression::int32_literal(1)];
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -6902,7 +6909,7 @@ fn c0_syntax_targets_kernel_assignment_function_call() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state.clone()),
             function: Box::new(function),
             arguments,
@@ -6944,7 +6951,7 @@ fn c0_syntax_targets_kernel_store_and_load() {
         .with_local("p", crate::kernel::ProgramValue::pointer(pointer.clone()))
         .with_memory(crate::kernel::Memory::new().store(pointer.clone(), crate::kernel::int32(9)))
         .with_resource_context(resources);
-    let theorem = crate::kernel::prove_symbolic_c_execution(
+    let theorem = crate::kernel::prove_symbolic_program_execution(
         initial.clone(),
         statement.clone(),
         Default::default(),
@@ -6953,7 +6960,7 @@ fn c0_syntax_targets_kernel_store_and_load() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CStatementExecutes {
+        &crate::kernel::Proposition::ProgramStatementExecutes {
             state: Box::new(initial),
             statement: Box::new(statement),
             outcome: crate::kernel::StatementOutcome::Return {
@@ -6997,7 +7004,7 @@ fn c0_syntax_targets_kernel_struct_field_load() {
         .with_local("obj", crate::kernel::ProgramValue::pointer(pointer.clone()))
         .with_memory(memory)
         .with_resource_context(view_memory_context(pointer, 0, 1));
-    let theorem = crate::kernel::prove_symbolic_c_execution(
+    let theorem = crate::kernel::prove_symbolic_program_execution(
         initial.clone(),
         statement.clone(),
         Default::default(),
@@ -7006,7 +7013,7 @@ fn c0_syntax_targets_kernel_struct_field_load() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CStatementExecutes {
+        &crate::kernel::Proposition::ProgramStatementExecutes {
             state: Box::new(initial.clone()),
             statement: Box::new(statement),
             outcome: crate::kernel::StatementOutcome::Return {
@@ -7047,7 +7054,7 @@ fn c0_syntax_targets_kernel_float64_struct_field_load() {
         .with_local("obj", crate::kernel::ProgramValue::pointer(pointer.clone()))
         .with_memory(memory)
         .with_resource_context(view_memory_context(pointer, 0, 2));
-    let theorem = crate::kernel::prove_symbolic_c_execution(
+    let theorem = crate::kernel::prove_symbolic_program_execution(
         initial.clone(),
         statement.clone(),
         Default::default(),
@@ -7056,7 +7063,7 @@ fn c0_syntax_targets_kernel_float64_struct_field_load() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CStatementExecutes {
+        &crate::kernel::Proposition::ProgramStatementExecutes {
             state: Box::new(initial.clone()),
             statement: Box::new(statement),
             outcome: crate::kernel::StatementOutcome::Return {
@@ -7097,8 +7104,8 @@ fn c0_syntax_targets_kernel_struct_field_store() {
         ))
         .with_resource_context(resources.clone());
     let arguments = vec![
-        crate::kernel::c_pointer_value(pointer.clone()),
-        crate::kernel::c_int32_literal(5),
+        crate::kernel::program_expression::pointer_value(pointer.clone()),
+        crate::kernel::program_expression::int32_literal(5),
     ];
     let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
@@ -7107,7 +7114,7 @@ fn c0_syntax_targets_kernel_struct_field_store() {
                 .store(pointer, crate::kernel::int32(5)),
         )
         .with_resource_context(resources);
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -7117,7 +7124,7 @@ fn c0_syntax_targets_kernel_struct_field_store() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -7180,8 +7187,8 @@ fn c0_syntax_targets_kernel_multifield_struct_offset_load() {
     let state = crate::kernel::ExecutionState::new()
         .with_memory(memory)
         .with_resource_context(view_memory_context(base.clone(), 1, 2));
-    let arguments = vec![crate::kernel::c_pointer_value(base)];
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let arguments = vec![crate::kernel::program_expression::pointer_value(base)];
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -7191,7 +7198,7 @@ fn c0_syntax_targets_kernel_multifield_struct_offset_load() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state.clone()),
             function: Box::new(function),
             arguments,
@@ -7249,10 +7256,10 @@ fn c0_syntax_targets_kernel_struct_pointer_field_roundtrip() {
         )
         .with_resource_context(resources);
     let arguments = vec![
-        crate::kernel::c_pointer_value(owner.clone()),
-        crate::kernel::c_pointer_value(data.clone()),
+        crate::kernel::program_expression::pointer_value(owner.clone()),
+        crate::kernel::program_expression::pointer_value(data.clone()),
     ];
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -7260,7 +7267,7 @@ fn c0_syntax_targets_kernel_struct_pointer_field_roundtrip() {
     )
     .expect("parsed struct pointer field roundtrip should execute");
 
-    let crate::kernel::Proposition::CFunctionExecutes {
+    let crate::kernel::Proposition::ProgramFunctionExecutes {
         outcome:
             crate::kernel::FunctionOutcome::Return {
                 value,
@@ -7308,12 +7315,14 @@ fn c0_syntax_targets_kernel_store_and_load_function_call() {
     let state = crate::kernel::ExecutionState::new()
         .with_local("caller", crate::kernel::int32(7))
         .with_resource_context(resources.clone());
-    let arguments = vec![crate::kernel::c_pointer_value(pointer.clone())];
+    let arguments = vec![crate::kernel::program_expression::pointer_value(
+        pointer.clone(),
+    )];
     let final_state = crate::kernel::ExecutionState::new()
         .with_local("caller", crate::kernel::int32(7))
         .with_memory(crate::kernel::Memory::new().store(pointer.clone(), crate::kernel::int32(9)))
         .with_resource_context(resources);
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -7323,7 +7332,7 @@ fn c0_syntax_targets_kernel_store_and_load_function_call() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -7362,8 +7371,8 @@ fn c0_syntax_targets_kernel_pointer_addition_load() {
     let state = crate::kernel::ExecutionState::new()
         .with_memory(memory.clone())
         .with_resource_context(resources);
-    let arguments = vec![crate::kernel::c_pointer_value(base)];
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let arguments = vec![crate::kernel::program_expression::pointer_value(base)];
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -7373,7 +7382,7 @@ fn c0_syntax_targets_kernel_pointer_addition_load() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state.clone()),
             function: Box::new(function),
             arguments,
@@ -7412,8 +7421,8 @@ fn c0_syntax_targets_kernel_array_index_load() {
     let state = crate::kernel::ExecutionState::new()
         .with_memory(memory.clone())
         .with_resource_context(resources);
-    let arguments = vec![crate::kernel::c_pointer_value(base)];
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let arguments = vec![crate::kernel::program_expression::pointer_value(base)];
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -7423,7 +7432,7 @@ fn c0_syntax_targets_kernel_array_index_load() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state.clone()),
             function: Box::new(function),
             arguments,
@@ -7468,8 +7477,8 @@ fn c0_syntax_targets_kernel_array_index_store() {
                 .store(second, crate::kernel::int32(7)),
         )
         .with_resource_context(resources);
-    let arguments = vec![crate::kernel::c_pointer_value(base)];
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let arguments = vec![crate::kernel::program_expression::pointer_value(base)];
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -7479,7 +7488,7 @@ fn c0_syntax_targets_kernel_array_index_store() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -7542,8 +7551,8 @@ fn c0_syntax_targets_kernel_address_of_array_index() {
             .clone()
             .without_local_block(&"local:q".into()),
     );
-    let arguments = vec![crate::kernel::c_pointer_value(base)];
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let arguments = vec![crate::kernel::program_expression::pointer_value(base)];
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -7553,7 +7562,7 @@ fn c0_syntax_targets_kernel_address_of_array_index() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -7586,8 +7595,8 @@ fn c0_syntax_targets_kernel_pointer_null_equality() {
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let state = crate::kernel::ExecutionState::new();
-    let arguments = vec![crate::kernel::c_pointer_value(null)];
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let arguments = vec![crate::kernel::program_expression::pointer_value(null)];
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -7597,7 +7606,7 @@ fn c0_syntax_targets_kernel_pointer_null_equality() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state.clone()),
             function: Box::new(function),
             arguments,
@@ -7636,7 +7645,7 @@ fn c0_syntax_targets_kernel_logical_short_circuiting() {
     let cases = [
         (
             crate::kernel::ExecutionState::new(),
-            vec![crate::kernel::c_pointer_value(null)],
+            vec![crate::kernel::program_expression::pointer_value(null)],
             crate::kernel::int32(1),
         ),
         (
@@ -7647,7 +7656,9 @@ fn c0_syntax_targets_kernel_logical_short_circuiting() {
                         .store(pointer.clone(), crate::kernel::int32(3)),
                 )
                 .with_resource_context(view_memory_context(pointer.clone(), 0, 1)),
-            vec![crate::kernel::c_pointer_value(pointer.clone())],
+            vec![crate::kernel::program_expression::pointer_value(
+                pointer.clone(),
+            )],
             crate::kernel::int32(1),
         ),
         (
@@ -7658,13 +7669,15 @@ fn c0_syntax_targets_kernel_logical_short_circuiting() {
                         .store(pointer.clone(), crate::kernel::int32(4)),
                 )
                 .with_resource_context(view_memory_context(pointer.clone(), 0, 1)),
-            vec![crate::kernel::c_pointer_value(pointer.clone())],
+            vec![crate::kernel::program_expression::pointer_value(
+                pointer.clone(),
+            )],
             crate::kernel::int32(0),
         ),
     ];
 
     for (state, arguments, expected) in cases {
-        let theorem = crate::kernel::prove_symbolic_c_function_execution(
+        let theorem = crate::kernel::prove_symbolic_program_function_execution(
             state.clone(),
             function.clone(),
             arguments.clone(),
@@ -7674,7 +7687,7 @@ fn c0_syntax_targets_kernel_logical_short_circuiting() {
 
         assert_eq!(
             theorem.proposition(),
-            &crate::kernel::Proposition::CFunctionExecutes {
+            &crate::kernel::Proposition::ProgramFunctionExecutes {
                 state: Box::new(state.clone()),
                 function: Box::new(function.clone()),
                 arguments,
@@ -7708,8 +7721,8 @@ fn c0_syntax_targets_kernel_unary_not() {
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let state = crate::kernel::ExecutionState::new();
-    let arguments = vec![crate::kernel::c_pointer_value(pointer)];
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let arguments = vec![crate::kernel::program_expression::pointer_value(pointer)];
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -7719,7 +7732,7 @@ fn c0_syntax_targets_kernel_unary_not() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state.clone()),
             function: Box::new(function),
             arguments,
@@ -7761,7 +7774,7 @@ fn c0_syntax_targets_kernel_local_address_of() {
             .clone()
             .without_local_block(&"local:x".into()),
     );
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         Vec::new(),
@@ -7771,7 +7784,7 @@ fn c0_syntax_targets_kernel_local_address_of() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state),
             function: Box::new(function),
             arguments: Vec::new(),
@@ -7819,7 +7832,7 @@ fn c0_syntax_targets_kernel_local_array_storage() {
             .clone()
             .without_local_block(&"local:a".into()),
     );
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         Vec::new(),
@@ -7829,7 +7842,7 @@ fn c0_syntax_targets_kernel_local_array_storage() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state),
             function: Box::new(function),
             arguments: Vec::new(),
@@ -7880,7 +7893,7 @@ fn c0_syntax_lowers_local_array_initializer_stores() {
             .clone()
             .without_local_block(&"local:a".into()),
     );
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         Vec::new(),
@@ -7890,7 +7903,7 @@ fn c0_syntax_lowers_local_array_initializer_stores() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state),
             function: Box::new(function),
             arguments: Vec::new(),
@@ -7938,7 +7951,7 @@ fn c0_syntax_flattens_multidimensional_local_array_indices() {
             .clone()
             .without_local_block(&"local:values".into()),
     );
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         Vec::new(),
@@ -7948,7 +7961,7 @@ fn c0_syntax_flattens_multidimensional_local_array_indices() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state),
             function: Box::new(function),
             arguments: Vec::new(),
@@ -8026,7 +8039,7 @@ fn c0_syntax_lowers_nested_multidimensional_array_initializers() {
             .clone()
             .without_local_block(&"local:values".into()),
     );
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         Vec::new(),
@@ -8036,7 +8049,7 @@ fn c0_syntax_lowers_nested_multidimensional_array_initializers() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state),
             function: Box::new(function),
             arguments: Vec::new(),
@@ -8089,7 +8102,7 @@ fn c0_syntax_lowers_local_struct_array_fields_with_abi_stride() {
             .clone()
             .without_local_block(&"local:items".into()),
     );
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         Vec::new(),
@@ -8099,7 +8112,7 @@ fn c0_syntax_lowers_local_struct_array_fields_with_abi_stride() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state),
             function: Box::new(function),
             arguments: Vec::new(),
@@ -8223,7 +8236,7 @@ fn c0_syntax_lowers_local_struct_array_initializers() {
             .clone()
             .without_local_block(&"local:items".into()),
     );
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         Vec::new(),
@@ -8233,7 +8246,7 @@ fn c0_syntax_lowers_local_struct_array_initializers() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state),
             function: Box::new(function),
             arguments: Vec::new(),
@@ -8350,7 +8363,7 @@ fn c0_syntax_local_array_decays_to_pointer_argument() {
             .without_local_block(&"local:a".into())
             .without_local_block(&"local:result".into()),
     );
-    let theorem = crate::kernel::prove_symbolic_c_function_execution_with_environment(
+    let theorem = crate::kernel::prove_symbolic_program_function_execution_with_environment(
         state.clone(),
         caller.clone(),
         Vec::new(),
@@ -8362,7 +8375,7 @@ fn c0_syntax_local_array_decays_to_pointer_argument() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state),
             function: Box::new(caller),
             arguments: Vec::new(),
@@ -8600,8 +8613,8 @@ fn c0_wide_scalar_struct_fields_execute_at_declared_widths() {
                 ),
         )
         .with_resource_context(resources);
-    let arguments = vec![crate::kernel::c_pointer_value(packet)];
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let arguments = vec![crate::kernel::program_expression::pointer_value(packet)];
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -8610,7 +8623,7 @@ fn c0_wide_scalar_struct_fields_execute_at_declared_widths() {
     .expect("wide scalar struct fields should execute");
 
     let mut numeric_result = theorem.proposition().clone();
-    let crate::kernel::Proposition::CFunctionExecutes {
+    let crate::kernel::Proposition::ProgramFunctionExecutes {
         outcome: crate::kernel::FunctionOutcome::Return { value, .. },
         ..
     } = &mut numeric_result
@@ -8620,7 +8633,7 @@ fn c0_wide_scalar_struct_fields_execute_at_declared_widths() {
     *value = value.native().numeric_value().clone().into();
     assert_eq!(
         &numeric_result,
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -9093,11 +9106,11 @@ fn c0_struct_value_pointer_parameter_and_return_copy_pointee_identity() {
             )
             .store(packet.offset_by_bytes(8), crate::kernel::int32(4)),
     );
-    let arguments = vec![crate::kernel::c_typed_pointer_value(
+    let arguments = vec![crate::kernel::program_expression::typed_pointer_value(
         packet.clone(),
         crate::kernel::ProgramType::UInt8Pointer,
     )];
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state,
         function,
         arguments,
@@ -9105,7 +9118,7 @@ fn c0_struct_value_pointer_parameter_and_return_copy_pointee_identity() {
     )
     .expect("pointer-bearing struct parameter and return should execute");
 
-    let crate::kernel::Proposition::CFunctionExecutes {
+    let crate::kernel::Proposition::ProgramFunctionExecutes {
         outcome:
             crate::kernel::FunctionOutcome::Return {
                 value: retained_result,
@@ -9459,8 +9472,8 @@ fn c0_struct_inline_scalar_array_field_supports_indexed_load_and_store() {
                 ),
         )
         .with_resource_context(resources);
-    let arguments = vec![crate::kernel::c_pointer_value(packet)];
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let arguments = vec![crate::kernel::program_expression::pointer_value(packet)];
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -9470,7 +9483,7 @@ fn c0_struct_inline_scalar_array_field_supports_indexed_load_and_store() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -9528,8 +9541,8 @@ fn c0_struct_multidimensional_scalar_array_field_flattens_row_major() {
                 ),
         )
         .with_resource_context(resources);
-    let arguments = vec![crate::kernel::c_pointer_value(packet)];
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let arguments = vec![crate::kernel::program_expression::pointer_value(packet)];
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -9539,7 +9552,7 @@ fn c0_struct_multidimensional_scalar_array_field_flattens_row_major() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -9681,8 +9694,8 @@ fn c0_struct_scalar_array_element_address_executes_at_element_width() {
             .clone()
             .without_local_block(&"local:value_pointer".into()),
     );
-    let arguments = vec![crate::kernel::c_pointer_value(packet)];
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let arguments = vec![crate::kernel::program_expression::pointer_value(packet)];
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -9692,7 +9705,7 @@ fn c0_struct_scalar_array_element_address_executes_at_element_width() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -9764,8 +9777,8 @@ fn c0_struct_byte_array_element_address_executes_at_byte_width() {
             .clone()
             .without_local_block(&"local:byte_pointer".into()),
     );
-    let arguments = vec![crate::kernel::c_pointer_value(packet)];
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let arguments = vec![crate::kernel::program_expression::pointer_value(packet)];
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -9775,7 +9788,7 @@ fn c0_struct_byte_array_element_address_executes_at_byte_width() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -9873,8 +9886,8 @@ fn c0_embedded_struct_array_field_preserves_stride_and_accesses_leaf() {
                 ),
         )
         .with_resource_context(resources);
-    let arguments = vec![crate::kernel::c_pointer_value(packet)];
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let arguments = vec![crate::kernel::program_expression::pointer_value(packet)];
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -9884,7 +9897,7 @@ fn c0_embedded_struct_array_field_preserves_stride_and_accesses_leaf() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -9983,8 +9996,8 @@ fn c0_multidimensional_embedded_struct_array_preserves_row_major_stride() {
                 ),
         )
         .with_resource_context(resources);
-    let arguments = vec![crate::kernel::c_pointer_value(packet)];
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let arguments = vec![crate::kernel::program_expression::pointer_value(packet)];
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -9994,7 +10007,7 @@ fn c0_multidimensional_embedded_struct_array_preserves_row_major_stride() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -10367,14 +10380,14 @@ fn c0_address_of_int16_preserves_pointer_type() {
     .expect("address-of an int16 local should parse before execution")
     .to_kernel_function();
 
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         crate::kernel::ExecutionState::new(),
         function.clone(),
         Vec::new(),
         Default::default(),
     )
     .expect("an int16 address should execute with its typed pointer result");
-    let crate::kernel::Proposition::CFunctionExecutes {
+    let crate::kernel::Proposition::ProgramFunctionExecutes {
         outcome: crate::kernel::FunctionOutcome::Return { value, .. },
         ..
     } = theorem.proposition()
@@ -10403,8 +10416,8 @@ fn c0_syntax_rejects_assignment_to_local_array_object() {
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let state = crate::kernel::ExecutionState::new();
-    let arguments = vec![crate::kernel::c_pointer_value(pointer)];
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let arguments = vec![crate::kernel::program_expression::pointer_value(pointer)];
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -10414,7 +10427,7 @@ fn c0_syntax_rejects_assignment_to_local_array_object() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -10446,8 +10459,8 @@ fn c0_syntax_targets_kernel_int32_subtraction_and_comparisons() {
     .to_kernel_function();
 
     let state = crate::kernel::ExecutionState::new();
-    let arguments = vec![crate::kernel::c_int32_literal(4)];
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let arguments = vec![crate::kernel::program_expression::int32_literal(4)];
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -10457,7 +10470,7 @@ fn c0_syntax_targets_kernel_int32_subtraction_and_comparisons() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state.clone()),
             function: Box::new(function),
             arguments,
@@ -10486,8 +10499,8 @@ fn c0_if_condition_uses_c_int32_truthiness() {
     .to_kernel_function();
 
     let state = crate::kernel::ExecutionState::new();
-    let arguments = vec![crate::kernel::c_int32_literal(7)];
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let arguments = vec![crate::kernel::program_expression::int32_literal(7)];
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -10497,7 +10510,7 @@ fn c0_if_condition_uses_c_int32_truthiness() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state.clone()),
             function: Box::new(function.clone()),
             arguments,
@@ -10508,8 +10521,8 @@ fn c0_if_condition_uses_c_int32_truthiness() {
         }
     );
 
-    let arguments = vec![crate::kernel::c_int32_literal(0)];
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let arguments = vec![crate::kernel::program_expression::int32_literal(0)];
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -10519,7 +10532,7 @@ fn c0_if_condition_uses_c_int32_truthiness() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state.clone()),
             function: Box::new(function),
             arguments,
@@ -10599,7 +10612,7 @@ fn c0_clamp_demo_proves_symbolic_branch_specifications() {
     ];
 
     for (requires, value) in cases {
-        let specification = crate::kernel::c_function_specification(
+        let specification = crate::kernel::program_function_specification(
             crate::kernel::ExecutionState::new(),
             arguments.clone(),
             requires.clone(),
@@ -10608,14 +10621,14 @@ fn c0_clamp_demo_proves_symbolic_branch_specifications() {
                 state: Box::new(crate::kernel::ExecutionState::new()),
             },
         );
-        let theorem = crate::kernel::prove_c_function_satisfies_specification(
+        let theorem = crate::kernel::prove_program_function_satisfies_specification(
             function.clone(),
             specification.clone(),
             crate::kernel::PureFactContext::new(),
         )
         .expect("clamp branch specification should prove");
         let expected = requires.iter().rev().fold(
-            crate::kernel::Proposition::CFunctionSatisfiesSpecification {
+            crate::kernel::Proposition::ProgramFunctionSatisfiesSpecification {
                 function: Box::new(function.clone()),
                 specification: Box::new(specification.clone()),
             },
@@ -10842,7 +10855,7 @@ fn c0_syntax_targets_kernel_known_function_call_assignment() {
             .clone()
             .without_local_block(&"local:result".into()),
     );
-    let theorem = crate::kernel::prove_symbolic_c_function_execution_with_environment(
+    let theorem = crate::kernel::prove_symbolic_program_function_execution_with_environment(
         state.clone(),
         caller.clone(),
         Vec::new(),
@@ -10854,7 +10867,7 @@ fn c0_syntax_targets_kernel_known_function_call_assignment() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state),
             function: Box::new(caller),
             arguments: Vec::new(),
@@ -10889,7 +10902,7 @@ fn c0_syntax_targets_kernel_float_argument_conversion() {
     .expect("integer-to-double call argument should parse")
     .to_kernel_function();
 
-    let theorem = crate::kernel::prove_symbolic_c_function_execution_with_environment(
+    let theorem = crate::kernel::prove_symbolic_program_function_execution_with_environment(
         crate::kernel::ExecutionState::new(),
         caller,
         Vec::new(),
@@ -10898,7 +10911,7 @@ fn c0_syntax_targets_kernel_float_argument_conversion() {
         crate::kernel::ExecutionSemantics::EXECUTE_BODIES,
     )
     .expect("integer-to-double call argument should execute");
-    let crate::kernel::Proposition::CFunctionExecutes {
+    let crate::kernel::Proposition::ProgramFunctionExecutes {
         outcome:
             crate::kernel::FunctionOutcome::Return {
                 value: retained_result,
@@ -11135,14 +11148,14 @@ fn c0_assignment_expression_result_uses_the_target_type() {
     .expect("a simple scalar assignment expression should parse")
     .to_kernel_function();
 
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         crate::kernel::ExecutionState::new(),
         function,
         Vec::new(),
         Default::default(),
     )
     .expect("the converted assignment result should execute");
-    let crate::kernel::Proposition::CFunctionExecutes {
+    let crate::kernel::Proposition::ProgramFunctionExecutes {
         outcome: crate::kernel::FunctionOutcome::Return { value, .. },
         ..
     } = theorem.proposition()
@@ -11177,14 +11190,14 @@ fn c0_assignment_expression_short_circuits_a_guard_read() {
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
 
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         crate::kernel::ExecutionState::new(),
         function,
-        vec![crate::kernel::c_pointer_value(null)],
+        vec![crate::kernel::program_expression::pointer_value(null)],
         Default::default(),
     )
     .expect("a false assignment result must skip the field read");
-    let crate::kernel::Proposition::CFunctionExecutes {
+    let crate::kernel::Proposition::ProgramFunctionExecutes {
         outcome: crate::kernel::FunctionOutcome::Return { value, .. },
         ..
     } = theorem.proposition()
@@ -11197,9 +11210,9 @@ fn c0_assignment_expression_short_circuits_a_guard_read() {
 #[test]
 fn c0_assignment_expression_loop_guard_reexecutes_once_after_continue() {
     let calls_owner = crate::kernel::ResourceSpec::owned_memory(crate::kernel::MemorySegment::new(
-        crate::kernel::c_variable("calls"),
-        crate::kernel::c_int32_literal(0),
-        crate::kernel::c_int32_literal(1),
+        crate::kernel::program_expression::variable("calls"),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(1),
     ));
     let tick = syntax::parse_function(
         r#"
@@ -11235,7 +11248,7 @@ fn c0_assignment_expression_loop_guard_reexecutes_once_after_continue() {
     .to_kernel_function();
     let environment = crate::kernel::ExecutionEnvironment::new().with_function(tick);
 
-    let theorem = crate::kernel::prove_symbolic_c_function_execution_with_environment(
+    let theorem = crate::kernel::prove_symbolic_program_function_execution_with_environment(
         crate::kernel::ExecutionState::new(),
         caller,
         Vec::new(),
@@ -11244,7 +11257,7 @@ fn c0_assignment_expression_loop_guard_reexecutes_once_after_continue() {
         crate::kernel::ExecutionSemantics::EXECUTE_BODIES,
     )
     .expect("the guard call should execute once on each of three condition checks");
-    let crate::kernel::Proposition::CFunctionExecutes {
+    let crate::kernel::Proposition::ProgramFunctionExecutes {
         outcome: crate::kernel::FunctionOutcome::Return { state, value },
         ..
     } = theorem.proposition()
@@ -11404,14 +11417,14 @@ fn c0_struct_union_fields_are_copyable_by_value_without_flattening_overlap() {
             .store(source.clone(), crate::kernel::int32(1))
             .store(source.offset_by_bytes(8), crate::kernel::int32(42)),
     );
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state,
         function,
-        vec![crate::kernel::c_pointer_value(source)],
+        vec![crate::kernel::program_expression::pointer_value(source)],
         Default::default(),
     )
     .expect("union-containing aggregate copy should preserve the active member view");
-    let crate::kernel::Proposition::CFunctionExecutes {
+    let crate::kernel::Proposition::ProgramFunctionExecutes {
         outcome: crate::kernel::FunctionOutcome::Return { value, .. },
         ..
     } = theorem.proposition()
@@ -11602,7 +11615,7 @@ fn c0_function_pointers_preserve_signature_and_dispatch_callback() {
         crate::kernel::ProgramType::FunctionPointer(_)
     ));
 
-    let theorem = crate::kernel::prove_symbolic_c_function_execution_with_environment(
+    let theorem = crate::kernel::prove_symbolic_program_function_execution_with_environment(
         crate::kernel::ExecutionState::new(),
         caller.clone(),
         Vec::new(),
@@ -11615,7 +11628,7 @@ fn c0_function_pointers_preserve_signature_and_dispatch_callback() {
     .expect("compatible callback should execute");
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(crate::kernel::ExecutionState::new()),
             function: Box::new(caller),
             arguments: Vec::new(),
@@ -11675,7 +11688,7 @@ fn c0_function_pointers_reject_incompatible_callback_targets() {
     .expect("function address should parse")
     .to_kernel_function();
 
-    let theorem = crate::kernel::prove_symbolic_c_function_execution_with_environment(
+    let theorem = crate::kernel::prove_symbolic_program_function_execution_with_environment(
         crate::kernel::ExecutionState::new(),
         caller,
         Vec::new(),
@@ -11686,7 +11699,7 @@ fn c0_function_pointers_reject_incompatible_callback_targets() {
         crate::kernel::ExecutionSemantics::EXECUTE_BODIES,
     )
     .expect("incompatible callback should produce a runtime-error theorem");
-    let crate::kernel::Proposition::CFunctionExecutes {
+    let crate::kernel::Proposition::ProgramFunctionExecutes {
         outcome:
             crate::kernel::FunctionOutcome::RuntimeError(crate::kernel::RuntimeError::FunctionContract(
                 message,
@@ -11837,10 +11850,10 @@ fn c0_struct_function_pointer_fields_load_and_dispatch_known_targets() {
         )
         .with_resource_context(own_memory_context(table.clone(), 0, 8));
 
-    let theorem = crate::kernel::prove_symbolic_c_function_execution_with_environment(
+    let theorem = crate::kernel::prove_symbolic_program_function_execution_with_environment(
         state,
         apply,
-        vec![crate::kernel::c_typed_pointer_value(
+        vec![crate::kernel::program_expression::typed_pointer_value(
             table,
             crate::kernel::ProgramType::Int32Pointer,
         )],
@@ -11851,7 +11864,7 @@ fn c0_struct_function_pointer_fields_load_and_dispatch_known_targets() {
         crate::kernel::ExecutionSemantics::EXECUTE_BODIES,
     )
     .expect("known callback field target should execute");
-    let crate::kernel::Proposition::CFunctionExecutes {
+    let crate::kernel::Proposition::ProgramFunctionExecutes {
         outcome: crate::kernel::FunctionOutcome::Return { value, .. },
         ..
     } = theorem.proposition()
@@ -11912,10 +11925,10 @@ fn c0_struct_function_pointer_fields_support_direct_calls() {
                 .store(table.clone(), callback),
         )
         .with_resource_context(own_memory_context(table.clone(), 0, 8));
-    let theorem = crate::kernel::prove_symbolic_c_function_execution_with_environment(
+    let theorem = crate::kernel::prove_symbolic_program_function_execution_with_environment(
         state,
         apply,
-        vec![crate::kernel::c_typed_pointer_value(
+        vec![crate::kernel::program_expression::typed_pointer_value(
             table,
             crate::kernel::ProgramType::Int32Pointer,
         )],
@@ -11924,7 +11937,7 @@ fn c0_struct_function_pointer_fields_support_direct_calls() {
         crate::kernel::ExecutionSemantics::EXECUTE_BODIES,
     )
     .expect("direct callback field call should execute");
-    let crate::kernel::Proposition::CFunctionExecutes {
+    let crate::kernel::Proposition::ProgramFunctionExecutes {
         outcome: crate::kernel::FunctionOutcome::Return { value, .. },
         ..
     } = theorem.proposition()
@@ -12094,8 +12107,8 @@ fn c0_syntax_targets_kernel_while_countdown() {
     .to_kernel_function();
 
     let state = crate::kernel::ExecutionState::new();
-    let arguments = vec![crate::kernel::c_int32_literal(3)];
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let arguments = vec![crate::kernel::program_expression::int32_literal(3)];
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -12105,7 +12118,7 @@ fn c0_syntax_targets_kernel_while_countdown() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -12168,8 +12181,8 @@ fn c0_memory_safety_demo_fill_three_ints() {
         .store(third, crate::kernel::int32(2))
         .store(local_i, crate::kernel::int32(3));
     let final_memory = final_memory.without_local_block(&"local:i".into());
-    let arguments = vec![crate::kernel::c_pointer_value(base)];
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let arguments = vec![crate::kernel::program_expression::pointer_value(base)];
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -12179,7 +12192,7 @@ fn c0_memory_safety_demo_fill_three_ints() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -12582,10 +12595,10 @@ fn c0_struct_pointer_indirection_updates_one_pointer_cell() {
             .without_local_block(&"local:link".into()),
     );
     let arguments = vec![
-        crate::kernel::c_pointer_value(root),
-        crate::kernel::c_pointer_value(replacement),
+        crate::kernel::program_expression::pointer_value(root),
+        crate::kernel::program_expression::pointer_value(replacement),
     ];
-    let theorem = crate::kernel::prove_symbolic_c_function_execution(
+    let theorem = crate::kernel::prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -12595,7 +12608,7 @@ fn c0_struct_pointer_indirection_updates_one_pointer_cell() {
 
     assert_eq!(
         theorem.proposition(),
-        &crate::kernel::Proposition::CFunctionExecutes {
+        &crate::kernel::Proposition::ProgramFunctionExecutes {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -12788,16 +12801,16 @@ fn c0_bool_objects_normalize_values_and_keep_abi_metadata() {
         .expect("normalize function")
         .to_kernel_function();
     for (input, expected) in [(0, 0), (7, 1)] {
-        let execution = crate::kernel::prove_symbolic_c_function_execution(
+        let execution = crate::kernel::prove_symbolic_program_function_execution(
             crate::kernel::ExecutionState::new(),
             normalize.clone(),
-            vec![crate::kernel::c_int32_literal(input)],
+            vec![crate::kernel::program_expression::int32_literal(input)],
             Default::default(),
         )
         .expect("integer-to-bool conversion should execute");
         assert!(matches!(
             execution.proposition(),
-            crate::kernel::Proposition::CFunctionExecutes {
+            crate::kernel::Proposition::ProgramFunctionExecutes {
                 outcome: crate::kernel::FunctionOutcome::Return {
                     value,
                     ..
@@ -12812,7 +12825,7 @@ fn c0_bool_objects_normalize_values_and_keep_abi_metadata() {
         .find(|function| function.name() == "read_flag")
         .expect("read_flag function")
         .to_kernel_function();
-    let execution = crate::kernel::prove_symbolic_c_function_execution(
+    let execution = crate::kernel::prove_symbolic_program_function_execution(
         crate::kernel::ExecutionState::new(),
         read_flag,
         Vec::new(),
@@ -12821,7 +12834,7 @@ fn c0_bool_objects_normalize_values_and_keep_abi_metadata() {
     .expect("bool struct field should execute");
     assert!(matches!(
         execution.proposition(),
-        crate::kernel::Proposition::CFunctionExecutes {
+        crate::kernel::Proposition::ProgramFunctionExecutes {
             outcome: crate::kernel::FunctionOutcome::Return {
                 value,
                 ..
@@ -12849,19 +12862,21 @@ fn c0_bool_header_constants_pointer_conversion_and_callbacks_are_typed() {
     )
     .expect("pointer-to-bool conversion should parse")
     .to_kernel_function();
-    let null = crate::kernel::prove_symbolic_c_function_execution(
+    let null = crate::kernel::prove_symbolic_program_function_execution(
         crate::kernel::ExecutionState::new(),
         pointer_function.clone(),
-        vec![crate::kernel::c_pointer_value(crate::kernel::Pointer {
-            block: crate::kernel::PointerBlock::Concrete("null".to_string()),
-            offset: crate::kernel::PointerOffsetTerm::Constant(0),
-        })],
+        vec![crate::kernel::program_expression::pointer_value(
+            crate::kernel::Pointer {
+                block: crate::kernel::PointerBlock::Concrete("null".to_string()),
+                offset: crate::kernel::PointerOffsetTerm::Constant(0),
+            },
+        )],
         Default::default(),
     )
     .expect("null pointer should convert to false");
     assert!(matches!(
         null.proposition(),
-        crate::kernel::Proposition::CFunctionExecutes {
+        crate::kernel::Proposition::ProgramFunctionExecutes {
             outcome: crate::kernel::FunctionOutcome::Return {
                 value,
                 ..
@@ -12871,19 +12886,21 @@ fn c0_bool_header_constants_pointer_conversion_and_callbacks_are_typed() {
                     int32_constant!(0)
                 ))
     ));
-    let non_null = crate::kernel::prove_symbolic_c_function_execution(
+    let non_null = crate::kernel::prove_symbolic_program_function_execution(
         crate::kernel::ExecutionState::new(),
         pointer_function,
-        vec![crate::kernel::c_pointer_value(crate::kernel::Pointer {
-            block: crate::kernel::PointerBlock::Concrete("object".to_string()),
-            offset: crate::kernel::PointerOffsetTerm::Constant(0),
-        })],
+        vec![crate::kernel::program_expression::pointer_value(
+            crate::kernel::Pointer {
+                block: crate::kernel::PointerBlock::Concrete("object".to_string()),
+                offset: crate::kernel::PointerOffsetTerm::Constant(0),
+            },
+        )],
         Default::default(),
     )
     .expect("non-null pointer should convert to true");
     assert!(matches!(
         non_null.proposition(),
-        crate::kernel::Proposition::CFunctionExecutes {
+        crate::kernel::Proposition::ProgramFunctionExecutes {
             outcome: crate::kernel::FunctionOutcome::Return {
                 value,
                 ..
@@ -13007,7 +13024,7 @@ fn c0_body_call_updates_a_local_array_without_rebinding_it_as_a_scalar() {
         .find(|function| function.name() == "caller")
         .unwrap()
         .to_kernel_function();
-    let theorem = crate::kernel::prove_symbolic_c_function_execution_with_environment(
+    let theorem = crate::kernel::prove_symbolic_program_function_execution_with_environment(
         crate::kernel::ExecutionState::new(),
         caller,
         Vec::new(),
@@ -13017,7 +13034,7 @@ fn c0_body_call_updates_a_local_array_without_rebinding_it_as_a_scalar() {
     )
     .unwrap();
     assert!(
-        matches!(theorem.proposition(), crate::kernel::Proposition::CFunctionExecutes {
+        matches!(theorem.proposition(), crate::kernel::Proposition::ProgramFunctionExecutes {
         outcome: crate::kernel::FunctionOutcome::Return { value, .. }, ..
     } if value.native().as_ref() == &crate::kernel::int32(9))
     );
@@ -13192,11 +13209,11 @@ fn c0_out_of_range_integer_constants_convert_modulo_the_destination_width() {
 fn signed_byte_proof_expansion_preserves_memory_and_negative_values() {
     let c = "int read(signed char *p) { return p[1] + 1; }";
     let proof = "verifying \"byte.c\"; int read(signed char *p) { views p[0..2]; ensures result == p[1] + 1; }";
-    crate::surface::verify_c0_sources(proof, &[("byte.c", c)]).unwrap();
+    crate::surface::verify_c_sources(proof, &[("byte.c", c)]).unwrap();
     let expanded =
-        crate::surface::expand_c0_claim_source_by_label(proof, &[("byte.c", c)], "read.ensures_0")
+        crate::surface::expand_c_claim_source_by_label(proof, &[("byte.c", c)], "read.ensures_0")
             .unwrap();
-    crate::surface::verify_c0_sources(&expanded, &[("byte.c", c)]).unwrap();
+    crate::surface::verify_c_sources(&expanded, &[("byte.c", c)]).unwrap();
 }
 
 #[test]
@@ -13250,14 +13267,14 @@ fn anonymous_struct_typedef_reuses_field_validation() {
 fn anonymous_struct_local_proof_expands_and_reverifies() {
     let c = "typedef struct { int __val[2]; } __fsid_t; int use_local(void) { __fsid_t a = {{3, 7}}; __fsid_t b = a; b.__val[0] = 11; return a.__val[0] + b.__val[0] + b.__val[1]; }";
     let proof = "verifying \"anonymous.c\"; int use_local() { ensures result == 21; }";
-    crate::surface::verify_c0_sources(proof, &[("anonymous.c", c)]).unwrap();
-    let expanded = crate::surface::expand_c0_claim_source_by_label(
+    crate::surface::verify_c_sources(proof, &[("anonymous.c", c)]).unwrap();
+    let expanded = crate::surface::expand_c_claim_source_by_label(
         proof,
         &[("anonymous.c", c)],
         "use_local.ensures_0",
     )
     .unwrap();
-    crate::surface::verify_c0_sources(&expanded, &[("anonymous.c", c)]).unwrap();
+    crate::surface::verify_c_sources(&expanded, &[("anonymous.c", c)]).unwrap();
 }
 
 #[test]
@@ -13295,11 +13312,11 @@ fn struct_wide_array_layout_and_size_overflow() {
 fn struct_wide_array_proof_expands_and_reverifies() {
     let c = "struct words { char tag; unsigned long data[3]; }; unsigned long set(struct words *p, unsigned long value) { p->data[1] = value; return p->data[2]; }";
     let proof = "verifying \"wide.c\"; unsigned long set(struct words *p, unsigned long value) { owns p->data[1..2]; views p->data[2..3]; ensures p->data[1] == value; ensures result == old(p->data[2]); }";
-    crate::surface::verify_c0_sources(proof, &[("wide.c", c)]).unwrap();
+    crate::surface::verify_c_sources(proof, &[("wide.c", c)]).unwrap();
     let expanded =
-        crate::surface::expand_c0_claim_source_by_label(proof, &[("wide.c", c)], "set.ensures_0")
+        crate::surface::expand_c_claim_source_by_label(proof, &[("wide.c", c)], "set.ensures_0")
             .unwrap();
-    crate::surface::verify_c0_sources(&expanded, &[("wide.c", c)]).unwrap();
+    crate::surface::verify_c_sources(&expanded, &[("wide.c", c)]).unwrap();
 }
 
 #[test]
@@ -13414,7 +13431,7 @@ fn c0_nonnull_function_attributes_accept_parameter_indices_without_granting_owne
     }
     let c = "int inspect(int *p) __attribute__((nonnull(1))) { return *p; }";
     let proof = "verifying \"nonnull.c\"; int inspect(int *p) { ensures result == 7; }";
-    assert!(crate::surface::verify_c0_sources(proof, &[("nonnull.c", c)]).is_err());
+    assert!(crate::surface::verify_c_sources(proof, &[("nonnull.c", c)]).is_err());
 }
 
 #[test]
@@ -13482,18 +13499,18 @@ fn c0_restrict_pointer_qualifiers_preserve_pointer_types_without_alias_facts() {
     }
     let c = "int read(int *restrict p) { return *p; }";
     let proof = "verifying \"restrict.c\"; int read(int *p) { ensures result == 7; }";
-    assert!(crate::surface::verify_c0_sources(proof, &[("restrict.c", c)]).is_err());
+    assert!(crate::surface::verify_c_sources(proof, &[("restrict.c", c)]).is_err());
 }
 
 #[test]
 fn c0_leaf_memory_proof_expands_and_reverifies() {
     let c = "__attribute__((__nothrow__, __leaf__)) int set(int *p) { *p = 7; return *p; }";
     let proof = "verifying \"leaf.c\"; int set(int *p) { owns p[0..1]; ensures p[0] == 7; ensures result == 7; }";
-    crate::surface::verify_c0_sources(proof, &[("leaf.c", c)]).unwrap();
+    crate::surface::verify_c_sources(proof, &[("leaf.c", c)]).unwrap();
     let expanded =
-        crate::surface::expand_c0_claim_source_by_label(proof, &[("leaf.c", c)], "set.ensures_0")
+        crate::surface::expand_c_claim_source_by_label(proof, &[("leaf.c", c)], "set.ensures_0")
             .unwrap();
-    crate::surface::verify_c0_sources(&expanded, &[("leaf.c", c)]).unwrap();
+    crate::surface::verify_c_sources(&expanded, &[("leaf.c", c)]).unwrap();
 }
 
 #[test]
@@ -13581,14 +13598,14 @@ fn c0_union_pointer_member_preserves_pointee_constness() {
 fn c0_const_pointer_fields_alias_proof_expands_and_reverifies() {
     let c = "struct holder { const int *value; }; int update(struct holder *h, int *p) { *p = 7; return h->value[0]; }";
     let proof = "verifying \"fields.c\"; int update(struct holder *h, int *p) { views h->value; owns p[0..1]; requires h->value == p; ensures result == 7; }";
-    crate::surface::verify_c0_sources(proof, &[("fields.c", c)]).unwrap();
-    let expanded = crate::surface::expand_c0_claim_source_by_label(
+    crate::surface::verify_c_sources(proof, &[("fields.c", c)]).unwrap();
+    let expanded = crate::surface::expand_c_claim_source_by_label(
         proof,
         &[("fields.c", c)],
         "update.ensures_0",
     )
     .unwrap();
-    crate::surface::verify_c0_sources(&expanded, &[("fields.c", c)]).unwrap();
+    crate::surface::verify_c_sources(&expanded, &[("fields.c", c)]).unwrap();
 }
 
 #[test]
@@ -13596,12 +13613,12 @@ fn c0_const_pointer_fields_alias_proof_expands_and_reverifies() {
 fn c0_const_pointer_fields_store_proof_expands_and_reverifies() {
     let c = "struct holder { const int *value; }; const int *set(struct holder *h, const int *p) { h->value = p; return h->value; }";
     let proof = "verifying \"fields.c\"; const int *set(struct holder *h, const int *p) { owns h->value; ensures result == p; ensures h->value == p; }";
-    crate::surface::verify_c0_sources(proof, &[("fields.c", c)]).unwrap();
+    crate::surface::verify_c_sources(proof, &[("fields.c", c)]).unwrap();
     for label in ["set.ensures_0", "set.ensures_1"] {
         let expanded =
-            crate::surface::expand_c0_claim_source_by_label(proof, &[("fields.c", c)], label)
+            crate::surface::expand_c_claim_source_by_label(proof, &[("fields.c", c)], label)
                 .unwrap();
-        crate::surface::verify_c0_sources(&expanded, &[("fields.c", c)]).unwrap();
+        crate::surface::verify_c_sources(&expanded, &[("fields.c", c)]).unwrap();
     }
 }
 
@@ -13732,7 +13749,7 @@ fn optimizing_imports_keep_the_compiletime_assert_declaration() {
     );
     let proof =
         "verifying \"guarded.c\";\nint32 guarded(int32 value) {\n    ensures result == value;\n}\n";
-    let error = crate::surface::verify_c0_prepared_sources(proof, &[import])
+    let error = crate::surface::verify_c_prepared_sources(proof, &[import])
         .expect_err("a reachable call to the error declaration must fail");
     assert!(
         error.message().contains("is unreachable"),
@@ -13928,7 +13945,7 @@ fn c0_unused_builtin_va_list_prototypes_do_not_block_ordinary_bodies() {
     .unwrap();
     assert_eq!(unit.functions.len(), 1);
     assert_eq!(unit.functions[0].name(), "identity");
-    crate::surface::verify_c0_sources(
+    crate::surface::verify_c_sources(
         "verifying \"opaque-header.c\"; int identity(int x) { ensures result == x; }",
         &[("opaque-header.c", source)],
     )
@@ -14327,7 +14344,7 @@ fn c0_scalar_updates_preserve_old_new_values_and_loop_exit_updates() {
         let function = syntax::parse_function(source)
             .expect(source)
             .to_kernel_function();
-        let theorem = crate::kernel::prove_symbolic_c_function_execution(
+        let theorem = crate::kernel::prove_symbolic_program_function_execution(
             ExecutionState::new(),
             function,
             Vec::new(),
@@ -14335,7 +14352,7 @@ fn c0_scalar_updates_preserve_old_new_values_and_loop_exit_updates() {
         )
         .expect(source);
         assert!(
-            matches!(theorem.proposition(), Proposition::CFunctionExecutes {
+            matches!(theorem.proposition(), Proposition::ProgramFunctionExecutes {
             outcome: FunctionOutcome::Return { value, .. }, ..
         } if value.native().as_ref() == &expected),
             "{source}: {:?}",
@@ -14355,7 +14372,7 @@ fn c0_scalar_updates_keep_const_pointer_reads_and_nominal_stride() {
         let function = syntax::parse_function(source)
             .expect(source)
             .to_kernel_function();
-        let theorem = crate::kernel::prove_symbolic_c_function_execution(
+        let theorem = crate::kernel::prove_symbolic_program_function_execution(
             crate::kernel::ExecutionState::new(),
             function,
             Vec::new(),
@@ -14363,7 +14380,7 @@ fn c0_scalar_updates_keep_const_pointer_reads_and_nominal_stride() {
         )
         .expect(source);
         assert!(
-            matches!(theorem.proposition(), crate::kernel::Proposition::CFunctionExecutes {
+            matches!(theorem.proposition(), crate::kernel::Proposition::ProgramFunctionExecutes {
             outcome: crate::kernel::FunctionOutcome::Return { value, .. }, ..
         } if value.native().as_ref() == &crate::kernel::int32(262)),
             "{source}: {:?}",
@@ -14398,7 +14415,7 @@ fn c0_scalar_updates_preserve_signed_overflow_undefined_behavior() {
         let function = syntax::parse_function(source)
             .expect(source)
             .to_kernel_function();
-        let theorem = crate::kernel::prove_symbolic_c_function_execution(
+        let theorem = crate::kernel::prove_symbolic_program_function_execution(
             crate::kernel::ExecutionState::new(),
             function,
             Vec::new(),
@@ -14408,7 +14425,7 @@ fn c0_scalar_updates_preserve_signed_overflow_undefined_behavior() {
         assert!(
             matches!(
                 theorem.proposition(),
-                crate::kernel::Proposition::CFunctionExecutes {
+                crate::kernel::Proposition::ProgramFunctionExecutes {
                     outcome: crate::kernel::FunctionOutcome::UndefinedBehavior(
                         crate::kernel::UndefinedBehavior::SignedOverflow
                     ),

@@ -8,7 +8,7 @@ fn division_paths(context: &PureFactContext) -> Vec<ExpressionPath> {
         ExecutionFacts::default(),
         Vec::new(),
         context,
-        apply_c_divide,
+        apply_program_divide,
     )
 }
 
@@ -108,7 +108,7 @@ fn native_existential_domains_scale_with_claims_not_ambient_facts() {
             .reduce(|left, right| SpecProposition::And(Box::new(left), Box::new(right)))
             .unwrap();
         let (lowered, work) = crate::instrumentation::measure_deterministic_work(|| {
-            crate::kernel::c_lower_spec_proposition_with_checked_obligations(
+            crate::kernel::program_lower_spec_proposition_with_checked_obligations(
                 &ExecutionState::new(),
                 &proposition,
                 None,
@@ -163,7 +163,7 @@ fn structural_signed_addition_keeps_its_debt_independent_of_ambient_facts() {
                     Vec::new(),
                     &context,
                     |left, right, facts, obligations, context| {
-                        apply_c_add(
+                        apply_program_add(
                             &ExecutionState::new(),
                             left,
                             right,
@@ -219,7 +219,7 @@ fn logical_shift_shape_and_work_ignore_ambient_count_facts() {
             ExecutionFacts::default(),
             Vec::new(),
             context,
-            apply_c_shift_right,
+            apply_program_shift_right,
         )
     };
     let expected = lower(&PureFactContext::new());
@@ -272,7 +272,7 @@ fn wide_logical_product_keeps_operands_when_equalities_grow() {
             ExecutionFacts::default(),
             Vec::new(),
             context,
-            apply_c_multiply,
+            apply_program_multiply,
         )
     };
     let expected = lower(&PureFactContext::new());

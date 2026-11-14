@@ -583,7 +583,7 @@ mod tests {
             vec![crate::kernel::int32(argument).into()].into(),
             crate::kernel::ResourceFieldSchema::new(vec![(
                 "value".into(),
-                crate::kernel::ResourceFieldType::C(crate::kernel::ProgramType::Int32),
+                crate::kernel::ResourceFieldType::Program(crate::kernel::ProgramType::Int32),
             )])
             .unwrap(),
             vec![crate::kernel::int32(0).into()].into(),

@@ -29,7 +29,7 @@ fn narrowing_casts_retain_growing_arithmetic_prefixes_without_exports() {
                         )
                         .unwrap();
                         assert!(cast.is_shared_machine_operand());
-                        assert_eq!(cast.ty(), &KernelType::C(destination.c_type()));
+                        assert_eq!(cast.ty(), &KernelType::Program(destination.c_type()));
                     }
                 });
                 assert_eq!(KernelTermExport::machine_export_count(), exports);

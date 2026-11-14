@@ -104,7 +104,7 @@ impl SpecValue {
         let value = self.native();
         IntegerTerm::from_machine(
             MachineIntegerType::from_c_type(value.c_type())?,
-            c_value_bitvector_term(&value)?,
+            program_value_bitvector_term(&value)?,
         )
     }
     pub(super) fn comparison(
@@ -143,7 +143,7 @@ impl SpecValue {
         let right = right.native();
         Ok(bool_comparison_proposition(&left, op, &right)
             .transpose()?
-            .or_else(|| c_value_comparison_proposition(&left, op, &right)))
+            .or_else(|| program_value_comparison_proposition(&left, op, &right)))
     }
 }
 
@@ -174,7 +174,7 @@ impl SpecCallArgument {
         match self {
             Self::Native(value) => value,
             Self::Shared(value) => {
-                let KernelType::C(ty) = value.ty() else {
+                let KernelType::Program(ty) = value.ty() else {
                     unreachable!("machine argument");
                 };
                 let format = MachineIntegerType::from_c_type(*ty).expect("machine argument type");

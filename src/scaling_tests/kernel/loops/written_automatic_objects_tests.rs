@@ -31,7 +31,13 @@ fn loop_written_objects_scale_with_the_body_not_the_frame() {
         }
         let mut body = ProgramStatement::Skip;
         for _ in 0..body_calls {
-            body = c_seq(body, c_call("bump", vec![c_variable("c")]));
+            body = program_seq(
+                body,
+                program_call(
+                    "bump",
+                    vec![crate::kernel::program_expression::variable("c")],
+                ),
+            );
         }
         let (ranges, work) = crate::instrumentation::measure_deterministic_work(|| {
             loop_written_automatic_objects(&state, &body, &BTreeSet::new())

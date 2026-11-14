@@ -20,7 +20,7 @@ fn condition_fact_graph_queries_scale_without_fact_index() {
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 1..=size {
                 let target = less_than(sum(var(index)), var(9000));
-                assert!(c_condition_facts_equivalent_for_memory_resolution(
+                assert!(program_condition_facts_equivalent_for_memory_resolution(
                     &source, &target, &context,
                 ));
             }
@@ -38,7 +38,7 @@ fn failed_check_cell_capture_is_bounded_and_ignores_unrelated_facts() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let memory =
-        crate::kernel::intern_c_memory(Memory::new().with_block(base.block.clone(), 128).store(
+        crate::kernel::intern_memory(Memory::new().with_block(base.block.clone(), 128).store(
             Pointer::symbolic(Variable(982_000)),
             ProgramValue::Int32(MachineTerm::constant(9)),
         ));

@@ -481,7 +481,7 @@ mod tests {
     }
 
     #[test]
-    fn nested_division_retains_total_and_c_defined_domains() {
+    fn nested_division_retains_total_and_program_defined_domains() {
         for format in [
             MachineIntegerType::Int32,
             MachineIntegerType::UInt32,

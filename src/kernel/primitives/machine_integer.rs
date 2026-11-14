@@ -957,7 +957,7 @@ mod tests {
     #[test]
     fn wide_cast_symbolic_and_constant_conversions_match_independent_exact_oracle() {
         use crate::kernel::Variable;
-        use crate::kernel::reasoning::substitute_bitvector_variable_in_c_value;
+        use crate::kernel::reasoning::substitute_bitvector_variable_in_program_value;
         use MachineIntegerType::*;
         let types = [
             Int8, UInt8, Int16, UInt16, Int32, UInt32, Int64, UInt64, Int128, UInt128,
@@ -998,7 +998,7 @@ mod tests {
                 for integer in &samples {
                     let input =
                         MachineIntegerConstant::from_integer(source.format(), integer).unwrap();
-                    let actual = substitute_bitvector_variable_in_c_value(
+                    let actual = substitute_bitvector_variable_in_program_value(
                         &symbolic,
                         variable,
                         &source.constant_term(input).unwrap(),
@@ -1030,7 +1030,7 @@ mod tests {
     #[test]
     fn nested_modulo_casts_match_an_independent_oracle_and_preserve_widening_sign() {
         use crate::kernel::Variable;
-        use crate::kernel::reasoning::substitute_bitvector_variable_in_c_value;
+        use crate::kernel::reasoning::substitute_bitvector_variable_in_program_value;
         use MachineIntegerType::*;
         let types = [Int8, UInt8, Int32, UInt32, Int64, UInt64, Int128, UInt128];
         let variable = Variable(149_003);
@@ -1076,7 +1076,7 @@ mod tests {
                         let constant =
                             MachineIntegerConstant::from_integer(source.format(), &input).unwrap();
                         let value = destination.value_from_term(term.clone());
-                        let result = substitute_bitvector_variable_in_c_value(
+                        let result = substitute_bitvector_variable_in_program_value(
                             &value,
                             variable,
                             &source.constant_term(constant).unwrap(),

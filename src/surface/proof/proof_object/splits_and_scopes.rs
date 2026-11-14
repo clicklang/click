@@ -1022,7 +1022,7 @@ impl<'a> Proof<'a> {
             // name that term, rather than introduce a new subtraction node.
             let starts_at_zero = matches!(
                 start,
-                ContractExpression::CFragment(ProgramExpression::Value(
+                ContractExpression::ProgramExpression(ProgramExpression::Value(
                     ProgramValue::Int32(int32_constant!(0))
                         | ProgramValue::UInt32(uint32_constant!(0))
                         | ProgramValue::Int64(int64_constant!(0))
@@ -1036,7 +1036,7 @@ impl<'a> Proof<'a> {
                     ContractExpression::Subtract(Box::new(end.clone()), Box::new(start.clone()))
                 },
                 operator: ComparisonOperator::LessEqual,
-                right: ContractExpression::CFragment(ProgramExpression::Value(
+                right: ContractExpression::ProgramExpression(ProgramExpression::Value(
                     ProgramValue::UInt64(MachineTerm::uint64_constant(constant_u64(*limit))),
                 )),
             };

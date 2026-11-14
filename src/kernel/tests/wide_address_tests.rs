@@ -1,8 +1,8 @@
 use super::*;
 
 fn normal(state: ExecutionState, statement: ProgramStatement) -> ExecutionState {
-    let theorem = prove_c_statement_execution(state, statement).unwrap();
-    let Proposition::CStatementExecutes {
+    let theorem = prove_execution_statement_execution(state, statement).unwrap();
+    let Proposition::ProgramStatementExecutes {
         outcome: StatementOutcome::Normal(after),
         ..
     } = theorem.proposition()
@@ -13,8 +13,8 @@ fn normal(state: ExecutionState, statement: ProgramStatement) -> ExecutionState 
 }
 
 fn outcome(state: &ExecutionState, expression: ProgramExpression) -> ExpressionOutcome {
-    let theorem = prove_c_expression_evaluation(state.clone(), expression).unwrap();
-    let Proposition::CExpressionEvaluates { outcome, .. } = theorem.proposition() else {
+    let theorem = prove_program_expression_evaluation(state.clone(), expression).unwrap();
+    let Proposition::ProgramExpressionEvaluates { outcome, .. } = theorem.proposition() else {
         unreachable!()
     };
     outcome.clone()
@@ -28,9 +28,9 @@ fn value(state: &ExecutionState, expression: ProgramExpression) -> ProgramValue 
 }
 
 fn element_address(index: u32) -> ProgramExpression {
-    ProgramExpression::AddressOf(Box::new(c_index(
-        c_variable("items"),
-        c_int32_literal(index),
+    ProgramExpression::AddressOf(Box::new(crate::kernel::program_expression::index(
+        crate::kernel::program_expression::variable("items"),
+        crate::kernel::program_expression::int32_literal(index),
     )))
 }
 
@@ -41,36 +41,50 @@ fn wide_address_scalar_address_and_pointer_slot_preserve_type_and_payload() {
             ProgramType::Int128,
             ProgramType::Int128Pointer,
             ProgramType::Int128PointerPointer,
-            c_int128_literal(i128::MIN),
+            crate::kernel::program_expression::int128_literal(i128::MIN),
         ),
         (
             ProgramType::UInt128,
             ProgramType::UInt128Pointer,
             ProgramType::UInt128PointerPointer,
-            c_uint128_literal(u128::MAX),
+            crate::kernel::program_expression::uint128_literal(u128::MAX),
         ),
     ] {
         let expected = value(&ExecutionState::new(), literal.clone());
         let state = normal(
             ExecutionState::new(),
-            c_seq(
-                c_declare("wide", ty),
-                c_seq(
-                    c_assign("wide", literal),
-                    c_seq(c_declare("p", pointer_ty), c_assign("p", c_addr_of("wide"))),
+            program_seq(
+                program_declare("wide", ty),
+                program_seq(
+                    program_assign("wide", literal),
+                    program_seq(
+                        program_declare("p", pointer_ty),
+                        program_assign("p", crate::kernel::program_expression::addr_of("wide")),
+                    ),
                 ),
             ),
         );
-        let pointer = value(&state, c_variable("p"));
+        let pointer = value(&state, crate::kernel::program_expression::variable("p"));
         assert_eq!(pointer.c_type(), pointer_ty);
         assert_eq!(pointer.byte_width(), 8);
-        assert_eq!(value(&state, c_load(c_variable("p"))), expected);
-        let slot = value(&state, c_addr_of("p"));
+        assert_eq!(
+            value(
+                &state,
+                crate::kernel::program_expression::load(
+                    crate::kernel::program_expression::variable("p")
+                )
+            ),
+            expected
+        );
+        let slot = value(&state, crate::kernel::program_expression::addr_of("p"));
         assert_eq!(slot.c_type(), slot_ty);
         assert_eq!(
             value(
                 &state,
-                c_typed_load(ProgramExpression::Value(slot), pointer_ty)
+                crate::kernel::program_expression::typed_load(
+                    ProgramExpression::Value(slot),
+                    pointer_ty
+                )
             ),
             pointer
         );
@@ -100,17 +114,17 @@ fn wide_address_arrays_use_sixteen_byte_stride_and_preserve_endpoint_values() {
         (
             ProgramType::Int128Array(3),
             ProgramType::Int128,
-            c_int128_literal(i128::MIN),
+            crate::kernel::program_expression::int128_literal(i128::MIN),
         ),
         (
             ProgramType::UInt128Array(3),
             ProgramType::UInt128,
-            c_uint128_literal(u128::MAX),
+            crate::kernel::program_expression::uint128_literal(u128::MAX),
         ),
     ] {
-        let state = normal(ExecutionState::new(), c_declare("items", array_ty));
+        let state = normal(ExecutionState::new(), program_declare("items", array_ty));
         let expected = value(&ExecutionState::new(), literal.clone());
-        let base = value(&state, c_variable("items"));
+        let base = value(&state, crate::kernel::program_expression::variable("items"));
         assert_eq!(base.c_type(), ty.pointer_to().unwrap());
         let ProgramValue::Pointer(base) = base else {
             unreachable!()
@@ -120,32 +134,53 @@ fn wide_address_arrays_use_sixteen_byte_stride_and_preserve_endpoint_values() {
             Some(48)
         );
         assert_eq!(array_ty.abi_alignment(), 16);
-        let state = normal(state, c_typed_store(element_address(2), literal, ty));
+        let state = normal(state, program_typed_store(element_address(2), literal, ty));
         let last = value(&state, element_address(2));
         let ProgramValue::Pointer(last) = last else {
             unreachable!()
         };
         assert_eq!(last.offset, PointerOffsetTerm::Constant(32));
         assert_eq!(
-            value(&state, c_index(c_variable("items"), c_int32_literal(2))),
+            value(
+                &state,
+                crate::kernel::program_expression::index(
+                    crate::kernel::program_expression::variable("items"),
+                    crate::kernel::program_expression::int32_literal(2)
+                )
+            ),
             expected
         );
         assert!(matches!(
-            outcome(&state, c_index(c_variable("items"), c_int32_literal(1))),
+            outcome(
+                &state,
+                crate::kernel::program_expression::index(
+                    crate::kernel::program_expression::variable("items"),
+                    crate::kernel::program_expression::int32_literal(1)
+                )
+            ),
             ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::UninitializedRead)
         ));
         // Forming the one-past pointer is valid; dereferencing it is not.
-        let past = value(&state, c_add(c_variable("items"), c_int32_literal(3)));
+        let past = value(
+            &state,
+            crate::kernel::program_expression::add(
+                crate::kernel::program_expression::variable("items"),
+                crate::kernel::program_expression::int32_literal(3),
+            ),
+        );
         let ProgramValue::Pointer(past) = past else {
             unreachable!()
         };
         assert_eq!(past.offset, PointerOffsetTerm::Constant(48));
-        let read_past = c_typed_load(ProgramExpression::Value(ProgramValue::Pointer(past)), ty);
-        let paths = evaluate_c_expression_paths(
+        let read_past = crate::kernel::program_expression::typed_load(
+            ProgramExpression::Value(ProgramValue::Pointer(past)),
+            ty,
+        );
+        let paths = evaluate_program_expression_paths(
             &state,
             &read_past,
             &PureFactContext::new(),
-            &mut ExecutionBudget::for_c_expression(&read_past),
+            &mut ExecutionBudget::for_program_expression(&read_past),
         )
         .unwrap();
         assert!(
@@ -154,7 +189,7 @@ fn wide_address_arrays_use_sixteen_byte_stride_and_preserve_endpoint_values() {
                 .any(|path| matches!(path.outcome, ExpressionOutcome::Value(_))
                     && path.obligations.is_empty())
         );
-        assert!(prove_c_expression_evaluation(state, read_past).is_none());
+        assert!(prove_program_expression_evaluation(state, read_past).is_none());
     }
 }
 
@@ -165,28 +200,32 @@ fn wide_address_pointer_arrays_scale_slots_by_eight_and_pointees_by_sixteen() {
             PointerArrayElement::Int128,
             ProgramType::Int128Pointer,
             ProgramType::Int128,
-            c_int128_literal(i128::MAX),
+            crate::kernel::program_expression::int128_literal(i128::MAX),
         ),
         (
             PointerArrayElement::UInt128,
             ProgramType::UInt128Pointer,
             ProgramType::UInt128,
-            c_uint128_literal(1u128 << 100),
+            crate::kernel::program_expression::uint128_literal(1u128 << 100),
         ),
     ] {
         let state = normal(
             ExecutionState::new(),
-            c_seq(
-                c_declare("wide", ty),
-                c_seq(
-                    c_assign("wide", literal.clone()),
-                    c_declare("items", ProgramType::PointerArray(element, 2)),
+            program_seq(
+                program_declare("wide", ty),
+                program_seq(
+                    program_assign("wide", literal.clone()),
+                    program_declare("items", ProgramType::PointerArray(element, 2)),
                 ),
             ),
         );
         let state = normal(
             state,
-            c_typed_store(element_address(1), c_addr_of("wide"), pointer_ty),
+            program_typed_store(
+                element_address(1),
+                crate::kernel::program_expression::addr_of("wide"),
+                pointer_ty,
+            ),
         );
         let ProgramValue::Pointer(slot) = value(&state, element_address(1)) else {
             unreachable!()
@@ -196,7 +235,10 @@ fn wide_address_pointer_arrays_scale_slots_by_eight_and_pointees_by_sixteen() {
         assert_eq!(
             value(
                 &state,
-                c_load(c_index(c_variable("items"), c_int32_literal(1)))
+                crate::kernel::program_expression::load(crate::kernel::program_expression::index(
+                    crate::kernel::program_expression::variable("items"),
+                    crate::kernel::program_expression::int32_literal(1)
+                ))
             ),
             value(&ExecutionState::new(), literal)
         );
@@ -228,7 +270,10 @@ fn wide_address_pointer_slot_read_needs_eight_bytes_but_pointee_read_needs_sixte
         )
         .store(
             pointee.clone(),
-            value(&ExecutionState::new(), c_uint128_literal(u128::MAX)),
+            value(
+                &ExecutionState::new(),
+                crate::kernel::program_expression::uint128_literal(u128::MAX),
+            ),
         );
     for bytes in [8, 16] {
         let range = |p| MemoryRange::new_with_element_width(p, 0u32.into(), 1u32.into(), bytes);
@@ -245,15 +290,21 @@ fn wide_address_pointer_slot_read_needs_eight_bytes_but_pointee_read_needs_sixte
             ]));
         let pointer = value(
             &state,
-            c_typed_load(
-                c_typed_pointer_value(slot.clone(), ProgramType::UInt128PointerPointer),
+            crate::kernel::program_expression::typed_load(
+                crate::kernel::program_expression::typed_pointer_value(
+                    slot.clone(),
+                    ProgramType::UInt128PointerPointer,
+                ),
                 ProgramType::UInt128Pointer,
             ),
         );
         assert_eq!(pointer.c_type(), ProgramType::UInt128Pointer);
         let read = outcome(
             &state,
-            c_typed_load(ProgramExpression::Value(pointer), ProgramType::UInt128),
+            crate::kernel::program_expression::typed_load(
+                ProgramExpression::Value(pointer),
+                ProgramType::UInt128,
+            ),
         );
         assert_eq!(matches!(read, ExpressionOutcome::Value(_)), bytes == 16);
         if bytes == 8 {
@@ -283,8 +334,11 @@ fn wide_address_symbolic_pointer_slot_reads_keep_eight_byte_access_identity() {
                         1,
                     )),
                 ]));
-            let expression = c_typed_load(
-                c_typed_pointer_value(slot.clone(), pointer_ty.pointer_to().unwrap()),
+            let expression = crate::kernel::program_expression::typed_load(
+                crate::kernel::program_expression::typed_pointer_value(
+                    slot.clone(),
+                    pointer_ty.pointer_to().unwrap(),
+                ),
                 pointer_ty,
             );
             let first = outcome(&state, expression.clone());
@@ -311,22 +365,22 @@ fn wide_address_static_array_startup_and_entry_keep_initializer_authority_separa
     for (ty, zero_literal, endpoint_literal) in [
         (
             ProgramType::Int128,
-            c_int128_literal(0),
-            c_int128_literal(i128::MIN),
+            crate::kernel::program_expression::int128_literal(0),
+            crate::kernel::program_expression::int128_literal(i128::MIN),
         ),
         (
             ProgramType::UInt128,
-            c_uint128_literal(0),
-            c_uint128_literal(u128::MAX),
+            crate::kernel::program_expression::uint128_literal(0),
+            crate::kernel::program_expression::uint128_literal(u128::MAX),
         ),
     ] {
         let zero = value(&ExecutionState::new(), zero_literal);
         let endpoint = value(&ExecutionState::new(), endpoint_literal);
-        let function = c_function(
+        let function = program_function(
             ProgramType::Int32,
             "wide_static",
             vec![],
-            c_return(c_int32_literal(0)),
+            program_return(crate::kernel::program_expression::int32_literal(0)),
         )
         .with_static_arrays(vec![StaticArray::new(
             "items",
@@ -337,22 +391,29 @@ fn wide_address_static_array_startup_and_entry_keep_initializer_authority_separa
         )]);
         let at =
             |index: u32| Memory::static_pointer("wide_static", "items").offset_by_bytes(index * 16);
-        let startup = crate::kernel::initialize_c_program_storage([function.clone()]).unwrap();
+        let startup =
+            crate::kernel::initialize_program_program_storage([function.clone()]).unwrap();
         assert_eq!(startup.memory.known_value(&at(0)), Some(zero));
         assert_eq!(startup.memory.known_value(&at(2)), Some(endpoint.clone()));
         assert_eq!(
             value(
                 &startup,
-                c_typed_load(c_typed_pointer_value(at(2), ty.pointer_to().unwrap()), ty)
+                crate::kernel::program_expression::typed_load(
+                    crate::kernel::program_expression::typed_pointer_value(
+                        at(2),
+                        ty.pointer_to().unwrap()
+                    ),
+                    ty
+                )
             ),
             endpoint.clone()
         );
-        let entry = initialize_c_function_globals(&ExecutionState::new(), &function);
+        let entry = initialize_program_function_globals(&ExecutionState::new(), &function);
         assert_ne!(entry.memory.known_value(&at(2)), Some(endpoint.clone()));
         assert!(entry.resources.facts().is_empty());
         // Nested entry retains a caller's writes; it cannot restore an initializer.
         let changed = startup.with_memory(entry.memory.clone().store(at(2), endpoint.clone()));
-        let nested = initialize_c_function_globals(&changed, &function);
+        let nested = initialize_program_function_globals(&changed, &function);
         assert_eq!(nested.memory.known_value(&at(2)), Some(endpoint));
     }
 }
@@ -369,7 +430,10 @@ fn wide_address_narrow_array_copy_refuses_a_wide_cell_overlapping_its_prefix() {
         .with_initialized_object(&at(0), 16)
         .store(
             at(0),
-            value(&ExecutionState::new(), c_uint128_literal(u128::MAX)),
+            value(
+                &ExecutionState::new(),
+                crate::kernel::program_expression::uint128_literal(u128::MAX),
+            ),
         );
     for offset in 8..16 {
         memory = memory.store(at(offset), uint8(1));
@@ -398,15 +462,23 @@ fn wide_address_narrow_array_copy_refuses_a_wide_cell_overlapping_its_prefix() {
 fn checked_object_address_accepts_uninitialized_storage_without_reading_it() {
     let state = normal(
         ExecutionState::new(),
-        c_declare("items", ProgramType::Int32Array(2)),
+        program_declare("items", ProgramType::Int32Array(2)),
     );
-    let pointer = c_checked_object_address(c_index(c_variable("items"), c_int32_literal(1)));
+    let pointer = crate::kernel::program_expression::checked_object_address(
+        crate::kernel::program_expression::index(
+            crate::kernel::program_expression::variable("items"),
+            crate::kernel::program_expression::int32_literal(1),
+        ),
+    );
     let address = value(&state, pointer);
     assert_eq!(address, value(&state, element_address(1)));
     assert!(matches!(
         outcome(
             &state,
-            c_typed_load(ProgramExpression::Value(address), ProgramType::Int32)
+            crate::kernel::program_expression::typed_load(
+                ProgramExpression::Value(address),
+                ProgramType::Int32
+            )
         ),
         ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::UninitializedRead)
     ));
@@ -416,7 +488,7 @@ fn checked_object_address_accepts_uninitialized_storage_without_reading_it() {
 fn checked_object_address_rejects_one_past_while_c_address_cancellation_preserves_it() {
     let state = normal(
         ExecutionState::new(),
-        c_declare("items", ProgramType::Int32Array(2)),
+        program_declare("items", ProgramType::Int32Array(2)),
     );
     assert!(matches!(
         outcome(&state, element_address(2)),
@@ -425,20 +497,27 @@ fn checked_object_address_rejects_one_past_while_c_address_cancellation_preserve
     assert!(matches!(
         outcome(
             &state,
-            c_checked_object_address(c_index(c_variable("items"), c_int32_literal(2)))
+            crate::kernel::program_expression::checked_object_address(
+                crate::kernel::program_expression::index(
+                    crate::kernel::program_expression::variable("items"),
+                    crate::kernel::program_expression::int32_literal(2)
+                )
+            )
         ),
         ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory)
     ));
     assert!(matches!(
         outcome(
             &state,
-            c_checked_object_address(c_typed_load(
-                ProgramExpression::Value(ProgramValue::typed_pointer(
-                    Pointer::null(),
-                    ProgramType::Int32Pointer
-                )),
-                ProgramType::Int32
-            ))
+            crate::kernel::program_expression::checked_object_address(
+                crate::kernel::program_expression::typed_load(
+                    ProgramExpression::Value(ProgramValue::typed_pointer(
+                        Pointer::null(),
+                        ProgramType::Int32Pointer
+                    )),
+                    ProgramType::Int32
+                )
+            )
         ),
         ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory)
     ));
@@ -448,7 +527,7 @@ fn checked_object_address_rejects_one_past_while_c_address_cancellation_preserve
 fn checked_object_address_rejects_storage_after_its_local_lifetime_ends() {
     let state = normal(
         ExecutionState::new(),
-        c_declare("items", ProgramType::Int32Array(2)),
+        program_declare("items", ProgramType::Int32Array(2)),
     );
     let address = value(&state, element_address(0));
     let ProgramValue::Pointer(pointer) = &address else {
@@ -460,10 +539,12 @@ fn checked_object_address_rejects_storage_after_its_local_lifetime_ends() {
     assert!(matches!(
         outcome(
             &retired,
-            c_checked_object_address(c_typed_load(
-                ProgramExpression::Value(address),
-                ProgramType::Int32
-            ))
+            crate::kernel::program_expression::checked_object_address(
+                crate::kernel::program_expression::typed_load(
+                    ProgramExpression::Value(address),
+                    ProgramType::Int32
+                )
+            )
         ),
         ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory)
     ));
@@ -486,39 +567,68 @@ fn wide_pointer_subtraction_preserves_unsigned_magnitude_and_bounds() {
         } else {
             1
         };
-        for offset in [c_uint32_literal(1), c_uint64_literal(1), c_int64_literal(1)] {
+        for offset in [
+            crate::kernel::program_expression::uint32_literal(1),
+            crate::kernel::program_expression::uint64_literal(1),
+            crate::kernel::program_expression::int64_literal(1),
+        ] {
             let result = value(
                 &state,
-                c_subtract(c_cast(c_typed_pointer_value(at(8), ty), ty), offset),
+                crate::kernel::program_expression::subtract(
+                    crate::kernel::program_expression::cast(
+                        crate::kernel::program_expression::typed_pointer_value(at(8), ty),
+                        ty,
+                    ),
+                    offset,
+                ),
             );
             assert_eq!(result, ProgramValue::typed_pointer(at(8 - stride), ty));
         }
         let result = value(
             &state,
-            c_subtract(
-                c_cast(c_typed_pointer_value(at(8), ty), ty),
-                c_int64_literal(-1),
+            crate::kernel::program_expression::subtract(
+                crate::kernel::program_expression::cast(
+                    crate::kernel::program_expression::typed_pointer_value(at(8), ty),
+                    ty,
+                ),
+                crate::kernel::program_expression::int64_literal(-1),
             ),
         );
         assert_eq!(result, ProgramValue::typed_pointer(at(8 + stride), ty));
         for offset in [
-            c_uint64_literal(17),
-            c_uint64_literal(u64::MAX),
-            c_int64_literal(i64::MIN),
+            crate::kernel::program_expression::uint64_literal(17),
+            crate::kernel::program_expression::uint64_literal(u64::MAX),
+            crate::kernel::program_expression::int64_literal(i64::MIN),
         ] {
             assert!(matches!(
                 outcome(
                     &state,
-                    c_subtract(c_cast(c_typed_pointer_value(at(8), ty), ty), offset)
+                    crate::kernel::program_expression::subtract(
+                        crate::kernel::program_expression::cast(
+                            crate::kernel::program_expression::typed_pointer_value(at(8), ty),
+                            ty
+                        ),
+                        offset
+                    )
                 ),
                 ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::PointerArithmetic)
             ));
         }
-        for offset in [c_uint32_literal(0), c_uint64_literal(0), c_int64_literal(0)] {
+        for offset in [
+            crate::kernel::program_expression::uint32_literal(0),
+            crate::kernel::program_expression::uint64_literal(0),
+            crate::kernel::program_expression::int64_literal(0),
+        ] {
             assert_eq!(
                 value(
                     &state,
-                    c_subtract(c_cast(c_typed_pointer_value(at(0), ty), ty), offset)
+                    crate::kernel::program_expression::subtract(
+                        crate::kernel::program_expression::cast(
+                            crate::kernel::program_expression::typed_pointer_value(at(0), ty),
+                            ty
+                        ),
+                        offset
+                    )
                 ),
                 ProgramValue::typed_pointer(at(0), ty)
             );

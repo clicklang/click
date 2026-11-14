@@ -181,7 +181,7 @@ pub(in crate::surface) fn contract_array_ref_element_type(
 ) -> Option<ProgramType> {
     match expression {
         ContractExpression::Binding(name)
-        | ContractExpression::CFragment(ProgramExpression::Variable(name))
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
         | ContractExpression::CBinding(name) => {
             array_refs.get(name).map(|array_ref| array_ref.element_type)
         }
@@ -198,7 +198,10 @@ pub(in crate::surface) fn contract_array_ref_element_type(
     }
 }
 
-pub(in crate::surface) fn c_value_matches_click_type(value: &ProgramValue, c_type: C0Type) -> bool {
+pub(in crate::surface) fn program_value_matches_click_type(
+    value: &ProgramValue,
+    c_type: C0Type,
+) -> bool {
     match (value.numeric_value(), c_type) {
         (
             ProgramValue::Int8(_),
@@ -227,7 +230,7 @@ pub(in crate::surface) fn c_value_matches_click_type(value: &ProgramValue, c_typ
 /// pointer type used by the C caller. Its public declaration keeps the
 /// historical `int32*` spelling, but allocator contracts may name any
 /// modeled data pointer (including pointer-to-pointer storage).
-pub(in crate::surface) fn c_value_matches_allocation_pointer(value: &ProgramValue) -> bool {
+pub(in crate::surface) fn program_value_matches_allocation_pointer(value: &ProgramValue) -> bool {
     matches!(
         value,
         ProgramValue::Pointer(pointer) if pointer.c_type().pointee_type().is_some()
@@ -236,7 +239,7 @@ pub(in crate::surface) fn c_value_matches_allocation_pointer(value: &ProgramValu
 
 /// An `allocation` byte count: an `int32` or a `uint64` heap extent
 /// (`design/heap-extents.md`, D4).
-pub(in crate::surface) fn c_value_matches_allocation_extent(value: &ProgramValue) -> bool {
+pub(in crate::surface) fn program_value_matches_allocation_extent(value: &ProgramValue) -> bool {
     matches!(
         value.numeric_value(),
         ProgramValue::Int32(_) | ProgramValue::UInt64(_)
@@ -320,7 +323,7 @@ mod tests {
             crate::kernel::ProgramStatement::Skip,
         )
         .with_global_arrays(arrays);
-        crate::kernel::c_function_entry_state(&ExecutionState::new(), &function, &[]).unwrap()
+        crate::kernel::program_function_entry_state(&ExecutionState::new(), &function, &[]).unwrap()
     }
 
     fn assert_bytes(

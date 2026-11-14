@@ -27,7 +27,7 @@ fn nested_solve_derivations_keep_rule_temporaries_off_the_recursive_stack() {
                 let mut goal = Proposition::ForAll {
                     name: Default::default(),
                     var: variable,
-                    sort: Sort::CInt32,
+                    sort: Sort::ProgramInt32,
                     body: Box::new(Proposition::Implies(
                         Box::new(positive),
                         Box::new(nonnegative),
@@ -641,7 +641,7 @@ fn loadability_same_base_extent_graph_queries_scale_without_fact_index() {
     let var = |id| MachineTerm::Variable(Variable(id));
     let bytes = |value| MachineTerm::add(value, MachineTerm::constant(1));
     for size in [16u64, 64, 256, 512] {
-        let fact = Proposition::CMemoryLoadable {
+        let fact = Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
             bytes: bytes(var(0)),
@@ -656,7 +656,7 @@ fn loadability_same_base_extent_graph_queries_scale_without_fact_index() {
         PureFactContext::reset_bitvector_equality_index_fact_visits();
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 1..=size {
-                let goal = Proposition::CMemoryLoadable {
+                let goal = Proposition::MemoryLoadable {
                     memory: memory.clone(),
                     base: base.clone(),
                     bytes: bytes(var(index)),
@@ -765,12 +765,12 @@ fn increment_chain_add_work_does_not_grow_with_earlier_increments() {
         );
     let state = ExecutionState::new();
     let increment = |value: MachineTerm, assumptions: &PureFactContext| {
-        let expression = c_add(
+        let expression = crate::kernel::program_expression::add(
             ProgramExpression::Value(ProgramValue::Int32(value)),
-            c_int32_literal(1),
+            crate::kernel::program_expression::int32_literal(1),
         );
         crate::instrumentation::measure_deterministic_work(|| {
-            evaluate_c_expression_paths(
+            evaluate_program_expression_paths(
                 &state,
                 &expression,
                 assumptions,
@@ -852,7 +852,7 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
                         Box::new(Proposition::ConditionIs(
                             ConditionTerm::equal(
                                 MachineTerm::MemoryLoad(
-                                    crate::kernel::intern_c_memory_ref(&memory),
+                                    crate::kernel::intern_memory_ref(&memory),
                                     Box::new(data.offset_by_int32_elements(MachineTerm::Variable(
                                         fact_index,
                                     ))),
@@ -884,7 +884,7 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
                         Box::new(Proposition::ConditionIs(
                             ConditionTerm::equal(
                                 MachineTerm::MemoryLoad(
-                                    crate::kernel::intern_c_memory_ref(&memory),
+                                    crate::kernel::intern_memory_ref(&memory),
                                     Box::new(unrelated.offset_by_int32_elements(
                                         MachineTerm::Variable(unrelated_index),
                                     )),
@@ -909,7 +909,7 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
                     ConditionTerm::signed_less_than(MachineTerm::Variable(target_index), length),
                     true,
                 );
-            let target = Proposition::CMemoryLoadable {
+            let target = Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: data.offset_by_int32_elements(MachineTerm::Variable(target_index)),
                 bytes: MachineTerm::constant(4),
@@ -983,7 +983,7 @@ fn theory_capable_order_endpoints_scale_near_linearly() {
                     offset: PointerOffsetTerm::Constant(0),
                 };
                 let load = MachineTerm::MemoryLoad(
-                    crate::kernel::intern_c_memory(Memory::new()),
+                    crate::kernel::intern_memory(Memory::new()),
                     Box::new(cell),
                     crate::kernel::LoadKind::Int32,
                 );
@@ -1376,14 +1376,14 @@ fn native_loadability_window_query_work_ignores_unrelated_views() {
     for count in [16, 64, 256, 1024] {
         let mut context = PureFactContext::new();
         for index in 0..count {
-            context = context.assume_proposition(Proposition::CMemoryLoadable {
+            context = context.assume_proposition(Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: root.offset_by_bytes(4 * (index + 1)),
                 bytes: MachineTerm::uint64_constant(16),
                 wide: true,
             });
         }
-        context = context.assume_proposition(Proposition::CMemoryLoadable {
+        context = context.assume_proposition(Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: root.clone(),
             bytes: MachineTerm::uint64_constant(16),
@@ -1430,7 +1430,7 @@ fn native_loadability_prefix_coverage_ignores_unrelated_addresses() {
     for count in [16, 64, 256, 1024] {
         let mut context = PureFactContext::new();
         for index in 0..count {
-            context = context.assume_proposition(Proposition::CMemoryLoadable {
+            context = context.assume_proposition(Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: base.offset_by_bytes(4 * (index + 1)),
                 bytes: MachineTerm::uint64_constant(16),
@@ -1438,7 +1438,7 @@ fn native_loadability_prefix_coverage_ignores_unrelated_addresses() {
             });
         }
         context = context
-            .assume_proposition(Proposition::CMemoryLoadable {
+            .assume_proposition(Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: base.clone(),
                 bytes: MachineTerm::uint64_constant(16),
@@ -1482,7 +1482,7 @@ fn native_loadability_queries_do_not_visit_unrelated_addresses() {
     for count in [16, 64, 256] {
         let mut context = PureFactContext::new();
         for index in 0..count {
-            context = context.assume_proposition(Proposition::CMemoryLoadable {
+            context = context.assume_proposition(Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: Pointer {
                     block: base.block.clone(),
@@ -1492,7 +1492,7 @@ fn native_loadability_queries_do_not_visit_unrelated_addresses() {
                 wide: true,
             });
         }
-        context = context.assume_proposition(Proposition::CMemoryLoadable {
+        context = context.assume_proposition(Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
             bytes: MachineTerm::uint64_constant(8),
@@ -1613,13 +1613,13 @@ fn call_input_retention_does_not_derive_memory_or_scan_unrelated_facts() {
         block: "retention_data".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let held = Proposition::CMemoryLoadable {
+    let held = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: base.clone(),
         bytes: 8u32.into(),
         wide: false,
     };
-    let derived = Proposition::CMemoryLoadable {
+    let derived = Proposition::MemoryLoadable {
         memory,
         base: base.offset_by_int32_elements(1u32.into()),
         bytes: 4u32.into(),
@@ -2073,7 +2073,7 @@ fn integer_match_rewrite_lookup_scales_with_its_selected_sources() {
                     crate::kernel::AlgebraicIntegerMatchArm {
                         binding_names: Default::default(),
                         variant: "Some".into(),
-                        bindings: vec![AlgebraicValue::C(ProgramValue::Int32(
+                        bindings: vec![AlgebraicValue::Program(ProgramValue::Int32(
                             MachineTerm::Variable(Variable(200_000)),
                         ))],
                         body: crate::kernel::IntegerTerm::constant_i64(1).into(),

@@ -227,7 +227,7 @@ fn observing_every_shared_machine_prefix_does_not_materialize_operands() {
         for size in [16, 64, 256] {
             let format = MachineIntegerType::Int64;
             let mut term =
-                KernelTerm::variable(KernelType::C(ProgramType::Int64), Variable(952000));
+                KernelTerm::variable(KernelType::Program(ProgramType::Int64), Variable(952000));
             let mut retained = Vec::new();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for _ in 0..size {
@@ -276,7 +276,7 @@ fn machine_root_checking_views_keep_shared_prefixes_unboxed() {
         for size in [16, 64, 256] {
             let format = MachineIntegerType::Int64;
             let mut term =
-                KernelTerm::variable(KernelType::C(ProgramType::Int64), Variable(956000));
+                KernelTerm::variable(KernelType::Program(ProgramType::Int64), Variable(956000));
             let mut retained = Vec::new();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for _ in 0..size {
@@ -307,7 +307,7 @@ fn machine_root_checking_views_keep_shared_prefixes_unboxed() {
                             .is_some()
                     );
                     let quotient = KernelTerm::intern(
-                        KernelType::C(format.c_type()),
+                        KernelType::Program(format.c_type()),
                         KernelTermNode::MachineBinary {
                             format,
                             operator: MachineBinaryOp::Divide,
@@ -361,11 +361,11 @@ fn retained_load_terms_grow_without_rewalking_snapshots_or_prior_arithmetic() {
         for index in 0..unrelated {
             memory = memory.with_block(format!("unrelated-read-{index}"), 4);
         }
-        let memory = intern_c_memory(memory);
+        let memory = intern_memory(memory);
         let mut samples = Vec::new();
         for size in [16, 64, 256] {
             let mut root =
-                KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(993200));
+                KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(993200));
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for index in 0..size {
@@ -410,7 +410,7 @@ fn retained_named_reads_do_not_rewalk_their_address_on_each_import() {
             );
         }
         let raw = MachineTerm::MemoryLoad(
-            intern_c_memory(Memory::new()),
+            intern_memory(Memory::new()),
             Box::new(Pointer {
                 block: PointerBlock::Symbolic(Variable(993499)),
                 offset,
@@ -442,7 +442,7 @@ fn shared_read_selection_reuses_growing_arithmetic_prefixes() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let raw = MachineTerm::MemoryLoad(
-            intern_c_memory(Memory::new()),
+            intern_memory(Memory::new()),
             Box::new(Pointer::symbolic(Variable(994110))),
             LoadKind::Int32,
         );
@@ -489,7 +489,7 @@ fn nested_read_address_import_is_linear_beside_unrelated_memory() {
                 ProgramValue::Int32(MachineTerm::constant(index as u32)),
             );
         }
-        let memory = intern_c_memory(memory);
+        let memory = intern_memory(memory);
         for depth in [16, 64, 256] {
             let mut raw = MachineTerm::constant(0);
             for _ in 0..depth {

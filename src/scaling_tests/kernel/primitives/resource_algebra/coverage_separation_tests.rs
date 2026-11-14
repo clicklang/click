@@ -8,7 +8,7 @@
 /// pair fixed and grow those related separations.
 #[test]
 fn range_coverage_ignores_related_separations() {
-    let separation = |left: MemoryRange, right: MemoryRange| Proposition::CResourceSeparate {
+    let separation = |left: MemoryRange, right: MemoryRange| Proposition::ResourceSeparate {
         left: Box::new(Resource::Memory(left)),
         right: Box::new(Resource::Memory(right)),
     };

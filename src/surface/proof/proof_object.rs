@@ -1397,14 +1397,16 @@ impl DiagnosticNaming {
 /// The C values the proof's own binders name: `let`, `choose`, `obtain`
 /// and `unfold` bindings. Diagnostics and premise spelling both name values
 /// through these, so a report and a citation agree.
-fn proof_local_c_values(proof: &KernelProofHandle) -> impl Iterator<Item = (&str, &ProgramValue)> {
+fn proof_local_program_values(
+    proof: &KernelProofHandle,
+) -> impl Iterator<Item = (&str, &ProgramValue)> {
     proof
         .state()
         .locals()
         .values
         .iter()
         .filter_map(|(name, expression)| match expression {
-            ContractExpression::CFragment(ProgramExpression::Value(value)) => {
+            ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
                 Some((name.as_str(), value))
             }
             _ => None,
@@ -1413,7 +1415,9 @@ fn proof_local_c_values(proof: &KernelProofHandle) -> impl Iterator<Item = (&str
 
 /// The C values the focused goal's `intro` binders name. Where a binder
 /// shadows an outer name, an `outer.` entry spells that outer value.
-fn goal_binder_c_values(proof: &KernelProofHandle) -> impl Iterator<Item = (&str, &ProgramValue)> {
+fn goal_binder_program_values(
+    proof: &KernelProofHandle,
+) -> impl Iterator<Item = (&str, &ProgramValue)> {
     proof
         .state()
         .open_branches()
@@ -1425,7 +1429,7 @@ fn goal_binder_c_values(proof: &KernelProofHandle) -> impl Iterator<Item = (&str
         .into_iter()
         .flatten()
         .filter_map(|(name, expression)| match expression {
-            ContractExpression::CFragment(ProgramExpression::Value(value)) => {
+            ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
                 Some((name.as_str(), value))
             }
             _ => None,
@@ -1465,7 +1469,7 @@ impl Proof<'_> {
         }
         // A goal's `intro` binder shadows a proof local of the same name:
         // that local is out of scope, and its name now spells the binder.
-        let shadowing = goal_binder_c_values(&self.state)
+        let shadowing = goal_binder_program_values(&self.state)
             .map(|(name, _)| name)
             .filter(|name| !name.starts_with("outer."))
             .collect::<BTreeSet<_>>();
@@ -1474,7 +1478,7 @@ impl Proof<'_> {
                 .filter_map(|(name, value)| Some((variable(value)?, name.to_owned())))
                 .collect::<BTreeMap<_, _>>()
         };
-        let mut intro = named(&mut goal_binder_c_values(&self.state));
+        let mut intro = named(&mut goal_binder_program_values(&self.state));
         // An Integer proof local, such as a loop's `iterations` or an
         // `obtain`'s binder, names the variable it holds.
         for (name, value) in self.local_integer_values().iter() {
@@ -1495,7 +1499,7 @@ impl Proof<'_> {
             .filter(|(name, _)| !shadowing.contains(name.as_str()))
             .filter_map(|(name, expression)| {
                 let variable = match expression {
-                    ContractExpression::CFragment(ProgramExpression::Value(value)) => {
+                    ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
                         variable(value)?
                     }
                     ContractExpression::AlgebraicVariable { binder_index, .. } => {
@@ -1713,7 +1717,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         }
         // A proof `let { result: r } = step(...)` holds the exact scalar result, so its
         // user-chosen name wins over the synthesized C assignment target.
-        for (name, value) in proof_local_c_values(&self.0) {
+        for (name, value) in proof_local_program_values(&self.0) {
             if let ProgramValue::Pointer(pointer) = value {
                 labels.immutable_pointer_name(pointer.pointer(), name);
             }
@@ -1739,7 +1743,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         // the proof's locals.
         // A report names a shadowed outer value by its source name.
         for (name, value) in
-            goal_binder_c_values(&self.0).filter(|(name, _)| !name.starts_with("outer."))
+            goal_binder_program_values(&self.0).filter(|(name, _)| !name.starts_with("outer."))
         {
             if let Some(variable) = diagnostic_value_variable(value) {
                 labels.source_name(variable, name.to_owned());
@@ -2151,7 +2155,7 @@ impl Proof<'_> {
         );
     }
 
-    fn record_trace_c_branch(
+    fn record_trace_program_branch(
         &self,
         marker: &Arc<ProofNode>,
         arms: [Option<BranchId>; 2],

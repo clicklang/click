@@ -911,7 +911,7 @@ fn collect_contract_expression_binding_names(
             collect_contract_expression_binding_names(right, names);
         }
         ContractExpression::QualifiedC { .. }
-        | ContractExpression::CFragment(_)
+        | ContractExpression::ProgramExpression(_)
         | ContractExpression::CBinding(_)
         | ContractExpression::ResourceWildcard => {}
         ContractExpression::ArrayIndex { .. } => {}
@@ -1225,16 +1225,17 @@ fn rewrite_click_proposition_expression(
             // matched model binding. Propose the same fragment substitution;
             // the caller's kernel comparison still decides whether the names
             // denote the checked pointer, including under shadowing.
-            let (base, changed) =
-                if contract_expression_as_c_fragment(source).as_ref() == Some(&segment.base) {
-                    (target.clone(), true)
-                } else {
-                    expression(base)
-                };
+            let (base, changed) = if contract_expression_as_program_expression(source).as_ref()
+                == Some(&segment.base)
+            {
+                (target.clone(), true)
+            } else {
+                expression(base)
+            };
             if !changed {
                 return (proposition.clone(), false);
             }
-            let Some(lowered_base) = contract_expression_as_c_fragment(&base) else {
+            let Some(lowered_base) = contract_expression_as_program_expression(&base) else {
                 return (proposition.clone(), false);
             };
             // Keep the snapshot and both extents exactly as written. This is
@@ -1582,7 +1583,7 @@ fn rewrite_contract_expression_exact(
         | ContractExpression::IntegerLiteral(_) => (expression.clone(), false),
         ContractExpression::CUnary { operand, lowered } => {
             let (operand, changed) = unary(operand);
-            let fragment = match contract_expression_as_c_fragment(&operand) {
+            let fragment = match contract_expression_as_program_expression(&operand) {
                 Some(fragment) => fragment,
                 None if matches!(
                     lowered,
@@ -1670,17 +1671,18 @@ fn rewrite_contract_expression_exact(
                 changed,
             )
         }
-        ContractExpression::CFragment(
+        ContractExpression::ProgramExpression(
             lowered @ ProgramExpression::Cast {
                 expression: operand,
                 ..
             },
         ) => {
-            let (operand, changed) = unary(&ContractExpression::CFragment((**operand).clone()));
+            let (operand, changed) =
+                unary(&ContractExpression::ProgramExpression((**operand).clone()));
             if !changed {
                 return (expression.clone(), false);
             }
-            let Some(fragment) = contract_expression_as_c_fragment(&operand) else {
+            let Some(fragment) = contract_expression_as_program_expression(&operand) else {
                 return (expression.clone(), false);
             };
             (
@@ -1692,7 +1694,7 @@ fn rewrite_contract_expression_exact(
             )
         }
         ContractExpression::QualifiedC { .. }
-        | ContractExpression::CFragment(_)
+        | ContractExpression::ProgramExpression(_)
         | ContractExpression::Field { .. }
         | ContractExpression::CBinding(_)
         | ContractExpression::ResourceWildcard => (expression.clone(), false),
@@ -1716,12 +1718,12 @@ fn rewrite_contract_expression_exact(
             if !changed {
                 return (expression.clone(), false);
             }
-            let Some(lowered_base) = contract_expression_as_c_fragment(&base) else {
+            let Some(lowered_base) = contract_expression_as_program_expression(&base) else {
                 return (expression.clone(), false);
             };
             let Some(lowered_indexes) = indexes
                 .iter()
-                .map(contract_expression_as_c_fragment)
+                .map(contract_expression_as_program_expression)
                 .collect::<Option<Vec<_>>>()
             else {
                 return (expression.clone(), false);
@@ -2010,9 +2012,9 @@ fn substitute_contract_segment(
     Ok(ContractSegment {
         uninitialized: segment.uninitialized,
         state: segment.state,
-        base: substitute_c_fragment_in(&segment.base, substitutions)?,
-        start: substitute_c_fragment_in(&segment.start, substitutions)?,
-        end: substitute_c_fragment_in(&segment.end, substitutions)?,
+        base: substitute_program_expression_in(&segment.base, substitutions)?,
+        start: substitute_program_expression_in(&segment.start, substitutions)?,
+        end: substitute_program_expression_in(&segment.end, substitutions)?,
         surface,
     })
 }
@@ -2043,7 +2045,7 @@ fn substitute_resource_subject(
                 let end = substitute_contract_expression_in(end, substitutions)?;
                 if [&base, &start, &end]
                     .iter()
-                    .any(|value| contract_expression_as_c_fragment(value).is_none())
+                    .any(|value| contract_expression_as_program_expression(value).is_none())
                 {
                     // Snapshot-valued arguments are Surface expressions, not
                     // C fragments. Retain them in the same resource form used
@@ -2281,9 +2283,9 @@ pub(in crate::surface) fn apply_contract_lets_to_segment(
     let segment = ContractSegment {
         uninitialized: segment.uninitialized,
         state: segment.state,
-        base: substitute_c_fragment(&segment.base, &substitutions)?,
-        start: substitute_c_fragment(&segment.start, &substitutions)?,
-        end: substitute_c_fragment(&segment.end, &substitutions)?,
+        base: substitute_program_expression(&segment.base, &substitutions)?,
+        start: substitute_program_expression(&segment.start, &substitutions)?,
+        end: substitute_program_expression(&segment.end, &substitutions)?,
         surface,
     };
     reject_contract_where_let_references(
@@ -2610,14 +2612,14 @@ pub(in crate::surface) fn wrap_contract_where_lets_proposition(
                 binding.name
             ));
         };
-        let ClickType::C(c_type) = click_type else {
+        let ClickType::Program(c_type) = click_type else {
             return Err(format!(
                 "`let ... where` `{}` requires a C type annotation",
                 binding.name
             ));
         };
         proposition = ClickProposition::Exists {
-            click_type: ClickType::C(*c_type),
+            click_type: ClickType::Program(*c_type),
             name: binding.name.clone(),
             written_name: None,
             body: Box::new(ClickProposition::And(
@@ -2799,13 +2801,13 @@ fn collect_contract_expression_referenced_names_one(
         // one is seen to mention it (`reject_pure_bodies_reading_c_objects`).
         ContractExpression::QualifiedC { name, lowered } => {
             names.insert(name.clone());
-            collect_c_expression_referenced_names(lowered, names);
+            collect_program_expression_referenced_names(lowered, names);
         }
         ContractExpression::CUnary { operand, .. } => {
             collect_contract_expression_referenced_names(operand, names);
         }
-        ContractExpression::CFragment(expression) => {
-            collect_c_expression_referenced_names(expression, names);
+        ContractExpression::ProgramExpression(expression) => {
+            collect_program_expression_referenced_names(expression, names);
         }
         ContractExpression::Field { base, .. } => {
             collect_contract_expression_referenced_names(base, names);
@@ -2917,9 +2919,9 @@ fn collect_resource_subject_referenced_names(
             }
         }
         ResourceSubject::Memory(segment) => {
-            collect_c_expression_referenced_names(&segment.base, names);
-            collect_c_expression_referenced_names(&segment.start, names);
-            collect_c_expression_referenced_names(&segment.end, names);
+            collect_program_expression_referenced_names(&segment.base, names);
+            collect_program_expression_referenced_names(&segment.start, names);
+            collect_program_expression_referenced_names(&segment.end, names);
             match &segment.surface {
                 ContractSegmentSurface::Range { base, start, end }
                 | ContractSegmentSurface::StructRange {
@@ -3084,7 +3086,7 @@ pub(in crate::surface) fn narrow_typed_arithmetic(
 ) -> bool {
     matches!(
         click_type,
-        Some(ClickType::C(
+        Some(ClickType::Program(
             C0Type::Int8 | C0Type::UInt8 | C0Type::Int16 | C0Type::UInt16
         ))
     ) && matches!(
@@ -3131,7 +3133,7 @@ pub(in crate::surface) struct ContractSubstitutions<'a> {
     values: Cow<'a, BTreeMap<String, ContractExpression>>,
     instance_renames: Cow<'a, BTreeMap<String, InstanceRename>>,
     /// Whether a scalar field of the resource body being defined is replaced
-    /// by the C name the kernel binds it to (see `resource_body_c_fragment`).
+    /// by the C name the kernel binds it to (see `resource_body_program_expression`).
     body_fields_as_c_names: bool,
     body_field_values: Option<&'a BTreeMap<String, ContractExpression>>,
     contract_result_only: bool,
@@ -3173,7 +3175,7 @@ impl<'a> ContractSubstitutions<'a> {
 
     /// Capture current C values without replacing the storage named by `&x`
     /// or changing a value explicitly read from a historical snapshot.
-    pub(in crate::surface) fn for_current_c_values(
+    pub(in crate::surface) fn for_current_program_values(
         values: &'a BTreeMap<String, ContractExpression>,
     ) -> Self {
         Self {
@@ -3186,7 +3188,7 @@ impl<'a> ContractSubstitutions<'a> {
     /// body being defined as the C name the kernel binds it to while folding
     /// or unfolding. Definition validation reads a field-bearing body this
     /// way, so a field and a matched constructor payload are checked alike.
-    pub(in crate::surface) fn with_body_fields_as_c_names(
+    pub(in crate::surface) fn with_body_fields_as_program_names(
         values: &'a BTreeMap<String, ContractExpression>,
     ) -> Self {
         Self {
@@ -3309,7 +3311,7 @@ pub(in crate::surface) fn substitute_contract_expression<'a>(
     substitute_contract_expression_in(expression, &substitutions.into())
 }
 
-pub(in crate::surface) fn contract_expression_has_explicit_c_result_reference(
+pub(in crate::surface) fn contract_expression_has_explicit_program_result_reference(
     expression: &ContractExpression,
 ) -> bool {
     let mut pending = vec![expression];
@@ -3384,7 +3386,8 @@ pub(in crate::surface) fn pure_function_result_value(
     };
     let lowered = ProgramExpression::Cast {
         expression: Box::new(
-            contract_expression_as_c_fragment(&value).unwrap_or(ProgramExpression::Value(int32(0))),
+            contract_expression_as_program_expression(&value)
+                .unwrap_or(ProgramExpression::Value(int32(0))),
         ),
         target_type,
         // At an 8- or 16-bit result the body's arithmetic is at that type
@@ -3437,7 +3440,7 @@ pub(in crate::surface) fn pure_function_parameter_argument(
             .c_type()
             .is_some_and(|c_type| argument_is_null_pointer_constant(argument, c_type))
     {
-        return ContractExpression::CFragment(ProgramExpression::Value(
+        return ContractExpression::ProgramExpression(ProgramExpression::Value(
             ProgramValue::typed_pointer(Pointer::null(), target_type),
         ));
     }
@@ -3447,7 +3450,7 @@ pub(in crate::surface) fn pure_function_parameter_argument(
         // C spelling when one exists for printing and C-fragment substitution.
         lowered: ProgramExpression::Cast {
             expression: Box::new(
-                contract_expression_as_c_fragment(argument)
+                contract_expression_as_program_expression(argument)
                     .unwrap_or(ProgramExpression::Value(int32(0))),
             ),
             target_type,
@@ -3484,9 +3487,9 @@ pub(in crate::surface) fn pure_function_parameter_conversion(
 /// cast uses the separate explicit-cast rule and can widen to the root.
 pub(in crate::surface) fn character_byte_view(name: &str) -> ContractExpression {
     ContractExpression::CUnary {
-        operand: Box::new(ContractExpression::CFragment(ProgramExpression::Variable(
-            name.to_string(),
-        ))),
+        operand: Box::new(ContractExpression::ProgramExpression(
+            ProgramExpression::Variable(name.to_string()),
+        )),
         lowered: ProgramExpression::Cast {
             expression: Box::new(ProgramExpression::Variable(name.to_string())),
             target_type: crate::kernel::ProgramType::UInt8Pointer,
@@ -3507,7 +3510,7 @@ pub(in crate::surface) fn character_byte_view_name(
         return None;
     };
     let (
-        ContractExpression::CFragment(ProgramExpression::Variable(name)),
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(name)),
         ProgramExpression::Cast {
             expression,
             target_type: crate::kernel::ProgramType::UInt8Pointer,
@@ -3563,13 +3566,15 @@ pub(in crate::surface) fn elaborate_character_byte_views(
                 .zip(definition.parameters())
                 .map(|(argument, parameter)| {
                     let named = match argument {
-                        ContractExpression::CFragment(ProgramExpression::Variable(name))
+                        ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                            name,
+                        ))
                         | ContractExpression::Binding(name)
                         | ContractExpression::CBinding(name) => Some(name),
                         _ => None,
                     };
                     match (named, parameter.click_type()) {
-                        (Some(named), ClickType::C(expected))
+                        (Some(named), ClickType::Program(expected))
                             if type_of(named).is_some_and(|actual| {
                                 needs_character_byte_view(actual, expected.to_kernel_type())
                             }) =>
@@ -3597,7 +3602,7 @@ pub(in crate::surface) fn contract_c_unary(
     // Keep member syntax through casts so later instantiation can substitute
     // a snapshot value such as old(p) into the authoritative Surface base.
     // A flattened C fragment cannot represent that substitution.
-    if contract_expression_has_explicit_c_result_reference(&operand)
+    if contract_expression_has_explicit_program_result_reference(&operand)
         || matches!(
             &operand,
             ContractExpression::Field { .. } | ContractExpression::CUnary { .. }
@@ -3608,7 +3613,7 @@ pub(in crate::surface) fn contract_c_unary(
             lowered,
         }
     } else {
-        ContractExpression::CFragment(lowered)
+        ContractExpression::ProgramExpression(lowered)
     }
 }
 
@@ -3655,7 +3660,7 @@ pub(in crate::surface) fn c_unary_with_operand(
 
 /// A projection rooted at an explicit C binding keeps that namespace even
 /// though its lowered C fragment no longer carries the surface wrapper.
-pub(in crate::surface) fn contract_expression_has_explicit_c_result_base(
+pub(in crate::surface) fn contract_expression_has_explicit_program_result_base(
     mut expression: &ContractExpression,
 ) -> bool {
     loop {
@@ -3704,7 +3709,7 @@ fn substitute_contract_expression_node(
                     ProgramExpression::AddressOf(_) | ProgramExpression::CheckedObjectAddress(_)
                 )
                 && matches!(
-                    contract_expression_as_c_fragment(operand),
+                    contract_expression_as_program_expression(operand),
                     Some(ProgramExpression::Variable(_))
                 ) =>
         {
@@ -3712,7 +3717,7 @@ fn substitute_contract_expression_node(
         }
         ContractExpression::CUnary { operand, lowered } => {
             let operand = substitute_contract_expression_in(operand, substitutions)?;
-            let fragment = match contract_expression_as_c_fragment(&operand) {
+            let fragment = match contract_expression_as_program_expression(&operand) {
                 Some(fragment) => fragment,
                 None if matches!(
                     lowered,
@@ -3745,9 +3750,9 @@ fn substitute_contract_expression_node(
         }
         ContractExpression::ResourceField(_)
             if substitutions.body_fields_as_c_names
-                && let Some(name) = resource_body_c_fragment(expression) =>
+                && let Some(name) = resource_body_program_expression(expression) =>
         {
-            Ok(ContractExpression::CFragment(name))
+            Ok(ContractExpression::ProgramExpression(name))
         }
         ContractExpression::ResourceField(access) => Ok(ContractExpression::ResourceField(
             match substitutions.instance_rename_target(&access.owner, access.identity) {
@@ -3817,14 +3822,14 @@ fn substitute_contract_expression_node(
                 .collect::<Result<Vec<_>, _>>()?,
             dimensions: dimensions.clone(),
             lowered: if substitutions.is_contract_result_binding()
-                && (contract_expression_has_explicit_c_result_reference(base)
+                && (contract_expression_has_explicit_program_result_reference(base)
                     || indexes
                         .iter()
-                        .any(contract_expression_has_explicit_c_result_reference))
+                        .any(contract_expression_has_explicit_program_result_reference))
             {
                 lowered.clone()
             } else {
-                substitute_c_fragment_in(lowered, substitutions)?
+                substitute_program_expression_in(lowered, substitutions)?
             },
         }),
         ContractExpression::ResourceWildcard => Ok(expression.clone()),
@@ -3869,12 +3874,14 @@ fn substitute_contract_expression_node(
                 },
             )))
         }
-        ContractExpression::CFragment(ProgramExpression::Variable(name)) => Ok(substitutions
-            .value(name)
-            .cloned()
-            .unwrap_or_else(|| expression.clone())),
-        ContractExpression::CFragment(expression) => {
-            substitute_c_fragment_as_contract_in(expression, substitutions)
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+            Ok(substitutions
+                .value(name)
+                .cloned()
+                .unwrap_or_else(|| expression.clone()))
+        }
+        ContractExpression::ProgramExpression(expression) => {
+            substitute_program_expression_as_contract_in(expression, substitutions)
         }
         ContractExpression::Field {
             base,
@@ -3902,11 +3909,11 @@ fn substitute_contract_expression_node(
                 field: field.clone(),
                 lowered: if snapshot_base
                     || (substitutions.is_contract_result_binding()
-                        && contract_expression_has_explicit_c_result_base(base))
+                        && contract_expression_has_explicit_program_result_base(base))
                 {
                     lowered.clone()
                 } else {
-                    substitute_c_fragment_in(lowered, substitutions)?
+                    substitute_program_expression_in(lowered, substitutions)?
                 },
                 offset_bytes: *offset_bytes,
             })
@@ -4060,26 +4067,26 @@ fn substitute_contract_expression_node(
     }
 }
 
-fn substitute_c_fragment_as_contract_in(
+fn substitute_program_expression_as_contract_in(
     expression: &ProgramExpression,
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<ContractExpression, String> {
-    substitute_c_fragment_as_contract_with_numerals_in(expression, substitutions, false)
+    substitute_program_expression_as_contract_with_numerals_in(expression, substitutions, false)
 }
 
-pub(in crate::surface) fn substitute_c_fragment_as_contract_with_numerals<'a>(
+pub(in crate::surface) fn substitute_program_expression_as_contract_with_numerals<'a>(
     expression: &ProgramExpression,
     substitutions: impl Into<ContractSubstitutions<'a>>,
     contextual_numerals: bool,
 ) -> Result<ContractExpression, String> {
-    substitute_c_fragment_as_contract_with_numerals_in(
+    substitute_program_expression_as_contract_with_numerals_in(
         expression,
         &substitutions.into(),
         contextual_numerals,
     )
 }
 
-fn substitute_c_fragment_as_contract_with_numerals_in(
+fn substitute_program_expression_as_contract_with_numerals_in(
     expression: &ProgramExpression,
     substitutions: &ContractSubstitutions<'_>,
     contextual_numerals: bool,
@@ -4101,12 +4108,15 @@ fn substitute_c_fragment_as_contract_with_numerals_in(
             expression: operand,
             ..
         } => {
-            let operand =
-                substitute_c_fragment_as_contract_with_numerals_in(operand, substitutions, false)?;
-            Ok(match contract_expression_as_c_fragment(&operand) {
-                Some(fragment) => {
-                    ContractExpression::CFragment(c_unary_with_operand(expression, fragment))
-                }
+            let operand = substitute_program_expression_as_contract_with_numerals_in(
+                operand,
+                substitutions,
+                false,
+            )?;
+            Ok(match contract_expression_as_program_expression(&operand) {
+                Some(fragment) => ContractExpression::ProgramExpression(c_unary_with_operand(
+                    expression, fragment,
+                )),
                 None => ContractExpression::CUnary {
                     operand: Box::new(operand),
                     // The authoritative operand carries the snapshot. The
@@ -4115,7 +4125,9 @@ fn substitute_c_fragment_as_contract_with_numerals_in(
                 },
             })
         }
-        ProgramExpression::Value(_) => Ok(ContractExpression::CFragment(expression.clone())),
+        ProgramExpression::Value(_) => {
+            Ok(ContractExpression::ProgramExpression(expression.clone()))
+        }
         // A call step's result is spelled by its call.
         ProgramExpression::CallResult {
             call,
@@ -4128,165 +4140,165 @@ fn substitute_c_fragment_as_contract_with_numerals_in(
         ProgramExpression::Variable(name) => Ok(substitutions
             .value(name)
             .cloned()
-            .unwrap_or_else(|| ContractExpression::CFragment(expression.clone()))),
+            .unwrap_or_else(|| ContractExpression::ProgramExpression(expression.clone()))),
         ProgramExpression::Add(left, right) => Ok(ContractExpression::Add(
-            Box::new(substitute_c_fragment_as_contract_with_numerals_in(
+            Box::new(substitute_program_expression_as_contract_with_numerals_in(
                 left,
                 substitutions,
                 contextual_numerals,
             )?),
-            Box::new(substitute_c_fragment_as_contract_with_numerals_in(
+            Box::new(substitute_program_expression_as_contract_with_numerals_in(
                 right,
                 substitutions,
                 contextual_numerals,
             )?),
         )),
         ProgramExpression::Subtract(left, right) => Ok(ContractExpression::Subtract(
-            Box::new(substitute_c_fragment_as_contract_with_numerals_in(
+            Box::new(substitute_program_expression_as_contract_with_numerals_in(
                 left,
                 substitutions,
                 contextual_numerals,
             )?),
-            Box::new(substitute_c_fragment_as_contract_with_numerals_in(
+            Box::new(substitute_program_expression_as_contract_with_numerals_in(
                 right,
                 substitutions,
                 contextual_numerals,
             )?),
         )),
         ProgramExpression::Multiply(left, right) => Ok(ContractExpression::Multiply(
-            Box::new(substitute_c_fragment_as_contract_with_numerals_in(
+            Box::new(substitute_program_expression_as_contract_with_numerals_in(
                 left,
                 substitutions,
                 contextual_numerals,
             )?),
-            Box::new(substitute_c_fragment_as_contract_with_numerals_in(
+            Box::new(substitute_program_expression_as_contract_with_numerals_in(
                 right,
                 substitutions,
                 contextual_numerals,
             )?),
         )),
         ProgramExpression::Divide(left, right) => Ok(ContractExpression::Divide(
-            Box::new(substitute_c_fragment_as_contract_with_numerals_in(
+            Box::new(substitute_program_expression_as_contract_with_numerals_in(
                 left,
                 substitutions,
                 contextual_numerals,
             )?),
-            Box::new(substitute_c_fragment_as_contract_with_numerals_in(
+            Box::new(substitute_program_expression_as_contract_with_numerals_in(
                 right,
                 substitutions,
                 contextual_numerals,
             )?),
         )),
         ProgramExpression::Remainder(left, right) => Ok(ContractExpression::Remainder(
-            Box::new(substitute_c_fragment_as_contract_with_numerals_in(
+            Box::new(substitute_program_expression_as_contract_with_numerals_in(
                 left,
                 substitutions,
                 contextual_numerals,
             )?),
-            Box::new(substitute_c_fragment_as_contract_with_numerals_in(
+            Box::new(substitute_program_expression_as_contract_with_numerals_in(
                 right,
                 substitutions,
                 contextual_numerals,
             )?),
         )),
         ProgramExpression::ShiftLeft(left, right) => Ok(ContractExpression::ShiftLeft(
-            Box::new(substitute_c_fragment_as_contract_with_numerals_in(
+            Box::new(substitute_program_expression_as_contract_with_numerals_in(
                 left,
                 substitutions,
                 contextual_numerals,
             )?),
-            Box::new(substitute_c_fragment_as_contract_with_numerals_in(
+            Box::new(substitute_program_expression_as_contract_with_numerals_in(
                 right,
                 substitutions,
                 contextual_numerals,
             )?),
         )),
         ProgramExpression::RustShiftLeft(left, right) => Ok(ContractExpression::RustShiftLeft(
-            Box::new(substitute_c_fragment_as_contract_with_numerals_in(
+            Box::new(substitute_program_expression_as_contract_with_numerals_in(
                 left,
                 substitutions,
                 contextual_numerals,
             )?),
-            Box::new(substitute_c_fragment_as_contract_with_numerals_in(
+            Box::new(substitute_program_expression_as_contract_with_numerals_in(
                 right,
                 substitutions,
                 contextual_numerals,
             )?),
         )),
         ProgramExpression::ShiftRight(left, right) => Ok(ContractExpression::ShiftRight(
-            Box::new(substitute_c_fragment_as_contract_with_numerals_in(
+            Box::new(substitute_program_expression_as_contract_with_numerals_in(
                 left,
                 substitutions,
                 contextual_numerals,
             )?),
-            Box::new(substitute_c_fragment_as_contract_with_numerals_in(
+            Box::new(substitute_program_expression_as_contract_with_numerals_in(
                 right,
                 substitutions,
                 contextual_numerals,
             )?),
         )),
         ProgramExpression::RustShiftRight(left, right) => Ok(ContractExpression::RustShiftRight(
-            Box::new(substitute_c_fragment_as_contract_with_numerals_in(
+            Box::new(substitute_program_expression_as_contract_with_numerals_in(
                 left,
                 substitutions,
                 contextual_numerals,
             )?),
-            Box::new(substitute_c_fragment_as_contract_with_numerals_in(
+            Box::new(substitute_program_expression_as_contract_with_numerals_in(
                 right,
                 substitutions,
                 contextual_numerals,
             )?),
         )),
         ProgramExpression::BitwiseAnd(left, right) => Ok(ContractExpression::BitwiseAnd(
-            Box::new(substitute_c_fragment_as_contract_with_numerals_in(
+            Box::new(substitute_program_expression_as_contract_with_numerals_in(
                 left,
                 substitutions,
                 contextual_numerals,
             )?),
-            Box::new(substitute_c_fragment_as_contract_with_numerals_in(
+            Box::new(substitute_program_expression_as_contract_with_numerals_in(
                 right,
                 substitutions,
                 contextual_numerals,
             )?),
         )),
         ProgramExpression::BitwiseOr(left, right) => Ok(ContractExpression::BitwiseOr(
-            Box::new(substitute_c_fragment_as_contract_with_numerals_in(
+            Box::new(substitute_program_expression_as_contract_with_numerals_in(
                 left,
                 substitutions,
                 contextual_numerals,
             )?),
-            Box::new(substitute_c_fragment_as_contract_with_numerals_in(
+            Box::new(substitute_program_expression_as_contract_with_numerals_in(
                 right,
                 substitutions,
                 contextual_numerals,
             )?),
         )),
         ProgramExpression::BitwiseXor(left, right) => Ok(ContractExpression::BitwiseXor(
-            Box::new(substitute_c_fragment_as_contract_with_numerals_in(
+            Box::new(substitute_program_expression_as_contract_with_numerals_in(
                 left,
                 substitutions,
                 contextual_numerals,
             )?),
-            Box::new(substitute_c_fragment_as_contract_with_numerals_in(
+            Box::new(substitute_program_expression_as_contract_with_numerals_in(
                 right,
                 substitutions,
                 contextual_numerals,
             )?),
         )),
         ProgramExpression::BitwiseNot(expression) => Ok(ContractExpression::BitwiseNot(Box::new(
-            substitute_c_fragment_as_contract_with_numerals_in(
+            substitute_program_expression_as_contract_with_numerals_in(
                 expression,
                 substitutions,
                 contextual_numerals,
             )?,
         ))),
         ProgramExpression::Index(base, index) => Ok(substituted_index(
-            substitute_c_fragment_as_contract_with_numerals_in(
+            substitute_program_expression_as_contract_with_numerals_in(
                 base,
                 substitutions,
                 contextual_numerals,
             )?,
-            substitute_c_fragment_as_contract_with_numerals_in(
+            substitute_program_expression_as_contract_with_numerals_in(
                 index,
                 substitutions,
                 contextual_numerals,
@@ -4294,10 +4306,9 @@ fn substitute_c_fragment_as_contract_with_numerals_in(
             substitutions,
             true,
         )),
-        _ => Ok(ContractExpression::CFragment(substitute_c_fragment_in(
-            expression,
-            substitutions,
-        )?)),
+        _ => Ok(ContractExpression::ProgramExpression(
+            substitute_program_expression_in(expression, substitutions)?,
+        )),
     }
 }
 
@@ -4335,14 +4346,14 @@ fn substituted_index(
     ContractExpression::Index(Box::new(base), Box::new(index))
 }
 
-pub(in crate::surface) fn substitute_c_fragment<'a>(
+pub(in crate::surface) fn substitute_program_expression<'a>(
     expression: &ProgramExpression,
     substitutions: impl Into<ContractSubstitutions<'a>>,
 ) -> Result<ProgramExpression, String> {
-    substitute_c_fragment_in(expression, &substitutions.into())
+    substitute_program_expression_in(expression, &substitutions.into())
 }
 
-pub(in crate::surface) fn substitute_c_fragment_in(
+pub(in crate::surface) fn substitute_program_expression_in(
     expression: &ProgramExpression,
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<ProgramExpression, String> {
@@ -4354,10 +4365,10 @@ pub(in crate::surface) fn substitute_c_fragment_in(
             let Some(substitution) = substitutions.value(name) else {
                 return Ok(expression.clone());
             };
-            contract_expression_as_c_fragment(substitution).ok_or_else(|| {
+            contract_expression_as_program_expression(substitution).ok_or_else(|| {
                 format!(
                     "cannot substitute non-C-fragment expression for `{name}` inside C fragment `{}`",
-                    crate::surface::diagnostics::describe_c_expression(expression)
+                    crate::surface::diagnostics::describe_program_expression(expression)
                 )
             })
         }
@@ -4370,7 +4381,7 @@ pub(in crate::surface) fn substitute_c_fragment_in(
             pointee_constant,
             explicit_qualification,
         } => Ok(ProgramExpression::Cast {
-            expression: Box::new(substitute_c_fragment_in(expression, substitutions)?),
+            expression: Box::new(substitute_program_expression_in(expression, substitutions)?),
             target_type: *target_type,
             integer_mode: *integer_mode,
             pointee_struct: pointee_struct.clone(),
@@ -4379,7 +4390,7 @@ pub(in crate::surface) fn substitute_c_fragment_in(
             explicit_qualification: *explicit_qualification,
         }),
         ProgramExpression::FloatNegate(expression) => Ok(ProgramExpression::FloatNegate(Box::new(
-            substitute_c_fragment_in(expression, substitutions)?,
+            substitute_program_expression_in(expression, substitutions)?,
         ))),
         ProgramExpression::EnumConstruct {
             enum_type,
@@ -4390,7 +4401,7 @@ pub(in crate::surface) fn substitute_c_fragment_in(
             variant: variant.clone(),
             fields: fields
                 .iter()
-                .map(|field| substitute_c_fragment_in(field, substitutions))
+                .map(|field| substitute_program_expression_in(field, substitutions))
                 .collect::<Result<_, _>>()?,
         }),
         ProgramExpression::EnumField {
@@ -4398,19 +4409,19 @@ pub(in crate::surface) fn substitute_c_fragment_in(
             variant,
             index,
         } => Ok(ProgramExpression::EnumField {
-            value: Box::new(substitute_c_fragment_in(value, substitutions)?),
+            value: Box::new(substitute_program_expression_in(value, substitutions)?),
             variant: variant.clone(),
             index: *index,
         }),
         ProgramExpression::EnumIs { value, variant } => Ok(ProgramExpression::EnumIs {
-            value: Box::new(substitute_c_fragment_in(value, substitutions)?),
+            value: Box::new(substitute_program_expression_in(value, substitutions)?),
             variant: variant.clone(),
         }),
         ProgramExpression::FloatClassification {
             expression,
             classification,
         } => Ok(ProgramExpression::FloatClassification {
-            expression: Box::new(substitute_c_fragment_in(expression, substitutions)?),
+            expression: Box::new(substitute_program_expression_in(expression, substitutions)?),
             classification: *classification,
         }),
         ProgramExpression::Conditional {
@@ -4418,9 +4429,15 @@ pub(in crate::surface) fn substitute_c_fragment_in(
             then_branch,
             else_branch,
         } => Ok(ProgramExpression::Conditional {
-            condition: Box::new(substitute_c_fragment_in(condition, substitutions)?),
-            then_branch: Box::new(substitute_c_fragment_in(then_branch, substitutions)?),
-            else_branch: Box::new(substitute_c_fragment_in(else_branch, substitutions)?),
+            condition: Box::new(substitute_program_expression_in(condition, substitutions)?),
+            then_branch: Box::new(substitute_program_expression_in(
+                then_branch,
+                substitutions,
+            )?),
+            else_branch: Box::new(substitute_program_expression_in(
+                else_branch,
+                substitutions,
+            )?),
         }),
         ProgramExpression::AddressOf(body) | ProgramExpression::CheckedObjectAddress(body)
             if substitutions.current_c_values
@@ -4429,111 +4446,111 @@ pub(in crate::surface) fn substitute_c_fragment_in(
             Ok(expression.clone())
         }
         ProgramExpression::AddressOf(body) => Ok(ProgramExpression::AddressOf(Box::new(
-            substitute_c_fragment_in(body, substitutions)?,
+            substitute_program_expression_in(body, substitutions)?,
         ))),
         ProgramExpression::CheckedObjectAddress(body) => {
             Ok(ProgramExpression::CheckedObjectAddress(Box::new(
-                substitute_c_fragment_in(body, substitutions)?,
+                substitute_program_expression_in(body, substitutions)?,
             )))
         }
         ProgramExpression::PointerOffsetBytes { pointer, bytes } => {
             Ok(ProgramExpression::PointerOffsetBytes {
-                pointer: Box::new(substitute_c_fragment_in(pointer, substitutions)?),
+                pointer: Box::new(substitute_program_expression_in(pointer, substitutions)?),
                 bytes: *bytes,
             })
         }
         ProgramExpression::Subobject { pointer, width } => Ok(ProgramExpression::Subobject {
-            pointer: Box::new(substitute_c_fragment_in(pointer, substitutions)?),
+            pointer: Box::new(substitute_program_expression_in(pointer, substitutions)?),
             width: *width,
         }),
         ProgramExpression::LessThan(left, right) => Ok(ProgramExpression::LessThan(
-            Box::new(substitute_c_fragment_in(left, substitutions)?),
-            Box::new(substitute_c_fragment_in(right, substitutions)?),
+            Box::new(substitute_program_expression_in(left, substitutions)?),
+            Box::new(substitute_program_expression_in(right, substitutions)?),
         )),
         ProgramExpression::LessEqual(left, right) => Ok(ProgramExpression::LessEqual(
-            Box::new(substitute_c_fragment_in(left, substitutions)?),
-            Box::new(substitute_c_fragment_in(right, substitutions)?),
+            Box::new(substitute_program_expression_in(left, substitutions)?),
+            Box::new(substitute_program_expression_in(right, substitutions)?),
         )),
         ProgramExpression::GreaterThan(left, right) => Ok(ProgramExpression::GreaterThan(
-            Box::new(substitute_c_fragment_in(left, substitutions)?),
-            Box::new(substitute_c_fragment_in(right, substitutions)?),
+            Box::new(substitute_program_expression_in(left, substitutions)?),
+            Box::new(substitute_program_expression_in(right, substitutions)?),
         )),
         ProgramExpression::GreaterEqual(left, right) => Ok(ProgramExpression::GreaterEqual(
-            Box::new(substitute_c_fragment_in(left, substitutions)?),
-            Box::new(substitute_c_fragment_in(right, substitutions)?),
+            Box::new(substitute_program_expression_in(left, substitutions)?),
+            Box::new(substitute_program_expression_in(right, substitutions)?),
         )),
         ProgramExpression::Equal(left, right) => Ok(ProgramExpression::Equal(
-            Box::new(substitute_c_fragment_in(left, substitutions)?),
-            Box::new(substitute_c_fragment_in(right, substitutions)?),
+            Box::new(substitute_program_expression_in(left, substitutions)?),
+            Box::new(substitute_program_expression_in(right, substitutions)?),
         )),
         ProgramExpression::NotEqual(left, right) => Ok(ProgramExpression::NotEqual(
-            Box::new(substitute_c_fragment_in(left, substitutions)?),
-            Box::new(substitute_c_fragment_in(right, substitutions)?),
+            Box::new(substitute_program_expression_in(left, substitutions)?),
+            Box::new(substitute_program_expression_in(right, substitutions)?),
         )),
         ProgramExpression::Not(body) => Ok(ProgramExpression::Not(Box::new(
-            substitute_c_fragment_in(body, substitutions)?,
+            substitute_program_expression_in(body, substitutions)?,
         ))),
         ProgramExpression::And(left, right) => Ok(ProgramExpression::And(
-            Box::new(substitute_c_fragment_in(left, substitutions)?),
-            Box::new(substitute_c_fragment_in(right, substitutions)?),
+            Box::new(substitute_program_expression_in(left, substitutions)?),
+            Box::new(substitute_program_expression_in(right, substitutions)?),
         )),
         ProgramExpression::Or(left, right) => Ok(ProgramExpression::Or(
-            Box::new(substitute_c_fragment_in(left, substitutions)?),
-            Box::new(substitute_c_fragment_in(right, substitutions)?),
+            Box::new(substitute_program_expression_in(left, substitutions)?),
+            Box::new(substitute_program_expression_in(right, substitutions)?),
         )),
         ProgramExpression::Add(left, right) => Ok(ProgramExpression::Add(
-            Box::new(substitute_c_fragment_in(left, substitutions)?),
-            Box::new(substitute_c_fragment_in(right, substitutions)?),
+            Box::new(substitute_program_expression_in(left, substitutions)?),
+            Box::new(substitute_program_expression_in(right, substitutions)?),
         )),
         ProgramExpression::Subtract(left, right) => Ok(ProgramExpression::Subtract(
-            Box::new(substitute_c_fragment_in(left, substitutions)?),
-            Box::new(substitute_c_fragment_in(right, substitutions)?),
+            Box::new(substitute_program_expression_in(left, substitutions)?),
+            Box::new(substitute_program_expression_in(right, substitutions)?),
         )),
         ProgramExpression::Multiply(left, right) => Ok(ProgramExpression::Multiply(
-            Box::new(substitute_c_fragment_in(left, substitutions)?),
-            Box::new(substitute_c_fragment_in(right, substitutions)?),
+            Box::new(substitute_program_expression_in(left, substitutions)?),
+            Box::new(substitute_program_expression_in(right, substitutions)?),
         )),
         ProgramExpression::Divide(left, right) => Ok(ProgramExpression::Divide(
-            Box::new(substitute_c_fragment_in(left, substitutions)?),
-            Box::new(substitute_c_fragment_in(right, substitutions)?),
+            Box::new(substitute_program_expression_in(left, substitutions)?),
+            Box::new(substitute_program_expression_in(right, substitutions)?),
         )),
         ProgramExpression::Remainder(left, right) => Ok(ProgramExpression::Remainder(
-            Box::new(substitute_c_fragment_in(left, substitutions)?),
-            Box::new(substitute_c_fragment_in(right, substitutions)?),
+            Box::new(substitute_program_expression_in(left, substitutions)?),
+            Box::new(substitute_program_expression_in(right, substitutions)?),
         )),
         ProgramExpression::ShiftLeft(left, right) => Ok(ProgramExpression::ShiftLeft(
-            Box::new(substitute_c_fragment_in(left, substitutions)?),
-            Box::new(substitute_c_fragment_in(right, substitutions)?),
+            Box::new(substitute_program_expression_in(left, substitutions)?),
+            Box::new(substitute_program_expression_in(right, substitutions)?),
         )),
         ProgramExpression::RustShiftLeft(left, right) => Ok(ProgramExpression::RustShiftLeft(
-            Box::new(substitute_c_fragment_in(left, substitutions)?),
-            Box::new(substitute_c_fragment_in(right, substitutions)?),
+            Box::new(substitute_program_expression_in(left, substitutions)?),
+            Box::new(substitute_program_expression_in(right, substitutions)?),
         )),
         ProgramExpression::ShiftRight(left, right) => Ok(ProgramExpression::ShiftRight(
-            Box::new(substitute_c_fragment_in(left, substitutions)?),
-            Box::new(substitute_c_fragment_in(right, substitutions)?),
+            Box::new(substitute_program_expression_in(left, substitutions)?),
+            Box::new(substitute_program_expression_in(right, substitutions)?),
         )),
         ProgramExpression::RustShiftRight(left, right) => Ok(ProgramExpression::RustShiftRight(
-            Box::new(substitute_c_fragment_in(left, substitutions)?),
-            Box::new(substitute_c_fragment_in(right, substitutions)?),
+            Box::new(substitute_program_expression_in(left, substitutions)?),
+            Box::new(substitute_program_expression_in(right, substitutions)?),
         )),
         ProgramExpression::BitwiseAnd(left, right) => Ok(ProgramExpression::BitwiseAnd(
-            Box::new(substitute_c_fragment_in(left, substitutions)?),
-            Box::new(substitute_c_fragment_in(right, substitutions)?),
+            Box::new(substitute_program_expression_in(left, substitutions)?),
+            Box::new(substitute_program_expression_in(right, substitutions)?),
         )),
         ProgramExpression::BitwiseOr(left, right) => Ok(ProgramExpression::BitwiseOr(
-            Box::new(substitute_c_fragment_in(left, substitutions)?),
-            Box::new(substitute_c_fragment_in(right, substitutions)?),
+            Box::new(substitute_program_expression_in(left, substitutions)?),
+            Box::new(substitute_program_expression_in(right, substitutions)?),
         )),
         ProgramExpression::BitwiseXor(left, right) => Ok(ProgramExpression::BitwiseXor(
-            Box::new(substitute_c_fragment_in(left, substitutions)?),
-            Box::new(substitute_c_fragment_in(right, substitutions)?),
+            Box::new(substitute_program_expression_in(left, substitutions)?),
+            Box::new(substitute_program_expression_in(right, substitutions)?),
         )),
         ProgramExpression::BitwiseNot(expression) => Ok(ProgramExpression::BitwiseNot(Box::new(
-            substitute_c_fragment_in(expression, substitutions)?,
+            substitute_program_expression_in(expression, substitutions)?,
         ))),
         ProgramExpression::Load(body) => Ok(ProgramExpression::Load(Box::new(
-            substitute_c_fragment_in(body, substitutions)?,
+            substitute_program_expression_in(body, substitutions)?,
         ))),
         ProgramExpression::TypedLoad {
             pointer,
@@ -4543,7 +4560,7 @@ pub(in crate::surface) fn substitute_c_fragment_in(
             access_class,
             source,
         } => Ok(ProgramExpression::TypedLoad {
-            pointer: Box::new(substitute_c_fragment_in(pointer, substitutions)?),
+            pointer: Box::new(substitute_program_expression_in(pointer, substitutions)?),
             value_type: *value_type,
             volatile: *volatile,
             pointee_constant: *pointee_constant,
@@ -4551,16 +4568,16 @@ pub(in crate::surface) fn substitute_c_fragment_in(
             source: source.clone(),
         }),
         ProgramExpression::Index(base, index) => Ok(ProgramExpression::Index(
-            Box::new(substitute_c_fragment_in(base, substitutions)?),
-            Box::new(substitute_c_fragment_in(index, substitutions)?),
+            Box::new(substitute_program_expression_in(base, substitutions)?),
+            Box::new(substitute_program_expression_in(index, substitutions)?),
         )),
     }
 }
 
-pub(in crate::surface) fn contract_expression_as_c_fragment(
+pub(in crate::surface) fn contract_expression_as_program_expression(
     expression: &ContractExpression,
 ) -> Option<ProgramExpression> {
-    contract_expression_as_c_fragment_resolving_fields(expression, &|_| None)
+    contract_expression_as_program_expression_resolving_fields(expression, &|_| None)
 }
 
 /// Converts a contract expression to a C fragment, letting `field` supply
@@ -4568,12 +4585,12 @@ pub(in crate::surface) fn contract_expression_as_c_fragment(
 /// field of the instance being defined is stable model data, which the kernel
 /// binds by name exactly as it binds a matched constructor payload; every
 /// other field access has no C spelling.
-pub(in crate::surface) fn contract_expression_as_c_fragment_resolving_fields(
+pub(in crate::surface) fn contract_expression_as_program_expression_resolving_fields(
     expression: &ContractExpression,
     field: &dyn Fn(&ResourceFieldAccess) -> Option<ProgramExpression>,
 ) -> Option<ProgramExpression> {
-    let contract_expression_as_c_fragment = |expression: &ContractExpression| {
-        contract_expression_as_c_fragment_resolving_fields(expression, field)
+    let contract_expression_as_program_expression = |expression: &ContractExpression| {
+        contract_expression_as_program_expression_resolving_fields(expression, field)
     };
     match expression {
         ContractExpression::Resource(_) => None,
@@ -4602,7 +4619,7 @@ pub(in crate::surface) fn contract_expression_as_c_fragment_resolving_fields(
             }
             Some(ProgramExpression::Subtract(
                 Box::new(ProgramExpression::Value(int32(0))),
-                Box::new(contract_expression_as_c_fragment(inner)?),
+                Box::new(contract_expression_as_program_expression(inner)?),
             ))
         }
         ContractExpression::AlgebraicVariable { .. }
@@ -4613,10 +4630,10 @@ pub(in crate::surface) fn contract_expression_as_c_fragment_resolving_fields(
             lowered: expression,
             ..
         }
-        | ContractExpression::CFragment(expression) => Some(expression.clone()),
+        | ContractExpression::ProgramExpression(expression) => Some(expression.clone()),
         ContractExpression::CUnary { operand, lowered } => Some(c_unary_with_operand(
             lowered,
-            contract_expression_as_c_fragment(operand)?,
+            contract_expression_as_program_expression(operand)?,
         )),
         ContractExpression::Field { lowered, .. } => Some(lowered.clone()),
         ContractExpression::Binding(name) | ContractExpression::CBinding(name) => {
@@ -4627,59 +4644,59 @@ pub(in crate::surface) fn contract_expression_as_c_fragment_resolving_fields(
         ContractExpression::Old(_) => None,
         ContractExpression::At { .. } => None,
         ContractExpression::Add(left, right) => Some(ProgramExpression::Add(
-            Box::new(contract_expression_as_c_fragment(left)?),
-            Box::new(contract_expression_as_c_fragment(right)?),
+            Box::new(contract_expression_as_program_expression(left)?),
+            Box::new(contract_expression_as_program_expression(right)?),
         )),
         ContractExpression::Subtract(left, right) => Some(ProgramExpression::Subtract(
-            Box::new(contract_expression_as_c_fragment(left)?),
-            Box::new(contract_expression_as_c_fragment(right)?),
+            Box::new(contract_expression_as_program_expression(left)?),
+            Box::new(contract_expression_as_program_expression(right)?),
         )),
         ContractExpression::Multiply(left, right) => Some(ProgramExpression::Multiply(
-            Box::new(contract_expression_as_c_fragment(left)?),
-            Box::new(contract_expression_as_c_fragment(right)?),
+            Box::new(contract_expression_as_program_expression(left)?),
+            Box::new(contract_expression_as_program_expression(right)?),
         )),
         ContractExpression::Divide(left, right) => Some(ProgramExpression::Divide(
-            Box::new(contract_expression_as_c_fragment(left)?),
-            Box::new(contract_expression_as_c_fragment(right)?),
+            Box::new(contract_expression_as_program_expression(left)?),
+            Box::new(contract_expression_as_program_expression(right)?),
         )),
         ContractExpression::Remainder(left, right) => Some(ProgramExpression::Remainder(
-            Box::new(contract_expression_as_c_fragment(left)?),
-            Box::new(contract_expression_as_c_fragment(right)?),
+            Box::new(contract_expression_as_program_expression(left)?),
+            Box::new(contract_expression_as_program_expression(right)?),
         )),
         ContractExpression::ShiftLeft(left, right) => Some(ProgramExpression::ShiftLeft(
-            Box::new(contract_expression_as_c_fragment(left)?),
-            Box::new(contract_expression_as_c_fragment(right)?),
+            Box::new(contract_expression_as_program_expression(left)?),
+            Box::new(contract_expression_as_program_expression(right)?),
         )),
         ContractExpression::RustShiftLeft(left, right) => Some(ProgramExpression::RustShiftLeft(
-            Box::new(contract_expression_as_c_fragment(left)?),
-            Box::new(contract_expression_as_c_fragment(right)?),
+            Box::new(contract_expression_as_program_expression(left)?),
+            Box::new(contract_expression_as_program_expression(right)?),
         )),
         ContractExpression::ShiftRight(left, right) => Some(ProgramExpression::ShiftRight(
-            Box::new(contract_expression_as_c_fragment(left)?),
-            Box::new(contract_expression_as_c_fragment(right)?),
+            Box::new(contract_expression_as_program_expression(left)?),
+            Box::new(contract_expression_as_program_expression(right)?),
         )),
         ContractExpression::RustShiftRight(left, right) => Some(ProgramExpression::RustShiftRight(
-            Box::new(contract_expression_as_c_fragment(left)?),
-            Box::new(contract_expression_as_c_fragment(right)?),
+            Box::new(contract_expression_as_program_expression(left)?),
+            Box::new(contract_expression_as_program_expression(right)?),
         )),
         ContractExpression::BitwiseAnd(left, right) => Some(ProgramExpression::BitwiseAnd(
-            Box::new(contract_expression_as_c_fragment(left)?),
-            Box::new(contract_expression_as_c_fragment(right)?),
+            Box::new(contract_expression_as_program_expression(left)?),
+            Box::new(contract_expression_as_program_expression(right)?),
         )),
         ContractExpression::BitwiseOr(left, right) => Some(ProgramExpression::BitwiseOr(
-            Box::new(contract_expression_as_c_fragment(left)?),
-            Box::new(contract_expression_as_c_fragment(right)?),
+            Box::new(contract_expression_as_program_expression(left)?),
+            Box::new(contract_expression_as_program_expression(right)?),
         )),
         ContractExpression::BitwiseXor(left, right) => Some(ProgramExpression::BitwiseXor(
-            Box::new(contract_expression_as_c_fragment(left)?),
-            Box::new(contract_expression_as_c_fragment(right)?),
+            Box::new(contract_expression_as_program_expression(left)?),
+            Box::new(contract_expression_as_program_expression(right)?),
         )),
         ContractExpression::BitwiseNot(expression) => Some(ProgramExpression::BitwiseNot(
-            Box::new(contract_expression_as_c_fragment(expression)?),
+            Box::new(contract_expression_as_program_expression(expression)?),
         )),
         ContractExpression::Index(base, index) => Some(ProgramExpression::Index(
-            Box::new(contract_expression_as_c_fragment(base)?),
-            Box::new(contract_expression_as_c_fragment(index)?),
+            Box::new(contract_expression_as_program_expression(base)?),
+            Box::new(contract_expression_as_program_expression(index)?),
         )),
         ContractExpression::ArrayIndex { lowered, .. } => Some(lowered.clone()),
         ContractExpression::If { .. }
@@ -4696,10 +4713,10 @@ pub(in crate::surface) fn contract_expression_as_c_fragment_resolving_fields(
 /// body, just as it binds a matched constructor payload, so the field may
 /// select a memory-range endpoint or supply a child argument. A field outside
 /// a resource body, or of a non-C type, has no C spelling.
-pub(in crate::surface) fn resource_body_c_fragment(
+pub(in crate::surface) fn resource_body_program_expression(
     expression: &ContractExpression,
 ) -> Option<ProgramExpression> {
-    contract_expression_as_c_fragment_resolving_fields(expression, &|access| {
+    contract_expression_as_program_expression_resolving_fields(expression, &|access| {
         (access.identity == Variable(u64::MAX)
             && access.owner == "__body"
             && access.children.is_empty()
@@ -4725,7 +4742,7 @@ pub(in crate::surface) fn c_comparison_operator(
     }
 }
 
-pub(in crate::surface) fn contract_expression_to_c_fragment(
+pub(in crate::surface) fn contract_expression_to_program_expression(
     expression: &ContractExpression,
 ) -> Option<ProgramExpression> {
     match expression {
@@ -4735,7 +4752,7 @@ pub(in crate::surface) fn contract_expression_to_c_fragment(
         | ContractExpression::RegionParameter { .. } => None,
         ContractExpression::ResourceField(_) => None,
         ContractExpression::IntegerLiteral(_) | ContractExpression::Negate(_) => {
-            resource_argument_to_c_expression(expression).ok()
+            resource_argument_to_program_expression(expression).ok()
         }
         ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::AlgebraicConstructor { .. }
@@ -4745,10 +4762,10 @@ pub(in crate::surface) fn contract_expression_to_c_fragment(
             lowered: expression,
             ..
         }
-        | ContractExpression::CFragment(expression) => Some(expression.clone()),
+        | ContractExpression::ProgramExpression(expression) => Some(expression.clone()),
         ContractExpression::CUnary { operand, lowered } => Some(c_unary_with_operand(
             lowered,
-            contract_expression_to_c_fragment(operand)?,
+            contract_expression_to_program_expression(operand)?,
         )),
         ContractExpression::Field { lowered, .. } => Some(lowered.clone()),
         ContractExpression::Binding(name) | ContractExpression::CBinding(name) => {
@@ -4759,59 +4776,59 @@ pub(in crate::surface) fn contract_expression_to_c_fragment(
         ContractExpression::Old(_) => None,
         ContractExpression::At { .. } => None,
         ContractExpression::Add(left, right) => Some(ProgramExpression::Add(
-            Box::new(contract_expression_to_c_fragment(left)?),
-            Box::new(contract_expression_to_c_fragment(right)?),
+            Box::new(contract_expression_to_program_expression(left)?),
+            Box::new(contract_expression_to_program_expression(right)?),
         )),
         ContractExpression::Subtract(left, right) => Some(ProgramExpression::Subtract(
-            Box::new(contract_expression_to_c_fragment(left)?),
-            Box::new(contract_expression_to_c_fragment(right)?),
+            Box::new(contract_expression_to_program_expression(left)?),
+            Box::new(contract_expression_to_program_expression(right)?),
         )),
         ContractExpression::Multiply(left, right) => Some(ProgramExpression::Multiply(
-            Box::new(contract_expression_to_c_fragment(left)?),
-            Box::new(contract_expression_to_c_fragment(right)?),
+            Box::new(contract_expression_to_program_expression(left)?),
+            Box::new(contract_expression_to_program_expression(right)?),
         )),
         ContractExpression::Divide(left, right) => Some(ProgramExpression::Divide(
-            Box::new(contract_expression_to_c_fragment(left)?),
-            Box::new(contract_expression_to_c_fragment(right)?),
+            Box::new(contract_expression_to_program_expression(left)?),
+            Box::new(contract_expression_to_program_expression(right)?),
         )),
         ContractExpression::Remainder(left, right) => Some(ProgramExpression::Remainder(
-            Box::new(contract_expression_to_c_fragment(left)?),
-            Box::new(contract_expression_to_c_fragment(right)?),
+            Box::new(contract_expression_to_program_expression(left)?),
+            Box::new(contract_expression_to_program_expression(right)?),
         )),
         ContractExpression::ShiftLeft(left, right) => Some(ProgramExpression::ShiftLeft(
-            Box::new(contract_expression_to_c_fragment(left)?),
-            Box::new(contract_expression_to_c_fragment(right)?),
+            Box::new(contract_expression_to_program_expression(left)?),
+            Box::new(contract_expression_to_program_expression(right)?),
         )),
         ContractExpression::RustShiftLeft(left, right) => Some(ProgramExpression::RustShiftLeft(
-            Box::new(contract_expression_to_c_fragment(left)?),
-            Box::new(contract_expression_to_c_fragment(right)?),
+            Box::new(contract_expression_to_program_expression(left)?),
+            Box::new(contract_expression_to_program_expression(right)?),
         )),
         ContractExpression::ShiftRight(left, right) => Some(ProgramExpression::ShiftRight(
-            Box::new(contract_expression_to_c_fragment(left)?),
-            Box::new(contract_expression_to_c_fragment(right)?),
+            Box::new(contract_expression_to_program_expression(left)?),
+            Box::new(contract_expression_to_program_expression(right)?),
         )),
         ContractExpression::RustShiftRight(left, right) => Some(ProgramExpression::RustShiftRight(
-            Box::new(contract_expression_to_c_fragment(left)?),
-            Box::new(contract_expression_to_c_fragment(right)?),
+            Box::new(contract_expression_to_program_expression(left)?),
+            Box::new(contract_expression_to_program_expression(right)?),
         )),
         ContractExpression::BitwiseAnd(left, right) => Some(ProgramExpression::BitwiseAnd(
-            Box::new(contract_expression_to_c_fragment(left)?),
-            Box::new(contract_expression_to_c_fragment(right)?),
+            Box::new(contract_expression_to_program_expression(left)?),
+            Box::new(contract_expression_to_program_expression(right)?),
         )),
         ContractExpression::BitwiseOr(left, right) => Some(ProgramExpression::BitwiseOr(
-            Box::new(contract_expression_to_c_fragment(left)?),
-            Box::new(contract_expression_to_c_fragment(right)?),
+            Box::new(contract_expression_to_program_expression(left)?),
+            Box::new(contract_expression_to_program_expression(right)?),
         )),
         ContractExpression::BitwiseXor(left, right) => Some(ProgramExpression::BitwiseXor(
-            Box::new(contract_expression_to_c_fragment(left)?),
-            Box::new(contract_expression_to_c_fragment(right)?),
+            Box::new(contract_expression_to_program_expression(left)?),
+            Box::new(contract_expression_to_program_expression(right)?),
         )),
         ContractExpression::BitwiseNot(expression) => Some(ProgramExpression::BitwiseNot(
-            Box::new(contract_expression_to_c_fragment(expression)?),
+            Box::new(contract_expression_to_program_expression(expression)?),
         )),
         ContractExpression::Index(base, index) => Some(ProgramExpression::Index(
-            Box::new(contract_expression_to_c_fragment(base)?),
-            Box::new(contract_expression_to_c_fragment(index)?),
+            Box::new(contract_expression_to_program_expression(base)?),
+            Box::new(contract_expression_to_program_expression(index)?),
         )),
         ContractExpression::ArrayIndex { lowered, .. } => Some(lowered.clone()),
         ContractExpression::If { .. }
@@ -4828,8 +4845,8 @@ mod tests {
 
     #[test]
     fn expression_rewrite_respects_absolute_snapshot_boundaries() {
-        let x = ContractExpression::CFragment(ProgramExpression::Variable("x".into()));
-        let y = ContractExpression::CFragment(ProgramExpression::Variable("y".into()));
+        let x = ContractExpression::ProgramExpression(ProgramExpression::Variable("x".into()));
+        let y = ContractExpression::ProgramExpression(ProgramExpression::Variable("y".into()));
         let old = |value| ContractExpression::Old(Box::new(value));
         let at = |label: &str, value| ContractExpression::At {
             selector: SnapshotSelector::Mark(label.into()),
@@ -4874,13 +4891,15 @@ mod tests {
 
     #[test]
     fn multidimensional_array_rewrite_updates_its_lowered_base() {
-        let source_base = ContractExpression::CFragment(ProgramExpression::Variable("old".into()));
-        let target_base = ContractExpression::CFragment(ProgramExpression::Variable("new".into()));
+        let source_base =
+            ContractExpression::ProgramExpression(ProgramExpression::Variable("old".into()));
+        let target_base =
+            ContractExpression::ProgramExpression(ProgramExpression::Variable("new".into()));
         let expression = ContractExpression::ArrayIndex {
             base: Box::new(source_base.clone()),
             indexes: vec![
-                ContractExpression::CFragment(ProgramExpression::Value(int32(0))),
-                ContractExpression::CFragment(ProgramExpression::Value(int32(1))),
+                ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
+                ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
             ],
             dimensions: vec![2, 2],
             lowered: ProgramExpression::Index(
@@ -4905,12 +4924,13 @@ mod tests {
 
     #[test]
     fn multidimensional_array_rewrite_fails_closed_for_non_c_bases() {
-        let source_base = ContractExpression::CFragment(ProgramExpression::Variable("old".into()));
+        let source_base =
+            ContractExpression::ProgramExpression(ProgramExpression::Variable("old".into()));
         let expression = ContractExpression::ArrayIndex {
             base: Box::new(source_base.clone()),
             indexes: vec![
-                ContractExpression::CFragment(ProgramExpression::Value(int32(0))),
-                ContractExpression::CFragment(ProgramExpression::Value(int32(1))),
+                ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
+                ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
             ],
             dimensions: vec![2, 2],
             lowered: ProgramExpression::Index(

@@ -25,7 +25,10 @@ fn alias(a: &AlgebraicTerm, b: &AlgebraicTerm) -> Proposition {
 #[test]
 fn integer_count_facts_follow_early_and_late_model_aliases() {
     let _session = crate::kernel::VerificationSession::enter();
-    let ty = model_type("IntegerModel", AlgebraicValueType::C(ProgramType::Int32));
+    let ty = model_type(
+        "IntegerModel",
+        AlgebraicValueType::Program(ProgramType::Int32),
+    );
     let a = variable(&ty, 920_101);
     let b = variable(&ty, 920_102);
     let same = alias(&a, &b);
@@ -120,10 +123,10 @@ fn integer_observations_keep_machine_types_and_read_snapshots() {
     let graph = EqualityGraph::default();
     assert!(!graph.are_integer_equal(&signed, &unsigned));
     let p = Pointer::symbolic(Variable(920_132));
-    let before = intern_c_memory(
+    let before = intern_memory(
         Memory::new().store(p.clone(), ProgramValue::Int32(MachineTerm::constant(7))),
     );
-    let after = intern_c_memory(
+    let after = intern_memory(
         before
             .memory()
             .clone()

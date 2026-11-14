@@ -16,7 +16,7 @@ fn capturing_closure_project() -> Project {
 fn charon_capturing_closures_meet_parameterized_contracts() {
     let p = capturing_closure_project();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(SIDECAR, &prepared)
+    ProgramVerificationSession::new_program_prepared(SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     // The caller's facts about a captured value hold in the refinement: the
     // closure's bound on `k` is the caller's, not the contract's. `moved`
@@ -28,7 +28,7 @@ fn charon_capturing_closures_meet_parameterized_contracts() {
         .replacen("    requires 0 <= amount and amount <= 1000;\n", "", 1)
         .replacen(moved, "", 1);
     assert_ne!(without_bound, SIDECAR);
-    C0VerificationSession::new_program_prepared(&without_bound, &prepared)
+    ProgramVerificationSession::new_program_prepared(&without_bound, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     // Keep the complete original-module checks above. Each mutation below
     // selects the full proof whose body or modular call must reject it.

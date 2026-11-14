@@ -377,7 +377,7 @@ mod tests {
     fn observation_keys_select_native_load_candidates_without_proving_them() {
         use crate::kernel::machine_integer::comparison::condition_for_operand_views;
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = crate::kernel::intern_c_memory(
+        let memory = crate::kernel::intern_memory(
             crate::kernel::Memory::new().with_block("snapshot-comparison", 4),
         );
         let pointer = Pointer {
@@ -431,7 +431,7 @@ mod tests {
     fn snapshot_operand_memo_tracks_restored_load_registries() {
         let _session = crate::kernel::VerificationSession::enter();
         let empty = crate::kernel::eval::capture_load_variable_registry();
-        let memory = crate::kernel::intern_c_memory(
+        let memory = crate::kernel::intern_memory(
             crate::kernel::Memory::new().with_block("snapshot-key", 4),
         );
         let pointer = Pointer {
@@ -446,7 +446,7 @@ mod tests {
             &memory,
         );
         let loaded = crate::kernel::eval::capture_load_variable_registry();
-        let shared = KernelTerm::variable(KernelType::C(ProgramType::Int32), variable);
+        let shared = KernelTerm::variable(KernelType::Program(ProgramType::Int32), variable);
         let key = operand(V::Shared(&shared));
         assert!(key.requires_checked_match());
         assert_eq!(

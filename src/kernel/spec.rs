@@ -152,7 +152,7 @@ impl<'a> SpecScope<'a> {
                             name,
                             SpecValue::Shared(value.clone()),
                             match value.ty() {
-                                KernelType::C(ty) => *ty,
+                                KernelType::Program(ty) => *ty,
                                 _ => unreachable!(),
                             },
                             false,
@@ -1248,7 +1248,7 @@ fn lower_spec_universal_chain_in(
                 SpecUniversalBinder {
                     name: name.clone(),
                     variable: *variable,
-                    sort: Sort::CPointer(*c_type),
+                    sort: Sort::ProgramPointer(*c_type),
                     pointer: true,
                     integer: false,
                 },
@@ -1452,7 +1452,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 obligations.extend(path_obligations);
             }
             Ok(vec![SpecPropositionPath {
-                proposition: Proposition::CMemoryMutatesOnly {
+                proposition: Proposition::MemoryMutatesOnly {
                     before: before.clone(),
                     after: after.clone(),
                     writes,
@@ -1898,7 +1898,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 proposition: Proposition::ForAll {
                     var: *variable,
                     name: BinderName::written(name),
-                    sort: Sort::CPointer(*c_type),
+                    sort: Sort::ProgramPointer(*c_type),
                     body: Box::new(body),
                 },
                 facts: Vec::new().into(),
@@ -1909,7 +1909,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                         obligation.map_proposition(|proposition| Proposition::ForAll {
                             var: *variable,
                             name: BinderName::written(name),
-                            sort: Sort::CPointer(*c_type),
+                            sort: Sort::ProgramPointer(*c_type),
                             body: Box::new(wrap_path_context(proposition, &path.facts, &[])),
                         })
                     })
@@ -2021,7 +2021,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 existential::ScopedExistential::new(
                     name.clone(),
                     *variable,
-                    Sort::CPointer(*c_type),
+                    Sort::ProgramPointer(*c_type),
                     paths,
                 )
                 .into_checked_path(),
@@ -2046,7 +2046,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 right,
                 assumptions,
                 budget,
-                |left, right| Proposition::CResourceSeparate {
+                |left, right| Proposition::ResourceSeparate {
                     left: Box::new(left),
                     right: Box::new(right),
                 },
@@ -2081,7 +2081,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 child,
                 assumptions,
                 budget,
-                |parent, child| Proposition::CResourceContains {
+                |parent, child| Proposition::ResourceContains {
                     parent: Box::new(parent),
                     child: Box::new(child),
                 },
@@ -2700,7 +2700,7 @@ fn integer_range_fold_item_domain(
                     true,
                 )),
             );
-            (Sort::CInt32, guard)
+            (Sort::ProgramInt32, guard)
         }
         IntegerRangeFoldIndex::UInt64 { start, end } => {
             let item_term = MachineTerm::Variable(item);
@@ -2725,7 +2725,7 @@ fn integer_range_fold_item_domain(
                     true,
                 )),
             );
-            (Sort::CMachineInteger(MachineIntegerType::UInt64), guard)
+            (Sort::ProgramInteger(MachineIntegerType::UInt64), guard)
         }
         IntegerRangeFoldIndex::Integer { start, end } => {
             let item_term = IntegerTerm::Variable(item);
@@ -2890,7 +2890,7 @@ fn integer_carrier_in_bitvector(term: &MachineTerm, variable: Variable) -> bool 
     }
 }
 
-fn integer_carrier_in_c_value(value: &ProgramValue, variable: Variable) -> bool {
+fn integer_carrier_in_program_value(value: &ProgramValue, variable: Variable) -> bool {
     match value.numeric_value() {
         ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
         ProgramValue::Pointer(pointer) => integer_carrier_in_pointer(pointer, variable),
@@ -2960,7 +2960,7 @@ fn sequence_contains_integer_variable(sequence: &SequenceTerm, variable: Variabl
     match sequence.node.as_ref() {
         SequenceTermNode::Literal(values) => values
             .iter()
-            .any(|value| integer_carrier_in_c_value(value, variable)),
+            .any(|value| integer_carrier_in_program_value(value, variable)),
         // Sequence concatenations are shared DAGs.  Their elements can carry
         // a registered pointer load, so preserving the accumulator scope for
         // the opaque composite is the bounded, sound choice.
@@ -2980,12 +2980,12 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
             Term::Integer(term) => integer_carrier_in_integer(term, variable),
             Term::Bitvector32(term) => integer_carrier_in_bitvector(term, variable),
             Term::Condition(condition) => condition_contains(condition, variable),
-            Term::ProgramValue(value) => integer_carrier_in_c_value(value, variable),
+            Term::ProgramValue(value) => integer_carrier_in_program_value(value, variable),
             Term::Sequence(sequence) => sequence_contains_integer_variable(sequence, variable),
             Term::PointerOffset(offset) => integer_carrier_in_pointer_offset(offset, variable),
             Term::Algebraic(value) => integer_carrier_in_algebraic(value, variable),
             Term::ExpressionOutcome(ExpressionOutcome::Value(value)) => {
-                integer_carrier_in_c_value(value, variable)
+                integer_carrier_in_program_value(value, variable)
             }
             // A state or an execution outcome may carry a mathematical
             // machine conversion in a nested local.  Keep this conservative
@@ -3048,33 +3048,33 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
         Proposition::Predicate { arguments, .. } => {
             arguments.iter().any(|term| term_contains(term, variable))
         }
-        Proposition::CMemoryLoads {
+        Proposition::MemoryLoads {
             pointer, outcome, ..
         } => {
             integer_carrier_in_pointer(pointer, variable)
-                || matches!(outcome, ExpressionOutcome::Value(value) if integer_carrier_in_c_value(value, variable))
+                || matches!(outcome, ExpressionOutcome::Value(value) if integer_carrier_in_program_value(value, variable))
         }
-        Proposition::CMemoryCanStore { pointer, .. } => {
+        Proposition::MemoryCanStore { pointer, .. } => {
             integer_carrier_in_pointer(pointer, variable)
         }
-        Proposition::CMemoryReadDefined { pointer, .. } => {
+        Proposition::MemoryReadDefined { pointer, .. } => {
             integer_carrier_in_pointer(pointer, variable)
         }
-        Proposition::CMemoryLoadable { base, bytes, .. } => {
+        Proposition::MemoryLoadable { base, bytes, .. } => {
             integer_carrier_in_bitvector(bytes, variable)
                 || integer_carrier_in_pointer(base, variable)
         }
-        Proposition::CMemoryMutatesOnly { writes, .. } => writes
+        Proposition::MemoryMutatesOnly { writes, .. } => writes
             .iter()
             .any(|(pointer, _)| integer_carrier_in_pointer(pointer, variable)),
-        Proposition::CMemoryEffectSummary { mutable_ranges, .. } => {
+        Proposition::MemoryEffectSummary { mutable_ranges, .. } => {
             mutable_ranges.iter().any(|range| {
                 integer_carrier_in_bitvector(range.bound_terms().0, variable)
                     || integer_carrier_in_bitvector(range.bound_terms().1, variable)
                     || integer_carrier_in_pointer(&range.base, variable)
             })
         }
-        Proposition::CHeapAllocationFreed {
+        Proposition::HeapAllocationFreed {
             allocation_base,
             bytes,
             ..
@@ -3267,7 +3267,7 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
             let body_values = scope.without_values(arm.bindings.iter().map(String::as_str));
             for (binding, value) in arm.bindings.iter().zip(bindings.clone()) {
                 match value {
-                    AlgebraicValue::C(value) => body_state.locals.set(binding.clone(), value),
+                    AlgebraicValue::Program(value) => body_state.locals.set(binding.clone(), value),
                     AlgebraicValue::Algebraic(value) => {
                         body_algebraic_bindings.insert(binding.clone(), value);
                     }
@@ -3458,17 +3458,17 @@ fn rewrite_integer_match_typed_fields(
                     return None;
                 }
             }
-            (AlgebraicValue::C(from), AlgebraicValue::C(to)) => match (from, to) {
+            (AlgebraicValue::Program(from), AlgebraicValue::Program(to)) => match (from, to) {
                 (ProgramValue::Void, ProgramValue::Void) => {}
-                (from, to) if c_value_bitvector_term(from).is_some() => {
-                    let from = c_value_bitvector_term(from)?;
+                (from, to) if program_value_bitvector_term(from).is_some() => {
+                    let from = program_value_bitvector_term(from)?;
                     let MachineTerm::Variable(from) = from else {
                         return None;
                     };
                     if !ExecutionBudget::is_match_binder_variable(from) {
                         return None;
                     }
-                    let to = c_value_bitvector_term(to)?;
+                    let to = program_value_bitvector_term(to)?;
                     if c_replacements
                         .insert(
                             from,
@@ -3758,10 +3758,11 @@ fn algebraic_match_reconstructs(
                 && fields.iter().zip(&schema.fields).zip(&arm.bindings).all(
                     |((field, field_type), binding)| match (field, field_type) {
                         (
-                            SpecAlgebraicValue::C(SpecExpression::ProgramExpression(
+                            SpecAlgebraicValue::Program(SpecExpression::ProgramExpression(
                                 ProgramExpression::Variable(name),
                             )),
-                            AlgebraicValueType::C(_) | AlgebraicValueType::ObjectPointer(_, _),
+                            AlgebraicValueType::Program(_)
+                            | AlgebraicValueType::ObjectPointer(_, _),
                         ) => name == binding,
                         (
                             SpecAlgebraicValue::Algebraic(SpecAlgebraicExpression {
@@ -3923,7 +3924,7 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                             scope.without_values(arm.bindings.iter().map(String::as_str));
                         for (binding, value) in arm.bindings.iter().zip(&bindings) {
                             match value {
-                                AlgebraicValue::C(value) => {
+                                AlgebraicValue::Program(value) => {
                                     body_state.locals.set(binding.clone(), value.clone());
                                 }
                                 AlgebraicValue::Integer(_) => {}
@@ -4011,7 +4012,7 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                     let body_values = scope.without_values(arm.bindings.iter().map(String::as_str));
                     for (binding, field) in arm.bindings.iter().zip(&case.fields) {
                         match field {
-                            AlgebraicValue::C(field) => {
+                            AlgebraicValue::Program(field) => {
                                 body_state.locals.set(binding.clone(), field.clone());
                             }
                             AlgebraicValue::Integer(_) => {}
@@ -4102,7 +4103,7 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                             // aliases and a declared object's block class.
                             let (
                                 AlgebraicValueType::ObjectPointer(ty, class),
-                                AlgebraicValue::C(value),
+                                AlgebraicValue::Program(value),
                             ) = (expected, &mut field_path.value)
                             else {
                                 continue;
@@ -4159,8 +4160,8 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                         // parameter and a plain one build the same value,
                         // whichever route evaluated the field.
                         next_values.push(match field_path.value {
-                            AlgebraicValue::C(value) => {
-                                AlgebraicValue::C(value.with_pointer_pointee_constant(false))
+                            AlgebraicValue::Program(value) => {
+                                AlgebraicValue::Program(value.with_pointer_pointee_constant(false))
                             }
                             value => value,
                         });
@@ -4329,13 +4330,12 @@ fn symbolic_algebraic_fields(
         .map(|(index, value_type)| {
             let variable = allocate()?;
             match value_type {
-                AlgebraicValueType::C(c_type) | AlgebraicValueType::ObjectPointer(c_type, _) => {
-                    Ok(AlgebraicValue::C(
-                        algebraic_type
-                            .symbolic_c_field_value(&variant.name, index, *c_type, variable)
-                            .with_pointer_object_class(value_type.object_class()),
-                    ))
-                }
+                AlgebraicValueType::Program(c_type)
+                | AlgebraicValueType::ObjectPointer(c_type, _) => Ok(AlgebraicValue::Program(
+                    algebraic_type
+                        .symbolic_program_field_value(&variant.name, index, *c_type, variable)
+                        .with_pointer_object_class(value_type.object_class()),
+                )),
                 AlgebraicValueType::Integer => {
                     Ok(AlgebraicValue::Integer(IntegerTerm::var(variable)))
                 }
@@ -4374,7 +4374,7 @@ fn evaluate_spec_algebraic_value_at_state_in(
                     .collect(),
             )
         }
-        SpecAlgebraicValue::C(expression) => {
+        SpecAlgebraicValue::Program(expression) => {
             Ok(evaluate_spec_expression_paths_with_algebraic_bindings_in(
                 scope,
                 expression,
@@ -4383,7 +4383,7 @@ fn evaluate_spec_algebraic_value_at_state_in(
             )?
             .into_iter()
             .map(|path| SpecAlgebraicValuePath {
-                value: AlgebraicValue::C(path.value.into_native()),
+                value: AlgebraicValue::Program(path.value.into_native()),
                 facts: path.facts,
                 obligations: path.obligations,
             })
@@ -4462,7 +4462,7 @@ fn guard_scalar_match_obligation(
         let sort = match binding {
             AlgebraicValue::Integer(_) => Sort::Integer,
             AlgebraicValue::Algebraic(value) => Sort::Algebraic(value.algebraic_type.clone()),
-            AlgebraicValue::C(value) => {
+            AlgebraicValue::Program(value) => {
                 let ty = value.c_type();
                 if let Some(integer) = MachineIntegerType::from_c_type(ty) {
                     Sort::machine_integer(integer)
@@ -4472,8 +4472,8 @@ fn guard_scalar_match_obligation(
                     Sort::Algebraic(value.algebraic_type.clone())
                 } else if ty.is_pointer() {
                     match arm.binding_types[index].object_class() {
-                        Some(class) => Sort::CObjectPointer(ty, class),
-                        None => Sort::CPointer(ty),
+                        Some(class) => Sort::ProgramObjectPointer(ty, class),
+                        None => Sort::ProgramPointer(ty),
                     }
                 } else {
                     return Err(ExecutionLimit::Paths);
@@ -4596,7 +4596,7 @@ fn lower_spec_sequence_membership_at_state_in(
             };
             let comparisons = sequence_elements(&sequence_path.value)
                 .filter_map(|member| {
-                    c_value_comparison_proposition(
+                    program_value_comparison_proposition(
                         &element_path.value.native(),
                         ComparisonOperator::Equal,
                         member,
@@ -4752,7 +4752,7 @@ pub(super) fn integer_sequence_element_equality(
     if left.c_type() != right.c_type() || !matches!(left, crate::kernel::integer64_c_value!(_)) {
         return None;
     }
-    c_value_comparison_proposition(left, ComparisonOperator::Equal, right)
+    program_value_comparison_proposition(left, ComparisonOperator::Equal, right)
 }
 
 fn evaluate_spec_sequence_at_state_in(
@@ -5124,7 +5124,7 @@ fn evaluate_spec_resource_at_state_in(
                 Box::new(move |arguments| {
                     Some(Resource::Composite {
                         name: name.clone(),
-                        arguments: arguments.into_iter().map(AlgebraicValue::C).collect(),
+                        arguments: arguments.into_iter().map(AlgebraicValue::Program).collect(),
                     })
                 }),
             )
@@ -5136,7 +5136,7 @@ fn evaluate_spec_resource_at_state_in(
                 Box::new(move |arguments| {
                     Some(Resource::Token {
                         name: name.clone(),
-                        arguments: arguments.into_iter().map(AlgebraicValue::C).collect(),
+                        arguments: arguments.into_iter().map(AlgebraicValue::Program).collect(),
                     })
                 }),
             )
@@ -5403,7 +5403,7 @@ fn lower_spec_memory_loadable_at_state_in(
             }
             Some(SpecPropositionPath {
                 introductions: Vec::new(),
-                proposition: Proposition::CMemoryLoadable {
+                proposition: Proposition::MemoryLoadable {
                     memory: memory.clone(),
                     base,
                     bytes: crate::kernel::memory_range_byte_count(
@@ -6110,7 +6110,7 @@ fn apply_spec_cast(
     if let ProgramValue::Bool(term) = &value
         && let Some(condition) = term.bool_cast_operand()
         && let Some(format) = MachineIntegerType::from_c_type(target_type)
-        && let Some(cast) = c_value_from_bitvector_term(
+        && let Some(cast) = program_value_from_bitvector_term(
             target_type,
             MachineTerm::bool_cast(format, condition.clone()),
         )
@@ -6124,7 +6124,7 @@ fn apply_spec_cast(
     // A specification's cast is C's conversion, modulo 2^N,
     // as the same cast in C source is; `to_T(...)` is the
     // checked conversion.
-    let outcome = cast_c_value_to_type(
+    let outcome = cast_program_value_to_type(
         value,
         target_type,
         crate::kernel::eval::IntegerConversion::Modular,
@@ -6250,7 +6250,16 @@ fn evaluate_spec_add_chain_paths_in(
                         obligations,
                         assumptions,
                         |left, right, facts, obligations, context| {
-                            apply_c_add(state, left, right, None, None, facts, obligations, context)
+                            apply_program_add(
+                                state,
+                                left,
+                                right,
+                                None,
+                                None,
+                                facts,
+                                obligations,
+                                context,
+                            )
                         },
                     ),
                     budget,
@@ -6354,7 +6363,9 @@ fn evaluate_resource_count_paths(
                     continue;
                 };
                 let mut next_values = values.clone();
-                next_values.push(Some(AlgebraicValue::C(argument_path.value.into_native())));
+                next_values.push(Some(AlgebraicValue::Program(
+                    argument_path.value.into_native(),
+                )));
                 next.push((next_values, merged_facts, merged_obligations));
             }
         }
@@ -6365,7 +6376,8 @@ fn evaluate_resource_count_paths(
         .map(|(arguments, mut facts, mut obligations)| {
             let path_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
             {
-                let Some(Some(AlgebraicValue::C(ProgramValue::Pointer(_)))) = arguments.first()
+                let Some(Some(AlgebraicValue::Program(ProgramValue::Pointer(_)))) =
+                    arguments.first()
                 else {
                     return Err(ExecutionLimit::AuthorityCountNeedsExactPointer);
                 };
@@ -6425,7 +6437,8 @@ fn evaluate_resource_count_paths(
                 let canonical = owned_description(&description);
                 let description =
                     canonical.unwrap_or_else(|| creation.population_type_description(&description));
-                let [AlgebraicValue::C(ProgramValue::Pointer(pointer))] = description.arguments()
+                let [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] =
+                    description.arguments()
                 else {
                     return Err(ExecutionLimit::AuthorityCountNeedsExactPointer);
                 };
@@ -6713,7 +6726,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 );
                 retain_required_integer_obligation(&mut obligations, assumptions, lower_bound);
                 retain_required_integer_obligation(&mut obligations, assumptions, upper_bound);
-                let value = c_value_from_bitvector_term(
+                let value = program_value_from_bitvector_term(
                     destination.c_type(),
                     MachineTerm::IntegerToMachine {
                         value: path.value.into(),
@@ -6735,7 +6748,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             } else {
                 state
             };
-            let Some(AlgebraicValue::C(value)) = snapshot
+            let Some(AlgebraicValue::Program(value)) = snapshot
                 .resource_instance_at_path(projection.identity, &projection.children)
                 .and_then(|instance| {
                     crate::kernel::eval::typed_reads::record_field(
@@ -6805,7 +6818,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                             scope.without_values(arm.bindings.iter().map(String::as_str));
                         for (binding, value) in arm.bindings.iter().zip(&bindings) {
                             match value {
-                                AlgebraicValue::C(value) => {
+                                AlgebraicValue::Program(value) => {
                                     body_state.locals.set(binding.clone(), value.clone());
                                 }
                                 AlgebraicValue::Integer(_) => {}
@@ -6875,7 +6888,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         let Some((format, operand)) = body_path.value.machine() else {
                             // Bool and floating-point matches retain their existing
                             // native carrier until those carrier boundaries migrate.
-                            let body = c_value_bitvector_term(&body_path.value.native())
+                            let body = program_value_bitvector_term(&body_path.value.native())
                                 .ok_or(ExecutionLimit::Paths)?;
                             compatibility_arms.push(AlgebraicBitvectorMatchArm {
                                 binding_names: crate::kernel::BindingNames::written(&arm.bindings),
@@ -6907,7 +6920,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         })))
                     } else if MachineIntegerType::from_c_type(result_type).is_none() {
                         SpecValue::from(
-                            c_value_from_bitvector_term(
+                            program_value_from_bitvector_term(
                                 result_type,
                                 MachineTerm::AlgebraicMatch {
                                     scrutinee: Box::new(scrutinee_path.value.into_native_compat()),
@@ -6927,7 +6940,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                             ));
                         SpecValue::Shared(
                             crate::kernel::KernelMatch::new(
-                                KernelType::C(result_type),
+                                KernelType::Program(result_type),
                                 scrutinee,
                                 lowered_arms,
                             )
@@ -6963,7 +6976,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     let body_values = scope.without_values(arm.bindings.iter().map(String::as_str));
                     for (binding, field) in arm.bindings.iter().zip(&case.fields) {
                         match field {
-                            AlgebraicValue::C(field) => {
+                            AlgebraicValue::Program(field) => {
                                 body_state.locals.set(binding.clone(), field.clone());
                             }
                             AlgebraicValue::Integer(_) => {}
@@ -7053,7 +7066,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             let _specification = crate::kernel::eval::SpecificationReadScope::enter();
             let native_state = scope.native_expression_state(expression);
             spec_value_paths_in(
-                evaluate_c_expression_paths(&native_state, expression, assumptions, budget)?,
+                evaluate_program_expression_paths(&native_state, expression, assumptions, budget)?,
                 budget,
             )
         }
@@ -7083,7 +7096,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         obligations,
                         assumptions,
                         |left, right, facts, obligations, context| {
-                            apply_c_add(
+                            apply_program_add(
                                 state,
                                 left,
                                 right,
@@ -7117,7 +7130,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         obligations,
                         assumptions,
                         |left, right, facts, obligations, context| {
-                            apply_c_subtract(
+                            apply_program_subtract(
                                 state,
                                 left,
                                 right,
@@ -7147,7 +7160,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     facts,
                     obligations,
                     assumptions,
-                    apply_c_multiply,
+                    apply_program_multiply,
                 )
             },
         )?,
@@ -7169,7 +7182,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         facts,
                         obligations,
                         assumptions,
-                        apply_c_divide,
+                        apply_program_divide,
                     )
                 },
             )?
@@ -7192,7 +7205,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         facts,
                         obligations,
                         assumptions,
-                        apply_c_remainder,
+                        apply_program_remainder,
                     )
                 },
             )?
@@ -7248,7 +7261,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     facts,
                     obligations,
                     assumptions,
-                    apply_c_shift_left,
+                    apply_program_shift_left,
                 )
             },
         )?,
@@ -7267,7 +7280,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     facts,
                     obligations,
                     assumptions,
-                    apply_c_shift_right,
+                    apply_program_shift_right,
                 )
             },
         )?,
@@ -7279,7 +7292,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             assumptions,
             budget,
             |left, right, facts, obligations| {
-                apply_c_bitwise_binary(
+                apply_program_bitwise_binary(
                     left,
                     right,
                     facts,
@@ -7297,7 +7310,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             assumptions,
             budget,
             |left, right, facts, obligations| {
-                apply_c_bitwise_binary(
+                apply_program_bitwise_binary(
                     left,
                     right,
                     facts,
@@ -7315,7 +7328,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             assumptions,
             budget,
             |left, right, facts, obligations| {
-                apply_c_bitwise_binary(
+                apply_program_bitwise_binary(
                     left,
                     right,
                     facts,
@@ -7377,7 +7390,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 budget,
                 None,
                 Some(None),
-                apply_c_bitwise_not,
+                apply_program_bitwise_not,
             )?
         }
         SpecExpression::NarrowArithmetic(operation, format) => 'narrow: {
@@ -7409,7 +7422,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                                 facts,
                                 obligations,
                             }],
-                            None => apply_c_bitwise_not(value, facts, obligations),
+                            None => apply_program_bitwise_not(value, facts, obligations),
                         },
                     )?;
                 }
@@ -7445,7 +7458,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     // checker refuse at a written narrow position, keep the
                     // operator's promoted reading, as the bare operator has it.
                     let bitwise = |operation| {
-                        apply_c_bitwise_binary(
+                        apply_program_bitwise_binary(
                             left.clone(),
                             right.clone(),
                             facts.clone(),
@@ -7465,7 +7478,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                             facts,
                             obligations,
                             assumptions,
-                            apply_c_multiply,
+                            apply_program_multiply,
                         ),
                         _ => apply_spec_arithmetic(
                             op,
@@ -7476,7 +7489,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                             assumptions,
                             |left, right, facts, obligations, context| {
                                 if op == MachineBinaryOp::Add {
-                                    apply_c_add(
+                                    apply_program_add(
                                         state,
                                         left,
                                         right,
@@ -7487,7 +7500,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                                         context,
                                     )
                                 } else {
-                                    apply_c_subtract(
+                                    apply_program_subtract(
                                         state,
                                         left,
                                         right,
@@ -7663,7 +7676,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         *value_type,
                     )
                 {
-                    obligations.push(ProofObligation::new(Proposition::CMemoryReadDefined {
+                    obligations.push(ProofObligation::new(Proposition::MemoryReadDefined {
                         memory: memory.clone(),
                         pointer: pointer.clone(),
                         value_type: *value_type,
@@ -7809,7 +7822,7 @@ fn evaluate_spec_pure_function_application_paths_in(
                 ConditionTerm::bool_application(name, call_arguments(arguments)),
             ))
         } else {
-            c_value_from_bitvector_term(
+            program_value_from_bitvector_term(
                 result_type,
                 MachineTerm::ClickFunctionApplication {
                     name: name.to_string(),
@@ -7847,7 +7860,7 @@ fn projected_field(
         return None;
     }
     match fields.get(projection.field)? {
-        AlgebraicValue::C(value) if value.c_type() == result_type => Some(value.clone()),
+        AlgebraicValue::Program(value) if value.c_type() == result_type => Some(value.clone()),
         _ => None,
     }
 }
@@ -8159,7 +8172,7 @@ fn array_ref_argument_memory(memory: &Memory, pointer: &ProgramValue) -> Memory 
     let ProgramValue::Pointer(pointer) = pointer else {
         return memory.clone();
     };
-    let interned = crate::kernel::intern_c_memory(memory.clone());
+    let interned = crate::kernel::intern_memory(memory.clone());
     crate::kernel::resource_tracker::last_same_point(
         crate::kernel::resource_tracker::TrackedResource::Block(&pointer.pointer().block),
         &crate::kernel::resource_tracker::ProgramPoint::at(&interned),
@@ -8168,7 +8181,7 @@ fn array_ref_argument_memory(memory: &Memory, pointer: &ProgramValue) -> Memory 
     .unwrap_or_else(|| memory.clone())
 }
 
-pub(in crate::kernel) fn c_value_bitvector_term(value: &ProgramValue) -> Option<MachineTerm> {
+pub(in crate::kernel) fn program_value_bitvector_term(value: &ProgramValue) -> Option<MachineTerm> {
     let value = value.numeric_value();
     match value.numeric_value() {
         ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
@@ -8204,7 +8217,10 @@ pub(super) fn integer_machine_bounds(
     (IntegerTerm::constant(lower), IntegerTerm::constant(upper))
 }
 
-fn c_value_from_bitvector_term(c_type: ProgramType, term: MachineTerm) -> Option<ProgramValue> {
+fn program_value_from_bitvector_term(
+    c_type: ProgramType,
+    term: MachineTerm,
+) -> Option<ProgramValue> {
     ProgramValue::from_bitvector_term(c_type, term)
 }
 
@@ -8426,7 +8442,7 @@ fn spec_expression_pointer_step_width(
 ) -> Option<u32> {
     match expression {
         SpecExpression::ProgramExpression(expression) => {
-            c_expression_pointer_step_width(state, expression)
+            program_expression_pointer_step_width(state, expression)
         }
         SpecExpression::PointerOffset { byte_width, .. } => Some(*byte_width),
         SpecExpression::Add(left, right) => spec_expression_pointer_step_width(state, left)
@@ -9639,7 +9655,7 @@ fn bool_comparison_proposition(
     )))
 }
 
-pub(super) fn c_value_comparison_proposition(
+pub(super) fn program_value_comparison_proposition(
     left: &ProgramValue,
     operator: ComparisonOperator,
     right: &ProgramValue,
@@ -9781,13 +9797,13 @@ pub(super) fn c_value_comparison_proposition(
     };
     if let Some(target_type) = target_type {
         let mut obligations = Vec::new();
-        let left = coerce_c_value_to_type(
+        let left = coerce_program_value_to_type(
             left.clone(),
             target_type,
             &mut obligations,
             &PureFactContext::new(),
         )?;
-        let right = coerce_c_value_to_type(
+        let right = coerce_program_value_to_type(
             right.clone(),
             target_type,
             &mut obligations,
@@ -9812,8 +9828,8 @@ pub(super) fn c_value_comparison_proposition(
     }
 
     if matches!(left, ProgramValue::UInt64(_)) || matches!(right, ProgramValue::UInt64(_)) {
-        let left = c_value_uint64_term(left)?;
-        let right = c_value_uint64_term(right)?;
+        let left = program_value_uint64_term(left)?;
+        let right = program_value_uint64_term(right)?;
         let condition = match operator {
             ComparisonOperator::Equal | ComparisonOperator::NotEqual => {
                 ConditionTerm::uint64_equal(left, right)
@@ -9829,8 +9845,8 @@ pub(super) fn c_value_comparison_proposition(
         ));
     }
     if matches!(left, ProgramValue::Int64(_)) || matches!(right, ProgramValue::Int64(_)) {
-        let left = c_value_int64_term(left)?;
-        let right = c_value_int64_term(right)?;
+        let left = program_value_int64_term(left)?;
+        let right = program_value_int64_term(right)?;
         let condition = match operator {
             ComparisonOperator::Equal | ComparisonOperator::NotEqual => {
                 ConditionTerm::int64_equal(left, right)
@@ -9855,7 +9871,7 @@ pub(super) fn c_value_comparison_proposition(
     // literal compared with a narrow value takes that value's format when
     // it fits (`x == 0` on a `uint8` is `x == 0u8`); a written conversion
     // (`x as int32 == 7`) is an `int32` operand and stays promoted. Only a
-    // C expression promotes narrow operands (`apply_c_comparison`).
+    // C expression promotes narrow operands (`apply_program_comparison`).
     if let Some((format, a, b)) = native_narrow_comparison_operands(left, right) {
         let (relation, value) = match operator {
             ComparisonOperator::Equal => (CompareRelation::Equal, true),
@@ -9881,8 +9897,8 @@ pub(super) fn c_value_comparison_proposition(
     } else {
         MachineIntegerType::Int32
     };
-    let left = c_value_word32_term(left, format)?;
-    let right = c_value_word32_term(right, format)?;
+    let left = program_value_word32_term(left, format)?;
+    let right = program_value_word32_term(right, format)?;
     let (condition, value) = match operator {
         ComparisonOperator::Equal | ComparisonOperator::NotEqual => (
             if unsigned {
@@ -9966,7 +9982,7 @@ fn native_narrow_comparison_operands(
 /// The term an integer operand of at most 32 bits has at the comparison's
 /// 32-bit `format`: its own word at that format, σ of the other 32-bit
 /// format's word, a narrow value's widening, or a `Bool`'s cast (rule C1).
-pub(crate) fn c_value_word32_term(
+pub(crate) fn program_value_word32_term(
     value: &ProgramValue,
     format: MachineIntegerType,
 ) -> Option<MachineTerm> {
@@ -9979,7 +9995,7 @@ pub(crate) fn c_value_word32_term(
         | ProgramValue::UInt8(_)
         | ProgramValue::UInt16(_)
         | ProgramValue::UInt32(_)) => {
-            crate::kernel::eval::promote_c_path_value(value.clone(), format)
+            crate::kernel::eval::promote_program_path_value(value.clone(), format)
         }
         ProgramValue::Int128(_)
         | ProgramValue::UInt128(_)
@@ -9995,7 +10011,7 @@ pub(crate) fn c_value_word32_term(
 
 /// The word an integer operand has at `int64`: its own word, a 32-bit
 /// word's extension, or a narrow value's or `Bool`'s conversion.
-fn c_value_int64_term(value: &ProgramValue) -> Option<MachineTerm> {
+fn program_value_int64_term(value: &ProgramValue) -> Option<MachineTerm> {
     match value.numeric_value() {
         ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
         ProgramValue::Int64(value) => Some(value.clone()),
@@ -10005,9 +10021,10 @@ fn c_value_int64_term(value: &ProgramValue) -> Option<MachineTerm> {
         | ProgramValue::Int8(_)
         | ProgramValue::Int16(_)
         | ProgramValue::UInt8(_)
-        | ProgramValue::UInt16(_)) => {
-            crate::kernel::eval::promote_c_path_value(value.clone(), MachineIntegerType::Int64)
-        }
+        | ProgramValue::UInt16(_)) => crate::kernel::eval::promote_program_path_value(
+            value.clone(),
+            MachineIntegerType::Int64,
+        ),
         ProgramValue::Int128(_)
         | ProgramValue::UInt128(_)
         | ProgramValue::Void
@@ -10021,7 +10038,7 @@ fn c_value_int64_term(value: &ProgramValue) -> Option<MachineTerm> {
 
 /// The word an integer operand has at `uint64`, modulo 2^64: its own word,
 /// a 32-bit word's conversion, or a narrow value's or `Bool`'s.
-fn c_value_uint64_term(value: &ProgramValue) -> Option<MachineTerm> {
+fn program_value_uint64_term(value: &ProgramValue) -> Option<MachineTerm> {
     match value.numeric_value() {
         ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
         ProgramValue::UInt64(value) => Some(value.clone()),
@@ -10098,7 +10115,7 @@ mod pointer_integer_observation_tests {
             Pointer::symbolic(Variable(994_001)),
             ProgramType::Int32Pointer,
         );
-        let word = crate::kernel::eval::cast_c_value_to_type(
+        let word = crate::kernel::eval::cast_program_value_to_type(
             ProgramValue::Pointer(pointer),
             ProgramType::UInt64,
             crate::kernel::eval::IntegerConversion::Modular,
@@ -10107,8 +10124,8 @@ mod pointer_integer_observation_tests {
         )
         .unwrap();
         assert!(crate::kernel::resource_arguments_proven_equal(
-            &AlgebraicValue::C(word.clone()),
-            &AlgebraicValue::C(word.numeric_value().clone()),
+            &AlgebraicValue::Program(word.clone()),
+            &AlgebraicValue::Program(word.numeric_value().clone()),
             &context,
         ));
         let state = ExecutionState::new().with_local("word", word.clone());
@@ -10159,7 +10176,7 @@ mod certificate_observation_tests {
                 right: SpecIntegerExpression::Term(right.clone()),
             };
             let lower = || {
-                crate::kernel::c_lower_spec_proposition_with_checked_obligations(
+                crate::kernel::program_lower_spec_proposition_with_checked_obligations(
                     &ExecutionState::new(),
                     &written,
                     None,
@@ -10207,7 +10224,7 @@ mod assumed_arithmetic_domain_tests {
                 ExecutionFacts::default(),
                 vec![inherited.clone()],
                 assumptions,
-                apply_c_multiply,
+                apply_program_multiply,
             )
             .pop()
             .unwrap()
@@ -10273,7 +10290,7 @@ mod shared_fold_operand_tests {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::Int32;
         let variable = Variable(998001);
-        let leaf = KernelTerm::variable(KernelType::C(ProgramType::Int32), variable);
+        let leaf = KernelTerm::variable(KernelType::Program(ProgramType::Int32), variable);
         let root = KernelTerm::machine_binary_shared(
             format,
             MachineBinaryOp::Add,

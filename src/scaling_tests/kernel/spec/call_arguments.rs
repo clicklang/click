@@ -3,7 +3,8 @@ fn call_argument_paths_retain_shared_prefixes_without_exporting() {
     for depth in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::UInt32;
-        let mut root = KernelTerm::variable(KernelType::C(ProgramType::UInt32), Variable(998700));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ProgramType::UInt32), Variable(998700));
         for _ in 0..depth {
             root = KernelTerm::machine_binary_shared(
                 format,

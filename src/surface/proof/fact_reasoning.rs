@@ -155,7 +155,7 @@ pub(super) fn describe_statement_prerequisite_failure(
         });
     format!(
         "{refusal}{}",
-        crate::surface::diagnostics::describe_c_statement_site()
+        crate::surface::diagnostics::describe_execution_statement_site()
     )
 }
 
@@ -168,12 +168,12 @@ fn describe_access_bound_prerequisite(
     statement: &ProgramStatement,
 ) -> Option<String> {
     let (access, verb, memory, pointer, byte_width) = match proposition {
-        Proposition::CMemoryCanStore {
+        Proposition::MemoryCanStore {
             memory,
             pointer,
             byte_width,
         } => ("store to", "write", memory, pointer, *byte_width),
-        Proposition::CMemoryLoadable {
+        Proposition::MemoryLoadable {
             memory,
             base,
             bytes,
@@ -244,7 +244,7 @@ fn describe_access_bound_prerequisite(
     };
     Some(format!(
         "the {access} {element} may {verb} outside `{object}`: {reason}\n  C operation: {}",
-        crate::surface::diagnostics::describe_c_statement_head(operation),
+        crate::surface::diagnostics::describe_execution_statement_head(operation),
     ))
 }
 
@@ -260,7 +260,7 @@ fn describe_assertion_prerequisite(
 ) -> Option<String> {
     let condition = asserted_condition(proposition, statement)?;
     let mut names = Vec::new();
-    collect_c_expression_variables(condition, &mut names);
+    collect_program_expression_variables(condition, &mut names);
     // A Rust panic check asserts over the lowering's own temporaries, which
     // no proof can name and no fact mentions: state the condition as the
     // pre-state evaluates it, over the source locals it reads.
@@ -272,7 +272,7 @@ fn describe_assertion_prerequisite(
             .locals()
             .object_values()
             .filter(|(name, _)| !name.starts_with("__rust_"))
-            .map(|(name, _)| crate::kernel::c_local_source_name(name).to_string())
+            .map(|(name, _)| crate::kernel::program_local_source_name(name).to_string())
             .collect::<Vec<_>>();
         let names = goal
             .split(|character: char| !(character.is_ascii_alphanumeric() || character == '_'))
@@ -288,7 +288,7 @@ fn describe_assertion_prerequisite(
         }
     }
     let names = names.iter().map(String::as_str).collect::<Vec<_>>();
-    let condition = describe_c_conjunction(condition);
+    let condition = describe_program_conjunction(condition);
     // A check over constants alone is simply false: no fact bears on it.
     if names.is_empty() {
         return Some(format!("`{condition}` does not hold"));
@@ -334,7 +334,7 @@ pub(in crate::surface) fn asserted_condition_goal(
     // deciding it from the false path's own assumption. The goal is the
     // fact on the path where the condition holds, with that path's
     // polarity: `x > 0` may be recorded as `x <= 0` being false.
-    let evaluation = crate::kernel::prove_symbolic_c_condition_evaluation(
+    let evaluation = crate::kernel::prove_symbolic_program_condition_evaluation(
         state.clone(),
         condition.clone(),
         crate::kernel::PureFactContext::new(),
@@ -356,15 +356,15 @@ pub(in crate::surface) fn asserted_condition_goal(
 
 /// A condition as a proof states it: a conjunction joined by `&&` without
 /// the expression printer's parentheses around each operand.
-fn describe_c_conjunction(condition: &ProgramExpression) -> String {
+fn describe_program_conjunction(condition: &ProgramExpression) -> String {
     if let ProgramExpression::And(left, right) = condition {
         return format!(
             "{} && {}",
-            describe_c_conjunction(left),
-            describe_c_conjunction(right)
+            describe_program_conjunction(left),
+            describe_program_conjunction(right)
         );
     }
-    let rendered = crate::surface::diagnostics::describe_c_expression(condition);
+    let rendered = crate::surface::diagnostics::describe_program_expression(condition);
     match rendered
         .strip_prefix('(')
         .and_then(|inner| inner.strip_suffix(')'))
@@ -389,7 +389,7 @@ fn balanced_parentheses(text: &str) -> bool {
     depth == 0
 }
 
-fn collect_c_expression_variables(expression: &ProgramExpression, names: &mut Vec<String>) {
+fn collect_program_expression_variables(expression: &ProgramExpression, names: &mut Vec<String>) {
     let mut pending = vec![expression];
     while let Some(expression) = pending.pop() {
         match expression {

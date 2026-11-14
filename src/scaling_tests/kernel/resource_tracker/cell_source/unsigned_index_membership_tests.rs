@@ -20,7 +20,7 @@ fn unsigned_index_membership_ignores_unrelated_facts_and_stores() {
         let range = bytes(&src, 4);
         let mut context = PureFactContext::new()
             .assume_condition(below(k, 4), true)
-            .assume_proposition(Proposition::CResourceSeparate {
+            .assume_proposition(Proposition::ResourceSeparate {
                 left: Box::new(Resource::Memory(bytes(&dst, 5))),
                 right: Box::new(Resource::Memory(range.clone())),
             });
@@ -30,7 +30,7 @@ fn unsigned_index_membership_ignores_unrelated_facts_and_stores() {
             let other = Variable(9_904_000 + index);
             context = context.assume_condition(below(other, 4 + index), true);
             // An unrelated separation of two other buffers.
-            context = context.assume_proposition(Proposition::CResourceSeparate {
+            context = context.assume_proposition(Proposition::ResourceSeparate {
                 left: Box::new(Resource::Memory(bytes(
                     &Pointer::symbolic(Variable(9_905_000 + index * 2)),
                     4,
@@ -44,7 +44,7 @@ fn unsigned_index_membership_ignores_unrelated_facts_and_stores() {
             let target = Pointer::symbolic(Variable(9_906_000 + index));
             let before = memory.clone();
             memory = memory.store(target.clone(), crate::kernel::uint8(0u32));
-            context = context.assume_proposition(Proposition::CMemoryMutatesOnly {
+            context = context.assume_proposition(Proposition::MemoryMutatesOnly {
                 before,
                 after: memory.clone(),
                 writes: vec![(target, 1)],

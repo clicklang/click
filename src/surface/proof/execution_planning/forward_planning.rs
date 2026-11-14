@@ -32,7 +32,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
             else_branch,
         } => {
             let statement_index = *next_statement_index;
-            let _site_scope = crate::surface::diagnostics::CStatementSiteScope::enter(
+            let _site_scope = crate::surface::diagnostics::StatementSiteScope::enter(
                 environment.source_layout,
                 statement_index,
                 environment.parsed_function,
@@ -112,7 +112,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
             ..
         } => {
             let statement_index = *next_statement_index;
-            let _site_scope = crate::surface::diagnostics::CStatementSiteScope::enter(
+            let _site_scope = crate::surface::diagnostics::StatementSiteScope::enter(
                 environment.source_layout,
                 statement_index,
                 environment.parsed_function,
@@ -136,11 +136,11 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
             // An early refusal: the kernel checks every certified loop's
             // measures against the function again when it records
             // termination, so the function-wide walk is shared by the loops.
-            crate::kernel::c_reject_address_escaped_loop_measures(
+            crate::kernel::program_reject_address_escaped_loop_measures(
                 environment.function_block.signature().name(),
                 ranking_measures,
                 environment.source_layout.address_taken_locals(|| {
-                    crate::kernel::c_address_taken_locals(environment.function.source_body())
+                    crate::kernel::program_address_taken_locals(environment.function.source_body())
                 }),
             )
             .map_err(ClickError::new)?;
@@ -194,23 +194,23 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                     });
                     checked_initializations.push(initialization);
                 } else {
-                    c_loop_invariants_hold_at_entry(&context.state, invariant_checks, &assumptions)
+                    loop_invariants_hold_at_entry(&context.state, invariant_checks, &assumptions)
                         .map_err(|message| {
-                            ClickError::new(format!(
-                                "`{}`: {message}",
-                                crate::surface::claim_labels::loop_phase_claim_label(
-                                    environment.function_block.signature().name(),
-                                    loop_index,
-                                    "initialize",
-                                )
-                            ))
-                        })?;
+                        ClickError::new(format!(
+                            "`{}`: {message}",
+                            crate::surface::claim_labels::loop_phase_claim_label(
+                                environment.function_block.signature().name(),
+                                loop_index,
+                                "initialize",
+                            )
+                        ))
+                    })?;
                 }
                 // The loop head invents identities for everything the body can
                 // change, from this execution's counter rather than from the
                 // base of the identity range.
                 let preservation_contexts = if *do_while {
-                    c_do_while_preservation_contexts(
+                    program_do_while_preservation_contexts(
                         &context.state,
                         condition,
                         invariant_checks,
@@ -222,7 +222,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                         context.next_kernel_variable,
                     )
                 } else {
-                    c_loop_preservation_contexts(
+                    loop_preservation_contexts(
                         &context.state,
                         condition,
                         invariant_checks,
@@ -243,7 +243,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                             "preserve",
                         ),
                         crate::surface::diagnostics::describe_loop_head_refusal(&refusal),
-                        crate::surface::diagnostics::describe_c_statement_site()
+                        crate::surface::diagnostics::describe_execution_statement_site()
                     ))
                 })?;
                 let multiple_entries = preservation_contexts.len() > 1;
@@ -517,7 +517,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
         }
         _ => {
             let statement_index = *next_statement_index;
-            let _site_scope = crate::surface::diagnostics::CStatementSiteScope::enter(
+            let _site_scope = crate::surface::diagnostics::StatementSiteScope::enter(
                 environment.source_layout,
                 statement_index,
                 environment.parsed_function,
@@ -591,7 +591,7 @@ fn split_execution_proof_branch_contexts(
                 case_path: {
                     let mut case_path = context.case_path.clone();
                     case_path.push(ProofCaseChoice {
-                        condition: surface_c_condition(condition, &context.state)?,
+                        condition: surface_program_condition(condition, &context.state)?,
                         value: transition.is_true,
                         match_arm: None,
                     });
@@ -815,9 +815,9 @@ fn advance_execution_proof_statement(
                         )?;
                     }
                     if let ProgramStatement::While { condition, .. } = statement {
-                        let exit_condition = ClickProposition::Not(Box::new(surface_c_condition(
-                            condition, exit_state,
-                        )?));
+                        let exit_condition = ClickProposition::Not(Box::new(
+                            surface_program_condition(condition, exit_state)?,
+                        ));
                         let lowered_exit_condition = lower_fixed_state_proposition(
                             &exit_condition,
                             &transition.pure_facts,
@@ -874,7 +874,7 @@ fn advance_execution_proof_statement(
                         "execution proof traversal for {} region({statement_index}) produced undefined behavior: {}{}",
                         environment.function_block.signature().name(),
                         kind.description(),
-                        crate::surface::diagnostics::describe_c_statement_site()
+                        crate::surface::diagnostics::describe_execution_statement_site()
                     )).with_reported_assertion_goal(kind.required_goal().cloned()));
                 }
                 StatementOutcome::RuntimeError(error) => {
@@ -882,7 +882,7 @@ fn advance_execution_proof_statement(
                         "execution proof traversal for {} region({statement_index}) could not verify C operation: {}{}\nresource facts in context: {}",
                         environment.function_block.signature().name(),
                         describe_runtime_error(&error, ParameterBinding::default()),
-                        crate::surface::diagnostics::describe_c_statement_site(),
+                        crate::surface::diagnostics::describe_execution_statement_site(),
                         context.state.resources().facts().len()
                     ))
                     .with_kind(crate::surface::diagnostics::runtime_refusal_kind(&error)));

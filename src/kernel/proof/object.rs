@@ -912,11 +912,11 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             if !matches!(
                 sort,
                 Sort::Integer
-                    | Sort::CInt32
-                    | Sort::CInt64
-                    | Sort::CMachineInteger(_)
-                    | Sort::CPointer(_)
-                    | Sort::CObjectPointer(_, _)
+                    | Sort::ProgramInt32
+                    | Sort::ProgramInt64
+                    | Sort::ProgramInteger(_)
+                    | Sort::ProgramPointer(_)
+                    | Sort::ProgramObjectPointer(_, _)
                     | Sort::Algebraic(_)
             ) {
                 return Err(PropositionCloseError::IntegerChoiceWrongSort);
@@ -931,14 +931,14 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                     )
                     .map_err(|_| PropositionCloseError::IntegerChoiceFresheningExhausted)?
                 }
-                Sort::CInt32 | Sort::CInt64 | Sort::CMachineInteger(_) => {
+                Sort::ProgramInt32 | Sort::ProgramInt64 | Sort::ProgramInteger(_) => {
                     crate::kernel::substitute_int32_variable_in_proposition(
                         &body,
                         var,
                         crate::kernel::MachineTerm::Variable(chosen),
                     )
                 }
-                Sort::CPointer(c_type) | Sort::CObjectPointer(c_type, _) => {
+                Sort::ProgramPointer(c_type) | Sort::ProgramObjectPointer(c_type, _) => {
                     let pointer =
                         if matches!(c_type, crate::kernel::ProgramType::FunctionPointer(_)) {
                             crate::kernel::Pointer::symbolic_function(chosen)
@@ -1097,7 +1097,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                 var, sort, body, ..
             } => {
                 let (variable, body, pointer, algebraic) = match sort {
-                    Sort::CPointer(c_type) | Sort::CObjectPointer(c_type, _) => {
+                    Sort::ProgramPointer(c_type) | Sort::ProgramObjectPointer(c_type, _) => {
                         let (variable, body) = facts
                             .freshen_pointer_forall_body(*var, *c_type, body)
                             .ok_or(PropositionCloseError::UniversalWitnessFresheningExhausted)?;
@@ -1736,7 +1736,7 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
         // The loop's names are bound again before any invariant reads a
         // binder field: the body may have refolded its instance under another
         // name, and the binder follows the family and arguments, not the name.
-        let back_edge_state = crate::kernel::c_loop_state_with_loop_binders_rebound(
+        let back_edge_state = crate::kernel::loop_state_with_loop_binders_rebound(
             iteration_entry,
             &execution.core.state,
             binders,
@@ -1764,7 +1764,7 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
             "loop invariant bundle",
             "invariant bundle: lower obligations",
         );
-        let mut obligations = crate::kernel::c_loop_invariant_obligations_at_back_edge(
+        let mut obligations = crate::kernel::loop_invariant_obligations_at_back_edge(
             &back_edge_state,
             loop_entry,
             checks,
@@ -1776,7 +1776,7 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
         // the bundle a retained certificate closed is the same list at every
         // site that rechecks it.
         obligations.extend(
-            crate::kernel::c_loop_ranking_obligations_at_back_edge(
+            crate::kernel::loop_ranking_obligations_at_back_edge(
                 &back_edge_state,
                 iteration_entry,
                 head_iterations,
@@ -2705,7 +2705,7 @@ mod tests {
         let source = Proposition::Exists {
             name: "machine".into(),
             var: Variable(43),
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(inner),
         };
         let proof = integer_choice_proof(
@@ -2820,7 +2820,7 @@ mod tests {
     /// about the range and not about which identities a particular fact set
     /// happens to hold.
     #[test]
-    fn a_freshened_universal_witness_never_takes_a_c_identity() {
+    fn a_freshened_universal_witness_never_takes_a_program_identity() {
         let bound = Variable(2_000_000);
         let body = Proposition::ConditionIs(
             crate::kernel::ConditionTerm::signed_less_equal(
@@ -2835,7 +2835,7 @@ mod tests {
         let reserving = Proposition::ForAll {
             name: Default::default(),
             var: bound,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(body.clone()),
         };
         let facts = ProofFacts::from_ordered(std::slice::from_ref(&reserving));
@@ -2873,7 +2873,7 @@ mod tests {
     /// for the same reason: `Pointer::symbolic(v)` over a C identity is a
     /// pointer the function already has a name for.
     #[test]
-    fn a_freshened_pointer_witness_never_takes_a_c_identity() {
+    fn a_freshened_pointer_witness_never_takes_a_program_identity() {
         let bound = Variable(2_000_000);
         let body = Proposition::Predicate {
             name: "witness_body".into(),
@@ -2882,7 +2882,7 @@ mod tests {
         let reserving = Proposition::ForAll {
             name: Default::default(),
             var: bound,
-            sort: Sort::CPointer(crate::kernel::ProgramType::Int32),
+            sort: Sort::ProgramPointer(crate::kernel::ProgramType::Int32),
             body: Box::new(body.clone()),
         };
         let facts = ProofFacts::from_ordered(std::slice::from_ref(&reserving));
@@ -2936,7 +2936,7 @@ mod tests {
         let loadable = |memory: Memory, variable| Proposition::ForAll {
             name: Default::default(),
             var: variable,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(Proposition::Implies(
                 Box::new(Proposition::And(
                     Box::new(Proposition::ConditionIs(
@@ -2958,7 +2958,7 @@ mod tests {
                         true,
                     )),
                 )),
-                Box::new(Proposition::CMemoryLoadable {
+                Box::new(Proposition::MemoryLoadable {
                     memory,
                     base: Pointer {
                         block: "alpha".into(),
@@ -3197,7 +3197,7 @@ mod tests {
         let goal = Proposition::Exists {
             name: "x".into(),
             var: variable,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(body.clone()),
         };
         let proof: ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()> =
@@ -3222,7 +3222,7 @@ mod tests {
                         Some(&Proposition::ForAll {
                             name: crate::kernel::BinderName::written("x"),
                             var: variable,
-                            sort: Sort::CInt32,
+                            sort: Sort::ProgramInt32,
                             body: Box::new(Proposition::Not(Box::new(body.clone()))),
                         })
                     );
@@ -3247,7 +3247,7 @@ mod tests {
         let goal = Proposition::ForAll {
             name: Default::default(),
             var: binder,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(body.clone()),
         };
         let branch = ProofBranch::new(

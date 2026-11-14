@@ -27,13 +27,13 @@ fn wide_resource_body_loadability_preserves_native_extent() {
     let base = Pointer::symbolic(Variable(984_010));
     let segment = MemorySegment::new(
         ProgramExpression::Value(ProgramValue::pointer(base.clone())),
-        c_uint64_literal(0),
-        c_uint64_literal(1 << 33),
+        crate::kernel::program_expression::uint64_literal(0),
+        crate::kernel::program_expression::uint64_literal(1 << 33),
     )
     .with_element_width(1);
     let schema = ResourceFieldSchema::new(vec![(
         "length".into(),
-        ResourceFieldType::C(ProgramType::UInt64),
+        ResourceFieldType::Program(ProgramType::UInt64),
     )])
     .unwrap();
     let definition = CompositeResourceDefinition::new(
@@ -50,7 +50,7 @@ fn wide_resource_body_loadability_preserves_native_extent() {
         "wide".into(),
         vec![].into(),
         schema,
-        vec![AlgebraicValue::C(ProgramValue::UInt64(
+        vec![AlgebraicValue::Program(ProgramValue::UInt64(
             MachineTerm::uint64_constant(1 << 33),
         ))]
         .into(),
@@ -89,6 +89,6 @@ fn wide_resource_body_loadability_preserves_native_extent() {
     assert!(
         loadable
             .iter()
-            .any(|fact| matches!(fact, Proposition::CMemoryLoadable { wide: true, .. }))
+            .any(|fact| matches!(fact, Proposition::MemoryLoadable { wide: true, .. }))
     );
 }

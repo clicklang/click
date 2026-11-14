@@ -144,7 +144,7 @@ pub(in crate::surface) fn count_flat_proof_units<R>(operation: impl FnOnce() -> 
 }
 
 pub(in crate::surface) struct ClaimProofResult {
-    pub(in crate::surface) theorems: Vec<VerifiedCTheorem>,
+    pub(in crate::surface) theorems: Vec<VerifiedProgramTheorem>,
 }
 
 /// A deferred tactic still to visit, with its `outcomes` depth and the
@@ -593,8 +593,8 @@ fn prove_claims_by_checked_tactics(
         ParameterBinding::new(parsed_function.parameters(), &arguments),
         proof_label,
     )?;
-    let function_entry_state =
-        c_function_entry_state(&state, &function, &arguments).ok_or_else(|| {
+    let function_entry_state = program_function_entry_state(&state, &function, &arguments)
+        .ok_or_else(|| {
             ClickError::new(format!("`{proof_label}` could not bind function arguments"))
         })?;
     let (mut pure_facts, mut entry_fact_origins) = contract_entry_view(
@@ -617,7 +617,7 @@ fn prove_claims_by_checked_tactics(
     // it, so this is not a step the proof may skip: without it the completed
     // execution is refused.
     let anchored_function_environment =
-        crate::kernel::c_execution_environment_with_recursion_anchor(
+        crate::kernel::program_execution_environment_with_recursion_anchor(
             function_environment.clone(),
             &function,
             &state,
@@ -636,8 +636,9 @@ fn prove_claims_by_checked_tactics(
     if source_layout.loop_body_entry(0).is_some() {
         source_layout.loop_region_count(|| count_loop_regions(parsed_function));
         source_layout.local_pointer_element_types(|| local_pointer_element_types(parsed_function));
-        source_layout
-            .address_taken_locals(|| crate::kernel::c_address_taken_locals(function.source_body()));
+        source_layout.address_taken_locals(|| {
+            crate::kernel::program_address_taken_locals(function.source_body())
+        });
     }
     let constants = ExecutionProofConstants {
         proof_site,
@@ -801,7 +802,7 @@ pub(in crate::surface) fn prove_claims_by_implicit_tail(
     resource_environment: &ResourceEnvironment,
     theorem_environment: &TheoremEnvironment,
     function_source_registry: Arc<FunctionSourceRegistry>,
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
     let mut tactics = vec![ProofTactic::SmartExecute];
     if !claims.is_empty() {
         tactics.push(ProofTactic::ImplicitSolve);
@@ -866,7 +867,7 @@ pub(in crate::surface) fn prove_claims_by_grouped_script(
     theorem_environment: &TheoremEnvironment,
     function_source_registry: Arc<FunctionSourceRegistry>,
     tactics: &[ProofTactic],
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
     let verified = prove_claims_by_grouped_tactics(
         expansion_capture,
         source_path,
@@ -1093,7 +1094,7 @@ mod exit_claim {
                 .paths()
                 .get(path_index)
                 .ok_or_else(|| ClickError::new("vacuous claim has no checked path"))?;
-            let Proposition::CFunctionVerifies { outcome, .. } =
+            let Proposition::ProgramFunctionVerifies { outcome, .. } =
                 implication_body(path.theorem().proposition())
             else {
                 return Err(ClickError::new(
@@ -1188,7 +1189,7 @@ fn contract_closing_goal<'a>(
                 ))
             })?,
         FunctionContractClaimTarget::ExceptionalEnsureProposition(contract_index) => {
-            crate::kernel::c_function_exceptional_ensure_goals(
+            crate::kernel::program_function_exceptional_ensure_goals(
                 function,
                 *contract_index,
                 pre_state,
@@ -1650,24 +1651,24 @@ fn close_claim_directly_from_outcome<'a>(
                 .ok()
                 // What a read of a stored cell evaluates to is the value
                 // stored there (the read-over-write authority).
-                .map(|value| crate::kernel::read_over_write_c_value(&value))
+                .map(|value| crate::kernel::read_over_write_program_value(&value))
             };
             match (evaluate(left), evaluate(right)) {
                 (Some(kernel_left), Some(kernel_right)) => {
                     let rendered_left =
-                        crate::surface::proof_diagnostics::render::render_c_value_labeled(
+                        crate::surface::proof_diagnostics::render::render_program_value_labeled(
                             &kernel_left,
                             &mut labels,
                         );
                     let rendered_right =
-                        crate::surface::proof_diagnostics::render::render_c_value_labeled(
+                        crate::surface::proof_diagnostics::render::render_program_value_labeled(
                             &kernel_right,
                             &mut labels,
                         );
                     // Whether the two sides are reads of one address, which
                     // the unqualified address spelling tells.
-                    let same_address = describe_c_value(&kernel_left, parameter_binding)
-                        == describe_c_value(&kernel_right, parameter_binding);
+                    let same_address = describe_program_value(&kernel_left, parameter_binding)
+                        == describe_program_value(&kernel_right, parameter_binding);
                     // Two reads of one address of different kinds are two
                     // values whatever happened in between: say that, and not
                     // which snapshot or store set them apart.
@@ -2208,7 +2209,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
     // body's own context in place.
     if !*resource_transition_applied
         && matches!(outcome, FunctionOutcome::Return { .. })
-        && !crate::kernel::c_function_return_resources_definitionally_established(
+        && !crate::kernel::program_function_return_resources_definitionally_established(
             pre_state,
             function,
             arguments,
@@ -3144,7 +3145,7 @@ pub(super) fn finish_ordered_proof<'a>(
     arguments: &[ProgramExpression],
     certificate_tactics: &std::sync::Arc<[ProofTactic]>,
     claim_surface_builders: &mut Vec<(VerifiedClaim, std::sync::Arc<ProofCertificateBuilder>)>,
-) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
     let parameter_binding = ParameterBinding::new(parsed_function.parameters(), arguments);
     let proof_label = if require_explicit_closers {
         function_block.contract_claim_label()
@@ -3353,7 +3354,7 @@ pub(super) fn finish_ordered_proof<'a>(
         )?;
         completed_execution.paths().iter().try_for_each(|path| {
             match implication_body(path.theorem().proposition()) {
-                Proposition::CFunctionVerifies {
+                Proposition::ProgramFunctionVerifies {
                     state,
                     function: proved_function,
                     arguments: proved_arguments,
@@ -3844,7 +3845,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         // does not satisfy the guard here; the closing `solve` runs
                         // the same transition once that fold has happened.
                         if matches!(outcome, FunctionOutcome::Return { .. })
-                            && crate::kernel::c_function_return_resources_definitionally_established(
+                            && crate::kernel::program_function_return_resources_definitionally_established(
                                 pre_state,
                                 function,
                                 arguments,
@@ -4618,7 +4619,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     })
                                 {
                                     assumption_transition_attempted = true;
-                                    let established = crate::kernel::c_function_return_resources_definitionally_established(
+                                    let established = crate::kernel::program_function_return_resources_definitionally_established(
                                         pre_state,
                                         function,
                                         arguments,
@@ -5456,7 +5457,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 })
                             })
                             .transpose()?;
-                        verified.push(VerifiedCTheorem {
+                        verified.push(VerifiedProgramTheorem {
                             source_path: source_path.to_string(),
                             import_identity: None,
                             artifact_identity: None,
@@ -6180,7 +6181,7 @@ mod evidence_tests {
             int32 zero() { owns marker(); ensures result == 0; }
         "#;
         let verified =
-            verify_c0_sources(source, &[("zero.c", "int32 zero() { return 0; }")]).unwrap();
+            verify_c_sources(source, &[("zero.c", "int32 zero() { return 0; }")]).unwrap();
         let resource_claim = verified
             .iter()
             .find(|theorem| {
@@ -6196,7 +6197,7 @@ mod evidence_tests {
         };
         let execution = &resource_claim.checked_execution;
         let path = &execution.paths()[0];
-        let Proposition::CFunctionVerifies {
+        let Proposition::ProgramFunctionVerifies {
             state,
             arguments,
             outcome,
@@ -6259,7 +6260,7 @@ mod evidence_tests {
                 solve();
             }
         "#;
-        let verified = verify_c0_sources(
+        let verified = verify_c_sources(
             source,
             &[("spin.c", "int32 spin() { while (1) {} return 0; }")],
         )
@@ -6291,7 +6292,8 @@ fn contract_entry_view(
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
 ) -> (PureFactList, Vec<EntryFactOrigin>) {
-    let Ok(entry) = crate::kernel::c_function_contract_entry(state, function, arguments) else {
+    let Ok(entry) = crate::kernel::program_function_contract_entry(state, function, arguments)
+    else {
         return (surface_facts, surface_origins);
     };
     let mut facts = Vec::new();
@@ -6377,11 +6379,11 @@ mod contract_closing_tests {
 
     #[test]
     fn missing_kernel_claim_is_refused_during_contract_closing() {
-        let function = crate::kernel::c_function(
+        let function = crate::kernel::program_function(
             ProgramType::Int32,
             "missing",
             vec![],
-            crate::kernel::c_return(crate::kernel::c_int32_literal(0)),
+            crate::kernel::program_return(crate::kernel::program_expression::int32_literal(0)),
         );
         let outcome = FunctionOutcome::Return {
             value: crate::kernel::int32(0).into(),

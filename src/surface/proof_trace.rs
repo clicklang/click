@@ -185,7 +185,7 @@ impl TraceLoad {
                 crate::kernel::ProgramValue::Pointer(pointer) => {
                     labels.pointer_value_name(pointer.pointer())
                 }
-                _ => render::render_c_value_labeled(value, labels),
+                _ => render::render_program_value_labeled(value, labels),
             };
         let value = identity(&self.value, labels);
         let address = identity(&self.address, labels);
@@ -263,7 +263,7 @@ impl ChildArgumentTrace {
         let (
             Some(crate::kernel::ProgramValue::Pointer(actual)),
             Some(crate::kernel::ProgramValue::Pointer(required)),
-        ) = (actual.as_c_value(), required.as_c_value())
+        ) = (actual.as_program_value(), required.as_program_value())
         else {
             return None;
         };
@@ -1432,7 +1432,7 @@ mod tests {
     #[test]
     fn admitted_read_equalities_share_the_fact_printer_and_read_labels() {
         let address = Pointer::symbolic(crate::kernel::Variable(303_000));
-        let memory = crate::kernel::intern_c_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(Memory::new());
         let read = Pointer::loaded_value(&memory, &address);
         let target = Pointer::function("callback");
         let fact = TraceFact {
@@ -1477,8 +1477,8 @@ mod tests {
     #[test]
     fn child_comparison_keeps_read_values_distinct_from_source_spelling() {
         let address = Pointer::symbolic(crate::kernel::Variable(700_001));
-        let first = crate::kernel::intern_c_memory(Memory::new());
-        let second = crate::kernel::intern_c_memory(Memory::new().store(
+        let first = crate::kernel::intern_memory(Memory::new());
+        let second = crate::kernel::intern_memory(Memory::new().store(
             address.clone(),
             crate::kernel::ProgramValue::Int32(MachineTerm::constant(1)),
         ));
@@ -1595,7 +1595,7 @@ mod tests {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
                     left: Box::new(MachineTerm::MemoryLoad(
-                        crate::kernel::intern_c_memory(memory),
+                        crate::kernel::intern_memory(memory),
                         Box::new(pointer.clone()),
                         LoadKind::Bits64,
                     )),
@@ -1663,7 +1663,7 @@ mod tests {
     }
 
     fn loadable_at(memory: Memory) -> Proposition {
-        Proposition::CMemoryLoadable {
+        Proposition::MemoryLoadable {
             memory,
             base: Pointer {
                 block: PointerBlock::ExternalArgument,
@@ -1828,7 +1828,7 @@ mod tests {
 
     #[test]
     fn trace_omits_generated_load_binding_beside_surface_branch_fact() {
-        let memory = crate::kernel::intern_c_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(Memory::new());
         let pointer = Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
@@ -2110,7 +2110,7 @@ mod tests {
                         kernel: Proposition::ConditionIs(
                             ConditionTerm::pointer_equal(
                                 Pointer::loaded_value(
-                                    &crate::kernel::intern_c_memory(Memory::new()),
+                                    &crate::kernel::intern_memory(Memory::new()),
                                     &Pointer::null(),
                                 ),
                                 Pointer::null(),

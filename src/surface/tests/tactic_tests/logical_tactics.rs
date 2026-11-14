@@ -9,7 +9,7 @@ fn solve_composite_machine_equalities_require_defined_operations() {
     )
     .unwrap();
     let source = fixture.click_source.as_deref().unwrap();
-    verify_c0_sources(source, &[]).expect("the original conservation proofs verify");
+    verify_c_sources(source, &[]).expect("the original conservation proofs verify");
     let shrink = source.split("theorem grow_conservation").next().unwrap();
     let equality = "capacity - amount == used + (available - amount)";
     // Without the amount bound, used=1, available=INT_MIN, amount=1
@@ -19,7 +19,7 @@ fn solve_composite_machine_equalities_require_defined_operations() {
         shrink.replace("requires amount <= available;", ""),
     ] {
         assert_ne!(invalid, shrink);
-        let error = verify_c0_sources(&invalid, &[])
+        let error = verify_c_sources(&invalid, &[])
             .expect_err("the bridge cannot prove a false or potentially undefined claim");
         assert_eq!(error.kind(), ClickErrorKind::Proof, "{error}");
         assert!(!error.message().contains("budget exhausted"), "{error}");
@@ -40,10 +40,10 @@ fn fixed_state_solve_closes_from_false_without_leaking_into_other_contracts() {
             solve();
         }
     "#;
-    verify_c0_sources(source, &[("f.c", c_source)])
+    verify_c_sources(source, &[("f.c", c_source)])
         .expect("the fixed-state goal follows from its explicit false premise");
     assert!(
-        verify_c0_sources(
+        verify_c_sources(
             &source.replace("requires false;", "requires true;"),
             &[("f.c", c_source)],
         )
@@ -54,11 +54,11 @@ fn fixed_state_solve_closes_from_false_without_leaking_into_other_contracts() {
         .replace("int32 f(int32 x)", "int32 f(int32 false, int32 x)")
         .replace("requires false;", "requires 0u32 == 1u32;");
     let shadowed_c = "int32 f(int32 false, int32 x) { return x; }\n";
-    let verified = verify_c0_sources(&shadowed, &[("f.c", shadowed_c)])
+    let verified = verify_c_sources(&shadowed, &[("f.c", shadowed_c)])
         .expect("a C parameter may be named false");
     let expanded = verified[0].expanded_proof_source().unwrap();
     let (prefix, _) = shadowed.split_once(" by {").unwrap();
-    verify_c0_sources(&format!("{prefix} {expanded}"), &[("f.c", shadowed_c)])
+    verify_c_sources(&format!("{prefix} {expanded}"), &[("f.c", shadowed_c)])
         .expect("the expanded contradiction must keep its literal meaning");
 }
 
@@ -76,12 +76,12 @@ fn solve_rewrites_constructor_equality_before_disequality() {
             }
         "#;
 
-    verify_c0_sources(click_source, &[])
+    verify_c_sources(click_source, &[])
         .expect("solve should rewrite a constructor equality before proving disequality");
     let without_equality =
         click_source.replace("                requires value == Mark::Set;\n", "");
     assert!(
-        verify_c0_sources(&without_equality, &[]).is_err(),
+        verify_c_sources(&without_equality, &[]).is_err(),
         "solve must not prove a constructor disequality without the equality premise"
     );
 }
@@ -111,14 +111,14 @@ fn solve_orients_pure_function_equality_inside_constructor_goal() {
             }
         "#;
 
-    verify_c0_sources(click_source, &[])
+    verify_c_sources(click_source, &[])
         .expect("solve should orient a pure-function equality inside a constructor");
     let without_equality = click_source.replace(
         "                requires shape_left(value) == middle;\n",
         "",
     );
     assert!(
-        verify_c0_sources(&without_equality, &[]).is_err(),
+        verify_c_sources(&without_equality, &[]).is_err(),
         "solve must not prove the constructor equality without its function premise"
     );
 }
@@ -144,7 +144,7 @@ fn explicit_nonnegative_add_definedness_certifies_the_whole_contract() {
             }
         "#;
 
-    verify_c0_sources(click_source, &[("add_nonnegative.c", c_source)])
+    verify_c_sources(click_source, &[("add_nonnegative.c", c_source)])
         .expect("the final contract gate should reuse the explicitly certified safe addition");
 
     let without_definedness =
@@ -153,10 +153,10 @@ fn explicit_nonnegative_add_definedness_certifies_the_whole_contract() {
     // Definedness is a requirement the implicit `solve` proves under a bare
     // `step()`; checked cold, as an expansion is, the simple step alone
     // must not rediscover the omitted overflow proof.
-    verify_c0_sources(&without_definedness, &[("add_nonnegative.c", c_source)])
+    verify_c_sources(&without_definedness, &[("add_nonnegative.c", c_source)])
         .expect("the implicit `solve` proves the step's definedness requirement");
     let error = crate::surface::proof::without_implicit_solve(|| {
-        verify_c0_sources(&without_definedness, &[("add_nonnegative.c", c_source)])
+        verify_c_sources(&without_definedness, &[("add_nonnegative.c", c_source)])
     })
     .expect_err("a simple statement step must not rediscover the omitted overflow proof");
     assert!(
@@ -197,7 +197,7 @@ fn apply_using_checks_only_with_its_explicit_premises() {
             }
         "#;
 
-    verify_c0_sources(click_source, &[("increment.c", c_source)])
+    verify_c_sources(click_source, &[("increment.c", c_source)])
         .expect("explicit theorem premises should check");
 
     let missing_premise = click_source.replace(
@@ -206,7 +206,7 @@ fn apply_using_checks_only_with_its_explicit_premises() {
                 }",
         "apply(increment_is_defined(x)) using {}",
     );
-    let error = verify_c0_sources(&missing_premise, &[("increment.c", c_source)])
+    let error = verify_c_sources(&missing_premise, &[("increment.c", c_source)])
         .expect_err("apply using must not search ambient facts for an omitted premise");
     assert!(
         error.message().contains("required exact fact"),
@@ -246,7 +246,7 @@ fn apply_using_uses_ambient_loadability_only_to_lower_explicit_premises() {
             }
         "#;
 
-    verify_c0_sources(click_source, &[("first.c", c_source)]).expect(
+    verify_c_sources(click_source, &[("first.c", c_source)]).expect(
         "ambient viewability may lower an explicit premise without becoming a theorem premise",
     );
 }
@@ -280,7 +280,7 @@ fn source_expander_makes_theorem_application_premises_explicit() {
         "#;
 
     let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("increment.c", c_source)])
+        verify_c_sources(click_source, &[("increment.c", c_source)])
     });
     verified.expect("bare theorem application should verify");
     let simple_apply_checks = events
@@ -300,17 +300,17 @@ fn source_expander_makes_theorem_application_premises_explicit() {
         "ordinary verification must not feed the extracted explicit application through a second acceptance pass"
     );
 
-    let expanded = expand_c0_claim_source(
+    let expanded = expand_c_claim_source(
         click_source,
         &[("increment.c", c_source)],
         "increment",
-        CProofClaim::Grouped,
+        ContractProofClaim::Grouped,
     )
     .expect("bare theorem application should expand");
 
     assert!(expanded.contains("apply(increment_is_defined(x)) using {"));
     assert!(expanded.contains("x < 2147483647;"));
-    verify_c0_sources(&expanded, &[("increment.c", c_source)])
+    verify_c_sources(&expanded, &[("increment.c", c_source)])
         .expect("expanded theorem application should check");
 }
 
@@ -325,7 +325,7 @@ fn defined_rejects_concrete_undefined_expression() {
             }
         "#;
 
-    let error = verify_c0_sources(click_source, &[])
+    let error = verify_c_sources(click_source, &[])
         .expect_err("a concretely overflowing expression is not defined");
     assert!(
         error.message().contains("goal did not normalize to true"),
@@ -357,7 +357,7 @@ fn failed_fixed_state_normalize_does_not_dump_internal_memory() {
         }
     "#;
 
-    let error = verify_c0_sources(click_source, &[("read.c", c_source)])
+    let error = verify_c_sources(click_source, &[("read.c", c_source)])
         .expect_err("an unknown loaded value must not normalize to one");
     assert!(
         error.message().contains("goal did not normalize to true"),
@@ -393,11 +393,11 @@ fn assumption_reuses_facts_but_does_not_normalize_or_extract_implications() {
         }
     "#;
 
-    verify_c0_sources(click_source, &[("keep.c", c_source)])
+    verify_c_sources(click_source, &[("keep.c", c_source)])
         .expect("explicit extraction and normalization should verify");
 
     let implicit_extract = click_source.replace("extract(y == 0);", "assumption();");
-    let error = verify_c0_sources(&implicit_extract, &[("keep.c", c_source)])
+    let error = verify_c_sources(&implicit_extract, &[("keep.c", c_source)])
         .expect_err("assumption must not discharge an implication");
     assert!(
         error
@@ -408,7 +408,7 @@ fn assumption_reuses_facts_but_does_not_normalize_or_extract_implications() {
     );
 
     let implicit_normalize = click_source.replacen("normalize();", "assumption();", 1);
-    let error = verify_c0_sources(&implicit_normalize, &[("keep.c", c_source)])
+    let error = verify_c_sources(&implicit_normalize, &[("keep.c", c_source)])
         .expect_err("assumption must not normalize a proposition");
     assert!(
         error
@@ -487,7 +487,7 @@ fn contract_lets_do_not_capture_later_quantifier_binders() {
     ];
 
     for source in false_claims {
-        let error = verify_c0_sources(source, &[])
+        let error = verify_c_sources(source, &[])
             .expect_err("a lexical alias must retain the outer binding");
         assert!(
             error.message().contains("did not normalize to true"),
@@ -503,7 +503,7 @@ fn contract_lets_do_not_capture_later_quantifier_binders() {
             ensures (0..2).all(|x| { saved == x });
         }
     "#;
-    let error = verify_c0_sources(false_range, &[])
+    let error = verify_c_sources(false_range, &[])
         .expect_err("a range binder must not capture the lexical alias");
     assert!(
         error.message().contains("could not establish"),
@@ -542,11 +542,11 @@ fn capture_avoiding_contract_lets_preserve_written_proof_names_and_expansion() {
         }
     "#;
 
-    verify_c0_sources(source, &[]).expect("written binder names should remain usable");
-    let expanded = expand_c0_claim_source_by_label(source, &[], "universal.ensures_0")
+    verify_c_sources(source, &[]).expect("written binder names should remain usable");
+    let expanded = expand_c_claim_source_by_label(source, &[], "universal.ensures_0")
         .expect("the hygienically renamed universal should expand");
     assert!(expanded.contains("intro();"), "{expanded}");
-    verify_c0_sources(&expanded, &[]).expect("the expanded proof should independently reverify");
+    verify_c_sources(&expanded, &[]).expect("the expanded proof should independently reverify");
 }
 
 #[test]
@@ -578,7 +578,7 @@ fn fixed_state_proof_intro_places_forall_binder_in_surface_scope() {
         }
     "#;
 
-    verify_c0_sources(click_source, &[("forall_scope.c", c_source)])
+    verify_c_sources(click_source, &[("forall_scope.c", c_source)])
         .expect("the introduced forall binder should be available to later surface tactics");
 }
 
@@ -622,7 +622,7 @@ fn parses_existential_proof_tactics() {
         ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit)
     ));
     assert!(matches!(&tactics[1], ProofTactic::LetSatisfy(binding)
-        if binding.bindings == [("k".to_string(), ClickType::C(C0Type::Int32))]));
+        if binding.bindings == [("k".to_string(), ClickType::Program(C0Type::Int32))]));
     assert_eq!(
         tactics[2],
         ProofTactic::Witness(ProofWitness::single(
@@ -808,7 +808,7 @@ fn parses_rust_style_let_annotations() {
         body,
         ContractExpression::Let {
             name,
-            click_type: Some(ClickType::C(C0Type::Int32)),
+            click_type: Some(ClickType::Program(C0Type::Int32)),
             ..
         } if name == "next"
     ));
@@ -834,7 +834,7 @@ fn parses_contract_level_let_bindings() {
         Ensure::Proposition(ClickProposition::Comparison {
             right: ContractExpression::Let {
                 name,
-                click_type: Some(ClickType::C(C0Type::Int32)),
+                click_type: Some(ClickType::Program(C0Type::Int32)),
                 ..
             },
             ..
@@ -860,7 +860,7 @@ fn parses_contract_level_let_where_bindings() {
     assert!(matches!(
         ensure.ensure(),
         Ensure::Proposition(ClickProposition::Exists {
-            click_type: ClickType::C(C0Type::Int32),
+            click_type: ClickType::Program(C0Type::Int32),
             name,
             body,
             ..
@@ -888,7 +888,7 @@ fn parses_proposition_let_where_bindings() {
     assert!(matches!(
         ensure.ensure(),
         Ensure::Proposition(ClickProposition::Exists {
-            click_type: ClickType::C(C0Type::Int32),
+            click_type: ClickType::Program(C0Type::Int32),
             name,
             ..
         }) if name == "k"
@@ -953,7 +953,7 @@ fn rejects_same_object_with_non_pointer_arguments() {
             }
         "#;
 
-    let error = verify_c0_sources(source, &[("identity.c", c_source)])
+    let error = verify_c_sources(source, &[("identity.c", c_source)])
         .expect_err("same_object should require object pointers");
 
     assert!(
@@ -1035,7 +1035,7 @@ fn verifies_opaque_predicate_from_requirement() {
             }
         "#;
 
-    let verified = verify_c0_sources(click_source, &[("identity_pointer_fact.c", c_source)])
+    let verified = verify_c_sources(click_source, &[("identity_pointer_fact.c", c_source)])
         .expect("exact opaque predicate fact should verify");
 
     assert_eq!(verified.len(), 1);
@@ -1065,7 +1065,7 @@ fn heap_dependent_ensures_still_owes_its_loads() {
             }
         "#;
 
-    let error = verify_c0_sources(click_source, &[("claim_sorted.c", c_source)])
+    let error = verify_c_sources(click_source, &[("claim_sorted.c", c_source)])
         .expect_err("an ensures with no requires must not assume its own definedness");
     assert!(
         error.message().contains("unproved") || error.message().contains("claim_sorted.ensures_0"),
@@ -1111,7 +1111,7 @@ fn call_site_owes_the_definedness_of_a_heap_dependent_precondition() {
             }
         "#;
 
-    verify_c0_sources(
+    verify_c_sources(
         click_source,
         &[
             ("needs_sorted.c", callee_source),
@@ -1147,7 +1147,7 @@ fn unfolds_predicate_requirement_to_prove_consequence() {
             }
         "#;
 
-    let verified = verify_c0_sources(click_source, &[("keep_pair.c", c_source)])
+    let verified = verify_c_sources(click_source, &[("keep_pair.c", c_source)])
         .expect("unfolded predicate requirement should prove its body");
 
     assert_eq!(verified.len(), 1);
@@ -1196,7 +1196,7 @@ fn unfolds_predicate_goal_to_prove_compare_swap_sorted() {
         "#;
 
     let (verified, flat_units) = proof::count_flat_proof_units(|| {
-        verify_c0_sources(click_source, &[("compare_swap2.c", c_source)])
+        verify_c_sources(click_source, &[("compare_swap2.c", c_source)])
     });
     let verified = verified.expect("unfolded predicate goal should prove compare-swap sortedness");
 
@@ -1236,7 +1236,7 @@ fn unfolds_general_sorted_predicate() {
         "#;
 
     let (verified, flat_units) = proof::count_flat_proof_units(|| {
-        verify_c0_sources(click_source, &[("keep_sorted.c", c_source)])
+        verify_c_sources(click_source, &[("keep_sorted.c", c_source)])
     });
     let verified = verified.expect("general sorted predicate should unfold deterministically");
 
@@ -1246,15 +1246,15 @@ fn unfolds_general_sorted_predicate() {
         "the grouped predicate proof should retain one Proof"
     );
 
-    let expanded = expand_c0_claim_source(
+    let expanded = expand_c_claim_source(
         click_source,
         &[("keep_sorted.c", c_source)],
         "keep_sorted",
-        CProofClaim::Ensure(0),
+        ContractProofClaim::Ensure(0),
     )
     .expect("the retained predicate proof should expand");
     assert!(expanded.contains("unfold(sorted);"), "{expanded}");
-    verify_c0_sources(&expanded, &[("keep_sorted.c", c_source)])
+    verify_c_sources(&expanded, &[("keep_sorted.c", c_source)])
         .expect("the expanded predicate proof should independently reverify");
 
     let corrupted = expanded.replacen("unfold(sorted);", "unfold(missing);", 1);
@@ -1262,7 +1262,7 @@ fn unfolds_general_sorted_predicate() {
         corrupted, expanded,
         "the expansion should expose its checked unfold"
     );
-    verify_c0_sources(&corrupted, &[("keep_sorted.c", c_source)])
+    verify_c_sources(&corrupted, &[("keep_sorted.c", c_source)])
         .expect_err("a corrupted predicate unfold must be rejected");
 }
 
@@ -1283,7 +1283,7 @@ fn verifies_click_proposition_logic() {
             }
         "#;
 
-    let verified = verify_c0_sources(click_source, &[("identity.c", c_source)])
+    let verified = verify_c_sources(click_source, &[("identity.c", c_source)])
         .expect("proposition logic should verify");
 
     assert_eq!(verified.len(), 2);
@@ -1297,7 +1297,7 @@ fn single_solve_call_and_block_have_the_same_frontier_semantics() {
         let source = format!(
             "verifying \"identity.c\"; int32 identity(int32 x) {{ ensures result == x {proof} }}"
         );
-        verify_c0_sources(&source, &[("identity.c", c_source)])
+        verify_c_sources(&source, &[("identity.c", c_source)])
             .expect_err("solve at function entry should not execute")
             .message()
             .to_string()
@@ -1330,7 +1330,7 @@ fn every_claim_proof_form_retains_expandable_provenance() {
             }
         "#;
 
-    let verified = verify_c0_sources(click_source, &[("clamp.c", c_source)])
+    let verified = verify_c_sources(click_source, &[("clamp.c", c_source)])
         .expect("every claim proof form should verify");
     for theorem in &verified {
         theorem
@@ -1363,7 +1363,7 @@ fn mid_execution_witness_solve_have_expands_to_a_simple_certificate() {
             }
         "#;
 
-    let verified = verify_c0_sources(click_source, &[("current_have.c", c_source)]);
+    let verified = verify_c_sources(click_source, &[("current_have.c", c_source)]);
     let verified = verified.expect("a witness/solve have should verify");
     let expanded = verified[0].expanded_proof_tactics().unwrap_or_else(|| {
         panic!(
@@ -1412,9 +1412,9 @@ fn mid_execution_witness_solve_have_expands_to_a_simple_certificate() {
             .unwrap_or(0)
         + 1;
     let rewritten =
-        expand_c0_tactic_source_at(click_source, &[("current_have.c", c_source)], line, column)
+        expand_c_tactic_source_at(click_source, &[("current_have.c", c_source)], line, column)
             .expect("the checked witness/solve path should expand at its source site");
-    verify_c0_sources(&rewritten, &[("current_have.c", c_source)])
+    verify_c_sources(&rewritten, &[("current_have.c", c_source)])
         .expect("the serialized witness/normalize path should independently verify");
 }
 
@@ -1440,7 +1440,7 @@ fn mid_execution_choose_witness_solve_retains_the_checked_proof_path() {
         "#;
 
     let (verified, flat_units) = proof::count_flat_proof_units(|| {
-        verify_c0_sources(click_source, &[("choose_witness.c", c_source)])
+        verify_c_sources(click_source, &[("choose_witness.c", c_source)])
     });
     let verified = verified.expect("a choose/witness/solve have should verify through Proof");
     assert_eq!(flat_units, 1, "the grouped proof should retain one Proof");
@@ -1483,14 +1483,14 @@ fn mid_execution_choose_witness_solve_retains_the_checked_proof_path() {
             .map(|offset| offset + 1)
             .unwrap_or(0)
         + 1;
-    let rewritten = expand_c0_tactic_source_at(
+    let rewritten = expand_c_tactic_source_at(
         click_source,
         &[("choose_witness.c", c_source)],
         line,
         column,
     )
     .expect("the retained choose proof should serialize at its source site");
-    verify_c0_sources(&rewritten, &[("choose_witness.c", c_source)])
+    verify_c_sources(&rewritten, &[("choose_witness.c", c_source)])
         .expect("the serialized choose proof should independently verify");
 
     let corrupted = rewritten.replacen("witness { j: k }", "witness { j: 0 }", 1);
@@ -1498,7 +1498,7 @@ fn mid_execution_choose_witness_solve_retains_the_checked_proof_path() {
         corrupted, rewritten,
         "the expansion should expose the checked witness"
     );
-    verify_c0_sources(&corrupted, &[("choose_witness.c", c_source)])
+    verify_c_sources(&corrupted, &[("choose_witness.c", c_source)])
         .expect_err("tampering with the extracted witness must invalidate the proof");
 }
 
@@ -1521,7 +1521,7 @@ fn explicit_mid_execution_witness_certificate_checks_and_expands() {
             }
         "#;
 
-    let verified = verify_c0_sources(click_source, &[("explicit_witness.c", c_source)])
+    let verified = verify_c_sources(click_source, &[("explicit_witness.c", c_source)])
         .expect("an explicit witness certificate should verify through the fixed-state Proof");
     let expanded = verified[0]
         .expanded_proof_tactics()
@@ -1561,14 +1561,14 @@ fn fixed_state_witness_retains_a_structural_surface_goal_for_solve() {
             }
         "#;
 
-    let verified = verify_c0_sources(click_source, &[("witness_pair.c", c_source)]);
+    let verified = verify_c_sources(click_source, &[("witness_pair.c", c_source)]);
     verified.expect("witness followed by structural solve should stay on Proof");
 
     let have_offset = click_source
         .find("have exists (j: int32)")
         .expect("source should contain the existential have");
     let position = expansion::position_at_offset(click_source, have_offset);
-    let expanded = expand_c0_tactic_source_at(
+    let expanded = expand_c_tactic_source_at(
         click_source,
         &[("witness_pair.c", c_source)],
         position.line,
@@ -1587,7 +1587,7 @@ fn fixed_state_witness_retains_a_structural_surface_goal_for_solve() {
     );
     assert!(expanded_have.contains("assumption();"), "{expanded_have}");
     assert!(!expanded_have.contains("solve();"), "{expanded_have}");
-    verify_c0_sources(&expanded, &[("witness_pair.c", c_source)])
+    verify_c_sources(&expanded, &[("witness_pair.c", c_source)])
         .expect("the expanded witness and structural proof should verify independently");
 }
 
@@ -1621,7 +1621,7 @@ fn mid_execution_proof_if_have_expands_to_a_simple_certificate() {
             }
         "#;
 
-    let verified = verify_c0_sources(click_source, &[("sign_partition.c", c_source)])
+    let verified = verify_c_sources(click_source, &[("sign_partition.c", c_source)])
         .expect("a proof-if have should verify");
     let expanded = verified[0].expanded_proof_tactics().unwrap_or_else(|| {
         panic!(
@@ -1672,7 +1672,7 @@ fn outcome_instantiate_uses_the_checked_proof_path() {
         }
     "#;
 
-    let verified = verify_c0_sources(click_source, &[("pick.c", c_source)]);
+    let verified = verify_c_sources(click_source, &[("pick.c", c_source)]);
     verified.expect("outcome instantiation should prove the bound directly through Proof");
 }
 
@@ -1705,7 +1705,7 @@ fn instantiate_does_not_discharge_guards_from_ambient_facts() {
         }
     "#;
 
-    let error = verify_c0_sources(click_source, &[("pick.c", c_source)])
+    let error = verify_c_sources(click_source, &[("pick.c", c_source)])
         .expect_err("the symbolic upper-bound guard must name its evidence");
     assert!(
         error
@@ -1734,7 +1734,7 @@ fn constant_bound_weakenings_lower_to_named_theorem_chains() {
         }
     "#;
 
-    verify_c0_sources(click_source, &[("keep.c", c_source)])
+    verify_c_sources(click_source, &[("keep.c", c_source)])
         .expect("constant bound weakenings should lower to named theorem chains");
 }
 
@@ -1770,7 +1770,7 @@ fn cases_eliminates_a_disjunctive_premise() {
         }
     "#;
 
-    verify_c0_sources(click_source, &[("keep_small.c", c_source)])
+    verify_c_sources(click_source, &[("keep_small.c", c_source)])
         .expect("explicit cases over the disjunctive requirement should check");
 }
 
@@ -1806,7 +1806,7 @@ fn cases_refuses_alternatives_that_do_not_cover_the_premise() {
         }
     "#;
 
-    let error = verify_c0_sources(click_source, &[("keep_small.c", c_source)])
+    let error = verify_c_sources(click_source, &[("keep_small.c", c_source)])
         .expect_err("cases must not omit the possible value x == 2");
     assert!(
         error
@@ -1851,7 +1851,7 @@ fn cases_checks_each_branch_under_exactly_its_own_disjunct() {
         }
     "#;
 
-    let error = verify_c0_sources(click_source, &[("keep_small.c", c_source)])
+    let error = verify_c_sources(click_source, &[("keep_small.c", c_source)])
         .expect_err("a branch must not use the other case's disjunct");
     assert!(
         error
@@ -1882,7 +1882,7 @@ fn pure_cases_certificate_uses_checked_proof_branches() {
         }
     "#;
 
-    verify_c0_sources(click_source, &[])
+    verify_c_sources(click_source, &[])
         .expect("both exact case branches should join through the checked Proof API");
 }
 
@@ -1901,7 +1901,7 @@ fn pure_if_certificate_uses_checked_proof_branches() {
         }
     "#;
 
-    verify_c0_sources(click_source, &[])
+    verify_c_sources(click_source, &[])
         .expect("a proof condition and its exact negation should join through the Proof API");
 }
 
@@ -1921,7 +1921,7 @@ fn pure_have_certificate_uses_checked_proof_scope() {
         }
     "#;
 
-    verify_c0_sources(click_source, &[])
+    verify_c_sources(click_source, &[])
         .expect("a checked nested body should publish its exact fact to the enclosing Proof");
 }
 
@@ -1941,7 +1941,7 @@ fn pure_unfold_then_solve_retains_the_checked_proof_path() {
         }
     "#;
 
-    verify_c0_sources(click_source, &[])
+    verify_c_sources(click_source, &[])
         .expect("pure unfold-then-solve should search on the unfolded Proof successor");
 }
 
@@ -1969,7 +1969,7 @@ fn smart_pure_have_theorem_search_retains_the_checked_scope_body_directly() {
         }
     "#;
 
-    verify_c0_sources(click_source, &[])
+    verify_c_sources(click_source, &[])
         .expect("smart have should apply theorem steps to its nested Proof");
 }
 
@@ -1994,7 +1994,7 @@ fn smart_pure_theorem_application_discharges_exact_goal() {
         }
     "#;
 
-    verify_c0_sources(click_source, &[])
+    verify_c_sources(click_source, &[])
         .expect("an applied pure theorem should discharge an exact matching goal");
 }
 
@@ -2033,7 +2033,7 @@ fn smart_fixed_state_nested_have_theorem_search_retains_checked_scopes() {
     "#;
 
     let (verified, flat_units) =
-        proof::count_flat_proof_units(|| verify_c0_sources(click_source, &[("keep.c", c_source)]));
+        proof::count_flat_proof_units(|| verify_c_sources(click_source, &[("keep.c", c_source)]));
     let verified =
         verified.expect("nested fixed-state have search should verify through Proof scopes");
     assert_eq!(flat_units, 1, "the grouped proof should retain one Proof");
@@ -2050,11 +2050,11 @@ fn smart_fixed_state_nested_have_theorem_search_retains_checked_scopes() {
         "{expanded_debug}"
     );
 
-    let expanded_source = expand_c0_claim_source(
+    let expanded_source = expand_c_claim_source(
         click_source,
         &[("keep.c", c_source)],
         "keep",
-        CProofClaim::Grouped,
+        ContractProofClaim::Grouped,
     )
     .expect("nested checked scopes should serialize");
     assert!(
@@ -2062,7 +2062,7 @@ fn smart_fixed_state_nested_have_theorem_search_retains_checked_scopes() {
             && !expanded_source.contains("apply(restate_zero(x));"),
         "{expanded_source}"
     );
-    verify_c0_sources(&expanded_source, &[("keep.c", c_source)])
+    verify_c_sources(&expanded_source, &[("keep.c", c_source)])
         .expect("the serialized nested fixed-state scopes should independently reverify");
 
     let corrupted = expanded_source.replacen("have x == 0 by {", "have x != 0 by {", 1);
@@ -2070,7 +2070,7 @@ fn smart_fixed_state_nested_have_theorem_search_retains_checked_scopes() {
         corrupted, expanded_source,
         "the expansion should expose the checked leading fixed-state scope"
     );
-    verify_c0_sources(&corrupted, &[("keep.c", c_source)])
+    verify_c_sources(&corrupted, &[("keep.c", c_source)])
         .expect_err("tampering with the extracted fixed-state goal must invalidate the proof");
 }
 
@@ -2122,7 +2122,7 @@ fn leading_logical_have_decomposition_stays_on_one_proof() {
     "#;
 
     let (verified, flat_units) = proof::count_flat_proof_units(|| {
-        verify_c0_sources(click_source, &[("logical_haves.c", c_source)])
+        verify_c_sources(click_source, &[("logical_haves.c", c_source)])
     });
     let verified = verified.expect("leading logical have scopes should verify through Proof");
     assert_eq!(flat_units, 1, "the grouped proof should retain one Proof");
@@ -2138,14 +2138,14 @@ fn leading_logical_have_decomposition_stays_on_one_proof() {
         );
     }
 
-    let rewritten = expand_c0_claim_source(
+    let rewritten = expand_c_claim_source(
         click_source,
         &[("logical_haves.c", c_source)],
         "logical_haves",
-        CProofClaim::Grouped,
+        ContractProofClaim::Grouped,
     )
     .expect("the checked logical scopes should serialize");
-    verify_c0_sources(&rewritten, &[("logical_haves.c", c_source)])
+    verify_c_sources(&rewritten, &[("logical_haves.c", c_source)])
         .expect("the serialized logical scopes should independently reverify");
 }
 
@@ -2203,7 +2203,7 @@ fn leading_universal_have_scopes_stay_on_one_proof() {
     "#;
 
     let (verified, flat_units) = proof::count_flat_proof_units(|| {
-        verify_c0_sources(click_source, &[("universal_haves.c", c_source)])
+        verify_c_sources(click_source, &[("universal_haves.c", c_source)])
     });
     let verified = verified.expect("leading universal have scopes should verify through Proof");
     assert_eq!(flat_units, 1, "the grouped proof should retain one Proof");
@@ -2219,14 +2219,14 @@ fn leading_universal_have_scopes_stay_on_one_proof() {
         );
     }
 
-    let rewritten = expand_c0_claim_source(
+    let rewritten = expand_c_claim_source(
         click_source,
         &[("universal_haves.c", c_source)],
         "universal_haves",
-        CProofClaim::Grouped,
+        ContractProofClaim::Grouped,
     )
     .expect("the checked universal scopes should serialize");
-    verify_c0_sources(&rewritten, &[("universal_haves.c", c_source)])
+    verify_c_sources(&rewritten, &[("universal_haves.c", c_source)])
         .expect("the serialized universal scopes should independently reverify");
 
     let corrupted = rewritten.replacen("}, 1) using {", "}, 0) using {", 1);
@@ -2234,7 +2234,7 @@ fn leading_universal_have_scopes_stay_on_one_proof() {
         corrupted, rewritten,
         "the expansion should expose the checked instantiation argument"
     );
-    let corrupted_result = { verify_c0_sources(&corrupted, &[("universal_haves.c", c_source)]) };
+    let corrupted_result = { verify_c_sources(&corrupted, &[("universal_haves.c", c_source)]) };
     let error = corrupted_result
         .expect_err("tampering with a universal instantiation must invalidate the proof");
     // The instantiation at the wrong argument adds a different fact, so it
@@ -2284,7 +2284,7 @@ fn grouped_top_level_existential_operations_verify_without_fallback() {
     ];
 
     for (operation, click_source) in cases {
-        verify_c0_sources(click_source, &[("identity.c", c_source)]).unwrap_or_else(|error| {
+        verify_c_sources(click_source, &[("identity.c", c_source)]).unwrap_or_else(|error| {
             panic!("grouped top-level {operation} should verify: {error:?}")
         });
     }
@@ -2321,7 +2321,7 @@ fn smart_pure_if_retains_checked_arm_proofs_directly() {
         }
     "#;
 
-    verify_c0_sources(click_source, &[])
+    verify_c_sources(click_source, &[])
         .expect("smart if arms should search by applying steps to branch-local Proofs");
 }
 
@@ -2345,7 +2345,7 @@ fn smart_pure_cases_retains_checked_arm_proofs_directly() {
         }
     "#;
 
-    verify_c0_sources(click_source, &[])
+    verify_c_sources(click_source, &[])
         .expect("smart cases arms should search by applying steps to branch-local Proofs");
 }
 
@@ -2379,7 +2379,7 @@ fn fixed_state_have_cases_certificate_uses_checked_proof_branches() {
         }
     "#;
 
-    verify_c0_sources(click_source, &[("keep.c", c_source)])
+    verify_c_sources(click_source, &[("keep.c", c_source)])
         .expect("fixed-state have cases should check through branch-local Proofs");
 }
 
@@ -2425,7 +2425,7 @@ fn smart_fixed_state_have_if_retains_checked_arm_proofs_directly() {
         }
     "#;
 
-    let verified = verify_c0_sources(click_source, &[("keep.c", c_source)]);
+    let verified = verify_c_sources(click_source, &[("keep.c", c_source)]);
     let verified = verified
         .expect("smart fixed-state-have arms should retain their checked Proof descendants");
     let expanded = verified[0]
@@ -2435,11 +2435,11 @@ fn smart_fixed_state_have_if_retains_checked_arm_proofs_directly() {
         format!("{expanded:?}").contains("ApplyTheoremUsing"),
         "{expanded:#?}"
     );
-    let expanded_source = expand_c0_claim_source(
+    let expanded_source = expand_c_claim_source(
         click_source,
         &[("keep.c", c_source)],
         "keep",
-        CProofClaim::Grouped,
+        ContractProofClaim::Grouped,
     )
     .expect("the checked fixed-state branch paths should serialize");
     assert!(
@@ -2449,7 +2449,7 @@ fn smart_fixed_state_have_if_retains_checked_arm_proofs_directly() {
             && !expanded_source.contains("apply(inequality_case(x));"),
         "{expanded_source}"
     );
-    verify_c0_sources(&expanded_source, &[("keep.c", c_source)])
+    verify_c_sources(&expanded_source, &[("keep.c", c_source)])
         .expect("the serialized fixed-state branch paths should independently reverify");
 }
 
@@ -2474,7 +2474,7 @@ fn leading_universal_contradiction_scope_stays_on_proof() {
     "#;
 
     let (verified, flat_units) = proof::count_flat_proof_units(|| {
-        verify_c0_sources(click_source, &[("impossible_universal.c", c_source)])
+        verify_c_sources(click_source, &[("impossible_universal.c", c_source)])
     });
     verified.expect("a checked contradiction should close the leading universal scope");
     assert_eq!(flat_units, 1, "the grouped proof should retain one Proof");
@@ -2505,7 +2505,7 @@ fn enumerate_closes_a_constant_bounded_universal_goal() {
         }
     "#;
 
-    verify_c0_sources(click_source, &[("keep.c", c_source)])
+    verify_c_sources(click_source, &[("keep.c", c_source)])
         .expect("written instances should close the bounded universal by enumeration");
 }
 
@@ -2536,7 +2536,7 @@ fn enumerate_requires_each_in_range_instance_as_an_available_fact() {
         }
     "#;
 
-    let error = verify_c0_sources(click_source, &[("keep.c", c_source)])
+    let error = verify_c_sources(click_source, &[("keep.c", c_source)])
         .expect_err("a missing in-range instance must fail the enumeration");
     assert!(
         error
@@ -2572,7 +2572,7 @@ fn enumerate_requires_a_constant_bounded_universal_goal() {
         }
     "#;
 
-    let error = verify_c0_sources(click_source, &[("keep.c", c_source)])
+    let error = verify_c_sources(click_source, &[("keep.c", c_source)])
         .expect_err("an unbounded universal goal must not enumerate");
     assert!(
         error
@@ -2628,7 +2628,7 @@ fn disjunctive_premise_solve_expands_to_a_replayable_certificate() {
         }
     "#;
 
-    let verified = verify_c0_sources(click_source, &[("select_first.c", c_source)])
+    let verified = verify_c_sources(click_source, &[("select_first.c", c_source)])
         .expect("the disjunctive-premise postcondition should verify");
     let expanded = verified[0].expanded_proof_tactics().unwrap_or_else(|| {
         panic!(
@@ -2648,7 +2648,7 @@ fn disjunctive_premise_solve_expands_to_a_replayable_certificate() {
     let expanded_source = expand_checked_grouped_claim(click_source, &verified, "select_first")
         .expect("the checked disjunctive proof should print");
     crate::surface::proof::without_implicit_solve(|| {
-        verify_c0_sources(&expanded_source, &[("select_first.c", c_source)])
+        verify_c_sources(&expanded_source, &[("select_first.c", c_source)])
     })
     .expect("the printed disjunctive certificate must cold-check without search");
 }
@@ -2665,21 +2665,21 @@ fn explicit_pointer_translation_checks_only_named_premises() {
             }
         }
     "#;
-    verify_c0_sources(source, &[]).unwrap_or_else(|e| panic!("{}", e.message()));
+    verify_c_sources(source, &[]).unwrap_or_else(|e| panic!("{}", e.message()));
     for omitted in [
         "solve() using { p == arr + i; }",
         "solve() using { i < n; }",
     ] {
         let missing = source.replace("solve() using { p == arr + i; i < n; }", omitted);
         assert!(
-            verify_c0_sources(&missing, &[]).is_err(),
+            verify_c_sources(&missing, &[]).is_err(),
             "unnamed ambient premises must not be used"
         );
     }
     let unavailable = source.replace("requires i < n;", "requires i <= n;");
-    assert!(verify_c0_sources(&unavailable, &[]).is_err());
+    assert!(verify_c_sources(&unavailable, &[]).is_err());
     let wrong = source.replace("ensures p + 1", "ensures p + 2");
-    assert!(verify_c0_sources(&wrong, &[]).is_err());
+    assert!(verify_c_sources(&wrong, &[]).is_err());
 }
 
 #[test]
@@ -2704,7 +2704,7 @@ fn pure_rewrite_rejects_an_int32_equality_that_is_not_available() {
         }
     "#;
 
-    let error = verify_c0_sources(click_source, &[])
+    let error = verify_c_sources(click_source, &[])
         .expect_err("a rewrite by an unproven equality must fail check");
     assert!(
         error
@@ -2730,7 +2730,7 @@ fn branching_pure_disjunction_lowers_to_left_right_certificate() {
         }
     "#;
 
-    verify_c0_sources(click_source, &[]).expect(
+    verify_c_sources(click_source, &[]).expect(
         "each branch proves its polarity-equivalent disjunct, so the smart branching proof should lower to left/right",
     );
 }
@@ -2752,7 +2752,7 @@ fn assumption_rejects_a_disjunction_neither_side_of_which_is_a_fact() {
         }
     "#;
 
-    let error = verify_c0_sources(click_source, &[])
+    let error = verify_c_sources(click_source, &[])
         .expect_err("a disjunction with no available side must fail check");
     assert!(
         error.message().contains("is not available"),
@@ -2775,7 +2775,7 @@ fn smart_nonstrict_then_strict_transitivity_closes_a_pure_goal() {
         }
     "#;
 
-    verify_c0_sources(click_source, &[]).expect(
+    verify_c_sources(click_source, &[]).expect(
         "a non-strict leg followed by a strict leg should close through `integer::int32_less_equal_less_than_transitive`",
     );
 }
@@ -2806,7 +2806,7 @@ fn apply_le_lt_transitive_requires_its_nonstrict_leg_listed() {
         }
     "#;
 
-    let error = verify_c0_sources(click_source, &[])
+    let error = verify_c_sources(click_source, &[])
         .expect_err("a transitivity application missing its non-strict leg must fail");
     assert!(
         error.message().contains("required exact fact"),
@@ -2832,7 +2832,7 @@ fn smart_rewrite_folds_substituted_constants_to_a_strict_constant_bound() {
         }
     "#;
 
-    verify_c0_sources(click_source, &[]).expect(
+    verify_c_sources(click_source, &[]).expect(
         "the folded constant successor should close through the strict constant lower bound",
     );
 }
@@ -2862,7 +2862,7 @@ fn apply_lt_le_transitive_rejects_a_false_constant_leg() {
         }
     "#;
 
-    let error = verify_c0_sources(click_source, &[])
+    let error = verify_c_sources(click_source, &[])
         .expect_err("a false constant leg must not be rubber-stamped");
     assert!(
         error.message().contains("required exact fact"),
@@ -2895,7 +2895,7 @@ fn apply_predecessor_upper_bound_closes_from_both_listed_legs() {
         }
     "#;
 
-    verify_c0_sources(click_source, &[]).expect(
+    verify_c_sources(click_source, &[]).expect(
         "a nonnegative value's predecessor should keep its upper bound through \
          an applied predecessor-bound theorem",
     );
@@ -2939,7 +2939,7 @@ fn outcome_predecessor_upper_bound_writes_a_rewritten_nonnegative_leg() {
         }
     "#;
 
-    let verified = verify_c0_sources(click_source, &[("drop_one.c", c_source)]);
+    let verified = verify_c_sources(click_source, &[("drop_one.c", c_source)]);
     verified.unwrap_or_else(|error| {
         panic!(
             "the outcome conjunction should split and close its predecessor bound: {}",
@@ -2974,7 +2974,7 @@ fn apply_predecessor_upper_bound_requires_its_nonnegative_leg_listed() {
         }
     "#;
 
-    let error = verify_c0_sources(click_source, &[])
+    let error = verify_c_sources(click_source, &[])
         .expect_err("a predecessor bound application missing its nonnegative leg must fail");
     assert!(
         error.message().contains("required exact fact"),
@@ -3008,7 +3008,7 @@ fn apply_predecessor_upper_bound_rejects_a_false_nonnegative_leg() {
         }
     "#;
 
-    let error = verify_c0_sources(click_source, &[])
+    let error = verify_c_sources(click_source, &[])
         .expect_err("a false nonnegative leg must not be rubber-stamped");
     assert!(
         error.message().contains("required exact fact"),
@@ -3044,14 +3044,14 @@ theorem three_way(x: int32) {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_20")]
 fn three_arm_cases_verifies_and_expands() {
-    verify_c0_sources(THREE_WAY_CASES, &[]).unwrap_or_else(|error| panic!("{}", error.message()));
-    let expanded = expand_c0_claim_source_by_label(THREE_WAY_CASES, &[], "three_way.ensures_0")
+    verify_c_sources(THREE_WAY_CASES, &[]).unwrap_or_else(|error| panic!("{}", error.message()));
+    let expanded = expand_c_claim_source_by_label(THREE_WAY_CASES, &[], "three_way.ensures_0")
         .unwrap_or_else(|error| panic!("{}", error.message()));
     for arm in ["x == 1 => {", "x == 2 => {", "x == 3 => {"] {
         assert!(expanded.contains(arm), "{expanded}");
     }
     assert!(!expanded.contains("solve();"), "{expanded}");
-    verify_c0_sources(&expanded, &[])
+    verify_c_sources(&expanded, &[])
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }
 
@@ -3064,7 +3064,7 @@ fn reordered_cases_check_bodies_under_their_written_assumptions() {
         .replacen("x == 1 => {", "x == 0 => {", 1)
         .replacen("x == 2 => {", "x == 1 => {", 1)
         .replacen("x == 0 => {", "x == 2 => {", 1);
-    let error = verify_c0_sources(&reordered, &[])
+    let error = verify_c_sources(&reordered, &[])
         .expect_err("the first body still cites x == 1 while its arm assumes x == 2");
     assert!(
         error
@@ -3074,7 +3074,7 @@ fn reordered_cases_check_bodies_under_their_written_assumptions() {
         error.message()
     );
     let corrected = reordered.replacen("rewrite(x == 1);", "rewrite(x == 2);", 1);
-    verify_c0_sources(&corrected, &[]).expect("reordered exhaustive alternatives work");
+    verify_c_sources(&corrected, &[]).expect("reordered exhaustive alternatives work");
 }
 
 /// `outcomes` names its arms like `match` does, so they may come in either
@@ -3132,10 +3132,10 @@ fn pure_machine_witness_instantiates_supported_c_binders() {
             }
         }
     "#;
-    verify_c0_sources(source, &[]).expect("pure witness accepts machine and pointer binders");
+    verify_c_sources(source, &[]).expect("pure witness accepts machine and pointer binders");
     let false_claim = source.replace("b: 0", "b: 1");
     assert!(
-        verify_c0_sources(&false_claim, &[]).is_err(),
+        verify_c_sources(&false_claim, &[]).is_err(),
         "the instantiated body must still be proved"
     );
 }
@@ -3170,7 +3170,7 @@ fn pure_machine_witness_rejects_wrong_types_with_binder_and_types() {
             "int64*",
         ),
     ] {
-        let error = verify_c0_sources(source, &[]).expect_err("witness type must match its binder");
+        let error = verify_c_sources(source, &[]).expect_err("witness type must match its binder");
         let message = error.message();
         assert!(message.contains("witness `x`"), "{message}");
         assert!(
@@ -3191,16 +3191,16 @@ fn pure_machine_witness_preserves_lexical_bindings_and_pointer_types() {
         let source = format!(
             "theorem retain(p: {pointer_type}) {{ let saved = p; ensures exists (p: {pointer_type}) {{ p == saved }} by {{ witness {{ p: p }}; solve(); }} }}"
         );
-        verify_c0_sources(&source, &[])
+        verify_c_sources(&source, &[])
             .unwrap_or_else(|error| panic!("{pointer_type}: {}", error.message()));
     }
     let source = "theorem retain(n: int32) { let saved = n; ensures exists (n: int32) { n == saved } by { witness { n: n }; solve(); } }";
-    verify_c0_sources(source, &[])
+    verify_c_sources(source, &[])
         .expect("a witness keeps its lexical alias despite binder shadowing");
     let position = expansion::position_at_offset(source, source.find("solve();").unwrap());
-    let expanded = expand_c0_tactic_source_at(source, &[], position.line, position.column)
+    let expanded = expand_c_tactic_source_at(source, &[], position.line, position.column)
         .expect("the proof after a pure machine witness expands");
-    verify_c0_sources(&expanded, &[]).expect("the expanded witness proof re-verifies");
+    verify_c_sources(&expanded, &[]).expect("the expanded witness proof re-verifies");
 }
 
 #[test]
@@ -3212,19 +3212,19 @@ fn pure_machine_witness_preserves_binder_widths() {
         let source = format!(
             "theorem retain(n: {scalar_type}) {{ ensures exists (x: {scalar_type}) {{ x == n }} by {{ witness {{ x: n }}; solve(); }} }}"
         );
-        verify_c0_sources(&source, &[])
+        verify_c_sources(&source, &[])
             .unwrap_or_else(|error| panic!("{scalar_type}: {}", error.message()));
         // Type bounds are supplied by the typed binder's introduction;
         // only the written forall needs an intro, at every machine width.
         let source = format!(
             "theorem retain(n: {scalar_type}) {{ ensures forall (x: {scalar_type}) {{ exists (y: {scalar_type}) {{ y == x }} }} by {{ intro(); witness {{ y: x }}; solve(); }} }}"
         );
-        verify_c0_sources(&source, &[])
+        verify_c_sources(&source, &[])
             .unwrap_or_else(|error| panic!("{scalar_type} universal: {}", error.message()));
         let position = expansion::position_at_offset(&source, source.find("solve();").unwrap());
-        let expanded = expand_c0_tactic_source_at(&source, &[], position.line, position.column)
+        let expanded = expand_c_tactic_source_at(&source, &[], position.line, position.column)
             .expect("typed witness proof expands");
-        verify_c0_sources(&expanded, &[]).expect("expanded typed witness proof re-verifies");
+        verify_c_sources(&expanded, &[]).expect("expanded typed witness proof re-verifies");
     }
 }
 
@@ -3241,7 +3241,7 @@ fn pure_machine_witness_rejects_different_widths_and_signedness() {
             "theorem bad(n: {witness}) {{ ensures exists (x: {binder}) {{ x == x }} by {{ witness {{ x: n }}; solve(); }} }}"
         );
         let error =
-            verify_c0_sources(&source, &[]).expect_err("witness must have the exact binder type");
+            verify_c_sources(&source, &[]).expect_err("witness must have the exact binder type");
         assert!(
             error.message().contains("wrong type"),
             "{}",
@@ -3296,12 +3296,12 @@ fn pure_witness_captures_declaration_aliases_and_reverifies_expansion() {
             }}
         "#
         );
-        verify_c0_sources(&source, &[]).unwrap_or_else(|error| panic!("{ty}: {}", error.message()));
+        verify_c_sources(&source, &[]).unwrap_or_else(|error| panic!("{ty}: {}", error.message()));
         for label in ["retain", "captured", "shadow_alias", "nested"] {
             let expanded =
-                expand_c0_claim_source_by_label(&source, &[], &format!("{label}.ensures_0"))
+                expand_c_claim_source_by_label(&source, &[], &format!("{label}.ensures_0"))
                     .expect("alias witness proof should expand");
-            verify_c0_sources(&expanded, &[]).expect("expanded alias witness should reverify");
+            verify_c_sources(&expanded, &[]).expect("expanded alias witness should reverify");
         }
     }
 }
@@ -3323,7 +3323,7 @@ fn pure_witness_aliases_preserve_outer_binding_and_do_not_prove_false_bodies() {
             }}
         "#
         );
-        let error = verify_c0_sources(&source, &[])
+        let error = verify_c_sources(&source, &[])
             .expect_err("outer alias cannot equal every introduced value");
         assert!(
             error.message().contains("did not normalize to true"),
@@ -3349,14 +3349,14 @@ fn pure_witness_declaration_aliases_keep_literal_types_and_source_scope() {
             ensures exists (q: Flag) { q == saved } by { witness { q: saved }; solve(); }
         }
     "#;
-    verify_c0_sources(source, &[]).expect("aliases retain their C, Integer and algebraic types");
+    verify_c_sources(source, &[]).expect("aliases retain their C, Integer and algebraic types");
     let later = r#"
         theorem later(p: int32) {
             ensures exists (q: int32) { q == p } by { witness { q: saved }; solve(); }
             let saved = p;
         }
     "#;
-    let error = verify_c0_sources(later, &[]).expect_err("a later declaration is not in scope");
+    let error = verify_c_sources(later, &[]).expect_err("a later declaration is not in scope");
     assert!(
         error.message().contains("unbound variable `saved`"),
         "{}",
@@ -3398,10 +3398,10 @@ const TERMINAL_BINDINGS_CLICK: &str = r#"
 fn terminal_if_tactics_keep_their_call_bindings_in_their_own_arms() {
     let source = TERMINAL_BINDINGS_CLICK;
     let sources = [("terminal_bindings.c", TERMINAL_BINDINGS_C)];
-    let verified = verify_c0_sources(source, &sources)
+    let verified = verify_c_sources(source, &sources)
         .expect("each checked call alias remains in its own arm after execute");
     let expanded = expand_checked_grouped_claim(source, &verified, "f").unwrap();
-    verify_c0_sources(&expanded, &sources)
+    verify_c_sources(&expanded, &sources)
         .expect("the expanded call-binding proof checks independently");
 }
 
@@ -3417,7 +3417,7 @@ fn terminal_if_tactics_refuse_sibling_bindings_and_false_results() {
             "ensures returned: result != n;",
         ),
     ] {
-        let error = verify_c0_sources(&invalid, &sources)
+        let error = verify_c_sources(&invalid, &sources)
             .expect_err("sibling aliases and false results are refused");
         assert_eq!(error.kind(), ClickErrorKind::Proof, "{error}");
         assert!(!error.message().contains("budget exhausted"), "{error}");
@@ -3438,7 +3438,7 @@ fn terminal_if_tactics_keep_claim_local_existential_witnesses() {
             "solve();\n            }",
             "obtain (w: int32) { w == n }; witness { j: w }; solve();\n            }",
         );
-    verify_c0_sources(&existential, &sources)
+    verify_c_sources(&existential, &sources)
         .expect("post-execution existence proofs retain their own obtained witnesses");
 }
 
@@ -3612,10 +3612,10 @@ fn check_trivial_disjuncts_expand_and_replay(goals: &[&str]) {
             &source,
             source.find("solve();").unwrap(),
         );
-        let expanded = expand_c0_tactic_source_at(&source, &[], position.line, position.column)
+        let expanded = expand_c_tactic_source_at(&source, &[], position.line, position.column)
             .expect("the direct disjunct has an explicit proof");
         assert!(!expanded.contains("solve();"), "{expanded}");
-        crate::surface::proof::without_implicit_solve(|| verify_c0_sources(&expanded, &[]))
+        crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &[]))
             .expect("the disjunct certificate cold-replays");
     }
 }
@@ -3628,6 +3628,6 @@ fn solve_trivial_disjuncts_reject_false_goals() {
         "(n == 1u64 implies false) or n == 2u64",
     ] {
         let source = format!("theorem invalid(n: uint64) {{ ensures {goal} by solve(); }}");
-        verify_c0_sources(&source, &[]).expect_err("neither disjunct holds for every n");
+        verify_c_sources(&source, &[]).expect_err("neither disjunct holds for every n");
     }
 }

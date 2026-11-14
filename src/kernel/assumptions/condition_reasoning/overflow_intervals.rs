@@ -135,7 +135,7 @@ impl PureFactContext {
             } => {
                 // Both operands are symbolic here; the arms above decide every
                 // constant operand. The zero divisor is split off before this
-                // condition is asked (`apply_c_int32_division_nonzero`), and the
+                // condition is asked (`apply_program_int32_division_nonzero`), and the
                 // condition is exactly `left == INT_MIN && right == -1`
                 // (`ConditionTerm::signed_divide_overflows`), so, as the int64
                 // arm decides from intervals, a divisor range without `-1` or

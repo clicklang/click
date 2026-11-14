@@ -380,7 +380,7 @@ Every read application (pointer, int32 and uint64) takes the read's
 *numeric* address, `UInt64Address(address class)`, as its operand, not the
 pointer's address class. Memory is addressed, so two reads of one snapshot at
 equal addresses read the same bytes. A C pointer comparison states only a
-uint64 address equality (`c_pointer_comparison_condition`), which merges the
+uint64 address equality (`program_pointer_comparison_condition`), which merges the
 two numeric addresses and so the reads, but never the address classes that
 pointer equality and read authority use. Equal pointers still have equal
 numeric addresses by congruence. The first read at a displaced address

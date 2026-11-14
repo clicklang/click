@@ -2,17 +2,21 @@ use super::*;
 
 fn guard(operator: ComparisonOperator, value: u32) -> SpecProposition {
     SpecProposition::Comparison {
-        left: SpecExpression::ProgramExpression(c_variable("active")),
+        left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
+            "active",
+        )),
         operator,
-        right: SpecExpression::ProgramExpression(c_int32_literal(value)),
+        right: SpecExpression::ProgramExpression(crate::kernel::program_expression::int32_literal(
+            value,
+        )),
     }
 }
 
 fn segment(guard: Option<SpecProposition>, start: u32, end: u32) -> MemorySegment {
     let segment = MemorySegment::new(
-        c_variable("cells"),
-        c_int32_literal(start),
-        c_int32_literal(end),
+        crate::kernel::program_expression::variable("cells"),
+        crate::kernel::program_expression::int32_literal(start),
+        crate::kernel::program_expression::int32_literal(end),
     );
     match guard {
         Some(guard) => segment.with_guard(guard),
@@ -21,11 +25,11 @@ fn segment(guard: Option<SpecProposition>, start: u32, end: u32) -> MemorySegmen
 }
 
 fn function_with_segment(name: &str, segment: MemorySegment) -> ProgramFunction {
-    c_function(
+    program_function(
         ProgramType::Void,
         name,
         Vec::new(),
-        c_return(c_void_value()),
+        program_return(program_void_value()),
     )
     .with_contract(Vec::new(), Vec::new(), vec![segment], Vec::new(), true)
 }

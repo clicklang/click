@@ -840,7 +840,7 @@ impl SharedMachineIntegerTerm {
 
     /// Retain exact operand identity, including producer and read metadata.
     pub(crate) fn from_shared(ty: MachineIntegerType, term: KernelTerm) -> Option<Self> {
-        if term.ty() != &KernelType::C(ty.c_type()) || !term.is_shared_machine_operand() {
+        if term.ty() != &KernelType::Program(ty.c_type()) || !term.is_shared_machine_operand() {
             return None;
         }
         crate::instrumentation::record_deterministic_work(1);
@@ -1008,13 +1008,13 @@ impl MachineIntegerKey {
     fn native(ty: MachineIntegerType, value: MachineTerm) -> Self {
         if let MachineTerm::ClickFunctionApplication { name, arguments } = value {
             return Self::Application {
-                arena: super::c_memory_arena_token(),
+                arena: super::memory_arena_token(),
                 ty,
                 application: SharedPureApplication::intern(name, arguments),
             };
         }
         Self::Legacy {
-            arena: super::c_memory_arena_token(),
+            arena: super::memory_arena_token(),
             ty,
             value,
         }

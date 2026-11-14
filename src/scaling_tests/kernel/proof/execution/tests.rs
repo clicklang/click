@@ -81,7 +81,7 @@ fn named_cell_check_rejects_removals_and_ignores_unchanged_cells() {
             );
         }
         let name = crate::kernel::canonical_form_of_load(
-            crate::kernel::intern_c_memory(before.clone()),
+            crate::kernel::intern_memory(before.clone()),
             target.clone(),
             crate::kernel::LoadKind::Int32,
         );
@@ -108,7 +108,7 @@ fn constructor_partition_transports_pointer_payloads_without_scanning_ambient_fa
     let program = Pointer::symbolic(Variable(1_000_001));
     value.node = crate::kernel::AlgebraicTermNode::Constructor {
         variant: "C0".into(),
-        fields: vec![crate::kernel::AlgebraicValue::C(
+        fields: vec![crate::kernel::AlgebraicValue::Program(
             ProgramValue::typed_pointer(payload.clone(), ProgramType::Int32Pointer),
         )],
     };
@@ -275,7 +275,7 @@ fn cached_body_loadability_work_is_linear_in_cache_delta_and_selected_facts() {
     });
     for size in [16u32, 32, 64, 128] {
         let cached = (0..size).fold(before.clone(), |memory, index| {
-            let source = crate::kernel::intern_c_memory_ref(&memory);
+            let source = crate::kernel::intern_memory_ref(&memory);
             memory.with_seeded_cells(
                 Pointer {
                     block: format!("cache-{index}").into(),
@@ -288,7 +288,7 @@ fn cached_body_loadability_work_is_linear_in_cache_delta_and_selected_facts() {
                 source,
             )
         });
-        let view = |memory, index| Proposition::CMemoryLoadable {
+        let view = |memory, index| Proposition::MemoryLoadable {
             memory,
             base: Pointer {
                 block: "body".into(),
@@ -331,7 +331,7 @@ fn return_materialized_reads_scale_with_the_selected_cells() {
         let initial = base.clone();
         let context = returned_proposition_context(&state);
         for pointer in pointers {
-            let fact = Proposition::CMemoryLoadable {
+            let fact = Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: pointer,
                 bytes: MachineTerm::constant(4),
@@ -405,7 +405,7 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
     use crate::kernel::{ResourceFieldSchema, ResourceFieldType, ResourceInstance, Variable};
     let schema = ResourceFieldSchema::new(vec![(
         "value".into(),
-        ResourceFieldType::C(ProgramType::Int32),
+        ResourceFieldType::Program(ProgramType::Int32),
     )])
     .unwrap();
     let instance = ResourceInstance::new(
@@ -438,7 +438,7 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
     )
     .with_instance_schema(Some(schema));
     let statement = ProgramStatement::Return(ProgramExpression::Value(int32(7)));
-    let function = c_function(ProgramType::Int32, "test", vec![], statement.clone())
+    let function = program_function(ProgramType::Int32, "test", vec![], statement.clone())
         .with_composite_resource_definitions(vec![definition.clone()]);
     let selected = ResourceFact::own(Resource::Instance(instance.clone()));
     let folded = ExecutionState::new()
@@ -455,7 +455,7 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
     let trace = |state: ExecutionState| {
         let mut trace = ExecutionEvidence::default();
         trace.push(CheckedExecutionEvent::Statement(Theorem::new(
-            Proposition::CStatementVerifies {
+            Proposition::ProgramStatementVerifies {
                 state: Box::new(state.clone()),
                 statement: Box::new(statement.clone()),
                 outcome: StatementOutcome::Return {
@@ -637,7 +637,7 @@ fn instance_rewrite_certificate_rejects_unrelated_state_and_fact_changes() {
     use crate::kernel::{ResourceFieldSchema, ResourceFieldType, ResourceInstance, Variable};
     let schema = ResourceFieldSchema::new(vec![(
         "value".into(),
-        ResourceFieldType::C(ProgramType::Int32),
+        ResourceFieldType::Program(ProgramType::Int32),
     )])
     .unwrap();
     let instance = ResourceInstance::new(
@@ -650,7 +650,7 @@ fn instance_rewrite_certificate_rejects_unrelated_state_and_fact_changes() {
     .unwrap();
     let definition = CompositeResourceDefinition::new("cell", vec![], None, false, vec![], vec![])
         .with_instance_schema(Some(schema));
-    let function = c_function(
+    let function = program_function(
         ProgramType::Void,
         "test",
         vec![],
@@ -816,13 +816,13 @@ fn interface_abstraction_work_scales_with_unrelated_locals_and_memory() {
         let ((then_join, else_join), work) =
             crate::instrumentation::measure_deterministic_work(|| {
                 (
-                    crate::kernel::abstract_c_state_for_interface_join_across(
+                    crate::kernel::abstract_execution_state_for_interface_join_across(
                         &then_state,
                         &siblings,
                         0,
                     )
                     .expect("the then arm should abstract"),
-                    crate::kernel::abstract_c_state_for_interface_join_across(
+                    crate::kernel::abstract_execution_state_for_interface_join_across(
                         &else_state,
                         &siblings,
                         0,
@@ -989,7 +989,7 @@ fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
 fn interface_read_premises_are_indexed_and_check_the_exact_range() {
     use crate::kernel::{Memory, Pointer};
     let memory = Memory::new();
-    let readable = |memory: Memory, block: String, width| Proposition::CMemoryLoadable {
+    let readable = |memory: Memory, block: String, width| Proposition::MemoryLoadable {
         memory,
         base: Pointer {
             block: block.into(),
@@ -1084,7 +1084,7 @@ fn constructing_an_instance_fold_pays_for_its_body_once() {
         let _session = crate::kernel::VerificationSession::enter();
         let schema = ResourceFieldSchema::new(vec![(
             "tag".into(),
-            ResourceFieldType::C(ProgramType::Int32),
+            ResourceFieldType::Program(ProgramType::Int32),
         )])
         .unwrap();
         let instance = ResourceInstance::new(
@@ -1109,7 +1109,7 @@ fn constructing_an_instance_fold_pays_for_its_body_once() {
         let definition =
             CompositeResourceDefinition::new("cell", vec![], None, false, vec![], clauses)
                 .with_instance_schema(Some(schema));
-        let function = c_function(
+        let function = program_function(
             ProgramType::Void,
             "test",
             vec![],
@@ -1179,7 +1179,7 @@ fn a_checked_interface_join_does_not_reconstruct_a_calls_havoc() {
         let after_state = before_state.clone().with_memory(after.clone());
         let parent =
             ExecutionProofCore::at_entry(before_state.clone(), ExecutionFrontier::default());
-        let effect = ExecutionPureFact::internal(Proposition::CMemoryEffectSummary {
+        let effect = ExecutionPureFact::internal(Proposition::MemoryEffectSummary {
             before: memory.clone(),
             after: after.clone(),
             mutable_ranges: vec![range.clone()],
@@ -1207,7 +1207,7 @@ fn a_checked_interface_join_does_not_reconstruct_a_calls_havoc() {
             )
         });
         let joined = joined.unwrap();
-        assert!(joined.iter().any(|fact| fact.is_join_summary() && matches!(fact.proposition(), Proposition::CMemoryEffectSummary { mutable_ranges, .. } if mutable_ranges == std::slice::from_ref(&range))));
+        assert!(joined.iter().any(|fact| fact.is_join_summary() && matches!(fact.proposition(), Proposition::MemoryEffectSummary { mutable_ranges, .. } if mutable_ranges == std::slice::from_ref(&range))));
         samples.push(work);
     }
     assert!(
@@ -1223,7 +1223,7 @@ fn taking_a_constructor_arm_reuses_its_constructed_fact_context() {
         let (core, mut value) = constructor_partition_fixture(2);
         value.node = crate::kernel::AlgebraicTermNode::Constructor {
             variant: "C0".into(),
-            fields: vec![crate::kernel::AlgebraicValue::C(ProgramValue::Int32(
+            fields: vec![crate::kernel::AlgebraicValue::Program(ProgramValue::Int32(
                 MachineTerm::ClickFunctionApplication {
                     name: "opaque_payload".into(),
                     arguments: (0..count)

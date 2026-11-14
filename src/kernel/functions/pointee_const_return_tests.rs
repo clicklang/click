@@ -5,7 +5,7 @@ fn function(constant: bool) -> ProgramFunction {
         ProgramType::UInt8Pointer,
         "text",
         Vec::new(),
-        c_return(c_int32_literal(0)),
+        program_return(crate::kernel::program_expression::int32_literal(0)),
     )
     .with_return_pointee_constant(constant)
 }
@@ -67,7 +67,7 @@ fn pointee_const_return_contract_signature_checks_qualifier() {
 #[test]
 fn pointee_const_return_function_address_cannot_convert_to_mutable_callback() {
     let target = function(true);
-    let parameter = c_parameter("callback", function(false).function_pointer_type());
+    let parameter = program_parameter("callback", function(false).function_pointer_type());
     let environment = ExecutionEnvironment::new().with_function(target);
     let value = type_function_address_value(
         &ProgramExpression::FunctionAddress("text".to_string()),
@@ -80,27 +80,33 @@ fn pointee_const_return_function_address_cannot_convert_to_mutable_callback() {
         ),
         Some(&environment),
     );
-    assert!(coerce_c_function_argument_without_obligations(&value, &parameter).is_none());
+    assert!(coerce_program_function_argument_without_obligations(&value, &parameter).is_none());
 }
 
 #[test]
 fn pointee_const_return_arguments_cannot_discard_const() {
     for constant in [false, true] {
         let parameter =
-            c_parameter("text", ProgramType::UInt8Pointer).with_pointee_constant(constant);
+            program_parameter("text", ProgramType::UInt8Pointer).with_pointee_constant(constant);
         assert_eq!(
-            coerce_c_function_argument_without_obligations(&pointer(true), &parameter).is_some(),
+            coerce_program_function_argument_without_obligations(&pointer(true), &parameter)
+                .is_some(),
             constant
         );
         let callee = ProgramFunction::new(
             ProgramType::Void,
             "consume",
             vec![parameter],
-            c_return(c_int32_literal(0)),
+            program_return(crate::kernel::program_expression::int32_literal(0)),
         );
         assert_eq!(
-            coerce_c_function_arguments(&callee, &[pointer(true)], &[], &PureFactContext::new())
-                .is_some(),
+            coerce_program_function_arguments(
+                &callee,
+                &[pointer(true)],
+                &[],
+                &PureFactContext::new()
+            )
+            .is_some(),
             constant
         );
     }
@@ -112,13 +118,13 @@ fn pointee_const_return_string_literal_storage_is_read_only_but_type_is_mutable(
         ProgramType::UInt8Pointer,
         "literal_source",
         Vec::new(),
-        c_return(c_variable("literal")),
+        program_return(crate::kernel::program_expression::variable("literal")),
     )
     .with_string_literals(vec![StringLiteral::new("literal", b"ok\0".to_vec())]);
-    let state = initialize_c_function_globals(&ExecutionState::new(), &function);
-    let paths = evaluate_c_expression_paths(
+    let state = initialize_program_function_globals(&ExecutionState::new(), &function);
+    let paths = evaluate_program_expression_paths(
         &state,
-        &c_variable("literal"),
+        &crate::kernel::program_expression::variable("literal"),
         &PureFactContext::new(),
         &mut ExecutionBudget::default(),
     )

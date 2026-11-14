@@ -103,7 +103,7 @@ fn rigid_parameters_are_typed_values_not_empty_datatypes() {
 }
 
 fn maybe_int32_type() -> AlgebraicType {
-    let arguments = vec![AlgebraicValueType::C(ProgramType::Int32)];
+    let arguments = vec![AlgebraicValueType::Program(ProgramType::Int32)];
     let variants: std::sync::Arc<[AlgebraicVariantType]> = vec![
         AlgebraicVariantType {
             name: "None".to_string(),
@@ -111,7 +111,7 @@ fn maybe_int32_type() -> AlgebraicType {
         },
         AlgebraicVariantType {
             name: "Some".to_string(),
-            fields: vec![AlgebraicValueType::C(ProgramType::Int32)],
+            fields: vec![AlgebraicValueType::Program(ProgramType::Int32)],
         },
     ]
     .into();
@@ -139,7 +139,7 @@ fn maybe_constructor(
         algebraic_type: algebraic_type.clone(),
         node: AlgebraicTermNode::Constructor {
             variant: variant.to_string(),
-            fields: fields.into_iter().map(AlgebraicValue::C).collect(),
+            fields: fields.into_iter().map(AlgebraicValue::Program).collect(),
         },
     }
 }
@@ -344,7 +344,7 @@ fn algebraic_symbolic_reflexivity_checks_well_formed_terms() {
                 AlgebraicResultMatchArm {
                     binding_names: Default::default(),
                     variant: "Some".to_string(),
-                    bindings: vec![AlgebraicValue::C(ProgramValue::Int32(
+                    bindings: vec![AlgebraicValue::Program(ProgramValue::Int32(
                         MachineTerm::Variable(Variable(89_011)),
                     ))],
                     body: call.clone(),
@@ -1017,7 +1017,7 @@ fn pure_theorem_completion_issues_universally_closed_authority() {
         |body, var| Proposition::ForAll {
             name: Default::default(),
             var: *var,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(body),
         },
     );
@@ -2130,7 +2130,7 @@ fn condition_fact_matching_ignores_unrelated_local_memory() {
     let old_memory = empty_memory.clone().store(
         owner.clone(),
         int32(MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(empty_memory),
+            crate::kernel::intern_memory(empty_memory),
             Box::new(owner),
             crate::kernel::LoadKind::Int32,
         )),
@@ -2143,14 +2143,14 @@ fn condition_fact_matching_ignores_unrelated_local_memory() {
         .with_block("local:ignored", 4)
         .store(ignored_local, int32(MachineTerm::Variable(Variable(1))));
     let old_load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory(old_memory),
+        crate::kernel::intern_memory(old_memory),
         Box::new(owner_field.clone()),
         crate::kernel::LoadKind::Int32,
     );
     let fact = Proposition::ConditionIs(
         ConditionTerm::equal(
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(before_local),
+                crate::kernel::intern_memory(before_local),
                 Box::new(owner_field.clone()),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -2161,7 +2161,7 @@ fn condition_fact_matching_ignores_unrelated_local_memory() {
     let target = Proposition::ConditionIs(
         ConditionTerm::equal(
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(after_local),
+                crate::kernel::intern_memory(after_local),
                 Box::new(owner_field),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -2198,7 +2198,7 @@ fn order_check_does_not_resolve_loads_across_an_unrelated_local_store() {
     let symbolic_length = MachineTerm::Variable(Variable(100_002));
     let load = |memory: &Memory, pointer: &Pointer| {
         MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(memory.clone()),
+            crate::kernel::intern_memory(memory.clone()),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
         )
@@ -2241,17 +2241,17 @@ fn equality_chains_across_observationally_equivalent_memory_loads() {
         .with_block("call-havoc:1", 0);
     let after = before_sparse.clone().with_block("call-havoc:3", 0);
     let before_materialized_load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory(before_materialized),
+        crate::kernel::intern_memory(before_materialized),
         Box::new(owner.clone()),
         crate::kernel::LoadKind::Int32,
     );
     let before_sparse_load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory(before_sparse),
+        crate::kernel::intern_memory(before_sparse),
         Box::new(owner.clone()),
         crate::kernel::LoadKind::Int32,
     );
     let after_load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory(after),
+        crate::kernel::intern_memory(after),
         Box::new(owner),
         crate::kernel::LoadKind::Int32,
     );
@@ -2317,7 +2317,7 @@ fn builtin_obligation_solver_proves_trivial_props() {
     ));
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
-        &Proposition::CMemoryLoadable {
+        &Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: pointer.clone(),
             bytes: MachineTerm::constant(4),
@@ -2326,7 +2326,7 @@ fn builtin_obligation_solver_proves_trivial_props() {
     ));
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
-        &Proposition::CMemoryCanStore {
+        &Proposition::MemoryCanStore {
             memory,
             pointer,
             byte_width: 4,
@@ -2353,7 +2353,7 @@ mod loadable_range_narrowing {
             block: "data".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        Proposition::CMemoryLoadable {
+        Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: origin.offset_by_int32_elements(start.clone()),
             bytes: MachineTerm::multiply(
@@ -2559,7 +2559,7 @@ mod loadable_range_narrowing {
             block: "data".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let byte_goal = Proposition::CMemoryLoadable {
+        let byte_goal = Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: origin.offset_by_elements(c.clone(), 1),
             bytes: MachineTerm::multiply(
@@ -2579,7 +2579,7 @@ mod loadable_range_narrowing {
 
 #[test]
 fn empty_memory_range_is_vacuously_loadable() {
-    let proposition = Proposition::CMemoryLoadable {
+    let proposition = Proposition::MemoryLoadable {
         memory: Memory::new(),
         base: Pointer {
             block: "not-live".into(),
@@ -2602,13 +2602,13 @@ fn deferred_obligations_keep_contextual_memory_proofs_explicit() {
         block: "data".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let range = Proposition::CMemoryLoadable {
+    let range = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: base.clone(),
         bytes: MachineTerm::constant(8),
         wide: false,
     };
-    let element = Proposition::CMemoryLoadable {
+    let element = Proposition::MemoryLoadable {
         memory,
         base: base.offset_by_int32_elements(MachineTerm::constant(1)),
         bytes: MachineTerm::constant(4),
@@ -2682,7 +2682,7 @@ fn memory_derivation_records_the_selected_range_candidate() {
         block: "data".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let unrelated = Proposition::CMemoryLoadable {
+    let unrelated = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: Pointer {
             block: "unrelated".into(),
@@ -2691,13 +2691,13 @@ fn memory_derivation_records_the_selected_range_candidate() {
         bytes: MachineTerm::constant(64),
         wide: false,
     };
-    let selected = Proposition::CMemoryLoadable {
+    let selected = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: data.clone(),
         bytes: MachineTerm::constant(8),
         wide: false,
     };
-    let target = Proposition::CMemoryLoadable {
+    let target = Proposition::MemoryLoadable {
         memory,
         base: data.offset_by_int32_elements(MachineTerm::constant(1)),
         bytes: MachineTerm::constant(4),
@@ -2724,7 +2724,7 @@ fn loadable_symbolic_subrange_proves_an_indexed_cell() {
     let split = MachineTerm::Variable(Variable(87));
     let index = MachineTerm::Variable(Variable(88));
     let len = MachineTerm::Variable(Variable(89));
-    let range = Proposition::CMemoryLoadable {
+    let range = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: data.offset_by_int32_elements(split.clone()),
         bytes: MachineTerm::multiply(
@@ -2733,7 +2733,7 @@ fn loadable_symbolic_subrange_proves_an_indexed_cell() {
         ),
         wide: false,
     };
-    let target = Proposition::CMemoryLoadable {
+    let target = Proposition::MemoryLoadable {
         memory,
         base: data.offset_by_int32_elements(index.clone()),
         bytes: MachineTerm::constant(4),
@@ -2778,19 +2778,19 @@ fn adjacent_loadable_regions_certify_their_concatenation() {
         block: "data".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let prefix = Proposition::CMemoryLoadable {
+    let prefix = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: data.clone(),
         bytes: MachineTerm::constant(8),
         wide: false,
     };
-    let next_cell = Proposition::CMemoryLoadable {
+    let next_cell = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: data.offset_by_int32_elements(MachineTerm::constant(2)),
         bytes: MachineTerm::constant(4),
         wide: false,
     };
-    let goal = Proposition::CMemoryLoadable {
+    let goal = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: data.clone(),
         bytes: MachineTerm::constant(12),
@@ -2812,7 +2812,7 @@ fn adjacent_loadable_regions_certify_their_concatenation() {
         data.offset_by_int32_elements(MachineTerm::constant(2)),
         ProgramValue::Int32(MachineTerm::constant(9)),
     );
-    let stored_goal = Proposition::CMemoryLoadable {
+    let stored_goal = Proposition::MemoryLoadable {
         memory: stored_memory,
         base: data.clone(),
         bytes: MachineTerm::constant(12),
@@ -2827,7 +2827,7 @@ fn adjacent_loadable_regions_certify_their_concatenation() {
     assert!(stored_derivation.check(&stored_assumptions));
     assert_eq!(stored_derivation.context_premises(), vec![prefix]);
 
-    let gap = Proposition::CMemoryLoadable {
+    let gap = Proposition::MemoryLoadable {
         memory,
         base: data.offset_by_int32_elements(MachineTerm::constant(4)),
         bytes: MachineTerm::constant(4),
@@ -2836,7 +2836,7 @@ fn adjacent_loadable_regions_certify_their_concatenation() {
     let assumptions = PureFactContext::new()
         .assume_proposition(goal.clone())
         .assume_proposition(gap);
-    let too_wide = Proposition::CMemoryLoadable {
+    let too_wide = Proposition::MemoryLoadable {
         memory: Memory::new(),
         base: data,
         bytes: MachineTerm::constant(16),
@@ -2863,7 +2863,7 @@ fn field_derived_capacity_range_covers_a_shorter_live_prefix() {
         ),
     };
     let len = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory_ref(&entry_memory),
+        crate::kernel::intern_memory_ref(&entry_memory),
         Box::new(owner.clone()),
         crate::kernel::LoadKind::Int32,
     );
@@ -2871,7 +2871,7 @@ fn field_derived_capacity_range_covers_a_shorter_live_prefix() {
         .clone()
         .store(owner.clone(), ProgramValue::Int32(len.clone()));
     let cap = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory_ref(&after_len),
+        crate::kernel::intern_memory_ref(&after_len),
         Box::new(field(4)),
         crate::kernel::LoadKind::Int32,
     );
@@ -2879,7 +2879,7 @@ fn field_derived_capacity_range_covers_a_shorter_live_prefix() {
         .clone()
         .store(field(4), ProgramValue::Int32(cap.clone()));
     let range_data_offset = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory_ref(&after_cap),
+        crate::kernel::intern_memory_ref(&after_cap),
         Box::new(field(8)),
         crate::kernel::LoadKind::Int32,
     );
@@ -2888,7 +2888,7 @@ fn field_derived_capacity_range_covers_a_shorter_live_prefix() {
         offset: PointerOffsetTerm::scaled_int32_node(range_data_offset, 4),
     };
     let entry_data_offset = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory_ref(&entry_memory),
+        crate::kernel::intern_memory_ref(&entry_memory),
         Box::new(field(8)),
         crate::kernel::LoadKind::Int32,
     );
@@ -2898,7 +2898,7 @@ fn field_derived_capacity_range_covers_a_shorter_live_prefix() {
     };
     let index = MachineTerm::Variable(Variable(2_000_000));
     let assumptions = PureFactContext::new()
-        .assume_proposition(Proposition::CMemoryLoadable {
+        .assume_proposition(Proposition::MemoryLoadable {
             memory: after_cap,
             base: range_data,
             bytes: MachineTerm::multiply(cap.clone(), MachineTerm::constant(4)),
@@ -2927,7 +2927,7 @@ fn field_derived_capacity_range_covers_a_shorter_live_prefix() {
             ),
             true,
         );
-    let target = Proposition::CMemoryLoadable {
+    let target = Proposition::MemoryLoadable {
         memory: entry_memory,
         base: entry_data.offset_by_int32_elements(index),
         bytes: MachineTerm::constant(4),
@@ -2953,7 +2953,7 @@ fn quantified_int32_fact_does_not_certify_an_instantiated_load() {
     let length = MachineTerm::Variable(Variable(2_100_002));
     let indexed_fact_pointer = data.offset_by_int32_elements(MachineTerm::Variable(fact_index));
     let loaded_value = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory_ref(&memory),
+        crate::kernel::intern_memory_ref(&memory),
         Box::new(indexed_fact_pointer),
         crate::kernel::LoadKind::Int32,
     );
@@ -2995,7 +2995,7 @@ fn quantified_int32_fact_does_not_certify_an_instantiated_load() {
             ConditionTerm::signed_less_than(MachineTerm::Variable(target_index), length),
             true,
         );
-    let target = Proposition::CMemoryLoadable {
+    let target = Proposition::MemoryLoadable {
         memory,
         base: data.offset_by_int32_elements(MachineTerm::Variable(target_index)),
         bytes: MachineTerm::constant(4),
@@ -3050,7 +3050,7 @@ fn quantified_loadability_fact_certifies_an_instantiated_load() {
         fact_index,
         Proposition::Implies(
             Box::new(guard_for(fact_index)),
-            Box::new(Proposition::CMemoryLoadable {
+            Box::new(Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: data.offset_by_int32_elements(MachineTerm::Variable(fact_index)),
                 bytes: MachineTerm::constant(4),
@@ -3064,7 +3064,7 @@ fn quantified_loadability_fact_certifies_an_instantiated_load() {
 
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
-        &Proposition::CMemoryLoadable {
+        &Proposition::MemoryLoadable {
             memory,
             base: data.offset_by_int32_elements(MachineTerm::Variable(target_index)),
             bytes: MachineTerm::constant(4),
@@ -3140,7 +3140,7 @@ fn quantified_atomic_derivation_retains_its_specialization_and_guards() {
     let exit = MachineTerm::Variable(Variable(2_100_101));
     let indexed_load = |value| {
         MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory_ref(&memory),
+            crate::kernel::intern_memory_ref(&memory),
             Box::new(data.offset_by_int32_elements(value)),
             crate::kernel::LoadKind::Int32,
         )
@@ -3226,7 +3226,7 @@ fn a_quantified_instantiation_guard_needing_a_derivation_is_refused() {
     let exit = MachineTerm::Variable(Variable(2_100_401));
     let indexed_load = |value| {
         MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory_ref(&memory),
+            crate::kernel::intern_memory_ref(&memory),
             Box::new(data.offset_by_int32_elements(value)),
             crate::kernel::LoadKind::Int32,
         )
@@ -3283,7 +3283,7 @@ fn quantified_int32_fact_certifies_a_concrete_indexed_load() {
     let index = Variable(2_100_003);
     let index_term = MachineTerm::Variable(index);
     let indexed_load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory_ref(&memory),
+        crate::kernel::intern_memory_ref(&memory),
         Box::new(data.offset_by_int32_elements(index_term.clone())),
         crate::kernel::LoadKind::Int32,
     );
@@ -3310,7 +3310,7 @@ fn quantified_int32_fact_certifies_a_concrete_indexed_load() {
     let target = Proposition::ConditionIs(
         ConditionTerm::equal(
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory_ref(&memory),
+                crate::kernel::intern_memory_ref(&memory),
                 Box::new(data.offset_by_int32_elements(concrete_index.clone())),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -3340,7 +3340,7 @@ fn quantified_copy_fact_certifies_concrete_pointer_indices() {
     let index_term = MachineTerm::Variable(index);
     let load = |base: &Pointer, index: MachineTerm| {
         MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory_ref(&memory),
+            crate::kernel::intern_memory_ref(&memory),
             Box::new(base.offset_by_int32_elements(index)),
             crate::kernel::LoadKind::Int32,
         )
@@ -3392,7 +3392,7 @@ fn quantified_int32_fact_does_not_certify_its_complete_guarded_range() {
     let length = MachineTerm::Variable(Variable(2_100_011));
     let index_bits = MachineTerm::Variable(index);
     let loaded_value = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory_ref(&memory),
+        crate::kernel::intern_memory_ref(&memory),
         Box::new(data.offset_by_int32_elements(index_bits.clone())),
         crate::kernel::LoadKind::Int32,
     );
@@ -3416,7 +3416,7 @@ fn quantified_int32_fact_does_not_certify_its_complete_guarded_range() {
         ),
     );
     let assumptions = PureFactContext::new().assume_proposition(guarded_fact);
-    let target = Proposition::CMemoryLoadable {
+    let target = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: data.clone(),
         bytes: MachineTerm::multiply(length.clone(), MachineTerm::constant(4)),
@@ -3429,7 +3429,7 @@ fn quantified_int32_fact_does_not_certify_its_complete_guarded_range() {
     );
     assert!(!crate::kernel::search::ProofSearch::proves(
         &(assumptions),
-        &Proposition::CMemoryLoadable {
+        &Proposition::MemoryLoadable {
             memory: memory.with_block("other-state", 4),
             base: data.clone(),
             bytes: MachineTerm::multiply(length.clone(), MachineTerm::constant(4)),
@@ -3438,7 +3438,7 @@ fn quantified_int32_fact_does_not_certify_its_complete_guarded_range() {
     ));
     assert!(!crate::kernel::search::ProofSearch::proves(
         &(assumptions),
-        &Proposition::CMemoryLoadable {
+        &Proposition::MemoryLoadable {
             memory: Memory::new(),
             base: Pointer {
                 block: "other-data".into(),
@@ -3936,7 +3936,7 @@ fn finite_forall_order_fact_needs_an_explicit_instantiation() {
     let memory = Memory::new();
     let indexed_load = |index| {
         MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(memory.clone()),
+            crate::kernel::intern_memory(memory.clone()),
             Box::new(Pointer {
                 block: "arg-memory".into(),
                 offset: PointerOffsetTerm::scale_int32(index, 4),
@@ -3954,7 +3954,7 @@ fn finite_forall_order_fact_needs_an_explicit_instantiation() {
     let finite_order_fact = Proposition::ForAll {
         name: Default::default(),
         var: k,
-        sort: Sort::CInt32,
+        sort: Sort::ProgramInt32,
         body: Box::new(Proposition::Implies(
             Box::new(Proposition::And(
                 Box::new(Proposition::ConditionIs(
@@ -4040,7 +4040,7 @@ fn conditional_forall_instantiates_at_same_named_variable_in_order_path() {
     let k_bits = MachineTerm::Variable(k);
     let j = MachineTerm::Variable(Variable(189));
     let value_at_k = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory(Memory::new()),
+        crate::kernel::intern_memory(Memory::new()),
         Box::new(Pointer {
             block: "arg-memory".into(),
             offset: PointerOffsetTerm::scale_int32(k_bits.clone(), 4),
@@ -4052,7 +4052,7 @@ fn conditional_forall_instantiates_at_same_named_variable_in_order_path() {
     let induction_hypothesis = Proposition::ForAll {
         name: Default::default(),
         var: k,
-        sort: Sort::CInt32,
+        sort: Sort::ProgramInt32,
         body: Box::new(Proposition::Implies(
             Box::new(Proposition::ConditionIs(
                 ConditionTerm::signed_less_than(k_bits.clone(), j.clone()),
@@ -4103,7 +4103,7 @@ fn a_binder_name_never_distinguishes_two_universals() {
     use std::hash::{Hash, Hasher};
     let universal = |name: &str| Proposition::ForAll {
         var: Variable(530),
-        sort: Sort::CInt32,
+        sort: Sort::ProgramInt32,
         body: Box::new(Proposition::ConditionIs(
             ConditionTerm::Constant(true),
             true,
@@ -4136,7 +4136,7 @@ fn forall_int32_instantiation_concludes_the_exact_substituted_body() {
     let quantified = Proposition::ForAll {
         name: Default::default(),
         var: binder,
-        sort: Sort::CInt32,
+        sort: Sort::ProgramInt32,
         body: Box::new(Proposition::Implies(
             Box::new(premise),
             Box::new(conclusion),
@@ -4177,7 +4177,7 @@ fn forall_int32_instantiation_rejects_a_premise_that_does_not_give_its_guard() {
     let quantified = Proposition::ForAll {
         name: Default::default(),
         var: binder,
-        sort: Sort::CInt32,
+        sort: Sort::ProgramInt32,
         body: Box::new(Proposition::Implies(
             Box::new(Proposition::ConditionIs(
                 ConditionTerm::signed_greater_equal(bound.clone(), MachineTerm::constant(0)),
@@ -4214,11 +4214,11 @@ fn forall_int32_instantiation_avoids_capturing_the_argument_variable() {
     let quantified = Proposition::ForAll {
         name: Default::default(),
         var: outer,
-        sort: Sort::CInt32,
+        sort: Sort::ProgramInt32,
         body: Box::new(Proposition::ForAll {
             name: Default::default(),
             var: inner,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(Proposition::ConditionIs(
                 ConditionTerm::equal(MachineTerm::Variable(outer), MachineTerm::Variable(inner)),
                 true,
@@ -4352,7 +4352,7 @@ fn forall_integer_instantiation_rejects_a_missing_guard_or_another_sort() {
     let machine = Proposition::ForAll {
         name: Default::default(),
         var: binder,
-        sort: Sort::CInt32,
+        sort: Sort::ProgramInt32,
         body: Box::new(Proposition::ConditionIs(
             ConditionTerm::Constant(true),
             true,
@@ -4448,7 +4448,7 @@ fn forall_integer_instantiation_supports_nested_machine_sorts_and_refuses_unsupp
         body: Box::new(Proposition::ForAll {
             name: Default::default(),
             var: Variable(631),
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(Proposition::ConditionIs(
                 ConditionTerm::IntegerEqual(
                     IntegerTerm::var(binder).into(),
@@ -4522,7 +4522,7 @@ fn forall_pointer_instantiation_takes_a_pointer_of_the_binder_type() {
     let quantified = Proposition::ForAll {
         name: Default::default(),
         var: binder,
-        sort: Sort::CPointer(ProgramType::Int32Pointer),
+        sort: Sort::ProgramPointer(ProgramType::Int32Pointer),
         body: Box::new(Proposition::Equal(
             pointer_term(binder),
             pointer_term(binder),
@@ -4625,7 +4625,7 @@ fn alpha_equivalence_rejects_free_variable_capture() {
     let left = Proposition::ForAll {
         name: Default::default(),
         var: left_binder,
-        sort: Sort::CInt32,
+        sort: Sort::ProgramInt32,
         body: Box::new(Proposition::ConditionIs(
             ConditionTerm::equal(MachineTerm::Variable(free), MachineTerm::constant(5)),
             true,
@@ -4634,7 +4634,7 @@ fn alpha_equivalence_rejects_free_variable_capture() {
     let right = Proposition::ForAll {
         name: Default::default(),
         var: right_binder,
-        sort: Sort::CInt32,
+        sort: Sort::ProgramInt32,
         body: Box::new(Proposition::ConditionIs(
             ConditionTerm::equal(MachineTerm::Variable(free), MachineTerm::constant(5)),
             true,
@@ -4731,7 +4731,7 @@ fn known_memory_block_bounds_prove_symbolic_element_access() {
 
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
-        &Proposition::CMemoryLoadable {
+        &Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: pointer.clone(),
             bytes: MachineTerm::constant(4),
@@ -4740,7 +4740,7 @@ fn known_memory_block_bounds_prove_symbolic_element_access() {
     ));
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
-        &Proposition::CMemoryCanStore {
+        &Proposition::MemoryCanStore {
             memory,
             pointer,
             byte_width: 4,
@@ -4770,7 +4770,7 @@ fn symbolic_int32_range_directly_proves_constant_element_loadable() {
             ),
             true,
         )
-        .assume_proposition(Proposition::CMemoryLoadable {
+        .assume_proposition(Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
             bytes: MachineTerm::multiply(length, MachineTerm::constant(4)),
@@ -4779,7 +4779,7 @@ fn symbolic_int32_range_directly_proves_constant_element_loadable() {
 
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
-        &Proposition::CMemoryLoadable {
+        &Proposition::MemoryLoadable {
             memory,
             base: base.offset_by_int32_elements(MachineTerm::constant(1)),
             bytes: MachineTerm::constant(4),
@@ -4808,13 +4808,13 @@ fn assumptions_prove_forall_int32_array_range_body() {
             true,
         )),
     );
-    let loadable_index = Proposition::CMemoryLoadable {
+    let loadable_index = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: indexed_pointer,
         bytes: MachineTerm::constant(4),
         wide: false,
     };
-    let assumptions = PureFactContext::new().assume_proposition(Proposition::CMemoryLoadable {
+    let assumptions = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
         memory,
         base,
         bytes: MachineTerm::constant(12),
@@ -4841,7 +4841,7 @@ fn loadability_transports_to_snapshot_with_symbolic_index_bounds() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let assumptions = PureFactContext::new()
-        .assume_proposition(Proposition::CMemoryLoadable {
+        .assume_proposition(Proposition::MemoryLoadable {
             memory: range_memory,
             base: base.clone(),
             bytes: MachineTerm::constant(12),
@@ -4873,7 +4873,7 @@ fn loadability_transports_to_snapshot_with_symbolic_index_bounds() {
     );
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
-        &Proposition::CMemoryLoadable {
+        &Proposition::MemoryLoadable {
             memory: snapshot_memory,
             base: base.offset_by_int32_elements(index),
             bytes: MachineTerm::constant(4),
@@ -4896,13 +4896,13 @@ fn loadability_same_base_extent_uses_graph_for_byte_count() {
     let a = MachineTerm::Variable(Variable(90_302));
     let b = MachineTerm::Variable(Variable(90_303));
     let bytes = |value| MachineTerm::add(value, MachineTerm::constant(1));
-    let fact = Proposition::CMemoryLoadable {
+    let fact = Proposition::MemoryLoadable {
         memory: before.clone(),
         base: base.clone(),
         bytes: bytes(a.clone()),
         wide: false,
     };
-    let goal = Proposition::CMemoryLoadable {
+    let goal = Proposition::MemoryLoadable {
         memory: after.clone(),
         base: base.clone(),
         bytes: bytes(b.clone()),
@@ -4925,7 +4925,7 @@ fn loadability_same_base_extent_uses_graph_for_byte_count() {
     assert!(!without_premise.proves_atomic_without_search(&goal));
     let without_loadable = PureFactContext::new().assume_condition(premise, true);
     assert!(!without_loadable.proves_atomic_without_search(&goal));
-    let other_base = Proposition::CMemoryLoadable {
+    let other_base = Proposition::MemoryLoadable {
         memory: after,
         base: Pointer::symbolic(Variable(90_304)),
         bytes: bytes(b),
@@ -5330,7 +5330,7 @@ fn builtin_obligation_solver_discharges_concrete_invariant() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let memory = Memory::new().with_block("block", 4);
-    let invariant = Proposition::CMemoryLoadable {
+    let invariant = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: pointer,
         bytes: MachineTerm::constant(4),
@@ -5339,18 +5339,27 @@ fn builtin_obligation_solver_discharges_concrete_invariant() {
     let state = ExecutionState::new()
         .with_local("x", int32(0))
         .with_memory(memory);
-    let statement = c_while(
-        c_greater_than(c_variable("x"), c_int32_literal(0)),
+    let statement = program_while(
+        crate::kernel::program_expression::greater_than(
+            crate::kernel::program_expression::variable("x"),
+            crate::kernel::program_expression::int32_literal(0),
+        ),
         vec![invariant],
-        c_assign("x", c_subtract(c_variable("x"), c_int32_literal(1))),
+        program_assign(
+            "x",
+            crate::kernel::program_expression::subtract(
+                crate::kernel::program_expression::variable("x"),
+                crate::kernel::program_expression::int32_literal(1),
+            ),
+        ),
     );
     let theorem =
-        prove_symbolic_c_execution(state.clone(), statement.clone(), PureFactContext::new())
+        prove_symbolic_program_execution(state.clone(), statement.clone(), PureFactContext::new())
             .expect("concrete invariant should be solved");
 
     assert_eq!(
         theorem.proposition(),
-        &Proposition::CStatementExecutes {
+        &Proposition::ProgramStatementExecutes {
             state: Box::new(state.clone()),
             statement: Box::new(statement),
             outcome: StatementOutcome::Normal(Box::new(state)),
@@ -5385,14 +5394,14 @@ fn equality_rewrites_through_matching_decrement() {
 fn symbolic_max_lt_branch_is_native_theorem() {
     let a = Variable(10);
     let b = Variable(11);
-    let theorem = prove_c_max_lt_returns_right(a, b).expect("lt branch should prove");
+    let theorem = prove_program_max_lt_returns_right(a, b).expect("lt branch should prove");
     let condition = ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::LessThan,
         left: Box::new(MachineTerm::Variable(a)),
         right: Box::new(MachineTerm::Variable(b)),
     };
-    let state = c_max_state(
+    let state = program_max_state(
         int32(MachineTerm::Variable(a)),
         int32(MachineTerm::Variable(b)),
     );
@@ -5405,9 +5414,9 @@ fn symbolic_max_lt_branch_is_native_theorem() {
                 b,
                 Proposition::Implies(
                     Box::new(Proposition::ConditionIs(condition, true)),
-                    Box::new(Proposition::CStatementExecutes {
+                    Box::new(Proposition::ProgramStatementExecutes {
                         state: Box::new(state.clone()),
-                        statement: Box::new(c_max_body()),
+                        statement: Box::new(program_max_body()),
                         outcome: StatementOutcome::Return {
                             value: int32(MachineTerm::Variable(b)).into(),
                             state: Box::new(state),
@@ -5423,14 +5432,14 @@ fn symbolic_max_lt_branch_is_native_theorem() {
 fn symbolic_max_not_lt_branch_is_native_theorem() {
     let a = Variable(12);
     let b = Variable(13);
-    let theorem = prove_c_max_not_lt_returns_left(a, b).expect("false branch should prove");
+    let theorem = prove_program_max_not_lt_returns_left(a, b).expect("false branch should prove");
     let condition = ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::LessThan,
         left: Box::new(MachineTerm::Variable(a)),
         right: Box::new(MachineTerm::Variable(b)),
     };
-    let state = c_max_state(
+    let state = program_max_state(
         int32(MachineTerm::Variable(a)),
         int32(MachineTerm::Variable(b)),
     );
@@ -5443,9 +5452,9 @@ fn symbolic_max_not_lt_branch_is_native_theorem() {
                 b,
                 Proposition::Implies(
                     Box::new(Proposition::ConditionIs(condition, false)),
-                    Box::new(Proposition::CStatementExecutes {
+                    Box::new(Proposition::ProgramStatementExecutes {
                         state: Box::new(state.clone()),
-                        statement: Box::new(c_max_body()),
+                        statement: Box::new(program_max_body()),
                         outcome: StatementOutcome::Return {
                             value: int32(MachineTerm::Variable(a)).into(),
                             state: Box::new(state),
@@ -5493,7 +5502,7 @@ fn repeated_resolution_queries_do_not_repay_their_search() {
             ),
             true,
         )
-        .assume_proposition(Proposition::CResourceSeparate {
+        .assume_proposition(Proposition::ResourceSeparate {
             left: Box::new(Resource::Memory(memory_range(left.clone(), 0, 1))),
             right: Box::new(Resource::Memory(memory_range(right.clone(), 0, 1))),
         });
@@ -5680,7 +5689,7 @@ fn derived_order_contradiction_resolves_load_endpoints() {
     };
     let memory = Memory::new().store(cell.clone(), int32(MachineTerm::constant(7)));
     let load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory(memory),
+        crate::kernel::intern_memory(memory),
         Box::new(cell),
         crate::kernel::LoadKind::Int32,
     );
@@ -5717,17 +5726,17 @@ fn derived_order_contradiction_bridges_snapshot_loads() {
         .clone()
         .store(written.clone(), int32(MachineTerm::constant(1)));
     let before_load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory(before.clone()),
+        crate::kernel::intern_memory(before.clone()),
         Box::new(preserved.clone()),
         crate::kernel::LoadKind::Int32,
     );
     let after_load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory(after.clone()),
+        crate::kernel::intern_memory(after.clone()),
         Box::new(preserved),
         crate::kernel::LoadKind::Int32,
     );
     let assumptions = PureFactContext::new()
-        .assume_proposition(Proposition::CMemoryMutatesOnly {
+        .assume_proposition(Proposition::MemoryMutatesOnly {
             before,
             after,
             writes: vec![(written, 4)],
@@ -7344,7 +7353,7 @@ fn native_loadability_transport_pins_extent_domain_and_lifetime() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let live = Memory::new().with_block("native-region", 8);
-    let fact = |memory: Memory, bytes, wide| Proposition::CMemoryLoadable {
+    let fact = |memory: Memory, bytes, wide| Proposition::MemoryLoadable {
         memory,
         base: base.clone(),
         bytes,
@@ -7406,7 +7415,7 @@ fn native_loadability_transport_pins_extent_domain_and_lifetime() {
         .clone()
         .free_heap_block(&external, &PureFactContext::new())
         .unwrap();
-    let external_fact = |memory| Proposition::CMemoryLoadable {
+    let external_fact = |memory| Proposition::MemoryLoadable {
         memory,
         base: external.clone(),
         bytes: MachineTerm::uint64_constant(8),
@@ -7429,7 +7438,7 @@ fn native_loadability_prefix_coverage_retains_full_width_bounds() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),
     };
-    let range = |bytes| Proposition::CMemoryLoadable {
+    let range = |bytes| Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: base.clone(),
         bytes,
@@ -7498,7 +7507,7 @@ fn native_loadability_prefix_coverage_preserves_lifetime_and_base() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let live = Memory::new().with_block("native-prefix", 8);
-    let range = |memory: Memory, base: Pointer, bytes| Proposition::CMemoryLoadable {
+    let range = |memory: Memory, base: Pointer, bytes| Proposition::MemoryLoadable {
         memory,
         base,
         bytes: MachineTerm::uint64_constant(bytes),
@@ -7558,7 +7567,7 @@ fn native_loadability_window_checks_offset_end_and_retirement() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(17),
     };
-    let range = |memory: Memory, base: Pointer, bytes| Proposition::CMemoryLoadable {
+    let range = |memory: Memory, base: Pointer, bytes| Proposition::MemoryLoadable {
         memory,
         base,
         bytes: MachineTerm::uint64_constant(bytes),
@@ -7648,13 +7657,13 @@ fn native_loadability_window_requires_every_full_width_guard() {
         block: base.block.clone(),
         offset: PointerOffsetTerm::scaled_int64_node(offset.clone(), 1, true),
     };
-    let source = Proposition::CMemoryLoadable {
+    let source = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base,
         bytes: held.clone(),
         wide: true,
     };
-    let goal = Proposition::CMemoryLoadable {
+    let goal = Proposition::MemoryLoadable {
         memory,
         base: target,
         bytes: requested.clone(),
@@ -8023,7 +8032,7 @@ fn false_quantified_frame_does_not_exhaust_a_small_load_registry() {
     crate::kernel::eval::with_load_variable_registry_capacity(1000, || {
         let source = "verifying \"probe.c\"; int32 untouched_element(int32* a) { owns a[0..1000000]; ensures result == old(a[2]); ensures (0..1000000).all(|k| { a[k] == old(a[k]) }); }";
         let c = "int32 untouched_element(int32* a) { unsigned char* b; b = (unsigned char*)(void*) a; b[5] = 7; return a[2]; }";
-        let error = crate::surface::verify_c0_sources(source, &[("probe.c", c)])
+        let error = crate::surface::verify_c_sources(source, &[("probe.c", c)])
             .expect_err("the whole range is changed");
         assert!(error.message().contains(".all"), "{}", error.message());
     });
@@ -8324,7 +8333,7 @@ fn universal_consequents_ignore_unrelated_propositions() {
     let universal = Proposition::ForAll {
         name: Default::default(),
         var: bound,
-        sort: Sort::CInt32,
+        sort: Sort::ProgramInt32,
         body: Box::new(Proposition::Implies(
             Box::new(Proposition::ConditionIs(
                 ConditionTerm::signed_less_than(
@@ -8360,7 +8369,7 @@ fn universal_consequents_ignore_unrelated_propositions() {
                     block: format!("universal-unrelated-{index}").into(),
                     offset: PointerOffsetTerm::Constant(0),
                 };
-                assumptions = assumptions.assume_proposition(Proposition::CResourceContains {
+                assumptions = assumptions.assume_proposition(Proposition::ResourceContains {
                     parent: Box::new(Resource::Memory(memory_range(unrelated.clone(), 0, 2))),
                     child: Box::new(Resource::Memory(memory_range(unrelated, 0, 1))),
                 });
@@ -8388,7 +8397,7 @@ fn universal_instantiation_ignores_universals_of_other_shapes() {
         Proposition::ForAll {
             name: Default::default(),
             var: bound,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(Proposition::Implies(
                 Box::new(Proposition::ConditionIs(
                     ConditionTerm::signed_less_than(
@@ -8416,7 +8425,7 @@ fn universal_instantiation_ignores_universals_of_other_shapes() {
     let universal_goal = Proposition::ForAll {
         name: Default::default(),
         var: bound,
-        sort: Sort::CInt32,
+        sort: Sort::ProgramInt32,
         body: Box::new(Proposition::ConditionIs(
             ConditionTerm::equal(MachineTerm::Variable(bound), cell.clone()),
             true,
@@ -8501,7 +8510,7 @@ fn exact_condition_check_ignores_unrelated_implications() {
 fn offset_and_existential_matches_ignore_unrelated_facts() {
     let memory = Memory::new();
     let load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory_ref(&memory),
+        crate::kernel::intern_memory_ref(&memory),
         Box::new(Pointer {
             block: "shape-target".into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -8512,7 +8521,7 @@ fn offset_and_existential_matches_ignore_unrelated_facts() {
     let existential = Proposition::Exists {
         name: String::new(),
         var: Variable(97_000),
-        sort: Sort::CInt32,
+        sort: Sort::ProgramInt32,
         body: Box::new(Proposition::ConditionIs(
             ConditionTerm::signed_less_than(
                 MachineTerm::Variable(Variable(97_000)),
@@ -8537,7 +8546,7 @@ fn offset_and_existential_matches_ignore_unrelated_facts() {
                     .assume_proposition(Proposition::Exists {
                         name: String::new(),
                         var: Variable(97_000),
-                        sort: Sort::CInt32,
+                        sort: Sort::ProgramInt32,
                         body: Box::new(Proposition::ConditionIs(
                             ConditionTerm::equal(
                                 MachineTerm::Variable(Variable(97_000)),

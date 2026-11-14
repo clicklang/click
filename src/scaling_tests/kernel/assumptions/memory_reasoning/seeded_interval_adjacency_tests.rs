@@ -11,7 +11,7 @@ fn materialized_run_adjacency_preserves_holes_and_scales() {
         block: "run-adjacency".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let source = crate::kernel::intern_c_memory(Memory::new());
+    let source = crate::kernel::intern_memory(Memory::new());
     let context = PureFactContext::new();
     let mut costs = Vec::new();
     for size in [16, 64, 4096, 22208, 1048576] {
@@ -40,7 +40,7 @@ fn materialized_run_adjacency_preserves_holes_and_scales() {
             });
             assert_eq!(facts.is_some(), missing.is_none());
             if missing.is_none() {
-                let goal = Proposition::CMemoryLoadable {
+                let goal = Proposition::MemoryLoadable {
                     memory,
                     base: base.clone(),
                     bytes: MachineTerm::constant(size + 1),

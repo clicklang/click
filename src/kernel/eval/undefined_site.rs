@@ -144,9 +144,9 @@ fn has_undefined_behavior(
 ) -> bool {
     let mut budget = ExecutionBudget::beside_live_state();
     let paths = if condition {
-        evaluate_c_condition_paths(state, expression, assumptions, &mut budget)
+        evaluate_program_condition_paths(state, expression, assumptions, &mut budget)
     } else {
-        evaluate_c_expression_paths(state, expression, assumptions, &mut budget)
+        evaluate_program_expression_paths(state, expression, assumptions, &mut budget)
     };
     paths.is_ok_and(|paths| {
         paths.iter().any(|path| {

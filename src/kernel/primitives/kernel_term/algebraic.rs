@@ -79,7 +79,9 @@ impl KernelTermExport {
                         let mut bindings = Vec::with_capacity(arm.bindings.len());
                         for _ in &arm.bindings {
                             bindings.push(match children.next().ok_or("missing declaration")? {
-                                PureFunctionArgument::Value(value) => AlgebraicValue::C(value),
+                                PureFunctionArgument::Value(value) => {
+                                    AlgebraicValue::Program(value)
+                                }
                                 PureFunctionArgument::Integer(value) => {
                                     AlgebraicValue::Integer(value.as_ref().clone())
                                 }

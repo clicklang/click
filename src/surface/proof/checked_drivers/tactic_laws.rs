@@ -265,7 +265,7 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
         annotation,
     }));
     if execution.core.frontier.is_at_function_entry() {
-        let entry_state = c_function_entry_state(&initial_state, &annotated, arguments)
+        let entry_state = program_function_entry_state(&initial_state, &annotated, arguments)
             .ok_or_else(|| {
                 ClickError::new(format!(
                     "`{claim_label}` tactic {tactic_index}: `loop` could not bind function arguments"
@@ -388,7 +388,7 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
     }
     let loop_exit_condition = match &current_loop {
         ProgramStatement::While { condition, .. } => Some(ClickProposition::Not(Box::new(
-            surface_c_condition(condition, &execution.core.state)?,
+            surface_program_condition(condition, &execution.core.state)?,
         ))),
         _ => None,
     };

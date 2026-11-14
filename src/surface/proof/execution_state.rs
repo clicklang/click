@@ -155,7 +155,7 @@ fn undecided_tactic_expansion(
     )))
 }
 
-pub(in crate::surface) fn capture_c0_tactic_expansion(
+pub(in crate::surface) fn capture_program_tactic_expansion(
     click_source: &str,
     c_sources: &[(&str, &str)],
     site: ProofSite,
@@ -164,7 +164,7 @@ pub(in crate::surface) fn capture_c0_tactic_expansion(
 ) -> Result<Vec<ProofTactic>, ClickError> {
     let mut capture = ExpansionCapture::for_nested_tactic(site.clone(), source_index, nested_path);
     let verification =
-        verify_c0_sources_with_expansion_capture(click_source, c_sources, &mut capture);
+        verify_c_sources_with_expansion_capture(click_source, c_sources, &mut capture);
     if let Some(result) = decided_tactic_expansion(&capture) {
         return result;
     }
@@ -204,14 +204,14 @@ pub(in crate::surface) fn capture_project_tactic_expansion(
 /// Captures one tactic's expansion over compiler-prepared inputs.
 pub(in crate::surface) fn capture_prepared_tactic_expansion(
     click_source: &str,
-    sources: &CSourceContext<'_>,
+    sources: &ProgramSourceContext<'_>,
     site: ProofSite,
     source_index: usize,
     nested_path: &[usize],
 ) -> Result<Vec<ProofTactic>, ClickError> {
     let mut capture = ExpansionCapture::for_nested_tactic(site.clone(), source_index, nested_path);
     let verification =
-        verify_c0_sources_with_expansion_capture_context(click_source, sources, &mut capture);
+        verify_program_with_expansion_capture_context(click_source, sources, &mut capture);
     if let Some(result) = decided_tactic_expansion(&capture) {
         return result;
     }
@@ -231,12 +231,12 @@ pub(in crate::surface) fn capture_project_proof_site_expansion(
 /// Captures a whole proof site's expansion over compiler-prepared inputs.
 pub(in crate::surface) fn capture_prepared_proof_site_expansion(
     click_source: &str,
-    sources: &CSourceContext<'_>,
+    sources: &ProgramSourceContext<'_>,
     site: ProofSite,
 ) -> Result<Vec<ProofTactic>, ClickError> {
     let mut capture = ExpansionCapture::for_site(site.clone());
     let verification =
-        verify_c0_sources_with_expansion_capture_context(click_source, sources, &mut capture);
+        verify_program_with_expansion_capture_context(click_source, sources, &mut capture);
     retained_proof_site_expansion(capture, verification, &site)
 }
 
@@ -255,14 +255,14 @@ fn retained_proof_site_expansion<T>(
     )))
 }
 
-pub(in crate::surface) fn capture_c0_proof_site_expansion(
+pub(in crate::surface) fn capture_program_proof_site_expansion(
     click_source: &str,
     c_sources: &[(&str, &str)],
     site: ProofSite,
 ) -> Result<Vec<ProofTactic>, ClickError> {
     let mut capture = ExpansionCapture::for_site(site.clone());
     let verification =
-        verify_c0_sources_with_expansion_capture(click_source, c_sources, &mut capture);
+        verify_c_sources_with_expansion_capture(click_source, c_sources, &mut capture);
     retained_proof_site_expansion(capture, verification, &site)
 }
 
@@ -352,12 +352,12 @@ pub(super) fn proof_site_for_claims(
     grouped_contract: bool,
 ) -> Option<ProofSite> {
     let claim = if grouped_contract {
-        CProofClaim::Grouped
+        ContractProofClaim::Grouped
     } else {
         match claims {
-            [FunctionClaimRef::Ensure(index, _)] => CProofClaim::Ensure(*index),
+            [FunctionClaimRef::Ensure(index, _)] => ContractProofClaim::Ensure(*index),
             [FunctionClaimRef::ExceptionalEnsure(index, _)] => {
-                CProofClaim::ExceptionalEnsure(*index)
+                ContractProofClaim::ExceptionalEnsure(*index)
             }
             _ => return None,
         }
@@ -771,7 +771,7 @@ fn match_arm_selection(
             },
         operator: ComparisonOperator::Equal,
         right:
-            ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::Int32(
+            ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
                 int32_constant!(1,),
             ))),
     } = condition
@@ -785,9 +785,9 @@ fn match_arm_selection(
         .iter()
         .zip(selector_arms)
         .map(|(arm, selector)| {
-            let ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::Int32(
-                int32_constant!(value),
-            ))) = &selector.body
+            let ContractExpression::ProgramExpression(ProgramExpression::Value(
+                ProgramValue::Int32(int32_constant!(value)),
+            )) = &selector.body
             else {
                 return None;
             };
@@ -1644,7 +1644,7 @@ mod proof_fact_store_tests {
         for size in [16_u32, 64, 256, 1024, 4096] {
             let mut statement = ProgramStatement::Skip;
             for _ in 0..size {
-                statement = c_seq(ProgramStatement::Skip, statement);
+                statement = program_seq(ProgramStatement::Skip, statement);
             }
             let remaining = Arc::new(statement);
             let mut frontier = ExecutionFrontier {

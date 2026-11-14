@@ -30,7 +30,7 @@ fn boolean_local_synthesis_round_trips_and_scales_with_local_population() {
         let surface = surface.expect("a normalized Boolean local has its source spelling");
         assert_eq!(
             surface,
-            ContractExpression::CFragment(ProgramExpression::Variable("z_bool".into()))
+            ContractExpression::ProgramExpression(ProgramExpression::Variable("z_bool".into()))
         );
         assert!(
             work >= size && work <= size + 64,
@@ -351,7 +351,7 @@ fn leading_domain_recognition_retains_shared_arithmetic() {
     for size in [8, 32, 96] {
         let _session = crate::kernel::VerificationSession::enter();
         let mut root = KernelTerm::variable(
-            KernelType::C(MachineIntegerType::Int32.c_type()),
+            KernelType::Program(MachineIntegerType::Int32.c_type()),
             Variable(991704),
         );
         for _ in 0..size {
@@ -427,7 +427,7 @@ fn common_arithmetic_names_ignore_unrelated_locals_without_exports() {
         });
         assert_eq!(
             surface,
-            Some(SurfaceTerm::CFragment(ProgramExpression::Variable(
+            Some(SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 "current".into()
             )))
         );
@@ -528,13 +528,13 @@ fn common_match_surface_work_tracks_selected_body_without_exports() {
     for size in [8, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
         let scrutinee =
-            KernelMatch::test_scrutinee(vec![AlgebraicValueType::C(ProgramType::Int32)]);
+            KernelMatch::test_scrutinee(vec![AlgebraicValueType::Program(ProgramType::Int32)]);
         let AlgebraicTermNode::Variable(id) = scrutinee.node else {
             panic!()
         };
         let mut import = KernelTermImport::default();
         let scrutinee = import.argument(&PureFunctionArgument::Algebraic(scrutinee));
-        let bound = KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(991950));
+        let bound = KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(991950));
         let mut body = bound.clone();
         for _ in 0..size {
             body = KernelTerm::machine_binary_shared(
@@ -544,7 +544,7 @@ fn common_match_surface_work_tracks_selected_body_without_exports() {
             );
         }
         let matched = KernelMatch::new(
-            KernelType::C(ProgramType::Int32),
+            KernelType::Program(ProgramType::Int32),
             scrutinee,
             vec![(
                 KernelMatchArm {
@@ -592,9 +592,9 @@ fn nested_fold_match_call_surface_work_ignores_unrelated_locals() {
             }
             let mut import = KernelTermImport::default();
             let scrutinee = import.argument(&PureFunctionArgument::Algebraic(
-                KernelMatch::test_scrutinee(vec![AlgebraicValueType::C(ProgramType::Int32)]),
+                KernelMatch::test_scrutinee(vec![AlgebraicValueType::Program(ProgramType::Int32)]),
             ));
-            let ty = KernelType::C(ProgramType::Int32);
+            let ty = KernelType::Program(ProgramType::Int32);
             let zero = import.machine(MachineIntegerType::Int32, &MachineTerm::constant(0));
             let end = import.machine(MachineIntegerType::Int32, &n);
             let declaration = KernelTerm::variable(ty.clone(), Variable(992003));

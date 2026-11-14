@@ -53,14 +53,14 @@ impl<'a> Proof<'a> {
     }
 
     /// The line naming the C statement checked path `path_index` ended at,
-    /// as [`describe_c_statement_site`] spells a stepped statement, or
+    /// as [`describe_execution_statement_site`] spells a stepped statement, or
     /// nothing when the path recorded no statement.
     ///
     /// This is diagnostics only. The statement is the one whose snapshot the
     /// path recorded last, read from the presentation data the outcome
     /// already carries.
     ///
-    /// [`describe_c_statement_site`]: crate::surface::diagnostics::describe_c_statement_site
+    /// [`describe_execution_statement_site`]: crate::surface::diagnostics::describe_execution_statement_site
     pub(in crate::surface::proof) fn describe_outcome_statement_site(
         &self,
         path_index: usize,
@@ -115,7 +115,7 @@ impl<'a> Proof<'a> {
             .paths()
             .get(goal.path_index)
             .ok_or_else(|| self.step_error("return counts have no checked path"))?;
-        let Proposition::CFunctionVerifies { outcome, .. } =
+        let Proposition::ProgramFunctionVerifies { outcome, .. } =
             implication_body(path.theorem().proposition())
         else {
             return Err(self.step_error("return counts have no checked execution outcome"));
@@ -276,7 +276,7 @@ impl<'a> Proof<'a> {
                             // Function exits restore caller locals. Rebind the
                             // callee parameters before lowering a guard, whose
                             // old-memory pointer still uses those names.
-                            c_function_entry_state(
+                            program_function_entry_state(
                                 &state,
                                 checked_execution.function(),
                                 context.arguments,
@@ -1274,7 +1274,7 @@ impl<'a> Proof<'a> {
 }
 
 /// The line naming the C statement a path stepped last, in the form
-/// `describe_c_statement_site` gives a stepped statement, or nothing when the
+/// `describe_execution_statement_site` gives a stepped statement, or nothing when the
 /// path recorded none or the layout has no site for it.
 fn describe_last_statement_site(
     layout: &crate::surface::lowering::SourceExecutionLayout,

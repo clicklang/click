@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(super) fn initialize_c_function_globals_owned(
+pub(super) fn initialize_program_function_globals_owned(
     mut state: ExecutionState,
     function: &ProgramFunction,
     initialize_missing_storage: bool,
@@ -617,7 +617,7 @@ pub(super) fn materialize_symbolic_array(
                 | ProgramType::Float64
         );
     if length > 0 && has_value {
-        let source = crate::kernel::intern_c_memory(symbolic_memory_base(&memory, base));
+        let source = crate::kernel::intern_memory(symbolic_memory_base(&memory, base));
         // An object pointer's load records no width, so it declares none.
         let widths_declared = element_type.is_object_pointer()
             || crate::kernel::eval::declare_symbolic_array_access_widths(
@@ -792,7 +792,7 @@ pub(super) fn materialize_symbolic_aggregate_array(
         && !cells.is_empty()
         && cells.len() <= length as usize
     {
-        let source = crate::kernel::intern_c_memory(symbolic_memory_base(&memory, base));
+        let source = crate::kernel::intern_memory(symbolic_memory_base(&memory, base));
         // An object pointer's load records no width, so it declares none.
         let widths = cells
             .iter()
@@ -1536,28 +1536,28 @@ pub(super) fn copy_aggregate_fields(
                 match element_type {
                     ProgramType::Int8 => {
                         Some(ProgramValue::Int8(crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_c_memory(memory.clone()),
+                            crate::kernel::intern_memory(memory.clone()),
                             source_field,
                             LoadKind::of_type(element_type)?,
                         )))
                     }
                     ProgramType::Int16 => {
                         Some(ProgramValue::Int16(crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_c_memory(memory.clone()),
+                            crate::kernel::intern_memory(memory.clone()),
                             source_field,
                             LoadKind::of_type(element_type)?,
                         )))
                     }
                     ProgramType::Int32 => {
                         Some(ProgramValue::Int32(crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_c_memory(memory.clone()),
+                            crate::kernel::intern_memory(memory.clone()),
                             source_field,
                             LoadKind::of_type(element_type)?,
                         )))
                     }
                     ProgramType::UInt8 => {
                         Some(ProgramValue::UInt8(crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_c_memory(memory.clone()),
+                            crate::kernel::intern_memory(memory.clone()),
                             source_field,
                             LoadKind::of_type(element_type)?,
                         )))
@@ -1579,42 +1579,42 @@ pub(super) fn copy_aggregate_fields(
                     }
                     ProgramType::UInt16 => {
                         Some(ProgramValue::UInt16(crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_c_memory(memory.clone()),
+                            crate::kernel::intern_memory(memory.clone()),
                             source_field,
                             LoadKind::of_type(element_type)?,
                         )))
                     }
                     ProgramType::UInt32 => {
                         Some(ProgramValue::UInt32(crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_c_memory(memory.clone()),
+                            crate::kernel::intern_memory(memory.clone()),
                             source_field,
                             LoadKind::of_type(element_type)?,
                         )))
                     }
                     ProgramType::Int64 => {
                         Some(ProgramValue::Int64(crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_c_memory(memory.clone()),
+                            crate::kernel::intern_memory(memory.clone()),
                             source_field,
                             LoadKind::of_type(element_type)?,
                         )))
                     }
                     ProgramType::UInt64 => {
                         Some(ProgramValue::UInt64(crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_c_memory(memory.clone()),
+                            crate::kernel::intern_memory(memory.clone()),
                             source_field,
                             LoadKind::of_type(element_type)?,
                         )))
                     }
                     ProgramType::Float32 => Some(ProgramValue::Float32(
                         crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_c_memory(memory.clone()),
+                            crate::kernel::intern_memory(memory.clone()),
                             source_field,
                             LoadKind::of_type(element_type)?,
                         ),
                     )),
                     ProgramType::Float64 => Some(ProgramValue::Float64(
                         crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_c_memory(memory.clone()),
+                            crate::kernel::intern_memory(memory.clone()),
                             source_field,
                             LoadKind::of_type(element_type)?,
                         ),
@@ -1690,7 +1690,7 @@ pub(super) fn copy_aggregate_union_member(
         );
     }
     let load = crate::kernel::canonical_form_of_load(
-        crate::kernel::intern_c_memory(memory.clone()),
+        crate::kernel::intern_memory(memory.clone()),
         source_field.clone(),
         LoadKind::of_type(element_type)?,
     );

@@ -186,9 +186,9 @@ impl BitvectorUnaryOp {
 impl BitvectorBinaryOp {
     /// The C spelling of the operator. Signed and unsigned forms of one
     /// operation share a spelling.
-    pub(crate) fn c_symbol(self) -> &'static str {
+    pub(crate) fn program_symbol(self) -> &'static str {
         match self {
-            Self::Machine(_, op) => op.c_symbol(),
+            Self::Machine(_, op) => op.program_symbol(),
             Self::Float32(operator) | Self::Float64(operator) => match operator {
                 FloatBinaryOperator::Add => "+",
                 FloatBinaryOperator::Subtract => "-",
@@ -418,7 +418,7 @@ impl ConditionTerm {
 
 impl CompareRelation {
     /// The C spelling of the relation.
-    pub(crate) fn c_symbol(self) -> &'static str {
+    pub(crate) fn program_symbol(self) -> &'static str {
         match self {
             Self::LessThan => "<",
             Self::LessEqual => "<=",
@@ -431,7 +431,7 @@ impl CompareRelation {
 
 impl OverflowOperation {
     /// The C spelling of the operation.
-    pub(crate) fn c_symbol(self) -> &'static str {
+    pub(crate) fn program_symbol(self) -> &'static str {
         match self {
             Self::Add => "+",
             Self::Subtract => "-",
@@ -445,7 +445,7 @@ impl OverflowOperation {
 impl MachineBinaryOp {
     /// The C spelling of the operator. Signed and unsigned forms share a
     /// spelling.
-    pub(crate) fn c_symbol(self) -> &'static str {
+    pub(crate) fn program_symbol(self) -> &'static str {
         match self {
             Self::Add => "+",
             Self::Subtract => "-",
@@ -471,15 +471,15 @@ impl BitvectorComparisonOp {
 
     /// The C spelling of the comparison, or of the operation an overflow test
     /// guards. Signed and unsigned forms share a spelling.
-    pub(crate) fn c_symbol(self) -> &'static str {
+    pub(crate) fn program_symbol(self) -> &'static str {
         match self {
-            Self::Compare(_, relation) => relation.c_symbol(),
-            Self::Overflows(_, op) => op.c_symbol(),
+            Self::Compare(_, relation) => relation.program_symbol(),
+            Self::Overflows(_, op) => op.program_symbol(),
         }
     }
 
     /// Whether the condition is an overflow test of the operation
-    /// [`Self::c_symbol`] spells, rather than a comparison.
+    /// [`Self::program_symbol`] spells, rather than a comparison.
     pub(crate) fn is_overflow(self) -> bool {
         matches!(self, Self::Overflows(..))
     }

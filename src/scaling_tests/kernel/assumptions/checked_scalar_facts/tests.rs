@@ -11,7 +11,7 @@ fn shared_scalar_sources_keep_identity_and_branch_locality() {
     let mut query_work = None;
     for size in [8, 32, 96] {
         let mut root = KernelTerm::variable(
-            KernelType::C(MachineIntegerType::Int32.c_type()),
+            KernelType::Program(MachineIntegerType::Int32.c_type()),
             Variable(991701),
         );
         for _ in 0..size {
@@ -226,7 +226,7 @@ fn arithmetic_call_endpoint_keys_preserve_argument_identity_and_opaque_refusal()
     }
     assert_eq!(KernelTermExport::machine_export_count(), exports);
     let read = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory_ref(&Memory::new()),
+        crate::kernel::intern_memory_ref(&Memory::new()),
         Box::new(Pointer::null()),
         LoadKind::Int32,
     );

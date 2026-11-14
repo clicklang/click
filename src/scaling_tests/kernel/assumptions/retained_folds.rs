@@ -14,7 +14,7 @@ fn common_fold_read_dependencies_visit_shared_bodies_once_and_recheck_snapshots(
         let read = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory_ref(&current),
+                crate::kernel::intern_memory_ref(&current),
                 Box::new(pointer.clone()),
                 LoadKind::Int32,
             ),
@@ -59,7 +59,7 @@ fn nested_machine_fold_dependencies_share_initial_and_body_subgraphs() {
         let memory = Memory::new();
         let pointer = Pointer::symbolic(Variable(972010));
         let read = MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory_ref(&memory),
+            crate::kernel::intern_memory_ref(&memory),
             Box::new(pointer.clone()),
             LoadKind::Int32,
         );
@@ -70,7 +70,7 @@ fn nested_machine_fold_dependencies_share_initial_and_body_subgraphs() {
             format,
             MachineOperandView::Legacy(&MachineTerm::constant(0)),
         );
-        let bound = KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(972011));
+        let bound = KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(972011));
         let mut last = None;
         for _ in 0..size {
             let initial = KernelTerm::machine_binary_shared(

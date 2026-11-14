@@ -55,7 +55,7 @@ fn shared_machine_variable_bookkeeping_reuses_prefixes_in_each_collection_mode()
         let _session = crate::kernel::VerificationSession::enter();
         let variable = Variable(crate::kernel::ExecutionBudget::KERNEL_VARIABLE_BASE + 123);
         let format = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::C(ProgramType::Int32), variable);
+        let mut root = KernelTerm::variable(KernelType::Program(ProgramType::Int32), variable);
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {
                 root = KernelTerm::machine_binary_shared(
@@ -95,7 +95,7 @@ fn shared_machine_variable_collection_keeps_snapshot_deferral_and_load_addresses
     };
     let _session = crate::kernel::VerificationSession::enter();
     let address = Variable(crate::kernel::ExecutionBudget::KERNEL_VARIABLE_BASE + 124);
-    let memory = crate::kernel::intern_c_memory(Memory::new());
+    let memory = crate::kernel::intern_memory(Memory::new());
     let load = crate::kernel::eval::load_variable_for_exact_cell(
         &memory,
         &Pointer::symbolic(address),

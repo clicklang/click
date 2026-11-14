@@ -10,7 +10,7 @@ fn charon_signed_arithmetic_verifies_with_its_panic_checks() {
     let p = Project::from_fixture("design/charon-trial/signed-arithmetic");
     fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(SIDECAR, &prepared)
+    ProgramVerificationSession::new_program_prepared(SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     for (function, before, after, expected) in [
         // `i64` remainder by a possible zero.
@@ -117,7 +117,7 @@ fn rust_shift_resource_arguments_retain_width_and_count_obligations() {
         literal_error.to_string().contains("integer index"),
         "{literal_error}"
     );
-    C0VerificationSession::new_program_prepared(&source, &prepared)
+    ProgramVerificationSession::new_program_prepared(&source, &prepared)
         .unwrap_or_else(|error| panic!("Rust shifts in resource arguments and bounds: {error:?}"));
     let narrow_extent = source.replace(
         "total[0..(1i32 << 0u32)]",

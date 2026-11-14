@@ -42,7 +42,7 @@ fn conjunct_elimination_is_flat_against_unrelated_history_and_facts() {
                 true,
             ))
         });
-        let defined = |memory: &Memory| Proposition::CMemoryReadDefined {
+        let defined = |memory: &Memory| Proposition::MemoryReadDefined {
             memory: memory.clone(),
             pointer: base.clone(),
             value_type: ProgramType::UInt8,
@@ -55,12 +55,12 @@ fn conjunct_elimination_is_flat_against_unrelated_history_and_facts() {
         let leaf =
             |from: &Proposition, to: &Proposition, context: &PureFactContext| match (from, to) {
                 (
-                    Proposition::CMemoryReadDefined {
+                    Proposition::MemoryReadDefined {
                         memory: before,
                         pointer,
                         value_type,
                     },
-                    Proposition::CMemoryReadDefined { memory: after, .. },
+                    Proposition::MemoryReadDefined { memory: after, .. },
                 ) => crate::kernel::memory_provenance::typed_read_has_same_memory_source(
                     before,
                     after,
@@ -122,8 +122,8 @@ fn load_equality_work(earlier: u32, between: u32, written: bool) -> usize {
     for index in 0..between {
         after = after.store(base.offset_by_bytes(8 + index), crate::kernel::uint8(0u32));
     }
-    let bi = crate::kernel::intern_c_memory_ref(&before);
-    let ai = crate::kernel::intern_c_memory_ref(&after);
+    let bi = crate::kernel::intern_memory_ref(&before);
+    let ai = crate::kernel::intern_memory_ref(&after);
     let load = |m: &SharedMemory| {
         MachineTerm::MemoryLoad(m.clone(), Box::new(base.clone()), LoadKind::UInt8)
     };

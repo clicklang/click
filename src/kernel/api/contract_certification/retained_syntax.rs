@@ -371,8 +371,8 @@ impl Comparison {
                 },
             ) => {
                 at == bt
-                    && crate::kernel::intern_c_memory_ref(am).arena_id()
-                        == crate::kernel::intern_c_memory_ref(bm).arena_id()
+                    && crate::kernel::intern_memory_ref(am).arena_id()
+                        == crate::kernel::intern_memory_ref(bm).arena_id()
                     && self.argument(&A::Value(ap.clone()), &A::Value(bp.clone()))
             }
             (A::Algebraic(a), A::Algebraic(b)) => self.algebraic(a, b),
@@ -473,7 +473,7 @@ mod tests {
         let read = |memory: &Memory| AlgebraicTerm {
             algebraic_type: ty.clone(),
             node: AlgebraicTermNode::MemoryLoad {
-                memory: crate::kernel::intern_c_memory_ref(memory),
+                memory: crate::kernel::intern_memory_ref(memory),
                 pointer: Box::new(Pointer::null()),
             },
         };
@@ -545,7 +545,7 @@ mod tests {
         );
         let read = |memory: &crate::kernel::Memory| {
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory_ref(memory),
+                crate::kernel::intern_memory_ref(memory),
                 Box::new(crate::kernel::Pointer::null()),
                 crate::kernel::LoadKind::Int32,
             )
@@ -644,7 +644,7 @@ mod tests {
                         value: SharedMachineIntegerTerm::index(
                             MachineIntegerType::Int32,
                             MachineTerm::MemoryLoad(
-                                crate::kernel::intern_c_memory_ref(snapshot),
+                                crate::kernel::intern_memory_ref(snapshot),
                                 Box::new(Pointer::symbolic(Variable(712))),
                                 LoadKind::Int32,
                             ),

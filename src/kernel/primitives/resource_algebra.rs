@@ -4054,8 +4054,8 @@ impl ResourceContext {
             assumptions: &no_facts,
             cross_loop_havoc: false,
         };
-        let before_node = crate::kernel::intern_c_memory_ref(before);
-        let mut current = crate::kernel::intern_c_memory_ref(after);
+        let before_node = crate::kernel::intern_memory_ref(before);
+        let mut current = crate::kernel::intern_memory_ref(after);
         let mut affected = ResourceEntryIds::default();
         let mut reached_before = false;
         loop {
@@ -4137,8 +4137,8 @@ impl ResourceContext {
         // is younger meets the common ancestor. A store that leaves the cell
         // holding the same value in both snapshots changes nothing either
         // side reads.
-        let mut before_side = crate::kernel::intern_c_memory_ref(before);
-        let mut after_side = crate::kernel::intern_c_memory_ref(after);
+        let mut before_side = crate::kernel::intern_memory_ref(before);
+        let mut after_side = crate::kernel::intern_memory_ref(after);
         let unchanged_cell = |pointer: &Pointer| {
             matches!(
                 (before.cells.get(pointer), after.cells.get(pointer)),
@@ -5058,11 +5058,11 @@ impl ResourceContext {
                 }
                 AtomicConnectedFact::Proposition(proposition) => !matches!(
                     proposition,
-                    Proposition::CResourceComposition(_)
-                        | Proposition::CMemoryLoadable { .. }
-                        | Proposition::CMemoryCanStore { .. }
-                        | Proposition::CMemoryReadDefined { .. }
-                        | Proposition::CMemoryMutatesOnly { .. }
+                    Proposition::ResourceComposition(_)
+                        | Proposition::MemoryLoadable { .. }
+                        | Proposition::MemoryCanStore { .. }
+                        | Proposition::MemoryReadDefined { .. }
+                        | Proposition::MemoryMutatesOnly { .. }
                 ),
             }
         });
@@ -6523,7 +6523,7 @@ impl ResourceContext {
             || (composition.storage.index.owned_count == 1
                 && !composition.loan_dependencies.map.is_empty())
         {
-            vec![Proposition::CResourceComposition(composition)]
+            vec![Proposition::ResourceComposition(composition)]
         } else {
             Vec::new()
         }
@@ -8612,7 +8612,7 @@ fn instance_pointer_arguments(instance: &ResourceInstance) -> impl Iterator<Item
 /// The C pointer arguments among `arguments`, in order.
 fn algebraic_pointer_arguments(arguments: &[AlgebraicValue]) -> impl Iterator<Item = &Pointer> {
     arguments.iter().filter_map(|argument| match argument {
-        AlgebraicValue::C(ProgramValue::Pointer(pointer)) => Some(pointer.pointer()),
+        AlgebraicValue::Program(ProgramValue::Pointer(pointer)) => Some(pointer.pointer()),
         _ => None,
     })
 }
@@ -8625,7 +8625,7 @@ fn algebraic_pointer_arguments(arguments: &[AlgebraicValue]) -> impl Iterator<It
 /// never normalize together.
 fn normalization_anchor(arguments: &[AlgebraicValue]) -> Option<&PointerBlock> {
     match arguments.first() {
-        Some(AlgebraicValue::C(ProgramValue::Pointer(pointer)))
+        Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer)))
             if matches!(
                 pointer.pointer().block,
                 PointerBlock::Heap(_) | PointerBlock::Temporary(_)
@@ -8751,7 +8751,7 @@ impl OwnedMemberKey {
 /// The first argument of a token or composite when it is a pointer.
 fn normalization_root_pointer(arguments: &[AlgebraicValue]) -> Option<&Pointer> {
     match arguments.first() {
-        Some(AlgebraicValue::C(ProgramValue::Pointer(pointer))) => Some(pointer.pointer()),
+        Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) => Some(pointer.pointer()),
         _ => None,
     }
 }
@@ -9275,7 +9275,7 @@ mod zero_quantity_graph_tests {
     #[test]
     fn zero_ownership_uses_graph_with_snapshot_scope() {
         let _session = crate::kernel::VerificationSession::enter();
-        let before = crate::kernel::intern_c_memory(Memory::new().with_block("zero-quantity", 8));
+        let before = crate::kernel::intern_memory(Memory::new().with_block("zero-quantity", 8));
         let pointer = |index| Pointer {
             block: "zero-quantity".into(),
             offset: PointerOffsetTerm::scale_int32(index, 4),
@@ -9290,7 +9290,7 @@ mod zero_quantity_graph_tests {
             ))
         };
         let (a, b) = (var(90_101), var(90_102));
-        let after = crate::kernel::intern_c_memory(before.memory().clone().store(
+        let after = crate::kernel::intern_memory(before.memory().clone().store(
             pointer(b.clone()),
             ProgramValue::Int32(MachineTerm::constant(9)),
         ));
@@ -12030,17 +12030,17 @@ impl ResourceFact {
     }
 
     pub fn own_composite(name: String, arguments: Vec<ProgramValue>) -> Self {
-        let arguments = arguments.into_iter().map(AlgebraicValue::C).collect();
+        let arguments = arguments.into_iter().map(AlgebraicValue::Program).collect();
         Self::own(Resource::Composite { name, arguments })
     }
 
     pub fn view_composite(name: String, arguments: Vec<ProgramValue>) -> Self {
-        let arguments = arguments.into_iter().map(AlgebraicValue::C).collect();
+        let arguments = arguments.into_iter().map(AlgebraicValue::Program).collect();
         Self::View(Resource::Composite { name, arguments })
     }
 
     pub fn own_token(name: String, arguments: Vec<ProgramValue>) -> Self {
-        let arguments = arguments.into_iter().map(AlgebraicValue::C).collect();
+        let arguments = arguments.into_iter().map(AlgebraicValue::Program).collect();
         Self::own(Resource::Token { name, arguments })
     }
 
@@ -12143,8 +12143,8 @@ impl ResourceFact {
             return None;
         }
         let [
-            AlgebraicValue::C(ProgramValue::Pointer(base)),
-            AlgebraicValue::C(bytes),
+            AlgebraicValue::Program(ProgramValue::Pointer(base)),
+            AlgebraicValue::Program(bytes),
         ] = arguments.as_ref()
         else {
             return None;
@@ -12157,7 +12157,7 @@ impl ResourceFact {
         Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_) => true,
             Resource::Memory(range) => &range.base().block == block,
             Resource::Composite { arguments, .. } => arguments.iter().any(
-                |argument| matches!(argument, AlgebraicValue::C(ProgramValue::Pointer(pointer)) if &pointer.block == block),
+                |argument| matches!(argument, AlgebraicValue::Program(ProgramValue::Pointer(pointer)) if &pointer.block == block),
             ),
             Resource::Iterated(iterated) => iterated.blocks().contains(&block),
             Resource::Token { .. } | Resource::PopulationAuthority(_)
@@ -12191,14 +12191,14 @@ impl ResourceFact {
         // (context inconsistency, singleton substitution), which are proof
         // search rather than resource theory.
         let right = self.resource().clone();
-        assumptions.proves_exact(&Proposition::CResourceSeparate {
+        assumptions.proves_exact(&Proposition::ResourceSeparate {
             left: Box::new(allocation_memory.clone()),
             right: Box::new(right.clone()),
         }) || assumptions.proves_resource_separate(&allocation_memory, &right)
     }
 
     pub fn view_token(name: String, arguments: Vec<ProgramValue>) -> Self {
-        let arguments = arguments.into_iter().map(AlgebraicValue::C).collect();
+        let arguments = arguments.into_iter().map(AlgebraicValue::Program).collect();
         Self::View(Resource::Token { name, arguments })
     }
 
@@ -12696,12 +12696,12 @@ mod support_removal_tests {
                 ProgramValue::Float64(MachineTerm::uint64_constant(0)),
             );
         let short_load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory_ref(&memory),
+            crate::kernel::intern_memory_ref(&memory),
             Box::new(short_pointer.clone()),
             crate::kernel::LoadKind::Int16,
         );
         let wide_load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory_ref(&memory),
+            crate::kernel::intern_memory_ref(&memory),
             Box::new(wide_pointer.clone()),
             crate::kernel::LoadKind::Float64,
         );
@@ -12739,12 +12739,12 @@ mod support_removal_tests {
             .store(pointer.clone(), int16(0));
         let second = first.clone().store(pointer.clone(), int16(1));
         let first_load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory_ref(&first),
+            crate::kernel::intern_memory_ref(&first),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
         );
         let second_load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory_ref(&second),
+            crate::kernel::intern_memory_ref(&second),
             Box::new(pointer),
             crate::kernel::LoadKind::Int32,
         );
@@ -12772,7 +12772,7 @@ mod support_removal_tests {
             .with_block("deep-load", 8)
             .store(pointer.clone(), int16(0));
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory_ref(&memory),
+            crate::kernel::intern_memory_ref(&memory),
             Box::new(pointer),
             crate::kernel::LoadKind::Int32,
         );

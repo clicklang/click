@@ -8,7 +8,8 @@ fn framed_index_transport_visits_shared_nodes_without_tree_exports() {
         let mut samples = Vec::new();
         for size in [16, 64, 256] {
             let _session = VerificationSession::enter();
-            let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1018910));
+            let mut root =
+                KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(1018910));
             for _ in 0..size {
                 root = KernelTerm::machine_binary_shared(
                     ty,
@@ -68,7 +69,8 @@ fn exact_index_normalization_visits_shared_nodes_without_tree_exports() {
         let mut samples = Vec::new();
         for size in [16, 64, 256] {
             let _session = VerificationSession::enter();
-            let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1018910));
+            let mut root =
+                KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(1018910));
             for _ in 0..size {
                 root = KernelTerm::machine_binary_shared(
                     ty,
@@ -129,7 +131,7 @@ fn exact_index_normalization_rewrites_shared_read_dags_without_exports() {
             .with_block("exact-scaling", 4)
             .store(pointer.clone(), ProgramValue::Int32(stored.clone()));
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(memory),
+            crate::kernel::intern_memory(memory),
             pointer.into(),
             LoadKind::Int32,
         );
@@ -181,8 +183,8 @@ fn exact_index_normalization_orders_xor_atoms_without_expanding_their_dags() {
     for size in [16, 64, 256] {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let mut a = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1018971));
-        let mut b = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1018972));
+        let mut a = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(1018971));
+        let mut b = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(1018972));
         for _ in 0..size {
             a = KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [a.clone(), a]);
             b = KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [b.clone(), b]);

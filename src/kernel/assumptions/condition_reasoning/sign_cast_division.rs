@@ -401,7 +401,7 @@ mod tests {
             MachineCastSpelling as Encoding, ProgramType,
         };
         let _session = crate::kernel::VerificationSession::enter();
-        let x = KernelTerm::variable(KernelType::C(ProgramType::UInt32), Variable(189113));
+        let x = KernelTerm::variable(KernelType::Program(ProgramType::UInt32), Variable(189113));
         let prefix = KernelTerm::machine_binary_shared(Ty::UInt32, Op::Add, [x.clone(), x]);
         let literal = |format, value| {
             KernelTermImport::default()

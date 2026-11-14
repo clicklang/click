@@ -12,12 +12,12 @@ fn checked_memory_load_equality(
 ) -> bool {
     checked_atomic_load_equality(
         &MachineTerm::MemoryLoad(
-            intern_c_memory_ref(left),
+            intern_memory_ref(left),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
         ),
         &MachineTerm::MemoryLoad(
-            intern_c_memory_ref(right),
+            intern_memory_ref(right),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
         ),
@@ -97,7 +97,7 @@ pub(in crate::kernel) fn explicit_frame(
         if !facts.proves_resource_separate(&member, &kept) {
             return None;
         }
-        selected = selected.assume_proposition(Proposition::CResourceSeparate {
+        selected = selected.assume_proposition(Proposition::ResourceSeparate {
             left: Box::new(member),
             right: Box::new(kept),
         });
@@ -105,7 +105,7 @@ pub(in crate::kernel) fn explicit_frame(
     if !crate::kernel::region_footprint::separate_using(&footprint, &kept, &selected) {
         return None;
     }
-    let separation = Proposition::CResourceSeparate {
+    let separation = Proposition::ResourceSeparate {
         left: Box::new(footprint),
         right: Box::new(kept),
     };
@@ -226,7 +226,7 @@ fn certify_contract_with_kernel_artifacts(
         .map(|case_facts| {
             let mut facts = derived_entry_facts.clone();
             facts.extend(case_facts.iter().cloned());
-            prove_checked_c_function_execution_with_environment(
+            prove_checked_program_function_execution_with_environment(
                 state.clone(),
                 function.clone(),
                 arguments.clone(),
@@ -237,7 +237,7 @@ fn certify_contract_with_kernel_artifacts(
             )
         })
         .collect::<Vec<_>>();
-    prove_c_function_contract_execution_paths_with_checked_artifacts(
+    prove_program_function_contract_execution_paths_with_checked_artifacts(
         state,
         function,
         arguments,

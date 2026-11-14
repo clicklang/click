@@ -4027,7 +4027,7 @@ mod tests {
     fn signed_read_atom_identity_survives_native_export() {
         use crate::kernel::{KernelTermExport, KernelTermImport, LoadKind, VerificationSession};
         let _session = VerificationSession::enter();
-        let memory = crate::kernel::intern_c_memory(crate::kernel::Memory::new());
+        let memory = crate::kernel::intern_memory(crate::kernel::Memory::new());
         let address = Pointer::symbolic(Variable(997151));
         let read = |offset, kind| {
             MachineTerm::MemoryLoad(

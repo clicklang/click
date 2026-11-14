@@ -99,16 +99,21 @@ fn construction_completion_work_scales_with_value_fields() {
                 .with_resource_context(resources)
                 .with_aggregate_return_destination(at.clone(), layout.clone());
             let function = if parameter {
-                c_function(
+                program_function(
                     ProgramType::Void,
                     "wide_constructor",
-                    vec![c_parameter("destination", ProgramType::Int32Pointer)],
-                    c_skip(),
+                    vec![program_parameter("destination", ProgramType::Int32Pointer)],
+                    program_skip(),
                 )
                 .with_construction_parameter(0, layout)
             } else {
-                c_function(ProgramType::VoidPointer, "wide_result", vec![], c_skip())
-                    .with_construction_return(layout)
+                program_function(
+                    ProgramType::VoidPointer,
+                    "wide_result",
+                    vec![],
+                    program_skip(),
+                )
+                .with_construction_return(layout)
             };
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let mut state = caller.clone().with_local(

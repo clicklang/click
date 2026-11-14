@@ -6,15 +6,15 @@ const RIGHT: Variable = Variable(155_002);
 
 fn operation(a: ProgramExpression, b: ProgramExpression, remainder: bool) -> ProgramExpression {
     if remainder {
-        c_remainder(a, b)
+        crate::kernel::program_expression::remainder(a, b)
     } else {
-        c_divide(a, b)
+        crate::kernel::program_expression::divide(a, b)
     }
 }
 
 fn evaluated(expression: ProgramExpression) -> ExpressionOutcome {
-    let theorem = prove_c_expression_evaluation(ExecutionState::new(), expression).unwrap();
-    let Proposition::CExpressionEvaluates { outcome, .. } = theorem.proposition() else {
+    let theorem = prove_program_expression_evaluation(ExecutionState::new(), expression).unwrap();
+    let Proposition::ProgramExpressionEvaluates { outcome, .. } = theorem.proposition() else {
         unreachable!()
     };
     outcome.clone()
@@ -47,7 +47,7 @@ fn paths(
     assumptions: &PureFactContext,
 ) -> Vec<ExpressionPath> {
     if remainder {
-        crate::kernel::eval::apply_c_remainder(
+        crate::kernel::eval::apply_program_remainder(
             value(ty, LEFT),
             value(ty, RIGHT),
             vec![].into(),
@@ -55,7 +55,7 @@ fn paths(
             assumptions,
         )
     } else {
-        crate::kernel::eval::apply_c_divide(
+        crate::kernel::eval::apply_program_divide(
             value(ty, LEFT),
             value(ty, RIGHT),
             vec![].into(),
@@ -85,8 +85,8 @@ fn wide_division_signed_constants_match_exact_oracle_and_native_failures() {
         for b in samples {
             for remainder in [false, true] {
                 let outcome = evaluated(operation(
-                    c_int128_literal(a),
-                    c_int128_literal(b),
+                    crate::kernel::program_expression::int128_literal(a),
+                    crate::kernel::program_expression::int128_literal(b),
                     remainder,
                 ));
                 let bad = if b == 0 {
@@ -131,8 +131,8 @@ fn wide_division_unsigned_preserves_high_bits_and_format() {
         for b in [0, 1, 3, 1u128 << 64, (1u128 << 127) + 1, u128::MAX] {
             for remainder in [false, true] {
                 let outcome = evaluated(operation(
-                    c_uint128_literal(a),
-                    c_uint128_literal(b),
+                    crate::kernel::program_expression::uint128_literal(a),
+                    crate::kernel::program_expression::uint128_literal(b),
                     remainder,
                 ));
                 if b == 0 {
@@ -267,17 +267,17 @@ fn wide_division_each_missing_guard_retains_its_undefined_path() {
 fn wide_division_minimum_dividend_still_checks_minus_one_for_remainder() {
     for remainder in [false, true] {
         let expression = operation(
-            c_int128_literal(i128::MIN),
+            crate::kernel::program_expression::int128_literal(i128::MIN),
             ProgramExpression::Value(value(MachineIntegerType::Int128, RIGHT)),
             remainder,
         );
         let (zero, _, minus_one, _) = guards(MachineIntegerType::Int128);
         let assumptions = PureFactContext::new().assume_condition(zero, false);
-        let output = evaluate_c_expression_paths(
+        let output = evaluate_program_expression_paths(
             &ExecutionState::new(),
             &expression,
             &assumptions,
-            &mut ExecutionBudget::for_c_expression(&expression),
+            &mut ExecutionBudget::for_program_expression(&expression),
         )
         .unwrap();
         assert_eq!(output.len(), 2);
@@ -300,10 +300,22 @@ fn wide_division_minimum_dividend_still_checks_minus_one_for_remainder() {
 fn wide_division_promotions_are_explicit_and_operand_definedness_is_preserved() {
     for remainder in [false, true] {
         for pair in [
-            (c_int128_literal(7), c_uint128_literal(3)),
-            (c_int128_literal(7), c_int32_literal(3)),
-            (c_int64_literal(7), c_uint128_literal(3)),
-            (c_uint128_literal(7), c_void_value()),
+            (
+                crate::kernel::program_expression::int128_literal(7),
+                crate::kernel::program_expression::uint128_literal(3),
+            ),
+            (
+                crate::kernel::program_expression::int128_literal(7),
+                crate::kernel::program_expression::int32_literal(3),
+            ),
+            (
+                crate::kernel::program_expression::int64_literal(7),
+                crate::kernel::program_expression::uint128_literal(3),
+            ),
+            (
+                crate::kernel::program_expression::uint128_literal(7),
+                program_void_value(),
+            ),
         ] {
             assert_eq!(
                 evaluated(operation(pair.0, pair.1, remainder)),
@@ -312,8 +324,11 @@ fn wide_division_promotions_are_explicit_and_operand_definedness_is_preserved() 
         }
         assert_eq!(
             evaluated(operation(
-                c_int128_literal(-7),
-                c_cast(c_int32_literal(3), ProgramType::Int128),
+                crate::kernel::program_expression::int128_literal(-7),
+                crate::kernel::program_expression::cast(
+                    crate::kernel::program_expression::int32_literal(3),
+                    ProgramType::Int128
+                ),
                 remainder
             )),
             ExpressionOutcome::Value(
@@ -330,11 +345,14 @@ fn wide_division_promotions_are_explicit_and_operand_definedness_is_preserved() 
         );
         assert_eq!(
             evaluated(operation(
-                c_cast(
-                    c_divide(c_int64_literal(1), c_int64_literal(0)),
+                crate::kernel::program_expression::cast(
+                    crate::kernel::program_expression::divide(
+                        crate::kernel::program_expression::int64_literal(1),
+                        crate::kernel::program_expression::int64_literal(0)
+                    ),
                     ProgramType::Int128
                 ),
-                c_int128_literal(1),
+                crate::kernel::program_expression::int128_literal(1),
                 remainder
             )),
             ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::DivisionByZero)
@@ -347,7 +365,7 @@ fn wide_division_unknown_guards_cannot_produce_an_unconditional_theorem() {
     for ty in [MachineIntegerType::Int128, MachineIntegerType::UInt128] {
         for remainder in [false, true] {
             assert!(
-                prove_c_expression_evaluation(
+                prove_program_expression_evaluation(
                     ExecutionState::new(),
                     operation(
                         ProgramExpression::Value(value(ty, LEFT)),
@@ -458,11 +476,15 @@ fn wide_division_checked_function_artifacts_recheck_exactly() {
             } else {
                 ProgramType::UInt128
             };
-            let function = c_function(
+            let function = program_function(
                 cty,
                 "wide_division",
-                vec![c_parameter("a", cty), c_parameter("b", cty)],
-                c_return(operation(c_variable("a"), c_variable("b"), remainder)),
+                vec![program_parameter("a", cty), program_parameter("b", cty)],
+                program_return(operation(
+                    crate::kernel::program_expression::variable("a"),
+                    crate::kernel::program_expression::variable("b"),
+                    remainder,
+                )),
             );
             let state = ExecutionState::new().with_local("caller", int32(77));
             let arguments = vec![
@@ -470,7 +492,7 @@ fn wide_division_checked_function_artifacts_recheck_exactly() {
                 ProgramExpression::Value(value(ty, RIGHT)),
             ];
             let check = || {
-                prove_checked_c_function_execution_with_environment(
+                prove_checked_program_function_execution_with_environment(
                     state.clone(),
                     function.clone(),
                     arguments.clone(),
@@ -492,7 +514,7 @@ fn wide_division_checked_function_artifacts_recheck_exactly() {
             );
             // The same function without the guard assumptions retains its UB
             // paths, so its artifact cannot agree with the checked safe one.
-            let unsafe_entry = prove_checked_c_function_execution_with_environment(
+            let unsafe_entry = prove_checked_program_function_execution_with_environment(
                 state,
                 function,
                 arguments,
@@ -557,11 +579,11 @@ fn wide_promoted_divisors_keep_native_guards_and_overflow_disjunctions() {
         for remainder in [false, true] {
             let expression = promoted_division_expression(ty, remainder);
             let evaluate = |context: &PureFactContext| {
-                evaluate_c_expression_paths(
+                evaluate_program_expression_paths(
                     &ExecutionState::new(),
                     &expression,
                     context,
-                    &mut ExecutionBudget::for_c_expression(&expression),
+                    &mut ExecutionBudget::for_program_expression(&expression),
                 )
                 .unwrap()
             };

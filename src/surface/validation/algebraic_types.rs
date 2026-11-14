@@ -60,7 +60,7 @@ impl AlgebraicVariables {
     }
 
     fn insert(&mut self, name: &str, c_type: C0Type) {
-        self.bind(name, ClickType::C(c_type));
+        self.bind(name, ClickType::Program(c_type));
     }
 
     /// Hides `name` until the open scope ends.
@@ -84,7 +84,7 @@ impl AlgebraicVariables {
                 lowered,
                 ..
             } => {
-                if let Some(c_type) = infer_c_expression_type(lowered, self) {
+                if let Some(c_type) = infer_program_expression_type(lowered, self) {
                     return Ok(Some(ClickType::CObjectPointer {
                         c_type,
                         struct_name: struct_name.clone(),
@@ -127,7 +127,7 @@ impl AlgebraicVariables {
             }
             ContractExpression::Binding(name)
             | ContractExpression::CBinding(name)
-            | ContractExpression::CFragment(ProgramExpression::Variable(name)) => {
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
                 if let Some(nominal) = self.nominal_types.get(name) {
                     return Ok(Some(nominal.clone()));
                 }
@@ -148,7 +148,7 @@ impl AlgebraicVariables {
             _ => {}
         }
         infer_contract_expression_type(expression, self, functions, context)
-            .map(|inferred| inferred.map(ClickType::C))
+            .map(|inferred| inferred.map(ClickType::Program))
     }
 }
 
@@ -234,7 +234,7 @@ pub(in crate::surface) fn resource_match_arm_scopes<'a, 'b>(
                 ClickType::Resource => {
                     return Err(ClickError::new("Resource is not an algebraic field type"));
                 }
-                ClickType::C(_) | ClickType::CObjectPointer { .. } => {
+                ClickType::Program(_) | ClickType::CObjectPointer { .. } => {
                     parameters.push(FunctionParameter {
                         name: name.clone(),
                         click_type: ty.clone(),
@@ -365,7 +365,7 @@ pub(in crate::surface) struct BodyChildren {
 /// an immediate constructor binding of the arm (`constructor_bindings`) or a
 /// field of the parent itself, of the child field's type. A scalar parent
 /// field used in a child argument or an unnamed resource argument is spelled
-/// as the C name the kernel binds it to (see `resource_body_c_fragment`).
+/// as the C name the kernel binds it to (see `resource_body_program_expression`).
 pub(in crate::surface) fn resource_body_children<'b>(
     definition: &ResourceDefinition,
     body: &CompositeResourceBody,
@@ -375,7 +375,7 @@ pub(in crate::surface) fn resource_body_children<'b>(
     resources: &impl Fn(&str) -> Option<&'b ResourceDefinition>,
 ) -> Result<BodyChildren, ClickError> {
     let no_values = BTreeMap::new();
-    let field_names = ContractSubstitutions::with_body_fields_as_c_names(&no_values);
+    let field_names = ContractSubstitutions::with_body_fields_as_program_names(&no_values);
     let spell_fields = |arguments: &[ContractExpression]| {
         arguments
             .iter()
@@ -544,7 +544,7 @@ pub(in crate::surface) fn resource_body_children<'b>(
             // C expressions are read-only. The kernel checks their value,
             // ownership requirements, and path obligations when rewriting.
             if !matches!(argument, ContractExpression::Call { .. }) {
-                resource_argument_to_c_expression(argument)?;
+                resource_argument_to_program_expression(argument)?;
             }
             // Pure calls are type checked by the shared specification lowerer.
         }
@@ -598,7 +598,7 @@ pub(in crate::surface) fn resource_body_children<'b>(
                 ContractExpression::Binding(variable)
                 | ContractExpression::CBinding(variable)
                 | ContractExpression::AlgebraicVariable { name: variable, .. }
-                | ContractExpression::CFragment(ProgramExpression::Variable(variable)) => {
+                | ContractExpression::ProgramExpression(ProgramExpression::Variable(variable)) => {
                     let (index, _) = constructor_bindings
                         .get(variable.as_str())
                         .filter(|(_, ty)| *ty == field.click_type())
@@ -1159,7 +1159,7 @@ pub(super) fn validate_algebraic_type_uses(
         )?;
         if matches!(
             definition.return_type(),
-            ClickType::C(_) | ClickType::CObjectPointer { .. } | ClickType::Integer
+            ClickType::Program(_) | ClickType::CObjectPointer { .. } | ClickType::Integer
         ) {
             let click_variables = definition
                 .parameters()
@@ -1220,14 +1220,14 @@ pub(super) fn validate_algebraic_type_uses(
                     describe_click_type(&ClickType::Algebraic(expected.clone()))
                 )));
             }
-            (ClickType::C(_) | ClickType::CObjectPointer { .. }, Some(actual)) => {
+            (ClickType::Program(_) | ClickType::CObjectPointer { .. }, Some(actual)) => {
                 return Err(ClickError::new(format!(
                     "function `{}` returns a C value, but its body has algebraic type {}",
                     definition.name(),
                     describe_click_type(&ClickType::Algebraic(actual))
                 )));
             }
-            (ClickType::C(_) | ClickType::CObjectPointer { .. }, None) => {}
+            (ClickType::Program(_) | ClickType::CObjectPointer { .. }, None) => {}
             (ClickType::Integer, None) => {}
             (ClickType::Integer, Some(actual)) => {
                 return Err(ClickError::new(format!(
@@ -1291,13 +1291,13 @@ pub(super) fn validate_algebraic_type_uses(
                                 (Some((name, format)), ClickType::Parameter(parameter))
                                     if parameter == *name =>
                                 {
-                                    ClickType::C(format.clone())
+                                    ClickType::Program(format.clone())
                                 }
                                 (Some((name, format)), ClickType::Algebraic(application))
                                     if application.name == *name
                                         && application.arguments.is_empty() =>
                                 {
-                                    ClickType::C(format.clone())
+                                    ClickType::Program(format.clone())
                                 }
                                 (_, click_type) => click_type,
                             },
@@ -1551,7 +1551,7 @@ fn validate_algebraic_proposition_one(
                 ClickType::Resource => {
                     return Err(ClickError::new("Resource quantifiers are not supported"));
                 }
-                ClickType::C(_) | ClickType::CObjectPointer { .. } => {
+                ClickType::Program(_) | ClickType::CObjectPointer { .. } => {
                     variables.bind(name, c_type.clone());
                 }
                 ClickType::Integer => variables.hide(name),
@@ -1603,7 +1603,7 @@ fn validate_algebraic_proposition_one(
             // `uint64`, `(0..n)` over `int32`.
             let mut item_type = C0Type::Int32;
             for bound in [start, end] {
-                if let Some(ClickType::C(bound_type)) =
+                if let Some(ClickType::Program(bound_type)) =
                     variables.argument_type(bound, click_functions, context)?
                     && bound_type != C0Type::Int32
                 {
@@ -1690,7 +1690,7 @@ fn validate_algebraic_proposition_one(
                         )));
                     }
                     (
-                        ClickType::C(expected)
+                        ClickType::Program(expected)
                         | ClickType::CObjectPointer {
                             c_type: expected, ..
                         },
@@ -1709,7 +1709,7 @@ fn validate_algebraic_proposition_one(
                         )));
                     }
                     (
-                        ClickType::C(expected)
+                        ClickType::Program(expected)
                         | ClickType::CObjectPointer {
                             c_type: expected, ..
                         },
@@ -1719,7 +1719,7 @@ fn validate_algebraic_proposition_one(
                         .and_then(|argument| literal_fits(argument, *expected))
                         == Some(true) => {}
                     (
-                        ClickType::C(expected)
+                        ClickType::Program(expected)
                         | ClickType::CObjectPointer {
                             c_type: expected, ..
                         },
@@ -1739,11 +1739,11 @@ fn validate_algebraic_proposition_one(
                         )));
                     }
                     (
-                        ClickType::C(expected)
+                        ClickType::Program(expected)
                         | ClickType::CObjectPointer {
                             c_type: expected, ..
                         },
-                        Some(ClickType::C(actual)),
+                        Some(ClickType::Program(actual)),
                     ) if !click_argument_types_compatible(actual, *expected) => {
                         return Err(ClickError::new(format!(
                             "predicate `{name}` argument {index} expects {}, got {} in {context}{}",
@@ -1752,7 +1752,7 @@ fn validate_algebraic_proposition_one(
                             written_conversion_hint(actual, *expected)
                         )));
                     }
-                    (ClickType::C(_) | ClickType::CObjectPointer { .. }, _) => {}
+                    (ClickType::Program(_) | ClickType::CObjectPointer { .. }, _) => {}
                 }
             }
             Ok(())
@@ -1913,7 +1913,7 @@ fn expression_is_integer_match_result(
                         ClickType::Resource => {
                             return Err(ClickError::new("Resource is not an algebraic field type"));
                         }
-                        ClickType::C(_) | ClickType::CObjectPointer { .. } => {}
+                        ClickType::Program(_) | ClickType::CObjectPointer { .. } => {}
                         ClickType::Algebraic(algebraic_type) => {
                             algebraic_bindings.insert(
                                 binding.clone(),
@@ -2132,7 +2132,7 @@ fn validate_algebraic_expression_node(
                         )));
                     }
                     (
-                        ClickType::C(expected)
+                        ClickType::Program(expected)
                         | ClickType::CObjectPointer {
                             c_type: expected, ..
                         },
@@ -2141,7 +2141,7 @@ fn validate_algebraic_expression_node(
                         argument, *expected,
                     ) => {}
                     (
-                        ClickType::C(expected)
+                        ClickType::Program(expected)
                         | ClickType::CObjectPointer {
                             c_type: expected, ..
                         },
@@ -2155,7 +2155,7 @@ fn validate_algebraic_expression_node(
                         )));
                     }
                     (
-                        ClickType::C(expected)
+                        ClickType::Program(expected)
                         | ClickType::CObjectPointer {
                             c_type: expected, ..
                         },
@@ -2283,7 +2283,7 @@ fn validate_algebraic_expression_node(
                             return Err(ClickError::new("Resource is not an algebraic field type"));
                         }
                         ClickType::Parameter(_) => {}
-                        field_type @ (ClickType::C(_) | ClickType::CObjectPointer { .. }) => {
+                        field_type @ (ClickType::Program(_) | ClickType::CObjectPointer { .. }) => {
                             variables.bind(binding, field_type);
                         }
                         ClickType::Algebraic(algebraic_type) => {
@@ -2338,7 +2338,7 @@ fn validate_algebraic_expression_node(
                                 click_functions,
                                 context,
                             )?
-                            .map(ClickType::C)
+                            .map(ClickType::Program)
                         }
                     }
                 };
@@ -2346,11 +2346,11 @@ fn validate_algebraic_expression_node(
                 if let (Some(expected), Some(actual)) = (&result_type, &arm_type) {
                     let compatible = match (expected, actual) {
                         (
-                            ClickType::C(expected)
+                            ClickType::Program(expected)
                             | ClickType::CObjectPointer {
                                 c_type: expected, ..
                             },
-                            ClickType::C(actual),
+                            ClickType::Program(actual),
                         ) => click_types_compatible(*actual, *expected),
                         _ => expected == actual,
                     };
@@ -2589,7 +2589,7 @@ fn validate_algebraic_expression_node(
                         describe_click_type(&ClickType::Algebraic(expected.clone()))
                     )));
                 }
-                (Some(ClickType::C(expected)), Some(actual)) => {
+                (Some(ClickType::Program(expected)), Some(actual)) => {
                     return Err(ClickError::new(format!(
                         "let binding `{name}` expects {}, got {} in {context}",
                         describe_c0_type(*expected),
@@ -2690,7 +2690,7 @@ fn validate_algebraic_expression_node(
                             &mut |leaf| {
                                 Ok(
                                     match variables.argument_type(leaf, click_functions, context)? {
-                                        Some(ClickType::C(c_type)) => {
+                                        Some(ClickType::Program(c_type)) => {
                                             SpecValueType::Scalar(Some(c_type))
                                         }
                                         _ => SpecValueType::Scalar(None),
@@ -2756,7 +2756,7 @@ fn validate_algebraic_expression_node(
                     // parameter, in a pure function exactly as in a resource
                     // argument.
                     (
-                        ClickType::C(expected)
+                        ClickType::Program(expected)
                         | ClickType::CObjectPointer {
                             c_type: expected, ..
                         },
@@ -2788,7 +2788,7 @@ fn validate_algebraic_expression_node(
                         )));
                     }
                     (
-                        ClickType::C(expected)
+                        ClickType::Program(expected)
                         | ClickType::CObjectPointer {
                             c_type: expected, ..
                         },
@@ -2801,7 +2801,7 @@ fn validate_algebraic_expression_node(
                         )));
                     }
                     (
-                        ClickType::C(expected)
+                        ClickType::Program(expected)
                         | ClickType::CObjectPointer {
                             c_type: expected, ..
                         },
@@ -2811,7 +2811,7 @@ fn validate_algebraic_expression_node(
                         .and_then(|argument| literal_fits(argument, *expected))
                         == Some(true) => {}
                     (
-                        ClickType::C(expected)
+                        ClickType::Program(expected)
                         | ClickType::CObjectPointer {
                             c_type: expected, ..
                         },
@@ -2831,11 +2831,11 @@ fn validate_algebraic_expression_node(
                         )));
                     }
                     (
-                        ClickType::C(expected)
+                        ClickType::Program(expected)
                         | ClickType::CObjectPointer {
                             c_type: expected, ..
                         },
-                        Some(ClickType::C(actual)),
+                        Some(ClickType::Program(actual)),
                     ) if !click_types_compatible(actual, *expected) => {
                         return Err(ClickError::new(format!(
                             "function `{name}` argument {index} expects {}, got {} in {context}{}",
@@ -2844,7 +2844,7 @@ fn validate_algebraic_expression_node(
                             written_conversion_hint(actual, *expected)
                         )));
                     }
-                    (ClickType::C(_) | ClickType::CObjectPointer { .. }, _) => {}
+                    (ClickType::Program(_) | ClickType::CObjectPointer { .. }, _) => {}
                 }
             }
             let return_type = function
@@ -2865,18 +2865,18 @@ fn validate_algebraic_expression_node(
                 ClickType::Resource => None,
                 ClickType::Parameter(_) => None,
                 ClickType::Algebraic(application) => Some(application),
-                ClickType::C(_) | ClickType::CObjectPointer { .. } => None,
+                ClickType::Program(_) | ClickType::CObjectPointer { .. } => None,
                 ClickType::Integer => None,
             }))
         }
         // A C name of a Rust enum's type holds that enum's value.
         ContractExpression::Binding(name)
         | ContractExpression::CBinding(name)
-        | ContractExpression::CFragment(ProgramExpression::Variable(name)) => Ok(variables
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => Ok(variables
             .get(name)
             .and_then(|c_type| AlgebraicTypeApplication::of_enum_c_type(*c_type))),
         // So does `*r` for a reference `r` to one.
-        ContractExpression::CFragment(ProgramExpression::Load(pointer))
+        ContractExpression::ProgramExpression(ProgramExpression::Load(pointer))
             if matches!(pointer.as_ref(), ProgramExpression::Variable(name)
                 if matches!(variables.get(name), Some(C0Type::ParameterPointer(_)))) =>
         {
@@ -2892,7 +2892,7 @@ fn validate_algebraic_expression_node(
         }
         ContractExpression::QualifiedC { .. }
         | ContractExpression::CUnary { .. }
-        | ContractExpression::CFragment(_)
+        | ContractExpression::ProgramExpression(_)
         | ContractExpression::ArrayIndex { .. }
         | ContractExpression::Field { .. }
         | ContractExpression::ResourceCount(_)
@@ -2901,8 +2901,8 @@ fn validate_algebraic_expression_node(
 }
 
 /// Whether one of two types is Integer and the other a C integer.
-fn integer_with_c_integer(left: &ClickType, right: &ClickType) -> bool {
-    let c_integer = |click_type: &ClickType| matches!(click_type, ClickType::C(c_type) if crate::languages::c::syntax::is_integer_type(*c_type));
+fn integer_with_program_integer(left: &ClickType, right: &ClickType) -> bool {
+    let c_integer = |click_type: &ClickType| matches!(click_type, ClickType::Program(c_type) if crate::languages::c::syntax::is_integer_type(*c_type));
     (*left == ClickType::Integer && c_integer(right))
         || (*right == ClickType::Integer && c_integer(left))
 }
@@ -2910,8 +2910,8 @@ fn integer_with_c_integer(left: &ClickType, right: &ClickType) -> bool {
 fn generic_click_types_compatible(actual: &ClickType, expected: &ClickType) -> bool {
     match (actual, expected) {
         (
-            ClickType::C(actual) | ClickType::CObjectPointer { c_type: actual, .. },
-            ClickType::C(expected)
+            ClickType::Program(actual) | ClickType::CObjectPointer { c_type: actual, .. },
+            ClickType::Program(expected)
             | ClickType::CObjectPointer {
                 c_type: expected, ..
             },
@@ -3017,7 +3017,7 @@ fn require_scalar_return_value(
                 click_type == &Some(ClickType::Integer),
             )?;
             let value_type = match inferred {
-                SpecValueType::Scalar(Some(ty)) => Some(ClickType::C(ty)),
+                SpecValueType::Scalar(Some(ty)) => Some(ClickType::Program(ty)),
                 SpecValueType::Integer => Some(ClickType::Integer),
                 SpecValueType::Algebraic(application) => Some(ClickType::Algebraic(application)),
                 _ => infer_generic_expression_type(
@@ -3034,7 +3034,7 @@ fn require_scalar_return_value(
                 });
                 let compatible = value_type.as_ref().is_some_and(|actual| {
                     generic_click_types_compatible(actual, declared)
-                        && (declared != &ClickType::C(C0Type::Bool) || actual == declared)
+                        && (declared != &ClickType::Program(C0Type::Bool) || actual == declared)
                 });
                 if !null && !compatible {
                     return Err(ClickError::new(format!(
@@ -3210,7 +3210,7 @@ fn require_scalar_return_leaf(
             types.end(scope);
             checked?;
             if generic_click_types_compatible(&accumulator_type, expected)
-                && (expected != &ClickType::C(C0Type::Bool) || &accumulator_type == expected)
+                && (expected != &ClickType::Program(C0Type::Bool) || &accumulator_type == expected)
             {
                 Ok(())
             } else {
@@ -3239,10 +3239,10 @@ fn require_scalar_return_leaf(
             )?;
             let compatible = match (&actual, expected) {
                 (SpecValueType::Integer, ClickType::Integer) => true,
-                (SpecValueType::Scalar(Some(actual)), ClickType::C(C0Type::Bool)) => {
+                (SpecValueType::Scalar(Some(actual)), ClickType::Program(C0Type::Bool)) => {
                     *actual == C0Type::Bool
                 }
-                (SpecValueType::Scalar(Some(actual)), ClickType::C(expected)) => {
+                (SpecValueType::Scalar(Some(actual)), ClickType::Program(expected)) => {
                     click_types_compatible(*actual, *expected)
                 }
                 _ => false,
@@ -3280,7 +3280,7 @@ fn require_scalar_return_leaf(
             };
             if let Some(actual_type) = &actual_type
                 && generic_click_types_compatible(actual_type, expected)
-                && (expected != &ClickType::C(C0Type::Bool) || actual_type == expected)
+                && (expected != &ClickType::Program(C0Type::Bool) || actual_type == expected)
             {
                 return Ok(());
             }
@@ -3288,7 +3288,7 @@ fn require_scalar_return_leaf(
                 .as_ref()
                 .map(describe_click_type)
                 .unwrap_or_else(|| describe_spec_value_type(&actual));
-            if expected == &ClickType::C(C0Type::Bool) {
+            if expected == &ClickType::Program(C0Type::Bool) {
                 if actual == SpecValueType::Scalar(None) {
                     return Err(ClickError::new(format!(
                         "{context} returns Bool, but its body can produce `{}`, whose type is not known to be Bool",
@@ -3380,18 +3380,18 @@ fn infer_generic_expression_type(
         }
         ContractExpression::Binding(name)
         | ContractExpression::CBinding(name)
-        | ContractExpression::CFragment(ProgramExpression::Variable(name)) => {
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
             Ok(variables.get(name).cloned())
         }
         ContractExpression::QualifiedC { .. }
         | ContractExpression::CUnary { .. }
-        | ContractExpression::CFragment(_) => infer_contract_expression_type(
+        | ContractExpression::ProgramExpression(_) => infer_contract_expression_type(
             expression,
             &variables.c_values,
             click_functions,
             context,
         )
-        .map(|c_type| c_type.map(ClickType::C)),
+        .map(|c_type| c_type.map(ClickType::Program)),
         ContractExpression::Old(inner)
         | ContractExpression::At {
             expression: inner, ..
@@ -3406,7 +3406,7 @@ fn infer_generic_expression_type(
             )?;
             if actual
                 .as_ref()
-                .is_some_and(|click_type| !matches!(click_type, ClickType::C(_)))
+                .is_some_and(|click_type| !matches!(click_type, ClickType::Program(_)))
             {
                 return Err(ClickError::new(format!(
                     "C operator cannot be applied to a generic or algebraic value in {context}"
@@ -3452,7 +3452,7 @@ fn infer_generic_expression_type(
                 // An arm of Integer and an arm of a C integer, `0`, are
                 // Integer.
                 if let (Some(expected), Some(actual)) = (&result_type, &actual)
-                    && integer_with_c_integer(expected, actual)
+                    && integer_with_program_integer(expected, actual)
                 {
                     result_type = Some(ClickType::Integer);
                     continue;
@@ -3634,7 +3634,7 @@ fn infer_generic_expression_type(
                     .chain(right_type.iter())
                     .all(|click_type| {
                         *click_type == ClickType::Integer
-                            || matches!(click_type, ClickType::C(c_type) if crate::languages::c::syntax::is_integer_type(*c_type))
+                            || matches!(click_type, ClickType::Program(c_type) if crate::languages::c::syntax::is_integer_type(*c_type))
                     })
             {
                 return Ok(Some(ClickType::Integer));
@@ -3642,7 +3642,7 @@ fn infer_generic_expression_type(
             if left_type
                 .iter()
                 .chain(right_type.iter())
-                .any(|click_type| !matches!(click_type, ClickType::C(_)))
+                .any(|click_type| !matches!(click_type, ClickType::Program(_)))
             {
                 return Err(ClickError::new(format!(
                     "C operator cannot be applied to a generic or algebraic value in {context}"
@@ -3654,7 +3654,7 @@ fn infer_generic_expression_type(
                 click_functions,
                 context,
             )
-            .map(|c_type| c_type.map(ClickType::C))
+            .map(|c_type| c_type.map(ClickType::Program))
         }
         ContractExpression::SequenceLiteral(_)
         | ContractExpression::RangeFold { .. }
@@ -3695,7 +3695,7 @@ fn validate_generic_proposition_types(
             )?;
             if let (Some(left), Some(right)) = (&left, &right)
                 && !generic_click_types_compatible(left, right)
-                && !integer_with_c_integer(left, right)
+                && !integer_with_program_integer(left, right)
             {
                 return Err(ClickError::new(format!(
                     "comparison has types {} and {} in {context}",
@@ -3709,7 +3709,7 @@ fn validate_generic_proposition_types(
             ) && left
                 .iter()
                 .chain(right.iter())
-                .any(|click_type| !matches!(click_type, ClickType::C(_) | ClickType::Integer))
+                .any(|click_type| !matches!(click_type, ClickType::Program(_) | ClickType::Integer))
             {
                 return Err(ClickError::new(format!(
                     "ordering is not defined for a generic or algebraic value in {context}"
@@ -3848,7 +3848,7 @@ pub(super) fn instantiate_field_type(
             c_type: *c_type,
             struct_name: struct_name.clone(),
         }),
-        AlgebraicFieldType::C { c_type, .. } => Ok(ClickType::C(*c_type)),
+        AlgebraicFieldType::C { c_type, .. } => Ok(ClickType::Program(*c_type)),
         AlgebraicFieldType::Parameter(name) => definition
             .type_parameters()
             .iter()
@@ -3866,14 +3866,14 @@ pub(super) fn instantiate_field_type(
             // In a generic declaration the parameter is still rigid: the field
             // is the generic pointer a `T*` parameter has.
             if let ClickType::Parameter(parameter) = element {
-                return Ok(ClickType::C(C0Type::ParameterPointer(
+                return Ok(ClickType::Program(C0Type::ParameterPointer(
                     crate::kernel::TypeParameterName::intern(parameter),
                 )));
             }
             element
                 .c_type()
                 .and_then(|ty| ty.pointer_type())
-                .map(ClickType::C)
+                .map(ClickType::Program)
                 .ok_or_else(|| {
                     ClickError::new(format!(
                         "`{name}*` needs `{name}` to be a C scalar type; `{}` is not",
@@ -3920,10 +3920,10 @@ fn validate_type_application(
                 return Err(ClickError::new("Resource is not an algebraic field type"));
             }
             ClickType::Parameter(_) => {}
-            ClickType::C(c_type) | ClickType::CObjectPointer { c_type, .. }
+            ClickType::Program(c_type) | ClickType::CObjectPointer { c_type, .. }
                 if algebraic_field_c_type_supported(*c_type) => {}
             ClickType::Integer => {}
-            ClickType::C(c_type) | ClickType::CObjectPointer { c_type, .. } => {
+            ClickType::Program(c_type) | ClickType::CObjectPointer { c_type, .. } => {
                 return Err(ClickError::new(format!(
                     "{} is not a valid algebraic datatype argument in {context}",
                     describe_c0_type(*c_type)

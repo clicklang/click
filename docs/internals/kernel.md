@@ -35,7 +35,9 @@ Kernel files:
   basic data-type impls.
 - `assumptions.rs`: `PureFactContext`, proof obligations, execution-derived pure
   facts (`ExecutionPureFact`), and symbolic execution accessors.
-- `api.rs`: public constructors and theorem-producing entry points.
+- `api.rs`: public statement constructors and theorem-producing entry points.
+- `program_expression.rs`: constructors for the shared executable expression
+  model, including literals, arithmetic, memory reads and explicit casts.
 - `api/algebraic_cases.rs`: checked constructor exhaustion. For each variant
   of a validated ADT schema it produces an equation to the unchanged
   scrutinee, existentially quantifying that variant's fields. All variants
@@ -148,7 +150,7 @@ For ordinary function contracts, the responsibilities are:
 | Entry lowering | Represent the declared parameter domain and entry resources, without specializing to a convenient call | `initial_call_state` in `src/surface/lowering/resource_lowering.rs`, called by `initial_claim_context_with_caller_owner` in `src/surface/proof.rs` |
 | Checked proof transitions | Validate execution, logical steps, branches, and completion against the supplied obligation | `src/kernel/proof/` and kernel execution APIs |
 | Contract registration | Check artifact reuse, entry-case/path coverage and retained proposition/resource/effect completions; independent execution-only APIs check the supplied execution instead | `src/kernel/api.rs` and `src/kernel/api/contract_certification/` |
-| Rule packaging | Require the complete set of certified claims for the exact function | `c_verified_function_rule` in `src/kernel/api/contract_certification/contract_claims.rs` |
+| Rule packaging | Require the complete set of certified claims for the exact function | `program_verified_function_rule` in `src/kernel/api/contract_certification/contract_claims.rs` |
 
 Entry lowering gives separate scalar parameters separate symbolic variables.
 Pointer inputs have separately named symbolic addresses; different names do
@@ -216,7 +218,7 @@ Opaque function rules have a narrower boundary:
   contract, exact claim targets, resource definitions, and execution metadata;
 - `FunctionContractExecution` can only be created by the kernel from the
   exact function's entry state and contract-derived assumptions. The kernel
-  builds the contract entry (`c_function_contract_entry`): its lowering of
+  builds the contract entry (`program_function_contract_entry`): its lowering of
   each `requires` clause, the parameters' ranges, and what the entry
   resources state, each fact tagged with its origin. A proof starts from
   that entry, seen through the source spelling the proof side recorded, with
@@ -323,7 +325,7 @@ component travels on the function's `FunctionContractInterface`, beside its
 the entry of the function being certified the kernel reads that component once
 and installs a `RecursionAnchor { function, component, measure: M0,
 entry_obligations }` on the `ExecutionEnvironment`; the anchor has no public
-constructor, and `c_execution_environment_with_recursion_anchor` reads the
+constructor, and `program_execution_environment_with_recursion_anchor` reads the
 measure off the named function's own interface, so asking for an anchor cannot
 choose what it ranks. At a call step whose callee is the anchored function,
 `prepare_verified_function_call` reads the same component at the state the
@@ -341,7 +343,7 @@ to certify a contract whose function declares a measure. `checked_function_execu
 refuses such an execution outright as well. What is left for the termination
 judgment is that the obligations were reachable and complete: the certified
 `ProgramFunction` must carry the measure (the plan names only a spelling, and
-`c_verified_function_rule` binds every claim to the same `ProgramFunction`), the
+`program_verified_function_rule` binds every claim to the same `ProgramFunction`), the
 component's only recursive edge must be the self-call, and the function must
 not have an inline body. Both are refusals by name; `decreases <int32
 parameter>` still ranks those shapes.
@@ -443,7 +445,7 @@ guessed, and a component naming a fixed state is refused at lowering, since a
 measure read twice at the same state can never decrease.
 
 The carrier is a function of the component, not of the state, so the two
-readings of one component always agree on it. `c_ranking_measure_term` returns
+readings of one component always agree on it. `ranking_measure_term` returns
 a `RankingMeasureValue`, `Machine` or `Integer`, and the members are built in
 that carrier: `0 <= m` and `m_post < m_pre` are signed int32 comparisons for a
 machine component and Integer comparisons for an Integer one. `<` on the
@@ -781,15 +783,15 @@ the widths a rule supports; it asks the module
 | Sign test of σ (sign bit at 32 bits) | `condition_reasoning/sign_bit.rs`: `sign_bit_equivalents`, `names_sign_cast32` | `u as int32 < 0` is `u > 2^31 - 1`, and `x as uint32 > 2^31 - 1` is `x < 0`, the equivalent built through σ, reading σ of a σ as that σ's operand (the constructor keeps σ of σ); a decision or known-condition lookup of either reads the other, and assuming a test of σ also files its equivalent |
 | Sign cast of a quotient (C) | `condition_reasoning/sign_cast_division.rs`: `decide_by_sign_cast_division`, `sign_cast_division_equivalent`, `names_sign_cast_division`; `MachineTerm::sign_cast_division_operands`; `ConditionTerm::nonnegative_division_bound_guards` | `(a / b) as int32 == (a as int32) / (b as int32)` for `uint32` `a`, `b` with `0 <= a as int32` and `0 < b as int32`, and `(x / y) as uint32 == (x as uint32) / (y as uint32)` for `int32` `x`, `y` with `0 <= x` and `0 < y`, and the same for `%`. Read at decision time on a comparison naming σ of a quotient, and filed beside such a fact when it is assumed: one match on each side's root and two sign decisions per side; the quotient bound guards read it too. A quotient by zero is not related |
 | Cross-format relations (R0, R-dist, R-comp) | the e-graph's `terms/machine_relations.rs`: `relate_machine_application`, `merge_machine_relations` | a conversion to a format no wider than its source distributes over `+ - * & \| ^ ~` and a constant `<<` below the destination's width (σ, which keeps the width, over a `<<` by any count); a conversion of a value-preserving conversion it reads exactly, or one keeping no more bits than either, is one conversion; a same-width conversion of at least 32 bits has its inverse in its operand's class; where both 32-bit widenings of one narrow class exist, the later is σ of the earlier (`relate_siblings`) |
-| Native narrow arithmetic (G2, G4) | `SpecExpression::NarrowArithmetic`, `SpecExpression::at_machine_type`; `IntegerCastMode::NarrowArithmetic`, `c_narrow_arithmetic`; `IntegerCastMode::ResultConversion`; `eval::native_narrow_binary`, `native_narrow_not` | specification arithmetic `+ - * & \| ^ ~` at an 8- or 16-bit position (a typed `let`, a pure function's argument at its parameter's type, a pure function's body at its result type) over operands of that type, and Rust `+ - * & \| ^ !` and `<<` by a 32-bit count on `u8`, `i8`, `u16`, `i16`, are the native node of the type, `(a op b) mod 2^N`, with no promotion and no domain obligation; an `int32` literal the type holds takes it. Rust's checked overflow stays its own panic assertion. An operand of another machine type at a specification position is refused by the parser or type checker, which names the conversion to write; inside the kernel, operands of another type keep the promoted reading. C keeps promote, operate, convert |
+| Native narrow arithmetic (G2, G4) | `SpecExpression::NarrowArithmetic`, `SpecExpression::at_machine_type`; `IntegerCastMode::NarrowArithmetic`, `program_expression::narrow_arithmetic`; `IntegerCastMode::ResultConversion`; `eval::native_narrow_binary`, `native_narrow_not` | specification arithmetic `+ - * & \| ^ ~` at an 8- or 16-bit position (a typed `let`, a pure function's argument at its parameter's type, a pure function's body at its result type) over operands of that type, and Rust `+ - * & \| ^ !` and `<<` by a 32-bit count on `u8`, `i8`, `u16`, `i16`, are the native node of the type, `(a op b) mod 2^N`, with no promotion and no domain obligation; an `int32` literal the type holds takes it. Rust's checked overflow stays its own panic assertion. An operand of another machine type at a specification position is refused by the parser or type checker, which names the conversion to write; inside the kernel, operands of another type keep the promoted reading. C keeps promote, operate, convert |
 | Promoted spelling of a native narrow operator (N) | the e-graph's `terms/machine_relations.rs`: `promote` (`Relation::Promote`) | a native 8- or 16-bit operator `a op b` (and `~a`, and `a << c` for a 32-bit count `c`) is in the class of `Cast(int32 -> F, widen(a) op widen(b))`, interned with its K7' word, so its widening meets the masked word operator. It fires on demand: when the operator's class is widened to 32 bits, and for a shift (whose symbolic count R-dist cannot move); C's spelling meets the native node through R-dist and R-comp without it. Once per operator, at most seven nodes and two unions; an operator R-dist built is skipped, and R-dist of the rule's own narrowing over its word is marked fired |
 | `Bool` conditional (L-If) | `ConditionTerm::open_bool_if`; `PureFactContext::decide_bool_value` | `if c { a } else { b }` holds exactly when `(c and a) or (not c and b)`; opened only when the conditional itself is decided or split |
 | `Bool` equality (L-Eq) | the e-graph's `bool_node`, `admit_bool_condition`, `knows_bool_condition` | a true `a == b` merges the classes of `a` and `b`, which share their truth; a false one contradicts the merge; applications of one function to equal arguments are one class |
 | `Bool` unfolding (L-Unfold) | `ConditionTerm::bool_unfold_equation`; `unfold` lowers `f(args) == body` to `BoolEqual` | unfolding a `-> Bool` function's application files `application == body` |
-| `Bool` to integer (C1) | `MachineTerm::BoolCast`, `bool_cast`, `bool_word_as`; the e-graph's `link_bool_cast`, `cast_value_truth`, `cast_disequality_truth`; `c_bool_cast_range_facts` | `b as F` is 1 when `b` holds and 0 otherwise: a decided `b` merges the cast's class with that constant, the constant 1 or 0 decides `b`, any other constant is a contradiction, a cast unequal to 0 or to 1 decides `b`, two casts in one class have equal `Bool`s, and two unequal casts have unequal `Bool`s; the cast's word is canonical at every format (C1c), and `0 <= b as int32 <= 1` with `b as int32 == 0 or b as int32 == 1` is filed where a C `bool` value is introduced (C1b) |
+| `Bool` to integer (C1) | `MachineTerm::BoolCast`, `bool_cast`, `bool_word_as`; the e-graph's `link_bool_cast`, `cast_value_truth`, `cast_disequality_truth`; `program_bool_cast_range_facts` | `b as F` is 1 when `b` holds and 0 otherwise: a decided `b` merges the cast's class with that constant, the constant 1 or 0 decides `b`, any other constant is a contradiction, a cast unequal to 0 or to 1 decides `b`, two casts in one class have equal `Bool`s, and two unequal casts have unequal `Bool`s; the cast's word is canonical at every format (C1c), and `0 <= b as int32 <= 1` with `b as int32 == 0 or b as int32 == 1` is filed where a C `bool` value is introduced (C1b) |
 | Integer to `Bool` | `ConditionTerm::nonzero_test`, `bool_not` | C's `(bool)x`, an assignment or argument at `bool`, and a C++ conversion are the `Bool` `x != 0` (a non-null test for a pointer), the negation `if x == 0 { false } else { true }`, exact at every width; a cast `b as F` tested against zero is `b` |
 | Byte rule | `eval::memory_loads::symbolic_load_value_unrecorded`, `canonical_integer_read`, `primitives::cell_store::cell_run_value` | a store of a `Bool` writes its byte `b as uint8`; a read of a `bool` cell whose byte is `β` is the `Bool` `β != 0`; no write of another kind and no byte view reaches a `bool` cell |
-| Rust `Bool` values (D5) | `IntegerCastMode::BoolValue`, `c_bool_value`; `eval::expression::ConditionValueScope` | a Rust comparison, `!`, or connective of a local or a value is the `Bool` it tests, carried as its C1 cast, with no path split; a branch or loop condition stays the comparison it tests |
+| Rust `Bool` values (D5) | `IntegerCastMode::BoolValue`, `program_expression::bool_value`; `eval::expression::ConditionValueScope` | a Rust comparison, `!`, or connective of a local or a value is the `Bool` it tests, carried as its C1 cast, with no path split; a branch or loop condition stays the comparison it tests |
 
 The last seven rows are the logic of Click `Bool` (Stage 5 of
 `design/machine-integers.md`, decision of 2026-10-26), which is the
@@ -1277,7 +1279,7 @@ in four parts, on each path it opens:
 
 A condition whose value the facts do not decide splits the path, once per
 truth value, and each side gains the condition or its negation as a fact.
-`prove_symbolic_c_condition_evaluation` is that rule for a control-flow
+`prove_symbolic_program_condition_evaluation` is that rule for a control-flow
 condition; tactics use it to select `if` edges.
 
 A call is one more part of an expression, not a separate mode. Proofs
@@ -1357,10 +1359,10 @@ outcome theorem. The function-specification prover checks that every path
 satisfies the function contract and that its remaining facts and obligations
 are justified by requirements and proof machinery.
 
-`prove_c_function_satisfies_specification_from_symbolic_path` accepts only
+`prove_program_function_satisfies_specification_from_symbolic_path` accepts only
 the exact function, entry state, arguments and outcome recorded in the
 certified path; it does not turn arbitrary outcomes into theorems.
-`c_function_execution_candidates_from_outcomes` constructs no theorem.
+`program_function_execution_candidates_from_outcomes` constructs no theorem.
 Budget exhaustion is an `ExecutionLimit`: a proof or executor failure, not C
 undefined behavior.
 
@@ -1377,7 +1379,7 @@ result sort, while execution-memory snapshots stay opaque (regressions in
 `src/kernel/tests/execution_tests.rs`).
 
 - **A rule that abstracts a state takes the counter and returns where it
-  left it.** `abstract_c_state_for_join` and its siblings take the maximum of
+  left it.** `abstract_execution_state_for_join` and its siblings take the maximum of
   the arms' counters, since the arms' abstractions are compared for equality,
   and return a `StateJoinAbstraction` pairing the state with that mark, so a
   caller cannot keep the old counter. A loop head's
@@ -1396,7 +1398,7 @@ result sort, while execution-memory snapshots stay opaque (regressions in
   execution over a state the caller built, whole-function contract
   certification, a refinement context built from two contract interfaces.
   `ExecutionBudget::continuing_from` counts up from a mark an execution has
-  reached. Work allowances (`with_c_expression_cost` and its siblings) are
+  reached. Work allowances (`with_program_expression_cost` and its siblings) are
   builder steps on either.
 - **`ExecutionBudget::beside_live_state` cannot invent an execution identity
   at all.** Its users are the proof-side families reached from `have`,
@@ -1480,7 +1482,7 @@ including program variables, the store, the memory snapshot and resources,
 not only the facts; so it comes from its own range rather than from the
 facts' unused identities
 (`the_universal_witness_range_is_disjoint_from_every_other_producer`,
-`a_freshened_universal_witness_never_takes_a_c_identity`). A proof that
+`a_freshened_universal_witness_never_takes_a_program_identity`). A proof that
 exhausts it refuses rather than reusing an identity.
 
 Freshening a binder is a renaming, so it must not change what the proposition
@@ -1628,9 +1630,9 @@ whether or not a matching rule is present. `ExecutionSemantics` also exposes
 where calls remain modular while the current loop body is verified directly.
 
 Concrete execution judgments and modular verification transitions are
-deliberately different propositions. `CStatementExecutes` and
-`CFunctionExecutes` describe outcomes produced by direct operational
-execution. `CStatementVerifies` and `CFunctionVerifies` describe abstract
+deliberately different propositions. `ProgramStatementExecutes` and
+`ProgramFunctionExecutes` describe outcomes produced by direct operational
+execution. `ProgramStatementVerifies` and `ProgramFunctionVerifies` describe abstract
 branches admitted while checking partial correctness with loop or function
 summaries. A verification return branch means “if this computation returns,
 this is an allowed post-state”; it is not evidence that the return is
@@ -1655,8 +1657,8 @@ judgment. The judgments differ in exactly two named branches:
 Everything else is shared: each statement is charged one step, every
 statement passes the same pending-thread-create gate, and a sequence whose
 first statement leaves abnormally carries that statement's facts and loan
-evidence out with it. `execute_c_statement_paths` and
-`execute_c_statement_verification_paths` remain only as names for the two
+evidence out with it. `execute_execution_statement_paths` and
+`execute_execution_statement_verification_paths` remain only as names for the two
 judgments.
 
 `VerificationDiverges` is an internal outcome marker accepted only inside the
@@ -1717,10 +1719,10 @@ the input allocation's cached values and zeroed status are forgotten under
 proven-equal pointer spellings. A `ContractAllocationRetired` edge records the
 possible release without claiming that a C `free` occurred. Exact execution
 records every successful
-free as `CHeapAllocationFreed(before, after, base, bytes)`. Effect
+free as `HeapAllocationFreed(before, after, base, bytes)`. Effect
 certification checks that executing `free(base)` from `before` with the stated
 extent produces `after`, and chains that transition separately from ordinary
-`CMemoryMutatesOnly` and ranged call-havoc effects. This lets a function free
+`MemoryMutatesOnly` and ranged call-havoc effects. This lets a function free
 owned storage directly even when its surface `owns` clause names only
 unrelated surviving memory.
 

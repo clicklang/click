@@ -43,8 +43,8 @@ fn wide_matched_instance_projection_keeps_native_loadability() {
     .unwrap();
     let segment = MemorySegment::new(
         ProgramExpression::Value(ProgramValue::pointer(base)),
-        c_uint64_literal(0),
-        c_uint64_literal(1 << 33),
+        crate::kernel::program_expression::uint64_literal(0),
+        crate::kernel::program_expression::uint64_literal(1 << 33),
     )
     .with_element_width(1);
     let mut definition =
@@ -84,6 +84,6 @@ fn wide_matched_instance_projection_keeps_native_loadability() {
     assert!(
         facts
             .iter()
-            .any(|fact| matches!(fact, Proposition::CMemoryLoadable { wide: true, .. }))
+            .any(|fact| matches!(fact, Proposition::MemoryLoadable { wide: true, .. }))
     );
 }

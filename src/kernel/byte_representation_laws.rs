@@ -20,8 +20,12 @@ pub(crate) fn prove_uint32_from_le_bytes(pointer: PointerValue) -> Result<Theore
         arguments: vec![],
     };
     let assumptions = PureFactContext::new().allow_symbolic_contract_loads();
-    let (view, _, _) =
-        super::api::c_lower_spec_proposition_at_state(&state, &view, Some(&state), &assumptions)?;
+    let (view, _, _) = super::api::program_lower_spec_proposition_at_state(
+        &state,
+        &view,
+        Some(&state),
+        &assumptions,
+    )?;
     let mut premises = vec![endian, view];
     let assumptions = premises
         .iter()
@@ -31,7 +35,7 @@ pub(crate) fn prove_uint32_from_le_bytes(pointer: PointerValue) -> Result<Theore
         pointer: Box::new(base.clone()),
         value_type: ProgramType::UInt32,
     };
-    let (defined, _, _) = super::api::c_lower_spec_proposition_at_state(
+    let (defined, _, _) = super::api::program_lower_spec_proposition_at_state(
         &state,
         &SpecProposition::Defined(word.clone()),
         Some(&state),
@@ -77,7 +81,7 @@ pub(crate) fn prove_uint32_from_le_bytes(pointer: PointerValue) -> Result<Theore
         operator: ComparisonOperator::Equal,
         right: packed,
     };
-    let (conclusion, _, _) = super::api::c_lower_spec_proposition_at_state(
+    let (conclusion, _, _) = super::api::program_lower_spec_proposition_at_state(
         &state,
         &conclusion,
         Some(&state),

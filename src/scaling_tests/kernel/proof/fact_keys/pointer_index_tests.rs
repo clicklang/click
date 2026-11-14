@@ -8,7 +8,8 @@ fn pointer_index_fact_keys_keep_shared_dags_and_linear_work() {
         let mut samples = Vec::new();
         for size in [16, 64, 256] {
             let _session = VerificationSession::enter();
-            let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1019020));
+            let mut root =
+                KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(1019020));
             for _ in 0..size {
                 root = KernelTerm::machine_binary_shared(
                     ty,
@@ -41,7 +42,7 @@ fn snapshot_pointer_index_keys_share_growing_prefixes() {
     for size in [16, 64, 256] {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1019021));
+        let mut root = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(1019021));
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {
@@ -69,7 +70,7 @@ fn pointer_index_fact_lookup_ignores_unrelated_facts() {
         let _session = VerificationSession::enter();
         let make = |var, width| {
             let ty = MachineIntegerType::Int32;
-            let x = KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(var));
+            let x = KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(var));
             let root = KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [x.clone(), x]);
             quantified(
                 Variable(var),

@@ -231,7 +231,7 @@ impl super::ProofSearch<PureFactContext> {
             }
             Proposition::ForAll {
                 var,
-                sort: Sort::CInt32,
+                sort: Sort::ProgramInt32,
                 body,
                 ..
             } => {
@@ -245,33 +245,33 @@ impl super::ProofSearch<PureFactContext> {
                     )
                     .is_some_and(|rule| proposition_derivation(proposition, rule).check(context))
             }
-            Proposition::CMemoryReadDefined {
+            Proposition::MemoryReadDefined {
                 memory,
                 pointer,
                 value_type,
             } => context.proves_memory_read_defined(memory, pointer, *value_type),
-            Proposition::CMemoryLoadable {
+            Proposition::MemoryLoadable {
                 memory,
                 base,
                 bytes,
                 wide: true,
             } => context.proves_native_memory_loadable(memory, base, bytes),
-            Proposition::CMemoryLoadable {
+            Proposition::MemoryLoadable {
                 memory,
                 base,
                 bytes,
                 wide: false,
             } => context.proves_memory_loadable(memory, base, bytes),
-            Proposition::CMemoryCanStore {
+            Proposition::MemoryCanStore {
                 memory,
                 pointer,
                 byte_width,
             } => context.proves_memory_access(memory, pointer, *byte_width),
-            Proposition::CResourceSeparate { left, right } => {
+            Proposition::ResourceSeparate { left, right } => {
                 context.contains_proposition_fact(proposition)
                     || context.proves_resource_separate(left, right)
             }
-            Proposition::CResourceContains { parent, child } => {
+            Proposition::ResourceContains { parent, child } => {
                 context.contains_proposition_fact(proposition)
                     || context.proves_resource_contains(parent, child)
             }
@@ -542,15 +542,15 @@ impl super::ProofSearch<PureFactContext> {
         }
 
         let candidate_family = |fact: &Proposition| match proposition {
-            Proposition::CMemoryReadDefined { .. } => matches!(
+            Proposition::MemoryReadDefined { .. } => matches!(
                 fact,
-                Proposition::CMemoryReadDefined { .. } | Proposition::CMemoryLoadable { .. }
+                Proposition::MemoryReadDefined { .. } | Proposition::MemoryLoadable { .. }
             ),
-            Proposition::CMemoryLoadable { .. } | Proposition::CMemoryCanStore { .. } => {
-                matches!(fact, Proposition::CMemoryLoadable { .. })
+            Proposition::MemoryLoadable { .. } | Proposition::MemoryCanStore { .. } => {
+                matches!(fact, Proposition::MemoryLoadable { .. })
             }
-            Proposition::CResourceSeparate { .. } => {
-                matches!(fact, Proposition::CResourceSeparate { .. })
+            Proposition::ResourceSeparate { .. } => {
+                matches!(fact, Proposition::ResourceSeparate { .. })
             }
             _ => false,
         };
@@ -559,8 +559,8 @@ impl super::ProofSearch<PureFactContext> {
         // source; the checker itself refuses ambiguous buckets. Other address
         // shapes remain unvisited unless a structural anchor or alias names them.
         let goal_base = match proposition {
-            Proposition::CMemoryLoadable { base, .. } => Some(base),
-            Proposition::CMemoryCanStore { pointer, .. } => Some(pointer),
+            Proposition::MemoryLoadable { base, .. } => Some(base),
+            Proposition::MemoryCanStore { pointer, .. } => Some(pointer),
             _ => None,
         };
         let usable = |fact: &&Proposition| !exclude_exact_goal || *fact != proposition;
@@ -578,7 +578,7 @@ impl super::ProofSearch<PureFactContext> {
                     .cloned()
                     .collect::<Vec<_>>()
             }),
-            Proposition::CMemoryReadDefined {
+            Proposition::MemoryReadDefined {
                 pointer,
                 value_type,
                 ..
@@ -599,7 +599,7 @@ impl super::ProofSearch<PureFactContext> {
                     .cloned()
                     .collect(),
             ),
-            Proposition::CResourceSeparate { left, right } => context
+            Proposition::ResourceSeparate { left, right } => context
                 .resource_separation_candidates(left, right)
                 .map(|facts| {
                     facts
@@ -619,7 +619,7 @@ impl super::ProofSearch<PureFactContext> {
         let family_fallback = |tried: &[Proposition]| {
             if !matches!(
                 proposition,
-                Proposition::CMemoryReadDefined { .. } | Proposition::CResourceSeparate { .. }
+                Proposition::MemoryReadDefined { .. } | Proposition::ResourceSeparate { .. }
             ) {
                 return Vec::new();
             }
@@ -694,7 +694,7 @@ impl super::ProofSearch<PureFactContext> {
         // Try a covering source before searching the ambient block for a
         // concatenation: unknown offsets in unrelated ranges can otherwise
         // trigger order reasoning over unrelated conditions for every range.
-        if let Proposition::CMemoryLoadable {
+        if let Proposition::MemoryLoadable {
             memory,
             base,
             bytes,
@@ -711,7 +711,7 @@ impl super::ProofSearch<PureFactContext> {
         // may have named the goal's own statement; without it, ask again of
         // the other sources alone instead of trying every pair.
         if exclude_exact_goal
-            && let Proposition::CMemoryLoadable {
+            && let Proposition::MemoryLoadable {
                 memory,
                 base,
                 bytes,
@@ -1288,7 +1288,7 @@ impl super::ProofSearch<PureFactContext> {
     ) -> Option<PropositionDerivationRule> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("derive_exists_from_witness");
-        if sort != &Sort::CInt32 {
+        if sort != &Sort::ProgramInt32 {
             return None;
         }
         let mut variables = BTreeSet::new();
@@ -1332,7 +1332,7 @@ impl super::ProofSearch<PureFactContext> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("derive_forall_loadable_range");
         let (premises, conclusion) = forall_loadable_range_parts(proposition)?;
-        let Proposition::CMemoryLoadable { base, bytes, .. } = conclusion else {
+        let Proposition::MemoryLoadable { base, bytes, .. } = conclusion else {
             return None;
         };
         if bytes.as_const() != Some(1) {
@@ -1627,7 +1627,7 @@ mod monotone_forall_tests {
         let goal = Proposition::ForAll {
             name: Default::default(),
             var: outer,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(body),
         };
         let facts = PureFactContext::new()
@@ -1640,7 +1640,7 @@ mod monotone_forall_tests {
         let invalid = Proposition::ForAll {
             name: Default::default(),
             var: outer,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(old_is_zero),
         };
         assert!(
@@ -1904,7 +1904,7 @@ mod condition_premise_tests {
             ProgramValue::Int32(term(70)),
         );
         let load =
-            MachineTerm::MemoryLoad(intern_c_memory(memory), Box::new(pointer), LoadKind::Int32);
+            MachineTerm::MemoryLoad(intern_memory(memory), Box::new(pointer), LoadKind::Int32);
         let fact = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -2229,13 +2229,13 @@ fn native_view_prefix_premises(
     source: &Proposition,
 ) -> Option<Vec<Proposition>> {
     let (
-        Proposition::CMemoryLoadable {
+        Proposition::MemoryLoadable {
             base,
             bytes,
             wide: true,
             ..
         },
-        Proposition::CMemoryLoadable {
+        Proposition::MemoryLoadable {
             base: source_base,
             bytes: source_bytes,
             wide: true,
@@ -2450,7 +2450,7 @@ mod shared_atomic_premise_tests {
             let source = Proposition::ForAll {
                 name: Default::default(),
                 var: Variable(900_000),
-                sort: Sort::CInt32,
+                sort: Sort::ProgramInt32,
                 body: Box::new(body),
             };
             let (context, clones) = crate::kernel::count_proposition_clone_nodes(|| {

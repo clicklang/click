@@ -1,6 +1,6 @@
 use super::functions::{
     apply_verified_contract_resource_transition,
-    construct_c_function_resource as construct_c_function_resource_checked,
+    construct_program_function_resource as construct_c_function_resource_checked,
     evaluate_function_resource_context_with_metadata, expand_composite_resource_fact_with_children,
     function_return_resources_definitionally_established,
 };
@@ -124,7 +124,7 @@ pub(in crate::kernel) use algebraic_cases::algebraic_constructor_case_equations;
 pub use algebraic_cases::algebraic_constructor_cases;
 use contract_certification::{
     certification_proves_condition_from_verified_pure_implication,
-    contract_resource_condition_cases, prove_symbolic_c_function_verification_paths,
+    contract_resource_condition_cases, prove_symbolic_program_function_verification_paths,
     resources_certify_loadability,
 };
 
@@ -152,7 +152,7 @@ pub fn bool_value(byte: impl Into<MachineTerm>) -> ProgramValue {
 /// format C's promotion and an `int` result read it at; an integer value
 /// that is a cast states its own. `None` for a constant, which has nothing
 /// left to state, and for every other value.
-pub(crate) fn c_bool_cast_range_facts(value: &ProgramValue) -> Option<Vec<Proposition>> {
+pub(crate) fn program_bool_cast_range_facts(value: &ProgramValue) -> Option<Vec<Proposition>> {
     let cast = match value.numeric_value() {
         ProgramValue::Bool(word) => {
             MachineTerm::bool_cast(MachineIntegerType::Int32, word.bool_cast_operand()?.clone())
@@ -237,7 +237,9 @@ pub(crate) fn c_bool_cast_range_facts(value: &ProgramValue) -> Option<Vec<Propos
 /// The range `[lower, upper]` every value of a narrow C integer type lies
 /// in, with the term holding it: a `uint8` is in `[0, 255]`, an `int16` in
 /// `[-32768, 32767]`. `None` for every other type, whose range is its word.
-pub(crate) fn c_narrow_integer_range(value: &ProgramValue) -> Option<(&MachineTerm, i32, i32)> {
+pub(crate) fn program_narrow_integer_range(
+    value: &ProgramValue,
+) -> Option<(&MachineTerm, i32, i32)> {
     match value {
         ProgramValue::Int8(term) => Some((term, i32::from(i8::MIN), i32::from(i8::MAX))),
         ProgramValue::Int16(term) => Some((term, i32::from(i16::MIN), i32::from(i16::MAX))),
@@ -310,7 +312,7 @@ pub fn float64(bits: impl Into<MachineTerm>) -> ProgramValue {
 /// True when `pointer` addresses within a live heap allocation of `memory`,
 /// matching allocation keys through the path's pointer equalities or exact
 /// materialization of loads embedded in the key and pointer forms.
-pub(crate) fn c_memory_holds_live_heap_allocation_at(
+pub(crate) fn memory_holds_live_heap_allocation_at(
     memory: &super::Memory,
     pointer: &Pointer,
     assumptions: &PureFactContext,
@@ -329,7 +331,7 @@ pub(crate) fn c_memory_holds_live_heap_allocation_at(
 /// assumptions, with the exact matching rule the atomic prover applies when
 /// it consumes a context fact: memory-resolution load equality and
 /// decide-driven term equality. This is a bounded check, not a search.
-pub fn c_condition_facts_match_for_transport(
+pub fn program_condition_facts_match_for_transport(
     source: &Proposition,
     target: &Proposition,
     assumptions: &PureFactContext,
@@ -382,7 +384,7 @@ fn transport_premise_holds(context: &PureFactContext, premise: &Proposition) -> 
 /// deterministic memory-resolution evidence. Unlike whole-fact transport,
 /// this permits a target to retain an old load on one side while transporting
 /// the other side to a newer snapshot.
-pub(crate) fn c_condition_fact_target_reaches_in_context(
+pub(crate) fn program_condition_fact_target_reaches_in_context(
     source: &Proposition,
     target: &Proposition,
     assumptions: &PureFactContext,
@@ -414,14 +416,14 @@ pub(crate) fn c_condition_fact_target_reaches_in_context(
 /// can be retained as an explicit theorem premise. Callers that merely need
 /// to check a fact inside one live context use the context-bound predicate
 /// above instead of turning that context into reusable authority.
-pub fn prove_c_condition_fact_target_transport(
+pub fn prove_program_condition_fact_target_transport(
     source: &Proposition,
     target: &Proposition,
     assumptions: &PureFactContext,
 ) -> Option<Theorem> {
     let (proved, premises) = crate::kernel::collect_reasoning_provenance(|| {
         crate::kernel::capture_implicit_reasoning_provenance(|| {
-            c_condition_fact_target_reaches_in_context(source, target, assumptions)
+            program_condition_fact_target_reaches_in_context(source, target, assumptions)
         })
     });
     if !proved {
@@ -439,7 +441,7 @@ pub fn prove_c_condition_fact_target_transport(
         })
         .assume_proposition(source.clone());
     condition_target_reaches(&restricted, target)
-        .then(|| c_condition_fact_transport_theorem(source, target.clone(), premises))
+        .then(|| program_condition_fact_transport_theorem(source, target.clone(), premises))
 }
 
 #[derive(Clone, Debug)]
@@ -462,7 +464,7 @@ pub struct LoopPreservationContext {
     binders: Vec<crate::kernel::LoopBinder>,
     /// The head's pass count `K`: the invariants this head assumes read
     /// `iterations` as `K`, and the back edge owes them at `K + 1`
-    /// ([`c_loop_invariant_obligations_at_back_edge`]).
+    /// ([`loop_invariant_obligations_at_back_edge`]).
     iterations: IntegerTerm,
     /// The execution's fresh-variable counter after building this head.
     ///
@@ -670,11 +672,15 @@ mod loop_exit_sharing_tests {
     fn natural_forward_exit_is_a_jump_and_only_absent_exits_diverge() {
         let backedge = ControlTargetId(1);
         let exit_target = ControlTargetId(2);
-        let statement = c_while(c_int32_literal(1), Vec::new(), c_goto(backedge))
-            .with_backedge_target(backedge)
-            .with_natural_exit_target(exit_target);
+        let statement = program_while(
+            crate::kernel::program_expression::int32_literal(1),
+            Vec::new(),
+            program_goto(backedge),
+        )
+        .with_backedge_target(backedge)
+        .with_natural_exit_target(exit_target);
         let check = |candidates| {
-            prove_symbolic_c_loop_exit_with_proven_phases(
+            prove_symbolic_loop_exit_with_proven_phases(
                 ExecutionState::new(),
                 statement.clone(),
                 PureFactContext::new(),
@@ -734,7 +740,7 @@ impl LoopPreservationContext {
         state: &ExecutionState,
         assumptions: &PureFactContext,
     ) -> ExecutionState {
-        let rebound = crate::kernel::c_loop_state_with_loop_binders_rebound(
+        let rebound = crate::kernel::loop_state_with_loop_binders_rebound(
             &self.state,
             state,
             &self.binders,
@@ -858,7 +864,7 @@ impl From<String> for LoopHeadRefusal {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn c_loop_preservation_contexts(
+pub fn loop_preservation_contexts(
     loop_entry_state: &ExecutionState,
     condition: &ProgramExpression,
     invariant_checks: &[LoopInvariantCheck],
@@ -869,7 +875,7 @@ pub fn c_loop_preservation_contexts(
     assumptions: &PureFactContext,
     next_kernel_variable: u64,
 ) -> Result<Vec<LoopPreservationContext>, LoopHeadRefusal> {
-    c_loop_preservation_contexts_with_mode(
+    loop_preservation_contexts_with_mode(
         loop_entry_state,
         condition,
         invariant_checks,
@@ -886,7 +892,7 @@ pub fn c_loop_preservation_contexts(
 /// Computes loop-body preservation contexts for a C `do ... while` loop.
 /// Unlike a pre-tested `while`, the first body entry cannot assume that the
 /// post-test condition is true; the condition only guards later iterations.
-pub fn c_do_while_preservation_contexts(
+pub fn program_do_while_preservation_contexts(
     loop_entry_state: &ExecutionState,
     condition: &ProgramExpression,
     invariant_checks: &[LoopInvariantCheck],
@@ -897,7 +903,7 @@ pub fn c_do_while_preservation_contexts(
     assumptions: &PureFactContext,
     next_kernel_variable: u64,
 ) -> Result<Vec<LoopPreservationContext>, LoopHeadRefusal> {
-    c_loop_preservation_contexts_with_mode(
+    loop_preservation_contexts_with_mode(
         loop_entry_state,
         condition,
         invariant_checks,
@@ -912,7 +918,7 @@ pub fn c_do_while_preservation_contexts(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn c_loop_preservation_contexts_with_mode(
+fn loop_preservation_contexts_with_mode(
     loop_entry_state: &ExecutionState,
     condition: &ProgramExpression,
     invariant_checks: &[LoopInvariantCheck],
@@ -931,15 +937,15 @@ fn c_loop_preservation_contexts_with_mode(
     // has already handed to something live.
     let mut budget = ExecutionBudget::continuing_from(next_kernel_variable);
     let mut existing_variables = BTreeSet::new();
-    collect_c_state_bitvector_variables(loop_entry_state, &mut existing_variables);
-    collect_c_expression_bitvector_variables(condition, &mut existing_variables);
+    collect_execution_state_bitvector_variables(loop_entry_state, &mut existing_variables);
+    collect_program_expression_bitvector_variables(condition, &mut existing_variables);
     for check in invariant_checks {
         collect_spec_proposition_bitvector_variables(check.proposition(), &mut existing_variables);
     }
     for check in effect_checks {
         collect_loop_effect_bitvector_variables(check.effect(), &mut existing_variables);
     }
-    collect_c_statement_bitvector_variables(body, &mut existing_variables);
+    collect_execution_statement_bitvector_variables(body, &mut existing_variables);
     // The context's variables are the whole path's before the loop. The
     // head's identities come from the execution counter, which normally
     // already lies above every one of them, so they are reserved through the
@@ -1121,7 +1127,7 @@ fn c_loop_preservation_contexts_with_mode(
                 pure_facts,
                 invariant_propositions: invariant_propositions.iter().cloned().collect(),
                 whole_loop_effect_facts: whole_loop_effect_summaries.clone(),
-                binders: crate::kernel::c_loop_binders(resource_specs),
+                binders: crate::kernel::loop_binders(resource_specs),
                 iterations: iterations.clone(),
                 // Filled in below from the one budget every context here was
                 // built with, so each reports the same high-water mark rather
@@ -1182,7 +1188,7 @@ fn loop_head_invariant_failure(
     )
 }
 
-pub fn c_loop_invariant_obligations_at_back_edge(
+pub fn loop_invariant_obligations_at_back_edge(
     state: &ExecutionState,
     iteration_entry_state: &ExecutionState,
     invariant_checks: &[LoopInvariantCheck],
@@ -1208,12 +1214,12 @@ pub fn c_loop_invariant_obligations_at_back_edge(
 
 /// Refuses a loop `decreases` component whose variables can be written
 /// through an escaped address. See the termination module for the rule.
-pub fn c_reject_address_escaped_loop_measures(
+pub fn program_reject_address_escaped_loop_measures(
     function_name: &str,
     measures: &[RankingComponent],
     addressed: &BTreeSet<String>,
 ) -> Result<(), String> {
-    crate::kernel::termination::c_reject_address_escaped_loop_measures(
+    crate::kernel::termination::program_reject_address_escaped_loop_measures(
         function_name,
         measures,
         addressed,
@@ -1222,25 +1228,25 @@ pub fn c_reject_address_escaped_loop_measures(
 
 /// The locals whose address `body` takes anywhere: the one walk the
 /// address-escape checks read (see the termination module).
-pub fn c_address_taken_locals(body: &ProgramStatement) -> BTreeSet<String> {
+pub fn program_address_taken_locals(body: &ProgramStatement) -> BTreeSet<String> {
     crate::kernel::termination::address_taken_locals(body)
 }
 
 /// The source form of one declared `decreases` component, for diagnostics.
-pub fn c_ranking_measure_source(measure: &RankingComponent) -> String {
-    crate::kernel::termination::c_ranking_measure_display(measure)
+pub fn ranking_measure_source(measure: &RankingComponent) -> String {
+    crate::kernel::termination::ranking_measure_display(measure)
 }
 
 /// The identity spelling of one declared `decreases` component: the form a
 /// pure component's written source is keyed by, which must keep telling
 /// different measures apart even where it has no source spelling.
-pub fn c_ranking_measure_identity(measure: &RankingComponent) -> String {
-    crate::kernel::termination::c_ranking_measure_key(measure)
+pub fn ranking_measure_identity(measure: &RankingComponent) -> String {
+    crate::kernel::termination::ranking_measure_key(measure)
 }
 
 /// The source form of a whole declared `decreases` clause, for diagnostics.
-pub fn c_ranking_measures_source(measures: &[RankingComponent]) -> String {
-    crate::kernel::termination::c_ranking_measures_display(measures)
+pub fn ranking_measures_source(measures: &[RankingComponent]) -> String {
+    crate::kernel::termination::ranking_measures_display(measures)
 }
 
 /// The other members of each function's recursive component, for the
@@ -1304,7 +1310,7 @@ pub fn recursive_component_peers(
 /// function and the same arguments, which is why an artifact stepped without
 /// an anchor does not satisfy `checked.environment == environment`: the
 /// anchor is part of the environment's identity.
-pub fn c_execution_environment_with_recursion_anchor(
+pub fn program_execution_environment_with_recursion_anchor(
     environment: ExecutionEnvironment,
     function: &ProgramFunction,
     caller_state: &ExecutionState,
@@ -1314,13 +1320,13 @@ pub fn c_execution_environment_with_recursion_anchor(
         return Ok(environment);
     }
     let entry_state =
-        c_function_entry_state(caller_state, function, arguments).ok_or_else(|| {
+        program_function_entry_state(caller_state, function, arguments).ok_or_else(|| {
             format!(
                 "could not bind `{}`'s arguments to read its `decreases` measure at entry",
                 function.name()
             )
         })?;
-    let anchor = crate::kernel::termination::c_function_recursion_anchor(
+    let anchor = crate::kernel::termination::program_function_recursion_anchor(
         function,
         &entry_state,
         &PureFactContext::new(),
@@ -1337,7 +1343,7 @@ pub fn c_execution_environment_with_recursion_anchor(
 /// `iteration_entry_state` reads each declared component at preserve entry
 /// and `state` at the back edge. The member order is fixed by
 /// `collect_loop_ranking_obligations`; see that function for the shape.
-pub fn c_loop_ranking_obligations_at_back_edge(
+pub fn loop_ranking_obligations_at_back_edge(
     state: &ExecutionState,
     iteration_entry_state: &ExecutionState,
     head_iterations: &IntegerTerm,
@@ -1370,7 +1376,7 @@ impl LoopEntryGoals {
     }
 }
 
-pub fn c_loop_entry_goals(
+pub fn loop_entry_goals(
     state: &ExecutionState,
     invariant_checks: &[LoopInvariantCheck],
     assumptions: &PureFactContext,
@@ -1392,7 +1398,7 @@ pub fn c_loop_entry_goals(
     Ok(LoopEntryGoals { declarations })
 }
 
-pub fn c_loop_invariant_obligations_at_entry(
+pub fn loop_invariant_obligations_at_entry(
     state: &ExecutionState,
     invariant_checks: &[LoopInvariantCheck],
     assumptions: &PureFactContext,
@@ -1414,7 +1420,7 @@ pub fn c_loop_invariant_obligations_at_entry(
     })
 }
 
-pub fn c_loop_invariants_hold_at_entry(
+pub fn loop_invariants_hold_at_entry(
     state: &ExecutionState,
     invariant_checks: &[LoopInvariantCheck],
     assumptions: &PureFactContext,
@@ -1469,12 +1475,12 @@ pub struct StateJoinAbstraction {
 /// Other scalar and pointer locals become fresh symbolic values, and non-stack
 /// memory is forgotten. Exported facts and resources constrain those values at
 /// the abstract frontier.
-pub fn abstract_c_state_for_join(
+pub fn abstract_execution_state_for_join(
     state: &ExecutionState,
     stable_entry_locals: &BTreeMap<String, ProgramValue>,
     next_kernel_variable: u64,
 ) -> Result<StateJoinAbstraction, String> {
-    abstract_c_state_for_join_across(
+    abstract_execution_state_for_join_across(
         state,
         std::slice::from_ref(&state),
         stable_entry_locals,
@@ -1493,13 +1499,13 @@ pub fn abstract_c_state_for_join(
 /// separately and then compared for equality. Counting from the maximum is
 /// what makes the result independent of which arm allocated more, and what
 /// keeps the join off identities an arm has already spent.
-pub fn abstract_c_state_for_join_across(
+pub fn abstract_execution_state_for_join_across(
     state: &ExecutionState,
     sibling_states: &[&ExecutionState],
     stable_entry_locals: &BTreeMap<String, ProgramValue>,
     next_kernel_variable: u64,
 ) -> Result<StateJoinAbstraction, String> {
-    abstract_c_state_for_join_across_with_policy(
+    abstract_execution_state_for_join_across_with_policy(
         state,
         sibling_states,
         JoinLocals::Stable(stable_entry_locals),
@@ -1517,12 +1523,12 @@ pub fn abstract_c_state_for_join_across(
 /// locals on which the arms differ are visited, found from the structure the
 /// arms' frames share, so a join costs the arms' changes rather than every
 /// local and parameter in scope.
-pub fn abstract_c_state_for_interface_join_across(
+pub fn abstract_execution_state_for_interface_join_across(
     state: &ExecutionState,
     sibling_states: &[&ExecutionState],
     next_kernel_variable: u64,
 ) -> Result<StateJoinAbstraction, String> {
-    abstract_c_state_for_join_across_with_policy(
+    abstract_execution_state_for_join_across_with_policy(
         state,
         sibling_states,
         JoinLocals::ArmsAgree,
@@ -1564,7 +1570,7 @@ impl crate::kernel::primitives::BlockMembership for InterfacePreservedBlocks<'_>
     }
 }
 
-fn abstract_c_state_for_join_across_with_policy(
+fn abstract_execution_state_for_join_across_with_policy(
     state: &ExecutionState,
     sibling_states: &[&ExecutionState],
     join_locals: JoinLocals<'_>,
@@ -1620,12 +1626,12 @@ fn abstract_c_state_for_join_across_with_policy(
             );
             // The state scan reserves the `havoc:N` and `call-havoc:N` marker
             // blocks' identities itself; the join no longer harvests block names.
-            collect_c_state_bitvector_variables(sibling, &mut existing_variables);
+            collect_execution_state_bitvector_variables(sibling, &mut existing_variables);
         }
         if let JoinLocals::Stable(stable_entry_locals) = join_locals {
             for value in stable_entry_locals.values() {
                 crate::instrumentation::record_deterministic_work(1);
-                collect_c_value_bitvector_variables(value, &mut existing_variables);
+                collect_program_value_bitvector_variables(value, &mut existing_variables);
             }
         }
     }
@@ -1640,11 +1646,11 @@ fn abstract_c_state_for_join_across_with_policy(
         crate::instrumentation::uncharged_debug_check(|| {
             let mut held = BTreeSet::new();
             for sibling in sibling_states {
-                collect_c_state_bitvector_variables(sibling, &mut held);
+                collect_execution_state_bitvector_variables(sibling, &mut held);
             }
             if let JoinLocals::Stable(stable_entry_locals) = join_locals {
                 for value in stable_entry_locals.values() {
-                    collect_c_value_bitvector_variables(value, &mut held);
+                    collect_program_value_bitvector_variables(value, &mut held);
                 }
             }
             let mark = ExecutionBudget::KERNEL_VARIABLE_BASE + next_kernel_variable;
@@ -2062,17 +2068,17 @@ fn validate_branch_memory_delta_against_loans(
 /// Read only the expression's existing C type metadata; no load or access
 /// check is performed. Surface branch spelling uses this to keep native
 /// address comparisons separate from contract pointer-value equalities.
-pub(crate) fn c_expression_has_pointer_type(
+pub(crate) fn program_expression_has_pointer_type(
     state: &ExecutionState,
     expression: &ProgramExpression,
 ) -> bool {
-    super::eval::c_expression_pointee_type(state, expression).is_some()
+    super::eval::program_expression_pointee_type(state, expression).is_some()
 }
 
 /// Whether `expression` is a C `bool` value this state can type: a `bool`
 /// constant, or a read of a `bool` object. A branch on it is the `Bool`
 /// claim on the value itself (Stage 5), not its comparison with an integer.
-pub(crate) fn c_expression_has_bool_type(
+pub(crate) fn program_expression_has_bool_type(
     state: &ExecutionState,
     expression: &ProgramExpression,
 ) -> bool {
@@ -2084,17 +2090,10 @@ pub(crate) fn c_expression_has_bool_type(
             .call_result(*call)
             .is_some_and(|value| value.c_type() == ProgramType::Bool),
         expression => {
-            super::eval::c_expression_lvalue_type(state, expression) == Some(ProgramType::Bool)
+            super::eval::program_expression_lvalue_type(state, expression)
+                == Some(ProgramType::Bool)
         }
     }
-}
-
-pub fn c_variable(name: impl Into<String>) -> ProgramExpression {
-    ProgramExpression::Variable(name.into())
-}
-
-pub fn c_function_address(name: impl Into<String>) -> ProgramExpression {
-    ProgramExpression::FunctionAddress(name.into())
 }
 
 /// The values a composite definition binds its existential witnesses to for
@@ -2119,7 +2118,7 @@ pub fn composite_resource_witness_values(
     }
     let mut state = ExecutionState::new().with_memory(memory.clone());
     for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
-        let argument = argument.as_c_value()?;
+        let argument = argument.as_program_value()?;
         state.locals.set_typed(
             parameter.name().to_string(),
             argument.clone(),
@@ -2139,389 +2138,7 @@ pub fn composite_resource_witness_values(
     )
 }
 
-pub fn c_cast(expression: ProgramExpression, target_type: ProgramType) -> ProgramExpression {
-    c_cast_with_pointee_volatile(expression, target_type, false)
-}
-
-pub fn c_cast_with_pointee_volatile(
-    expression: ProgramExpression,
-    target_type: ProgramType,
-    pointee_volatile: bool,
-) -> ProgramExpression {
-    c_cast_with_pointee_qualifiers(expression, target_type, pointee_volatile, false)
-}
-
-pub fn c_cast_with_pointee_qualifiers(
-    expression: ProgramExpression,
-    target_type: ProgramType,
-    pointee_volatile: bool,
-    pointee_constant: bool,
-) -> ProgramExpression {
-    c_cast_with_pointee_qualifiers_and_struct(
-        expression,
-        target_type,
-        pointee_volatile,
-        pointee_constant,
-        None,
-    )
-}
-
-pub fn c_cast_with_pointee_qualifiers_and_struct(
-    expression: ProgramExpression,
-    target_type: ProgramType,
-    pointee_volatile: bool,
-    pointee_constant: bool,
-    pointee_struct: Option<String>,
-) -> ProgramExpression {
-    ProgramExpression::Cast {
-        expression: Box::new(expression),
-        target_type,
-        integer_mode: crate::kernel::IntegerCastMode::Standard,
-        pointee_struct,
-        pointee_volatile,
-        pointee_constant,
-        explicit_qualification: false,
-    }
-}
-
-/// A cast the C source wrote. Its result has exactly the destination's
-/// pointee `const` qualification, so unlike the lowering-inserted casts
-/// above it can drop the source pointer's `const`.
-pub fn c_source_cast_with_pointee_qualifiers_and_struct(
-    expression: ProgramExpression,
-    target_type: ProgramType,
-    pointee_volatile: bool,
-    pointee_constant: bool,
-    pointee_struct: Option<String>,
-) -> ProgramExpression {
-    ProgramExpression::Cast {
-        expression: Box::new(expression),
-        target_type,
-        integer_mode: crate::kernel::IntegerCastMode::Standard,
-        pointee_struct,
-        pointee_volatile,
-        pointee_constant,
-        explicit_qualification: true,
-    }
-}
-
-/// Marks a cast lowered from C source as C's integer conversion
-/// (`IntegerCastMode::CConversion`). Any other cast is returned unchanged.
-pub fn c_source_integer_conversion(mut expression: ProgramExpression) -> ProgramExpression {
-    if let ProgramExpression::Cast { integer_mode, .. } = &mut expression
-        && *integer_mode == IntegerCastMode::Standard
-    {
-        *integer_mode = IntegerCastMode::CConversion;
-    }
-    expression
-}
-
-/// Explicit modulo conversion between admitted machine integer types.
-/// The evaluator checks both runtime types. This policy is shared by Rust and
-/// C++20; C source conversions use `c_source_integer_conversion`, and a
-/// specification's casts keep `c_cast` and its checked policy.
-pub fn c_integer_cast_modulo(
-    expression: ProgramExpression,
-    target_type: ProgramType,
-) -> ProgramExpression {
-    let mut result = c_cast(expression, target_type);
-    if let ProgramExpression::Cast { integer_mode, .. } = &mut result {
-        *integer_mode = IntegerCastMode::Modulo;
-    }
-    result
-}
-
-/// The `Bool` value of a Rust comparison, `!` or connective (decision D5):
-/// the condition itself, with no path split.
-pub fn c_bool_value(expression: ProgramExpression) -> ProgramExpression {
-    let mut result = c_cast(expression, ProgramType::Bool);
-    if let ProgramExpression::Cast { integer_mode, .. } = &mut result {
-        *integer_mode = IntegerCastMode::BoolValue;
-    }
-    result
-}
-
-/// A Rust operator on 8- or 16-bit operands at their type `target_type`
-/// (decision G4): `operation` is the operator over the operands as written,
-/// and its value is the native node of that type, with no promotion.
-pub fn c_narrow_arithmetic(
-    operation: ProgramExpression,
-    target_type: ProgramType,
-) -> ProgramExpression {
-    let mut result = c_cast(operation, target_type);
-    if let ProgramExpression::Cast { integer_mode, .. } = &mut result {
-        *integer_mode = IntegerCastMode::NarrowArithmetic;
-    }
-    result
-}
-
-/// The C++20 uint64-to-int64 rule, distinct from an ordinary C cast.
-pub fn c_uint64_bits_to_int64(expression: ProgramExpression) -> ProgramExpression {
-    let mut result = c_cast(expression, ProgramType::Int64);
-    if let ProgramExpression::Cast { integer_mode, .. } = &mut result {
-        *integer_mode = IntegerCastMode::UInt64BitsToInt64;
-    }
-    result
-}
-
-pub fn c_conditional(
-    condition: ProgramExpression,
-    then_branch: ProgramExpression,
-    else_branch: ProgramExpression,
-) -> ProgramExpression {
-    ProgramExpression::Conditional {
-        condition: Box::new(condition),
-        then_branch: Box::new(then_branch),
-        else_branch: Box::new(else_branch),
-    }
-}
-
-pub fn c_float_classification(
-    expression: ProgramExpression,
-    classification: FloatClassification,
-) -> ProgramExpression {
-    ProgramExpression::FloatClassification {
-        expression: Box::new(expression),
-        classification,
-    }
-}
-
-pub fn c_float_negate(expression: ProgramExpression) -> ProgramExpression {
-    ProgramExpression::FloatNegate(Box::new(expression))
-}
-
-pub fn c_addr_of(name: impl Into<String>) -> ProgramExpression {
-    ProgramExpression::AddressOf(Box::new(c_variable(name)))
-}
-
-/// A non-reading check of the storage denoted by an lvalue.
-pub fn c_checked_object_address(lvalue: ProgramExpression) -> ProgramExpression {
-    ProgramExpression::CheckedObjectAddress(Box::new(lvalue))
-}
-
-pub fn c_pointer_offset_bytes(pointer: ProgramExpression, bytes: u32) -> ProgramExpression {
-    if bytes == 0 {
-        pointer
-    } else {
-        ProgramExpression::PointerOffsetBytes {
-            pointer: Box::new(pointer),
-            bytes,
-        }
-    }
-}
-
-pub fn c_int32_literal(value: u32) -> ProgramExpression {
-    ProgramExpression::Value(int32(MachineTerm::constant(value)))
-}
-
-pub fn c_uint8_literal(value: u8) -> ProgramExpression {
-    ProgramExpression::Value(uint8(MachineTerm::constant(u32::from(value))))
-}
-
-pub fn c_uint32_literal(value: u32) -> ProgramExpression {
-    ProgramExpression::Value(uint32(MachineTerm::constant(value)))
-}
-
-/// Signed wide literal in the common checked machine arena.
-pub fn c_int128_literal(value: i128) -> ProgramExpression {
-    let ty = MachineIntegerType::Int128;
-    ProgramExpression::Value(
-        ty.constant_value(
-            MachineIntegerConstant::from_signed(ty.format(), value)
-                .expect("i128 fits the signed 128-bit format"),
-        )
-        .expect("exact wide format"),
-    )
-}
-
-/// Unsigned wide literal; the high 64 bits are retained.
-pub fn c_uint128_literal(value: u128) -> ProgramExpression {
-    let ty = MachineIntegerType::UInt128;
-    ProgramExpression::Value(
-        ty.constant_value(
-            MachineIntegerConstant::from_unsigned(ty.format(), value)
-                .expect("u128 fits the unsigned 128-bit format"),
-        )
-        .expect("exact wide format"),
-    )
-}
-
-pub fn c_int64_literal(value: i64) -> ProgramExpression {
-    ProgramExpression::Value(int64(MachineTerm::int64_constant(value)))
-}
-
-pub fn c_uint64_literal(value: u64) -> ProgramExpression {
-    ProgramExpression::Value(uint64(MachineTerm::uint64_constant(value)))
-}
-
-pub fn c_float32_literal(bits: u32) -> ProgramExpression {
-    ProgramExpression::Value(float32(MachineTerm::constant(bits)))
-}
-
-pub fn c_float64_literal(bits: u64) -> ProgramExpression {
-    ProgramExpression::Value(float64(MachineTerm::uint64_constant(bits)))
-}
-
-pub fn c_pointer_value(pointer: Pointer) -> ProgramExpression {
-    ProgramExpression::Value(ProgramValue::pointer(pointer))
-}
-
-pub fn c_typed_pointer_value(pointer: Pointer, c_type: ProgramType) -> ProgramExpression {
-    ProgramExpression::Value(ProgramValue::typed_pointer(pointer, c_type))
-}
-
-pub fn c_less_than(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
-    ProgramExpression::LessThan(Box::new(left), Box::new(right))
-}
-
-pub fn c_less_equal(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
-    ProgramExpression::LessEqual(Box::new(left), Box::new(right))
-}
-
-pub fn c_greater_than(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
-    ProgramExpression::GreaterThan(Box::new(left), Box::new(right))
-}
-
-pub fn c_greater_equal(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
-    ProgramExpression::GreaterEqual(Box::new(left), Box::new(right))
-}
-
-pub fn c_equal(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
-    ProgramExpression::Equal(Box::new(left), Box::new(right))
-}
-
-pub fn c_not_equal(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
-    ProgramExpression::NotEqual(Box::new(left), Box::new(right))
-}
-
-pub fn c_not(expression: ProgramExpression) -> ProgramExpression {
-    ProgramExpression::Not(Box::new(expression))
-}
-
-pub fn c_and(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
-    ProgramExpression::And(Box::new(left), Box::new(right))
-}
-
-pub fn c_or(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
-    ProgramExpression::Or(Box::new(left), Box::new(right))
-}
-
-pub fn c_add(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
-    ProgramExpression::Add(Box::new(left), Box::new(right))
-}
-
-pub fn c_subtract(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
-    ProgramExpression::Subtract(Box::new(left), Box::new(right))
-}
-
-pub fn c_multiply(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
-    ProgramExpression::Multiply(Box::new(left), Box::new(right))
-}
-
-pub fn c_divide(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
-    ProgramExpression::Divide(Box::new(left), Box::new(right))
-}
-
-pub fn c_remainder(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
-    ProgramExpression::Remainder(Box::new(left), Box::new(right))
-}
-
-pub fn c_shift_left(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
-    ProgramExpression::ShiftLeft(Box::new(left), Box::new(right))
-}
-
-pub fn c_shift_right(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
-    ProgramExpression::ShiftRight(Box::new(left), Box::new(right))
-}
-
-pub fn c_bitwise_and(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
-    ProgramExpression::BitwiseAnd(Box::new(left), Box::new(right))
-}
-
-pub fn c_bitwise_or(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
-    ProgramExpression::BitwiseOr(Box::new(left), Box::new(right))
-}
-
-pub fn c_bitwise_xor(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
-    ProgramExpression::BitwiseXor(Box::new(left), Box::new(right))
-}
-
-pub fn c_bitwise_not(expression: ProgramExpression) -> ProgramExpression {
-    ProgramExpression::BitwiseNot(Box::new(expression))
-}
-
-pub fn c_load(pointer: ProgramExpression) -> ProgramExpression {
-    ProgramExpression::Load(Box::new(pointer))
-}
-
-pub fn c_typed_load(pointer: ProgramExpression, value_type: ProgramType) -> ProgramExpression {
-    c_typed_load_with_source(pointer, value_type, None)
-}
-
-pub(crate) fn c_typed_load_with_source(
-    pointer: ProgramExpression,
-    value_type: ProgramType,
-    source: Option<crate::kernel::LoadSourceId>,
-) -> ProgramExpression {
-    c_qualified_typed_load_with_source(pointer, value_type, false, None, source)
-}
-
-pub(crate) fn c_qualified_typed_load_with_source(
-    pointer: ProgramExpression,
-    value_type: ProgramType,
-    pointee_constant: bool,
-    access_class: Option<crate::kernel::effective_type::CAccessClass>,
-    source: Option<crate::kernel::LoadSourceId>,
-) -> ProgramExpression {
-    ProgramExpression::TypedLoad {
-        pointer: Box::new(pointer),
-        value_type,
-        volatile: false,
-        pointee_constant,
-        access_class,
-        source: source
-            .map(crate::kernel::ExpressionLoadSource::new)
-            .unwrap_or_default(),
-    }
-}
-
-/// A load of a `value_type` lvalue whose access class the kernel type cannot
-/// give (`design/effective-types.md`).
-pub(crate) fn c_classed_load(
-    pointer: ProgramExpression,
-    value_type: ProgramType,
-    access_class: Option<crate::kernel::effective_type::CAccessClass>,
-) -> ProgramExpression {
-    ProgramExpression::TypedLoad {
-        pointer: Box::new(pointer),
-        value_type,
-        volatile: false,
-        pointee_constant: false,
-        access_class,
-        source: crate::kernel::ExpressionLoadSource::none(),
-    }
-}
-
-pub(crate) fn c_qualified_volatile_typed_load(
-    pointer: ProgramExpression,
-    value_type: ProgramType,
-    pointee_constant: bool,
-) -> ProgramExpression {
-    ProgramExpression::TypedLoad {
-        pointer: Box::new(pointer),
-        value_type,
-        volatile: true,
-        pointee_constant,
-        access_class: None,
-        source: crate::kernel::ExpressionLoadSource::none(),
-    }
-}
-
-pub fn c_index(base: ProgramExpression, index: ProgramExpression) -> ProgramExpression {
-    ProgramExpression::Index(Box::new(base), Box::new(index))
-}
-
-pub fn c_assign(name: impl Into<String>, expression: ProgramExpression) -> ProgramStatement {
+pub fn program_assign(name: impl Into<String>, expression: ProgramExpression) -> ProgramStatement {
     ProgramStatement::Assign {
         name: name.into(),
         expression,
@@ -2529,7 +2146,7 @@ pub fn c_assign(name: impl Into<String>, expression: ProgramExpression) -> Progr
     }
 }
 
-pub fn c_call_assign(
+pub fn program_call_assign(
     target: impl Into<String>,
     function_name: impl Into<String>,
     arguments: Vec<ProgramExpression>,
@@ -2541,7 +2158,7 @@ pub fn c_call_assign(
     }
 }
 
-pub fn c_call(
+pub fn program_call(
     function_name: impl Into<String>,
     arguments: Vec<ProgramExpression>,
 ) -> ProgramStatement {
@@ -2551,18 +2168,21 @@ pub fn c_call(
     }
 }
 
-pub fn c_heap_allocate(target: impl Into<String>, bytes: u32) -> ProgramStatement {
-    c_heap_allocate_sized(target, c_int32_literal(bytes))
+pub fn program_heap_allocate(target: impl Into<String>, bytes: u32) -> ProgramStatement {
+    program_heap_allocate_sized(
+        target,
+        crate::kernel::program_expression::int32_literal(bytes),
+    )
 }
 
-pub fn c_heap_allocate_sized(
+pub fn program_heap_allocate_sized(
     target: impl Into<String>,
     bytes: ProgramExpression,
 ) -> ProgramStatement {
-    c_heap_allocate_sized_with_zeroed(target, bytes, false)
+    program_heap_allocate_sized_with_zeroed(target, bytes, false)
 }
 
-pub fn c_heap_allocate_sized_with_zeroed(
+pub fn program_heap_allocate_sized_with_zeroed(
     target: impl Into<String>,
     bytes: ProgramExpression,
     zeroed: bool,
@@ -2576,32 +2196,32 @@ pub fn c_heap_allocate_sized_with_zeroed(
     }
 }
 
-pub fn c_heap_free(pointer: ProgramExpression) -> ProgramStatement {
+pub fn program_heap_free(pointer: ProgramExpression) -> ProgramStatement {
     ProgramStatement::HeapFree { pointer }
 }
 
-pub fn c_declare(name: impl Into<String>, c_type: ProgramType) -> ProgramStatement {
-    c_declare_volatile(name, c_type, false)
+pub fn program_declare(name: impl Into<String>, c_type: ProgramType) -> ProgramStatement {
+    program_declare_volatile(name, c_type, false)
 }
 
-pub fn c_declare_volatile(
+pub fn program_declare_volatile(
     name: impl Into<String>,
     c_type: ProgramType,
     volatile: bool,
 ) -> ProgramStatement {
-    c_declare_qualified(name, c_type, volatile, false)
+    program_declare_qualified(name, c_type, volatile, false)
 }
 
-pub fn c_declare_qualified(
+pub fn program_declare_qualified(
     name: impl Into<String>,
     c_type: ProgramType,
     volatile: bool,
     pointee_volatile: bool,
 ) -> ProgramStatement {
-    c_declare_with_all_qualifiers(name, c_type, volatile, pointee_volatile, false, false)
+    program_declare_with_all_qualifiers(name, c_type, volatile, pointee_volatile, false, false)
 }
 
-pub fn c_declare_with_all_qualifiers(
+pub fn program_declare_with_all_qualifiers(
     name: impl Into<String>,
     c_type: ProgramType,
     volatile: bool,
@@ -2622,10 +2242,10 @@ pub fn c_declare_with_all_qualifiers(
     }
 }
 
-/// [`c_declare_with_all_qualifiers`], zero-filling the object first when
+/// [`program_declare_with_all_qualifiers`], zero-filling the object first when
 /// `zero_fill` says how: an automatic array declared with an initializer,
 /// whose written elements follow as ordinary stores ([`ZeroFill`]).
-pub fn c_declare_with_zero_fill(
+pub fn program_declare_with_zero_fill(
     name: impl Into<String>,
     c_type: ProgramType,
     volatile: bool,
@@ -2649,7 +2269,7 @@ pub fn c_declare_with_zero_fill(
 
 /// Allocate a fresh scalar and initialize it once. Ordinary stores remain
 /// subject to the object's const qualification after this transition.
-pub fn c_declare_initialized(
+pub fn program_declare_initialized(
     name: impl Into<String>,
     c_type: ProgramType,
     expression: ProgramExpression,
@@ -2671,7 +2291,10 @@ pub fn c_declare_initialized(
     }
 }
 
-pub fn c_declare_aggregate(name: impl Into<String>, layout: AggregateLayout) -> ProgramStatement {
+pub fn program_declare_aggregate(
+    name: impl Into<String>,
+    layout: AggregateLayout,
+) -> ProgramStatement {
     ProgramStatement::DeclareAggregate {
         name: name.into(),
         layout,
@@ -2680,8 +2303,8 @@ pub fn c_declare_aggregate(name: impl Into<String>, layout: AggregateLayout) -> 
     }
 }
 
-/// [`c_declare_aggregate`] of an object whose class is `declared_class`.
-pub(crate) fn c_declare_classed_aggregate(
+/// [`program_declare_aggregate`] of an object whose class is `declared_class`.
+pub(crate) fn program_declare_classed_aggregate(
     name: impl Into<String>,
     layout: AggregateLayout,
     declared_class: Option<crate::kernel::effective_type::CAccessClass>,
@@ -2694,7 +2317,7 @@ pub(crate) fn c_declare_classed_aggregate(
     }
 }
 
-pub fn c_begin_aggregate_construction(
+pub fn program_begin_aggregate_construction(
     name: impl Into<String>,
     layout: AggregateLayout,
 ) -> ProgramStatement {
@@ -2708,7 +2331,7 @@ pub fn c_begin_aggregate_construction(
 
 /// Allocates fresh owned aggregate storage without initializing its fields.
 /// This grants authority over the allocation, not over any future pointees.
-pub fn c_allocate_aggregate_destination(
+pub fn program_allocate_aggregate_destination(
     name: impl Into<String>,
     layout: AggregateLayout,
 ) -> ProgramStatement {
@@ -2720,7 +2343,7 @@ pub fn c_allocate_aggregate_destination(
     }
 }
 
-pub fn c_copy_aggregate(
+pub fn program_copy_aggregate(
     target: ProgramExpression,
     source: ProgramExpression,
     layout: AggregateLayout,
@@ -2734,11 +2357,11 @@ pub fn c_copy_aggregate(
 
 /// Retire automatic storage at a source-language lifetime boundary. Frontends
 /// supply the objects whose lifetimes end; this grants no cleanup authority.
-pub fn c_end_automatic_lifetimes(names: Vec<String>) -> ProgramStatement {
+pub fn program_end_automatic_lifetimes(names: Vec<String>) -> ProgramStatement {
     ProgramStatement::EndAutomaticLifetimes { names }
 }
 
-pub fn c_initialize_scalar_array(
+pub fn program_initialize_scalar_array(
     target: ProgramExpression,
     source: ProgramExpression,
     element_type: ProgramType,
@@ -2757,7 +2380,7 @@ pub fn c_initialize_scalar_array(
 
 /// Write an embedded scalar-array region without changing adjacent bytes.
 /// This does not grant storage, initialization or memory authority.
-pub fn c_write_scalar_array_region(
+pub fn program_write_scalar_array_region(
     target: ProgramExpression,
     source: ProgramExpression,
     element_type: ProgramType,
@@ -2774,14 +2397,14 @@ pub fn c_write_scalar_array_region(
     }
 }
 
-pub fn c_assert(condition: ProgramExpression) -> ProgramStatement {
+pub fn program_assert(condition: ProgramExpression) -> ProgramStatement {
     ProgramStatement::Assert {
         condition,
         label: None,
     }
 }
 
-pub fn c_labeled_assert(
+pub fn program_labeled_assert(
     condition: ProgramExpression,
     label: impl Into<String>,
 ) -> ProgramStatement {
@@ -2791,53 +2414,53 @@ pub fn c_labeled_assert(
     }
 }
 
-pub fn c_seq(first: ProgramStatement, second: ProgramStatement) -> ProgramStatement {
+pub fn program_seq(first: ProgramStatement, second: ProgramStatement) -> ProgramStatement {
     ProgramStatement::seq(Arc::new(first), Arc::new(second))
 }
 
-pub fn c_skip() -> ProgramStatement {
+pub fn program_skip() -> ProgramStatement {
     ProgramStatement::Skip
 }
 
-pub fn c_break() -> ProgramStatement {
+pub fn program_break() -> ProgramStatement {
     ProgramStatement::Break
 }
 
-pub fn c_continue() -> ProgramStatement {
+pub fn program_continue() -> ProgramStatement {
     ProgramStatement::Continue
 }
 
-pub(crate) fn c_goto(target: ControlTargetId) -> ProgramStatement {
+pub(crate) fn program_goto(target: ControlTargetId) -> ProgramStatement {
     ProgramStatement::Goto { target }
 }
 
-pub fn c_switch(expression: ProgramExpression, cases: Vec<SwitchCase>) -> ProgramStatement {
+pub fn program_switch(expression: ProgramExpression, cases: Vec<SwitchCase>) -> ProgramStatement {
     ProgramStatement::Switch { expression, cases }
 }
 
-pub fn c_return(expression: ProgramExpression) -> ProgramStatement {
+pub fn program_return(expression: ProgramExpression) -> ProgramStatement {
     ProgramStatement::Return(expression)
 }
 
-pub fn c_void_value() -> ProgramExpression {
+pub fn program_void_value() -> ProgramExpression {
     ProgramExpression::Value(ProgramValue::Void)
 }
 
-pub fn c_store(pointer: ProgramExpression, value: ProgramExpression) -> ProgramStatement {
+pub fn program_store(pointer: ProgramExpression, value: ProgramExpression) -> ProgramStatement {
     ProgramStatement::Store { pointer, value }
 }
 
-pub fn c_typed_store(
+pub fn program_typed_store(
     pointer: ProgramExpression,
     value: ProgramExpression,
     value_type: ProgramType,
 ) -> ProgramStatement {
-    c_qualified_typed_store(pointer, value, value_type, None, false, false)
+    program_qualified_typed_store(pointer, value, value_type, None, false, false)
 }
 
 /// A typed store whose lvalue has `access_class` when `value_type` erases
-/// it, as [`c_classed_load`] does for a load.
-pub(crate) fn c_qualified_typed_store(
+/// it, as [`crate::kernel::program_expression::classed_load`] does for a load.
+pub(crate) fn program_qualified_typed_store(
     pointer: ProgramExpression,
     value: ProgramExpression,
     value_type: ProgramType,
@@ -2856,7 +2479,7 @@ pub(crate) fn c_qualified_typed_store(
     }
 }
 
-pub fn c_update(
+pub fn program_update(
     target: ProgramExpression,
     operator: UpdateOperator,
     operand: ProgramExpression,
@@ -2868,7 +2491,7 @@ pub fn c_update(
     }
 }
 
-pub fn c_if(
+pub fn program_if(
     condition: ProgramExpression,
     then_branch: ProgramStatement,
     else_branch: ProgramStatement,
@@ -2882,15 +2505,15 @@ pub fn c_if(
 
 /// Handle a checked int32 exceptional outcome, binding its payload only on
 /// the caught path. Normal and other terminal outcomes bypass the handler.
-pub fn c_try_catch_int32(
+pub fn program_try_catch_int32(
     try_body: ProgramStatement,
     binding: impl Into<String>,
     handler: ProgramStatement,
 ) -> ProgramStatement {
-    c_try_catch_int32_with_cleanup(try_body, binding, handler, false)
+    program_try_catch_int32_with_cleanup(try_body, binding, handler, false)
 }
 
-pub fn c_try_catch_int32_with_cleanup(
+pub fn program_try_catch_int32_with_cleanup(
     try_body: ProgramStatement,
     binding: impl Into<String>,
     handler: ProgramStatement,
@@ -2904,21 +2527,27 @@ pub fn c_try_catch_int32_with_cleanup(
     }
 }
 
-pub fn c_while(
+pub fn program_while(
     condition: ProgramExpression,
     invariant: Vec<Proposition>,
     body: ProgramStatement,
 ) -> ProgramStatement {
-    c_while_with_invariant_and_effect_checks(condition, invariant, Vec::new(), Vec::new(), body)
+    program_while_with_invariant_and_effect_checks(
+        condition,
+        invariant,
+        Vec::new(),
+        Vec::new(),
+        body,
+    )
 }
 
-pub fn c_while_with_invariant_checks(
+pub fn program_while_with_invariant_checks(
     condition: ProgramExpression,
     invariant: Vec<Proposition>,
     invariant_checks: Vec<LoopInvariantCheck>,
     body: ProgramStatement,
 ) -> ProgramStatement {
-    c_while_with_invariant_and_effect_checks(
+    program_while_with_invariant_and_effect_checks(
         condition,
         invariant,
         invariant_checks,
@@ -2927,7 +2556,7 @@ pub fn c_while_with_invariant_checks(
     )
 }
 
-pub fn c_while_with_invariant_and_effect_checks(
+pub fn program_while_with_invariant_and_effect_checks(
     condition: ProgramExpression,
     invariant: Vec<Proposition>,
     invariant_checks: Vec<LoopInvariantCheck>,
@@ -3035,11 +2664,11 @@ impl ProgramStatement {
     }
 }
 
-pub fn c_do_while(condition: ProgramExpression, body: ProgramStatement) -> ProgramStatement {
-    c_do_while_with_invariant_and_effect_checks(condition, Vec::new(), Vec::new(), body)
+pub fn program_do_while(condition: ProgramExpression, body: ProgramStatement) -> ProgramStatement {
+    program_do_while_with_invariant_and_effect_checks(condition, Vec::new(), Vec::new(), body)
 }
 
-pub fn c_do_while_with_invariant_and_effect_checks(
+pub fn program_do_while_with_invariant_and_effect_checks(
     condition: ProgramExpression,
     invariant_checks: Vec<LoopInvariantCheck>,
     effect_checks: Vec<LoopEffectCheck>,
@@ -3065,7 +2694,10 @@ pub fn c_do_while_with_invariant_and_effect_checks(
 /// a `continue` must execute that same step before returning to the loop head.
 /// Nested loops are opaque here because their `continue` statements target
 /// those inner loops instead.
-pub fn c_for_body_with_step(body: ProgramStatement, step: ProgramStatement) -> ProgramStatement {
+pub fn program_for_body_with_step(
+    body: ProgramStatement,
+    step: ProgramStatement,
+) -> ProgramStatement {
     fn rewrite(
         statement: ProgramStatement,
         step: &ProgramStatement,
@@ -3092,7 +2724,7 @@ pub fn c_for_body_with_step(body: ProgramStatement, step: ProgramStatement) -> P
                     scopes.truncate(parent_len);
                     body
                 };
-                c_if(condition, arm(*then_branch), arm(*else_branch))
+                program_if(condition, arm(*then_branch), arm(*else_branch))
             }
             ProgramStatement::Switch { expression, cases } => {
                 let parent_len = scopes.len();
@@ -3107,7 +2739,7 @@ pub fn c_for_body_with_step(body: ProgramStatement, step: ProgramStatement) -> P
                     })
                     .collect();
                 scopes.truncate(parent_len);
-                c_switch(expression, cases)
+                program_switch(expression, cases)
             }
             statement => statement,
         }
@@ -3134,14 +2766,14 @@ pub fn c_for_body_with_step(body: ProgramStatement, step: ProgramStatement) -> P
     } else {
         first_step(step, names)
     };
-    c_seq(rewritten, step)
+    program_seq(rewritten, step)
 }
 
-pub fn c_parameter(name: impl Into<String>, c_type: ProgramType) -> ProgramParameter {
+pub fn program_parameter(name: impl Into<String>, c_type: ProgramType) -> ProgramParameter {
     ProgramParameter::new(name, c_type)
 }
 
-pub fn c_parameter_with_aggregate_layout(
+pub fn program_parameter_with_aggregate_layout(
     name: impl Into<String>,
     c_type: ProgramType,
     layout: AggregateLayout,
@@ -3149,7 +2781,7 @@ pub fn c_parameter_with_aggregate_layout(
     ProgramParameter::new(name, c_type).with_aggregate_layout(layout)
 }
 
-pub fn c_function(
+pub fn program_function(
     return_type: ProgramType,
     name: impl Into<String>,
     parameters: Vec<ProgramParameter>,
@@ -3164,7 +2796,7 @@ pub fn c_function(
 /// using arithmetic on a value of an abstract type, is refused with the
 /// lowering's reason. Nothing is proved: a declaration no body answers for,
 /// a generic trait's interface, is checked this way once for every type.
-pub fn c_check_contract_clauses_lower(
+pub fn program_check_contract_clauses_lower(
     function: &ProgramFunction,
     state: &ExecutionState,
     arguments: &[ProgramValue],
@@ -3182,7 +2814,12 @@ pub fn c_check_contract_clauses_lower(
     }
     let entry_state = &entry_state;
     for clause in function.contract_requires() {
-        c_lower_spec_proposition_at_state(entry_state, clause, Some(entry_state), assumptions)?;
+        program_lower_spec_proposition_at_state(
+            entry_state,
+            clause,
+            Some(entry_state),
+            assumptions,
+        )?;
     }
     let mut exit_state = entry_state.clone();
     if function.return_type() != ProgramType::Void {
@@ -3196,7 +2833,12 @@ pub fn c_check_contract_clauses_lower(
             .set_typed(C_CONTRACT_RESULT_NAME, result, function.return_type());
     }
     for clause in function.contract_ensures() {
-        c_lower_spec_proposition_at_state(&exit_state, clause, Some(entry_state), assumptions)?;
+        program_lower_spec_proposition_at_state(
+            &exit_state,
+            clause,
+            Some(entry_state),
+            assumptions,
+        )?;
     }
     Ok(())
 }
@@ -3207,28 +2849,29 @@ pub fn c_check_contract_clauses_lower(
 /// single path with the facts its loads introduced and the obligations
 /// they left open (a load the state does not show loadable); `None` when
 /// the lowering fails or splits into several paths.
-pub fn c_lower_spec_proposition_at_state(
+pub fn program_lower_spec_proposition_at_state(
     state: &ExecutionState,
     proposition: &SpecProposition,
     entry_state: Option<&ExecutionState>,
     assumptions: &PureFactContext,
 ) -> Result<(Proposition, Vec<Proposition>, Vec<Proposition>), String> {
-    let (proposition, facts, obligations, _) = c_lower_spec_proposition_at_state_with_provenance(
-        state,
-        proposition,
-        entry_state,
-        assumptions,
-    )?;
+    let (proposition, facts, obligations, _) =
+        program_lower_spec_proposition_at_state_with_provenance(
+            state,
+            proposition,
+            entry_state,
+            assumptions,
+        )?;
     Ok((proposition, facts, obligations))
 }
 
-/// [`c_lower_spec_proposition_at_state`], also reporting the head chain of
+/// [`program_lower_spec_proposition_at_state`], also reporting the head chain of
 /// the lowered proposition: which of its outermost nodes this lowering
 /// inserted as a guard, which were written, and the exact kernel variable
 /// each written universal bound its written name to. A proof that
 /// introduces the head of this goal reads the record instead of inferring
 /// the correspondence from the shape the written syntax happens to share.
-pub fn c_lower_spec_proposition_at_state_with_provenance(
+pub fn program_lower_spec_proposition_at_state_with_provenance(
     state: &ExecutionState,
     proposition: &SpecProposition,
     entry_state: Option<&ExecutionState>,
@@ -3243,7 +2886,7 @@ pub fn c_lower_spec_proposition_at_state_with_provenance(
     String,
 > {
     let (goal, facts, obligations, introductions) =
-        c_lower_spec_proposition_with_checked_obligations(
+        program_lower_spec_proposition_with_checked_obligations(
             state,
             proposition,
             entry_state,
@@ -3467,7 +3110,7 @@ pub(in crate::kernel) fn exactly_selected_spec_proposition_path<'a>(
 
 /// Proof-side lowering keeps mandatory verification conditions distinct from
 /// assumable evaluation obligations until the caller checks their evidence.
-pub(crate) fn c_lower_spec_proposition_with_checked_obligations(
+pub(crate) fn program_lower_spec_proposition_with_checked_obligations(
     state: &ExecutionState,
     proposition: &SpecProposition,
     entry_state: Option<&ExecutionState>,
@@ -3484,11 +3127,11 @@ pub(crate) fn c_lower_spec_proposition_with_checked_obligations(
     lower_checked_proof_proposition(state, proposition, entry_state, assumptions, false)
 }
 
-/// [`c_lower_spec_proposition_with_checked_obligations`] for a `branch
+/// [`program_lower_spec_proposition_with_checked_obligations`] for a `branch
 /// ensuring` fact at its join. Every arm lowered the fact with ordinary
 /// lowering, so the join may introduce its typed calls' argument domains for
 /// the joined values (see `spec::lower_assumed_interface_proposition`).
-pub(crate) fn c_lower_assumed_interface_proposition_with_checked_obligations(
+pub(crate) fn program_lower_assumed_interface_proposition_with_checked_obligations(
     state: &ExecutionState,
     proposition: &SpecProposition,
     entry_state: Option<&ExecutionState>,
@@ -3642,13 +3285,13 @@ fn lower_checked_proof_proposition(
 /// proof-side expression and every contract expression share. `entry_state`
 /// is what `old(...)` refers to. The result is the value on the evaluation's
 /// single path with the load obligations the path left open.
-pub fn c_evaluate_spec_expression_at_state(
+pub fn program_evaluate_speprogram_expression_at_state(
     state: &ExecutionState,
     expression: &SpecExpression,
     entry_state: Option<&ExecutionState>,
     assumptions: &PureFactContext,
 ) -> Result<(ProgramValue, Vec<Proposition>), String> {
-    let (value, obligations) = c_evaluate_spec_expression_with_checked_obligations(
+    let (value, obligations) = program_evaluate_speprogram_expression_with_checked_obligations(
         state,
         expression,
         entry_state,
@@ -3664,7 +3307,7 @@ pub fn c_evaluate_spec_expression_at_state(
 }
 
 /// Retains mandatory conversion conditions for proof-side expression capture.
-pub(crate) fn c_evaluate_spec_expression_with_checked_obligations(
+pub(crate) fn program_evaluate_speprogram_expression_with_checked_obligations(
     state: &ExecutionState,
     expression: &SpecExpression,
     entry_state: Option<&ExecutionState>,
@@ -3690,7 +3333,7 @@ pub(crate) fn c_evaluate_spec_expression_with_checked_obligations(
     Ok((path.value.clone().into_native(), path.obligations.clone()))
 }
 
-pub(crate) fn c_evaluate_spec_resource_expression_with_checked_obligations(
+pub(crate) fn program_evaluate_speresource_expression_with_checked_obligations(
     state: &ExecutionState,
     expression: &SpecExpression,
     entry_state: Option<&ExecutionState>,
@@ -3718,7 +3361,9 @@ pub(crate) fn c_evaluate_spec_resource_expression_with_checked_obligations(
 
 /// Freeze protocols before evaluating an independent contract's assumed guard
 /// inputs. This grants no resources and is not a call-site transfer operation.
-pub(crate) fn c_state_with_assumed_mutex_inputs(mut state: ExecutionState) -> ExecutionState {
+pub(crate) fn execution_state_with_assumed_mutex_inputs(
+    mut state: ExecutionState,
+) -> ExecutionState {
     if state.resources.facts().iter().any(|fact| {
         matches!(
             fact.resource(),
@@ -3730,7 +3375,7 @@ pub(crate) fn c_state_with_assumed_mutex_inputs(mut state: ExecutionState) -> Ex
     state
 }
 
-pub(crate) fn c_mutex_guard_resource(
+pub(crate) fn program_mutex_guard_resource(
     state: &ExecutionState,
     mutex: &Pointer,
     abstract_entry: bool,
@@ -3738,7 +3383,7 @@ pub(crate) fn c_mutex_guard_resource(
     crate::kernel::mutexes::guard_resource(state, mutex, abstract_entry)
 }
 
-pub(crate) fn c_mutex_live_resource(
+pub(crate) fn program_mutex_live_resource(
     state: &ExecutionState,
     mutex: &Pointer,
     abstract_entry: bool,
@@ -3747,12 +3392,12 @@ pub(crate) fn c_mutex_live_resource(
 }
 
 /// Construct a contract requirement; this does not establish ownership.
-pub(crate) fn c_mutex_use_resource_with_type(
+pub(crate) fn program_mutex_use_resource_with_type(
     state: &ExecutionState,
     mutex: &Pointer,
     protected: ResourceDescription,
 ) -> ResourceFact {
-    let fact = c_mutex_use_resource(state, mutex);
+    let fact = program_mutex_use_resource(state, mutex);
     let Resource::MutexUse(mut identity) = fact.resource().clone() else {
         unreachable!()
     };
@@ -3760,7 +3405,7 @@ pub(crate) fn c_mutex_use_resource_with_type(
     ResourceFact::own(Resource::MutexUse(identity))
 }
 
-pub(crate) fn c_mutex_use_resource(state: &ExecutionState, mutex: &Pointer) -> ResourceFact {
+pub(crate) fn program_mutex_use_resource(state: &ExecutionState, mutex: &Pointer) -> ResourceFact {
     crate::kernel::mutexes::use_resource(state, mutex)
 }
 
@@ -3785,27 +3430,27 @@ pub(crate) fn bind_contract_value_parameters(
     }
 }
 
-pub fn c_function_entry_state(
+pub fn program_function_entry_state(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
 ) -> Option<ExecutionState> {
-    c_function_entry_state_with(caller_state, function, arguments, false)
+    program_function_entry_state_with(caller_state, function, arguments, false)
 }
 
 /// The state that declares a function proof's by-value aggregate inputs:
-/// [`c_function_entry_state`], except that each such parameter's object is
+/// [`program_function_entry_state`], except that each such parameter's object is
 /// declared and not copied into. It is the argument the proof is about, so
 /// the caller names its cells as their own entry values.
-pub fn c_function_input_objects_state(
+pub fn program_function_input_objects_state(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
 ) -> Option<ExecutionState> {
-    c_function_entry_state_with(caller_state, function, arguments, true)
+    program_function_entry_state_with(caller_state, function, arguments, true)
 }
 
-fn c_function_entry_state_with(
+fn program_function_entry_state_with(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
@@ -3818,7 +3463,7 @@ fn c_function_entry_state_with(
             _ => None,
         })
         .collect::<Option<Vec<_>>>()?;
-    let mut entry = crate::kernel::functions::bind_c_function_arguments_with(
+    let mut entry = crate::kernel::functions::bind_program_function_arguments_with(
         caller_state,
         function,
         &values,
@@ -3842,7 +3487,7 @@ fn c_function_entry_state_with(
 /// proof. Only principal resource occurrences selected by checked input-view
 /// clauses may receive authority here. Ordinary and nested calls must use the
 /// checked lending/reborrow planner instead.
-pub(crate) fn c_state_with_borrowed_contract_inputs(
+pub(crate) fn execution_state_with_borrowed_contract_inputs(
     state: ExecutionState,
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
@@ -3959,7 +3604,7 @@ pub(crate) fn c_state_with_borrowed_contract_inputs(
         .iter()
         .any(|spec| spec.mutex_authority_binding().is_some())
     {
-        let entry = c_function_entry_state(&rooted, function, arguments)
+        let entry = program_function_entry_state(&rooted, function, arguments)
             .ok_or_else(|| LoanRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry))?;
         let mut budget = ExecutionBudget::beside_live_state();
         for spec in function.resource_requires() {
@@ -3984,7 +3629,7 @@ pub(crate) fn c_state_with_borrowed_contract_inputs(
         crate::kernel::mutexes::helper_contracts::classify(function.contract_interface())
             .map_err(|_| LoanRefusal::InvalidEvidence.diagnostic(LoanRefusalOperation::Entry))?
     {
-        let entry = c_function_entry_state(&rooted, function, arguments)
+        let entry = program_function_entry_state(&rooted, function, arguments)
             .ok_or_else(|| LoanRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry))?;
         let mut budget = ExecutionBudget::beside_live_state();
         let mut evaluate = |spec: &ResourceSpec| {
@@ -4040,7 +3685,7 @@ fn install_borrowed_contract_inputs(
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
 ) -> Result<ExecutionState, LoanRefusalDiagnostic> {
-    let entry = c_function_entry_state(&state, function, arguments)
+    let entry = program_function_entry_state(&state, function, arguments)
         .ok_or_else(|| LoanRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry))?;
     let mut budget = ExecutionBudget::beside_live_state();
     let (_, checked_inputs) = evaluate_function_resource_context_with_metadata(
@@ -4293,7 +3938,7 @@ fn install_borrowed_contract_inputs(
 /// When proof execution has explicitly observed or unfolded part of a recursive
 /// resource, independent certification preserves that equivalent form so
 /// both executions use the same boundary state.
-pub fn c_function_contract_entry_state(
+pub fn program_function_contract_entry_state(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
@@ -4331,7 +3976,7 @@ pub fn c_function_contract_entry_state(
 /// by the rule contract certification applies to a `produces` claim. A proof
 /// consults this before reading the outcome through the contract's resource
 /// transition, so the surface accepts exactly the exits certification does.
-pub fn c_function_return_resources_definitionally_established(
+pub fn program_function_return_resources_definitionally_established(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
@@ -4357,7 +4002,7 @@ pub fn c_function_return_resources_definitionally_established(
 /// Applies a function's already-checked resource effect to a concrete body
 /// outcome. This changes only the contract-level resource/population state;
 /// the C value and memory come from the supplied body execution.
-pub fn apply_c_function_contract_resource_transition(
+pub fn apply_program_function_contract_resource_transition(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
@@ -4387,7 +4032,7 @@ pub fn apply_c_function_contract_resource_transition(
 /// Commits a proposed return-resource exchange only after its verification
 /// conditions have been established in the supplied checked context. The
 /// proposal API above also serves callers that retain explicit obligations.
-pub(crate) fn checked_c_function_contract_resource_transition(
+pub(crate) fn checked_program_function_contract_resource_transition(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
@@ -4412,7 +4057,7 @@ pub(crate) fn checked_c_function_contract_resource_transition(
             "the body outcome does not establish the contract's returned resources".to_string(),
         );
     }
-    let (outcome, obligations) = apply_c_function_contract_resource_transition(
+    let (outcome, obligations) = apply_program_function_contract_resource_transition(
         caller_state,
         function,
         arguments,
@@ -4459,7 +4104,7 @@ pub(crate) fn function_body_with_return_counts(
 
 /// Applies a kernel-checked, zero-source construction of one abstract token
 /// to a function outcome state.
-pub fn construct_c_function_resource(
+pub fn construct_program_function_resource(
     state: &ExecutionState,
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
@@ -4487,7 +4132,7 @@ pub fn construct_c_function_resource(
     }
 }
 
-pub fn c_function_outcome_from_statement_outcome(
+pub fn program_function_outcome_from_statement_outcome(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
     outcome: StatementOutcome,
@@ -4516,7 +4161,7 @@ pub fn c_function_outcome_from_statement_outcome(
 /// transition boundary when a conditional resource effect is undecided. The
 /// C body is not executed again: each returned case reuses the supplied statement
 /// outcome and carries the guard facts that authorized its boundary check.
-pub(crate) fn c_function_outcomes_from_statement_outcome_with_resource_cases(
+pub(crate) fn program_function_outcomes_from_statement_outcome_with_resource_cases(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
@@ -4526,7 +4171,7 @@ pub(crate) fn c_function_outcomes_from_statement_outcome_with_resource_cases(
 ) -> Vec<(FunctionOutcome, Vec<ProofObligation>, Vec<Proposition>)> {
     let original_outcome = outcome.clone();
     let original_obligations = obligations.clone();
-    let (outcome, obligations) = c_function_outcome_from_statement_outcome(
+    let (outcome, obligations) = program_function_outcome_from_statement_outcome(
         caller_state,
         function,
         outcome,
@@ -4547,7 +4192,7 @@ pub(crate) fn c_function_outcomes_from_statement_outcome_with_resource_cases(
     let mut resolved = Vec::new();
     for case in cases {
         let case_assumptions = assumptions_with_propositions(assumptions, &case);
-        let (case_outcome, case_obligations) = c_function_outcome_from_statement_outcome(
+        let (case_outcome, case_obligations) = program_function_outcome_from_statement_outcome(
             caller_state,
             function,
             original_outcome.clone(),
@@ -4570,7 +4215,7 @@ pub(crate) fn c_function_outcomes_from_statement_outcome_with_resource_cases(
     }
 }
 
-pub fn c_function_specification(
+pub fn program_function_specification(
     state: ExecutionState,
     arguments: Vec<ProgramExpression>,
     requires: Vec<Proposition>,
@@ -4688,58 +4333,62 @@ pub(crate) fn proposition_variables(proposition: &Proposition) -> BTreeSet<Varia
 }
 
 #[cfg(test)]
-pub fn c_max_body() -> ProgramStatement {
-    c_if(
-        c_less_than(c_variable("a"), c_variable("b")),
-        c_return(c_variable("b")),
-        c_return(c_variable("a")),
+pub fn program_max_body() -> ProgramStatement {
+    program_if(
+        crate::kernel::program_expression::less_than(
+            crate::kernel::program_expression::variable("a"),
+            crate::kernel::program_expression::variable("b"),
+        ),
+        program_return(crate::kernel::program_expression::variable("b")),
+        program_return(crate::kernel::program_expression::variable("a")),
     )
 }
 
 #[cfg(test)]
-pub fn c_max_function() -> ProgramFunction {
-    c_function(
+pub fn program_max_function() -> ProgramFunction {
+    program_function(
         ProgramType::Int32,
         "max",
         vec![
-            c_parameter("a", ProgramType::Int32),
-            c_parameter("b", ProgramType::Int32),
+            program_parameter("a", ProgramType::Int32),
+            program_parameter("b", ProgramType::Int32),
         ],
-        c_max_body(),
+        program_max_body(),
     )
 }
 
 #[cfg(test)]
-pub fn c_max_state(a: ProgramValue, b: ProgramValue) -> ExecutionState {
+pub fn program_max_state(a: ProgramValue, b: ProgramValue) -> ExecutionState {
     ExecutionState::new().with_local("a", a).with_local("b", b)
 }
 
 #[cfg(test)]
-pub fn c_max_lt_condition(a: MachineTerm, b: MachineTerm) -> ConditionTerm {
+pub fn program_max_lt_condition(a: MachineTerm, b: MachineTerm) -> ConditionTerm {
     ConditionTerm::signed_less_than(a, b)
 }
 
-pub fn prove_c_expression_evaluation(
+pub fn prove_program_expression_evaluation(
     state: ExecutionState,
     expression: ProgramExpression,
 ) -> Option<Theorem> {
-    let mut budget = ExecutionBudget::for_new_execution().with_c_expression_cost(&expression);
-    let outcome = evaluate_c_expression(&state, &expression, &PureFactContext::new(), &mut budget)?;
-    Some(Theorem::new(Proposition::CExpressionEvaluates {
+    let mut budget = ExecutionBudget::for_new_execution().with_program_expression_cost(&expression);
+    let outcome =
+        evaluate_program_expression(&state, &expression, &PureFactContext::new(), &mut budget)?;
+    Some(Theorem::new(Proposition::ProgramExpressionEvaluates {
         state: Box::new(state),
         expression,
         outcome,
     }))
 }
 
-pub fn prove_symbolic_c_condition_evaluation(
+pub fn prove_symbolic_program_condition_evaluation(
     state: ExecutionState,
     condition: ProgramExpression,
     assumptions: PureFactContext,
 ) -> SymbolicConditionEvaluation {
-    let mut budget = ExecutionBudget::beside_live_state().with_c_expression_cost(&condition);
+    let mut budget = ExecutionBudget::beside_live_state().with_program_expression_cost(&condition);
     let expression_paths =
-        match evaluate_c_condition_paths(&state, &condition, &assumptions, &mut budget) {
+        match evaluate_program_condition_paths(&state, &condition, &assumptions, &mut budget) {
             Ok(paths) => paths,
             Err(limit) => {
                 return SymbolicConditionEvaluation {
@@ -4753,7 +4402,7 @@ pub fn prove_symbolic_c_condition_evaluation(
         match path.outcome {
             ExpressionOutcome::Value(value) => {
                 outcomes.extend(
-                    c_truthiness_paths(value, path.facts, path.obligations, &assumptions)
+                    program_truthiness_paths(value, path.facts, path.obligations, &assumptions)
                         .into_iter()
                         .map(|path| {
                             (
@@ -4780,7 +4429,7 @@ pub fn prove_symbolic_c_condition_evaluation(
         .into_iter()
         .map(|(outcome, facts, obligations)| {
             let facts = public_execution_pure_facts(&facts);
-            let proposition = Proposition::CConditionEvaluates {
+            let proposition = Proposition::ProgramConditionEvaluates {
                 state: Box::new(state.clone()),
                 condition: condition.clone(),
                 outcome: outcome.clone(),
@@ -4803,29 +4452,29 @@ pub fn prove_symbolic_c_condition_evaluation(
     SymbolicConditionEvaluation { paths, limit: None }
 }
 
-pub fn prove_c_statement_execution(
+pub fn prove_execution_statement_execution(
     state: ExecutionState,
     statement: ProgramStatement,
 ) -> Option<Theorem> {
-    prove_symbolic_c_execution(state, statement, PureFactContext::new())
+    prove_symbolic_program_execution(state, statement, PureFactContext::new())
 }
 
-pub fn prove_symbolic_c_execution(
+pub fn prove_symbolic_program_execution(
     state: ExecutionState,
     statement: ProgramStatement,
     assumptions: PureFactContext,
 ) -> Option<Theorem> {
-    let budget = ExecutionBudget::for_new_execution().with_c_statement_cost(&statement);
-    prove_symbolic_c_execution_with_budget(state, statement, assumptions, budget)
+    let budget = ExecutionBudget::for_new_execution().with_execution_statement_cost(&statement);
+    prove_symbolic_program_execution_with_budget(state, statement, assumptions, budget)
 }
 
-pub fn prove_symbolic_c_execution_with_budget(
+pub fn prove_symbolic_program_execution_with_budget(
     state: ExecutionState,
     statement: ProgramStatement,
     assumptions: PureFactContext,
     budget: ExecutionBudget,
 ) -> Option<Theorem> {
-    prove_symbolic_c_execution_with_environment_and_budget(
+    prove_symbolic_program_execution_with_environment_and_budget(
         state,
         statement,
         assumptions,
@@ -4835,15 +4484,15 @@ pub fn prove_symbolic_c_execution_with_budget(
     )
 }
 
-pub fn prove_symbolic_c_execution_with_environment(
+pub fn prove_symbolic_program_execution_with_environment(
     state: ExecutionState,
     statement: ProgramStatement,
     assumptions: PureFactContext,
     environment: ExecutionEnvironment,
     execution_semantics: ExecutionSemantics,
 ) -> Option<Theorem> {
-    let budget = ExecutionBudget::for_new_execution().with_c_statement_cost(&statement);
-    prove_symbolic_c_execution_with_environment_and_budget(
+    let budget = ExecutionBudget::for_new_execution().with_execution_statement_cost(&statement);
+    prove_symbolic_program_execution_with_environment_and_budget(
         state,
         statement,
         assumptions,
@@ -4853,7 +4502,7 @@ pub fn prove_symbolic_c_execution_with_environment(
     )
 }
 
-pub fn prove_symbolic_c_execution_with_environment_and_budget(
+pub fn prove_symbolic_program_execution_with_environment_and_budget(
     state: ExecutionState,
     statement: ProgramStatement,
     assumptions: PureFactContext,
@@ -4861,7 +4510,7 @@ pub fn prove_symbolic_c_execution_with_environment_and_budget(
     execution_semantics: ExecutionSemantics,
     budget: ExecutionBudget,
 ) -> Option<Theorem> {
-    let execution = prove_symbolic_c_execution_paths_with_environment_and_budget(
+    let execution = prove_symbolic_program_execution_paths_with_environment_and_budget(
         state,
         statement,
         assumptions,
@@ -4880,22 +4529,22 @@ pub fn prove_symbolic_c_execution_with_environment_and_budget(
     Some(path.theorem)
 }
 
-pub fn prove_symbolic_c_execution_paths(
+pub fn prove_symbolic_program_execution_paths(
     state: ExecutionState,
     statement: ProgramStatement,
     assumptions: PureFactContext,
 ) -> SymbolicExecution {
-    let budget = ExecutionBudget::for_new_execution().with_c_statement_cost(&statement);
-    prove_symbolic_c_execution_paths_with_budget(state, statement, assumptions, budget)
+    let budget = ExecutionBudget::for_new_execution().with_execution_statement_cost(&statement);
+    prove_symbolic_program_execution_paths_with_budget(state, statement, assumptions, budget)
 }
 
-pub fn prove_symbolic_c_execution_paths_with_budget(
+pub fn prove_symbolic_program_execution_paths_with_budget(
     state: ExecutionState,
     statement: ProgramStatement,
     assumptions: PureFactContext,
     budget: ExecutionBudget,
 ) -> SymbolicExecution {
-    prove_symbolic_c_execution_paths_with_environment_and_budget(
+    prove_symbolic_program_execution_paths_with_environment_and_budget(
         state,
         statement,
         assumptions,
@@ -4905,15 +4554,15 @@ pub fn prove_symbolic_c_execution_paths_with_budget(
     )
 }
 
-pub fn prove_symbolic_c_execution_paths_with_environment(
+pub fn prove_symbolic_program_execution_paths_with_environment(
     state: ExecutionState,
     statement: ProgramStatement,
     assumptions: PureFactContext,
     environment: ExecutionEnvironment,
     execution_semantics: ExecutionSemantics,
 ) -> SymbolicExecution {
-    let budget = ExecutionBudget::for_new_execution().with_c_statement_cost(&statement);
-    prove_symbolic_c_execution_paths_with_environment_and_budget(
+    let budget = ExecutionBudget::for_new_execution().with_execution_statement_cost(&statement);
+    prove_symbolic_program_execution_paths_with_environment_and_budget(
         state,
         statement,
         assumptions,
@@ -4923,7 +4572,7 @@ pub fn prove_symbolic_c_execution_paths_with_environment(
     )
 }
 
-pub fn prove_symbolic_c_execution_paths_with_environment_and_budget(
+pub fn prove_symbolic_program_execution_paths_with_environment_and_budget(
     state: ExecutionState,
     statement: ProgramStatement,
     assumptions: PureFactContext,
@@ -4931,7 +4580,7 @@ pub fn prove_symbolic_c_execution_paths_with_environment_and_budget(
     execution_semantics: ExecutionSemantics,
     mut budget: ExecutionBudget,
 ) -> SymbolicExecution {
-    let paths = match execute_c_statement_paths(
+    let paths = match execute_execution_statement_paths(
         &state,
         &statement,
         &assumptions,
@@ -4960,13 +4609,13 @@ pub fn prove_symbolic_c_execution_paths_with_environment_and_budget(
             let effect_facts = memory_effect_execution_facts(&path.facts);
             let facts = public_execution_pure_facts(&path.facts);
             let proposition = if execution_semantics == ExecutionSemantics::EXECUTE_BODIES {
-                Proposition::CStatementExecutes {
+                Proposition::ProgramStatementExecutes {
                     state: Box::new(state.clone()),
                     statement: Box::new(statement.clone()),
                     outcome: path.outcome,
                 }
             } else {
-                Proposition::CStatementVerifies {
+                Proposition::ProgramStatementVerifies {
                     state: Box::new(state.clone()),
                     statement: Box::new(statement.clone()),
                     outcome: path.outcome,
@@ -4996,14 +4645,14 @@ pub fn prove_symbolic_c_execution_paths_with_environment_and_budget(
     SymbolicExecution { paths, limit: None }
 }
 
-pub fn prove_symbolic_c_statement_verification_paths_with_environment(
+pub fn prove_symbolic_execution_statement_verification_paths_with_environment(
     state: ExecutionState,
     statement: ProgramStatement,
     assumptions: PureFactContext,
     environment: ExecutionEnvironment,
     execution_semantics: ExecutionSemantics,
 ) -> SymbolicExecution {
-    prove_symbolic_c_statement_verification_paths_with_environment_and_loop_rule(
+    prove_symbolic_execution_statement_verification_paths_with_environment_and_loop_rule(
         state,
         statement,
         assumptions,
@@ -5013,15 +4662,15 @@ pub fn prove_symbolic_c_statement_verification_paths_with_environment(
     .0
 }
 
-pub fn prove_symbolic_c_statement_verification_paths_with_environment_and_loop_rule(
+pub fn prove_symbolic_execution_statement_verification_paths_with_environment_and_loop_rule(
     state: ExecutionState,
     statement: ProgramStatement,
     assumptions: PureFactContext,
     environment: ExecutionEnvironment,
     execution_semantics: ExecutionSemantics,
 ) -> (SymbolicExecution, Option<VerifiedLoopRule>) {
-    let mut budget = ExecutionBudget::for_new_execution().with_c_statement_cost(&statement);
-    prove_symbolic_c_statement_verification_paths_with_environment_and_loop_rule_using_budget(
+    let mut budget = ExecutionBudget::for_new_execution().with_execution_statement_cost(&statement);
+    prove_symbolic_execution_statement_verification_paths_with_environment_and_loop_rule_using_budget(
         state,
         statement,
         assumptions,
@@ -5040,8 +4689,8 @@ fn statement_kernel_variables<'scope>(
     KernelVariableGenerator::fresh_for_execution_with_deferred_reservations(
         move || {
             let mut existing = BTreeSet::new();
-            collect_c_state_bitvector_variables(state, &mut existing);
-            collect_c_statement_bitvector_variables(statement, &mut existing);
+            collect_execution_state_bitvector_variables(state, &mut existing);
+            collect_execution_statement_bitvector_variables(statement, &mut existing);
             existing
         },
         execution_environment_variable_index(environment),
@@ -5049,7 +4698,7 @@ fn statement_kernel_variables<'scope>(
     .reserving_through(assumptions.execution_variable_ceiling())
 }
 
-pub(crate) fn prove_symbolic_c_statement_verification_paths_with_environment_and_loop_rule_using_budget(
+pub(crate) fn prove_symbolic_execution_statement_verification_paths_with_environment_and_loop_rule_using_budget(
     state: ExecutionState,
     statement: ProgramStatement,
     assumptions: PureFactContext,
@@ -5058,7 +4707,7 @@ pub(crate) fn prove_symbolic_c_statement_verification_paths_with_environment_and
     budget: &mut ExecutionBudget,
 ) -> (SymbolicExecution, Option<VerifiedLoopRule>) {
     let mut variables = statement_kernel_variables(&state, &statement, &assumptions, &environment);
-    let execution = execute_c_statement_verification_paths(
+    let execution = execute_execution_statement_verification_paths(
         &state,
         &statement,
         &assumptions,
@@ -5093,7 +4742,7 @@ pub(crate) fn prove_symbolic_c_statement_verification_paths_with_environment_and
             path
         })
         .collect();
-    symbolic_c_statement_execution_with_loop_rule(
+    symbolic_execution_statement_execution_with_loop_rule(
         state,
         statement,
         assumptions,
@@ -5118,7 +4767,7 @@ fn statement_outcome_memory(outcome: &StatementOutcome) -> Option<&Memory> {
 }
 
 #[cfg(test)]
-pub(crate) fn prove_symbolic_c_loop_exit_with_proven_phases(
+pub(crate) fn prove_symbolic_loop_exit_with_proven_phases(
     state: ExecutionState,
     statement: ProgramStatement,
     assumptions: PureFactContext,
@@ -5129,8 +4778,8 @@ pub(crate) fn prove_symbolic_c_loop_exit_with_proven_phases(
     break_exits: Vec<LoopBreakExit>,
     return_exits: Vec<LoopReturnExit>,
 ) -> (SymbolicExecution, Option<VerifiedLoopRule>) {
-    let mut budget = ExecutionBudget::for_new_execution().with_c_statement_cost(&statement);
-    prove_symbolic_c_loop_exit_with_proven_phases_using_budget(
+    let mut budget = ExecutionBudget::for_new_execution().with_execution_statement_cost(&statement);
+    prove_symbolic_loop_exit_with_proven_phases_using_budget(
         state,
         statement,
         assumptions,
@@ -5144,7 +4793,7 @@ pub(crate) fn prove_symbolic_c_loop_exit_with_proven_phases(
     )
 }
 
-pub(crate) fn prove_symbolic_c_loop_exit_with_proven_phases_using_budget(
+pub(crate) fn prove_symbolic_loop_exit_with_proven_phases_using_budget(
     state: ExecutionState,
     statement: ProgramStatement,
     assumptions: PureFactContext,
@@ -5166,7 +4815,7 @@ pub(crate) fn prove_symbolic_c_loop_exit_with_proven_phases_using_budget(
         );
     };
     let mut variables = statement_kernel_variables(&state, &statement, &assumptions, &environment);
-    let execution = execute_c_while_exit_paths_with_proven_phases(
+    let execution = execute_program_while_exit_paths_with_proven_phases(
         &state,
         while_loop,
         &assumptions,
@@ -5192,7 +4841,7 @@ pub(crate) fn prove_symbolic_c_loop_exit_with_proven_phases_using_budget(
             );
         }
     };
-    symbolic_c_statement_execution_with_loop_rule(
+    symbolic_execution_statement_execution_with_loop_rule(
         state,
         statement,
         assumptions,
@@ -5201,7 +4850,7 @@ pub(crate) fn prove_symbolic_c_loop_exit_with_proven_phases_using_budget(
     )
 }
 
-fn symbolic_c_statement_execution_with_loop_rule(
+fn symbolic_execution_statement_execution_with_loop_rule(
     state: ExecutionState,
     statement: ProgramStatement,
     assumptions: PureFactContext,
@@ -5250,7 +4899,7 @@ fn symbolic_c_statement_execution_with_loop_rule(
         .map(|path| {
             let effect_facts = memory_effect_execution_facts(&path.facts);
             let facts = public_execution_pure_facts(&path.facts);
-            let proposition = Proposition::CStatementVerifies {
+            let proposition = Proposition::ProgramStatementVerifies {
                 state: Box::new(state.clone()),
                 statement: Box::new(statement.clone()),
                 outcome: path.outcome,
@@ -5285,24 +4934,31 @@ fn symbolic_c_statement_execution_with_loop_rule(
     (SymbolicExecution { paths, limit: None }, loop_rule)
 }
 
-pub fn prove_symbolic_c_function_execution(
+pub fn prove_symbolic_program_function_execution(
     state: ExecutionState,
     function: ProgramFunction,
     arguments: Vec<ProgramExpression>,
     assumptions: PureFactContext,
 ) -> Option<Theorem> {
-    let budget = ExecutionBudget::for_new_execution().with_c_function_cost(&function, &arguments);
-    prove_symbolic_c_function_execution_with_budget(state, function, arguments, assumptions, budget)
+    let budget =
+        ExecutionBudget::for_new_execution().with_program_function_cost(&function, &arguments);
+    prove_symbolic_program_function_execution_with_budget(
+        state,
+        function,
+        arguments,
+        assumptions,
+        budget,
+    )
 }
 
-pub fn prove_symbolic_c_function_execution_with_budget(
+pub fn prove_symbolic_program_function_execution_with_budget(
     state: ExecutionState,
     function: ProgramFunction,
     arguments: Vec<ProgramExpression>,
     assumptions: PureFactContext,
     budget: ExecutionBudget,
 ) -> Option<Theorem> {
-    prove_symbolic_c_function_execution_with_environment_and_budget(
+    prove_symbolic_program_function_execution_with_environment_and_budget(
         state,
         function,
         arguments,
@@ -5313,7 +4969,7 @@ pub fn prove_symbolic_c_function_execution_with_budget(
     )
 }
 
-pub fn prove_symbolic_c_function_execution_with_environment(
+pub fn prove_symbolic_program_function_execution_with_environment(
     state: ExecutionState,
     function: ProgramFunction,
     arguments: Vec<ProgramExpression>,
@@ -5321,8 +4977,9 @@ pub fn prove_symbolic_c_function_execution_with_environment(
     environment: ExecutionEnvironment,
     execution_semantics: ExecutionSemantics,
 ) -> Option<Theorem> {
-    let budget = ExecutionBudget::for_new_execution().with_c_function_cost(&function, &arguments);
-    prove_symbolic_c_function_execution_with_environment_and_budget(
+    let budget =
+        ExecutionBudget::for_new_execution().with_program_function_cost(&function, &arguments);
+    prove_symbolic_program_function_execution_with_environment_and_budget(
         state,
         function,
         arguments,
@@ -5333,7 +4990,7 @@ pub fn prove_symbolic_c_function_execution_with_environment(
     )
 }
 
-pub fn prove_symbolic_c_function_execution_with_environment_and_budget(
+pub fn prove_symbolic_program_function_execution_with_environment_and_budget(
     state: ExecutionState,
     function: ProgramFunction,
     arguments: Vec<ProgramExpression>,
@@ -5342,7 +4999,7 @@ pub fn prove_symbolic_c_function_execution_with_environment_and_budget(
     execution_semantics: ExecutionSemantics,
     budget: ExecutionBudget,
 ) -> Option<Theorem> {
-    let execution = prove_symbolic_c_function_execution_paths_with_environment_and_budget(
+    let execution = prove_symbolic_program_function_execution_paths_with_environment_and_budget(
         state,
         function,
         arguments,
@@ -5362,14 +5019,15 @@ pub fn prove_symbolic_c_function_execution_with_environment_and_budget(
     Some(path.theorem)
 }
 
-pub fn prove_symbolic_c_function_execution_paths(
+pub fn prove_symbolic_program_function_execution_paths(
     state: ExecutionState,
     function: ProgramFunction,
     arguments: Vec<ProgramExpression>,
     assumptions: PureFactContext,
 ) -> SymbolicExecution {
-    let budget = ExecutionBudget::for_new_execution().with_c_function_cost(&function, &arguments);
-    prove_symbolic_c_function_execution_paths_with_budget(
+    let budget =
+        ExecutionBudget::for_new_execution().with_program_function_cost(&function, &arguments);
+    prove_symbolic_program_function_execution_paths_with_budget(
         state,
         function,
         arguments,
@@ -5378,14 +5036,14 @@ pub fn prove_symbolic_c_function_execution_paths(
     )
 }
 
-pub fn prove_symbolic_c_function_execution_paths_with_budget(
+pub fn prove_symbolic_program_function_execution_paths_with_budget(
     state: ExecutionState,
     function: ProgramFunction,
     arguments: Vec<ProgramExpression>,
     assumptions: PureFactContext,
     budget: ExecutionBudget,
 ) -> SymbolicExecution {
-    prove_symbolic_c_function_execution_paths_with_environment_and_budget(
+    prove_symbolic_program_function_execution_paths_with_environment_and_budget(
         state,
         function,
         arguments,
@@ -5396,7 +5054,7 @@ pub fn prove_symbolic_c_function_execution_paths_with_budget(
     )
 }
 
-pub fn prove_symbolic_c_function_execution_paths_with_environment(
+pub fn prove_symbolic_program_function_execution_paths_with_environment(
     state: ExecutionState,
     function: ProgramFunction,
     arguments: Vec<ProgramExpression>,
@@ -5404,8 +5062,9 @@ pub fn prove_symbolic_c_function_execution_paths_with_environment(
     environment: ExecutionEnvironment,
     execution_semantics: ExecutionSemantics,
 ) -> SymbolicExecution {
-    let budget = ExecutionBudget::for_new_execution().with_c_function_cost(&function, &arguments);
-    prove_symbolic_c_function_execution_paths_with_environment_and_budget(
+    let budget =
+        ExecutionBudget::for_new_execution().with_program_function_cost(&function, &arguments);
+    prove_symbolic_program_function_execution_paths_with_environment_and_budget(
         state,
         function,
         arguments,
@@ -5416,7 +5075,7 @@ pub fn prove_symbolic_c_function_execution_paths_with_environment(
     )
 }
 
-pub fn prove_symbolic_c_function_execution_paths_with_environment_and_budget(
+pub fn prove_symbolic_program_function_execution_paths_with_environment_and_budget(
     state: ExecutionState,
     function: ProgramFunction,
     arguments: Vec<ProgramExpression>,
@@ -5425,7 +5084,7 @@ pub fn prove_symbolic_c_function_execution_paths_with_environment_and_budget(
     execution_semantics: ExecutionSemantics,
     budget: ExecutionBudget,
 ) -> SymbolicExecution {
-    prove_symbolic_c_function_execution_paths_with_contract_resources(
+    prove_symbolic_program_function_execution_paths_with_contract_resources(
         state,
         function,
         arguments,
@@ -5445,7 +5104,7 @@ fn function_has_conditional_resource_effect(function: &ProgramFunction) -> bool 
 }
 
 #[allow(clippy::too_many_arguments)]
-fn prove_symbolic_c_function_execution_paths_with_contract_resources(
+fn prove_symbolic_program_function_execution_paths_with_contract_resources(
     state: ExecutionState,
     function: ProgramFunction,
     arguments: Vec<ProgramExpression>,
@@ -5456,7 +5115,7 @@ fn prove_symbolic_c_function_execution_paths_with_contract_resources(
     prepare_contract_resources: bool,
 ) -> SymbolicExecution {
     let defer_conditional_resource_effect = function_has_conditional_resource_effect(&function);
-    let paths = match execute_c_function_paths_with_contract_resources(
+    let paths = match execute_program_function_paths_with_contract_resources(
         &state,
         &function,
         &arguments,
@@ -5480,14 +5139,14 @@ fn prove_symbolic_c_function_execution_paths_with_contract_resources(
             let effect_facts = memory_effect_execution_facts(&path.facts);
             let facts = public_execution_pure_facts(&path.facts);
             let proposition = if execution_semantics == ExecutionSemantics::EXECUTE_BODIES {
-                Proposition::CFunctionExecutes {
+                Proposition::ProgramFunctionExecutes {
                     state: Box::new(state.clone()),
                     function: Box::new(function.clone()),
                     arguments: arguments.clone(),
                     outcome: path.outcome,
                 }
             } else {
-                Proposition::CFunctionVerifies {
+                Proposition::ProgramFunctionVerifies {
                     state: Box::new(state.clone()),
                     function: Box::new(function.clone()),
                     arguments: arguments.clone(),
@@ -5518,7 +5177,7 @@ fn prove_symbolic_c_function_execution_paths_with_contract_resources(
     SymbolicExecution { paths, limit: None }
 }
 
-pub fn prove_symbolic_c_function_verification_paths_with_environment(
+pub fn prove_symbolic_program_function_verification_paths_with_environment(
     state: ExecutionState,
     function: ProgramFunction,
     arguments: Vec<ProgramExpression>,
@@ -5526,8 +5185,9 @@ pub fn prove_symbolic_c_function_verification_paths_with_environment(
     environment: ExecutionEnvironment,
     execution_semantics: ExecutionSemantics,
 ) -> SymbolicExecution {
-    let budget = ExecutionBudget::for_new_execution().with_c_function_cost(&function, &arguments);
-    prove_symbolic_c_function_verification_paths_with_environment_and_budget(
+    let budget =
+        ExecutionBudget::for_new_execution().with_program_function_cost(&function, &arguments);
+    prove_symbolic_program_function_verification_paths_with_environment_and_budget(
         state,
         function,
         arguments,
@@ -5538,7 +5198,7 @@ pub fn prove_symbolic_c_function_verification_paths_with_environment(
     )
 }
 
-pub fn prove_symbolic_c_function_verification_paths_with_environment_and_budget(
+pub fn prove_symbolic_program_function_verification_paths_with_environment_and_budget(
     state: ExecutionState,
     function: ProgramFunction,
     arguments: Vec<ProgramExpression>,
@@ -5547,7 +5207,7 @@ pub fn prove_symbolic_c_function_verification_paths_with_environment_and_budget(
     execution_semantics: ExecutionSemantics,
     budget: ExecutionBudget,
 ) -> SymbolicExecution {
-    prove_symbolic_c_function_verification_paths(
+    prove_symbolic_program_function_verification_paths(
         state,
         function,
         arguments,
@@ -5562,7 +5222,7 @@ pub fn prove_symbolic_c_function_verification_paths_with_environment_and_budget(
 
 /// Executes one whole-function judgment and retains its exact authority inputs
 /// together with the resulting frontier for later contract certification.
-pub fn prove_checked_c_function_execution_with_environment(
+pub fn prove_checked_program_function_execution_with_environment(
     state: ExecutionState,
     function: ProgramFunction,
     arguments: Vec<ProgramExpression>,
@@ -5581,26 +5241,30 @@ pub fn prove_checked_c_function_execution_with_environment(
     };
     let defer_conditional_resource_effect = function_has_conditional_resource_effect(&function);
     let execution = match mode {
-        FunctionContractExecutionMode::VerifyLoops => prove_symbolic_c_function_verification_paths(
-            state.clone(),
-            function.clone(),
-            arguments.clone(),
-            assumptions.clone(),
-            environment.clone(),
-            execution_semantics,
-            ExecutionBudget::for_new_execution().with_c_function_cost(&function, &arguments),
-            true,
-            defer_conditional_resource_effect,
-        ),
-        FunctionContractExecutionMode::ExecuteLoops => {
-            prove_symbolic_c_function_execution_paths_with_contract_resources(
+        FunctionContractExecutionMode::VerifyLoops => {
+            prove_symbolic_program_function_verification_paths(
                 state.clone(),
                 function.clone(),
                 arguments.clone(),
                 assumptions.clone(),
                 environment.clone(),
                 execution_semantics,
-                ExecutionBudget::for_new_execution().with_c_function_cost(&function, &arguments),
+                ExecutionBudget::for_new_execution()
+                    .with_program_function_cost(&function, &arguments),
+                true,
+                defer_conditional_resource_effect,
+            )
+        }
+        FunctionContractExecutionMode::ExecuteLoops => {
+            prove_symbolic_program_function_execution_paths_with_contract_resources(
+                state.clone(),
+                function.clone(),
+                arguments.clone(),
+                assumptions.clone(),
+                environment.clone(),
+                execution_semantics,
+                ExecutionBudget::for_new_execution()
+                    .with_program_function_cost(&function, &arguments),
                 true,
             )
         }
@@ -5702,7 +5366,7 @@ pub(crate) fn function_entry_representation_states_match(
         && left.locals == right.locals
         && left.memory.heap == right.memory.heap
         && left.local_cell_values().eq(right.local_cell_values())
-        && c_memories_definitionally_equal(left.memory(), right.memory(), assumptions)
+        && memories_definitionally_equal(left.memory(), right.memory(), assumptions)
         && contract_certification::resource_contexts_definitionally_equal_with_definitions(
             function.composite_resource_definitions(),
             left.memory(),
@@ -5773,8 +5437,8 @@ pub(in crate::kernel) fn proof_evidence_initial_state<'e>(
         CheckedExecutionEvent::TacticApplication(application) => Some(application.before_state()),
         CheckedExecutionEvent::Statement(theorem) | CheckedExecutionEvent::Condition(theorem) => {
             match proof_evidence_conclusion(theorem) {
-                Proposition::CStatementVerifies { state, .. }
-                | Proposition::CConditionEvaluates { state, .. } => Some(state),
+                Proposition::ProgramStatementVerifies { state, .. }
+                | Proposition::ProgramConditionEvaluates { state, .. } => Some(state),
                 _ => None,
             }
         }
@@ -5926,7 +5590,7 @@ mod proof_case_evidence_tests {
 
     #[test]
     fn entry_representation_rebase_rejects_changed_loan_authority() {
-        let function = c_function(
+        let function = program_function(
             ProgramType::Void,
             "loan_entry_rebase",
             Vec::new(),
@@ -6014,11 +5678,11 @@ mod proof_case_evidence_tests {
     }
 
     fn join_test_function() -> ProgramFunction {
-        c_function(
+        program_function(
             ProgramType::Int32,
             "joined",
             Vec::new(),
-            c_return(c_int32_literal(0)),
+            program_return(crate::kernel::program_expression::int32_literal(0)),
         )
     }
 
@@ -6142,16 +5806,16 @@ mod proof_case_evidence_tests {
         let mut core =
             ExecutionProofCore::at_entry(ExecutionState::new(), ExecutionFrontier::default());
         // Two candidate paths with one trace each; the second is forked.
-        let function = c_function(
+        let function = program_function(
             ProgramType::Int32,
             "fork",
             Vec::new(),
-            c_return(c_int32_literal(0)),
+            program_return(crate::kernel::program_expression::int32_literal(0)),
         );
-        let entry_state =
-            c_function_entry_state(&ExecutionState::new(), &function, &[]).expect("entry state");
+        let entry_state = program_function_entry_state(&ExecutionState::new(), &function, &[])
+            .expect("entry state");
         let skip_return = |value: u32| {
-            Theorem::new(Proposition::CStatementVerifies {
+            Theorem::new(Proposition::ProgramStatementVerifies {
                 state: Box::new(entry_state.clone()),
                 statement: Box::new(ProgramStatement::Skip),
                 outcome: StatementOutcome::Return {
@@ -6467,7 +6131,7 @@ pub fn checked_owned_resource_count_lower_bound(
         let arguments = arguments
             .iter()
             .map(|argument| match argument {
-                AlgebraicValue::C(value) => Some(Some(SpecExpression::Value(value.clone()))),
+                AlgebraicValue::Program(value) => Some(Some(SpecExpression::Value(value.clone()))),
                 _ => None,
             })
             .collect::<Option<Vec<_>>>()?;
@@ -6555,13 +6219,13 @@ fn describe_contract_reuse_premise(premise: &Proposition) -> String {
     }
     match premise {
         Proposition::Predicate { name, .. } => format!("the predicate identity `{name}`"),
-        Proposition::CResourceContains { parent, .. } => {
+        Proposition::ResourceContains { parent, .. } => {
             format!(
                 "a containment fact under resource `{}`",
                 resource_name(parent)
             )
         }
-        Proposition::CResourceSeparate { left, right } => format!(
+        Proposition::ResourceSeparate { left, right } => format!(
             "a separation fact between `{}` and `{}`",
             resource_name(left),
             resource_name(right)
@@ -6626,7 +6290,7 @@ fn checked_execution_at_definitionally_equal_entry_state(
             conclusion = body;
         }
         let proposition = match conclusion {
-            Proposition::CFunctionExecutes {
+            Proposition::ProgramFunctionExecutes {
                 state: proved_state,
                 function: proved_function,
                 arguments,
@@ -6635,14 +6299,14 @@ fn checked_execution_at_definitionally_equal_entry_state(
                 && **proved_function == *function
                 && arguments == &checked.arguments =>
             {
-                Proposition::CFunctionExecutes {
+                Proposition::ProgramFunctionExecutes {
                     state: Box::new(state.clone()),
                     function: Box::new(function.clone()),
                     arguments: arguments.clone(),
                     outcome: outcome.clone(),
                 }
             }
-            Proposition::CFunctionVerifies {
+            Proposition::ProgramFunctionVerifies {
                 state: proved_state,
                 function: proved_function,
                 arguments,
@@ -6651,7 +6315,7 @@ fn checked_execution_at_definitionally_equal_entry_state(
                 && **proved_function == *function
                 && arguments == &checked.arguments =>
             {
-                Proposition::CFunctionVerifies {
+                Proposition::ProgramFunctionVerifies {
                     state: Box::new(state.clone()),
                     function: Box::new(function.clone()),
                     arguments: arguments.clone(),
@@ -6866,8 +6530,8 @@ pub(super) fn path_function_outcome(path: &SymbolicExecutionPath) -> Option<&Fun
         proposition = body;
     }
     match proposition {
-        Proposition::CFunctionExecutes { outcome, .. }
-        | Proposition::CFunctionVerifies { outcome, .. } => Some(outcome),
+        Proposition::ProgramFunctionExecutes { outcome, .. }
+        | Proposition::ProgramFunctionVerifies { outcome, .. } => Some(outcome),
         _ => None,
     }
 }
@@ -6889,7 +6553,7 @@ pub(crate) fn population_observations_equal(left: &ExecutionState, right: &Execu
 /// intend to package reusable function rules must supply an entry representing
 /// the declared input domain, as Surface's `initial_call_state` does. See
 /// `docs/internals/kernel.md`, "Source obligations and checked evidence".
-pub fn prove_c_function_contract_execution_paths_with_checked_artifacts(
+pub fn prove_program_function_contract_execution_paths_with_checked_artifacts(
     state: ExecutionState,
     function: ProgramFunction,
     arguments: Vec<ProgramExpression>,
@@ -6898,7 +6562,7 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts(
     mode: FunctionContractExecutionMode,
     checked_artifacts: &[CheckedFunctionExecution],
 ) -> FunctionContractExecution {
-    prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure_theorems(
+    prove_program_function_contract_execution_paths_with_checked_artifacts_and_pure_theorems(
         state,
         function,
         arguments,
@@ -6912,9 +6576,9 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts(
 
 /// Certifies an opaque contract with kernel-issued pure theorem authorities.
 /// The entry-construction responsibility is the same as for
-/// [`prove_c_function_contract_execution_paths_with_checked_artifacts`].
+/// [`prove_program_function_contract_execution_paths_with_checked_artifacts`].
 #[allow(clippy::too_many_arguments)]
-pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure_theorems(
+pub fn prove_program_function_contract_execution_paths_with_checked_artifacts_and_pure_theorems(
     state: ExecutionState,
     function: ProgramFunction,
     arguments: Vec<ProgramExpression>,
@@ -6938,7 +6602,7 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
     // body stepped without the anchor emitted no descent obligation at its
     // self-calls, and certifying a contract from it
     // would grant a recursive function everything but the descent.
-    let environment = match c_execution_environment_with_recursion_anchor(
+    let environment = match program_execution_environment_with_recursion_anchor(
         environment,
         &function,
         &state,
@@ -6956,7 +6620,7 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
         "contract certification",
         "contract assumptions",
         || {
-            c_function_contract_entry(&state, &function, &arguments)
+            program_function_contract_entry(&state, &function, &arguments)
                 .map(ContractEntry::into_assumptions)
         },
     ) {
@@ -7007,7 +6671,8 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
     for case_facts in resource_condition_cases {
         // A resource-guard case assumes its guards beside the contract entry.
         let assumptions = assumptions_with_propositions(&base_assumptions, &case_facts);
-        let Some(mut entry_state) = c_function_entry_state(&state, &function, &arguments) else {
+        let Some(mut entry_state) = program_function_entry_state(&state, &function, &arguments)
+        else {
             return FunctionContractExecution::failed(
                 "could not build the contract entry state from the call arguments".to_string(),
             );
@@ -7053,7 +6718,7 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                 && !checked.execution.paths().is_empty()
                 && checked_loan_evidence_is_valid(checked, &function)
         };
-        let raw_entry_state = c_function_entry_state(&state, &function, &arguments);
+        let raw_entry_state = program_function_entry_state(&state, &function, &arguments);
         let mut reuse_assumptions = assumptions.clone();
         // A claim proof opens entry composites and assumes the containment
         // and separation facts of their children. Derive those facts from the
@@ -7087,14 +6752,14 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                     .filter(|premise| {
                         matches!(
                             premise,
-                            Proposition::CResourceContains { .. }
-                                | Proposition::CResourceSeparate { .. }
+                            Proposition::ResourceContains { .. }
+                                | Proposition::ResourceSeparate { .. }
                         ) && !(reuse_assumptions.proves_exact(premise)
                             || reuse_assumptions.states_required_goal(premise))
                     })
                     .flat_map(|premise| match premise {
-                        Proposition::CResourceContains { parent, .. } => vec![*parent],
-                        Proposition::CResourceSeparate { left, right } => vec![*left, *right],
+                        Proposition::ResourceContains { parent, .. } => vec![*parent],
+                        Proposition::ResourceSeparate { left, right } => vec![*left, *right],
                         _ => Vec::new(),
                     })
                     .filter(|resource| {
@@ -7127,7 +6792,7 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                         continue;
                     };
                     for proposition in propositions {
-                        if let Proposition::CResourceContains { child, .. } = &proposition
+                        if let Proposition::ResourceContains { child, .. } = &proposition
                             && matches!(&**child, Resource::Composite { .. })
                         {
                             composites.push(ResourceFact::own(*child.clone()));
@@ -7169,7 +6834,7 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
             |_checked: &CheckedFunctionExecution, premise: &Proposition| {
                 reuse_assumptions.proves_exact(premise)
                     || reuse_assumptions.states_required_goal(premise)
-                    || matches!(premise, Proposition::CMemoryLoadable { .. })
+                    || matches!(premise, Proposition::MemoryLoadable { .. })
                         && (resources_certify_loadability(
                             &entry_state,
                             entry_state.resources(),
@@ -7317,8 +6982,7 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                         ArtifactReuseRejection::UnauthorizedPredicatePremise
                     }
                     Some(
-                        Proposition::CResourceContains { .. }
-                        | Proposition::CResourceSeparate { .. },
+                        Proposition::ResourceContains { .. } | Proposition::ResourceSeparate { .. },
                     ) => ArtifactReuseRejection::UnauthorizedResourcePremise,
                     Some(_) | None => ArtifactReuseRejection::UnauthorizedPremise,
                 };
@@ -7421,12 +7085,12 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
     }
 }
 
-pub fn prove_c_function_satisfies_specification(
+pub fn prove_program_function_satisfies_specification(
     function: ProgramFunction,
     specification: FunctionSpecification,
     assumptions: PureFactContext,
 ) -> Option<Theorem> {
-    prove_c_function_satisfies_specification_with_environment(
+    prove_program_function_satisfies_specification_with_environment(
         function,
         specification,
         assumptions,
@@ -7435,7 +7099,7 @@ pub fn prove_c_function_satisfies_specification(
     )
 }
 
-pub fn prove_c_function_satisfies_specification_with_environment(
+pub fn prove_program_function_satisfies_specification_with_environment(
     function: ProgramFunction,
     specification: FunctionSpecification,
     assumptions: PureFactContext,
@@ -7444,7 +7108,7 @@ pub fn prove_c_function_satisfies_specification_with_environment(
 ) -> Option<Theorem> {
     let specification_assumptions =
         assumptions_with_propositions(&assumptions, specification.requires());
-    let paths = execute_c_function_paths(
+    let paths = execute_program_function_paths(
         specification.state(),
         &function,
         specification.arguments(),
@@ -7465,7 +7129,7 @@ pub fn prove_c_function_satisfies_specification_with_environment(
 
     let requires = specification.requires().to_vec();
     let proposition = requires.iter().rev().fold(
-        Proposition::CFunctionSatisfiesSpecification {
+        Proposition::ProgramFunctionSatisfiesSpecification {
             function: Box::new(function),
             specification: Box::new(specification),
         },
@@ -7480,15 +7144,15 @@ pub fn prove_c_function_satisfies_specification_with_environment(
 }
 
 #[cfg(test)]
-pub fn prove_c_max_lt_returns_right(a: Variable, b: Variable) -> Option<Theorem> {
+pub fn prove_program_max_lt_returns_right(a: Variable, b: Variable) -> Option<Theorem> {
     let a_bits = MachineTerm::Variable(a);
     let b_bits = MachineTerm::Variable(b);
     let a_value = int32(a_bits.clone());
     let b_value = int32(b_bits.clone());
-    let condition = c_max_lt_condition(a_bits.clone(), b_bits.clone());
-    let state = c_max_state(a_value, b_value.clone());
+    let condition = program_max_lt_condition(a_bits.clone(), b_bits.clone());
+    let state = program_max_state(a_value, b_value.clone());
     let assumptions = PureFactContext::new().assume_condition(condition.clone(), true);
-    let outcome = execute_c_statement(&state, &c_max_body(), &assumptions)?;
+    let outcome = execute_execution_statement(&state, &program_max_body(), &assumptions)?;
 
     if outcome
         != (StatementOutcome::Return {
@@ -7505,9 +7169,9 @@ pub fn prove_c_max_lt_returns_right(a: Variable, b: Variable) -> Option<Theorem>
             b,
             Proposition::Implies(
                 Box::new(Proposition::ConditionIs(condition, true)),
-                Box::new(Proposition::CStatementExecutes {
+                Box::new(Proposition::ProgramStatementExecutes {
                     state: Box::new(state),
-                    statement: Box::new(c_max_body()),
+                    statement: Box::new(program_max_body()),
                     outcome,
                 }),
             ),
@@ -7516,15 +7180,15 @@ pub fn prove_c_max_lt_returns_right(a: Variable, b: Variable) -> Option<Theorem>
 }
 
 #[cfg(test)]
-pub fn prove_c_max_not_lt_returns_left(a: Variable, b: Variable) -> Option<Theorem> {
+pub fn prove_program_max_not_lt_returns_left(a: Variable, b: Variable) -> Option<Theorem> {
     let a_bits = MachineTerm::Variable(a);
     let b_bits = MachineTerm::Variable(b);
     let a_value = int32(a_bits.clone());
     let b_value = int32(b_bits.clone());
-    let condition = c_max_lt_condition(a_bits, b_bits);
-    let state = c_max_state(a_value.clone(), b_value);
+    let condition = program_max_lt_condition(a_bits, b_bits);
+    let state = program_max_state(a_value.clone(), b_value);
     let assumptions = PureFactContext::new().assume_condition(condition.clone(), false);
-    let outcome = execute_c_statement(&state, &c_max_body(), &assumptions)?;
+    let outcome = execute_execution_statement(&state, &program_max_body(), &assumptions)?;
 
     if outcome
         != (StatementOutcome::Return {
@@ -7541,9 +7205,9 @@ pub fn prove_c_max_not_lt_returns_left(a: Variable, b: Variable) -> Option<Theor
             b,
             Proposition::Implies(
                 Box::new(Proposition::ConditionIs(condition, false)),
-                Box::new(Proposition::CStatementExecutes {
+                Box::new(Proposition::ProgramStatementExecutes {
                     state: Box::new(state),
-                    statement: Box::new(c_max_body()),
+                    statement: Box::new(program_max_body()),
                     outcome,
                 }),
             ),
@@ -7838,7 +7502,7 @@ pub fn prove_integer_range_fold_append(
         }
     };
     let original_initial = initial.clone();
-    let c_item = index.machine_item_type();
+    let program_item = index.machine_item_type();
     let prior = IntegerTerm::range_fold(index, initial, accumulator, item, body.clone());
     let stepped = crate::kernel::reasoning::instantiate_integer_range_fold_step(
         &body,
@@ -7846,7 +7510,7 @@ pub fn prove_integer_range_fold_append(
         &prior,
         item,
         &item_value,
-        c_item,
+        program_item,
     )
     .ok()?;
     let extended_fold =
@@ -8178,7 +7842,7 @@ pub fn prove_integer_range_fold_over_equal_terms(
 
     let (predecessor_index, item_value) = integer_range_fold_predecessor_index(&index)
         .ok_or("the fold end endpoint has no Integer predecessor in its own carrier")?;
-    let c_item = predecessor_index.machine_item_type();
+    let program_item = predecessor_index.machine_item_type();
     let append = prove_integer_range_fold_append(
         predecessor_index.clone(),
         initial.clone(),
@@ -8216,7 +7880,7 @@ pub fn prove_integer_range_fold_over_equal_terms(
         &prior,
         item,
         &item_value,
-        c_item,
+        program_item,
     )
     .map_err(|_| {
         "the fold body could not take the previous accumulator and the last item; a fold whose item indexes a pure call is not yet supported"
@@ -8322,7 +7986,7 @@ fn universally_close_pure_implication(
             .fold(implication, |body, var| Proposition::ForAll {
                 name: Default::default(),
                 var,
-                sort: Sort::CInt32,
+                sort: Sort::ProgramInt32,
                 body: Box::new(body),
             });
     Some(VerifiedPureTheorem {
@@ -8336,7 +8000,7 @@ fn universally_close_pure_implication(
 ///
 /// No project search occurs: both names are exact map lookups, and a concrete
 /// target must already carry a verified or explicitly external rule.
-pub fn c_function_contract_refinement_context(
+pub fn program_function_contract_refinement_context(
     environment: &ExecutionEnvironment,
     contract_name: &str,
     target_name: &str,
@@ -8369,7 +8033,7 @@ pub fn c_function_contract_refinement_context(
 /// method implementation is checked once against the trait's interface,
 /// which calls through the trait then assume. `function` must itself be
 /// verified against its contract; this compares the two contracts only.
-pub fn c_function_refines_named_contract(
+pub fn program_function_refines_named_contract(
     environment: &ExecutionEnvironment,
     contract_name: &str,
     function: &ProgramFunction,
@@ -8389,7 +8053,7 @@ pub fn c_function_refines_named_contract(
 /// Whether `function`'s contract refines the contract `interface` is
 /// verified against, as an override's must refine the virtual method's it
 /// overrides: the same judgment as a named contract's.
-pub fn c_function_refines_function_contract(
+pub fn program_function_refines_function_contract(
     _environment: &ExecutionEnvironment,
     interface: &ProgramFunction,
     function: &ProgramFunction,
@@ -8415,7 +8079,7 @@ pub fn c_function_refines_function_contract(
 /// interface cannot: a struct pointer is kept as a layout, so the struct tag
 /// comes from the contract's source declaration. A position left empty keeps
 /// the spelling this interface derives from the modeled type.
-pub fn c_named_contract_refinement_theorem_skeleton(
+pub fn program_named_contract_refinement_theorem_skeleton(
     environment: &ExecutionEnvironment,
     contract_name: &str,
     target_name: &str,
@@ -8444,7 +8108,7 @@ pub fn c_named_contract_refinement_theorem_skeleton(
 /// an explicit premise of the theorem authority issued after refinement; this
 /// operation does not infer contracts from a signature or inspect project
 /// functions.
-pub fn c_contract_refinement_context(
+pub fn contract_refinement_context(
     environment: &ExecutionEnvironment,
     target_contract_name: &str,
     target_values: &[ProgramValue],
@@ -8482,13 +8146,13 @@ pub fn c_contract_refinement_context(
 
 /// Returns the shared arbitrary argument values introduced by a refinement
 /// theorem's `unfold(Contract)` step.
-pub fn c_function_contract_refinement_arguments(
+pub fn program_function_contract_refinement_arguments(
     context: &FunctionContractRefinementContext,
 ) -> &[ProgramValue] {
     &context.argument_values
 }
 
-pub fn c_function_contract_refinement_obligations(
+pub fn program_function_contract_refinement_obligations(
     context: &FunctionContractRefinementContext,
 ) -> Option<FunctionContractRefinementObligations> {
     prepare_contract_refinement_obligations(context)
@@ -8507,7 +8171,7 @@ impl FunctionContractRefinementObligations {
 }
 
 /// Issues contract authority only from the exact closed ordinary proof obligation.
-pub(crate) fn prove_c_function_contract_refinement(
+pub(crate) fn prove_program_function_contract_refinement(
     context: &FunctionContractRefinementContext,
     conclusion: Proposition,
     proof: &crate::kernel::proof::CheckedProposition,
@@ -8573,7 +8237,7 @@ pub(crate) fn prove_c_function_contract_refinement(
             Proposition::ForAll {
                 name: Default::default(),
                 var: *variable,
-                sort: Sort::CPointer(context.pointer.c_type()),
+                sort: Sort::ProgramPointer(context.pointer.c_type()),
                 body: Box::new(Proposition::Implies(
                     Box::new(premise),
                     Box::new(conclusion),
@@ -8702,7 +8366,7 @@ pub(crate) fn prove_executed_contract_refinement(
         theorem: Theorem::new(Proposition::ForAll {
             name: Default::default(),
             var: variable,
-            sort: Sort::CPointer(pointer.c_type()),
+            sort: Sort::ProgramPointer(pointer.c_type()),
             body: Box::new(implication),
         }),
     })
@@ -8770,7 +8434,7 @@ fn executed_call_arguments(
 /// function: its parameter types in order, then its return type. Two exact map
 /// lookups, so a concrete `executes` clause is checked against the same C
 /// signature the call rule will use.
-pub fn c_project_function_signature(
+pub fn program_project_function_signature(
     environment: &ExecutionEnvironment,
     name: &str,
 ) -> Option<(Vec<ProgramType>, ProgramType)> {
@@ -9470,7 +9134,7 @@ pub fn prove_uint32_ge_implies_reversed_le(greater: MachineTerm, lower: MachineT
 
 pub fn prove_memory_load(memory: Memory, pointer: Pointer) -> Theorem {
     let outcome = memory.load(&pointer);
-    Theorem::new(Proposition::CMemoryLoads {
+    Theorem::new(Proposition::MemoryLoads {
         memory,
         pointer,
         outcome,
@@ -9483,7 +9147,7 @@ pub fn prove_memory_load_after_store_same(
     value: ProgramValue,
 ) -> Theorem {
     let stored = memory.store(pointer.clone(), value.clone());
-    Theorem::new(Proposition::CMemoryLoads {
+    Theorem::new(Proposition::MemoryLoads {
         memory: stored,
         pointer,
         outcome: ExpressionOutcome::Value(value),
@@ -9506,7 +9170,7 @@ pub fn prove_memory_load_after_store_other(
         return None;
     }
 
-    Some(Theorem::new(Proposition::CMemoryLoads {
+    Some(Theorem::new(Proposition::MemoryLoads {
         memory: stored,
         pointer: loaded_pointer,
         outcome,

@@ -24,7 +24,7 @@ fn typed_load(memory: &Memory, pointer: &Pointer) -> ProgramValue {
     match memory.load(pointer) {
         ExpressionOutcome::Value(value) => value,
         _ => ProgramValue::UInt32(crate::kernel::eval::canonical_form_of_load(
-            crate::kernel::intern_c_memory(memory.clone()),
+            crate::kernel::intern_memory(memory.clone()),
             pointer.clone(),
             crate::kernel::primitives::LoadKind::UInt32,
         )),
@@ -192,7 +192,7 @@ fn external_array_copy_representatives_cover_source_and_destination_stem_cancell
             4,
             ProgramType::UInt32,
             8,
-            crate::kernel::intern_c_memory(Memory::new()),
+            crate::kernel::intern_memory(Memory::new()),
             RunValueMode::Copy {
                 source_base: source,
             },

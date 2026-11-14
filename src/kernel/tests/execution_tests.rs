@@ -10,7 +10,7 @@ fn scalar_initialization_freezes_storage_and_preserves_lifetime() {
     let _session = crate::kernel::VerificationSession::enter();
     crate::kernel::set_never_address_taken_locals(BTreeSet::from(["x".to_string()]));
     let execute = |state: &ExecutionState, statement: &ProgramStatement| {
-        execute_c_statement_paths(
+        execute_execution_statement_paths(
             state,
             statement,
             &PureFactContext::new(),
@@ -19,10 +19,10 @@ fn scalar_initialization_freezes_storage_and_preserves_lifetime() {
         )
         .unwrap()
     };
-    let declaration = c_declare_initialized(
+    let declaration = program_declare_initialized(
         "x",
         ProgramType::Int32,
-        c_int32_literal(7),
+        crate::kernel::program_expression::int32_literal(7),
         false,
         false,
         true,
@@ -34,16 +34,23 @@ fn scalar_initialization_freezes_storage_and_preserves_lifetime() {
     assert!(state.memory.requires_explicit_scalar_ownership(&pointer));
     assert_eq!(state.locals.get_native("x").as_deref(), Some(&int32(7)));
     assert!(matches!(
-        execute(&state, &c_assign("x", c_int32_literal(9)))[0].outcome,
+        execute(
+            &state,
+            &program_assign("x", crate::kernel::program_expression::int32_literal(9))
+        )[0]
+        .outcome,
         StatementOutcome::UndefinedBehavior(_)
     ));
     // Even an unqualified forged pointer cannot write the read-only allocation.
     assert!(matches!(
         execute(
             &state,
-            &c_typed_store(
-                c_typed_pointer_value(pointer.clone(), ProgramType::Int32Pointer),
-                c_int32_literal(9),
+            &program_typed_store(
+                crate::kernel::program_expression::typed_pointer_value(
+                    pointer.clone(),
+                    ProgramType::Int32Pointer
+                ),
+                crate::kernel::program_expression::int32_literal(9),
                 ProgramType::Int32
             )
         )[0]
@@ -55,8 +62,11 @@ fn scalar_initialization_freezes_storage_and_preserves_lifetime() {
     assert!(matches!(
         execute(
             &replaced,
-            &c_return(c_typed_load(
-                c_typed_pointer_value(pointer, ProgramType::Int32Pointer),
+            &program_return(crate::kernel::program_expression::typed_load(
+                crate::kernel::program_expression::typed_pointer_value(
+                    pointer,
+                    ProgramType::Int32Pointer
+                ),
                 ProgramType::Int32
             ))
         )[0]
@@ -65,15 +75,15 @@ fn scalar_initialization_freezes_storage_and_preserves_lifetime() {
     ));
     let unwritten = normal_state(&execute(
         &ExecutionState::new(),
-        &c_declare("u", ProgramType::Int32),
+        &program_declare("u", ProgramType::Int32),
     ));
     assert!(!matches!(
         execute(
             &unwritten,
-            &c_declare_initialized(
+            &program_declare_initialized(
                 "x",
                 ProgramType::Int32,
-                c_variable("u"),
+                crate::kernel::program_expression::variable("u"),
                 false,
                 false,
                 true,
@@ -88,14 +98,17 @@ fn scalar_initialization_freezes_storage_and_preserves_lifetime() {
 #[test]
 fn whole_function_execution_resumes_a_direct_forward_goto_target() {
     let target = ControlTargetId(0);
-    let target_statement = c_return(c_variable("x"));
-    let function = c_function(
+    let target_statement = program_return(crate::kernel::program_expression::variable("x"));
+    let function = program_function(
         ProgramType::Int32,
         "forward",
-        vec![c_parameter("x", ProgramType::Int32)],
-        c_seq(
-            c_goto(target),
-            c_seq(c_return(c_int32_literal(99)), target_statement.clone()),
+        vec![program_parameter("x", ProgramType::Int32)],
+        program_seq(
+            program_goto(target),
+            program_seq(
+                program_return(crate::kernel::program_expression::int32_literal(99)),
+                target_statement.clone(),
+            ),
         ),
     )
     .with_control_targets(BTreeMap::from([(
@@ -105,17 +118,17 @@ fn whole_function_execution_resumes_a_direct_forward_goto_target() {
             remaining: Arc::new(target_statement),
         },
     )]));
-    let theorem = prove_symbolic_c_function_execution(
+    let theorem = prove_symbolic_program_function_execution(
         ExecutionState::new(),
         function,
-        vec![c_int32_literal(1)],
+        vec![crate::kernel::program_expression::int32_literal(1)],
         PureFactContext::new(),
     )
     .expect("forward goto should resume at its target");
     assert!(
         matches!(
             theorem.proposition(),
-            Proposition::CFunctionExecutes {
+            Proposition::ProgramFunctionExecutes {
                 outcome: FunctionOutcome::Return {
                     value,
                     ..
@@ -180,7 +193,7 @@ fn assert_loan_write_obligation_is_unprovable(path: &StatementExecutionPath) {
         .obligations
         .iter()
         .find_map(|obligation| match obligation.proposition() {
-            Proposition::CResourceSeparate { left, right } => Some((left, right)),
+            Proposition::ResourceSeparate { left, right } => Some((left, right)),
             _ => None,
         })
         .expect("the scalar write must retain its loan separation obligation");
@@ -191,7 +204,7 @@ fn assert_loan_write_obligation_is_unprovable(path: &StatementExecutionPath) {
 fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store() {
     let _session = crate::kernel::VerificationSession::enter();
     crate::kernel::set_never_address_taken_locals(BTreeSet::from(["x".to_string()]));
-    let declared = execute_c_statement_paths(
+    let declared = execute_execution_statement_paths(
         &ExecutionState::new(),
         &ProgramStatement::Declare {
             name: "x".to_string(),
@@ -218,12 +231,12 @@ fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store()
     ));
     let state = state.with_loan_ledger(Some(loan));
 
-    let direct = execute_c_statement_paths(
+    let direct = execute_execution_statement_paths(
         &state,
         &ProgramStatement::Assign {
             source: Default::default(),
             name: "x".to_string(),
-            expression: c_int32_literal(1),
+            expression: crate::kernel::program_expression::int32_literal(1),
         },
         &PureFactContext::new(),
         ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
@@ -232,7 +245,7 @@ fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store()
     .expect("direct assignment should return a checked refusal");
     assert_loan_write_rejected(&direct[0].outcome);
 
-    let reused = execute_c_statement_paths(
+    let reused = execute_execution_statement_paths(
         &state,
         &ProgramStatement::Declare {
             name: "x".to_string(),
@@ -256,9 +269,12 @@ fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store()
         "p",
         ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer),
     );
-    let indirect = execute_c_statement_paths(
+    let indirect = execute_execution_statement_paths(
         &alias_state,
-        &c_store(c_variable("p"), c_int32_literal(2)),
+        &program_store(
+            crate::kernel::program_expression::variable("p"),
+            crate::kernel::program_expression::int32_literal(2),
+        ),
         &PureFactContext::new(),
         ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
@@ -272,7 +288,7 @@ fn private_pointer_copy_retains_qualifier_ownership_and_loan_refusals() {
     let _session = crate::kernel::VerificationSession::enter();
     crate::kernel::set_never_address_taken_locals(BTreeSet::from(["p".to_string()]));
     let execute = |state: &ExecutionState, statement: &ProgramStatement| {
-        execute_c_statement_paths(
+        execute_execution_statement_paths(
             state,
             statement,
             &PureFactContext::new(),
@@ -283,13 +299,13 @@ fn private_pointer_copy_retains_qualifier_ownership_and_loan_refusals() {
     };
     let state = normal_state(&execute(
         &ExecutionState::new(),
-        &c_declare("p", ProgramType::UInt8Pointer),
+        &program_declare("p", ProgramType::UInt8Pointer),
     ));
     let value = ProgramValue::typed_pointer(
         Pointer::symbolic(Variable(93_700)),
         ProgramType::UInt8Pointer,
     );
-    let copy = c_assign("p", ProgramExpression::Value(value.clone()));
+    let copy = program_assign("p", ProgramExpression::Value(value.clone()));
     assert_eq!(
         normal_state(&execute(&state, &copy))
             .locals()
@@ -297,7 +313,7 @@ fn private_pointer_copy_retains_qualifier_ownership_and_loan_refusals() {
             .as_deref(),
         Some(&value)
     );
-    let discard_const = c_assign(
+    let discard_const = program_assign(
         "p",
         ProgramExpression::Value(value.clone().with_pointer_pointee_constant(true)),
     );
@@ -322,7 +338,7 @@ fn private_pointer_copy_retains_qualifier_ownership_and_loan_refusals() {
 
 #[test]
 fn active_stable_loan_allows_a_disjoint_local_store() {
-    let declared = execute_c_statement_paths(
+    let declared = execute_execution_statement_paths(
         &ExecutionState::new(),
         &ProgramStatement::Declare {
             name: "a".to_string(),
@@ -351,9 +367,12 @@ fn active_stable_loan_allows_a_disjoint_local_store() {
         "p",
         ProgramValue::typed_pointer(base.offset_by_bytes(4), ProgramType::Int32Pointer),
     );
-    let paths = execute_c_statement_paths(
+    let paths = execute_execution_statement_paths(
         &state,
-        &c_store(c_variable("p"), c_int32_literal(3)),
+        &program_store(
+            crate::kernel::program_expression::variable("p"),
+            crate::kernel::program_expression::int32_literal(3),
+        ),
         &PureFactContext::new(),
         ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
@@ -368,22 +387,24 @@ fn active_stable_loan_allows_a_disjoint_local_store() {
 
 #[test]
 fn volatile_parameter_accesses_emit_ordered_facts() {
-    let function = c_function(
+    let function = program_function(
         ProgramType::Int32,
         "volatile_read",
-        vec![c_parameter("value", ProgramType::Int32).with_volatile(true)],
+        vec![program_parameter("value", ProgramType::Int32).with_volatile(true)],
         ProgramStatement::seq(
             std::sync::Arc::new(ProgramStatement::Assign {
                 source: Default::default(),
                 name: "value".to_string(),
-                expression: c_int32_literal(8),
+                expression: crate::kernel::program_expression::int32_literal(8),
             }),
-            std::sync::Arc::new(ProgramStatement::Return(c_variable("value"))),
+            std::sync::Arc::new(ProgramStatement::Return(
+                crate::kernel::program_expression::variable("value"),
+            )),
         ),
     );
-    let bound = bind_c_function_arguments(&ExecutionState::new(), &function, &[int32(7)])
+    let bound = bind_program_function_arguments(&ExecutionState::new(), &function, &[int32(7)])
         .expect("volatile parameter should bind");
-    let paths = execute_c_statement_paths(
+    let paths = execute_execution_statement_paths(
         &bound,
         function.body(),
         &PureFactContext::new(),
@@ -414,7 +435,7 @@ fn volatile_parameter_accesses_emit_ordered_facts() {
     let span = ExecutionBudget::KERNEL_VARIABLE_CEILING - ExecutionBudget::KERNEL_VARIABLE_BASE;
     let mut exhausted = ExecutionBudget::default().with_next_kernel_variable(span);
     assert_eq!(
-        execute_c_statement_paths(
+        execute_execution_statement_paths(
             &bound,
             function.body(),
             &PureFactContext::new(),
@@ -441,7 +462,7 @@ fn a_state_scan_reserves_memory_havoc_marker_identities() {
             .with_block("local:x", 4),
     );
     let mut reserved = BTreeSet::new();
-    crate::kernel::reasoning::collect_c_state_bitvector_variables(&state, &mut reserved);
+    crate::kernel::reasoning::collect_execution_state_bitvector_variables(&state, &mut reserved);
     assert!(reserved.contains(&Variable(1_000_004)));
     assert!(reserved.contains(&Variable(1_000_009)));
 
@@ -485,9 +506,9 @@ fn loop_back_edge_rejects_heap_and_resource_state_changes() {
                     MachineTerm::constant(4),
                 ))),
         );
-    let freed = execute_c_statement_paths(
+    let freed = execute_execution_statement_paths(
         &top,
-        &c_heap_free(ProgramExpression::Value(ProgramValue::pointer(Pointer {
+        &program_heap_free(ProgramExpression::Value(ProgramValue::pointer(Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
         }))),
@@ -499,14 +520,13 @@ fn loop_back_edge_rejects_heap_and_resource_state_changes() {
     let StatementOutcome::Normal(freed) = &freed[0].outcome else {
         panic!("test free should have a normal outcome");
     };
-    let error =
-        c_loop_state_components_match_at_back_edge(&top, freed, &PureFactContext::new(), &[])
-            .expect_err("a freed allocation must not cross a loop back edge");
+    let error = loop_state_components_match_at_back_edge(&top, freed, &PureFactContext::new(), &[])
+        .expect_err("a freed allocation must not cross a loop back edge");
     assert!(error.contains("heap allocation lifetime"));
 
     let consumed = top.clone().with_resource_context(ResourceContext::new());
     let error =
-        c_loop_state_components_match_at_back_edge(&top, &consumed, &PureFactContext::new(), &[])
+        loop_state_components_match_at_back_edge(&top, &consumed, &PureFactContext::new(), &[])
             .expect_err("consumed resources must not cross a loop back edge");
     assert!(error.contains("resource ownership"));
 
@@ -514,7 +534,7 @@ fn loop_back_edge_rejects_heap_and_resource_state_changes() {
     let token_top = ExecutionState::new()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(token));
     let token_consumed = ExecutionState::new();
-    let error = c_loop_state_components_match_at_back_edge(
+    let error = loop_state_components_match_at_back_edge(
         &token_top,
         &token_consumed,
         &PureFactContext::new(),
@@ -546,9 +566,12 @@ fn final_iteration_condition_can_use_the_pre_body_bound() {
         );
 
     assert!(
-        !c_loop_condition_may_continue(
+        !loop_condition_may_continue(
             &state,
-            &c_less_than(c_variable("i"), c_int32_literal(1)),
+            &crate::kernel::program_expression::less_than(
+                crate::kernel::program_expression::variable("i"),
+                crate::kernel::program_expression::int32_literal(1)
+            ),
             &assumptions,
         )
         .expect("condition classification should stay within its expression budget")
@@ -578,8 +601,9 @@ fn join_state_forgets_changed_scalars_and_memory() {
     let stable = BTreeMap::from([("x".to_string(), stable_x.clone())]);
 
     let abstract_zero =
-        abstract_c_state_for_join(&state_zero, &stable, 0).expect("join abstraction");
-    let abstract_one = abstract_c_state_for_join(&state_one, &stable, 0).expect("join abstraction");
+        abstract_execution_state_for_join(&state_zero, &stable, 0).expect("join abstraction");
+    let abstract_one =
+        abstract_execution_state_for_join(&state_one, &stable, 0).expect("join abstraction");
 
     assert_eq!(abstract_zero, abstract_one);
     // The abstraction issued an identity, and it says so: the joined
@@ -607,13 +631,13 @@ fn join_state_abstracts_changed_pointer_locals() {
         block: "right".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let abstract_left = abstract_c_state_for_join(
+    let abstract_left = abstract_execution_state_for_join(
         &ExecutionState::new().with_local("selected", ProgramValue::pointer(left)),
         &BTreeMap::new(),
         0,
     )
     .expect("pointer join abstraction");
-    let abstract_right = abstract_c_state_for_join(
+    let abstract_right = abstract_execution_state_for_join(
         &ExecutionState::new().with_local("selected", ProgramValue::pointer(right)),
         &BTreeMap::new(),
         0,
@@ -634,8 +658,8 @@ fn join_state_fresh_variables_do_not_collide_with_symbolic_pointer_blocks() {
         "selected",
         ProgramValue::pointer(Pointer::symbolic(Variable(1_000_000))),
     );
-    let abstract_state =
-        abstract_c_state_for_join(&state, &BTreeMap::new(), 0).expect("pointer join abstraction");
+    let abstract_state = abstract_execution_state_for_join(&state, &BTreeMap::new(), 0)
+        .expect("pointer join abstraction");
     // `v1000000` was reserved by the state, so the abstraction issued
     // `v1000001` for the local and `v1000002` for its memory-havoc marker.
     // The counter it returns is above both, and the joined execution
@@ -652,19 +676,19 @@ fn join_state_fresh_variables_do_not_collide_with_symbolic_pointer_blocks() {
 #[test]
 fn sibling_join_abstraction_is_deterministic_after_a_nested_join() {
     let nested_source = ExecutionState::new().with_local("y", int32(0));
-    let nested = abstract_c_state_for_join(&nested_source, &BTreeMap::new(), 0)
+    let nested = abstract_execution_state_for_join(&nested_source, &BTreeMap::new(), 0)
         .expect("nested join abstraction");
     let sibling = ExecutionState::new().with_local("y", int32(1));
     let states = [&nested.state, &sibling];
 
-    let abstract_nested = abstract_c_state_for_join_across(
+    let abstract_nested = abstract_execution_state_for_join_across(
         &nested.state,
         &states,
         &BTreeMap::new(),
         nested.next_kernel_variable,
     )
     .expect("outer nested-arm abstraction");
-    let abstract_sibling = abstract_c_state_for_join_across(
+    let abstract_sibling = abstract_execution_state_for_join_across(
         &sibling,
         &states,
         &BTreeMap::new(),
@@ -674,18 +698,19 @@ fn sibling_join_abstraction_is_deterministic_after_a_nested_join() {
 
     assert_eq!(abstract_nested, abstract_sibling);
 
-    let inner_empty = abstract_c_state_for_join(&ExecutionState::new(), &BTreeMap::new(), 0)
-        .expect("inner empty-state abstraction");
+    let inner_empty =
+        abstract_execution_state_for_join(&ExecutionState::new(), &BTreeMap::new(), 0)
+            .expect("inner empty-state abstraction");
     let raw_empty = ExecutionState::new();
     let empty_states = [&inner_empty.state, &raw_empty];
-    let outer_nested = abstract_c_state_for_join_across(
+    let outer_nested = abstract_execution_state_for_join_across(
         &inner_empty.state,
         &empty_states,
         &BTreeMap::new(),
         inner_empty.next_kernel_variable,
     )
     .expect("outer nested empty-state abstraction");
-    let outer_raw = abstract_c_state_for_join_across(
+    let outer_raw = abstract_execution_state_for_join_across(
         &raw_empty,
         &empty_states,
         &BTreeMap::new(),
@@ -727,15 +752,15 @@ fn concrete_pointer_block_names_cannot_create_symbolic_identity() {
 
 #[test]
 fn concrete_max_executes_without_list_encoding() {
-    let state = c_max_state(int32(0), int32(1));
-    let theorem =
-        prove_c_statement_execution(state.clone(), c_max_body()).expect("max should execute");
+    let state = program_max_state(int32(0), int32(1));
+    let theorem = prove_execution_statement_execution(state.clone(), program_max_body())
+        .expect("max should execute");
 
     assert_eq!(
         theorem.proposition(),
-        &Proposition::CStatementExecutes {
+        &Proposition::ProgramStatementExecutes {
             state: Box::new(state.clone()),
-            statement: Box::new(c_max_body()),
+            statement: Box::new(program_max_body()),
             outcome: StatementOutcome::Return {
                 value: int32(1).into(),
                 state: Box::new(state),
@@ -747,9 +772,12 @@ fn concrete_max_executes_without_list_encoding() {
 #[test]
 fn concrete_max_function_call_preserves_caller_locals() {
     let state = ExecutionState::new().with_local("caller", int32(99));
-    let function = c_max_function();
-    let arguments = vec![c_int32_literal(0), c_int32_literal(1)];
-    let theorem = prove_symbolic_c_function_execution(
+    let function = program_max_function();
+    let arguments = vec![
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(1),
+    ];
+    let theorem = prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -759,7 +787,7 @@ fn concrete_max_function_call_preserves_caller_locals() {
 
     assert_eq!(
         theorem.proposition(),
-        &Proposition::CFunctionExecutes {
+        &Proposition::ProgramFunctionExecutes {
             state: Box::new(state.clone()),
             function: Box::new(function),
             arguments,
@@ -777,14 +805,14 @@ fn symbolic_max_function_call_reports_branch_facts() {
     let b = Variable(15);
     let a_bits = MachineTerm::Variable(a);
     let b_bits = MachineTerm::Variable(b);
-    let condition = c_max_lt_condition(a_bits.clone(), b_bits.clone());
+    let condition = program_max_lt_condition(a_bits.clone(), b_bits.clone());
     let state = ExecutionState::new();
-    let function = c_max_function();
+    let function = program_max_function();
     let arguments = vec![
         ProgramExpression::Value(int32(a_bits.clone())),
         ProgramExpression::Value(int32(b_bits.clone())),
     ];
-    let execution = prove_symbolic_c_function_execution_paths(
+    let execution = prove_symbolic_program_function_execution_paths(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -804,7 +832,7 @@ fn symbolic_max_function_call_reports_branch_facts() {
         execution.paths()[0].theorem().proposition(),
         &Proposition::Implies(
             Box::new(Proposition::ConditionIs(condition.clone(), true)),
-            Box::new(Proposition::CFunctionExecutes {
+            Box::new(Proposition::ProgramFunctionExecutes {
                 state: Box::new(state.clone()),
                 function: Box::new(function.clone()),
                 arguments: arguments.clone(),
@@ -828,7 +856,7 @@ fn symbolic_max_function_call_reports_branch_facts() {
         execution.paths()[1].theorem().proposition(),
         &Proposition::Implies(
             Box::new(Proposition::ConditionIs(condition, false)),
-            Box::new(Proposition::CFunctionExecutes {
+            Box::new(Proposition::ProgramFunctionExecutes {
                 state: Box::new(state.clone()),
                 function: Box::new(function),
                 arguments,
@@ -882,7 +910,7 @@ fn execution_provenance_matches_only_equivalent_call_havoc() {
     };
 
     assert!(
-        c_function_outcomes_program_state_equal_by_execution_provenance(
+        program_function_outcomes_program_state_equal_by_execution_provenance(
             &left,
             &[],
             &equivalent,
@@ -892,7 +920,7 @@ fn execution_provenance_matches_only_equivalent_call_havoc() {
         "fresh marker names should not distinguish the same call havoc"
     );
     assert!(
-        !c_function_outcomes_program_state_equal_by_execution_provenance(
+        !program_function_outcomes_program_state_equal_by_execution_provenance(
             &left,
             &[],
             &different,
@@ -913,21 +941,28 @@ fn function_call_threads_memory_but_discards_callee_locals() {
     let state = ExecutionState::new()
         .with_local("caller", int32(42))
         .with_resource_context(resources.clone());
-    let function = c_function(
+    let function = program_function(
         ProgramType::Int32,
         "store_and_load",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
-        c_seq(
-            c_store(c_variable("p"), c_int32_literal(9)),
-            c_return(c_load(c_variable("p"))),
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        program_seq(
+            program_store(
+                crate::kernel::program_expression::variable("p"),
+                crate::kernel::program_expression::int32_literal(9),
+            ),
+            program_return(crate::kernel::program_expression::load(
+                crate::kernel::program_expression::variable("p"),
+            )),
         ),
     );
-    let arguments = vec![c_pointer_value(pointer.clone())];
+    let arguments = vec![crate::kernel::program_expression::pointer_value(
+        pointer.clone(),
+    )];
     let final_state = ExecutionState::new()
         .with_local("caller", int32(42))
         .with_memory(Memory::new().store(pointer.clone(), int32(9)))
         .with_resource_context(resources);
-    let theorem = prove_symbolic_c_function_execution(
+    let theorem = prove_symbolic_program_function_execution(
         state.clone(),
         function.clone(),
         arguments.clone(),
@@ -937,7 +972,7 @@ fn function_call_threads_memory_but_discards_callee_locals() {
 
     assert_eq!(
         theorem.proposition(),
-        &Proposition::CFunctionExecutes {
+        &Proposition::ProgramFunctionExecutes {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
@@ -957,23 +992,34 @@ fn function_call_does_not_inherit_undeclared_resources() {
     };
     let resources = own_memory_context(pointer.clone(), 0, 1);
     let state = ExecutionState::new().with_resource_context(resources);
-    let helper = c_function(
+    let helper = program_function(
         ProgramType::Int32,
         "store_and_load",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
-        c_seq(
-            c_store(c_variable("p"), c_int32_literal(9)),
-            c_return(c_load(c_variable("p"))),
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        program_seq(
+            program_store(
+                crate::kernel::program_expression::variable("p"),
+                crate::kernel::program_expression::int32_literal(9),
+            ),
+            program_return(crate::kernel::program_expression::load(
+                crate::kernel::program_expression::variable("p"),
+            )),
         ),
     );
-    let caller = c_function(
+    let caller = program_function(
         ProgramType::Int32,
         "caller",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
-        c_call_assign("result", "store_and_load", vec![c_variable("p")]),
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        program_call_assign(
+            "result",
+            "store_and_load",
+            vec![crate::kernel::program_expression::variable("p")],
+        ),
     );
-    let arguments = vec![c_pointer_value(pointer.clone())];
-    let theorem = prove_symbolic_c_function_execution_with_environment(
+    let arguments = vec![crate::kernel::program_expression::pointer_value(
+        pointer.clone(),
+    )];
+    let theorem = prove_symbolic_program_function_execution_with_environment(
         state.clone(),
         caller.clone(),
         arguments.clone(),
@@ -985,7 +1031,7 @@ fn function_call_does_not_inherit_undeclared_resources() {
 
     assert_eq!(
         theorem.proposition(),
-        &Proposition::CFunctionExecutes {
+        &Proposition::ProgramFunctionExecutes {
             state: Box::new(state),
             function: Box::new(caller),
             arguments,
@@ -998,17 +1044,20 @@ fn function_call_does_not_inherit_undeclared_resources() {
 
 #[test]
 fn concrete_function_specification_is_native_theorem() {
-    let function = c_max_function();
-    let specification = c_function_specification(
+    let function = program_max_function();
+    let specification = program_function_specification(
         ExecutionState::new(),
-        vec![c_int32_literal(0), c_int32_literal(1)],
+        vec![
+            crate::kernel::program_expression::int32_literal(0),
+            crate::kernel::program_expression::int32_literal(1),
+        ],
         Vec::new(),
         FunctionOutcome::Return {
             value: int32(1).into(),
             state: Box::new(ExecutionState::new()),
         },
     );
-    let theorem = prove_c_function_satisfies_specification(
+    let theorem = prove_program_function_satisfies_specification(
         function.clone(),
         specification.clone(),
         PureFactContext::new(),
@@ -1017,7 +1066,7 @@ fn concrete_function_specification_is_native_theorem() {
 
     assert_eq!(
         theorem.proposition(),
-        &Proposition::CFunctionSatisfiesSpecification {
+        &Proposition::ProgramFunctionSatisfiesSpecification {
             function: Box::new(function),
             specification: Box::new(specification)
         }
@@ -1030,9 +1079,9 @@ fn symbolic_function_specification_uses_requirements_as_execution_pure_facts() {
     let b = Variable(17);
     let a_bits = MachineTerm::Variable(a);
     let b_bits = MachineTerm::Variable(b);
-    let condition = c_max_lt_condition(a_bits.clone(), b_bits.clone());
-    let function = c_max_function();
-    let specification = c_function_specification(
+    let condition = program_max_lt_condition(a_bits.clone(), b_bits.clone());
+    let function = program_max_function();
+    let specification = program_function_specification(
         ExecutionState::new(),
         vec![
             ProgramExpression::Value(int32(a_bits)),
@@ -1044,7 +1093,7 @@ fn symbolic_function_specification_uses_requirements_as_execution_pure_facts() {
             state: Box::new(ExecutionState::new()),
         },
     );
-    let theorem = prove_c_function_satisfies_specification(
+    let theorem = prove_program_function_satisfies_specification(
         function.clone(),
         specification.clone(),
         PureFactContext::new(),
@@ -1055,7 +1104,7 @@ fn symbolic_function_specification_uses_requirements_as_execution_pure_facts() {
         theorem.proposition(),
         &Proposition::Implies(
             Box::new(Proposition::ConditionIs(condition, true)),
-            Box::new(Proposition::CFunctionSatisfiesSpecification {
+            Box::new(Proposition::ProgramFunctionSatisfiesSpecification {
                 function: Box::new(function),
                 specification: Box::new(specification)
             }),
@@ -1067,8 +1116,8 @@ fn symbolic_function_specification_uses_requirements_as_execution_pure_facts() {
 fn incomplete_symbolic_function_specification_does_not_prove() {
     let a = Variable(18);
     let b = Variable(19);
-    let function = c_max_function();
-    let specification = c_function_specification(
+    let function = program_max_function();
+    let specification = program_function_specification(
         ExecutionState::new(),
         vec![
             ProgramExpression::Value(int32(MachineTerm::Variable(a))),
@@ -1082,27 +1131,38 @@ fn incomplete_symbolic_function_specification_does_not_prove() {
     );
 
     assert!(
-        prove_c_function_satisfies_specification(function, specification, PureFactContext::new())
-            .is_none()
+        prove_program_function_satisfies_specification(
+            function,
+            specification,
+            PureFactContext::new()
+        )
+        .is_none()
     );
 }
 
 #[test]
 fn call_assign_uses_function_environment() {
-    let increment = c_function(
+    let increment = program_function(
         ProgramType::Int32,
         "increment",
-        vec![c_parameter("x", ProgramType::Int32)],
-        c_return(c_add(c_variable("x"), c_int32_literal(1))),
+        vec![program_parameter("x", ProgramType::Int32)],
+        program_return(crate::kernel::program_expression::add(
+            crate::kernel::program_expression::variable("x"),
+            crate::kernel::program_expression::int32_literal(1),
+        )),
     );
     let environment = ExecutionEnvironment::new().with_function(increment);
     let state = ExecutionState::new();
-    let statement = c_seq(
-        c_call_assign("result", "increment", vec![c_int32_literal(41)]),
-        c_return(c_variable("result")),
+    let statement = program_seq(
+        program_call_assign(
+            "result",
+            "increment",
+            vec![crate::kernel::program_expression::int32_literal(41)],
+        ),
+        program_return(crate::kernel::program_expression::variable("result")),
     );
     let final_state = ExecutionState::new().with_local("result", int32(42));
-    let theorem = prove_symbolic_c_execution_with_environment(
+    let theorem = prove_symbolic_program_execution_with_environment(
         state.clone(),
         statement.clone(),
         PureFactContext::new(),
@@ -1113,7 +1173,7 @@ fn call_assign_uses_function_environment() {
 
     assert_eq!(
         theorem.proposition(),
-        &Proposition::CStatementExecutes {
+        &Proposition::ProgramStatementExecutes {
             state: Box::new(state),
             statement: Box::new(statement),
             outcome: StatementOutcome::Return {
@@ -1126,20 +1186,20 @@ fn call_assign_uses_function_environment() {
 
 #[test]
 fn direct_call_propagates_internal_throw_and_skips_its_suffix() {
-    let thrower = c_function(
+    let thrower = program_function(
         ProgramType::Int32,
         "thrower",
         Vec::new(),
-        ProgramStatement::Throw(c_int32_literal(7)),
+        ProgramStatement::Throw(crate::kernel::program_expression::int32_literal(7)),
     )
     .with_int32_exceptional_outcome();
     let environment = ExecutionEnvironment::new().with_function(thrower);
     let state = ExecutionState::new().with_local("result", int32(1));
-    let statement = c_seq(
-        c_call_assign("result", "thrower", Vec::new()),
-        c_return(c_variable("result")),
+    let statement = program_seq(
+        program_call_assign("result", "thrower", Vec::new()),
+        program_return(crate::kernel::program_expression::variable("result")),
     );
-    let theorem = prove_symbolic_c_execution_with_environment(
+    let theorem = prove_symbolic_program_execution_with_environment(
         state.clone(),
         statement.clone(),
         PureFactContext::new(),
@@ -1150,7 +1210,7 @@ fn direct_call_propagates_internal_throw_and_skips_its_suffix() {
 
     assert_eq!(
         theorem.proposition(),
-        &Proposition::CStatementExecutes {
+        &Proposition::ProgramStatementExecutes {
             state: Box::new(state.clone()),
             statement: Box::new(statement),
             outcome: StatementOutcome::Throw {
@@ -1163,24 +1223,27 @@ fn direct_call_propagates_internal_throw_and_skips_its_suffix() {
 
 #[test]
 fn int32_handler_receives_payload_and_thrown_state_across_a_call() {
-    let thrower = c_function(
+    let thrower = program_function(
         ProgramType::Int32,
         "thrower",
         Vec::new(),
-        ProgramStatement::Throw(c_int32_literal(7)),
+        ProgramStatement::Throw(crate::kernel::program_expression::int32_literal(7)),
     )
     .with_int32_exceptional_outcome();
     let environment = ExecutionEnvironment::new().with_function(thrower);
     let state = ExecutionState::new().with_local("x", int32(1));
-    let statement = c_try_catch_int32(
-        c_seq(
-            c_assign("x", c_int32_literal(9)),
-            c_seq(c_call("thrower", Vec::new()), c_return(c_int32_literal(99))),
+    let statement = program_try_catch_int32(
+        program_seq(
+            program_assign("x", crate::kernel::program_expression::int32_literal(9)),
+            program_seq(
+                program_call("thrower", Vec::new()),
+                program_return(crate::kernel::program_expression::int32_literal(99)),
+            ),
         ),
         "caught",
-        c_return(c_variable("caught")),
+        program_return(crate::kernel::program_expression::variable("caught")),
     );
-    let theorem = prove_symbolic_c_execution_with_environment(
+    let theorem = prove_symbolic_program_execution_with_environment(
         state,
         statement,
         PureFactContext::new(),
@@ -1188,7 +1251,7 @@ fn int32_handler_receives_payload_and_thrown_state_across_a_call() {
         ExecutionSemantics::EXECUTE_BODIES,
     )
     .expect("the checked handler should execute from the thrown state");
-    let Proposition::CStatementExecutes {
+    let Proposition::ProgramStatementExecutes {
         outcome: StatementOutcome::Return { value, state },
         ..
     } = theorem.proposition()
@@ -1206,19 +1269,19 @@ fn int32_handler_receives_payload_and_thrown_state_across_a_call() {
 #[test]
 fn int32_handler_does_not_run_on_normal_or_return_paths() {
     let initial = ExecutionState::new().with_local("x", int32(1));
-    let normal = c_seq(
-        c_try_catch_int32(
-            c_assign("x", c_int32_literal(9)),
+    let normal = program_seq(
+        program_try_catch_int32(
+            program_assign("x", crate::kernel::program_expression::int32_literal(9)),
             "caught",
-            c_return(c_int32_literal(99)),
+            program_return(crate::kernel::program_expression::int32_literal(99)),
         ),
-        c_return(c_variable("x")),
+        program_return(crate::kernel::program_expression::variable("x")),
     );
-    let theorem = prove_symbolic_c_execution(initial.clone(), normal, PureFactContext::new())
+    let theorem = prove_symbolic_program_execution(initial.clone(), normal, PureFactContext::new())
         .expect("a normal try body should bypass the handler");
     assert!(matches!(
         theorem.proposition(),
-        Proposition::CStatementExecutes {
+        Proposition::ProgramStatementExecutes {
             outcome: StatementOutcome::Return {
                 value,
                 ..
@@ -1226,16 +1289,16 @@ fn int32_handler_does_not_run_on_normal_or_return_paths() {
             ..
         } if matches!(value.native().as_ref(), ProgramValue::Int32(int32_constant!(9)))
     ));
-    let returning = c_try_catch_int32(
-        c_return(c_int32_literal(3)),
+    let returning = program_try_catch_int32(
+        program_return(crate::kernel::program_expression::int32_literal(3)),
         "caught",
-        c_return(c_int32_literal(99)),
+        program_return(crate::kernel::program_expression::int32_literal(99)),
     );
-    let theorem = prove_symbolic_c_execution(initial, returning, PureFactContext::new())
+    let theorem = prove_symbolic_program_execution(initial, returning, PureFactContext::new())
         .expect("a return from the try body should bypass the handler");
     assert!(matches!(
         theorem.proposition(),
-        Proposition::CStatementExecutes {
+        Proposition::ProgramStatementExecutes {
             outcome: StatementOutcome::Return {
                 value,
                 ..
@@ -1247,17 +1310,17 @@ fn int32_handler_does_not_run_on_normal_or_return_paths() {
 
 #[test]
 fn throw_from_int32_handler_escapes_instead_of_being_recaught() {
-    let statement = c_try_catch_int32(
-        ProgramStatement::Throw(c_int32_literal(7)),
+    let statement = program_try_catch_int32(
+        ProgramStatement::Throw(crate::kernel::program_expression::int32_literal(7)),
         "caught",
-        ProgramStatement::Throw(c_variable("caught")),
+        ProgramStatement::Throw(crate::kernel::program_expression::variable("caught")),
     );
     let theorem =
-        prove_symbolic_c_execution(ExecutionState::new(), statement, PureFactContext::new())
+        prove_symbolic_program_execution(ExecutionState::new(), statement, PureFactContext::new())
             .expect("a handler throw should escape the same handler");
     assert!(matches!(
         theorem.proposition(),
-        Proposition::CStatementExecutes {
+        Proposition::ProgramStatementExecutes {
             outcome: StatementOutcome::Throw {
                 value,
                 ..
@@ -1269,12 +1332,12 @@ fn throw_from_int32_handler_escapes_instead_of_being_recaught() {
 
 #[test]
 fn int32_handler_rejects_a_binding_that_would_replace_a_live_local() {
-    let statement = c_try_catch_int32(
-        ProgramStatement::Throw(c_int32_literal(7)),
+    let statement = program_try_catch_int32(
+        ProgramStatement::Throw(crate::kernel::program_expression::int32_literal(7)),
         "live",
-        c_return(c_variable("live")),
+        program_return(crate::kernel::program_expression::variable("live")),
     );
-    let theorem = prove_symbolic_c_execution(
+    let theorem = prove_symbolic_program_execution(
         ExecutionState::new().with_local("live", int32(11)),
         statement,
         PureFactContext::new(),
@@ -1282,7 +1345,7 @@ fn int32_handler_rejects_a_binding_that_would_replace_a_live_local() {
     .expect("a colliding catch binding must be rejected, not overwrite the local");
     assert!(matches!(
         theorem.proposition(),
-        Proposition::CStatementExecutes {
+        Proposition::ProgramStatementExecutes {
             outcome: StatementOutcome::RuntimeError(RuntimeError::FunctionContract(message)),
             ..
         } if message.contains("handler binding `live` is not fresh")
@@ -1291,17 +1354,17 @@ fn int32_handler_rejects_a_binding_that_would_replace_a_live_local() {
 
 #[test]
 fn caught_throw_satisfies_a_nonthrowing_function_signature() {
-    let function = c_function(
+    let function = program_function(
         ProgramType::Int32,
         "fully_handled",
         Vec::new(),
-        c_try_catch_int32(
-            ProgramStatement::Throw(c_int32_literal(7)),
+        program_try_catch_int32(
+            ProgramStatement::Throw(crate::kernel::program_expression::int32_literal(7)),
             "caught",
-            c_return(c_variable("caught")),
+            program_return(crate::kernel::program_expression::variable("caught")),
         ),
     );
-    let theorem = prove_symbolic_c_function_execution(
+    let theorem = prove_symbolic_program_function_execution(
         ExecutionState::new(),
         function,
         Vec::new(),
@@ -1310,7 +1373,7 @@ fn caught_throw_satisfies_a_nonthrowing_function_signature() {
     .expect("a fully caught body should be a nonthrowing function");
     assert!(matches!(
         theorem.proposition(),
-        Proposition::CFunctionExecutes {
+        Proposition::ProgramFunctionExecutes {
             outcome: FunctionOutcome::Return {
                 value,
                 ..
@@ -1322,38 +1385,41 @@ fn caught_throw_satisfies_a_nonthrowing_function_signature() {
 
 #[test]
 fn conditional_catch_has_a_continuing_call_outcome_and_a_terminal_one() {
-    let helper = c_function(
+    let helper = program_function(
         ProgramType::Int32,
         "helper",
-        vec![c_parameter("should_throw", ProgramType::Bool)],
-        c_if(
-            c_variable("should_throw"),
-            ProgramStatement::Throw(c_int32_literal(7)),
-            c_return(c_int32_literal(5)),
+        vec![program_parameter("should_throw", ProgramType::Bool)],
+        program_if(
+            crate::kernel::program_expression::variable("should_throw"),
+            ProgramStatement::Throw(crate::kernel::program_expression::int32_literal(7)),
+            program_return(crate::kernel::program_expression::int32_literal(5)),
         ),
     )
     .with_int32_exceptional_outcome();
-    let caller = c_function(
+    let caller = program_function(
         ProgramType::Int32,
         "caller",
         vec![
-            c_parameter("construct", ProgramType::Bool),
-            c_parameter("should_throw", ProgramType::Bool),
+            program_parameter("construct", ProgramType::Bool),
+            program_parameter("should_throw", ProgramType::Bool),
         ],
-        c_seq(
-            c_if(
-                c_variable("construct"),
-                c_try_catch_int32(
-                    c_call("helper", vec![c_variable("should_throw")]),
+        program_seq(
+            program_if(
+                crate::kernel::program_expression::variable("construct"),
+                program_try_catch_int32(
+                    program_call(
+                        "helper",
+                        vec![crate::kernel::program_expression::variable("should_throw")],
+                    ),
                     "caught",
-                    c_return(c_variable("caught")),
+                    program_return(crate::kernel::program_expression::variable("caught")),
                 ),
-                c_skip(),
+                program_skip(),
             ),
-            c_return(c_int32_literal(5)),
+            program_return(crate::kernel::program_expression::int32_literal(5)),
         ),
     );
-    let execution = prove_symbolic_c_function_execution_paths_with_environment(
+    let execution = prove_symbolic_program_function_execution_paths_with_environment(
         ExecutionState::new(),
         caller,
         vec![
@@ -1376,7 +1442,7 @@ fn conditional_catch_has_a_continuing_call_outcome_and_a_terminal_one() {
                 proposition = body;
             }
             match proposition {
-                Proposition::CFunctionExecutes {
+                Proposition::ProgramFunctionExecutes {
                     outcome: FunctionOutcome::Return { value, .. },
                     ..
                 } => {
@@ -1396,11 +1462,11 @@ fn conditional_catch_has_a_continuing_call_outcome_and_a_terminal_one() {
 
 #[test]
 fn internal_throw_is_int32_only_and_requires_a_verified_direct_rule() {
-    let throwing = c_function(
+    let throwing = program_function(
         ProgramType::Int32,
         "throwing",
         Vec::new(),
-        ProgramStatement::Throw(c_int32_literal(7)),
+        ProgramStatement::Throw(crate::kernel::program_expression::int32_literal(7)),
     )
     .with_int32_exceptional_outcome();
     assert!(!throwing.opaque_contract_supported());
@@ -1412,20 +1478,20 @@ fn internal_throw_is_int32_only_and_requires_a_verified_direct_rule() {
         })
     );
 
-    let declared_without_throw = c_function(
+    let declared_without_throw = program_function(
         ProgramType::Int32,
         "declared_without_throw",
         Vec::new(),
-        c_return(c_int32_literal(0)),
+        program_return(crate::kernel::program_expression::int32_literal(0)),
     )
     .with_int32_exceptional_outcome();
     assert!(!declared_without_throw.opaque_contract_supported());
     assert!(declared_without_throw.verified_direct_contract_supported());
     assert!(FunctionContract::new("DeclaredWithoutThrow", declared_without_throw).is_some());
 
-    let modular = prove_symbolic_c_execution_with_environment(
+    let modular = prove_symbolic_program_execution_with_environment(
         ExecutionState::new(),
-        c_call("throwing", Vec::new()),
+        program_call("throwing", Vec::new()),
         PureFactContext::new(),
         ExecutionEnvironment::new().with_function(throwing),
         ExecutionSemantics::APPLY_VERIFIED_RULES,
@@ -1434,7 +1500,7 @@ fn internal_throw_is_int32_only_and_requires_a_verified_direct_rule() {
     assert!(
         matches!(
             modular.proposition(),
-            Proposition::CStatementVerifies {
+            Proposition::ProgramStatementVerifies {
                 outcome: StatementOutcome::RuntimeError(RuntimeError::MissingVerifiedFunctionRule(name)),
                 ..
             } if name == "throwing"
@@ -1443,15 +1509,17 @@ fn internal_throw_is_int32_only_and_requires_a_verified_direct_rule() {
         modular.proposition()
     );
 
-    let theorem = prove_symbolic_c_execution(
+    let theorem = prove_symbolic_program_execution(
         ExecutionState::new(),
-        ProgramStatement::Throw(c_pointer_value(Pointer::null())),
+        ProgramStatement::Throw(crate::kernel::program_expression::pointer_value(
+            Pointer::null(),
+        )),
         PureFactContext::new(),
     )
     .expect("a non-int32 throw should produce a checked type mismatch");
     assert!(matches!(
         theorem.proposition(),
-        Proposition::CStatementExecutes {
+        Proposition::ProgramStatementExecutes {
             outcome: StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
             ..
         }
@@ -1460,13 +1528,13 @@ fn internal_throw_is_int32_only_and_requires_a_verified_direct_rule() {
 
 #[test]
 fn function_execution_rejects_an_undeclared_exceptional_outcome() {
-    let function = c_function(
+    let function = program_function(
         ProgramType::Int32,
         "undeclared_throw",
         Vec::new(),
-        ProgramStatement::Throw(c_int32_literal(7)),
+        ProgramStatement::Throw(crate::kernel::program_expression::int32_literal(7)),
     );
-    let theorem = prove_symbolic_c_function_execution(
+    let theorem = prove_symbolic_program_function_execution(
         ExecutionState::new(),
         function,
         Vec::new(),
@@ -1475,7 +1543,7 @@ fn function_execution_rejects_an_undeclared_exceptional_outcome() {
     .expect("an undeclared throw should produce a checked contract error");
     assert!(matches!(
         theorem.proposition(),
-        Proposition::CFunctionExecutes {
+        Proposition::ProgramFunctionExecutes {
             outcome: FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(message)),
             ..
         } if message == "undeclared_throw produced an exceptional outcome not declared by its signature"
@@ -1485,23 +1553,34 @@ fn function_execution_rejects_an_undeclared_exceptional_outcome() {
 #[test]
 fn loop_semantics_explicitly_select_verification_or_verified_rules() {
     let state = ExecutionState::new().with_local("i", int32(0));
-    let statement = c_while_with_invariant_checks(
-        c_less_than(c_variable("i"), c_int32_literal(1)),
+    let statement = program_while_with_invariant_checks(
+        crate::kernel::program_expression::less_than(
+            crate::kernel::program_expression::variable("i"),
+            crate::kernel::program_expression::int32_literal(1),
+        ),
         Vec::new(),
         vec![LoopInvariantCheck::new(
             SpecProposition::Comparison {
                 left: SpecExpression::Value(int32(0)),
                 operator: ComparisonOperator::LessEqual,
-                right: SpecExpression::ProgramExpression(c_variable("i")),
+                right: SpecExpression::ProgramExpression(
+                    crate::kernel::program_expression::variable("i"),
+                ),
             },
             Some("loop entry".to_string()),
             Some("loop preservation".to_string()),
         )],
-        c_assign("i", c_add(c_variable("i"), c_int32_literal(1))),
+        program_assign(
+            "i",
+            crate::kernel::program_expression::add(
+                crate::kernel::program_expression::variable("i"),
+                crate::kernel::program_expression::int32_literal(1),
+            ),
+        ),
     );
     let assumptions = PureFactContext::new();
     let (certified, loop_rule) =
-        prove_symbolic_c_statement_verification_paths_with_environment_and_loop_rule(
+        prove_symbolic_execution_statement_verification_paths_with_environment_and_loop_rule(
             state.clone(),
             statement.clone(),
             assumptions.clone(),
@@ -1514,10 +1593,10 @@ fn loop_semantics_explicitly_select_verification_or_verified_rules() {
         while let Proposition::Implies(_, body) = proposition {
             proposition = body;
         }
-        matches!(proposition, Proposition::CStatementVerifies { .. })
+        matches!(proposition, Proposition::ProgramStatementVerifies { .. })
     }));
 
-    let missing = prove_symbolic_c_statement_verification_paths_with_environment(
+    let missing = prove_symbolic_execution_statement_verification_paths_with_environment(
         state.clone(),
         statement.clone(),
         assumptions.clone(),
@@ -1533,7 +1612,7 @@ fn loop_semantics_explicitly_select_verification_or_verified_rules() {
     assert!(base_environment.shares_all_storage_with(&cloned_environment));
     let loop_environment = cloned_environment.with_verified_loop_rules([ignored_rule]);
     assert!(base_environment.shares_project_storage_with(&loop_environment));
-    let verified_directly = prove_symbolic_c_statement_verification_paths_with_environment(
+    let verified_directly = prove_symbolic_execution_statement_verification_paths_with_environment(
         state.clone(),
         statement.clone(),
         assumptions.clone(),
@@ -1542,7 +1621,7 @@ fn loop_semantics_explicitly_select_verification_or_verified_rules() {
     );
     assert!(!verified_directly.paths().is_empty());
 
-    let reused = prove_symbolic_c_statement_verification_paths_with_environment(
+    let reused = prove_symbolic_execution_statement_verification_paths_with_environment(
         state.clone(),
         statement.clone(),
         assumptions
@@ -1557,10 +1636,10 @@ fn loop_semantics_explicitly_select_verification_or_verified_rules() {
         while let Proposition::Implies(_, body) = proposition {
             proposition = body;
         }
-        matches!(proposition, Proposition::CStatementVerifies { .. })
+        matches!(proposition, Proposition::ProgramStatementVerifies { .. })
     }));
 
-    let mismatched = prove_symbolic_c_statement_verification_paths_with_environment(
+    let mismatched = prove_symbolic_execution_statement_verification_paths_with_environment(
         state.with_local("unrelated", int32(0)),
         statement,
         assumptions,
@@ -1573,11 +1652,11 @@ fn loop_semantics_explicitly_select_verification_or_verified_rules() {
 #[test]
 fn statement_checks_share_one_execution_environment_variable_index() {
     let reserved = Variable(1_000_000);
-    let indexed_function = c_function(
+    let indexed_function = program_function(
         ProgramType::Int32,
         "indexed",
         Vec::new(),
-        c_return(ProgramExpression::Value(ProgramValue::Int32(
+        program_return(ProgramExpression::Value(ProgramValue::Int32(
             MachineTerm::Variable(reserved),
         ))),
     );
@@ -1586,9 +1665,9 @@ fn statement_checks_share_one_execution_environment_variable_index() {
     assert_eq!(environment.variable_index.build_count(), 0);
 
     for candidate in [environment.clone(), cloned_before_initialization] {
-        let execution = prove_symbolic_c_statement_verification_paths_with_environment(
+        let execution = prove_symbolic_execution_statement_verification_paths_with_environment(
             ExecutionState::new(),
-            c_skip(),
+            program_skip(),
             PureFactContext::new(),
             candidate,
             ExecutionSemantics::EXECUTE_BODIES,
@@ -1615,11 +1694,11 @@ fn statement_checks_share_one_execution_environment_variable_index() {
         "fresh variables must avoid both shared environment and local reservations"
     );
 
-    let changed = environment.with_function(c_function(
+    let changed = environment.with_function(program_function(
         ProgramType::Int32,
         "changed",
         Vec::new(),
-        c_return(ProgramExpression::Value(ProgramValue::Int32(
+        program_return(ProgramExpression::Value(ProgramValue::Int32(
             MachineTerm::Variable(Variable(1_000_001)),
         ))),
     ));
@@ -1639,7 +1718,7 @@ fn statement_checks_share_one_execution_environment_variable_index() {
 fn adding_a_loop_rule_collects_only_that_rules_variables() {
     let rule = |index: u64| VerifiedLoopRule {
         symbolic_entry_state: ExecutionState::default(),
-        loop_statement: c_skip(),
+        loop_statement: program_skip(),
         loop_index: Some(index as usize),
         required_assumptions: PureFactContext::new()
             .assume_proposition(guard_operand_fact(1_000_000 + index, true)),
@@ -1675,10 +1754,10 @@ fn adding_a_loop_rule_collects_only_that_rules_variables() {
 #[test]
 fn environment_variable_scans_do_not_multiply_by_statement_count() {
     for size in [8, 32, 128, 512] {
-        let mut body = c_return(ProgramExpression::Value(int32(0)));
+        let mut body = program_return(ProgramExpression::Value(int32(0)));
         for index in (0..size).rev() {
-            body = c_seq(
-                c_assign(
+            body = program_seq(
+                program_assign(
                     "symbolic",
                     ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(
                         1_000_000 + index,
@@ -1687,7 +1766,7 @@ fn environment_variable_scans_do_not_multiply_by_statement_count() {
                 body,
             );
         }
-        let environment = ExecutionEnvironment::new().with_function(c_function(
+        let environment = ExecutionEnvironment::new().with_function(program_function(
             ProgramType::Int32,
             format!("indexed_{size}"),
             Vec::new(),
@@ -1695,9 +1774,9 @@ fn environment_variable_scans_do_not_multiply_by_statement_count() {
         ));
 
         for _ in 0..size {
-            let execution = prove_symbolic_c_statement_verification_paths_with_environment(
+            let execution = prove_symbolic_execution_statement_verification_paths_with_environment(
                 ExecutionState::new(),
-                c_skip(),
+                program_skip(),
                 PureFactContext::new(),
                 environment.clone(),
                 ExecutionSemantics::EXECUTE_BODIES,
@@ -1715,8 +1794,8 @@ fn environment_variable_scans_do_not_multiply_by_statement_count() {
 #[test]
 fn perpetual_loop_verifies_safety_without_minting_a_concrete_exit() {
     let state = ExecutionState::new();
-    let statement = c_while_with_invariant_checks(
-        c_int32_literal(1),
+    let statement = program_while_with_invariant_checks(
+        crate::kernel::program_expression::int32_literal(1),
         Vec::new(),
         vec![LoopInvariantCheck::new(
             SpecProposition::Comparison {
@@ -1727,10 +1806,10 @@ fn perpetual_loop_verifies_safety_without_minting_a_concrete_exit() {
             Some("perpetual loop entry".to_string()),
             Some("perpetual loop preservation".to_string()),
         )],
-        c_skip(),
+        program_skip(),
     );
     let (verification, rule) =
-        prove_symbolic_c_statement_verification_paths_with_environment_and_loop_rule(
+        prove_symbolic_execution_statement_verification_paths_with_environment_and_loop_rule(
             state.clone(),
             statement.clone(),
             PureFactContext::new(),
@@ -1745,13 +1824,13 @@ fn perpetual_loop_verifies_safety_without_minting_a_concrete_exit() {
     }
     assert!(matches!(
         proposition,
-        Proposition::CStatementVerifies {
+        Proposition::ProgramStatementVerifies {
             outcome: StatementOutcome::VerificationDiverges,
             ..
         }
     ));
 
-    let concrete = prove_symbolic_c_execution_paths(state, statement, PureFactContext::new());
+    let concrete = prove_symbolic_program_execution_paths(state, statement, PureFactContext::new());
     assert!(concrete.paths().is_empty());
     assert!(concrete.limit().is_some());
 }
@@ -1759,22 +1838,30 @@ fn perpetual_loop_verifies_safety_without_minting_a_concrete_exit() {
 #[test]
 fn loop_exit_rule_with_proven_preservation_does_not_reverify_the_body() {
     let state = ExecutionState::new().with_local("i", int32(0));
-    let statement = c_while_with_invariant_checks(
-        c_less_than(c_variable("i"), c_int32_literal(1)),
+    let statement = program_while_with_invariant_checks(
+        crate::kernel::program_expression::less_than(
+            crate::kernel::program_expression::variable("i"),
+            crate::kernel::program_expression::int32_literal(1),
+        ),
         Vec::new(),
         vec![LoopInvariantCheck::new(
             SpecProposition::Comparison {
                 left: SpecExpression::Value(int32(0)),
                 operator: ComparisonOperator::LessEqual,
-                right: SpecExpression::ProgramExpression(c_variable("i")),
+                right: SpecExpression::ProgramExpression(
+                    crate::kernel::program_expression::variable("i"),
+                ),
             },
             Some("loop entry".to_string()),
             Some("loop preservation".to_string()),
         )],
-        c_assign("i", c_int32_literal(u32::MAX)),
+        program_assign(
+            "i",
+            crate::kernel::program_expression::int32_literal(u32::MAX),
+        ),
     );
     let assumptions = PureFactContext::new();
-    let automatic = prove_symbolic_c_statement_verification_paths_with_environment(
+    let automatic = prove_symbolic_execution_statement_verification_paths_with_environment(
         state.clone(),
         statement.clone(),
         assumptions.clone(),
@@ -1789,7 +1876,7 @@ fn loop_exit_rule_with_proven_preservation_does_not_reverify_the_body() {
             .any(|obligation| obligation.context() == Some("loop preservation"))
     );
 
-    let (after_proof, loop_rule) = prove_symbolic_c_loop_exit_with_proven_phases(
+    let (after_proof, loop_rule) = prove_symbolic_loop_exit_with_proven_phases(
         state,
         statement,
         assumptions,
@@ -1811,21 +1898,26 @@ fn loop_exit_rule_with_proven_preservation_does_not_reverify_the_body() {
 #[test]
 fn loop_exit_with_unproven_preservation_does_not_produce_rule() {
     let state = ExecutionState::new().with_local("i", int32(u32::MAX));
-    let statement = c_while_with_invariant_checks(
-        c_int32_literal(1),
+    let statement = program_while_with_invariant_checks(
+        crate::kernel::program_expression::int32_literal(1),
         Vec::new(),
         vec![LoopInvariantCheck::new(
             SpecProposition::Comparison {
                 left: SpecExpression::Value(int32(0)),
                 operator: ComparisonOperator::LessEqual,
-                right: SpecExpression::ProgramExpression(c_variable("i")),
+                right: SpecExpression::ProgramExpression(
+                    crate::kernel::program_expression::variable("i"),
+                ),
             },
             Some("loop entry".to_string()),
             Some("loop preservation".to_string()),
         )],
-        c_assign("i", c_int32_literal(u32::MAX)),
+        program_assign(
+            "i",
+            crate::kernel::program_expression::int32_literal(u32::MAX),
+        ),
     );
-    let (execution, loop_rule) = prove_symbolic_c_loop_exit_with_proven_phases(
+    let (execution, loop_rule) = prove_symbolic_loop_exit_with_proven_phases(
         state,
         statement,
         PureFactContext::new(),
@@ -1858,8 +1950,8 @@ fn loop_exit_with_unproven_preservation_does_not_produce_rule() {
 #[test]
 fn unknown_call_assign_is_runtime_error() {
     let state = ExecutionState::new();
-    let statement = c_call_assign("result", "missing", Vec::new());
-    let theorem = prove_symbolic_c_execution_with_environment(
+    let statement = program_call_assign("result", "missing", Vec::new());
+    let theorem = prove_symbolic_program_execution_with_environment(
         state.clone(),
         statement.clone(),
         PureFactContext::new(),
@@ -1870,7 +1962,7 @@ fn unknown_call_assign_is_runtime_error() {
 
     assert_eq!(
         theorem.proposition(),
-        &Proposition::CStatementExecutes {
+        &Proposition::ProgramStatementExecutes {
             state: Box::new(state),
             statement: Box::new(statement),
             outcome: StatementOutcome::RuntimeError(RuntimeError::UnknownFunction(
@@ -1897,11 +1989,19 @@ fn unreadable_guard_operand_leaves_the_condition_undecided() {
             "p",
             ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer),
         );
-    let condition = c_and(
-        c_not_equal(c_variable("a"), c_int32_literal(0)),
-        c_not_equal(c_load(c_variable("p")), c_int32_literal(0)),
+    let condition = crate::kernel::program_expression::and(
+        crate::kernel::program_expression::not_equal(
+            crate::kernel::program_expression::variable("a"),
+            crate::kernel::program_expression::int32_literal(0),
+        ),
+        crate::kernel::program_expression::not_equal(
+            crate::kernel::program_expression::load(crate::kernel::program_expression::variable(
+                "p",
+            )),
+            crate::kernel::program_expression::int32_literal(0),
+        ),
     );
-    let mut budget = ExecutionBudget::for_c_expression(&condition);
+    let mut budget = ExecutionBudget::for_program_expression(&condition);
     for desired_truthiness in [false, true] {
         let assumptions = crate::kernel::loops::assume_condition_truthiness(
             &state,
@@ -1929,20 +2029,32 @@ fn unreadable_guard_operand_leaves_the_condition_undecided() {
 #[test]
 fn while_loop_executes_concrete_countdown() {
     let state = ExecutionState::new().with_local("x", int32(3));
-    let loop_statement = c_while(
-        c_greater_than(c_variable("x"), c_int32_literal(0)),
+    let loop_statement = program_while(
+        crate::kernel::program_expression::greater_than(
+            crate::kernel::program_expression::variable("x"),
+            crate::kernel::program_expression::int32_literal(0),
+        ),
         Vec::new(),
-        c_assign("x", c_subtract(c_variable("x"), c_int32_literal(1))),
+        program_assign(
+            "x",
+            crate::kernel::program_expression::subtract(
+                crate::kernel::program_expression::variable("x"),
+                crate::kernel::program_expression::int32_literal(1),
+            ),
+        ),
     );
-    let statement = c_seq(loop_statement, c_return(c_variable("x")));
+    let statement = program_seq(
+        loop_statement,
+        program_return(crate::kernel::program_expression::variable("x")),
+    );
     let final_state = ExecutionState::new().with_local("x", int32(0));
     let theorem =
-        prove_symbolic_c_execution(state.clone(), statement.clone(), PureFactContext::new())
+        prove_symbolic_program_execution(state.clone(), statement.clone(), PureFactContext::new())
             .expect("concrete countdown loop should execute");
 
     assert_eq!(
         theorem.proposition(),
-        &Proposition::CStatementExecutes {
+        &Proposition::ProgramStatementExecutes {
             state: Box::new(state),
             statement: Box::new(statement),
             outcome: StatementOutcome::Return {
@@ -1956,13 +2068,13 @@ fn while_loop_executes_concrete_countdown() {
 #[test]
 fn loop_budget_exhaustion_is_executor_failure_not_c_runtime_error() {
     let state = ExecutionState::new().with_local("x", int32(0));
-    let statement = c_while(
-        c_int32_literal(1),
+    let statement = program_while(
+        crate::kernel::program_expression::int32_literal(1),
         Vec::new(),
-        c_assign("x", c_variable("x")),
+        program_assign("x", crate::kernel::program_expression::variable("x")),
     );
     let budget = ExecutionBudget::new().with_loop_unrolls(2);
-    let execution = prove_symbolic_c_execution_paths_with_budget(
+    let execution = prove_symbolic_program_execution_paths_with_budget(
         state.clone(),
         statement.clone(),
         PureFactContext::new(),
@@ -1972,18 +2084,23 @@ fn loop_budget_exhaustion_is_executor_failure_not_c_runtime_error() {
     assert_eq!(execution.limit(), Some(ExecutionLimit::LoopUnrolls));
     assert_eq!(execution.paths(), &[] as &[SymbolicExecutionPath]);
     assert!(
-        prove_symbolic_c_execution_with_budget(state, statement, PureFactContext::new(), budget,)
-            .is_none()
+        prove_symbolic_program_execution_with_budget(
+            state,
+            statement,
+            PureFactContext::new(),
+            budget,
+        )
+        .is_none()
     );
 }
 
 #[test]
 fn executor_budgets_cap_steps_calls_and_paths() {
     let state = ExecutionState::new();
-    let statement = c_return(c_int32_literal(1));
+    let statement = program_return(crate::kernel::program_expression::int32_literal(1));
 
     assert_eq!(
-        prove_symbolic_c_execution_paths_with_budget(
+        prove_symbolic_program_execution_paths_with_budget(
             state.clone(),
             statement.clone(),
             PureFactContext::new(),
@@ -1993,7 +2110,7 @@ fn executor_budgets_cap_steps_calls_and_paths() {
         Some(ExecutionLimit::StatementSteps)
     );
     assert_eq!(
-        prove_symbolic_c_execution_paths_with_budget(
+        prove_symbolic_program_execution_paths_with_budget(
             state.clone(),
             statement,
             PureFactContext::new(),
@@ -2003,17 +2120,17 @@ fn executor_budgets_cap_steps_calls_and_paths() {
         Some(ExecutionLimit::ExpressionSteps)
     );
 
-    let function = c_function(
+    let function = program_function(
         ProgramType::Int32,
         "id",
-        vec![c_parameter("x", ProgramType::Int32)],
-        c_return(c_variable("x")),
+        vec![program_parameter("x", ProgramType::Int32)],
+        program_return(crate::kernel::program_expression::variable("x")),
     );
     assert_eq!(
-        prove_symbolic_c_function_execution_paths_with_budget(
+        prove_symbolic_program_function_execution_paths_with_budget(
             ExecutionState::new(),
             function,
-            vec![c_int32_literal(1)],
+            vec![crate::kernel::program_expression::int32_literal(1)],
             PureFactContext::new(),
             ExecutionBudget::new().with_function_calls(0),
         )
@@ -2021,11 +2138,12 @@ fn executor_budgets_cap_steps_calls_and_paths() {
         Some(ExecutionLimit::FunctionCalls)
     );
 
-    let straight_line = (0..128).fold(c_return(c_int32_literal(1)), |tail, _| {
-        c_seq(ProgramStatement::Skip, tail)
-    });
+    let straight_line = (0..128).fold(
+        program_return(crate::kernel::program_expression::int32_literal(1)),
+        |tail, _| program_seq(ProgramStatement::Skip, tail),
+    );
     assert_eq!(
-        prove_symbolic_c_execution_paths_with_budget(
+        prove_symbolic_program_execution_paths_with_budget(
             state.clone(),
             straight_line,
             PureFactContext::new(),
@@ -2038,13 +2156,13 @@ fn executor_budgets_cap_steps_calls_and_paths() {
         "a path budget is not a source-length budget; singleton continuations are free"
     );
 
-    let branchy_statement = c_if(
+    let branchy_statement = program_if(
         ProgramExpression::Value(int32(MachineTerm::Variable(Variable(75)))),
-        c_return(c_int32_literal(1)),
-        c_return(c_int32_literal(0)),
+        program_return(crate::kernel::program_expression::int32_literal(1)),
+        program_return(crate::kernel::program_expression::int32_literal(0)),
     );
     assert_eq!(
-        prove_symbolic_c_execution_paths_with_budget(
+        prove_symbolic_program_execution_paths_with_budget(
             state,
             branchy_statement,
             PureFactContext::new(),
@@ -2060,30 +2178,32 @@ fn whole_function_default_budget_scales_with_selected_source() {
     const ASSIGNMENTS: usize = 3_334;
 
     let mut statements = (0..ASSIGNMENTS)
-        .map(|_| c_assign("x", c_variable("x")))
-        .chain(std::iter::once(c_return(c_variable("x"))))
+        .map(|_| program_assign("x", crate::kernel::program_expression::variable("x")))
+        .chain(std::iter::once(program_return(
+            crate::kernel::program_expression::variable("x"),
+        )))
         .collect::<Vec<_>>();
     while statements.len() > 1 {
         let mut next = Vec::with_capacity(statements.len().div_ceil(2));
         let mut pairs = statements.into_iter();
         while let Some(first) = pairs.next() {
             next.push(match pairs.next() {
-                Some(second) => c_seq(first, second),
+                Some(second) => program_seq(first, second),
                 None => first,
             });
         }
         statements = next;
     }
-    let function = c_function(
+    let function = program_function(
         ProgramType::Int32,
         "large_identity",
-        vec![c_parameter("x", ProgramType::Int32)],
+        vec![program_parameter("x", ProgramType::Int32)],
         statements.pop().expect("nonempty function body"),
     );
-    let arguments = vec![c_int32_literal(1)];
+    let arguments = vec![crate::kernel::program_expression::int32_literal(1)];
 
     let fixed_budget_execution =
-        prove_symbolic_c_function_verification_paths_with_environment_and_budget(
+        prove_symbolic_program_function_verification_paths_with_environment_and_budget(
             ExecutionState::new(),
             function.clone(),
             arguments.clone(),
@@ -2098,14 +2218,15 @@ fn whole_function_default_budget_scales_with_selected_source() {
         "explicit budgets remain exact and still bound evaluator work"
     );
 
-    let source_sized_execution = prove_symbolic_c_function_verification_paths_with_environment(
-        ExecutionState::new(),
-        function,
-        arguments,
-        PureFactContext::new(),
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
-    );
+    let source_sized_execution =
+        prove_symbolic_program_function_verification_paths_with_environment(
+            ExecutionState::new(),
+            function,
+            arguments,
+            PureFactContext::new(),
+            ExecutionEnvironment::new(),
+            ExecutionSemantics::EXECUTE_BODIES,
+        );
     assert_eq!(
         source_sized_execution.limit(),
         None,
@@ -2120,27 +2241,36 @@ fn while_invariant_is_proof_obligation() {
         block: "block".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let invariant = Proposition::CMemoryLoadable {
+    let invariant = Proposition::MemoryLoadable {
         memory: Memory::new(),
         base: pointer,
         bytes: MachineTerm::constant(4),
         wide: false,
     };
     let state = ExecutionState::new().with_local("x", int32(0));
-    let statement = c_while(
-        c_greater_than(c_variable("x"), c_int32_literal(0)),
+    let statement = program_while(
+        crate::kernel::program_expression::greater_than(
+            crate::kernel::program_expression::variable("x"),
+            crate::kernel::program_expression::int32_literal(0),
+        ),
         vec![invariant.clone()],
-        c_assign("x", c_subtract(c_variable("x"), c_int32_literal(1))),
+        program_assign(
+            "x",
+            crate::kernel::program_expression::subtract(
+                crate::kernel::program_expression::variable("x"),
+                crate::kernel::program_expression::int32_literal(1),
+            ),
+        ),
     );
     let theorem =
-        prove_symbolic_c_execution(state.clone(), statement.clone(), PureFactContext::new())
+        prove_symbolic_program_execution(state.clone(), statement.clone(), PureFactContext::new())
             .expect("false loop should execute under invariant obligation");
 
     assert_eq!(
         theorem.proposition(),
         &Proposition::Implies(
             Box::new(invariant),
-            Box::new(Proposition::CStatementExecutes {
+            Box::new(Proposition::ProgramStatementExecutes {
                 state: Box::new(state.clone()),
                 statement: Box::new(statement),
                 outcome: StatementOutcome::Normal(Box::new(state)),
@@ -2175,7 +2305,7 @@ fn verified_loop_rules_are_selected_by_their_exact_prerequisites() {
     let environment =
         ExecutionEnvironment::new().with_verified_loop_rules([first.clone(), second.clone()]);
 
-    let applied_first = prove_symbolic_c_statement_verification_paths_with_environment(
+    let applied_first = prove_symbolic_execution_statement_verification_paths_with_environment(
         state.clone(),
         statement.clone(),
         PureFactContext::new().assume_condition(first_guard.clone(), true),
@@ -2186,7 +2316,7 @@ fn verified_loop_rules_are_selected_by_their_exact_prerequisites() {
 
     // The first rule is rejected here because its prerequisite is not
     // available, so the second rule is the one that applies.
-    let applied_second = prove_symbolic_c_statement_verification_paths_with_environment(
+    let applied_second = prove_symbolic_execution_statement_verification_paths_with_environment(
         state.clone(),
         statement.clone(),
         PureFactContext::new().assume_condition(second_guard.clone(), true),
@@ -2197,7 +2327,7 @@ fn verified_loop_rules_are_selected_by_their_exact_prerequisites() {
     assert_ne!(first.paths.len(), second.paths.len());
 
     // Neither prerequisite is available, so no rule applies at all.
-    let applied_none = prove_symbolic_c_statement_verification_paths_with_environment(
+    let applied_none = prove_symbolic_execution_statement_verification_paths_with_environment(
         state.clone(),
         statement.clone(),
         PureFactContext::new().assume_condition(loop_rule_guard(3), true),
@@ -2208,7 +2338,7 @@ fn verified_loop_rules_are_selected_by_their_exact_prerequisites() {
 
     // A prerequisite that the ambient facts refute, rather than merely omit,
     // is also rejected: the check is exact availability, not consistency.
-    let applied_refuted = prove_symbolic_c_statement_verification_paths_with_environment(
+    let applied_refuted = prove_symbolic_execution_statement_verification_paths_with_environment(
         state,
         statement,
         PureFactContext::new()
@@ -2240,7 +2370,7 @@ fn verified_loop_rule_prerequisites_are_not_reproved_from_ambient_facts() {
     // is rejected anyway, because deciding a prerequisite is not the same as
     // the rule's prerequisite being available.
     assert_eq!(stronger_facts.decide(&required), Some(true));
-    let applied = prove_symbolic_c_statement_verification_paths_with_environment(
+    let applied = prove_symbolic_execution_statement_verification_paths_with_environment(
         state.clone(),
         statement.clone(),
         stronger_facts,
@@ -2249,7 +2379,7 @@ fn verified_loop_rule_prerequisites_are_not_reproved_from_ambient_facts() {
     );
     assert!(applied.paths().is_empty());
 
-    let exact = prove_symbolic_c_statement_verification_paths_with_environment(
+    let exact = prove_symbolic_execution_statement_verification_paths_with_environment(
         state,
         statement,
         PureFactContext::new().assume_condition(required, true),
@@ -2271,27 +2401,39 @@ fn loop_rule_guard(value: u32) -> ConditionTerm {
 /// assumptions.
 fn prerequisite_loop_rule_fixture() -> (ProgramStatement, VerifiedLoopRule) {
     let state = ExecutionState::new().with_local("i", int32(0));
-    let statement = c_while_with_invariant_checks(
-        c_less_than(c_variable("i"), c_int32_literal(1)),
+    let statement = program_while_with_invariant_checks(
+        crate::kernel::program_expression::less_than(
+            crate::kernel::program_expression::variable("i"),
+            crate::kernel::program_expression::int32_literal(1),
+        ),
         Vec::new(),
         vec![LoopInvariantCheck::new(
             SpecProposition::Comparison {
                 left: SpecExpression::Value(int32(0)),
                 operator: ComparisonOperator::LessEqual,
-                right: SpecExpression::ProgramExpression(c_variable("i")),
+                right: SpecExpression::ProgramExpression(
+                    crate::kernel::program_expression::variable("i"),
+                ),
             },
             Some("loop entry".to_string()),
             Some("loop preservation".to_string()),
         )],
-        c_assign("i", c_add(c_variable("i"), c_int32_literal(1))),
+        program_assign(
+            "i",
+            crate::kernel::program_expression::add(
+                crate::kernel::program_expression::variable("i"),
+                crate::kernel::program_expression::int32_literal(1),
+            ),
+        ),
     );
-    let (_, rule) = prove_symbolic_c_statement_verification_paths_with_environment_and_loop_rule(
-        state,
-        statement.clone(),
-        PureFactContext::new(),
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
-    );
+    let (_, rule) =
+        prove_symbolic_execution_statement_verification_paths_with_environment_and_loop_rule(
+            state,
+            statement.clone(),
+            PureFactContext::new(),
+            ExecutionEnvironment::new(),
+            ExecutionSemantics::EXECUTE_BODIES,
+        );
     let rule = rule.expect("loop verification should produce a rule");
     assert!(!rule.paths.is_empty());
     (statement, rule)
@@ -2349,7 +2491,7 @@ fn loop_back_edge_refuses_a_dropped_share_or_a_regenerated_root() {
 
     // The head state closes its own back edge.
     assert_eq!(
-        crate::kernel::c_loop_state_components_match_at_back_edge(
+        crate::kernel::loop_state_components_match_at_back_edge(
             &head,
             &head,
             &assumptions,
@@ -2381,7 +2523,7 @@ fn loop_back_edge_refuses_a_dropped_share_or_a_regenerated_root() {
             .expect("the regenerated root applies"),
         participant,
     );
-    let refusal = crate::kernel::c_loop_state_components_match_at_back_edge(
+    let refusal = crate::kernel::loop_state_components_match_at_back_edge(
         &head,
         &regenerated_state,
         &assumptions,
@@ -2401,7 +2543,7 @@ fn loop_back_edge_refuses_a_dropped_share_or_a_regenerated_root() {
         head_ledger.apply(&transfer).expect("the transfer applies"),
         participant,
     );
-    let refusal = crate::kernel::c_loop_state_components_match_at_back_edge(
+    let refusal = crate::kernel::loop_state_components_match_at_back_edge(
         &head,
         &dropped,
         &assumptions,
@@ -2417,7 +2559,7 @@ fn loop_entry_goals_retain_satisfied_duplicate_declarations() {
     let proposition = SpecProposition::Comparison {
         left: SpecExpression::Value(int32(0)),
         operator: ComparisonOperator::LessEqual,
-        right: SpecExpression::ProgramExpression(c_variable("i")),
+        right: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable("i")),
     };
     let checks = (0..2)
         .map(|index| {
@@ -2429,7 +2571,7 @@ fn loop_entry_goals_retain_satisfied_duplicate_declarations() {
         })
         .collect::<Vec<_>>();
     let assumptions = PureFactContext::new();
-    let goals = c_loop_entry_goals(&state, &checks, &assumptions).unwrap();
+    let goals = loop_entry_goals(&state, &checks, &assumptions).unwrap();
     assert_eq!(goals.declarations().len(), 2);
     for (index, declaration) in goals.declarations().iter().enumerate() {
         assert_eq!(declaration.len(), 1);
@@ -2444,7 +2586,7 @@ fn loop_entry_goals_retain_satisfied_duplicate_declarations() {
         goals.declarations()[1][0].proposition()
     );
     assert!(
-        c_loop_invariant_obligations_at_entry(&state, &checks, &assumptions)
+        loop_invariant_obligations_at_entry(&state, &checks, &assumptions)
             .unwrap()
             .is_empty()
     );
@@ -2456,7 +2598,7 @@ fn loop_entry_goals_preserve_guarded_judgments() {
     let proposition = SpecProposition::Comparison {
         left: SpecExpression::Value(int32(0)),
         operator: ComparisonOperator::LessEqual,
-        right: SpecExpression::ProgramExpression(c_variable("i")),
+        right: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable("i")),
     };
     let checks = (0..2)
         .map(|index| {
@@ -2468,7 +2610,7 @@ fn loop_entry_goals_preserve_guarded_judgments() {
         })
         .collect::<Vec<_>>();
     let assumptions = PureFactContext::new();
-    let goals = c_loop_entry_goals(&state, &checks, &assumptions).unwrap();
+    let goals = loop_entry_goals(&state, &checks, &assumptions).unwrap();
     assert_eq!(goals.declarations().len(), 2);
     assert!(goals.declarations().iter().all(|goals| goals.len() == 1));
     let first = &goals.declarations()[0][0];
@@ -2477,7 +2619,7 @@ fn loop_entry_goals_preserve_guarded_judgments() {
         matches!(second.proposition(), Proposition::Implies(guard, body)
         if guard.as_ref() == first.proposition() && body.as_ref() == first.proposition())
     );
-    let outstanding = c_loop_invariant_obligations_at_entry(&state, &checks, &assumptions).unwrap();
+    let outstanding = loop_invariant_obligations_at_entry(&state, &checks, &assumptions).unwrap();
     assert_eq!(
         goals
             .declarations()
@@ -2569,7 +2711,7 @@ fn a_post_join_allocation_never_reuses_a_join_abstracted_variable() {
     // The arms have issued nothing of their own, which is the case the old
     // code shared a starting point with.
     let arms_next_kernel_variable = 0;
-    let abstraction = abstract_c_state_for_interface_join_across(
+    let abstraction = abstract_execution_state_for_interface_join_across(
         &then_state,
         &siblings,
         arms_next_kernel_variable,
@@ -2626,7 +2768,7 @@ fn a_join_successor_cannot_continue_from_a_rewound_counter() {
     let siblings = [&then_state, &else_state];
 
     let arms_next_kernel_variable = 0;
-    let abstraction = abstract_c_state_for_interface_join_across(
+    let abstraction = abstract_execution_state_for_interface_join_across(
         &then_state,
         &siblings,
         arms_next_kernel_variable,
@@ -2712,7 +2854,7 @@ fn a_rebound_binder_field_never_reuses_a_havocked_local_variable() {
     let mut variables = KernelVariableGenerator::fresh_for_execution(BTreeSet::new());
     let schema = ResourceFieldSchema::new(vec![(
         "rank".to_string(),
-        ResourceFieldType::C(ProgramType::Int32),
+        ResourceFieldType::Program(ProgramType::Int32),
     )])
     .expect("one int32 model field");
 
@@ -2734,7 +2876,7 @@ fn a_rebound_binder_field_never_reuses_a_havocked_local_variable() {
             &mut budget,
         )
         .expect("the execution's counter is nowhere near its ceiling");
-        let [AlgebraicValue::C(ProgramValue::Int32(MachineTerm::Variable(field)))] =
+        let [AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(field)))] =
             fields.as_ref()
         else {
             panic!("an int32 model field is one symbolic int32: {fields:?}");
@@ -2766,11 +2908,20 @@ fn loop_preservation_contexts_allocate_above_the_executions_counter() {
     let loop_entry_state = ExecutionState::new()
         .with_local("i", int32(0))
         .with_local("n", int32(MachineTerm::Variable(Variable(7))));
-    let condition = c_less_than(c_variable("i"), c_variable("n"));
-    let body = c_assign("i", c_add(c_variable("i"), c_int32_literal(1)));
+    let condition = crate::kernel::program_expression::less_than(
+        crate::kernel::program_expression::variable("i"),
+        crate::kernel::program_expression::variable("n"),
+    );
+    let body = program_assign(
+        "i",
+        crate::kernel::program_expression::add(
+            crate::kernel::program_expression::variable("i"),
+            crate::kernel::program_expression::int32_literal(1),
+        ),
+    );
 
     let head_identities = |spent: u64| -> (BTreeSet<Variable>, u64) {
-        let contexts = c_loop_preservation_contexts(
+        let contexts = loop_preservation_contexts(
             &loop_entry_state,
             &condition,
             &[],
@@ -2786,7 +2937,7 @@ fn loop_preservation_contexts_allocate_above_the_executions_counter() {
             panic!("a single-guard loop has one preservation context");
         };
         let mut identities = BTreeSet::new();
-        crate::kernel::reasoning::collect_c_state_bitvector_variables(
+        crate::kernel::reasoning::collect_execution_state_bitvector_variables(
             context.state(),
             &mut identities,
         );
@@ -3110,7 +3261,7 @@ fn loop_entry_lowering_limit_is_spelled_in_words() {
         None,
     )];
     let assumptions = PureFactContext::new();
-    let refusal = c_loop_entry_goals(&state, &checks, &assumptions).unwrap_err();
+    let refusal = loop_entry_goals(&state, &checks, &assumptions).unwrap_err();
     assert_eq!(
         refusal,
         "could not lower entry invariants: they stopped at a model field of a resource instance this state does not hold"
@@ -3135,7 +3286,7 @@ fn zero_filled_node_array(
         ],
     );
     written.iter().fold(
-        c_declare_with_zero_fill(
+        program_declare_with_zero_fill(
             "items",
             ProgramType::UInt8Array(length * 16),
             false,
@@ -3145,10 +3296,13 @@ fn zero_filled_node_array(
             Some(fill),
         ),
         |statement, (offset, value, value_type)| {
-            c_seq(
+            program_seq(
                 statement,
-                c_typed_store(
-                    c_pointer_offset_bytes(c_variable("items"), *offset),
+                program_typed_store(
+                    crate::kernel::program_expression::pointer_offset_bytes(
+                        crate::kernel::program_expression::variable("items"),
+                        *offset,
+                    ),
                     ProgramExpression::Value(value.clone()),
                     *value_type,
                 ),
@@ -3165,7 +3319,7 @@ fn balanced_c_seq(statements: &[ProgramStatement]) -> ProgramStatement {
         [statement] => statement.clone(),
         _ => {
             let (first, second) = statements.split_at(statements.len() / 2);
-            c_seq(balanced_c_seq(first), balanced_c_seq(second))
+            program_seq(balanced_c_seq(first), balanced_c_seq(second))
         }
     }
 }
@@ -3175,10 +3329,13 @@ fn load_items_field(
     offset: u32,
     value_type: ProgramType,
 ) -> ExpressionOutcome {
-    let paths = evaluate_c_expression_paths(
+    let paths = evaluate_program_expression_paths(
         state,
-        &c_typed_load(
-            c_pointer_offset_bytes(c_variable("items"), offset),
+        &crate::kernel::program_expression::typed_load(
+            crate::kernel::program_expression::pointer_offset_bytes(
+                crate::kernel::program_expression::variable("items"),
+                offset,
+            ),
             value_type,
         ),
         &PureFactContext::new(),
@@ -3193,7 +3350,7 @@ fn load_items_field(
 
 fn execute_declaration(state: &ExecutionState, statement: &ProgramStatement) -> ExecutionState {
     normal_state(
-        &execute_c_statement_paths(
+        &execute_execution_statement_paths(
             state,
             statement,
             &PureFactContext::new(),
@@ -3230,15 +3387,18 @@ fn a_zero_filled_automatic_array_holds_exactly_the_per_element_stores() {
             })
             .chain(written.iter().cloned())
             .map(|(offset, value, value_type)| {
-                c_typed_store(
-                    c_pointer_offset_bytes(c_variable("items"), offset),
+                program_typed_store(
+                    crate::kernel::program_expression::pointer_offset_bytes(
+                        crate::kernel::program_expression::variable("items"),
+                        offset,
+                    ),
                     ProgramExpression::Value(value),
                     value_type,
                 )
             })
             .collect::<Vec<_>>();
-        let per_element = c_seq(
-            c_declare("items", ProgramType::UInt8Array(length * 16)),
+        let per_element = program_seq(
+            program_declare("items", ProgramType::UInt8Array(length * 16)),
             balanced_c_seq(&stores),
         );
         let stored = execute_declaration(&ExecutionState::new(), &per_element);
@@ -3253,7 +3413,7 @@ fn a_zero_filled_automatic_array_holds_exactly_the_per_element_stores() {
         );
         let declared = execute_declaration(
             &ExecutionState::new(),
-            &c_declare("items", ProgramType::UInt8Array(length * 16)),
+            &program_declare("items", ProgramType::UInt8Array(length * 16)),
         );
         assert_eq!(
             load_items_field(&declared, 16 * (length - 1), ProgramType::Int32),
@@ -3267,14 +3427,26 @@ fn assert_statement_reserves_application_integer_argument(
     invariant: SpecProposition,
     held: Variable,
 ) {
-    let statement = c_while_with_invariant_checks(
-        c_less_than(c_variable("i"), c_int32_literal(1)),
+    let statement = program_while_with_invariant_checks(
+        crate::kernel::program_expression::less_than(
+            crate::kernel::program_expression::variable("i"),
+            crate::kernel::program_expression::int32_literal(1),
+        ),
         Vec::new(),
         vec![LoopInvariantCheck::new(invariant, None, None)],
-        c_assign("i", c_add(c_variable("i"), c_int32_literal(1))),
+        program_assign(
+            "i",
+            crate::kernel::program_expression::add(
+                crate::kernel::program_expression::variable("i"),
+                crate::kernel::program_expression::int32_literal(1),
+            ),
+        ),
     );
     let mut reserved = BTreeSet::new();
-    crate::kernel::reasoning::collect_c_statement_bitvector_variables(&statement, &mut reserved);
+    crate::kernel::reasoning::collect_execution_statement_bitvector_variables(
+        &statement,
+        &mut reserved,
+    );
     let mut budget = ExecutionBudget::for_new_execution();
     let mut variables = KernelVariableGenerator::fresh_for_execution(reserved);
     assert_ne!(variables.next_in(&mut budget).unwrap(), held);
@@ -3297,7 +3469,9 @@ fn statement_reservations_cover_integer_arguments_of_machine_applications() {
         SpecProposition::Comparison {
             left: call,
             operator: ComparisonOperator::LessEqual,
-            right: SpecExpression::ProgramExpression(c_variable("i")),
+            right: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
+                "i",
+            )),
         },
         held,
     );
@@ -3381,13 +3555,13 @@ fn loop_join_reports_the_local_and_both_object_classes() {
         (None, "unknown (no retained object class)"),
     ] {
         let back = ExecutionState::new().with_local("parent", pointer(class));
-        let error = c_loop_state_components_match_at_back_edge(&head, &back, &assumptions, &[])
-            .unwrap_err();
+        let error =
+            loop_state_components_match_at_back_edge(&head, &back, &assumptions, &[]).unwrap_err();
         assert!(error.contains("pointer local `parent`: loop-head object class: struct node; back-edge object class: "), "{error}");
         assert!(error.ends_with(expected), "{error}");
     }
     let back = ExecutionState::new().with_local("parent", pointer(Some(node)));
-    assert!(c_loop_state_components_match_at_back_edge(&head, &back, &assumptions, &[]).is_ok());
+    assert!(loop_state_components_match_at_back_edge(&head, &back, &assumptions, &[]).is_ok());
 }
 
 #[test]
@@ -3412,16 +3586,16 @@ fn loop_join_accepts_null_without_restoring_an_object_class() {
     );
     for (pointer, facts) in [(null, &empty), (unknown.clone(), &known_null)] {
         let back = ExecutionState::new().with_local("parent", ProgramValue::Pointer(pointer));
-        assert!(c_loop_state_components_match_at_back_edge(&head, &back, facts, &[]).is_ok());
+        assert!(loop_state_components_match_at_back_edge(&head, &back, facts, &[]).is_ok());
         assert!(
             matches!(back.locals().get_native("parent").as_deref(), Some(ProgramValue::Pointer(p)) if p.object_class().is_none())
         );
     }
     let back = ExecutionState::new().with_local("parent", ProgramValue::Pointer(unknown.clone()));
-    assert!(c_loop_state_components_match_at_back_edge(&head, &back, &empty, &[]).is_err());
+    assert!(loop_state_components_match_at_back_edge(&head, &back, &empty, &[]).is_err());
     let nonnull = empty.assume_condition(
         ConditionTerm::pointer_equal(unknown.pointer().clone(), Pointer::null()),
         false,
     );
-    assert!(c_loop_state_components_match_at_back_edge(&head, &back, &nonnull, &[]).is_err());
+    assert!(loop_state_components_match_at_back_edge(&head, &back, &nonnull, &[]).is_err());
 }

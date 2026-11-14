@@ -27,13 +27,13 @@ use std::sync::Arc;
 /// ancestry that ownership and typed access must continue to distinguish.
 /// This key is only for memory/memory separation, never containment or views.
 fn spatial_separation_key(fact: &Proposition) -> Option<Proposition> {
-    let Proposition::CResourceSeparate { left, right } = fact else {
+    let Proposition::ResourceSeparate { left, right } = fact else {
         return None;
     };
     let (Resource::Memory(left), Resource::Memory(right)) = (&**left, &**right) else {
         return None;
     };
-    Some(Proposition::CResourceSeparate {
+    Some(Proposition::ResourceSeparate {
         left: Box::new(Resource::Memory(left.spatial_key())),
         right: Box::new(Resource::Memory(right.spatial_key())),
     })
@@ -165,7 +165,7 @@ mod disjunction_projection_tests {
             Proposition::ConditionIs(
                 ConditionTerm::equal(
                     MachineTerm::MemoryLoad(
-                        crate::kernel::intern_c_memory(memory),
+                        crate::kernel::intern_memory(memory),
                         Box::new(pointer.clone()),
                         LoadKind::Int32,
                     ),
@@ -1653,7 +1653,7 @@ impl ProofFacts {
         while let Some(part) = pending.pop() {
             match part {
                 Proposition::And(left, right) => pending.extend([right.as_ref(), left.as_ref()]),
-                Proposition::CResourceSeparate { left, right }
+                Proposition::ResourceSeparate { left, right }
                     if !facts.contains(part)
                         && resources.proves_exact_partition_separation(left, right) =>
                 {
@@ -1674,7 +1674,7 @@ impl ProofFacts {
         goal: &Proposition,
         state: &crate::kernel::ExecutionState,
     ) -> Self {
-        let Proposition::CResourceSeparate { left, right } = goal else {
+        let Proposition::ResourceSeparate { left, right } = goal else {
             return self.clone();
         };
         if !self.contains(goal)
@@ -1698,7 +1698,7 @@ impl ProofFacts {
                 pending.push(left);
                 continue;
             }
-            if matches!(part, Proposition::CResourceSeparate { .. }) && !facts.contains(part) {
+            if matches!(part, Proposition::ResourceSeparate { .. }) && !facts.contains(part) {
                 let assumptions = &facts.assumptions;
                 if assumptions.proves_exact(part)
                     || assumptions.proves_atomic_memory_or_resource(part)
@@ -2758,14 +2758,14 @@ fn restore_range_extent_spelling(
     };
     match (original, renamed) {
         (
-            Proposition::CMemoryLoadable { bytes, .. },
-            Proposition::CMemoryLoadable {
+            Proposition::MemoryLoadable { bytes, .. },
+            Proposition::MemoryLoadable {
                 memory,
                 base,
                 bytes: folded,
                 wide: false,
             },
-        ) => Proposition::CMemoryLoadable {
+        ) => Proposition::MemoryLoadable {
             memory,
             base,
             bytes: substituted_range_extent(bytes, from, to).unwrap_or(folded),
@@ -3309,7 +3309,7 @@ fn bitvector_equality_atom_key(term: &MachineTerm) -> Option<BitvectorEqualityAt
                         element_type,
                     } => {
                         2u8.hash(&mut hasher);
-                        intern_c_memory_ref(memory).arena_id().hash(&mut hasher);
+                        intern_memory_ref(memory).arena_id().hash(&mut hasher);
                         pointer.hash(&mut hasher);
                         element_type.hash(&mut hasher);
                     }
@@ -3342,7 +3342,7 @@ fn collect_proposition_bitvector_atoms(
         Proposition::ConditionIs(condition, _) => {
             collect_condition_bitvector_atoms(condition, atoms)
         }
-        Proposition::CResourceSeparate { left, right } => {
+        Proposition::ResourceSeparate { left, right } => {
             for resource in [left, right] {
                 if let Resource::Memory(range) = &**resource {
                     collect_pointer_offset_bitvector_atoms(&range.base.offset, atoms);
@@ -3903,7 +3903,7 @@ mod integer_equality_fact_index_tests {
         let goal = Proposition::ConditionIs(
             ConditionTerm::equal(
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_c_memory(Memory::new()),
+                    crate::kernel::intern_memory(Memory::new()),
                     Box::new(read.offset_by_bytes(4)),
                     crate::kernel::LoadKind::Int32,
                 ),
@@ -4019,8 +4019,8 @@ mod integer_equality_fact_index_tests {
         Proposition::ForAll {
             name: Default::default(),
             var: binder,
-            sort: Sort::CInt32,
-            body: Box::new(Proposition::CMemoryLoadable {
+            sort: Sort::ProgramInt32,
+            body: Box::new(Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: Pointer {
                     block: block.into(),
@@ -4053,8 +4053,8 @@ mod integer_equality_fact_index_tests {
         Proposition::Exists {
             name: name.into(),
             var: binder,
-            sort: Sort::CInt32,
-            body: Box::new(Proposition::CMemoryLoadable {
+            sort: Sort::ProgramInt32,
+            body: Box::new(Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: Pointer {
                     block: block.into(),
@@ -4078,7 +4078,7 @@ mod integer_equality_fact_index_tests {
                 MachineTerm::Variable(Variable(210_000)),
             ))
         };
-        let separation = Proposition::CResourceSeparate {
+        let separation = Proposition::ResourceSeparate {
             left: Box::new(range("a")),
             right: Box::new(range("b")),
         };
@@ -4251,8 +4251,8 @@ mod integer_equality_fact_index_tests {
     #[test]
     fn integer_alpha_fact_lookup_keeps_inequality_snapshot_identity() {
         let before =
-            crate::kernel::intern_c_memory(Memory::new().with_block("snapshot-alpha-facts", 8));
-        let changed = crate::kernel::intern_c_memory(before.as_ref().clone().store(
+            crate::kernel::intern_memory(Memory::new().with_block("snapshot-alpha-facts", 8));
+        let changed = crate::kernel::intern_memory(before.as_ref().clone().store(
             Pointer {
                 block: "snapshot-alpha-facts".into(),
                 offset: PointerOffsetTerm::Constant(0),
@@ -4401,7 +4401,7 @@ mod integer_equality_fact_index_tests {
         let predicate = |name: &str, binder: Variable, state: ExecutionState| Proposition::Exists {
             name: name.to_string(),
             var: binder,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(Proposition::Predicate {
                 name: "sample".to_string(),
                 arguments: vec![
@@ -4742,8 +4742,8 @@ mod integer_equality_fact_index_tests {
     #[test]
     fn integer_alpha_fact_lookup_requires_the_same_load_snapshot() {
         let before =
-            crate::kernel::intern_c_memory(Memory::new().with_block("snapshot-alpha-facts", 8));
-        let changed = crate::kernel::intern_c_memory(before.as_ref().clone().store(
+            crate::kernel::intern_memory(Memory::new().with_block("snapshot-alpha-facts", 8));
+        let changed = crate::kernel::intern_memory(before.as_ref().clone().store(
             Pointer {
                 block: "snapshot-alpha-facts".into(),
                 offset: PointerOffsetTerm::Constant(0),
@@ -4949,7 +4949,7 @@ mod held_separation_tests {
             }
         }
         // The spatial equivalence does not generalize to containment authority.
-        let contains = |part| Proposition::CResourceContains {
+        let contains = |part| Proposition::ResourceContains {
             parent: Box::new(part),
             child: Box::new(right.clone()),
         };
@@ -4969,7 +4969,7 @@ mod held_separation_tests {
     }
 
     fn separation(left: Resource, right: Resource) -> Proposition {
-        Proposition::CResourceSeparate {
+        Proposition::ResourceSeparate {
             left: Box::new(left),
             right: Box::new(right),
         }
@@ -5314,7 +5314,7 @@ mod quantified_conjunct_projection_tests {
         Proposition::ForAll {
             name: Default::default(),
             var: Variable(var),
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(Proposition::Implies(
                 Box::new(at_most(var, bound)),
                 Box::new(conclusion(var)),

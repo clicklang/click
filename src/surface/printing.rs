@@ -1,6 +1,7 @@
 use super::diagnostics::{
-    aligned_sugar, describe_c_expression, describe_contract_expression, describe_contract_segment,
-    describe_resource_subject, describe_snapshot_selector, snapshot_aligned_sugar,
+    aligned_sugar, describe_contract_expression, describe_contract_segment,
+    describe_program_expression, describe_resource_subject, describe_snapshot_selector,
+    snapshot_aligned_sugar,
 };
 use super::*;
 
@@ -95,7 +96,7 @@ fn integer_comparison_type(other: &ContractExpression) -> Option<&'static str> {
         inner = next;
     }
     match inner {
-        ContractExpression::CFragment(ProgramExpression::Value(value)) => match value {
+        ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => match value {
             ProgramValue::UInt32(_) => Some("uint32"),
             ProgramValue::Int64(_) => Some("int64"),
             ProgramValue::UInt64(_) => Some("uint64"),
@@ -190,11 +191,11 @@ fn machine_arithmetic(
                 contract_pending.push(operand)
             }
             ContractExpression::IntegerLiteral(_) => return None,
-            ContractExpression::CFragment(ProgramExpression::Value(value)) if !top => {
+            ContractExpression::ProgramExpression(ProgramExpression::Value(value)) if !top => {
                 machine = true;
                 c_types.push(value.clone());
             }
-            ContractExpression::CFragment(fragment) => {
+            ContractExpression::ProgramExpression(fragment) => {
                 if top && !c_arithmetic(fragment) {
                     return None;
                 }
@@ -256,13 +257,16 @@ pub(super) fn print_proposition(
     mode: PropositionSpelling,
 ) -> String {
     if let Some((pointer, alignment)) = aligned_sugar(proposition) {
-        return format!("aligned({}, {alignment})", describe_c_expression(pointer));
+        return format!(
+            "aligned({}, {alignment})",
+            describe_program_expression(pointer)
+        );
     }
     if let Some((selector, pointer, alignment)) = snapshot_aligned_sugar(proposition) {
         return format!(
             "at({}, aligned({}, {alignment}))",
             describe_snapshot_selector(selector),
-            describe_c_expression(pointer)
+            describe_program_expression(pointer)
         );
     }
     match proposition {
@@ -2377,11 +2381,11 @@ mod tests {
             proposition.clone()
         }
         let word = |value: u64| {
-            ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::UInt64(
+            ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt64(
                 crate::kernel::MachineTerm::uint64_constant(value),
             )))
         };
-        let n = || ContractExpression::CFragment(ProgramExpression::Variable("n".into()));
+        let n = || ContractExpression::ProgramExpression(ProgramExpression::Variable("n".into()));
         for (arithmetic, spelled, bare) in [
             (
                 ContractExpression::Subtract(Box::new(n()), Box::new(word(1))),
@@ -2421,7 +2425,7 @@ mod tests {
     }
 
     fn certificate_variable(name: &str) -> ContractExpression {
-        ContractExpression::CFragment(ProgramExpression::Variable(name.into()))
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(name.into()))
     }
 
     fn certificate_literal(value: &str) -> ContractExpression {
@@ -2632,10 +2636,10 @@ mod tests {
         // can also carry the read. Both must print the original lvalue.
         for read in [
             ContractExpression::Index(
-                Box::new(ContractExpression::CFragment(address.clone())),
-                Box::new(ContractExpression::CFragment(zero.clone())),
+                Box::new(ContractExpression::ProgramExpression(address.clone())),
+                Box::new(ContractExpression::ProgramExpression(zero.clone())),
             ),
-            ContractExpression::CFragment(ProgramExpression::Index(
+            ContractExpression::ProgramExpression(ProgramExpression::Index(
                 Box::new(address),
                 Box::new(zero),
             )),
@@ -2643,7 +2647,7 @@ mod tests {
             let proposition = ClickProposition::Comparison {
                 left: read,
                 operator: ComparisonOperator::LessEqual,
-                right: ContractExpression::CFragment(ProgramExpression::Value(
+                right: ContractExpression::ProgramExpression(ProgramExpression::Value(
                     ProgramValue::Int32(MachineTerm::constant(10)),
                 )),
             };
@@ -2666,9 +2670,9 @@ mod tests {
         let read = ContractExpression::Index(
             Box::new(ContractExpression::Field {
                 pointee_struct: None,
-                base: Box::new(ContractExpression::CFragment(ProgramExpression::Variable(
-                    "p".into(),
-                ))),
+                base: Box::new(ContractExpression::ProgramExpression(
+                    ProgramExpression::Variable("p".into()),
+                )),
                 field: "items".into(),
                 lowered: ProgramExpression::TypedLoad {
                     pointer: Box::new(ProgramExpression::PointerOffsetBytes {
@@ -2683,12 +2687,14 @@ mod tests {
                 },
                 offset_bytes: 4,
             }),
-            Box::new(ContractExpression::CFragment(ProgramExpression::Variable(
-                "index".into(),
-            ))),
+            Box::new(ContractExpression::ProgramExpression(
+                ProgramExpression::Variable("index".into()),
+            )),
         );
         let goal = ClickProposition::Comparison {
-            left: ContractExpression::CFragment(ProgramExpression::Variable("result".into())),
+            left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                "result".into(),
+            )),
             operator: ComparisonOperator::Equal,
             right: read,
         };
@@ -2709,19 +2715,23 @@ mod tests {
             "read.c",
             "uint32 read(uint32* p, int32 index) { return p[index + 1]; }",
         )];
-        verify_c0_sources(&sidecar, &sources)
+        verify_c_sources(&sidecar, &sources)
             .expect("the printed read must preserve its offset, width and unsigned type");
         let false_claim = sidecar.replace("ensures result ==", "ensures result + 1u32 ==");
-        assert!(verify_c0_sources(&false_claim, &sources).is_err());
-        assert!(verify_c0_sources(&sidecar.replace("views p[0..4];", ""), &sources).is_err());
+        assert!(verify_c_sources(&false_claim, &sources).is_err());
+        assert!(verify_c_sources(&sidecar.replace("views p[0..4];", ""), &sources).is_err());
     }
 
     #[test]
     fn marked_conjunction_uses_parseable_click_connectives() {
         let equality = |name: &str| ClickProposition::Comparison {
-            left: ContractExpression::CFragment(ProgramExpression::Variable(name.to_string())),
+            left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                name.to_string(),
+            )),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::CFragment(ProgramExpression::Variable(name.to_string())),
+            right: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                name.to_string(),
+            )),
         };
         let proposition = ClickProposition::At {
             selector: SnapshotSelector::Mark("checkpoint".to_string()),

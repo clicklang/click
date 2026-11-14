@@ -142,8 +142,8 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
         Binary::Machine(Op::Add | Op::Subtract) | Binary::Comparison(_)
     ) {
         (
-            c_expression_pointer_step_width(state, left),
-            c_expression_pointer_step_width(state, right),
+            program_expression_pointer_step_width(state, left),
+            program_expression_pointer_step_width(state, right),
         )
     } else {
         (None, None)
@@ -236,9 +236,9 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
                 let native_paths = if let Some(condition) =
                     retained_comparison(operator, &left_value, &right_value)
                 {
-                    condition_as_c_int32_paths(condition, facts, obligations, assumptions)
+                    condition_as_program_int32_paths(condition, facts, obligations, assumptions)
                 } else {
-                    super::operators::apply_c_comparison(
+                    super::operators::apply_program_comparison(
                         state,
                         operator,
                         left_value.clone().into_native(),
@@ -278,7 +278,7 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
             let left_value = left_value.clone().into_native();
             let right_value = right_value.into_native();
             let native = match op {
-                Op::Add => apply_c_add(
+                Op::Add => apply_program_add(
                     state,
                     left_value,
                     right_value,
@@ -289,9 +289,9 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
                     assumptions,
                 )
                 .into_iter()
-                .map(super::operators::fold_c_int32_constant_increment)
+                .map(super::operators::fold_program_int32_constant_increment)
                 .collect(),
-                Op::Subtract => apply_c_subtract(
+                Op::Subtract => apply_program_subtract(
                     state,
                     left_value,
                     right_value,
@@ -302,12 +302,12 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
                     assumptions,
                 ),
                 Op::Multiply => {
-                    apply_c_multiply(left_value, right_value, facts, obligations, assumptions)
+                    apply_program_multiply(left_value, right_value, facts, obligations, assumptions)
                 }
                 Op::Divide => {
-                    apply_c_divide(left_value, right_value, facts, obligations, assumptions)
+                    apply_program_divide(left_value, right_value, facts, obligations, assumptions)
                 }
-                Op::BitwiseAnd | Op::BitwiseOr | Op::BitwiseXor => apply_c_bitwise_binary(
+                Op::BitwiseAnd | Op::BitwiseOr | Op::BitwiseXor => apply_program_bitwise_binary(
                     left_value,
                     right_value,
                     facts,
@@ -372,12 +372,13 @@ fn conditional_paths(
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<ExecutionValuePath>> {
     let mut paths = Vec::new();
-    for path in evaluate_c_condition_paths(state, condition, assumptions, budget)? {
+    for path in evaluate_program_condition_paths(state, condition, assumptions, budget)? {
         let ExpressionOutcome::Value(value) = path.outcome else {
             paths.push(path.into());
             continue;
         };
-        for truthiness in c_truthiness_paths(value, path.facts, path.obligations, assumptions) {
+        for truthiness in program_truthiness_paths(value, path.facts, path.obligations, assumptions)
+        {
             let branch = if truthiness.is_true {
                 then_branch
             } else {
@@ -571,7 +572,7 @@ mod tests {
             ] {
                 let retained =
                     retained_binary(op, &left.clone().into(), &right.clone().into()).unwrap();
-                let expected = apply_c_bitwise_binary(
+                let expected = apply_program_bitwise_binary(
                     left.clone(),
                     right.clone(),
                     ExecutionFacts::new(),
@@ -611,7 +612,7 @@ mod tests {
                     Box::new(ProgramExpression::Value(left.clone())),
                     Box::new(ProgramExpression::Value(right.clone())),
                 ));
-                let expected = super::super::operators::apply_c_comparison(
+                let expected = super::super::operators::apply_program_comparison(
                     &ExecutionState::new(),
                     operator,
                     left,
@@ -729,7 +730,7 @@ mod tests {
                 Box::new(ProgramExpression::Value(left.clone())),
                 Box::new(ProgramExpression::Value(right.clone())),
             );
-            let expected = apply_c_bitwise_binary(
+            let expected = apply_program_bitwise_binary(
                 left.clone(),
                 right.clone(),
                 ExecutionFacts::new(),
@@ -920,7 +921,7 @@ mod tests {
             MachineTerm::uint32_constant(3)
         };
         let multiply = ProgramExpression::Multiply(
-            Box::new(c_variable("held")),
+            Box::new(crate::kernel::program_expression::variable("held")),
             Box::new(ProgramExpression::Value(format.value_from_term(three))),
         );
         let expression = if rust {
@@ -928,32 +929,38 @@ mod tests {
         } else {
             multiply
         };
-        let mut body = c_return(c_variable("held"));
+        let mut body = program_return(crate::kernel::program_expression::variable("held"));
         for _ in 0..size {
-            body = c_seq(c_assign("held", expression.clone()), body);
+            body = program_seq(program_assign("held", expression.clone()), body);
         }
         if declared {
-            body = c_seq(
-                c_declare("held", c_type),
-                c_seq(c_assign("held", c_variable("x")), body),
+            body = program_seq(
+                program_declare("held", c_type),
+                program_seq(
+                    program_assign("held", crate::kernel::program_expression::variable("x")),
+                    body,
+                ),
             );
         }
-        let helper = c_function(
+        let helper = program_function(
             c_type,
             "machine_handoff",
-            vec![c_parameter(if declared { "x" } else { "held" }, c_type)],
+            vec![program_parameter(
+                if declared { "x" } else { "held" },
+                c_type,
+            )],
             body,
         );
         let environment = ExecutionEnvironment::new().with_function(helper);
-        let statement = c_seq(
-            c_call_assign(
+        let statement = program_seq(
+            program_call_assign(
                 "received",
                 "machine_handoff",
                 vec![ProgramExpression::Value(
                     format.value_from_term(MachineTerm::Variable(Variable(998341))),
                 )],
             ),
-            c_return(c_variable("received")),
+            program_return(crate::kernel::program_expression::variable("received")),
         );
         (environment, statement)
     }
@@ -965,7 +972,7 @@ mod tests {
                 let _session = crate::kernel::VerificationSession::enter();
                 let (environment, statement) = complete_machine_handoff_program(rust, size, true);
                 let exports = KernelTermExport::machine_export_count();
-                let paths = super::super::statements::execute_c_statement_paths(
+                let paths = super::super::statements::execute_execution_statement_paths(
                     &ExecutionState::new(),
                     &statement,
                     &PureFactContext::new(),
@@ -1003,7 +1010,7 @@ mod tests {
             ))),
         ));
         let exports = KernelTermExport::machine_export_count();
-        let outcome = super::super::statements::execute_c_statement(
+        let outcome = super::super::statements::execute_execution_statement(
             &ExecutionState::new(),
             &statement,
             &PureFactContext::new(),
@@ -1014,14 +1021,14 @@ mod tests {
         };
         let root = value.shared().expect("retained return root").clone();
         assert_eq!(KernelTermExport::machine_export_count(), exports);
-        let function = c_function(
+        let function = program_function(
             ProgramType::UInt32,
             "retained_return",
             Vec::new(),
             statement,
         );
         let environment = ExecutionEnvironment::new();
-        let paths = execute_c_function_paths(
+        let paths = execute_program_function_paths(
             &ExecutionState::new(),
             &function,
             &[],
@@ -1056,7 +1063,7 @@ mod tests {
             format,
             Op::Multiply,
             [
-                KernelTerm::variable(KernelType::C(ProgramType::UInt32), Variable(998322)),
+                KernelTerm::variable(KernelType::Program(ProgramType::UInt32), Variable(998322)),
                 KernelTerm::retained_native_machine_operand(
                     format,
                     &MachineTerm::uint32_constant(3),
@@ -1112,7 +1119,7 @@ mod tests {
             expression: ProgramExpression::Variable("source".into()),
             source: Default::default(),
         };
-        let outcome = super::super::statements::execute_c_statement(
+        let outcome = super::super::statements::execute_execution_statement(
             &state,
             &assignment,
             &PureFactContext::new(),
@@ -1129,9 +1136,10 @@ mod tests {
     fn retained_local_call_and_conditional_names_use_the_existing_index() {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::UInt32;
-        let value = KernelTerm::variable(KernelType::C(ProgramType::UInt32), Variable(998323));
+        let value =
+            KernelTerm::variable(KernelType::Program(ProgramType::UInt32), Variable(998323));
         let call = KernelTerm::checked_call(
-            KernelType::C(ProgramType::UInt32),
+            KernelType::Program(ProgramType::UInt32),
             "held_call".into(),
             vec![value.clone()],
         );
@@ -1177,7 +1185,7 @@ mod tests {
         ] {
             let term = MachineTerm::bool_cast(format, ConditionTerm::Variable(Variable(998325)));
             let expected =
-                crate::kernel::c_bool_cast_range_facts(&format.value_from_term(term.clone()))
+                crate::kernel::program_bool_cast_range_facts(&format.value_from_term(term.clone()))
                     .unwrap();
             let root = KernelTermImport::default().machine(format, &term);
             let mut state = ExecutionState::new();

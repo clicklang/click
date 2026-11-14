@@ -17,22 +17,22 @@ fn one_position_does_not_convert_unrequested_tactic_positions() {
             proof_source_tokens(&source, &file.source_spans().implicit_proofs).unwrap()
         });
         let (first, first_work) = crate::instrumentation::measure_deterministic_work(|| {
-            c0_tactic_source_position_file(&file, &source, "locations.ensures_0", 0).unwrap()
+            tactic_source_position_file(&file, &source, "locations.ensures_0", 0).unwrap()
         });
         assert_eq!(first, SourcePosition::new(3, 2));
         overhead.push(first_work - scan_work);
         let positions =
-            c0_tactic_source_positions_file(&file, &source, "locations.ensures_0").unwrap();
+            tactic_source_positions_file(&file, &source, "locations.ensures_0").unwrap();
         assert_eq!(positions.len(), 3);
         for (index, position) in positions.iter().enumerate() {
             assert_eq!(
-                &c0_tactic_source_position_file(&file, &source, "locations.ensures_0", index,)
+                &tactic_source_position_file(&file, &source, "locations.ensures_0", index,)
                     .unwrap(),
                 position,
             );
         }
         assert!(
-            c0_tactic_source_position_file(&file, &source, "locations.ensures_0", 3)
+            tactic_source_position_file(&file, &source, "locations.ensures_0", 3)
                 .unwrap_err()
                 .message()
                 .contains("no source tactic occurrence 3")

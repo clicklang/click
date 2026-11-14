@@ -38,7 +38,7 @@ fn deferred_integer_multiply_precharges_product_work_without_active_tactic() {
 }
 
 #[test]
-fn from_machine_requires_c_overflow_path_fact() {
+fn from_machine_requires_program_overflow_path_fact() {
     let left = Variable(31);
     let right = Variable(32);
     let left_bits = MachineTerm::Variable(left);
@@ -47,7 +47,10 @@ fn from_machine_requires_c_overflow_path_fact() {
         .with_local("left", int32(left_bits.clone()))
         .with_local("right", int32(right_bits.clone()));
     let expression = SpecIntegerExpression::FromMachine(Box::new(
-        SpecExpression::ProgramExpression(c_add(c_variable("left"), c_variable("right"))),
+        SpecExpression::ProgramExpression(crate::kernel::program_expression::add(
+            crate::kernel::program_expression::variable("left"),
+            crate::kernel::program_expression::variable("right"),
+        )),
     ));
 
     let paths = evaluate_spec_integer_expression_paths_in(
@@ -108,7 +111,10 @@ fn integer_existential_scopes_definedness_with_its_witness() {
             left: SpecIntegerExpression::Term(IntegerTerm::var(witness)),
             operator: IntegerComparisonOperator::Equal,
             right: SpecIntegerExpression::FromMachine(Box::new(SpecExpression::ProgramExpression(
-                c_add(c_variable("left"), c_variable("right")),
+                crate::kernel::program_expression::add(
+                    crate::kernel::program_expression::variable("left"),
+                    crate::kernel::program_expression::variable("right"),
+                ),
             ))),
         }),
     };
@@ -248,7 +254,7 @@ fn integer_fold_loadable_obligation_keeps_carriers_separate() {
         value: IntegerTerm::var(shared_id).into(),
         destination: MachineIntegerType::Int32,
     };
-    let integer_address_requirement = Proposition::CMemoryLoadable {
+    let integer_address_requirement = Proposition::MemoryLoadable {
         memory: Memory::new(),
         base: Pointer {
             block: PointerBlock::Concrete("array".into()),
@@ -277,12 +283,12 @@ fn integer_fold_loadable_obligation_keeps_carriers_separate() {
         item_body.as_ref(),
         Proposition::ForAll {
             var,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             ..
         } if *var == shared_id
     ));
 
-    let c_address_requirement = Proposition::CMemoryLoadable {
+    let c_address_requirement = Proposition::MemoryLoadable {
         memory: Memory::new(),
         base: Pointer {
             block: PointerBlock::Concrete("array".into()),
@@ -295,7 +301,7 @@ fn integer_fold_loadable_obligation_keeps_carriers_separate() {
         integer_range_fold_body_obligation(c_address_requirement, &index, shared_id, shared_id);
     let Proposition::ForAll {
         var,
-        sort: Sort::CInt32,
+        sort: Sort::ProgramInt32,
         ..
     } = wrapped
     else {
@@ -308,7 +314,7 @@ fn integer_fold_loadable_obligation_keeps_carriers_separate() {
 fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
     let accumulator = Variable(71_106);
     let item = Variable(71_107);
-    let memory = crate::kernel::intern_c_memory(Memory::new().with_block("array", 16));
+    let memory = crate::kernel::intern_memory(Memory::new().with_block("array", 16));
     let pointer = Pointer {
         block: PointerBlock::Concrete("array".into()),
         offset: PointerOffsetTerm::scaled_int32_node(
@@ -324,7 +330,7 @@ fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
         &pointer,
         crate::kernel::LoadKind::Int32,
     );
-    let requirement = Proposition::CMemoryLoadable {
+    let requirement = Proposition::MemoryLoadable {
         memory: Memory::new(),
         base: Pointer {
             block: PointerBlock::Concrete("array".into()),
@@ -347,7 +353,7 @@ fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
         } if var == accumulator
     ));
 
-    let direct_requirement = Proposition::CMemoryLoadable {
+    let direct_requirement = Proposition::MemoryLoadable {
         memory: Memory::new(),
         base: Pointer {
             block: PointerBlock::Concrete("array".into()),
@@ -372,7 +378,7 @@ fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
 fn integer_fold_loadable_obligation_keeps_accumulator_for_two_hop_direct_offset() {
     let accumulator = Variable(71_108);
     let item = Variable(71_109);
-    let memory = crate::kernel::intern_c_memory(Memory::new().with_block("array", 16));
+    let memory = crate::kernel::intern_memory(Memory::new().with_block("array", 16));
     let inner = crate::kernel::eval::load_variable_for_cell(
         &memory,
         &Pointer {
@@ -398,7 +404,7 @@ fn integer_fold_loadable_obligation_keeps_accumulator_for_two_hop_direct_offset(
         },
         crate::kernel::LoadKind::Int32,
     );
-    let requirement = Proposition::CMemoryLoadable {
+    let requirement = Proposition::MemoryLoadable {
         memory: Memory::new(),
         base: Pointer {
             block: PointerBlock::Concrete("array".into()),
@@ -424,7 +430,7 @@ fn integer_fold_loadable_obligation_keeps_accumulator_for_two_hop_direct_offset(
 
 #[test]
 fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
-    let memory = crate::kernel::intern_c_memory(Memory::new().with_block("array", 16));
+    let memory = crate::kernel::intern_memory(Memory::new().with_block("array", 16));
     let pointer = Pointer {
         block: PointerBlock::Concrete("array".into()),
         offset: PointerOffsetTerm::Constant(0),
@@ -450,7 +456,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
         },
         true,
     );
-    let loadable = Proposition::CMemoryLoadable {
+    let loadable = Proposition::MemoryLoadable {
         memory: registered_memory.as_ref().clone(),
         base: registered_pointer.clone(),
         bytes: MachineTerm::constant(4),
@@ -461,7 +467,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
         Box::new(loadable.clone()),
     ))
     .expect("the viewability conjunct must remain");
-    assert!(matches!(exact, Proposition::CMemoryLoadable { .. }));
+    assert!(matches!(exact, Proposition::MemoryLoadable { .. }));
 
     let guarded = Proposition::Implies(Box::new(defining), Box::new(loadable.clone()));
     let retained_guard = drop_verified_load_definition_conjuncts(guarded.clone())
@@ -491,7 +497,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
     .expect("a tampered definition must remain an obligation");
     assert!(matches!(retained_pointer, Proposition::And(_, _)));
 
-    let tampered_memory = crate::kernel::intern_c_memory(Memory::new().with_block("other", 16));
+    let tampered_memory = crate::kernel::intern_memory(Memory::new().with_block("other", 16));
     let tampered_snapshot = Proposition::ConditionIs(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
@@ -507,7 +513,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
     );
     let retained_snapshot = drop_verified_load_definition_conjuncts(Proposition::And(
         Box::new(tampered_snapshot),
-        Box::new(Proposition::CMemoryLoadable {
+        Box::new(Proposition::MemoryLoadable {
             memory: registered_memory.as_ref().clone(),
             base: registered_pointer.clone(),
             bytes: MachineTerm::constant(4),
@@ -533,7 +539,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
     );
     let retained_unknown = drop_verified_load_definition_conjuncts(Proposition::And(
         Box::new(unknown_definition),
-        Box::new(Proposition::CMemoryLoadable {
+        Box::new(Proposition::MemoryLoadable {
             memory: memory.as_ref().clone(),
             base: pointer,
             bytes: MachineTerm::constant(4),
@@ -569,7 +575,7 @@ fn defined_memory_load_retains_typed_validity_after_dropping_registry_metadata()
     assert_eq!(paths.len(), 1);
     assert!(matches!(
         &paths[0].proposition,
-        Proposition::CMemoryReadDefined {
+        Proposition::MemoryReadDefined {
             value_type: ProgramType::Int32,
             ..
         }
@@ -599,7 +605,7 @@ fn integer_existential_branch_filters_exact_load_definitions_only() {
         }
     }
 
-    let memory = crate::kernel::intern_c_memory(Memory::new().with_block("array", 16));
+    let memory = crate::kernel::intern_memory(Memory::new().with_block("array", 16));
     let pointer = Pointer {
         block: PointerBlock::Concrete("array".into()),
         offset: PointerOffsetTerm::Constant(0),
@@ -629,7 +635,7 @@ fn integer_existential_branch_filters_exact_load_definitions_only() {
         )
     };
     let exact = defining(registered_memory.clone(), registered_pointer.clone(), load);
-    let loadable = Proposition::CMemoryLoadable {
+    let loadable = Proposition::MemoryLoadable {
         memory: registered_memory.as_ref().clone(),
         base: registered_pointer.clone(),
         bytes: MachineTerm::constant(4),
@@ -674,7 +680,7 @@ fn integer_existential_branch_filters_exact_load_definitions_only() {
     ));
     assert!(contains(&tampered_pointer_branch, &loadable));
 
-    let other_memory = crate::kernel::intern_c_memory(Memory::new().with_block("other", 16));
+    let other_memory = crate::kernel::intern_memory(Memory::new().with_block("other", 16));
     let tampered_snapshot_definition = defining(other_memory, registered_pointer.clone(), load);
     let tampered_snapshot_path = SpecPropositionPath {
         proposition: marker.clone(),
@@ -710,7 +716,7 @@ fn integer_existential_branch_filters_exact_load_definitions_only() {
 
     // The normalizer does not manufacture a source memory guard. A path
     // carrying only a registered definition therefore retains no
-    // CMemoryLoadable evidence and cannot satisfy a missing-guard goal.
+    // MemoryLoadable evidence and cannot satisfy a missing-guard goal.
     let missing_loadability_path = SpecPropositionPath {
         proposition: marker,
         facts: vec![ExecutionPureFact::certified(exact.clone())].into(),
@@ -829,7 +835,7 @@ fn nonempty_integer_fold_is_logical_but_checked_reads_remain_scoped() {
     assert_eq!(checked.len(), 1);
     assert!(checked[0].obligations.iter().any(|obligation| {
         matches!(obligation.proposition(), Proposition::ForAll {
-                var, sort: Sort::CInt32, body,
+                var, sort: Sort::ProgramInt32, body,
 .. } if *var == item && matches!(body.as_ref(), Proposition::Implies(_, _)))
     }));
 }
@@ -1029,7 +1035,10 @@ fn integer_to_machine_symbolic_values_keep_carrier_and_range_obligations() {
         .with_local("right", int32(MachineTerm::Variable(right)));
     let expression = SpecExpression::IntegerToMachine {
         value: Box::new(SpecIntegerExpression::FromMachine(Box::new(
-            SpecExpression::ProgramExpression(c_add(c_variable("left"), c_variable("right"))),
+            SpecExpression::ProgramExpression(crate::kernel::program_expression::add(
+                crate::kernel::program_expression::variable("left"),
+                crate::kernel::program_expression::variable("right"),
+            )),
         ))),
         destination: MachineIntegerType::Int32,
     };

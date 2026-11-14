@@ -39,7 +39,7 @@ fn owned_address_admission_does_not_generate_pairs() {
             )));
         }
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            PureFactContext::new().assume_proposition(Proposition::CResourceComposition(owners))
+            PureFactContext::new().assume_proposition(Proposition::ResourceComposition(owners))
         });
         costs.push((size, work));
     }

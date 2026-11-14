@@ -36,7 +36,7 @@ fn charon_shared_iterator_lowering_and_first_read_work_are_independent_of_extent
             "verifying \"iteration.rs\"; fn signed(words: &[i32; {length}]) -> i32 {{ views words[0..{length}]; ensures result == old(words[0]); }}"
         );
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
-            C0VerificationSession::new_program_prepared(&claim, &prepared)
+            ProgramVerificationSession::new_program_prepared(&claim, &prepared)
         });
         verified.unwrap();
         samples.push((lowering_work, work));
@@ -135,7 +135,7 @@ fn charon_owned_array_construction_and_moves_have_bounded_work_at_large_extents(
             "verifying \"owned.rs\"; fn moved(value: u32, index: usize) -> u32 {{ requires index < {length}u64; ensures result == value; }}"
         );
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            C0VerificationSession::new_program_prepared(&claim, &prepared)
+            ProgramVerificationSession::new_program_prepared(&claim, &prepared)
         });
         result.unwrap();
         samples.push((shape, work));
@@ -211,7 +211,7 @@ fn charon_nonuniform_sparse_snapshots_have_bounded_work_at_large_extents() {
         let claim =
             "verifying \"snapshots.rs\"; fn sparse(a: u32, b: u32) -> u32 { ensures result == b; }";
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            C0VerificationSession::new_program_prepared(claim, &prepared)
+            ProgramVerificationSession::new_program_prepared(claim, &prepared)
         });
         result.unwrap();
         samples.push((shape, work));
@@ -258,7 +258,7 @@ fn charon_array_field_layout_and_verification_work_are_independent_of_extent() {
             "verifying \"fields.rs\"; fn read(state: &Lanes, index: usize) -> u32 {{ requires index == 0u64; views state.values[0..{length}]; ensures result == old(state.values[index]); }}"
         );
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
-            C0VerificationSession::new_program_prepared(&sidecar, &prepared)
+            ProgramVerificationSession::new_program_prepared(&sidecar, &prepared)
         });
         verified.unwrap();
         samples.push(work);
@@ -285,7 +285,7 @@ fn charon_chunk_metadata_work_is_independent_of_input_length() {
             length % 4
         );
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
-            C0VerificationSession::new_program_prepared(&claim, &prepared)
+            ProgramVerificationSession::new_program_prepared(&claim, &prepared)
         });
         verified.unwrap();
         samples.push(work);
@@ -307,7 +307,7 @@ fn charon_slice_metadata_verification_work_is_independent_of_length() {
             "verifying \"slices.rs\"; fn length(bytes: &[u8]) -> usize {{ requires bytes.len() == {length}u64; ensures result == {length}u64; }}"
         );
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
-            C0VerificationSession::new_program_prepared(&claim, &prepared)
+            ProgramVerificationSession::new_program_prepared(&claim, &prepared)
         });
         verified.unwrap();
         samples.push(work);
@@ -375,7 +375,7 @@ fn charon_array_lowering_and_verification_work_do_not_expand_with_length() {
         assert_eq!(shape.1, 0);
         let prepared = super::super::super::import::prepared_for_test(export).unwrap();
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
-            C0VerificationSession::new_program_prepared(
+            ProgramVerificationSession::new_program_prepared(
                 "verifying \"arrays.rs\"; fn large_array() -> u8 { ensures result == 7; }",
                 &prepared,
             )

@@ -3217,7 +3217,7 @@ mod slice_index_tests {
         let _session = crate::kernel::VerificationSession::enter();
         for ty in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
             let make = |id| {
-                let variable = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(id));
+                let variable = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(id));
                 SharedMachineIntegerTerm::from_shared(
                     ty,
                     KernelTerm::machine_binary_shared(
@@ -4015,7 +4015,7 @@ mod shared_read_equality_rule_tests {
             &context,
         );
         let read = |memory: Memory, at: &Pointer| {
-            let memory = crate::kernel::intern_c_memory(memory);
+            let memory = crate::kernel::intern_memory(memory);
             MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
                 &memory,
                 at,
@@ -4130,7 +4130,7 @@ mod shared_read_order_bridge_tests {
         );
         let read = |memory| {
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(memory),
+                crate::kernel::intern_memory(memory),
                 Box::new(pointer.clone()),
                 LoadKind::Int32,
             )

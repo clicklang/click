@@ -13,7 +13,7 @@ fn shape_pointer(fact: &ResourceFact) -> Option<(Shape, &Pointer)> {
     else {
         return None;
     };
-    let Some(AlgebraicValue::C(ProgramValue::Pointer(pointer))) = arguments.first() else {
+    let Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) = arguments.first() else {
         return None;
     };
     Some((

@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel::eval::{evaluate_c_expression_paths, execute_c_statement_paths};
+use crate::kernel::eval::{evaluate_program_expression_paths, execute_execution_statement_paths};
 use crate::kernel::*;
 
 fn pointer(index: usize) -> Pointer {
@@ -53,7 +53,7 @@ fn begin(
 fn read(state: &ExecutionState, pointer: &PointerValue) -> ExpressionOutcome {
     read_assuming(
         state,
-        c_load(ProgramExpression::Value(ProgramValue::Pointer(
+        crate::kernel::program_expression::load(ProgramExpression::Value(ProgramValue::Pointer(
             pointer.clone(),
         ))),
         &PureFactContext::new(),
@@ -64,15 +64,19 @@ fn read_assuming(
     expression: ProgramExpression,
     assumptions: &PureFactContext,
 ) -> ExpressionOutcome {
-    let mut paths =
-        evaluate_c_expression_paths(state, &expression, assumptions, &mut ExecutionBudget::new())
-            .unwrap();
+    let mut paths = evaluate_program_expression_paths(
+        state,
+        &expression,
+        assumptions,
+        &mut ExecutionBudget::new(),
+    )
+    .unwrap();
     assert_eq!(paths.len(), 1);
     paths.pop().unwrap().outcome
 }
 fn statement(state: &ExecutionState, statement: ProgramStatement) -> StatementOutcome {
     let environment = ExecutionEnvironment::default();
-    let mut paths = execute_c_statement_paths(
+    let mut paths = execute_execution_statement_paths(
         state,
         &statement,
         &PureFactContext::new(),
@@ -86,9 +90,9 @@ fn statement(state: &ExecutionState, statement: ProgramStatement) -> StatementOu
 fn store(state: &ExecutionState, pointer: &PointerValue, value: u32) -> StatementOutcome {
     statement(
         state,
-        c_store(
+        program_store(
             ProgramExpression::Value(ProgramValue::Pointer(pointer.clone())),
-            c_int32_literal(value),
+            crate::kernel::program_expression::int32_literal(value),
         ),
     )
 }
@@ -163,7 +167,10 @@ fn scalar_lease_local_copies_and_identity_casts_remain_expired_after_recovery() 
         .with_local("child", ProgramValue::Pointer(child.clone()))
         .with_local("copy", ProgramValue::Pointer(parent.clone()));
     assert!(matches!(
-        statement(&active, c_assign("copy", c_variable("child"))),
+        statement(
+            &active,
+            program_assign("copy", crate::kernel::program_expression::variable("child"))
+        ),
         StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(_))
     ));
     let registries = crate::kernel::capture_block_registries();
@@ -171,7 +178,10 @@ fn scalar_lease_local_copies_and_identity_casts_remain_expired_after_recovery() 
         "child".to_owned(),
         "copy".to_owned(),
     ]));
-    let copied = normal(statement(&active, c_assign("copy", c_variable("child"))));
+    let copied = normal(statement(
+        &active,
+        program_assign("copy", crate::kernel::program_expression::variable("child")),
+    ));
     let local_native_output_173 = copied.locals.get_native("copy");
     let ProgramValue::Pointer(copy) = local_native_output_173.as_deref().unwrap() else {
         panic!("pointer copy");
@@ -184,7 +194,9 @@ fn scalar_lease_local_copies_and_identity_casts_remain_expired_after_recovery() 
     assert!(matches!(
         read_assuming(
             &recovered,
-            c_load(c_variable("copy")),
+            crate::kernel::program_expression::load(crate::kernel::program_expression::variable(
+                "copy"
+            )),
             &PureFactContext::new()
         ),
         ExpressionOutcome::RuntimeError(RuntimeError::LoanRefusal(_))
@@ -285,9 +297,10 @@ fn scalar_lease_rejects_wrong_holder_branch_address_and_type() {
 fn scalar_lease_address_of_dereference_preserves_custody_and_integer_escape_is_refused() {
     let (state, parent, support) = fixture(1);
     let (active, child) = begin(&state, &parent, Some(support));
-    let expression = ProgramExpression::AddressOf(Box::new(c_load(ProgramExpression::Value(
-        ProgramValue::Pointer(child.clone()),
-    ))));
+    let expression =
+        ProgramExpression::AddressOf(Box::new(crate::kernel::program_expression::load(
+            ProgramExpression::Value(ProgramValue::Pointer(child.clone())),
+        )));
     assert_eq!(
         read_assuming(&active, expression, &PureFactContext::new()),
         ExpressionOutcome::Value(ProgramValue::Pointer(child.clone()))
@@ -295,7 +308,7 @@ fn scalar_lease_address_of_dereference_preserves_custody_and_integer_escape_is_r
     assert_eq!(
         read_assuming(
             &active,
-            c_equal(
+            crate::kernel::program_expression::equal(
                 ProgramExpression::Value(ProgramValue::Pointer(parent)),
                 ProgramExpression::Value(ProgramValue::Pointer(child.clone()))
             ),
@@ -305,7 +318,7 @@ fn scalar_lease_address_of_dereference_preserves_custody_and_integer_escape_is_r
     );
     let displaced = read_assuming(
         &active,
-        c_pointer_offset_bytes(
+        crate::kernel::program_expression::pointer_offset_bytes(
             ProgramExpression::Value(ProgramValue::Pointer(child.clone())),
             4,
         ),
@@ -322,7 +335,7 @@ fn scalar_lease_address_of_dereference_preserves_custody_and_integer_escape_is_r
         read(&active, &displaced),
         ExpressionOutcome::RuntimeError(RuntimeError::LoanRefusal(_))
     ));
-    let converted = crate::kernel::eval::cast_c_value_to_type(
+    let converted = crate::kernel::eval::cast_program_value_to_type(
         ProgramValue::Pointer(child),
         ProgramType::UInt64,
         crate::kernel::prelude::IntegerConversion::Checked,
@@ -341,7 +354,9 @@ fn scalar_lease_contract_load_bypass_and_view_only_parent_do_not_restore_authori
             ResourceFact::view_memory(owned(0).memory_own_range().unwrap().clone()),
         ));
     let (active, _) = begin(&state, &parent, Some(support));
-    let expression = c_load(ProgramExpression::Value(ProgramValue::Pointer(parent)));
+    let expression = crate::kernel::program_expression::load(ProgramExpression::Value(
+        ProgramValue::Pointer(parent),
+    ));
     assert!(matches!(
         read_assuming(
             &active,
@@ -357,8 +372,12 @@ fn scalar_lease_unsupported_boundaries_refuse_before_custody_can_escape() {
     let (state, parent, support) = fixture(1);
     let (active, child) = begin(&state, &parent, Some(support));
     for operation in [
-        c_call("unmodeled", Vec::new()),
-        c_while(c_int32_literal(0), Vec::new(), ProgramStatement::Skip),
+        program_call("unmodeled", Vec::new()),
+        program_while(
+            crate::kernel::program_expression::int32_literal(0),
+            Vec::new(),
+            ProgramStatement::Skip,
+        ),
         ProgramStatement::HeapFree {
             pointer: ProgramExpression::Value(ProgramValue::Pointer(child.clone())),
         },
@@ -369,7 +388,10 @@ fn scalar_lease_unsupported_boundaries_refuse_before_custody_can_escape() {
         ));
     }
     assert!(matches!(
-        statement(&active, ProgramStatement::Return(c_int32_literal(0))),
+        statement(
+            &active,
+            ProgramStatement::Return(crate::kernel::program_expression::int32_literal(0))
+        ),
         StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(_))
     ));
     assert_eq!(read(&active, &child), ExpressionOutcome::Value(int32(0)));

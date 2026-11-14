@@ -276,7 +276,7 @@ unresolved state. Failed allocation removes that metadata and returns to the
 pre-allocation memory identity without producing allocation authority.
 Successful allocation starts from the pending memory but introduces only
 its fresh, uninitialized block. A successful `free` also emits a checked heap
-`CHeapAllocationFreed` effect connecting the memory before and after it,
+`HeapAllocationFreed` effect connecting the memory before and after it,
 exact base, and possibly symbolic byte extent. This is deliberately distinct
 from an owned byte range: deallocation changes which allocation identities
 are live, while an owned range bounds ordinary stores. Exact contract

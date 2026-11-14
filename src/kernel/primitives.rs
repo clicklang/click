@@ -43,7 +43,7 @@ impl Proposition {
     /// cites it (`docs/internals/spellability.md`).
     pub(crate) fn is_kernel_authority(&self) -> bool {
         match self {
-            Self::CResourceComposition(_) => true,
+            Self::ResourceComposition(_) => true,
             Self::Predicate { name, .. } => predicate_source_name(name).is_none(),
             _ => false,
         }
@@ -153,7 +153,7 @@ pub(super) use resource_algebra::*;
 pub(in crate::kernel) use term_operations::round_right_to_even;
 pub(crate) use term_operations::{
     first_unavailable_connective_side, listed_premise_holds, mirrored_equality,
-    proposition_holds_without_facts, single_variable_of_c_value,
+    proposition_holds_without_facts, single_variable_of_program_value,
 };
 pub(in crate::kernel) use term_operations::{
     int64_add_interval_fits, int64_signed_order_by_width_views, int64_subtract_interval_fits,
@@ -448,11 +448,11 @@ pub enum Sort {
     Integer,
     PointerOffset,
     ProgramType,
-    CInt32,
-    CInt64,
-    CMachineInteger(MachineIntegerType),
-    CPointer(ProgramType),
-    CObjectPointer(ProgramType, crate::kernel::effective_type::CAccessClass),
+    ProgramInt32,
+    ProgramInt64,
+    ProgramInteger(MachineIntegerType),
+    ProgramPointer(ProgramType),
+    ProgramObjectPointer(ProgramType, crate::kernel::effective_type::CAccessClass),
     ProgramValue,
     Sequence(Option<ProgramType>),
     Algebraic(AlgebraicType),
@@ -465,7 +465,7 @@ pub enum Sort {
 impl Sort {
     pub(crate) fn pointer_type(&self) -> Option<ProgramType> {
         match self {
-            Self::CPointer(ty) | Self::CObjectPointer(ty, _) => Some(*ty),
+            Self::ProgramPointer(ty) | Self::ProgramObjectPointer(ty, _) => Some(*ty),
             _ => None,
         }
     }
@@ -474,7 +474,7 @@ impl Sort {
         &self,
     ) -> Option<crate::kernel::effective_type::CAccessClass> {
         match self {
-            Self::CObjectPointer(_, class) => Some(class.clone()),
+            Self::ProgramObjectPointer(_, class) => Some(class.clone()),
             _ => None,
         }
     }
@@ -492,17 +492,17 @@ impl Sort {
 
     pub fn machine_integer(integer_type: MachineIntegerType) -> Self {
         match integer_type {
-            MachineIntegerType::Int32 => Self::CInt32,
-            MachineIntegerType::Int64 => Self::CInt64,
-            other => Self::CMachineInteger(other),
+            MachineIntegerType::Int32 => Self::ProgramInt32,
+            MachineIntegerType::Int64 => Self::ProgramInt64,
+            other => Self::ProgramInteger(other),
         }
     }
 
     pub fn machine_integer_type(&self) -> Option<MachineIntegerType> {
         match self {
-            Self::CInt32 => Some(MachineIntegerType::Int32),
-            Self::CInt64 => Some(MachineIntegerType::Int64),
-            Self::CMachineInteger(integer_type) => Some(*integer_type),
+            Self::ProgramInt32 => Some(MachineIntegerType::Int32),
+            Self::ProgramInt64 => Some(MachineIntegerType::Int64),
+            Self::ProgramInteger(integer_type) => Some(*integer_type),
             _ => None,
         }
     }
@@ -4240,7 +4240,7 @@ pub enum SpecPureFunctionArgument {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum SpecAlgebraicValue {
-    C(SpecExpression),
+    Program(SpecExpression),
     Integer(SpecIntegerExpression),
     Algebraic(SpecAlgebraicExpression),
 }
@@ -4312,7 +4312,7 @@ pub struct AlgebraicType {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum AlgebraicValueType {
     Parameter(String),
-    C(ProgramType),
+    Program(ProgramType),
     /// A pointer payload with a checked original object-class guarantee.
     /// Null is allowed; a destination cast alone does not establish the class.
     ObjectPointer(ProgramType, crate::kernel::effective_type::CAccessClass),
@@ -4331,9 +4331,9 @@ impl AlgebraicValueType {
         }
     }
 
-    pub(crate) fn accepts_c_value(&self, value: &ProgramValue) -> bool {
+    pub(crate) fn accepts_program_value(&self, value: &ProgramValue) -> bool {
         match self {
-            Self::C(ty) => *ty == value.c_type(),
+            Self::Program(ty) => *ty == value.c_type(),
             Self::ObjectPointer(ty, class) => {
                 matches!(value, ProgramValue::Pointer(pointer) if pointer.c_type() == *ty
                     && pointer.supports_object_class(class))
@@ -4342,9 +4342,9 @@ impl AlgebraicValueType {
         }
     }
 
-    pub(crate) fn symbolic_c_value(&self, variable: Variable) -> Option<ProgramValue> {
+    pub(crate) fn symbolic_program_value(&self, variable: Variable) -> Option<ProgramValue> {
         let ty = match self {
-            Self::C(ty) | Self::ObjectPointer(ty, _) => *ty,
+            Self::Program(ty) | Self::ObjectPointer(ty, _) => *ty,
             _ => return None,
         };
         Some(
@@ -4358,7 +4358,7 @@ impl AlgebraicValueType {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum ResourceFieldType {
     Integer,
-    C(ProgramType),
+    Program(ProgramType),
     Algebraic(AlgebraicType),
 }
 
@@ -4377,7 +4377,7 @@ impl ResourceFieldSchema {
                 return None;
             }
             let valid = match ty {
-                ResourceFieldType::C(ty) => !matches!(
+                ResourceFieldType::Program(ty) => !matches!(
                     ty,
                     ProgramType::Void
                         | ProgramType::FunctionPointer(_)
@@ -4462,7 +4462,7 @@ impl AlgebraicSchemas {
             for (value_type, constructors) in &variants {
                 if constructors.iter().any(|constructor| {
                     constructor.fields.iter().all(|field| match field {
-                        AlgebraicValueType::C(_)
+                        AlgebraicValueType::Program(_)
                         | AlgebraicValueType::ObjectPointer(_, _)
                         | AlgebraicValueType::Integer
                         | AlgebraicValueType::Parameter(_) => true,
@@ -4605,7 +4605,7 @@ impl AlgebraicTermNode {
         memory: &SharedMemory,
         pointer: &Pointer,
     ) -> AlgebraicValue {
-        AlgebraicValue::C(ProgramValue::UInt64(Self::memory_load_carrier(
+        AlgebraicValue::Program(ProgramValue::UInt64(Self::memory_load_carrier(
             memory, pointer,
         )))
     }
@@ -4655,7 +4655,7 @@ pub(crate) fn rewrite_condition_through_bits(
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum AlgebraicValue {
-    C(ProgramValue),
+    Program(ProgramValue),
     Integer(IntegerTerm),
     Algebraic(AlgebraicTerm),
 }
@@ -4695,7 +4695,7 @@ impl AlgebraicTerm {
                     AlgebraicTermNode::Constructor { fields, .. } => {
                         for field in fields {
                             match field {
-                                AlgebraicValue::C(v) => pending.push(Node::Value(v)),
+                                AlgebraicValue::Program(v) => pending.push(Node::Value(v)),
                                 AlgebraicValue::Integer(_) => {}
                                 AlgebraicValue::Algebraic(v) => pending.push(Node::Algebraic(v)),
                             }
@@ -4707,7 +4707,7 @@ impl AlgebraicTerm {
                             pending.push(Node::Algebraic(&arm.body));
                             for binding in &arm.bindings {
                                 match binding {
-                                    AlgebraicValue::C(v) => pending.push(Node::Value(v)),
+                                    AlgebraicValue::Program(v) => pending.push(Node::Value(v)),
                                     AlgebraicValue::Integer(_) => {}
                                     AlgebraicValue::Algebraic(v) => {
                                         pending.push(Node::Algebraic(v))
@@ -4948,7 +4948,7 @@ impl AlgebraicType {
     /// A fresh symbolic value for field `index` of constructor `variant`,
     /// of kernel type `c_type`, carrying the class its declaration gives a
     /// pointer field's object.
-    pub(crate) fn symbolic_c_field_value(
+    pub(crate) fn symbolic_program_field_value(
         &self,
         variant: &str,
         index: usize,
@@ -5017,14 +5017,14 @@ impl Ord for AlgebraicType {
 
 impl From<ProgramValue> for AlgebraicValue {
     fn from(value: ProgramValue) -> Self {
-        Self::C(value)
+        Self::Program(value)
     }
 }
 
 impl AlgebraicValue {
-    pub fn as_c_value(&self) -> Option<&ProgramValue> {
+    pub fn as_program_value(&self) -> Option<&ProgramValue> {
         match self {
-            Self::C(value) => Some(value),
+            Self::Program(value) => Some(value),
             Self::Integer(_) => None,
             Self::Algebraic(_) => None,
         }
@@ -5032,7 +5032,7 @@ impl AlgebraicValue {
 
     pub(in crate::kernel) fn value_type(&self) -> AlgebraicValueType {
         match self {
-            Self::C(value) => AlgebraicValueType::C(value.c_type()),
+            Self::Program(value) => AlgebraicValueType::Program(value.c_type()),
             Self::Integer(_) => AlgebraicValueType::Integer,
             Self::Algebraic(value) => value.algebraic_type.value_type(),
         }
@@ -5040,7 +5040,7 @@ impl AlgebraicValue {
 
     pub(crate) fn has_type(&self, expected: &AlgebraicValueType) -> bool {
         match self {
-            Self::C(value) => expected.accepts_c_value(value),
+            Self::Program(value) => expected.accepts_program_value(value),
             _ => self.value_type() == *expected,
         }
     }
@@ -5050,14 +5050,14 @@ impl AlgebraicValue {
         expected: &AlgebraicValueType,
         schemas: &AlgebraicSchemas,
     ) -> bool {
-        if let Self::C(value) = self {
-            return expected.accepts_c_value(value);
+        if let Self::Program(value) = self {
+            return expected.accepts_program_value(value);
         }
         if &self.value_type() != expected {
             return false;
         }
         match self {
-            Self::C(_) => true,
+            Self::Program(_) => true,
             Self::Integer(_) => true,
             Self::Algebraic(value) => {
                 (matches!(expected, AlgebraicValueType::Parameter(_))
@@ -6599,7 +6599,7 @@ pub(crate) const C_CONTRACT_RESULT_NAME: &str = "@click:result";
 
 /// The Click spelling of the C local `name`: the contract result's internal
 /// local is `result`; every other local is its own name.
-pub(crate) fn c_local_source_name(name: &str) -> &str {
+pub(crate) fn program_local_source_name(name: &str) -> &str {
     if name == C_CONTRACT_RESULT_NAME {
         "result"
     } else {
@@ -7285,7 +7285,7 @@ pub enum FunctionTerminationMeasure {
 /// checked against this one term, never against a term the call site
 /// supplies: the surface can ask for an anchor (naming a function and an
 /// entry) but cannot choose what the anchor holds, because
-/// [`crate::kernel::c_execution_environment_with_recursion_anchor`] reads the
+/// [`crate::kernel::program_execution_environment_with_recursion_anchor`] reads the
 /// measure off the function's own contract interface and evaluates it itself.
 ///
 /// `entry_obligations` are what reading the measure at the entry owes: the
@@ -7995,7 +7995,7 @@ pub struct ExecutionBudget {
     /// executing, installed from `ExecutionEnvironment` at each statement.
     /// `None` until a statement installs it: an expression evaluated with no
     /// environment in hand has no byte view of integer cells at all.
-    pub(super) c_byte_order: Option<ByteOrder>,
+    pub(super) program_byte_order: Option<ByteOrder>,
 }
 
 /// A constant element range a lowering refused as a byte extent, for the
@@ -8081,7 +8081,7 @@ pub enum StatementOutcome {
         value: StoredExecutionValue,
         state: Box<ExecutionState>,
     },
-    /// Internal to `CStatementVerifies`: the statement has no finite
+    /// Internal to `ProgramStatementVerifies`: the statement has no finite
     /// successor, but all of its finite prefixes have been checked.
     VerificationDiverges,
     UndefinedBehavior(UndefinedBehavior),
@@ -8099,7 +8099,7 @@ pub enum FunctionOutcome {
         value: StoredExecutionValue,
         state: Box<ExecutionState>,
     },
-    /// Internal to `CFunctionVerifies`: no return frontier exists, but the
+    /// Internal to `ProgramFunctionVerifies`: no return frontier exists, but the
     /// function's finite prefixes satisfy its safety proof.
     VerificationDiverges,
     UndefinedBehavior(UndefinedBehavior),
@@ -8414,7 +8414,7 @@ impl Memory {
     /// [`SnapshotMap::eq_relative_to`]). Exact whatever the snapshots share;
     /// the cost is the changed paths when both were derived from `base`.
     pub(super) fn eq_relative_to(&self, other: &Self, base: &Self) -> bool {
-        if c_memory_content_hash(self) != c_memory_content_hash(other) {
+        if memory_content_hash(self) != memory_content_hash(other) {
             return false;
         }
         (std::sync::Arc::ptr_eq(&self.blocks, &other.blocks)
@@ -8541,7 +8541,7 @@ impl PartialEq for Memory {
     /// randomly seeded hash table happens to probe would change the charged
     /// work from run to run.
     fn eq(&self, other: &Self) -> bool {
-        if c_memory_content_hash(self) != c_memory_content_hash(other) {
+        if memory_content_hash(self) != memory_content_hash(other) {
             return false;
         }
         self.blocks == other.blocks
@@ -8587,8 +8587,8 @@ impl Ord for Memory {
         {
             return std::cmp::Ordering::Equal;
         }
-        c_memory_ordering_key(self)
-            .cmp(&c_memory_ordering_key(other))
+        memory_ordering_key(self)
+            .cmp(&memory_ordering_key(other))
             .then_with(|| self.structural_cmp(other))
     }
 }
@@ -9323,13 +9323,13 @@ impl AsRef<Memory> for SharedMemory {
 
 impl From<Memory> for SharedMemory {
     fn from(memory: Memory) -> Self {
-        intern_c_memory(memory)
+        intern_memory(memory)
     }
 }
 
 impl From<&Memory> for SharedMemory {
     fn from(memory: &Memory) -> Self {
-        intern_c_memory_ref(memory)
+        intern_memory_ref(memory)
     }
 }
 
@@ -9646,14 +9646,14 @@ pub(super) struct MemoryArenaState {
 
 /// How many entries the arena holds: interned snapshots and pinned roots.
 #[cfg(test)]
-pub(super) fn c_memory_arena_entry_count() -> usize {
+pub(super) fn memory_arena_entry_count() -> usize {
     C_MEMORY_ARENA.with(|arena| {
         let arena = arena.borrow();
         arena.1.memories.len() + arena.1.shallow_pins.len()
     })
 }
 
-pub(super) fn capture_c_memory_arena() -> MemoryArenaState {
+pub(super) fn capture_memory_arena() -> MemoryArenaState {
     MemoryArenaState {
         arena: C_MEMORY_ARENA.with(|arena| arena.borrow().clone()),
         derivation_generation: C_MEMORY_DERIVATION_GENERATION.with(std::cell::Cell::get),
@@ -9663,7 +9663,7 @@ pub(super) fn capture_c_memory_arena() -> MemoryArenaState {
 /// Reinstalls a captured arena under its own token, so every snapshot id the
 /// capture's holder kept still names the same snapshot and derivation, and
 /// nothing interned since remains.
-pub(super) fn restore_c_memory_arena(state: &MemoryArenaState) {
+pub(super) fn restore_memory_arena(state: &MemoryArenaState) {
     C_MEMORY_ARENA.with(|arena| *arena.borrow_mut() = state.arena.clone());
     C_MEMORY_DERIVATION_GENERATION.with(|generation| generation.set(state.derivation_generation));
 }
@@ -9671,11 +9671,11 @@ pub(super) fn restore_c_memory_arena(state: &MemoryArenaState) {
 /// Scope native import memo keys to the active snapshot arena. Global shared
 /// syntax identities remain independent; a cache lookup must not compare the
 /// contents of snapshots owned by different verification sessions.
-fn c_memory_arena_token() -> u32 {
+fn memory_arena_token() -> u32 {
     C_MEMORY_ARENA.with(|arena| arena.borrow().0)
 }
 
-pub(super) fn start_fresh_c_memory_arena() {
+pub(super) fn start_fresh_memory_arena() {
     C_MEMORY_ARENA.with(|arena| {
         *arena.borrow_mut() = (
             NEXT_MEMORY_ARENA_TOKEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
@@ -9694,7 +9694,7 @@ pub(super) fn start_fresh_c_memory_arena() {
 /// history never changes, so no earlier answer can. Bumping on those too
 /// emptied every negative memo at every program step, and a call step re-ran
 /// each failed alias question its walks had already answered.
-pub(super) fn c_memory_derivation_generation() -> u64 {
+pub(super) fn memory_derivation_generation() -> u64 {
     C_MEMORY_DERIVATION_GENERATION.with(std::cell::Cell::get)
 }
 
@@ -9702,10 +9702,10 @@ pub(super) fn c_memory_derivation_generation() -> u64 {
 /// and replaces it with the arena's canonical storage for that content (an
 /// O(1) handle clone). Every recorded result is therefore derived from its
 /// base's canonical storage and shares every unchanged subtree with it, which
-/// is what lets [`record_c_memory_derivation`] compare a re-derived result
+/// is what lets [`record_memory_derivation`] compare a re-derived result
 /// against an earlier child of the same base along the changed paths only.
 pub(crate) fn intern_derivation_base(memory: &mut Memory) -> SharedMemory {
-    let base = intern_c_memory_ref(memory);
+    let base = intern_memory_ref(memory);
     if !memory.same_storage_roots(base.memory()) {
         *memory = base.memory().clone();
     }
@@ -9732,7 +9732,7 @@ pub(crate) fn intern_derivation_base(memory: &mut Memory) -> SharedMemory {
 /// canonical instance forward means every later snapshot derived from this
 /// one shares storage roots with whatever the arena already holds, so facts
 /// and terms that embed equal snapshots compare by root identity.
-pub(crate) fn record_c_memory_derivation(result: &mut Memory, derivation: MemoryDerivation) {
+pub(crate) fn record_memory_derivation(result: &mut Memory, derivation: MemoryDerivation) {
     let variable_base = derivation.base().clone();
     let derivation = Arc::new(derivation);
     result.construction = Some(Arc::new(MemoryConstruction {
@@ -9766,7 +9766,7 @@ pub(crate) fn record_c_memory_derivation(result: &mut Memory, derivation: Memory
     // A snapshot this call interns is one no query has seen yet, so filling
     // its derivation cannot change an earlier answer.
     let next_id = C_MEMORY_ARENA.with(|arena| arena.borrow().1.identities.len());
-    let derived = intern_c_memory_ref_with_read_identity(result, read_identity);
+    let derived = intern_memory_ref_with_read_identity(result, read_identity);
     let interned_here = derived.id as usize >= next_id;
     if !result.same_storage_roots(derived.memory()) {
         *result = derived.memory().clone();
@@ -9842,7 +9842,7 @@ pub(crate) fn record_c_memory_derivation(result: &mut Memory, derivation: Memory
 /// all of `base` that their updates did not touch and the comparison walks
 /// only the changed paths. The answer is exact either way.
 fn recorded_child_matching(result: &Memory, base: &SharedMemory) -> Option<Memory> {
-    let content_hash = c_memory_content_hash(result);
+    let content_hash = memory_content_hash(result);
     C_MEMORY_ARENA.with(|arena| {
         let arena = arena.borrow();
         if arena.0 != base.arena {
@@ -9865,7 +9865,7 @@ fn recorded_child_matching(result: &Memory, base: &SharedMemory) -> Option<Memor
 /// than the rest of a comparison and runs twice per comparison. Like the
 /// content hash it depends only on the entries, so it is deterministic and
 /// equal for equal snapshots; a collision costs only the structural walk.
-fn c_memory_ordering_key(memory: &Memory) -> u64 {
+fn memory_ordering_key(memory: &Memory) -> u64 {
     use std::hash::{Hash, Hasher};
     #[derive(Default)]
     struct OrderingHasher(u64);
@@ -9892,7 +9892,7 @@ fn c_memory_ordering_key(memory: &Memory) -> u64 {
     hasher.finish()
 }
 
-fn c_memory_content_hash(memory: &Memory) -> u64 {
+fn memory_content_hash(memory: &Memory) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     memory.hash(&mut hasher);
@@ -9907,7 +9907,7 @@ const C_MEMORY_HASHED_COMPONENTS: usize = 14;
 /// each collection caches its content hash; the comparison a bucket hit
 /// performs is charged by the collections' own `eq`, per element actually
 /// compared, and is O(1) for snapshots sharing their persistent roots.
-fn record_c_memory_structural_lookup_work() {
+fn record_memory_structural_lookup_work() {
     crate::instrumentation::record_deterministic_work(C_MEMORY_HASHED_COMPONENTS);
 }
 
@@ -9915,7 +9915,7 @@ fn record_c_memory_structural_lookup_work() {
 /// snapshots interned on the same thread share one allocation and identity;
 /// snapshots that cross threads still compare correctly through the content
 /// hash and structural fallback.
-pub fn intern_c_memory(memory: Memory) -> SharedMemory {
+pub fn intern_memory(memory: Memory) -> SharedMemory {
     C_MEMORY_ARENA.with(|arena| {
         let mut arena = arena.borrow_mut();
         let (token, arena) = &mut *arena;
@@ -9928,7 +9928,7 @@ pub fn intern_c_memory(memory: Memory) -> SharedMemory {
                 memory: arena.memories[id as usize].clone(),
             };
         }
-        record_c_memory_structural_lookup_work();
+        record_memory_structural_lookup_work();
         if let Some((stored, (id, content_hash))) = arena.identities.get_key_value(&memory) {
             let (id, content_hash, stored) = (*id, *content_hash, stored.clone());
             // Remember the caller's storage roots, so the next lookup of this
@@ -9947,7 +9947,7 @@ pub fn intern_c_memory(memory: Memory) -> SharedMemory {
             };
         }
         let id = u32::try_from(arena.identities.len()).expect("memory arena exhausted");
-        let content_hash = c_memory_content_hash(&memory);
+        let content_hash = memory_content_hash(&memory);
         let stored = std::sync::Arc::new(memory);
         arena.identities.insert(stored.clone(), (id, content_hash));
         arena
@@ -9971,7 +9971,7 @@ pub fn intern_c_memory(memory: Memory) -> SharedMemory {
 /// The interned snapshot `memory` is the canonical storage of, found by its
 /// storage roots alone, or `None`. Interns nothing and compares no content:
 /// a snapshot a derivation produced carries its interned storage forward
-/// ([`record_c_memory_derivation`]), so a live state's memory is found here
+/// ([`record_memory_derivation`]), so a live state's memory is found here
 /// in O(1), and any other memory is left to the caller.
 pub(crate) fn interned_storage_of(memory: &Memory) -> Option<SharedMemory> {
     C_MEMORY_ARENA.with(|arena| {
@@ -9993,14 +9993,14 @@ pub(crate) fn interned_storage_of(memory: &Memory) -> Option<SharedMemory> {
 /// Interns by reference: an already-interned snapshot is found without
 /// cloning it, so hot memoization lookups keyed by interned identity pay a
 /// hash and comparison but no allocation.
-pub fn intern_c_memory_ref(memory: &Memory) -> SharedMemory {
-    intern_c_memory_ref_with_read_identity(memory, None)
+pub fn intern_memory_ref(memory: &Memory) -> SharedMemory {
+    intern_memory_ref_with_read_identity(memory, None)
 }
 
 /// First interning wins, including its read identity. Existing snapshots never
 /// change keys underneath registered applications; an earlier unannotated hit
 /// conservatively loses this equality rather than requiring graph rescans.
-fn intern_c_memory_ref_with_read_identity(
+fn intern_memory_ref_with_read_identity(
     memory: &Memory,
     read_identity: Option<(u32, u32)>,
 ) -> SharedMemory {
@@ -10016,7 +10016,7 @@ fn intern_c_memory_ref_with_read_identity(
                 memory: arena.memories[id as usize].clone(),
             };
         }
-        record_c_memory_structural_lookup_work();
+        record_memory_structural_lookup_work();
         if let Some((stored, (id, content_hash))) = arena.identities.get_key_value(memory) {
             let (id, content_hash, stored) = (*id, *content_hash, stored.clone());
             // Remember the caller's storage roots, so the next lookup of this
@@ -10035,7 +10035,7 @@ fn intern_c_memory_ref_with_read_identity(
             };
         }
         let id = u32::try_from(arena.identities.len()).expect("memory arena exhausted");
-        let content_hash = c_memory_content_hash(memory);
+        let content_hash = memory_content_hash(memory);
         let stored = std::sync::Arc::new(memory.clone());
         arena.identities.insert(stored.clone(), (id, content_hash));
         arena
@@ -11273,7 +11273,9 @@ impl ResourceInstance {
         for ((_, ty), value) in schema.fields().iter().zip(fields.iter()) {
             let valid = match (ty, value) {
                 (ResourceFieldType::Integer, AlgebraicValue::Integer(_)) => true,
-                (ResourceFieldType::C(ty), AlgebraicValue::C(value)) => *ty == value.c_type(),
+                (ResourceFieldType::Program(ty), AlgebraicValue::Program(value)) => {
+                    *ty == value.c_type()
+                }
                 (ResourceFieldType::Algebraic(ty), AlgebraicValue::Algebraic(value)) => {
                     *ty == value.algebraic_type && value.is_well_formed()
                 }
@@ -12759,29 +12761,29 @@ pub enum Proposition {
         name: String,
         arguments: Vec<Term>,
     },
-    CExpressionEvaluates {
+    ProgramExpressionEvaluates {
         state: Box<ExecutionState>,
         expression: ProgramExpression,
         outcome: ExpressionOutcome,
     },
-    CConditionEvaluates {
+    ProgramConditionEvaluates {
         state: Box<ExecutionState>,
         condition: ProgramExpression,
         outcome: ConditionOutcome,
     },
-    CStatementExecutes {
+    ProgramStatementExecutes {
         state: Box<ExecutionState>,
         statement: Box<ProgramStatement>,
         outcome: StatementOutcome,
     },
-    /// An abstract verification transition. Unlike `CStatementExecutes`, this
+    /// An abstract verification transition. Unlike `ProgramStatementExecutes`, this
     /// does not assert that the represented outcome is concretely reachable.
-    CStatementVerifies {
+    ProgramStatementVerifies {
         state: Box<ExecutionState>,
         statement: Box<ProgramStatement>,
         outcome: StatementOutcome,
     },
-    CFunctionExecutes {
+    ProgramFunctionExecutes {
         state: Box<ExecutionState>,
         function: Box<ProgramFunction>,
         arguments: Vec<ProgramExpression>,
@@ -12790,29 +12792,29 @@ pub enum Proposition {
     /// A return branch admitted by modular verification. This is conditional
     /// on the function returning and is not a termination or reachability
     /// theorem.
-    CFunctionVerifies {
+    ProgramFunctionVerifies {
         state: Box<ExecutionState>,
         function: Box<ProgramFunction>,
         arguments: Vec<ProgramExpression>,
         outcome: FunctionOutcome,
     },
-    CFunctionSatisfiesSpecification {
+    ProgramFunctionSatisfiesSpecification {
         function: Box<ProgramFunction>,
         // Large C payloads stay out of every pure proposition clone frame.
         specification: Box<FunctionSpecification>,
     },
     /// The specification describes one allowed return branch and makes no
     /// claim that the branch is reachable or that the function terminates.
-    CFunctionPartiallySatisfiesSpecification {
+    ProgramFunctionPartiallySatisfiesSpecification {
         function: Box<ProgramFunction>,
         specification: Box<FunctionSpecification>,
     },
-    CMemoryLoads {
+    MemoryLoads {
         memory: Memory,
         pointer: Pointer,
         outcome: ExpressionOutcome,
     },
-    CMemoryCanStore {
+    MemoryCanStore {
         memory: Memory,
         pointer: Pointer,
         byte_width: u32,
@@ -12820,7 +12822,7 @@ pub enum Proposition {
     /// `bytes` bytes at `base` are live in `memory`. The count is a 32-bit
     /// term, or, when `wide`, an unsigned 64-bit one: a term carries no
     /// width, so a reader that takes a wide count as 32 bits misreads it.
-    CMemoryLoadable {
+    MemoryLoadable {
         memory: Memory,
         base: Pointer,
         bytes: MachineTerm,
@@ -12828,40 +12830,40 @@ pub enum Proposition {
     },
     /// A typed read is valid in this snapshot, including initialization.
     /// This is a pure fact; it grants no resource access permission.
-    CMemoryReadDefined {
+    MemoryReadDefined {
         memory: Memory,
         pointer: Pointer,
         value_type: ProgramType,
     },
-    CResourceSeparate {
+    ResourceSeparate {
         left: Box<Resource>,
         right: Box<Resource>,
     },
     /// Internal carrier for an already-validated resource composition.
     /// PureFactContext store this as indexed kernel authority rather than as an
     /// ambient proposition visible to proof search.
-    CResourceComposition(ResourceContext),
-    CResourceViewable {
+    ResourceComposition(ResourceContext),
+    ResourceViewable {
         memory: Memory,
         resource: Box<Resource>,
     },
-    CResourceContains {
+    ResourceContains {
         parent: Box<Resource>,
         child: Box<Resource>,
     },
-    CMemoryMutatesOnly {
+    MemoryMutatesOnly {
         before: Memory,
         after: Memory,
         writes: Vec<(Pointer, u32)>,
     },
-    CMemoryEffectSummary {
+    MemoryEffectSummary {
         before: Memory,
         after: Memory,
         mutable_ranges: Vec<MemoryRange>,
     },
     /// A free of the block at `allocation_base` with extent `bytes`, which
     /// keeps its format, so a 64-bit block's free reinstates a 64-bit claim.
-    CHeapAllocationFreed {
+    HeapAllocationFreed {
         before: Memory,
         after: Memory,
         allocation_base: Pointer,
@@ -12890,7 +12892,7 @@ impl Proposition {
     /// The two ranges of a separation between two memory resources.
     pub(crate) fn memory_separation(&self) -> Option<(&MemoryRange, &MemoryRange)> {
         match self {
-            Self::CResourceSeparate { left, right } => match (&**left, &**right) {
+            Self::ResourceSeparate { left, right } => match (&**left, &**right) {
                 (Resource::Memory(left), Resource::Memory(right)) => Some((left, right)),
                 _ => None,
             },
@@ -12902,7 +12904,7 @@ impl Proposition {
     #[cfg(test)]
     pub(crate) fn memory_containment(&self) -> Option<(&Resource, &MemoryRange)> {
         match self {
-            Self::CResourceContains { parent, child } => match &**child {
+            Self::ResourceContains { parent, child } => match &**child {
                 Resource::Memory(range) => Some((parent, range)),
                 _ => None,
             },
@@ -12994,7 +12996,7 @@ fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
             name.hash(state);
             arguments.hash(state);
         }
-        Proposition::CExpressionEvaluates {
+        Proposition::ProgramExpressionEvaluates {
             state: c_state,
             expression,
             outcome,
@@ -13003,7 +13005,7 @@ fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
             expression.hash(state);
             outcome.hash(state);
         }
-        Proposition::CConditionEvaluates {
+        Proposition::ProgramConditionEvaluates {
             state: c_state,
             condition,
             outcome,
@@ -13012,12 +13014,12 @@ fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
             condition.hash(state);
             outcome.hash(state);
         }
-        Proposition::CStatementExecutes {
+        Proposition::ProgramStatementExecutes {
             state: c_state,
             statement,
             outcome,
         }
-        | Proposition::CStatementVerifies {
+        | Proposition::ProgramStatementVerifies {
             state: c_state,
             statement,
             outcome,
@@ -13026,13 +13028,13 @@ fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
             statement.hash(state);
             outcome.hash(state);
         }
-        Proposition::CFunctionExecutes {
+        Proposition::ProgramFunctionExecutes {
             state: c_state,
             function,
             arguments,
             outcome,
         }
-        | Proposition::CFunctionVerifies {
+        | Proposition::ProgramFunctionVerifies {
             state: c_state,
             function,
             arguments,
@@ -13043,18 +13045,18 @@ fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
             arguments.hash(state);
             outcome.hash(state);
         }
-        Proposition::CFunctionSatisfiesSpecification {
+        Proposition::ProgramFunctionSatisfiesSpecification {
             function,
             specification,
         }
-        | Proposition::CFunctionPartiallySatisfiesSpecification {
+        | Proposition::ProgramFunctionPartiallySatisfiesSpecification {
             function,
             specification,
         } => {
             function.hash(state);
             specification.hash(state);
         }
-        Proposition::CMemoryLoads {
+        Proposition::MemoryLoads {
             memory,
             pointer,
             outcome,
@@ -13063,7 +13065,7 @@ fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
             pointer.hash(state);
             outcome.hash(state);
         }
-        Proposition::CMemoryCanStore {
+        Proposition::MemoryCanStore {
             memory,
             pointer,
             byte_width,
@@ -13072,7 +13074,7 @@ fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
             pointer.hash(state);
             byte_width.hash(state);
         }
-        Proposition::CMemoryLoadable {
+        Proposition::MemoryLoadable {
             memory,
             base,
             bytes,
@@ -13083,7 +13085,7 @@ fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
             bytes.hash(state);
             wide.hash(state);
         }
-        Proposition::CMemoryReadDefined {
+        Proposition::MemoryReadDefined {
             memory,
             pointer,
             value_type,
@@ -13092,20 +13094,20 @@ fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
             pointer.hash(state);
             value_type.hash(state);
         }
-        Proposition::CResourceSeparate { left, right } => {
+        Proposition::ResourceSeparate { left, right } => {
             left.hash(state);
             right.hash(state);
         }
-        Proposition::CResourceComposition(resources) => resources.hash(state),
-        Proposition::CResourceViewable { memory, resource } => {
+        Proposition::ResourceComposition(resources) => resources.hash(state),
+        Proposition::ResourceViewable { memory, resource } => {
             memory.hash(state);
             resource.hash(state);
         }
-        Proposition::CResourceContains { parent, child } => {
+        Proposition::ResourceContains { parent, child } => {
             parent.hash(state);
             child.hash(state);
         }
-        Proposition::CMemoryMutatesOnly {
+        Proposition::MemoryMutatesOnly {
             before,
             after,
             writes,
@@ -13114,7 +13116,7 @@ fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
             after.hash(state);
             writes.hash(state);
         }
-        Proposition::CMemoryEffectSummary {
+        Proposition::MemoryEffectSummary {
             before,
             after,
             mutable_ranges,
@@ -13123,7 +13125,7 @@ fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
             after.hash(state);
             mutable_ranges.hash(state);
         }
-        Proposition::CHeapAllocationFreed {
+        Proposition::HeapAllocationFreed {
             before,
             after,
             allocation_base,
@@ -13289,155 +13291,155 @@ fn clone_atomic_proposition(proposition: &Proposition) -> Proposition {
             name: name.clone(),
             arguments: arguments.clone(),
         },
-        Proposition::CExpressionEvaluates {
+        Proposition::ProgramExpressionEvaluates {
             state,
             expression,
             outcome,
-        } => Proposition::CExpressionEvaluates {
+        } => Proposition::ProgramExpressionEvaluates {
             state: state.clone(),
             expression: expression.clone(),
             outcome: outcome.clone(),
         },
-        Proposition::CConditionEvaluates {
+        Proposition::ProgramConditionEvaluates {
             state,
             condition,
             outcome,
-        } => Proposition::CConditionEvaluates {
+        } => Proposition::ProgramConditionEvaluates {
             state: state.clone(),
             condition: condition.clone(),
             outcome: outcome.clone(),
         },
-        Proposition::CStatementExecutes {
+        Proposition::ProgramStatementExecutes {
             state,
             statement,
             outcome,
-        } => Proposition::CStatementExecutes {
+        } => Proposition::ProgramStatementExecutes {
             state: state.clone(),
             statement: statement.clone(),
             outcome: outcome.clone(),
         },
-        Proposition::CStatementVerifies {
+        Proposition::ProgramStatementVerifies {
             state,
             statement,
             outcome,
-        } => Proposition::CStatementVerifies {
+        } => Proposition::ProgramStatementVerifies {
             state: state.clone(),
             statement: statement.clone(),
             outcome: outcome.clone(),
         },
-        Proposition::CFunctionExecutes {
+        Proposition::ProgramFunctionExecutes {
             state,
             function,
             arguments,
             outcome,
-        } => Proposition::CFunctionExecutes {
+        } => Proposition::ProgramFunctionExecutes {
             state: state.clone(),
             function: function.clone(),
             arguments: arguments.clone(),
             outcome: outcome.clone(),
         },
-        Proposition::CFunctionVerifies {
+        Proposition::ProgramFunctionVerifies {
             state,
             function,
             arguments,
             outcome,
-        } => Proposition::CFunctionVerifies {
+        } => Proposition::ProgramFunctionVerifies {
             state: state.clone(),
             function: function.clone(),
             arguments: arguments.clone(),
             outcome: outcome.clone(),
         },
-        Proposition::CFunctionSatisfiesSpecification {
+        Proposition::ProgramFunctionSatisfiesSpecification {
             function,
             specification,
-        } => Proposition::CFunctionSatisfiesSpecification {
+        } => Proposition::ProgramFunctionSatisfiesSpecification {
             function: function.clone(),
             specification: specification.clone(),
         },
-        Proposition::CFunctionPartiallySatisfiesSpecification {
+        Proposition::ProgramFunctionPartiallySatisfiesSpecification {
             function,
             specification,
-        } => Proposition::CFunctionPartiallySatisfiesSpecification {
+        } => Proposition::ProgramFunctionPartiallySatisfiesSpecification {
             function: function.clone(),
             specification: specification.clone(),
         },
-        Proposition::CMemoryLoads {
+        Proposition::MemoryLoads {
             memory,
             pointer,
             outcome,
-        } => Proposition::CMemoryLoads {
+        } => Proposition::MemoryLoads {
             memory: memory.clone(),
             pointer: pointer.clone(),
             outcome: outcome.clone(),
         },
-        Proposition::CMemoryCanStore {
+        Proposition::MemoryCanStore {
             memory,
             pointer,
             byte_width,
-        } => Proposition::CMemoryCanStore {
+        } => Proposition::MemoryCanStore {
             memory: memory.clone(),
             pointer: pointer.clone(),
             byte_width: *byte_width,
         },
-        Proposition::CMemoryLoadable {
+        Proposition::MemoryLoadable {
             memory,
             base,
             bytes,
             wide,
-        } => Proposition::CMemoryLoadable {
+        } => Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
             bytes: bytes.clone(),
             wide: *wide,
         },
-        Proposition::CMemoryReadDefined {
+        Proposition::MemoryReadDefined {
             memory,
             pointer,
             value_type,
-        } => Proposition::CMemoryReadDefined {
+        } => Proposition::MemoryReadDefined {
             memory: memory.clone(),
             pointer: pointer.clone(),
             value_type: *value_type,
         },
-        Proposition::CResourceSeparate { left, right } => Proposition::CResourceSeparate {
+        Proposition::ResourceSeparate { left, right } => Proposition::ResourceSeparate {
             left: left.clone(),
             right: right.clone(),
         },
-        Proposition::CResourceComposition(resources) => {
-            Proposition::CResourceComposition(resources.clone())
+        Proposition::ResourceComposition(resources) => {
+            Proposition::ResourceComposition(resources.clone())
         }
-        Proposition::CResourceViewable { memory, resource } => Proposition::CResourceViewable {
+        Proposition::ResourceViewable { memory, resource } => Proposition::ResourceViewable {
             memory: memory.clone(),
             resource: resource.clone(),
         },
-        Proposition::CResourceContains { parent, child } => Proposition::CResourceContains {
+        Proposition::ResourceContains { parent, child } => Proposition::ResourceContains {
             parent: parent.clone(),
             child: child.clone(),
         },
-        Proposition::CMemoryMutatesOnly {
+        Proposition::MemoryMutatesOnly {
             before,
             after,
             writes,
-        } => Proposition::CMemoryMutatesOnly {
+        } => Proposition::MemoryMutatesOnly {
             before: before.clone(),
             after: after.clone(),
             writes: writes.clone(),
         },
-        Proposition::CMemoryEffectSummary {
+        Proposition::MemoryEffectSummary {
             before,
             after,
             mutable_ranges,
-        } => Proposition::CMemoryEffectSummary {
+        } => Proposition::MemoryEffectSummary {
             before: before.clone(),
             after: after.clone(),
             mutable_ranges: mutable_ranges.clone(),
         },
-        Proposition::CHeapAllocationFreed {
+        Proposition::HeapAllocationFreed {
             before,
             after,
             allocation_base,
             bytes,
-        } => Proposition::CHeapAllocationFreed {
+        } => Proposition::HeapAllocationFreed {
             before: before.clone(),
             after: after.clone(),
             allocation_base: allocation_base.clone(),
@@ -14317,12 +14319,12 @@ pub struct PureFactContext {
         PointerBlock,
         crate::persistent::PersistentMap<u64, crate::persistent::PersistentSet<Proposition>>,
     >,
-    /// The `CResourceContains` facts, filed by their parent: a memory
+    /// The `ResourceContains` facts, filed by their parent: a memory
     /// range under its base block, any other resource under itself. A
     /// containment walk reads the facts under the resource it has reached,
     /// not every proposition fact.
-    /// The memory effect facts (`CMemoryEffectSummary`, `CMemoryMutatesOnly`,
-    /// `CHeapAllocationFreed`), filed under both of their memories, so a load
+    /// The memory effect facts (`MemoryEffectSummary`, `MemoryMutatesOnly`,
+    /// `HeapAllocationFreed`), filed under both of their memories, so a load
     /// comparison between two snapshots reads the effects naming one of
     /// them, not every proposition fact.
     pub(super) memory_effect_facts:
@@ -15479,7 +15481,7 @@ mod representation_size_tests {
     /// resources therefore stay behind a pointer, so a pure fact such as
     /// `a == b` does not pay for a C payload it does not carry.
     #[test]
-    fn pure_facts_do_not_pay_for_c_payloads() {
+    fn pure_facts_do_not_pay_for_program_payloads() {
         assert!(std::mem::size_of::<Term>() <= 144);
         assert!(std::mem::size_of::<Proposition>() <= 2 * std::mem::size_of::<Term>());
         assert!(std::mem::size_of::<ExecutionPureFact>() <= 352);

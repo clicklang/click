@@ -9,13 +9,13 @@ fn resource_relation_comparison_keys_visit_only_selected_arguments() {
             name: "selected".into(),
             arguments: (0..size)
                 .map(|i| {
-                    AlgebraicValue::C(ProgramValue::Int32(MachineTerm::Variable(Variable(
+                    AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(Variable(
                         3_219_400 + i as u64,
                     ))))
                 })
                 .collect(),
         };
-        let goal = Proposition::CResourceContains {
+        let goal = Proposition::ResourceContains {
             parent: Box::new(resource),
             child: Box::new(Resource::Emp),
         };
@@ -35,7 +35,7 @@ fn resource_relation_comparison_lookup_ignores_unrelated_facts() {
     let mut work = Vec::new();
     for size in [64u64, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = crate::kernel::intern_c_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(Memory::new());
         let address = Pointer::symbolic(Variable(3_219_500));
         let name = crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
@@ -73,7 +73,7 @@ fn deep_logical_comparison_keys_visit_each_selected_node_once() {
     let _session = crate::kernel::VerificationSession::enter();
     let mut costs = Vec::new();
     for depth in [32, 64, 128, 256, 512] {
-        let mut proposition = Proposition::CResourceContains {
+        let mut proposition = Proposition::ResourceContains {
             parent: Box::new(Resource::Emp),
             child: Box::new(Resource::Emp),
         };

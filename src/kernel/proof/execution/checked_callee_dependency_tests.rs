@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn normal_evidence_completes_only_exhausted_void_function_source() {
-    use crate::kernel::{ProgramType, c_function};
+    use crate::kernel::{ProgramType, program_function};
     for (return_type, tail, region, completes) in [
         (
             ProgramType::Void,
@@ -46,7 +46,7 @@ fn normal_evidence_completes_only_exhausted_void_function_source() {
         } else {
             statement.clone()
         };
-        let function = c_function(return_type, "test", vec![], body);
+        let function = program_function(return_type, "test", vec![], body);
         let mut core = ExecutionProofCore::at_entry(
             ExecutionState::new(),
             ExecutionFrontier {
@@ -55,7 +55,7 @@ fn normal_evidence_completes_only_exhausted_void_function_source() {
             },
         );
         let before = core.running_state(&function, &[]).unwrap().into_owned();
-        let theorem = Theorem::new(Proposition::CStatementVerifies {
+        let theorem = Theorem::new(Proposition::ProgramStatementVerifies {
             state: Box::new(before.clone()),
             statement: Box::new(statement),
             outcome: StatementOutcome::Normal(Box::new(before)),

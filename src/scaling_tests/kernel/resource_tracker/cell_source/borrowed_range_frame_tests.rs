@@ -53,7 +53,7 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
                 hold: None,
             },
         );
-        let authority = Proposition::CResourceComposition(partition);
+        let authority = Proposition::ResourceComposition(partition);
         let context = PureFactContext::new()
             .assume_proposition(authority.clone())
             .assume_condition(
@@ -65,7 +65,7 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
                 true,
             );
         let bare =
-            PureFactContext::new().assume_proposition(Proposition::CResourceComposition(bare));
+            PureFactContext::new().assume_proposition(Proposition::ResourceComposition(bare));
         assert!(typed_range_disjoint_from_pointer_evidence(&backing, &field, 8, &bare).is_none());
         let (proof, work) = crate::instrumentation::measure_deterministic_work(|| {
             typed_range_disjoint_from_pointer_evidence(&backing, &field, 8, &context)
@@ -104,7 +104,7 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
         );
         let load = |memory: &Memory| {
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory_ref(memory),
+                crate::kernel::intern_memory_ref(memory),
                 Box::new(field.clone()),
                 LoadKind::Bits64,
             )
@@ -127,7 +127,7 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
             .unchecked_with_fact(ResourceFact::view_memory(backing.clone()))
             .unchecked_with_fact(ResourceFact::view_memory(descriptor));
         let views =
-            PureFactContext::new().assume_proposition(Proposition::CResourceComposition(views));
+            PureFactContext::new().assume_proposition(Proposition::ResourceComposition(views));
         assert!(typed_range_disjoint_from_pointer_evidence(&backing, &field, 8, &views).is_none());
     }
 }

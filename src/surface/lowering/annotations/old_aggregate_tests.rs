@@ -6,10 +6,10 @@ fn entry_state() -> ExecutionState {
         block: "local:caller".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let function = c_function(
+    let function = program_function(
         ProgramType::Void,
         "copy",
-        vec![c_parameter_with_aggregate_layout(
+        vec![program_parameter_with_aggregate_layout(
             "input",
             ProgramType::VoidPointer,
             AggregateLayout::new(
@@ -18,9 +18,9 @@ fn entry_state() -> ExecutionState {
                 vec![AggregateField::new("data", 0, ProgramType::Int32Pointer)],
             ),
         )],
-        c_return(c_void_value()),
+        program_return(program_void_value()),
     );
-    c_function_entry_state(
+    program_function_entry_state(
         &ExecutionState::new().with_memory(Memory::new().with_block(source.block.clone(), 8)),
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(source))],
@@ -48,7 +48,7 @@ fn lower_name(
         BTreeSet::new(),
         BTreeMap::new(),
     );
-    lowerer.lower_c_binding_to_spec(
+    lowerer.lower_program_binding_to_spec(
         name,
         &SpecElaborationContext {
             current_memory: SpecMemory::Fixed(state.memory().clone()),

@@ -1,7 +1,7 @@
 use super::*;
 use crate::kernel::{
-    AggregateField, AggregateLayout, c_function, c_function_entry_state,
-    c_parameter_with_aggregate_layout, c_return, c_void_value,
+    AggregateField, AggregateLayout, program_function, program_function_entry_state,
+    program_parameter_with_aggregate_layout, program_return, program_void_value,
 };
 
 fn aggregate_entry(count: u32) -> (ExecutionState, BTreeMap<String, ProgramValue>) {
@@ -18,16 +18,20 @@ fn aggregate_entry(count: u32) -> (ExecutionState, BTreeMap<String, ProgramValue
     let values = (0..count)
         .map(|index| (format!("input_{index}"), value.clone()))
         .collect::<BTreeMap<_, _>>();
-    let function = c_function(
+    let function = program_function(
         ProgramType::Void,
         "aggregate_binding",
         values
             .keys()
             .map(|name| {
-                c_parameter_with_aggregate_layout(name, ProgramType::VoidPointer, layout.clone())
+                program_parameter_with_aggregate_layout(
+                    name,
+                    ProgramType::VoidPointer,
+                    layout.clone(),
+                )
             })
             .collect(),
-        c_return(c_void_value()),
+        program_return(program_void_value()),
     );
     let caller = ExecutionState::new().with_memory(Memory::new().with_block(source.block, 8));
     let arguments = values
@@ -36,7 +40,7 @@ fn aggregate_entry(count: u32) -> (ExecutionState, BTreeMap<String, ProgramValue
         .map(ProgramExpression::Value)
         .collect::<Vec<_>>();
     (
-        c_function_entry_state(&caller, &function, &arguments).unwrap(),
+        program_function_entry_state(&caller, &function, &arguments).unwrap(),
         values,
     )
 }
@@ -70,22 +74,22 @@ fn proof_lowering_retains_each_selected_aggregate_copy() {
     // Rebinding creates a different callee frame. A selected old/current
     // pair must preserve each frame independently, not use one for both.
     let source = values.values().next().unwrap().clone();
-    let function = c_function(
+    let function = program_function(
         ProgramType::Void,
         "nested",
         ["input_0", "input_1"]
             .into_iter()
             .map(|name| {
-                c_parameter_with_aggregate_layout(
+                program_parameter_with_aggregate_layout(
                     name,
                     ProgramType::VoidPointer,
                     entry.locals().aggregate_layout(name).unwrap().clone(),
                 )
             })
             .collect(),
-        c_return(c_void_value()),
+        program_return(program_void_value()),
     );
-    let current = c_function_entry_state(
+    let current = program_function_entry_state(
         &entry,
         &function,
         &[

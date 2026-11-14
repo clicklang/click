@@ -4,13 +4,13 @@ use crate::kernel::*;
 fn boxed_definition() -> CompositeResourceDefinition {
     CompositeResourceDefinition::new(
         "boxed",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![ResourceSpec::owned_memory(MemorySegment::new(
-            c_variable("p"),
-            c_int32_literal(0),
-            c_int32_literal(1),
+            crate::kernel::program_expression::variable("p"),
+            crate::kernel::program_expression::int32_literal(0),
+            crate::kernel::program_expression::int32_literal(1),
         ))],
         vec![],
     )
@@ -162,28 +162,28 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
         };
         let memory_spec = |name: &str| {
             ResourceSpec::owned_memory(MemorySegment::new(
-                c_variable(name),
-                c_int32_literal(0),
-                c_int32_literal(1),
+                crate::kernel::program_expression::variable(name),
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::program_expression::int32_literal(1),
             ))
         };
         let population = CompositeResourceDefinition::authority_control(
             "remaining",
-            vec![c_parameter("p", ProgramType::Int32Pointer)],
+            vec![program_parameter("p", ProgramType::Int32Pointer)],
             None,
             vec![memory_spec("p")],
             vec![],
         );
         let schema = ResourceFieldSchema::new(vec![(
             "tag".into(),
-            ResourceFieldType::C(ProgramType::Int32),
+            ResourceFieldType::Program(ProgramType::Int32),
         )])
         .unwrap();
         let wrapper = CompositeResourceDefinition::new(
             "wrapper",
             vec![
-                c_parameter("p", ProgramType::Int32Pointer),
-                c_parameter("q", ProgramType::Int32Pointer),
+                program_parameter("p", ProgramType::Int32Pointer),
+                program_parameter("q", ProgramType::Int32Pointer),
             ],
             None,
             false,
@@ -191,7 +191,7 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
                 ResourceSpec::composite(
                     ResourceAccessMode::Own,
                     "remaining".into(),
-                    vec![c_variable("p")],
+                    vec![crate::kernel::program_expression::variable("p")],
                     vec![ProgramType::Int32Pointer],
                 ),
                 memory_spec("q"),
@@ -236,7 +236,7 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
             .with_block("private-cell", 4);
         let load_in = |memory: &Memory| {
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory_ref(memory),
+                crate::kernel::intern_memory_ref(memory),
                 Box::new(shared.clone()),
                 crate::kernel::LoadKind::Int32,
             )
@@ -269,12 +269,12 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
         let same_load = |pointer: &Pointer| {
             checked_atomic_load_equality(
                 &MachineTerm::MemoryLoad(
-                    intern_c_memory_ref(&before),
+                    intern_memory_ref(&before),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Int32,
                 ),
                 &MachineTerm::MemoryLoad(
-                    intern_c_memory_ref(&after),
+                    intern_memory_ref(&after),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Int32,
                 ),

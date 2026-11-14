@@ -15,7 +15,7 @@ fn separation_class_lookup_visits_only_the_selected_payload() {
                     4,
                 ),
             };
-            let separation = |left, right| Proposition::CResourceSeparate {
+            let separation = |left, right| Proposition::ResourceSeparate {
                 left: Box::new(Resource::Memory(MemoryRange::new_with_element_width(
                     left,
                     0u32.into(),

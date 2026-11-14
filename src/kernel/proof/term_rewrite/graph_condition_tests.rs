@@ -95,7 +95,7 @@ fn check_binder_bodies(scalar: bool) {
     };
     let variants: std::sync::Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
         name: "Case".into(),
-        fields: vec![AlgebraicValueType::C(ProgramType::Int32)],
+        fields: vec![AlgebraicValueType::Program(ProgramType::Int32)],
     }]
     .into();
     let value_type = AlgebraicValueType::Algebraic {
@@ -115,7 +115,7 @@ fn check_binder_bodies(scalar: bool) {
         algebraic_type,
         node: AlgebraicTermNode::Variable(Variable(70)),
     };
-    let binding = AlgebraicValue::C(ProgramValue::Int32(MachineTerm::Variable(Variable(51))));
+    let binding = AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(Variable(51))));
     let machine_match = MachineTerm::AlgebraicMatch {
         scrutinee: Box::new(scrutinee.clone()),
         arms: vec![AlgebraicBitvectorMatchArm {
@@ -137,7 +137,7 @@ fn check_binder_bodies(scalar: bool) {
     let quantified = Proposition::ForAll {
         name: Default::default(),
         var: Variable(51),
-        sort: Sort::CInt32,
+        sort: Sort::ProgramInt32,
         body: Box::new(Proposition::ConditionIs(guard(), true)),
     };
     // Both cited facts and graph facts are from the enclosing scope.

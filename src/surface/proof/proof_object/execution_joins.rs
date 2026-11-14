@@ -109,7 +109,7 @@ impl<'a> Proof<'a> {
             region: CodeRegionRef::Region(statement_index),
             kind: ProgramPointKind::Entry,
         };
-        let source_condition = surface_c_condition(&condition, &current_state)?;
+        let source_condition = surface_program_condition(&condition, &current_state)?;
         let checked = surface_at_snapshot(&source_condition, &entry_point)?;
         if checked == *surface_condition {
             return Ok(true);
@@ -191,7 +191,7 @@ impl<'a> Proof<'a> {
             else_branch: else_branch.clone(),
         };
         let surface_condition = surface_at_snapshot(
-            &surface_c_condition(&condition, &current_state)?,
+            &surface_program_condition(&condition, &current_state)?,
             &ProgramPointRef {
                 region: CodeRegionRef::Region(statement_index),
                 kind: ProgramPointKind::Entry,
@@ -224,7 +224,7 @@ impl<'a> Proof<'a> {
                 .count()
                 > 1
         });
-        let source_condition = surface_c_condition(&condition, &current_state)?;
+        let source_condition = surface_program_condition(&condition, &current_state)?;
         let mut operand_condition = &source_condition;
         while let ClickProposition::Not(inner) = operand_condition {
             operand_condition = inner;
@@ -298,7 +298,7 @@ impl<'a> Proof<'a> {
             let reason = match repeated_value {
                 Some(value) => format!(
                     "its condition `{}` is {value} along {} checked paths, and `branch` has one arm per truth value",
-                    crate::surface::diagnostics::describe_c_expression(&condition),
+                    crate::surface::diagnostics::describe_program_expression(&condition),
                     transitions
                         .iter()
                         .filter(|transition| transition.is_true == value)
@@ -489,7 +489,7 @@ impl<'a> Proof<'a> {
         if let Some(condition_theorem) = arm.condition_theorem
             && !matches!(
                 implication_body(condition_theorem.proposition()),
-                Proposition::CConditionEvaluates {
+                Proposition::ProgramConditionEvaluates {
                     outcome: ConditionOutcome::Value(actual),
                     ..
                 } if *actual == expected
@@ -676,7 +676,7 @@ impl<'a> Proof<'a> {
             );
         };
         let surface_condition = surface_at_snapshot(
-            &surface_c_condition(&condition, &current_state)?,
+            &surface_program_condition(&condition, &current_state)?,
             &ProgramPointRef {
                 region: CodeRegionRef::Region(statement_index),
                 kind: ProgramPointKind::Entry,
@@ -1498,11 +1498,11 @@ impl<'a> Proof<'a> {
         let (surface_condition, empty_source_arms) = if call_outcomes {
             (
                 ClickProposition::Comparison {
-                    left: ContractExpression::CFragment(ProgramExpression::Value(
+                    left: ContractExpression::ProgramExpression(ProgramExpression::Value(
                         crate::kernel::api::int32(0),
                     )),
                     operator: ComparisonOperator::Equal,
-                    right: ContractExpression::CFragment(ProgramExpression::Value(
+                    right: ContractExpression::ProgramExpression(ProgramExpression::Value(
                         crate::kernel::api::int32(0),
                     )),
                 },
@@ -1532,7 +1532,7 @@ impl<'a> Proof<'a> {
             };
             (
                 surface_at_snapshot(
-                    &surface_c_condition(&condition, &current_state)?,
+                    &surface_program_condition(&condition, &current_state)?,
                     &ProgramPointRef {
                         region: CodeRegionRef::Region(statement_index),
                         kind: ProgramPointKind::Entry,
@@ -1773,7 +1773,7 @@ impl<'a> Proof<'a> {
                     // evidence. Retain every leaf with its own provenance rather
                     // than discarding the evidence of a coincident outcome.
                     let published =
-                        crate::kernel::c_function_execution_candidate_with_additional_facts(
+                        crate::kernel::program_function_execution_candidate_with_additional_facts(
                             path,
                             &additional_facts,
                         );
@@ -1814,7 +1814,7 @@ impl<'a> Proof<'a> {
                         - materialized_before,
                 )
             });
-            let outcomes = crate::kernel::c_function_execution_candidates_from_retained_paths(
+            let outcomes = crate::kernel::program_function_execution_candidates_from_retained_paths(
                 execution_start_state.clone(),
                 context.function.clone(),
                 context.arguments.to_vec(),
@@ -3303,7 +3303,7 @@ impl<'a> Proof<'a> {
             return Err(self.step_error("expanded execution branch root is not a C `if`"));
         };
         let checked_condition = surface_at_snapshot(
-            &surface_c_condition(&condition, &current_state)?,
+            &surface_program_condition(&condition, &current_state)?,
             &ProgramPointRef {
                 region: CodeRegionRef::Region(record.statement_index),
                 kind: ProgramPointKind::Entry,
@@ -3725,7 +3725,7 @@ impl<'a> Proof<'a> {
                 arm_ids.iter().flatten().copied().collect(),
             ),
         };
-        successor.record_trace_c_branch(&successor.node, arm_ids, &path_facts);
+        successor.record_trace_program_branch(&successor.node, arm_ids, &path_facts);
         let record = Arc::new(ExecutionSplitData {
             marker: successor.checkpoint(),
             split,
@@ -4022,15 +4022,15 @@ mod progress_tests {
             &theorems,
         );
         let written = ClickProposition::Comparison {
-            left: ContractExpression::CFragment(ProgramExpression::Variable("x".into())),
+            left: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".into())),
             operator: ComparisonOperator::LessThan,
-            right: ContractExpression::CFragment(ProgramExpression::Value(int32(10))),
+            right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(10))),
         };
         let assertions = [
             ProofAssertion::Fact(ClickProposition::Comparison {
-                left: ContractExpression::CFragment(ProgramExpression::Value(int32(0))),
+                left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
                 operator: ComparisonOperator::Equal,
-                right: ContractExpression::CFragment(ProgramExpression::Value(int32(0))),
+                right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
             }),
             ProofAssertion::Fact(written),
         ];
@@ -4043,7 +4043,7 @@ mod progress_tests {
             },
             true,
         );
-        let read = Proposition::CMemoryReadDefined {
+        let read = Proposition::MemoryReadDefined {
             memory: Memory::new(),
             pointer: Pointer::symbolic(Variable(71_001)),
             value_type: ProgramType::Int32,
@@ -4136,9 +4136,11 @@ mod progress_tests {
         ))];
         let function_environment = ExecutionEnvironment::new();
         let condition = ClickProposition::Comparison {
-            left: ContractExpression::CFragment(ProgramExpression::Variable("x".to_string())),
+            left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                "x".to_string(),
+            )),
             operator: ComparisonOperator::GreaterEqual,
-            right: ContractExpression::CFragment(ProgramExpression::Value(int32(0))),
+            right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
         };
 
         for size in [8_u32, 32, 128] {

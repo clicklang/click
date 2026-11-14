@@ -15,7 +15,7 @@ pub(super) fn collect_match_memory_loads(
     for (arm, body) in matched.arms.iter().zip(&matched.arguments[1..]) {
         for binding in &arm.bindings {
             let width = match binding.ty() {
-                KernelType::C(ty) => Some(ty.byte_width()),
+                KernelType::Program(ty) => Some(ty.byte_width()),
                 _ => None,
             };
             pending.push((binding, width));
@@ -42,7 +42,7 @@ mod tests {
             for opaque in [false, true] {
                 let _session = crate::kernel::VerificationSession::enter();
                 let current = Memory::new();
-                let memory = intern_c_memory_ref(&current);
+                let memory = intern_memory_ref(&current);
                 let read = MachineTerm::MemoryLoad(
                     memory,
                     Box::new(Pointer::symbolic(Variable(991901))),

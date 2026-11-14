@@ -112,7 +112,7 @@ fn exit_cache_reconciliation_reuses_the_joins_exit_contexts() {
             })
             .collect::<Vec<_>>();
         facts.push(ExecutionPureFact::new(
-            c_value_comparison_proposition(&load, ComparisonOperator::Equal, &zero).unwrap(),
+            program_value_comparison_proposition(&load, ComparisonOperator::Equal, &zero).unwrap(),
         ));
         let exit_facts = ExecutionFacts::from(facts);
         let empty = ExecutionFacts::new();

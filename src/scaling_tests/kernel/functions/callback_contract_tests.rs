@@ -20,10 +20,10 @@ fn authoritative_memory_projection_scales_with_used_members_not_unrelated_frames
             memory = memory.with_block(format!("local:projection:frame:{unrelated}"), 4);
         }
         let state = state.clone().with_memory(memory);
-        let function = c_function(
+        let function = program_function(
             ProgramType::Void,
             format!("project_{used_members}"),
-            vec![c_parameter("p", ProgramType::Int32Pointer)],
+            vec![program_parameter("p", ProgramType::Int32Pointer)],
             ProgramStatement::Skip,
         )
         .with_contract(
@@ -32,9 +32,9 @@ fn authoritative_memory_projection_scales_with_used_members_not_unrelated_frames
             (0..used_members)
                 .map(|index| {
                     MemorySegment::new(
-                        c_variable("p"),
-                        c_int32_literal(index as u32),
-                        c_int32_literal(index as u32 + 1),
+                        crate::kernel::program_expression::variable("p"),
+                        crate::kernel::program_expression::int32_literal(index as u32),
+                        crate::kernel::program_expression::int32_literal(index as u32 + 1),
                     )
                 })
                 .collect(),
@@ -65,14 +65,14 @@ fn authoritative_memory_projection_scales_with_used_members_not_unrelated_frames
     // memory authority. A bare resource summary without this marker must not
     // turn an abstract callback into an unconditional memory havoc.
     let resource = ResourceSpec::owned_memory(MemorySegment::new(
-        c_variable("p"),
-        c_int32_literal(0),
-        c_int32_literal(1),
+        crate::kernel::program_expression::variable("p"),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(1),
     ));
-    let resource_function = c_function(
+    let resource_function = program_function(
         ProgramType::Void,
         "project_resource",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         ProgramStatement::Skip,
     )
     .with_resource_summary(vec![resource], vec![])
@@ -138,10 +138,10 @@ fn checked_transition_projection_ignores_unrelated_caller_frame() {
                 .with_local("p", ProgramValue::pointer(pointer.clone()))
                 .with_memory(Memory::new().with_block(pointer.block.clone(), 512))
                 .with_resource_context(ResourceContext::new().unchecked_with_facts(owned));
-            let function = c_function(
+            let function = program_function(
                 ProgramType::Void,
                 format!("transition_projection_{used_members}"),
-                vec![c_parameter("p", ProgramType::Int32Pointer)],
+                vec![program_parameter("p", ProgramType::Int32Pointer)],
                 ProgramStatement::Skip,
             )
             .with_contract(vec![], vec![], vec![], vec![], true)
@@ -215,7 +215,7 @@ fn checked_wrapper_projection_scales_with_used_members() {
             .collect();
         let definition = CompositeResourceDefinition::new(
             "TransitionWrapper",
-            vec![c_parameter("data", ProgramType::Int32Pointer)],
+            vec![program_parameter("data", ProgramType::Int32Pointer)],
             None,
             false,
             contains,
@@ -236,10 +236,10 @@ fn checked_wrapper_projection_scales_with_used_members() {
                     vec![ProgramValue::pointer(pointer.clone())],
                 ),
             ));
-        let function = c_function(
+        let function = program_function(
             ProgramType::Void,
             format!("wrapper_projection_{used_members}"),
-            vec![c_parameter("p", ProgramType::Int32Pointer)],
+            vec![program_parameter("p", ProgramType::Int32Pointer)],
             ProgramStatement::Skip,
         )
         .with_contract(vec![], vec![], vec![], vec![], true)

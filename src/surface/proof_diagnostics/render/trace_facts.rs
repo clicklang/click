@@ -75,7 +75,7 @@ impl Renderer<'_> {
                 op,
                 left: a,
                 right: b,
-            } => Some((a, b, format.name(), op.c_symbol())),
+            } => Some((a, b, format.name(), op.program_symbol())),
             _ => None,
         };
         if let Some((a, b, kind, operator)) = binary {
@@ -146,7 +146,7 @@ mod tests {
         let p = Pointer::symbolic(Variable(986_700));
         let memory = Memory::new();
         let word = MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory_ref(&memory),
+            crate::kernel::intern_memory_ref(&memory),
             Box::new(p.clone()),
             LoadKind::Bits64,
         );
@@ -158,7 +158,7 @@ mod tests {
         ));
         let composite = Resource::Composite {
             name: "rb_child_links".into(),
-            arguments: std::sync::Arc::from([AlgebraicValue::C(ProgramValue::Int32(
+            arguments: std::sync::Arc::from([AlgebraicValue::Program(ProgramValue::Int32(
                 MachineTerm::constant(7),
             ))]),
         };
@@ -225,7 +225,7 @@ mod tests {
                 "16",
             ),
             (
-                Proposition::CMemoryLoadable {
+                Proposition::MemoryLoadable {
                     memory,
                     base: p,
                     bytes: MachineTerm::constant(8),
@@ -233,9 +233,9 @@ mod tests {
                 },
                 "bytes:uint32=8",
             ),
-            (Proposition::CResourceComposition(context), "owns memory("),
+            (Proposition::ResourceComposition(context), "owns memory("),
             (
-                Proposition::CResourceContains {
+                Proposition::ResourceContains {
                     parent: Box::new(composite),
                     child: Box::new(field),
                 },
@@ -266,8 +266,8 @@ mod tests {
     #[test]
     fn trace_reads_preserve_snapshot_and_load_kind_without_current_pointer_names() {
         let address = Pointer::symbolic(Variable(986_702));
-        let first = crate::kernel::intern_c_memory(Memory::new());
-        let second = crate::kernel::intern_c_memory(Memory::new().with_block("trace_changed", 4));
+        let first = crate::kernel::intern_memory(Memory::new());
+        let second = crate::kernel::intern_memory(Memory::new().with_block("trace_changed", 4));
         let load = |memory, kind| {
             Term::Bitvector32(MachineTerm::MemoryLoad(
                 memory,
@@ -299,7 +299,7 @@ mod tests {
                     arguments: std::sync::Arc::from([]),
                 })
             }));
-            let text = render(&Proposition::CResourceComposition(context));
+            let text = render(&Proposition::ResourceComposition(context));
             assert_eq!(text.matches("views token_").count(), 8, "{text}");
             assert_eq!(text.contains("more entries"), count > 8, "{text}");
             assert!(text.contains("support details omitted"));

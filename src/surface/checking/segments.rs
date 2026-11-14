@@ -52,13 +52,14 @@ pub(in crate::surface) fn evaluate_requirement_segment_base(
     .map_err(|error| error.message)?;
     let array_refs =
         array_refs_for_values(parameter_binding, &parameter_values, entry_state.memory());
-    let ProgramValue::Pointer(base) = crate::surface::proof::evaluate_c_fragment_through_kernel(
-        &segment.base,
-        &PureFactContext::new(),
-        ContractEnvironment::new(&parameter_values, &array_refs),
-        entry_state,
-        None,
-    )?
+    let ProgramValue::Pointer(base) =
+        crate::surface::proof::evaluate_program_expression_through_kernel(
+            &segment.base,
+            &PureFactContext::new(),
+            ContractEnvironment::new(&parameter_values, &array_refs),
+            entry_state,
+            None,
+        )?
     else {
         return Err("segment base did not evaluate to a pointer".to_string());
     };
@@ -75,7 +76,7 @@ fn evaluate_segment_bounds(
     element_width: u32,
 ) -> Result<EvaluatedContractSegment, String> {
     let evaluate = |expression: &ProgramExpression| {
-        crate::surface::proof::evaluate_c_fragment_through_kernel(
+        crate::surface::proof::evaluate_program_expression_through_kernel(
             expression,
             assumptions,
             contract_environment,
@@ -185,7 +186,7 @@ fn pointer_offsets_equal_for_effect(
     right: &PointerOffsetTerm,
     assumptions: &PureFactContext,
 ) -> bool {
-    c_pointer_offsets_proven_equal_for_effect(left, right, assumptions)
+    program_pointer_offsets_proven_equal_for_effect(left, right, assumptions)
 }
 
 fn element_index_from_pointer_offset(

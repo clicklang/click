@@ -1,7 +1,7 @@
 use super::*;
 
-fn prove(body: &str) -> Result<Vec<VerifiedCTheorem>, ClickError> {
-    verify_c0_sources(
+fn prove(body: &str) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
+    verify_c_sources(
         &format!("verifying \"slices.rs\"; {body}"),
         &[("slices.rs", "")],
     )

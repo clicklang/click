@@ -106,11 +106,11 @@ fn callback_signature_codes_cannot_overlap_adjacent_types() {
 /// never throws implements a contract that may, and not the reverse.
 #[test]
 fn exceptional_outcome_is_part_of_the_contract_not_the_pointer_type() {
-    let ordinary = c_function(
+    let ordinary = program_function(
         ProgramType::Int32,
         "ordinary",
-        vec![c_parameter("value", ProgramType::Int32)],
-        c_return(c_variable("value")),
+        vec![program_parameter("value", ProgramType::Int32)],
+        program_return(crate::kernel::program_expression::variable("value")),
     );
     let exceptional = ordinary.clone().with_int32_exceptional_outcome();
 

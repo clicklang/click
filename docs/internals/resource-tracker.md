@@ -449,7 +449,7 @@ The four classes:
 | `ResourceContext::invalidate_memory_support` → `memory_derivation_affects_footprint` `src/kernel/primitives/resource_algebra.rs` | **routed** | Walks the edges between two snapshots and drops every resource projection a step could have written. It now asks `affects` about `Resource::Ranges` for a stated footprint and `Resource::AnyMemory` for one the kernel could not name, and keeps the projection only where the answer is `Separate(Footprint(..))` — so this site is where `footprint_effect` is spent, and the only place it is. |
 | `ResourceContext::entries_affected_by_memory_derivation` | another question | Chooses *candidates* from the interval index; the rule then decides. Its one obligation is to stay a superset of the steps `affects` does not answer `Separate` for — narrowing it would silently keep a stale projection. |
 | `statement_call_havoc_views` `src/kernel/proof/execution.rs` | another question | Collects the call nodes between two states; asks nothing about a resource. |
-| `matching_recomputed_call_havoc_views`, `c_memories_definitionally_equal` `src/kernel/api/contract_certification/contract_claims.rs` | another question | Matches two derivation chains edge for edge, to certify a recomputation. A whole-state equality, not a footprint. The second skips the `local:` blocks its kernel twin skips, and by the same one filter — below. The chain walk is where the two part: `transparent_base` descends past an edge that recomputation would not have minted — a store or a declaration whose block is spelled `local:`, a store whose value is the base's own load at that very pointer (a tactic materializing a symbolic load, which independent certification never does), and the two edges that name nothing, `ContractAllocationClaimsChanged` and `CellsForgotten`. That is a structural skip over *edges*, decided by spelling and by interned identity, and it is not the pointerless filter the twin spends; a `local:` name is what it reads, so an addressed local's store is stepped past here as well. Nothing is claimed about a version by descending, because the pair the descent reaches is still compared in full. |
+| `matching_recomputed_call_havoc_views`, `memories_definitionally_equal` `src/kernel/api/contract_certification/contract_claims.rs` | another question | Matches two derivation chains edge for edge, to certify a recomputation. A whole-state equality, not a footprint. The second skips the `local:` blocks its kernel twin skips, and by the same one filter — below. The chain walk is where the two part: `transparent_base` descends past an edge that recomputation would not have minted — a store or a declaration whose block is spelled `local:`, a store whose value is the base's own load at that very pointer (a tactic materializing a symbolic load, which independent certification never does), and the two edges that name nothing, `ContractAllocationClaimsChanged` and `CellsForgotten`. That is a structural skip over *edges*, decided by spelling and by interned identity, and it is not the pointerless filter the twin spends; a `local:` name is what it reads, so an addressed local's store is stepped past here as well. Nothing is claimed about a version by descending, because the pair the descent reaches is still compared in full. |
 
 ### The eager half: a step applying its own write set
 
@@ -479,7 +479,7 @@ them without losing every pair the DAG does not connect.
 
 | Site | Class | Note |
 | --- | --- | --- |
-| `c_memory_load_is_directly_unchanged`, `memories_directly_match_for_pointer_load` `src/kernel/memory_provenance.rs` | disagrees | The transport rule. It already asks the tracker as one disjunct — two snapshots that name the cell by one point hold the same cell — and the rest reads `CMemoryMutatesOnly`, `CMemoryEffectSummary` and `CHeapAllocationFreed` over *stated* endpoints. Its per-write ladder is the same four predicates the rule's `Store` arm uses, applied to a stated write list. |
+| `memory_load_is_directly_unchanged`, `memories_directly_match_for_pointer_load` `src/kernel/memory_provenance.rs` | disagrees | The transport rule. It already asks the tracker as one disjunct — two snapshots that name the cell by one point hold the same cell — and the rest reads `MemoryMutatesOnly`, `MemoryEffectSummary` and `HeapAllocationFreed` over *stated* endpoints. Its per-write ladder is the same four predicates the rule's `Store` arm uses, applied to a stated write list. |
 | `memories_match_for_pointer_load` `src/kernel/reasoning/memory_resolution.rs` | disagrees | Assumption-free structural agreement about one load: the same forgotten-source identity; equal extents for every object the load may designate plus equal havoc markers; agreement about retirement tombstones and all load-observable heap lifetime, initialization and implicit-zero metadata; and equal cells and union cells under `observable_by_load`. Decides pairs with no common ancestor. |
 | `memory_snapshots_match_for_resolution`, `memory_snapshots_proven_equal_at_pointer`, `memories_match_for_pointer_load_bounded_alias`, `memories_match_for_pointer_load_under_assumptions` `src/kernel/reasoning/memory_resolution.rs` | disagrees | The same question with assumptions: every cell the two snapshots differ on must both miss the load's bytes and be proven distinct from the load. All refuse a load whose own block is `local:`, and all select the cells to check with `cell_is_observable_by_load`, the one filter — *not*, as they used to, by dropping every differing `local:` cell unasked. See below. The second is a thin name for the first, so that a caller asking "are these two snapshots one state as far as this pointer is concerned" reads as that question rather than as a resolution internal. |
 | `snapshot_objects_agree`, `retirements_agree_for_load` | separation | The object half, as against the values in the cells: an extent is what says an object is there and how big it is, and a tombstone is the only record that an automatic object's lifetime ended once its cells are gone. The first is the assumption-carrying comparisons' extent check, and the only extents it leaves out are the ones `local_block_no_pointer_can_reach` allows. The second is the tombstone check, which all four comparisons ask, and it allows a difference only where the load's block is proven distinct from the retired object or no pointer value in the program designates it — two exclusions, each catching what the other does not. A load through a stale alias is exactly the load these comparisons are asked about, which is why neither half may be skipped on a spelling. |
@@ -793,7 +793,7 @@ pointer value designates that object at all.
 
 Two neighbours carried it a third time, and neither had a load pointer to ask
 `observable_by_load` about: `memories_proven_equal_for_memory_resolution` and
-its certification twin `c_memories_definitionally_equal`, whole-snapshot
+its certification twin `memories_definitionally_equal`, whole-snapshot
 equalities that each dropped every `local:` cell and block before comparing.
 
 The one caller that decided a *load* question with them, the memory-resolution
@@ -803,7 +803,7 @@ memory resolution reads order from the difference graph, which compares no
 snapshots.
 
 What is left is genuinely pointerless. The remaining callers of
-`c_memories_definitionally_equal` — the effect-chain endpoint checks in
+`memories_definitionally_equal` — the effect-chain endpoint checks in
 `checked_interface_effect_facts`, the resource-rewrite and
 resource-observation evidence checks in `src/kernel/proof/execution.rs`,
 `function_entry_representation_states_match`, the two outcome comparisons and
@@ -846,7 +846,7 @@ its certification twin, and for a symbolic-pointer load — while a pair
 differing only in a local no pointer can reach is.
 
 One relative of these two is deliberately wider and stays so:
-`c_effect_memories_definitionally_equal` strips *every* local from both sides
+`program_effect_memories_definitionally_equal` strips *every* local from both sides
 before comparing, because an effect memory is the externally visible state an
 effect summary is about. That is a statement about what the comparison is for,
 not a shortcut inside it.
@@ -866,7 +866,7 @@ automatic object — the `&` operator and the array-to-pointer conversion of an
 aggregate object's name — so an object neither of them reaches is storage no
 pointer value in the program designates. Nothing else can reach it either:
 arithmetic that leaves the object it was derived from is undefined behaviour
-that Click refuses on every displaced access (`CMemoryCanStore` /
+that Click refuses on every displaced access (`MemoryCanStore` /
 `access_in_bounds`), and an integer cast to a pointer is outside supported C. An `&x`
 written in a *proof* creates no runtime pointer.
 
@@ -954,7 +954,7 @@ things make it the narrow claim it is.
 It sits **last**, after every cheaper check, at the four places the
 store-versus-load question is asked: the tracker's `Store` arm, the two
 transport sites in `memory_provenance` (`memories_directly_match_for_pointer_load`
-and the `CMemoryMutatesOnly` arm of `c_memory_load_is_directly_unchanged`), and
+and the `MemoryMutatesOnly` arm of `memory_load_is_directly_unchanged`), and
 `Memory::without_possible_aliasing_cells`. The last of those is the one that
 decides `c_contract_executes_acquire`, and it is not optional: once a store has
 dropped a cell, the two snapshots differ *at the read's own address*, and no
@@ -1121,7 +1121,7 @@ Every way a contract can be entered checks it, and each check is **fail-closed**
 | Entry | Where | Checked by |
 | --- | --- | --- |
 | an ordinary call, a self-call (recursion) | `prepare_function_resource_transfer` → `prepare_contract_resource_transfer` `src/kernel/functions.rs` | `plan_stable_view_transfer_with_bindings_and_composites`: exclusive requirements are reserved out of the caller's `residual` *before* any view is planned, and each view's backing owner must still be found in that residual (`ConflictingRequirement` → `ProvenOverlap`) |
-| a call through a function pointer or a `contract` interface | the same funnel, from `execute_c_function_call_paths` and the contract-transition sites | the same planner |
+| a call through a function pointer or a `contract` interface | the same funnel, from `execute_program_function_call_paths` and the contract-transition sites | the same planner |
 | contract/implementation refinement | `prepare_contract_resource_transfer(.., "refinement", ..)` | the same planner |
 | the contract's own entry, for the body proof | `install_borrowed_contract_inputs` `src/kernel/api.rs` | a viewed clause that provably overlaps an owned clause, or that the contract's own resources already own, is refused (`protected_range_proven_overlapping`, `directly_supporting_owned_entry`) |
 | the outer boundary | — | an **assumption** about the environment, in the same class as the ownership the contract also assumes: a precondition's clauses are read as a separating conjunction |
@@ -1152,7 +1152,7 @@ b[0..1]; }`:
 It needed no new fact kind and no new framing route. At contract entry, each
 (transferred memory clause, borrowed `views` clause) pair of one contract
 yields the ordinary explicit separation `separate(memory(X), memory(Y))` —
-`Proposition::CResourceSeparate` over two `Resource::Memory` operands, exactly
+`Proposition::ResourceSeparate` over two `Resource::Memory` operands, exactly
 what a written `requires separate(memory(a[0..n]), memory(g[0..1]))` lowers to
 (`mdtests/a_separated_array_argument_survives_a_global_store.md`). The Store
 ladder therefore spends it at `typed_store_separated_ranges_evidence`, where it
@@ -1182,7 +1182,7 @@ holds the owner observation above, and the clause list does not.
 
 The resulting separation remains path evidence, not a permanent address fact.
 A later equality can make its two ranges overlap while the original
-`CResourceSeparate` proposition remains in the context. Before an indexed
+`ResourceSeparate` proposition remains in the context. Before an indexed
 separation candidate can be used, `PureFactContext` now compares the ranges'
 current bases using path equalities that do not consult separation evidence,
 then checks their byte intervals; an overlapping or undecidable pair cannot
@@ -1224,7 +1224,7 @@ No pairwise facts or recursive footprint expansion are produced.
 The two sites that know they are at a contract entry produce it independently
 from the same list, so neither trusts the other: the body proof's
 `initial_claim_context_with_caller_owner` (`src/surface/proof.rs`), and
-`contract_certification::c_function_contract_entry_facts`, which records the
+`contract_certification::program_function_contract_entry_facts`, which records the
 partition as an entry fact with origin `Partition`, beside the other facts it
 derives from the contract's own clauses and the resources those clauses
 supply. Emitting instead at `ResourceContext::observable_facts_assuming_valid`

@@ -115,7 +115,7 @@ impl<'a> Proof<'a> {
                 goal.surface_bindings
                     .iter()
                     .filter_map(|(name, binding)| match binding {
-                        ContractExpression::CFragment(ProgramExpression::Value(
+                        ContractExpression::ProgramExpression(ProgramExpression::Value(
                             crate::kernel::integer64_c_value!(MachineTerm::Variable(variable)),
                         )) => Some((*variable, name.clone())),
                         _ => None,
@@ -382,7 +382,7 @@ impl GuardedTermSpeller<'_, '_> {
             .fields()
             .get(access.field_index)?
         {
-            AlgebraicValue::C(crate::kernel::integer64_c_value!(value)) => Some(value),
+            AlgebraicValue::Program(crate::kernel::integer64_c_value!(value)) => Some(value),
             _ => None,
         }
     }
@@ -420,9 +420,9 @@ impl GuardedTermSpeller<'_, '_> {
         if let MachineTerm::Variable(variable) = term
             && let Some(name) = self.bound.get(variable)
         {
-            return Some(ContractExpression::CFragment(ProgramExpression::Variable(
-                name.clone(),
-            )));
+            return Some(ContractExpression::ProgramExpression(
+                ProgramExpression::Variable(name.clone()),
+            ));
         }
         if let Some(field) = self.field_spelling(term) {
             return Some(field);

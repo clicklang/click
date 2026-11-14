@@ -22,7 +22,7 @@ pub(super) fn match_variables(
     summaries: &mut std::collections::HashMap<u64, Variables>,
 ) -> Variables {
     let integer_result = matched.result_type == KernelType::Integer;
-    let machine_result = matches!(matched.result_type, KernelType::C(_));
+    let machine_result = matches!(matched.result_type, KernelType::Program(_));
     let scrutinee = &matched.arguments[0];
     let mut result = if mode == FoldVariableRead::ExpressionFree
         && machine_result
@@ -161,12 +161,12 @@ mod tests {
     #[test]
     fn retained_machine_match_readers_preserve_declaration_and_connection_rules() {
         let native = MachineTerm::AlgebraicMatch {
-            scrutinee: Box::new(KernelMatch::test_scrutinee(vec![AlgebraicValueType::C(
-                ProgramType::Int32,
-            )])),
+            scrutinee: Box::new(KernelMatch::test_scrutinee(vec![
+                AlgebraicValueType::Program(ProgramType::Int32),
+            ])),
             arms: vec![AlgebraicBitvectorMatchArm {
                 variant: "Arm".into(),
-                bindings: vec![AlgebraicValue::C(ProgramValue::Int32(
+                bindings: vec![AlgebraicValue::Program(ProgramValue::Int32(
                     MachineTerm::Variable(Variable(2)),
                 ))],
                 binding_names: Default::default(),

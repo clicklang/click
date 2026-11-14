@@ -6,7 +6,7 @@ use super::*;
 
 #[test]
 fn private_member_facts_cannot_use_ambient_cell_ownership() {
-    use crate::kernel::{MemorySegment, c_int32_literal, c_parameter, c_variable};
+    use crate::kernel::{MemorySegment, program_parameter};
     let (_, authority) = source_state();
     let Resource::PopulationAuthority(description) = authority.resource() else {
         unreachable!()
@@ -15,7 +15,7 @@ fn private_member_facts_cannot_use_ambient_cell_ownership() {
         name: "reference".into(),
         arguments: description.arguments().to_vec().into(),
     });
-    let [crate::kernel::AlgebraicValue::C(ProgramValue::Pointer(pointer))] =
+    let [crate::kernel::AlgebraicValue::Program(ProgramValue::Pointer(pointer))] =
         description.arguments()
     else {
         unreachable!()
@@ -31,19 +31,21 @@ fn private_member_facts_cannot_use_ambient_cell_ownership() {
     ]);
     let definition = CompositeResourceDefinition::new(
         "reference",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![ResourceSpec::owned_memory(MemorySegment::new(
-            c_variable("p"),
-            c_int32_literal(0),
-            c_int32_literal(1),
+            crate::kernel::program_expression::variable("p"),
+            crate::kernel::program_expression::int32_literal(0),
+            crate::kernel::program_expression::int32_literal(1),
         ))],
         vec![crate::kernel::SpecProposition::Comparison {
-            left: crate::kernel::SpecExpression::ProgramExpression(crate::kernel::c_index(
-                c_variable("p"),
-                c_int32_literal(1),
-            )),
+            left: crate::kernel::SpecExpression::ProgramExpression(
+                crate::kernel::program_expression::index(
+                    crate::kernel::program_expression::variable("p"),
+                    crate::kernel::program_expression::int32_literal(1),
+                ),
+            ),
             operator: crate::kernel::ComparisonOperator::Equal,
             right: crate::kernel::SpecExpression::Value(crate::kernel::int32(0)),
         }],
@@ -117,7 +119,10 @@ fn authority_count_observation_rejects_unchecked_deltas_and_scales() {
         });
         let definition = CompositeResourceDefinition::new(
             "reference",
-            vec![crate::kernel::c_parameter("p", ProgramType::Int32Pointer)],
+            vec![crate::kernel::program_parameter(
+                "p",
+                ProgramType::Int32Pointer,
+            )],
             None,
             false,
             vec![],
@@ -139,7 +144,7 @@ fn authority_count_observation_rejects_unchecked_deltas_and_scales() {
             ));
         }
         state = state.with_resource_context(resources);
-        let function = c_function(
+        let function = program_function(
             ProgramType::Void,
             "observe",
             vec![],

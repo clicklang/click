@@ -42,7 +42,7 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
         );
         memory =
             memory.without_possible_aliasing_cells(&possible_write, 4, &PureFactContext::new());
-        let snapshot = intern_c_memory(memory);
+        let snapshot = intern_memory(memory);
         let read = Pointer::loaded_value(&snapshot, &field);
         context
             .equality_graph
@@ -74,7 +74,7 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
             Box::new(parent_alias),
             crate::kernel::AddressObjectClass::NONE,
         );
-        let source = intern_c_memory(
+        let source = intern_memory(
             snapshot
                 .memory()
                 .clone()
@@ -123,7 +123,7 @@ fn complete_read_domains_use_numeric_storage_classes_without_scanning_other_clas
         let a = Pointer::symbolic(Variable(9_889_000));
         let b = Pointer::symbolic(Variable(9_889_001));
         facts = facts.assume_condition(equal(a.clone(), b.clone()), true);
-        let memory = intern_c_memory(Memory::new());
+        let memory = intern_memory(Memory::new());
         let left = Pointer::loaded_value(&memory, &a);
         let right = Pointer::loaded_value(&memory, &b);
         let (holds, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -144,7 +144,7 @@ fn copied_pointer_frames_ignore_unrelated_separations() {
     let costs = [16u64, 64, 256, 1024].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
         let _reads = crate::kernel::TransportReadScope::enter();
-        let separation = |a: Pointer, a_words: u32, b: Pointer| Proposition::CResourceSeparate {
+        let separation = |a: Pointer, a_words: u32, b: Pointer| Proposition::ResourceSeparate {
             left: Box::new(Resource::Memory(MemoryRange::new(
                 a,
                 0u32.into(),
@@ -211,11 +211,11 @@ fn sibling_pointer_reads_stop_before_unrelated_shared_history() {
                 ProgramValue::Int32(0u32.into()),
             );
         }
-        let left = intern_c_memory(memory.clone().store(
+        let left = intern_memory(memory.clone().store(
             field.offset_by_bytes(8),
             ProgramValue::UInt64(MachineTerm::uint64_constant(1)),
         ));
-        let right = intern_c_memory(memory.store(
+        let right = intern_memory(memory.store(
             field.offset_by_bytes(16),
             ProgramValue::UInt64(MachineTerm::uint64_constant(2)),
         ));
@@ -295,7 +295,7 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
                 true,
             );
         }
-        let before = intern_c_memory(memory);
+        let before = intern_memory(memory);
         let bits =
             MachineTerm::MemoryLoad(before.clone(), Box::new(field.clone()), LoadKind::Bits64);
         let value = PointerValue::from_read(
@@ -319,7 +319,7 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
         );
         let (one_theorem, unrelated_work) =
             crate::instrumentation::measure_deterministic_work(|| {
-                prove_c_condition_fact_transport(&source, &one_write, &context)
+                prove_program_condition_fact_transport(&source, &one_write, &context)
             });
         assert!(one_theorem.is_some());
         assert!(unrelated_work > 0);
@@ -334,9 +334,10 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
                     field.offset_by_bytes(24),
                     ProgramValue::Int32(MachineTerm::constant(index)),
                 );
-                let theorem = prove_c_condition_fact_transport(&current, &after, &explicit_context)
-                    .expect("the supplied adjacent transition preserves the packed pointer");
-                let (premises, target) = c_condition_fact_transport_parts(&theorem, &current)
+                let theorem =
+                    prove_program_condition_fact_transport(&current, &after, &explicit_context)
+                        .expect("the supplied adjacent transition preserves the packed pointer");
+                let (premises, target) = program_condition_fact_transport_parts(&theorem, &current)
                     .expect("a condition transport retains its explicit premises");
                 assert!(
                     premises
@@ -349,7 +350,7 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
             after
         });
         assert!(
-            prove_c_condition_fact_transport(&source, &after, &context).is_none(),
+            prove_program_condition_fact_transport(&source, &after, &context).is_none(),
             "a cold endpoint query must not search the older stores"
         );
         assert!(work > 0);
@@ -393,7 +394,7 @@ fn converted_narrow_read_value_uses_only_selected_terms_and_cells() {
         let value = MachineTerm::narrow_constant(MachineIntegerType::UInt8, 129);
         memory = memory.store(pointer.clone(), ProgramValue::UInt8(value.clone()));
         let load =
-            MachineTerm::MemoryLoad(intern_c_memory(memory), Box::new(pointer), LoadKind::UInt8);
+            MachineTerm::MemoryLoad(intern_memory(memory), Box::new(pointer), LoadKind::UInt8);
         let cast = |value| MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             from: MachineIntegerType::UInt8,
@@ -463,7 +464,7 @@ fn complete_word_record_at_bounded_stop_has_flat_lookup_work() {
             .store(field.clone(), value.clone())
             .without_possible_aliasing_cells(&Pointer::symbolic(Variable(9_887_002)), 8, &context);
         assert!(memory.known_value(&field).is_none());
-        let read = Pointer::loaded_value(&intern_c_memory(memory), &field);
+        let read = Pointer::loaded_value(&intern_memory(memory), &field);
         let (recovered, work) = crate::instrumentation::measure_deterministic_work(|| {
             complete_pointer_carrier_read_value(&read, &context)
         });
@@ -483,7 +484,7 @@ fn complete_word_frame_reuses_named_versions_across_observations() {
         let _session = crate::kernel::VerificationSession::enter();
         let field = Pointer::symbolic(Variable(9_950_001));
         let write = Pointer::symbolic(Variable(9_950_002));
-        let base = intern_c_memory(Memory::new());
+        let base = intern_memory(Memory::new());
         let mut observed = base.memory().clone();
         for index in 0..size {
             observed = observed.materialize_cell_from_source(
@@ -492,7 +493,7 @@ fn complete_word_frame_reuses_named_versions_across_observations() {
                 base.clone(),
             );
         }
-        let before = intern_c_memory(observed);
+        let before = intern_memory(observed);
         // This is the actual read producer, not a warm-up of the query:
         // its designation names the pre-observation version of the word.
         let value = PointerValue::from_read(
@@ -501,7 +502,7 @@ fn complete_word_frame_reuses_named_versions_across_observations() {
             &before,
             &field,
         );
-        let after = intern_c_memory(before.memory().clone().store(
+        let after = intern_memory(before.memory().clone().store(
             write.clone(),
             ProgramValue::UInt64(MachineTerm::uint64_constant(1)),
         ));
@@ -519,11 +520,11 @@ fn complete_word_frame_reuses_named_versions_across_observations() {
                 8,
             ))
         };
-        let context = PureFactContext::new().assume_proposition(Proposition::CResourceSeparate {
+        let context = PureFactContext::new().assume_proposition(Proposition::ResourceSeparate {
             left: Box::new(range(write)),
             right: Box::new(range(field.clone())),
         });
-        let overwritten = intern_c_memory(
+        let overwritten = intern_memory(
             before
                 .memory()
                 .clone()

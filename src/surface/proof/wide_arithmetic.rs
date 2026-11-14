@@ -127,7 +127,9 @@ impl Carrier {
                         .map(|value| ProgramValue::UInt32(MachineTerm::uint32_constant(value))),
                 };
                 value
-                    .map(|value| ContractExpression::CFragment(ProgramExpression::Value(value)))
+                    .map(|value| {
+                        ContractExpression::ProgramExpression(ProgramExpression::Value(value))
+                    })
                     .unwrap_or_else(|| expression.clone())
             }
             ContractExpression::Add(left, right) => ContractExpression::Add(
@@ -267,7 +269,7 @@ pub(super) fn compares_observations(proposition: &ClickProposition) -> bool {
 fn at_operand(selector: &SnapshotSelector, expression: &ContractExpression) -> ContractExpression {
     match expression {
         ContractExpression::IntegerLiteral(_)
-        | ContractExpression::CFragment(ProgramExpression::Value(
+        | ContractExpression::ProgramExpression(ProgramExpression::Value(
             ProgramValue::UInt64(uint64_constant!(_))
             | ProgramValue::Int64(int64_constant!(_))
             | ProgramValue::UInt32(bits32_constant!(_)),
@@ -336,20 +338,23 @@ pub(super) fn to_integer(expression: &ContractExpression) -> ContractExpression 
             },
         };
     }
-    if let ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::UInt64(value))) =
-        expression
+    if let ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt64(
+        value,
+    ))) = expression
         && let Some(constant) = value.uint64_as_const()
     {
         return ContractExpression::IntegerLiteral(constant.to_string());
     }
-    if let ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::Int64(value))) =
-        expression
+    if let ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int64(
+        value,
+    ))) = expression
         && let Some(constant) = value.int64_as_const()
     {
         return ContractExpression::IntegerLiteral(constant.to_string());
     }
-    if let ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::UInt32(value))) =
-        expression
+    if let ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt32(
+        value,
+    ))) = expression
         && let Some(constant) = value.as_const()
     {
         return ContractExpression::IntegerLiteral(constant.to_string());
@@ -382,11 +387,12 @@ fn collect_atoms(expression: &ContractExpression, atoms: &mut Vec<ContractExpres
             collect_atoms(left, atoms);
             collect_atoms(right, atoms);
         }
-        ContractExpression::CFragment(ProgramExpression::Value(
+        ContractExpression::ProgramExpression(ProgramExpression::Value(
             ProgramValue::UInt64(value) | ProgramValue::Int64(value),
         )) if value.uint64_as_const().is_some() || value.int64_as_const().is_some() => {}
-        ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::UInt32(value)))
-            if value.as_const().is_some() => {}
+        ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt32(
+            value,
+        ))) if value.as_const().is_some() => {}
         atom => {
             if !atoms.contains(atom) {
                 atoms.push(atom.clone());
@@ -426,10 +432,10 @@ fn literal_carrier(expression: &ContractExpression) -> Option<Carrier> {
         ContractExpression::Add(left, right) | ContractExpression::Subtract(left, right) => {
             literal_carrier(left).or_else(|| literal_carrier(right))
         }
-        ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::UInt64(_))) => {
-            Some(Carrier::UInt64)
-        }
-        ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::Int64(_))) => {
+        ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt64(
+            _,
+        ))) => Some(Carrier::UInt64),
+        ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int64(_))) => {
             Some(Carrier::Int64)
         }
         _ => None,

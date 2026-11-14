@@ -3744,9 +3744,9 @@ mod tests {
         assert!(!graph.are_offsets_equal(&scaled(value.clone(), 8, false), &target));
         assert!(!graph.are_offsets_equal(&scaled(value, 4, true), &target));
         let before =
-            crate::kernel::intern_c_memory(crate::kernel::Memory::new().with_block("offset", 8));
+            crate::kernel::intern_memory(crate::kernel::Memory::new().with_block("offset", 8));
         let address = Pointer::symbolic(Variable(12));
-        let after = crate::kernel::intern_c_memory(before.memory().clone().store(
+        let after = crate::kernel::intern_memory(before.memory().clone().store(
             address.clone(),
             crate::kernel::ProgramValue::Int32(MachineTerm::constant(9)),
         ));

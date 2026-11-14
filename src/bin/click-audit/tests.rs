@@ -1,7 +1,6 @@
 use super::*;
 use click::surface::{
-    c0_smart_tactic_source_sites, c0_tactic_source_position, verify_c0_sources,
-    verify_c0_sources_at,
+    c_smart_tactic_source_sites, c_tactic_source_position, verify_c_sources, verify_c_sources_at,
 };
 
 #[test]
@@ -101,16 +100,12 @@ fn execution_theorem_contract_labels_expand_and_audit() {
         })
         .unwrap_or_else(|error| panic!("{claim}: {error}"));
         if fixture == "named_contract_value_parameter_execution_theorem" {
-            let CInput::Bundle(sources) = &source.inputs else {
+            let VerificationInput::Bundle(sources) = &source.inputs else {
                 panic!("the fixture has ordinary C sources");
             };
             assert_eq!(
-                expand_c0_claim_source_by_label(
-                    &source.click_source,
-                    &source_refs(sources),
-                    &claim
-                )
-                .unwrap(),
+                expand_c_claim_source_by_label(&source.click_source, &source_refs(sources), &claim)
+                    .unwrap(),
                 rewritten
             );
         }
@@ -119,7 +114,7 @@ fn execution_theorem_contract_labels_expand_and_audit() {
         run_audit(arguments).unwrap_or_else(|error| panic!("{fixture}: {error}"));
     }
     assert!(
-        expand_c0_claim_source_by_label(
+        expand_c_claim_source_by_label(
             "theorem ordinary() { ensures 1 == 1; }",
             &[],
             "ordinary.contract",
@@ -172,7 +167,7 @@ fn generic_cpp_clause_proofs_stay_on_the_generic_method() {
         "{error}"
     );
 
-    let error = verify_c0_sources(
+    let error = verify_c_sources(
         "extern int32 f() { ensures result == 0 by { normalize(); } }",
         &[],
     )
@@ -424,7 +419,7 @@ int32 unrelated(int32 x) { ensures result == x; }
         baseline.replacen("result == x", "result >= x", 1),
     ] {
         let selection =
-            c0_incremental_selection(&changed, &c_sources, baseline, &c_sources).unwrap();
+            c_incremental_selection(&changed, &c_sources, baseline, &c_sources).unwrap();
         assert_eq!(selection.selected_functions, ["caller", "leaf"]);
         let functions = selection
             .selected_functions
@@ -764,7 +759,7 @@ int32 example() {
 }
 "#;
     let sources = [("example.c", c_source)];
-    let inventory = c0_smart_tactic_source_sites(click_source, &sources).unwrap();
+    let inventory = c_smart_tactic_source_sites(click_source, &sources).unwrap();
     assert_eq!(
         inventory
             .iter()
@@ -779,15 +774,14 @@ int32 example() {
             ("example.contract", 1, "solve"),
         ]
     );
-    verify_c0_sources(click_source, &sources).unwrap();
-    let position =
-        c0_tactic_source_position(click_source, &sources, "example.contract", 0).unwrap();
+    verify_c_sources(click_source, &sources).unwrap();
+    let position = c_tactic_source_position(click_source, &sources, "example.contract", 0).unwrap();
     let expanded =
-        expand_c0_tactic_source_at(click_source, &sources, position.line, position.column).unwrap();
+        expand_c_tactic_source_at(click_source, &sources, position.line, position.column).unwrap();
 
     assert_ne!(expanded, click_source);
     click::surface::verifying_source_paths(&expanded).unwrap();
-    verify_c0_sources(&expanded, &sources).unwrap();
+    verify_c_sources(&expanded, &sources).unwrap();
 }
 
 #[test]
@@ -802,10 +796,9 @@ int32 example() {
 }
 "#;
     let sources = [("example.c", c_source)];
-    let position =
-        c0_tactic_source_position(click_source, &sources, "example.contract", 1).unwrap();
+    let position = c_tactic_source_position(click_source, &sources, "example.contract", 1).unwrap();
     let expanded =
-        expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
+        expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("redundant trailing solve should expand away");
     assert!(!expanded.contains("solve();"));
 
@@ -813,14 +806,14 @@ int32 example() {
         container_source: expanded.clone(),
         click_source: expanded,
         c_sources: vec![("example.c".to_string(), c_source.to_string())],
-        inputs: CInput::Bundle(vec![("example.c".to_string(), c_source.to_string())]),
+        inputs: VerificationInput::Bundle(vec![("example.c".to_string(), c_source.to_string())]),
         project: None,
         line_offset: 0,
         mdtest: None,
     };
     let relocated = claim_source_position(&source, "example.contract")
         .expect("the rewritten claim should have a fresh selector");
-    verify_c0_sources_at(
+    verify_c_sources_at(
         &source.click_source,
         &[("example.c", c_source)],
         relocated.line,
@@ -861,7 +854,7 @@ int32 count_to_one() {
 }
 "#;
     let sources = [("loop.c", c_source)];
-    let inventory = c0_smart_tactic_source_sites(click_source, &sources).unwrap();
+    let inventory = c_smart_tactic_source_sites(click_source, &sources).unwrap();
 
     assert!(
         inventory
@@ -929,7 +922,7 @@ fn markdown_inventory_and_expansion_use_container_coordinates() {
     let source =
         load_audit_source_from_text(&path, expanded).expect("expanded markdown should re-extract");
     let refs = source_refs(&source.c_sources);
-    verify_c0_sources(&source.click_source, &refs).expect("expanded markdown proof should verify");
+    verify_c_sources(&source.click_source, &refs).expect("expanded markdown proof should verify");
     let mut worker = AuditSessionWorker::start(&path, AuditLimits::default().session).unwrap();
     audit_site(
         site,
@@ -945,7 +938,10 @@ fn markdown_inventory_and_expansion_use_container_coordinates() {
 fn cpp_mdtest_audit_inventories_imported_semantics() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("mdtests/cpp_scalar_catch.md");
     let source = load_audit_source(&path).expect("prepare C++ mdtest for audit");
-    assert!(matches!(source.inputs, CInput::PreparedProgram(_)));
+    assert!(matches!(
+        source.inputs,
+        VerificationInput::PreparedProgram(_)
+    ));
     assert!(source.project.is_some());
     let sites = inventory_sites(&[path]).expect("inventory C++ smart proof sites");
     assert!(sites.iter().any(|site| site.claim == "caller.ensures_0"));
@@ -989,7 +985,7 @@ int32 write_selected(int32 p[2], int32 flag) {
         .expect("the audit expansion path should handle branched frames");
     let source = load_audit_source_from_text(&click_path, expanded.clone()).unwrap();
     let refs = source_refs(&source.c_sources);
-    verify_c0_sources(&source.click_source, &refs)
+    verify_c_sources(&source.click_source, &refs)
         .expect("the audited branched expansion should verify");
 
     assert_eq!(
@@ -1032,7 +1028,7 @@ int32 flag(int32 x) {
     let click_path = directory.join("dropped_arm.click");
     fs::write(directory.join("flag.c"), c_source).unwrap();
     fs::write(&click_path, click_source).unwrap();
-    verify_c0_sources(click_source, &[("flag.c", c_source)])
+    verify_c_sources(click_source, &[("flag.c", c_source)])
         .expect("the infeasible-arm proof should verify");
 
     let sites = inventory_sites(std::slice::from_ref(&click_path)).unwrap();
@@ -1045,7 +1041,7 @@ int32 flag(int32 x) {
     assert!(!expanded.contains("step(); solve();"), "{expanded}");
     let source = load_audit_source_from_text(&click_path, expanded.clone()).unwrap();
     let refs = source_refs(&source.c_sources);
-    verify_c0_sources(&source.click_source, &refs)
+    verify_c_sources(&source.click_source, &refs)
         .expect("the audited dropped-arm expansion should verify");
 
     assert_eq!(
@@ -1165,7 +1161,7 @@ void object_retain_many(struct object* obj, int32 amount) {
     let click_path = directory.join("scope_have.click");
     fs::write(directory.join("object_retain_many.c"), c_source).unwrap();
     fs::write(&click_path, click_source).unwrap();
-    verify_c0_sources(click_source, &[("object_retain_many.c", c_source)])
+    verify_c_sources(click_source, &[("object_retain_many.c", c_source)])
         .expect("the produced-resource proof should verify");
 
     let line_of = |needle: &str| {
@@ -1192,7 +1188,7 @@ void object_retain_many(struct object* obj, int32 amount) {
             .unwrap_or_else(|error| panic!("line {line} should expand: {error}"));
         let source = load_audit_source_from_text(&click_path, expanded.clone()).unwrap();
         let refs = source_refs(&source.c_sources);
-        verify_c0_sources(&source.click_source, &refs)
+        verify_c_sources(&source.click_source, &refs)
             .unwrap_or_else(|error| panic!("line {line} rewrite: {}", error.message()));
         assert_eq!(
             reexpand_source(&click_path, &site.claim, &expanded).unwrap(),
@@ -1316,7 +1312,7 @@ struct node* unpack(struct node* node) {
     let click_path = directory.join("witness.click");
     fs::write(directory.join("unpack.c"), c_source).unwrap();
     fs::write(&click_path, click_source).unwrap();
-    verify_c0_sources(click_source, &[("unpack.c", c_source)])
+    verify_c_sources(click_source, &[("unpack.c", c_source)])
         .expect("the witness fold/unfold proof should verify");
 
     let closer_line = click_source
@@ -1331,7 +1327,7 @@ struct node* unpack(struct node* node) {
         .expect("the closer should be an auditable site");
     let expanded = expand_location(&format_location(&site_location(site)))
         .expect("the checked return pointer names the witness");
-    verify_c0_sources(&expanded, &[("unpack.c", c_source)])
+    verify_c_sources(&expanded, &[("unpack.c", c_source)])
         .expect("the expansion must verify with fresh kernel state");
     fs::remove_dir_all(directory).unwrap();
 }
@@ -1400,7 +1396,7 @@ uint32 count_live(struct cell* node) {
     let click_path = directory.join("count_live.click");
     fs::write(directory.join("count_live.c"), c_source).unwrap();
     fs::write(&click_path, click_source).unwrap();
-    verify_c0_sources(click_source, &[("count_live.c", c_source)])
+    verify_c_sources(click_source, &[("count_live.c", c_source)])
         .expect("the recursive count proof should verify");
 
     // The arm's implicit tail is not a located site; the claim's expansion
@@ -1414,7 +1410,7 @@ uint32 count_live(struct cell* node) {
     );
     let source = load_audit_source_from_text(&click_path, expanded.clone()).unwrap();
     let refs = source_refs(&source.c_sources);
-    verify_c0_sources(&source.click_source, &refs)
+    verify_c_sources(&source.click_source, &refs)
         .unwrap_or_else(|error| panic!("the rewritten arm should reverify: {}", error.message()));
     assert_eq!(
         reexpand_source(&click_path, "count_live.contract", &expanded).unwrap(),
@@ -1472,7 +1468,7 @@ int32 stop_at(int32 n) {
     let click_path = directory.join("stop_at.click");
     fs::write(directory.join("stop_at.c"), c_source).unwrap();
     fs::write(&click_path, click_source).unwrap();
-    verify_c0_sources(click_source, &[("stop_at.c", c_source)])
+    verify_c_sources(click_source, &[("stop_at.c", c_source)])
         .expect("the omitted-phase break-exit loop should verify");
 
     let loop_offset = click_source
@@ -1496,7 +1492,7 @@ int32 stop_at(int32 n) {
     );
     let source = load_audit_source_from_text(&click_path, expanded.clone()).unwrap();
     let refs = source_refs(&source.c_sources);
-    verify_c0_sources(&source.click_source, &refs).unwrap_or_else(|error| {
+    verify_c_sources(&source.click_source, &refs).unwrap_or_else(|error| {
         panic!(
             "the rewritten preservation should reverify: {}",
             error.message()
@@ -1668,7 +1664,7 @@ fn loop_expansion_preserves_match_pointer_theorem_arguments_and_audits_every_sit
     let path = directory.join("loop_pointer.md");
     fs::write(&path, source).unwrap();
     let prepared = load_audit_source(&path).unwrap();
-    verify_c0_sources(&prepared.click_source, &source_refs(&prepared.c_sources))
+    verify_c_sources(&prepared.click_source, &source_refs(&prepared.c_sources))
         .expect("the original loop must verify before expansion");
     let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
     let loop_site = sites
@@ -2067,14 +2063,14 @@ theorem nested(x: int32) {
     assert_ne!(sites[0].position, sites[1].position);
     for site in sites {
         assert_eq!(site.position, site.click_position);
-        let expanded = expand_c0_tactic_source_at(
+        let expanded = expand_c_tactic_source_at(
             source,
             &[],
             site.click_position.line,
             site.click_position.column,
         )
         .unwrap();
-        verify_c0_sources(&expanded, &[]).unwrap();
+        verify_c_sources(&expanded, &[]).unwrap();
     }
 }
 
@@ -2182,7 +2178,7 @@ int32 compare(uint8 bytes[]) {
     let path = directory.path().join("compare.click");
     fs::write(directory.path().join("compare.c"), c_source).unwrap();
     fs::write(&path, click_source).unwrap();
-    verify_c0_sources(click_source, &[("compare.c", c_source)]).unwrap();
+    verify_c_sources(click_source, &[("compare.c", c_source)]).unwrap();
     let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
     assert_eq!(sites.len(), 1);
     let limits = AuditLimits::default();
@@ -2197,7 +2193,7 @@ int32 compare(uint8 bytes[]) {
     // cold check can detect the omitted evidence.
     let incomplete =
         click_source.replace("solve();", "have 1 == 1 by { normalize(); } assumption();");
-    verify_c0_sources(&incomplete, &[("compare.c", c_source)]).unwrap();
+    verify_c_sources(&incomplete, &[("compare.c", c_source)]).unwrap();
     // Even an unchanged candidate must fail if a bare step still relies on
     // implicit solving. Exercise both changed and byte-identical replies.
     for original in [click_source, incomplete.as_str()] {
@@ -2436,14 +2432,14 @@ fn body_safety_proofs_have_one_auditable_source_site() {
             .any(|site| site.claim == "healthy.ensures_0")
     );
     let source = load_audit_source(&path).unwrap();
-    let CInput::Bundle(inputs) = &source.inputs else {
+    let VerificationInput::Bundle(inputs) = &source.inputs else {
         panic!("the fixture has ordinary C sources");
     };
     let position =
         claim_source_position_for_source(&source, &source.click_source, "read_byte.body_safety")
             .unwrap();
     assert_eq!(
-        verify_c0_sources_at(
+        verify_c_sources_at(
             &source.click_source,
             &source_refs(inputs),
             position.line,
@@ -2454,7 +2450,7 @@ fn body_safety_proofs_have_one_auditable_source_site() {
         1
     );
     assert!(
-        verify_c0_sources(&source.click_source, &source_refs(inputs))
+        verify_c_sources(&source.click_source, &source_refs(inputs))
             .unwrap()
             .is_empty(),
         "whole-source verification keeps its existing implicit body-safety result behavior"
@@ -2463,7 +2459,7 @@ fn body_safety_proofs_have_one_auditable_source_site() {
         "views p[0..1]; }",
         "views p[0..1]; } by { step_until(function.exit); solve(); }",
     );
-    let written_sites = c0_smart_tactic_source_sites(&written, &source_refs(inputs)).unwrap();
+    let written_sites = c_smart_tactic_source_sites(&written, &source_refs(inputs)).unwrap();
     assert_eq!(
         written_sites
             .iter()

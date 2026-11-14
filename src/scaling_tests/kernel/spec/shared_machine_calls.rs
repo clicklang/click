@@ -84,7 +84,8 @@ fn actual_nested_call_production_and_native_handoffs_scale_linearly() {
         let _session = VerificationSession::enter();
         let state = ExecutionState::new();
         let mut values = crate::persistent::PersistentMap::default();
-        let mut root = KernelTerm::variable(KernelType::C(ProgramType::UInt32), Variable(995831));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ProgramType::UInt32), Variable(995831));
         let expression = call_expression(
             MachineIntegerType::UInt32,
             vec![SpecExpression::ProgramExpression(

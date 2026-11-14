@@ -20,7 +20,7 @@ impl EqualityGraph {
         insert: bool,
     ) -> bool {
         let anchors = match source.proposition() {
-            Proposition::CResourceSeparate { left, right } => {
+            Proposition::ResourceSeparate { left, right } => {
                 let (Resource::Memory(a), Resource::Memory(b)) = (left.as_ref(), right.as_ref())
                 else {
                     return false;

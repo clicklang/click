@@ -25,9 +25,9 @@ trait VariableSubstitution {
     fn local_slot(&self, pointer: &Pointer) -> Pointer;
     fn term(&self, term: &Term) -> Term;
     fn condition(&self, condition: &ConditionTerm) -> ConditionTerm;
-    fn c_value(&self, value: &ProgramValue) -> ProgramValue;
+    fn program_value(&self, value: &ProgramValue) -> ProgramValue;
     fn expression_value(&self, value: &ExecutionValue) -> ExecutionValue;
-    fn c_expression(&self, expression: &ProgramExpression) -> ProgramExpression;
+    fn program_expression(&self, expression: &ProgramExpression) -> ProgramExpression;
     fn memory(&self, memory: &Memory) -> Memory;
     fn algebraic_term(&self, term: &AlgebraicTerm) -> AlgebraicTerm;
     fn spec_expression(&self, expression: &SpecExpression) -> SpecExpression;
@@ -73,8 +73,8 @@ impl VariableSubstitution for BitvectorSubstitution<'_> {
     fn condition(&self, condition: &ConditionTerm) -> ConditionTerm {
         substitute_bitvector_variable_in_condition(condition, self.from, self.to)
     }
-    fn c_value(&self, value: &ProgramValue) -> ProgramValue {
-        substitute_bitvector_variable_in_c_value(value, self.from, self.to)
+    fn program_value(&self, value: &ProgramValue) -> ProgramValue {
+        substitute_bitvector_variable_in_program_value(value, self.from, self.to)
     }
     fn expression_value(&self, value: &ExecutionValue) -> ExecutionValue {
         if let Some(root) = value.shared() {
@@ -86,10 +86,10 @@ impl VariableSubstitution for BitvectorSubstitution<'_> {
                 return rewritten.into();
             }
         }
-        self.c_value(&value.native()).into()
+        self.program_value(&value.native()).into()
     }
-    fn c_expression(&self, expression: &ProgramExpression) -> ProgramExpression {
-        substitute_bitvector_variable_in_c_expression(expression, self.from, self.to)
+    fn program_expression(&self, expression: &ProgramExpression) -> ProgramExpression {
+        substitute_bitvector_variable_in_program_expression(expression, self.from, self.to)
     }
     fn memory(&self, memory: &Memory) -> Memory {
         substitute_bitvector_variable_in_memory(memory, self.from, self.to)
@@ -150,8 +150,8 @@ impl VariableSubstitution for PointerSubstitution<'_> {
     fn condition(&self, condition: &ConditionTerm) -> ConditionTerm {
         substitute_pointer_variable_in_condition(condition, self.from, self.to)
     }
-    fn c_value(&self, value: &ProgramValue) -> ProgramValue {
-        substitute_pointer_variable_in_c_value(value, self.from, self.to)
+    fn program_value(&self, value: &ProgramValue) -> ProgramValue {
+        substitute_pointer_variable_in_program_value(value, self.from, self.to)
     }
     fn expression_value(&self, value: &ExecutionValue) -> ExecutionValue {
         if let Some(root) = value.shared() {
@@ -164,10 +164,10 @@ impl VariableSubstitution for PointerSubstitution<'_> {
                 return rewritten.into();
             }
         }
-        self.c_value(&value.native()).into()
+        self.program_value(&value.native()).into()
     }
-    fn c_expression(&self, expression: &ProgramExpression) -> ProgramExpression {
-        substitute_pointer_variable_in_c_expression(expression, self.from, self.to)
+    fn program_expression(&self, expression: &ProgramExpression) -> ProgramExpression {
+        substitute_pointer_variable_in_program_expression(expression, self.from, self.to)
     }
     fn memory(&self, memory: &Memory) -> Memory {
         substitute_pointer_variable_in_memory(memory, self.from, self.to)
@@ -232,62 +232,62 @@ fn substitute_bitvector_variable_in_sequence(
 }
 
 #[cfg(test)]
-pub(in crate::kernel) fn substitute_bitvector_variable_in_c_statement(
+pub(in crate::kernel) fn substitute_bitvector_variable_in_execution_statement(
     statement: &ProgramStatement,
     from: Variable,
     to: &MachineTerm,
 ) -> ProgramStatement {
-    walk_c_statement(statement, &BitvectorSubstitution { from, to })
+    walk_execution_statement(statement, &BitvectorSubstitution { from, to })
 }
 
-pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression_outcome(
+pub(in crate::kernel) fn substitute_bitvector_variable_in_program_expression_outcome(
     outcome: &ExpressionOutcome,
     from: Variable,
     to: &MachineTerm,
 ) -> ExpressionOutcome {
-    walk_c_expression_outcome(outcome, &BitvectorSubstitution { from, to })
+    walk_program_expression_outcome(outcome, &BitvectorSubstitution { from, to })
 }
 
-pub(in crate::kernel) fn substitute_bitvector_variable_in_c_statement_outcome(
+pub(in crate::kernel) fn substitute_bitvector_variable_in_execution_statement_outcome(
     outcome: &StatementOutcome,
     from: Variable,
     to: &MachineTerm,
 ) -> StatementOutcome {
-    walk_c_statement_outcome(outcome, &BitvectorSubstitution { from, to })
+    walk_execution_statement_outcome(outcome, &BitvectorSubstitution { from, to })
 }
 
-pub(in crate::kernel) fn substitute_bitvector_variable_in_c_function_outcome(
+pub(in crate::kernel) fn substitute_bitvector_variable_in_program_function_outcome(
     outcome: &FunctionOutcome,
     from: Variable,
     to: &MachineTerm,
 ) -> FunctionOutcome {
-    walk_c_function_outcome(outcome, &BitvectorSubstitution { from, to })
+    walk_program_function_outcome(outcome, &BitvectorSubstitution { from, to })
 }
 
-fn substitute_bitvector_variable_in_c_state(
+fn substitute_bitvector_variable_in_execution_state(
     state: &ExecutionState,
     from: Variable,
     to: &MachineTerm,
 ) -> ExecutionState {
-    walk_c_state(state, &BitvectorSubstitution { from, to })
+    walk_execution_state(state, &BitvectorSubstitution { from, to })
 }
 
 #[cfg(test)]
-pub(in crate::kernel) fn substitute_bitvector_variable_in_c_resource(
+pub(in crate::kernel) fn substitute_bitvector_variable_in_resource(
     resource: &Resource,
     from: Variable,
     to: &MachineTerm,
 ) -> Resource {
-    walk_c_resource(resource, &BitvectorSubstitution { from, to })
+    walk_resource(resource, &BitvectorSubstitution { from, to })
 }
 
 #[cfg(test)]
-pub(in crate::kernel) fn substitute_bitvector_variable_in_c_function(
+pub(in crate::kernel) fn substitute_bitvector_variable_in_program_function(
     function: &ProgramFunction,
     from: Variable,
     to: &MachineTerm,
 ) -> ProgramFunction {
-    walk_c_function(function, &BitvectorSubstitution { from, to })
+    walk_program_function(function, &BitvectorSubstitution { from, to })
 }
 
 #[cfg(test)]
@@ -354,62 +354,62 @@ fn substitute_pointer_variable_in_sequence(
 }
 
 #[cfg(test)]
-fn substitute_pointer_variable_in_c_statement(
+fn substitute_pointer_variable_in_execution_statement(
     statement: &ProgramStatement,
     from: Variable,
     to: &Pointer,
 ) -> ProgramStatement {
-    walk_c_statement(statement, &PointerSubstitution { from, to })
+    walk_execution_statement(statement, &PointerSubstitution { from, to })
 }
 
-fn substitute_pointer_variable_in_c_expression_outcome(
+fn substitute_pointer_variable_in_program_expression_outcome(
     outcome: &ExpressionOutcome,
     from: Variable,
     to: &Pointer,
 ) -> ExpressionOutcome {
-    walk_c_expression_outcome(outcome, &PointerSubstitution { from, to })
+    walk_program_expression_outcome(outcome, &PointerSubstitution { from, to })
 }
 
-fn substitute_pointer_variable_in_c_statement_outcome(
+fn substitute_pointer_variable_in_execution_statement_outcome(
     outcome: &StatementOutcome,
     from: Variable,
     to: &Pointer,
 ) -> StatementOutcome {
-    walk_c_statement_outcome(outcome, &PointerSubstitution { from, to })
+    walk_execution_statement_outcome(outcome, &PointerSubstitution { from, to })
 }
 
-fn substitute_pointer_variable_in_c_function_outcome(
+fn substitute_pointer_variable_in_program_function_outcome(
     outcome: &FunctionOutcome,
     from: Variable,
     to: &Pointer,
 ) -> FunctionOutcome {
-    walk_c_function_outcome(outcome, &PointerSubstitution { from, to })
+    walk_program_function_outcome(outcome, &PointerSubstitution { from, to })
 }
 
-fn substitute_pointer_variable_in_c_state(
+fn substitute_pointer_variable_in_execution_state(
     state: &ExecutionState,
     from: Variable,
     to: &Pointer,
 ) -> ExecutionState {
-    walk_c_state(state, &PointerSubstitution { from, to })
+    walk_execution_state(state, &PointerSubstitution { from, to })
 }
 
 #[cfg(test)]
-fn substitute_pointer_variable_in_c_resource(
+fn substitute_pointer_variable_in_resource(
     resource: &Resource,
     from: Variable,
     to: &Pointer,
 ) -> Resource {
-    walk_c_resource(resource, &PointerSubstitution { from, to })
+    walk_resource(resource, &PointerSubstitution { from, to })
 }
 
 #[cfg(test)]
-fn substitute_pointer_variable_in_c_function(
+fn substitute_pointer_variable_in_program_function(
     function: &ProgramFunction,
     from: Variable,
     to: &Pointer,
 ) -> ProgramFunction {
-    walk_c_function(function, &PointerSubstitution { from, to })
+    walk_program_function(function, &PointerSubstitution { from, to })
 }
 
 fn walk_algebraic_value<S: VariableSubstitution + ?Sized>(
@@ -417,18 +417,18 @@ fn walk_algebraic_value<S: VariableSubstitution + ?Sized>(
     s: &S,
 ) -> AlgebraicValue {
     match value {
-        AlgebraicValue::C(value) => AlgebraicValue::C(s.c_value(value)),
+        AlgebraicValue::Program(value) => AlgebraicValue::Program(s.program_value(value)),
         AlgebraicValue::Integer(value) => AlgebraicValue::Integer(s.integer(value)),
         AlgebraicValue::Algebraic(value) => AlgebraicValue::Algebraic(s.algebraic_term(value)),
     }
 }
 
-fn walk_c_expression_outcome<S: VariableSubstitution + ?Sized>(
+fn walk_program_expression_outcome<S: VariableSubstitution + ?Sized>(
     outcome: &ExpressionOutcome,
     s: &S,
 ) -> ExpressionOutcome {
     match outcome {
-        ExpressionOutcome::Value(value) => ExpressionOutcome::Value(s.c_value(value)),
+        ExpressionOutcome::Value(value) => ExpressionOutcome::Value(s.program_value(value)),
         ExpressionOutcome::UndefinedBehavior(kind) => {
             ExpressionOutcome::UndefinedBehavior(kind.clone())
         }
@@ -436,7 +436,7 @@ fn walk_c_expression_outcome<S: VariableSubstitution + ?Sized>(
     }
 }
 
-fn walk_c_function<S: VariableSubstitution + ?Sized>(
+fn walk_program_function<S: VariableSubstitution + ?Sized>(
     function: &ProgramFunction,
     s: &S,
 ) -> ProgramFunction {
@@ -474,7 +474,7 @@ fn walk_c_function<S: VariableSubstitution + ?Sized>(
     interface.contract_mutable = function
         .contract_mutable()
         .iter()
-        .map(|segment| walk_c_memory_segment(segment, s))
+        .map(|segment| walk_memory_segment(segment, s))
         .collect();
     // The declared measure is read at states like a `requires` is, so it is
     // rewritten with them; leaving it behind would make a substituted
@@ -482,7 +482,7 @@ fn walk_c_function<S: VariableSubstitution + ?Sized>(
     interface.recursion_measure = interface
         .recursion_measure
         .iter()
-        .map(|measure| walk_c_ranking_component(measure, s))
+        .map(|measure| walk_ranking_component(measure, s))
         .collect();
     interface.composite_resource_definitions = function
         .composite_resource_definitions()
@@ -588,8 +588,8 @@ fn walk_c_function<S: VariableSubstitution + ?Sized>(
         program_entry: function.program_entry,
         name: function.name.clone(),
         inline_body: function.inline_body,
-        body: walk_c_statement(function.body(), s),
-        source_body: walk_c_statement(function.source_body(), s),
+        body: walk_execution_statement(function.body(), s),
+        source_body: walk_execution_statement(function.source_body(), s),
         control_targets: std::sync::Arc::new(
             function
                 .control_targets
@@ -599,7 +599,10 @@ fn walk_c_function<S: VariableSubstitution + ?Sized>(
                         *identity,
                         ControlTarget {
                             statement_index: target.statement_index,
-                            remaining: std::sync::Arc::new(walk_c_statement(&target.remaining, s)),
+                            remaining: std::sync::Arc::new(walk_execution_statement(
+                                &target.remaining,
+                                s,
+                            )),
                         },
                     )
                 })
@@ -615,18 +618,18 @@ fn walk_c_function<S: VariableSubstitution + ?Sized>(
     }
 }
 
-fn walk_c_function_outcome<S: VariableSubstitution + ?Sized>(
+fn walk_program_function_outcome<S: VariableSubstitution + ?Sized>(
     outcome: &FunctionOutcome,
     s: &S,
 ) -> FunctionOutcome {
     match outcome {
         FunctionOutcome::Return { value, state } => FunctionOutcome::Return {
             value: s.expression_value(value).into(),
-            state: Box::new(walk_c_state(state, s)),
+            state: Box::new(walk_execution_state(state, s)),
         },
         FunctionOutcome::Throw { value, state } => FunctionOutcome::Throw {
             value: s.expression_value(value).into(),
-            state: Box::new(walk_c_state(state, s)),
+            state: Box::new(walk_execution_state(state, s)),
         },
         FunctionOutcome::VerificationDiverges => FunctionOutcome::VerificationDiverges,
         FunctionOutcome::UndefinedBehavior(kind) => {
@@ -636,34 +639,34 @@ fn walk_c_function_outcome<S: VariableSubstitution + ?Sized>(
     }
 }
 
-fn walk_c_function_specification<S: VariableSubstitution + ?Sized>(
+fn walk_program_function_specification<S: VariableSubstitution + ?Sized>(
     specification: &FunctionSpecification,
     s: &S,
 ) -> FunctionSpecification {
     FunctionSpecification {
-        state: walk_c_state(specification.state(), s),
+        state: walk_execution_state(specification.state(), s),
         arguments: specification
             .arguments()
             .iter()
-            .map(|argument| s.c_expression(argument))
+            .map(|argument| s.program_expression(argument))
             .collect(),
         requires: specification
             .requires()
             .iter()
             .map(|requirement| walk_proposition(requirement, s))
             .collect(),
-        outcome: walk_c_function_outcome(specification.outcome(), s),
+        outcome: walk_program_function_outcome(specification.outcome(), s),
     }
 }
 
-fn walk_c_memory_segment<S: VariableSubstitution + ?Sized>(
+fn walk_memory_segment<S: VariableSubstitution + ?Sized>(
     segment: &MemorySegment,
     s: &S,
 ) -> MemorySegment {
     MemorySegment {
-        base: s.c_expression(&segment.base),
-        start: s.c_expression(&segment.start),
-        end: s.c_expression(&segment.end),
+        base: s.program_expression(&segment.base),
+        start: s.program_expression(&segment.start),
+        end: s.program_expression(&segment.end),
         element_width: segment.element_width,
         uninitialized: segment.uninitialized,
         value_runs: segment.value_runs.clone(),
@@ -674,13 +677,13 @@ fn walk_c_memory_segment<S: VariableSubstitution + ?Sized>(
     }
 }
 
-fn walk_c_ranking_component<S: VariableSubstitution + ?Sized>(
+fn walk_ranking_component<S: VariableSubstitution + ?Sized>(
     measure: &RankingComponent,
     s: &S,
 ) -> RankingComponent {
     match measure {
         RankingComponent::ProgramExpression(expression) => {
-            RankingComponent::ProgramExpression(s.c_expression(expression))
+            RankingComponent::ProgramExpression(s.program_expression(expression))
         }
         RankingComponent::Pure { source, expression } => RankingComponent::Pure {
             source: source.clone(),
@@ -693,10 +696,10 @@ fn walk_c_ranking_component<S: VariableSubstitution + ?Sized>(
     }
 }
 
-fn walk_c_resource<S: VariableSubstitution + ?Sized>(resource: &Resource, s: &S) -> Resource {
+fn walk_resource<S: VariableSubstitution + ?Sized>(resource: &Resource, s: &S) -> Resource {
     match resource {
         Resource::Star(pair) => {
-            Resource::star(walk_c_resource(&pair.0, s), walk_c_resource(&pair.1, s))
+            Resource::star(walk_resource(&pair.0, s), walk_resource(&pair.1, s))
         }
         Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp => resource.clone(),
         Resource::PopulationAuthority(description) => Resource::PopulationAuthority(
@@ -706,7 +709,7 @@ fn walk_c_resource<S: VariableSubstitution + ?Sized>(resource: &Resource, s: &S)
             side: right.side,
             payload: right.payload.map_values(|v| walk_algebraic_value(v, s)),
             flag: s.pointer(&right.flag),
-            observed: right.observed.as_ref().map(|value| s.c_value(value)),
+            observed: right.observed.as_ref().map(|value| s.program_value(value)),
         }),
         Resource::MutexUse(identity) => Resource::MutexUse(MutexUseIdentity {
             protected: identity.protected.as_ref().map(|p| {
@@ -758,7 +761,7 @@ fn walk_c_resource<S: VariableSubstitution + ?Sized>(resource: &Resource, s: &S)
             );
             Resource::Instance(result)
         }
-        Resource::Memory(range) => Resource::Memory(walk_c_memory_range(range, s)),
+        Resource::Memory(range) => Resource::Memory(walk_memory_range(range, s)),
         Resource::Iterated(iterated) => Resource::iterated(
             iterated.map_terms(|term| s.bitvector(term), |pointer| s.pointer(pointer)),
         ),
@@ -779,7 +782,10 @@ fn walk_c_resource<S: VariableSubstitution + ?Sized>(resource: &Resource, s: &S)
     }
 }
 
-fn walk_c_state<S: VariableSubstitution + ?Sized>(state: &ExecutionState, s: &S) -> ExecutionState {
+fn walk_execution_state<S: VariableSubstitution + ?Sized>(
+    state: &ExecutionState,
+    s: &S,
+) -> ExecutionState {
     let bindings = state
         .locals
         .bindings
@@ -870,7 +876,7 @@ fn walk_c_state<S: VariableSubstitution + ?Sized>(state: &ExecutionState, s: &S)
             std::sync::Arc::new(
                 results
                     .iter()
-                    .map(|(call, value)| (*call, s.c_value(value)))
+                    .map(|(call, value)| (*call, s.program_value(value)))
                     .collect(),
             )
         }),
@@ -900,7 +906,7 @@ fn walk_c_state<S: VariableSubstitution + ?Sized>(state: &ExecutionState, s: &S)
                 |status| s.bitvector(status),
                 |resources| walk_resource_context(resources, s),
                 |pointer| s.pointer(pointer),
-                |value| s.c_value(value),
+                |value| s.program_value(value),
                 |memory| s.memory(memory),
             )
         }),
@@ -918,7 +924,7 @@ fn walk_c_state<S: VariableSubstitution + ?Sized>(state: &ExecutionState, s: &S)
     }
 }
 
-fn walk_c_statement<S: VariableSubstitution + ?Sized>(
+fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
     statement: &ProgramStatement,
     s: &S,
 ) -> ProgramStatement {
@@ -941,7 +947,7 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(
         } => ProgramStatement::ForStep {
             exited_locals: exited_locals.clone(),
             continue_after: *continue_after,
-            step: Box::new(walk_c_statement(step, s)),
+            step: Box::new(walk_execution_statement(step, s)),
         },
         ProgramStatement::Declare {
             initializer: Some(expression),
@@ -949,7 +955,7 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(
         } => {
             let mut statement = statement.clone();
             if let ProgramStatement::Declare { initializer, .. } = &mut statement {
-                *initializer = Some(s.c_expression(expression));
+                *initializer = Some(s.program_expression(expression));
             }
             statement
         }
@@ -960,7 +966,7 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(
         } => ProgramStatement::Assign {
             source: source.clone(),
             name: name.clone(),
-            expression: s.c_expression(expression),
+            expression: s.program_expression(expression),
         },
         ProgramStatement::CallAssign {
             target,
@@ -971,7 +977,7 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(
             function_name: function_name.clone(),
             arguments: arguments
                 .iter()
-                .map(|argument| s.c_expression(argument))
+                .map(|argument| s.program_expression(argument))
                 .collect(),
         },
         ProgramStatement::Call {
@@ -981,7 +987,7 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(
             function_name: function_name.clone(),
             arguments: arguments
                 .iter()
-                .map(|argument| s.c_expression(argument))
+                .map(|argument| s.program_expression(argument))
                 .collect(),
         },
         ProgramStatement::CallResult {
@@ -995,7 +1001,7 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(
             function_name: function_name.clone(),
             arguments: arguments
                 .iter()
-                .map(|argument| s.c_expression(argument))
+                .map(|argument| s.program_expression(argument))
                 .collect(),
             result_type: *result_type,
             result_pointee_constant: *result_pointee_constant,
@@ -1008,42 +1014,44 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(
             ends_program_on_failure,
         } => ProgramStatement::HeapAllocate {
             target: target.clone(),
-            bytes: s.c_expression(bytes),
+            bytes: s.program_expression(bytes),
             zeroed: *zeroed,
             object_type: object_type.clone(),
             ends_program_on_failure: *ends_program_on_failure,
         },
         ProgramStatement::HeapFree { pointer } => ProgramStatement::HeapFree {
-            pointer: s.c_expression(pointer),
+            pointer: s.program_expression(pointer),
         },
         ProgramStatement::Assert { condition, label } => ProgramStatement::Assert {
-            condition: s.c_expression(condition),
+            condition: s.program_expression(condition),
             label: label.clone(),
         },
         ProgramStatement::LoopTest { condition } => ProgramStatement::LoopTest {
-            condition: s.c_expression(condition),
+            condition: s.program_expression(condition),
         },
         ProgramStatement::Seq(statements) => ProgramStatement::Seq(
-            statements.map(|statement| std::sync::Arc::new(walk_c_statement(statement, s))),
+            statements.map(|statement| std::sync::Arc::new(walk_execution_statement(statement, s))),
         ),
         ProgramStatement::Return(expression) => {
-            ProgramStatement::Return(s.c_expression(expression))
+            ProgramStatement::Return(s.program_expression(expression))
         }
-        ProgramStatement::Throw(expression) => ProgramStatement::Throw(s.c_expression(expression)),
+        ProgramStatement::Throw(expression) => {
+            ProgramStatement::Throw(s.program_expression(expression))
+        }
         ProgramStatement::TryCatchInt32 {
             try_body,
             binding,
             handler,
             cleanup_unwind,
         } => ProgramStatement::TryCatchInt32 {
-            try_body: Box::new(walk_c_statement(try_body, s)),
+            try_body: Box::new(walk_execution_statement(try_body, s)),
             binding: binding.clone(),
-            handler: Box::new(walk_c_statement(handler, s)),
+            handler: Box::new(walk_execution_statement(handler, s)),
             cleanup_unwind: *cleanup_unwind,
         },
         ProgramStatement::Store { pointer, value } => ProgramStatement::Store {
-            pointer: s.c_expression(pointer),
-            value: s.c_expression(value),
+            pointer: s.program_expression(pointer),
+            value: s.program_expression(value),
         },
         ProgramStatement::TypedStore {
             pointer,
@@ -1054,8 +1062,8 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(
             pointee_constant,
             source,
         } => ProgramStatement::TypedStore {
-            pointer: s.c_expression(pointer),
-            value: s.c_expression(value),
+            pointer: s.program_expression(pointer),
+            value: s.program_expression(value),
             value_type: *value_type,
             access_class: access_class.clone(),
             volatile: *volatile,
@@ -1067,8 +1075,8 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(
             source,
             layout,
         } => ProgramStatement::CopyAggregate {
-            target: s.c_expression(target),
-            source: s.c_expression(source),
+            target: s.program_expression(target),
+            source: s.program_expression(source),
             layout: layout.clone(),
         },
         ProgramStatement::InitializeScalarArray {
@@ -1079,8 +1087,8 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(
             copy,
             fresh,
         } => ProgramStatement::InitializeScalarArray {
-            target: s.c_expression(target),
-            source: s.c_expression(source),
+            target: s.program_expression(target),
+            source: s.program_expression(source),
             element_type: *element_type,
             count: *count,
             copy: *copy,
@@ -1091,18 +1099,18 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(
             operator,
             operand,
         } => ProgramStatement::Update {
-            target: s.c_expression(target),
+            target: s.program_expression(target),
             operator: *operator,
-            operand: s.c_expression(operand),
+            operand: s.program_expression(operand),
         },
         ProgramStatement::If {
             condition,
             then_branch,
             else_branch,
         } => ProgramStatement::If {
-            condition: s.c_expression(condition),
-            then_branch: Box::new(walk_c_statement(then_branch, s)),
-            else_branch: Box::new(walk_c_statement(else_branch, s)),
+            condition: s.program_expression(condition),
+            then_branch: Box::new(walk_execution_statement(then_branch, s)),
+            else_branch: Box::new(walk_execution_statement(else_branch, s)),
         },
         ProgramStatement::While {
             condition,
@@ -1118,10 +1126,10 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(
             natural_exit_target,
         } => ProgramStatement::While {
             structural_measure: structural_measure.clone(),
-            condition: s.c_expression(condition),
+            condition: s.program_expression(condition),
             ranking_measures: ranking_measures
                 .iter()
-                .map(|measure| walk_c_ranking_component(measure, s))
+                .map(|measure| walk_ranking_component(measure, s))
                 .collect(),
             resource_specs: resource_specs
                 .iter()
@@ -1149,7 +1157,7 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(
                     validated_ranges: check.validated_ranges.as_ref().map(|ranges| {
                         ranges
                             .iter()
-                            .map(|range| walk_c_memory_range(range, s))
+                            .map(|range| walk_memory_range(range, s))
                             .collect()
                     }),
                 })
@@ -1157,44 +1165,46 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(
             do_while: *do_while,
             backedge_target: *backedge_target,
             natural_exit_target: *natural_exit_target,
-            body: Box::new(walk_c_statement(body, s)),
+            body: Box::new(walk_execution_statement(body, s)),
         },
         ProgramStatement::Switch { expression, cases } => ProgramStatement::Switch {
-            expression: s.c_expression(expression),
+            expression: s.program_expression(expression),
             cases: cases
                 .iter()
                 .map(|case| SwitchCase {
                     value: case.value,
-                    body: Box::new(walk_c_statement(&case.body, s)),
+                    body: Box::new(walk_execution_statement(&case.body, s)),
                 })
                 .collect(),
         },
     }
 }
 
-fn walk_c_statement_outcome<S: VariableSubstitution + ?Sized>(
+fn walk_execution_statement_outcome<S: VariableSubstitution + ?Sized>(
     outcome: &StatementOutcome,
     s: &S,
 ) -> StatementOutcome {
     match outcome {
         StatementOutcome::Normal(state) => {
-            StatementOutcome::Normal(Box::new(walk_c_state(state, s)))
+            StatementOutcome::Normal(Box::new(walk_execution_state(state, s)))
         }
-        StatementOutcome::Break(state) => StatementOutcome::Break(Box::new(walk_c_state(state, s))),
+        StatementOutcome::Break(state) => {
+            StatementOutcome::Break(Box::new(walk_execution_state(state, s)))
+        }
         StatementOutcome::Continue(state) => {
-            StatementOutcome::Continue(Box::new(walk_c_state(state, s)))
+            StatementOutcome::Continue(Box::new(walk_execution_state(state, s)))
         }
         StatementOutcome::Jump { target, state } => StatementOutcome::Jump {
             target: *target,
-            state: Box::new(walk_c_state(state, s)),
+            state: Box::new(walk_execution_state(state, s)),
         },
         StatementOutcome::Return { value, state } => StatementOutcome::Return {
             value: s.expression_value(value).into(),
-            state: Box::new(walk_c_state(state, s)),
+            state: Box::new(walk_execution_state(state, s)),
         },
         StatementOutcome::Throw { value, state } => StatementOutcome::Throw {
             value: s.expression_value(value).into(),
-            state: Box::new(walk_c_state(state, s)),
+            state: Box::new(walk_execution_state(state, s)),
         },
         StatementOutcome::VerificationDiverges => StatementOutcome::VerificationDiverges,
         StatementOutcome::UndefinedBehavior(kind) => {
@@ -1211,9 +1221,9 @@ fn walk_loop_effect<S: VariableSubstitution + ?Sized>(effect: &LoopEffect, s: &S
             segments
                 .iter()
                 .map(|segment| MemorySegment {
-                    base: s.c_expression(&segment.base),
-                    start: s.c_expression(&segment.start),
-                    end: s.c_expression(&segment.end),
+                    base: s.program_expression(&segment.base),
+                    start: s.program_expression(&segment.start),
+                    end: s.program_expression(&segment.end),
                     element_width: segment.element_width,
                     uninitialized: segment.uninitialized,
                     value_runs: segment.value_runs.clone(),
@@ -1241,157 +1251,165 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
             name: name.clone(),
             arguments: arguments.iter().map(|argument| s.term(argument)).collect(),
         },
-        Proposition::CExpressionEvaluates {
+        Proposition::ProgramExpressionEvaluates {
             state,
             expression,
             outcome,
-        } => Proposition::CExpressionEvaluates {
-            state: Box::new(walk_c_state(state, s)),
-            expression: s.c_expression(expression),
-            outcome: walk_c_expression_outcome(outcome, s),
+        } => Proposition::ProgramExpressionEvaluates {
+            state: Box::new(walk_execution_state(state, s)),
+            expression: s.program_expression(expression),
+            outcome: walk_program_expression_outcome(outcome, s),
         },
-        Proposition::CConditionEvaluates {
+        Proposition::ProgramConditionEvaluates {
             state,
             condition,
             outcome,
-        } if S::SUBSTITUTES_CONDITION_EVIDENCE => Proposition::CConditionEvaluates {
-            state: Box::new(walk_c_state(state, s)),
-            condition: s.c_expression(condition),
+        } if S::SUBSTITUTES_CONDITION_EVIDENCE => Proposition::ProgramConditionEvaluates {
+            state: Box::new(walk_execution_state(state, s)),
+            condition: s.program_expression(condition),
             outcome: outcome.clone(),
         },
-        Proposition::CStatementExecutes {
+        Proposition::ProgramStatementExecutes {
             state,
             statement,
             outcome,
         }
-        | Proposition::CStatementVerifies {
+        | Proposition::ProgramStatementVerifies {
             state,
             statement,
             outcome,
         } => {
-            let state = walk_c_state(state, s);
-            let statement = walk_c_statement(statement, s);
-            let outcome = walk_c_statement_outcome(outcome, s);
+            let state = walk_execution_state(state, s);
+            let statement = walk_execution_statement(statement, s);
+            let outcome = walk_execution_statement_outcome(outcome, s);
             match proposition {
-                Proposition::CStatementExecutes { .. } => Proposition::CStatementExecutes {
-                    state: Box::new(state),
-                    statement: Box::new(statement),
-                    outcome,
-                },
-                Proposition::CStatementVerifies { .. } => Proposition::CStatementVerifies {
-                    state: Box::new(state),
-                    statement: Box::new(statement),
-                    outcome,
-                },
+                Proposition::ProgramStatementExecutes { .. } => {
+                    Proposition::ProgramStatementExecutes {
+                        state: Box::new(state),
+                        statement: Box::new(statement),
+                        outcome,
+                    }
+                }
+                Proposition::ProgramStatementVerifies { .. } => {
+                    Proposition::ProgramStatementVerifies {
+                        state: Box::new(state),
+                        statement: Box::new(statement),
+                        outcome,
+                    }
+                }
                 _ => unreachable!("the combined statement proposition arm is exhaustive"),
             }
         }
-        Proposition::CFunctionExecutes {
+        Proposition::ProgramFunctionExecutes {
             state,
             function,
             arguments,
             outcome,
         }
-        | Proposition::CFunctionVerifies {
+        | Proposition::ProgramFunctionVerifies {
             state,
             function,
             arguments,
             outcome,
         } => {
-            let state = walk_c_state(state, s);
-            let function = walk_c_function(function, s);
+            let state = walk_execution_state(state, s);
+            let function = walk_program_function(function, s);
             let arguments = arguments
                 .iter()
-                .map(|argument| s.c_expression(argument))
+                .map(|argument| s.program_expression(argument))
                 .collect();
-            let outcome = walk_c_function_outcome(outcome, s);
+            let outcome = walk_program_function_outcome(outcome, s);
             match proposition {
-                Proposition::CFunctionExecutes { .. } => Proposition::CFunctionExecutes {
-                    state: Box::new(state),
-                    function: Box::new(function),
-                    arguments,
-                    outcome,
-                },
-                Proposition::CFunctionVerifies { .. } => Proposition::CFunctionVerifies {
-                    state: Box::new(state),
-                    function: Box::new(function),
-                    arguments,
-                    outcome,
-                },
+                Proposition::ProgramFunctionExecutes { .. } => {
+                    Proposition::ProgramFunctionExecutes {
+                        state: Box::new(state),
+                        function: Box::new(function),
+                        arguments,
+                        outcome,
+                    }
+                }
+                Proposition::ProgramFunctionVerifies { .. } => {
+                    Proposition::ProgramFunctionVerifies {
+                        state: Box::new(state),
+                        function: Box::new(function),
+                        arguments,
+                        outcome,
+                    }
+                }
                 _ => unreachable!("the combined function proposition arm is exhaustive"),
             }
         }
-        Proposition::CFunctionSatisfiesSpecification {
+        Proposition::ProgramFunctionSatisfiesSpecification {
             function,
             specification,
-        } => Proposition::CFunctionSatisfiesSpecification {
-            function: Box::new(walk_c_function(function, s)),
-            specification: Box::new(walk_c_function_specification(specification, s)),
+        } => Proposition::ProgramFunctionSatisfiesSpecification {
+            function: Box::new(walk_program_function(function, s)),
+            specification: Box::new(walk_program_function_specification(specification, s)),
         },
-        Proposition::CFunctionPartiallySatisfiesSpecification {
+        Proposition::ProgramFunctionPartiallySatisfiesSpecification {
             function,
             specification,
-        } => Proposition::CFunctionPartiallySatisfiesSpecification {
-            function: Box::new(walk_c_function(function, s)),
-            specification: Box::new(walk_c_function_specification(specification, s)),
+        } => Proposition::ProgramFunctionPartiallySatisfiesSpecification {
+            function: Box::new(walk_program_function(function, s)),
+            specification: Box::new(walk_program_function_specification(specification, s)),
         },
-        Proposition::CMemoryLoads {
+        Proposition::MemoryLoads {
             memory,
             pointer,
             outcome,
-        } => Proposition::CMemoryLoads {
+        } => Proposition::MemoryLoads {
             memory: s.memory(memory),
             pointer: s.pointer(pointer),
-            outcome: walk_c_expression_outcome(outcome, s),
+            outcome: walk_program_expression_outcome(outcome, s),
         },
-        Proposition::CMemoryReadDefined {
+        Proposition::MemoryReadDefined {
             memory,
             pointer,
             value_type,
-        } => Proposition::CMemoryReadDefined {
+        } => Proposition::MemoryReadDefined {
             memory: s.memory(memory),
             pointer: s.pointer(pointer),
             value_type: *value_type,
         },
-        Proposition::CMemoryCanStore {
+        Proposition::MemoryCanStore {
             memory,
             pointer,
             byte_width,
-        } => Proposition::CMemoryCanStore {
+        } => Proposition::MemoryCanStore {
             memory: s.memory(memory),
             pointer: s.pointer(pointer),
             byte_width: *byte_width,
         },
-        Proposition::CMemoryLoadable {
+        Proposition::MemoryLoadable {
             memory,
             base,
             bytes,
             wide,
-        } => Proposition::CMemoryLoadable {
+        } => Proposition::MemoryLoadable {
             memory: s.memory(memory),
             base: s.pointer(base),
             bytes: s.bitvector(bytes),
             wide: *wide,
         },
-        Proposition::CResourceSeparate { left, right } => Proposition::CResourceSeparate {
-            left: Box::new(walk_c_resource(left, s)),
-            right: Box::new(walk_c_resource(right, s)),
+        Proposition::ResourceSeparate { left, right } => Proposition::ResourceSeparate {
+            left: Box::new(walk_resource(left, s)),
+            right: Box::new(walk_resource(right, s)),
         },
-        Proposition::CResourceViewable { memory, resource } => {
-            crate::kernel::resource_viewable(&s.memory(memory), walk_c_resource(resource, s))
+        Proposition::ResourceViewable { memory, resource } => {
+            crate::kernel::resource_viewable(&s.memory(memory), walk_resource(resource, s))
         }
-        Proposition::CResourceContains { parent, child } => Proposition::CResourceContains {
-            parent: Box::new(walk_c_resource(parent, s)),
-            child: Box::new(walk_c_resource(child, s)),
+        Proposition::ResourceContains { parent, child } => Proposition::ResourceContains {
+            parent: Box::new(walk_resource(parent, s)),
+            child: Box::new(walk_resource(child, s)),
         },
-        Proposition::CResourceComposition(resources) if S::SUBSTITUTES_CONDITION_EVIDENCE => {
-            Proposition::CResourceComposition(walk_resource_context(resources, s))
+        Proposition::ResourceComposition(resources) if S::SUBSTITUTES_CONDITION_EVIDENCE => {
+            Proposition::ResourceComposition(walk_resource_context(resources, s))
         }
-        Proposition::CMemoryMutatesOnly {
+        Proposition::MemoryMutatesOnly {
             before,
             after,
             writes,
-        } => Proposition::CMemoryMutatesOnly {
+        } => Proposition::MemoryMutatesOnly {
             before: s.memory(before),
             after: s.memory(after),
             writes: writes
@@ -1399,24 +1417,24 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
                 .map(|(pointer, bytes)| (s.pointer(pointer), *bytes))
                 .collect(),
         },
-        Proposition::CMemoryEffectSummary {
+        Proposition::MemoryEffectSummary {
             before,
             after,
             mutable_ranges,
-        } => Proposition::CMemoryEffectSummary {
+        } => Proposition::MemoryEffectSummary {
             before: s.memory(before),
             after: s.memory(after),
             mutable_ranges: mutable_ranges
                 .iter()
-                .map(|range| walk_c_memory_range(range, s))
+                .map(|range| walk_memory_range(range, s))
                 .collect(),
         },
-        Proposition::CHeapAllocationFreed {
+        Proposition::HeapAllocationFreed {
             before,
             after,
             allocation_base,
             bytes,
-        } => Proposition::CHeapAllocationFreed {
+        } => Proposition::HeapAllocationFreed {
             before: s.memory(before),
             after: s.memory(after),
             allocation_base: s.pointer(allocation_base),
@@ -1489,7 +1507,7 @@ fn walk_pure_function_argument<S: VariableSubstitution + ?Sized>(
             )
             .unwrap_or_else(|| value.clone()),
         ),
-        PureFunctionArgument::Value(value) => PureFunctionArgument::Value(s.c_value(value)),
+        PureFunctionArgument::Value(value) => PureFunctionArgument::Value(s.program_value(value)),
         PureFunctionArgument::Algebraic(value) => {
             PureFunctionArgument::Algebraic(s.algebraic_term(value))
         }
@@ -1499,19 +1517,21 @@ fn walk_pure_function_argument<S: VariableSubstitution + ?Sized>(
             element_type,
         } => PureFunctionArgument::ArrayRef {
             memory: s.memory(memory),
-            pointer: s.c_value(pointer),
+            pointer: s.program_value(pointer),
             element_type: *element_type,
         },
     }
 }
 
-fn walk_resource<S: VariableSubstitution + ?Sized>(resource: &ResourceFact, s: &S) -> ResourceFact {
+fn walk_resource_fact<S: VariableSubstitution + ?Sized>(
+    resource: &ResourceFact,
+    s: &S,
+) -> ResourceFact {
     match resource {
-        ResourceFact::Own(resource, quantity) => ResourceFact::Own(
-            walk_c_resource(resource, s),
-            Box::new(s.bitvector(quantity)),
-        ),
-        ResourceFact::View(resource) => ResourceFact::View(walk_c_resource(resource, s)),
+        ResourceFact::Own(resource, quantity) => {
+            ResourceFact::Own(walk_resource(resource, s), Box::new(s.bitvector(quantity)))
+        }
+        ResourceFact::View(resource) => ResourceFact::View(walk_resource(resource, s)),
     }
 }
 
@@ -1527,7 +1547,7 @@ fn walk_resource_context<S: VariableSubstitution + ?Sized>(
         resources
             .facts()
             .iter()
-            .map(|resource| walk_resource(resource, s)),
+            .map(|resource| walk_resource_fact(resource, s)),
     )
 }
 
@@ -1540,7 +1560,9 @@ fn walk_resource_spec<S: VariableSubstitution + ?Sized>(
         resource.access(),
         match resource.quantity() {
             ResourceQuantity::One => ResourceQuantity::One,
-            ResourceQuantity::Count(quantity) => ResourceQuantity::Count(s.c_expression(quantity)),
+            ResourceQuantity::Count(quantity) => {
+                ResourceQuantity::Count(s.program_expression(quantity))
+            }
         },
         resource.role(),
         resource.snapshot(),
@@ -1584,11 +1606,11 @@ fn walk_resource_term<S: VariableSubstitution + ?Sized>(
             snapshot: *snapshot,
         },
         ResourceTerm::MutexGuard { mutex, snapshot } => ResourceTerm::MutexGuard {
-            mutex: Box::new(s.c_expression(mutex)),
+            mutex: Box::new(s.program_expression(mutex)),
             snapshot: *snapshot,
         },
         ResourceTerm::MutexLive { mutex, snapshot } => ResourceTerm::MutexLive {
-            mutex: Box::new(s.c_expression(mutex)),
+            mutex: Box::new(s.program_expression(mutex)),
             snapshot: *snapshot,
         },
         ResourceTerm::Publication {
@@ -1602,7 +1624,7 @@ fn walk_resource_term<S: VariableSubstitution + ?Sized>(
                 resource: Box::new(walk_resource_spec(&payload.resource, s)),
                 schema: payload.schema.clone(),
             }),
-            flag: Box::new(s.c_expression(flag)),
+            flag: Box::new(s.program_expression(flag)),
             snapshot: *snapshot,
         },
         ResourceTerm::MutexUse {
@@ -1616,16 +1638,16 @@ fn walk_resource_term<S: VariableSubstitution + ?Sized>(
                     schema: p.schema.clone(),
                 })
             }),
-            mutex: Box::new(s.c_expression(mutex)),
+            mutex: Box::new(s.program_expression(mutex)),
             snapshot: *snapshot,
         },
         ResourceTerm::Iterated(spec) => ResourceTerm::Iterated(Box::new(
-            spec.map_expressions(|expression| s.c_expression(expression)),
+            spec.map_expressions(|expression| s.program_expression(expression)),
         )),
         ResourceTerm::Memory(segment) => ResourceTerm::Memory(MemorySegment {
-            base: s.c_expression(&segment.base),
-            start: s.c_expression(&segment.start),
-            end: s.c_expression(&segment.end),
+            base: s.program_expression(&segment.base),
+            start: s.program_expression(&segment.start),
+            end: s.program_expression(&segment.end),
             element_width: segment.element_width,
             uninitialized: segment.uninitialized,
             value_runs: segment.value_runs.clone(),
@@ -1643,7 +1665,7 @@ fn walk_resource_term<S: VariableSubstitution + ?Sized>(
             name: name.clone(),
             arguments: arguments
                 .iter()
-                .map(|argument| s.c_expression(argument))
+                .map(|argument| s.program_expression(argument))
                 .collect(),
             argument_snapshots: argument_snapshots.clone(),
             parameter_types: parameter_types.clone(),
@@ -1657,7 +1679,7 @@ fn walk_resource_term<S: VariableSubstitution + ?Sized>(
             name: name.clone(),
             arguments: arguments
                 .iter()
-                .map(|argument| s.c_expression(argument))
+                .map(|argument| s.program_expression(argument))
                 .collect(),
             argument_snapshots: argument_snapshots.clone(),
             parameter_types: parameter_types.clone(),
@@ -1670,7 +1692,7 @@ fn walk_sequence<S: VariableSubstitution + ?Sized>(sequence: &SequenceTerm, s: &
         SequenceTermNode::Literal(values) => SequenceTermNode::Literal(
             values
                 .iter()
-                .map(|value| s.c_value(value))
+                .map(|value| s.program_value(value))
                 .collect::<Vec<_>>()
                 .into(),
         ),
@@ -1684,10 +1706,7 @@ fn walk_sequence<S: VariableSubstitution + ?Sized>(sequence: &SequenceTerm, s: &
     }
 }
 
-fn walk_c_memory_range<S: VariableSubstitution + ?Sized>(
-    range: &MemoryRange,
-    s: &S,
-) -> MemoryRange {
+fn walk_memory_range<S: VariableSubstitution + ?Sized>(range: &MemoryRange, s: &S) -> MemoryRange {
     let mut result = range
         .with_bounds(
             s.pointer(&range.base),
@@ -1730,14 +1749,14 @@ mod resource_frame_substitution_tests {
             mutex: address,
         });
         assert_eq!(
-            substitute_pointer_variable_in_c_resource(&abstract_guard, variable, &replacement),
+            substitute_pointer_variable_in_resource(&abstract_guard, variable, &replacement),
             Resource::MutexGuard(MutexIdentity {
                 epoch: None,
                 mutex: replacement.clone()
             })
         );
         assert_eq!(
-            substitute_pointer_variable_in_c_resource(&concrete_guard, variable, &replacement),
+            substitute_pointer_variable_in_resource(&concrete_guard, variable, &replacement),
             concrete_guard
         );
     }
@@ -1756,14 +1775,14 @@ mod resource_frame_substitution_tests {
             mutex: address,
         });
         assert_eq!(
-            substitute_pointer_variable_in_c_resource(&abstract_guard, variable, &replacement),
+            substitute_pointer_variable_in_resource(&abstract_guard, variable, &replacement),
             Resource::MutexLive(MutexIdentity {
                 epoch: None,
                 mutex: replacement.clone()
             })
         );
         assert_eq!(
-            substitute_pointer_variable_in_c_resource(&concrete_guard, variable, &replacement),
+            substitute_pointer_variable_in_resource(&concrete_guard, variable, &replacement),
             concrete_guard
         );
     }
@@ -1791,7 +1810,7 @@ mod resource_frame_substitution_tests {
         let fact = ledger.mutex_use_resource(loan.usage, participant).unwrap();
         let resource = fact.resource();
         assert_eq!(
-            substitute_pointer_variable_in_c_resource(
+            substitute_pointer_variable_in_resource(
                 resource,
                 variable,
                 &Pointer::symbolic(Variable(71_901))
@@ -1799,7 +1818,7 @@ mod resource_frame_substitution_tests {
             *resource
         );
         assert_eq!(
-            substitute_bitvector_variable_in_c_resource(
+            substitute_bitvector_variable_in_resource(
                 resource,
                 variable,
                 &MachineTerm::constant(4)
@@ -1824,7 +1843,7 @@ mod resource_frame_substitution_tests {
                 Box::new(PointerOffsetTerm::Constant(4)),
             ),
         };
-        let snapshot = crate::kernel::intern_c_memory(
+        let snapshot = crate::kernel::intern_memory(
             base.store(metadata, ProgramValue::Int32(MachineTerm::constant(7))),
         );
         let rewritten = substitute_bitvector_variable_in_shared_memory(
@@ -1843,12 +1862,12 @@ mod resource_frame_substitution_tests {
             .with_local("x", int32(MachineTerm::Variable(Variable(71_100))))
             .with_loan_ledger(Some(ledger))
             .with_loan_participant(Some(participant));
-        let bitvector_substituted = substitute_bitvector_variable_in_c_state(
+        let bitvector_substituted = substitute_bitvector_variable_in_execution_state(
             &state,
             Variable(71_100),
             &MachineTerm::constant(4),
         );
-        let pointer_substituted = substitute_pointer_variable_in_c_state(
+        let pointer_substituted = substitute_pointer_variable_in_execution_state(
             &state,
             Variable(71_100),
             &Pointer::symbolic(Variable(71_101)),
@@ -1900,7 +1919,7 @@ mod resource_frame_substitution_tests {
             ),
         );
         let statement = ProgramStatement::While {
-            condition: c_int32_literal(0),
+            condition: crate::kernel::program_expression::int32_literal(0),
             invariant: Vec::new(),
             invariant_checks: Vec::new(),
             effect_checks: vec![inherited_check(range)],
@@ -1912,7 +1931,7 @@ mod resource_frame_substitution_tests {
             backedge_target: None,
             natural_exit_target: None,
         };
-        let substituted = substitute_bitvector_variable_in_c_statement(
+        let substituted = substitute_bitvector_variable_in_execution_statement(
             &statement,
             from,
             &MachineTerm::constant(4),
@@ -1944,7 +1963,7 @@ mod resource_frame_substitution_tests {
             MachineTerm::constant(1),
         );
         let statement = ProgramStatement::While {
-            condition: c_int32_literal(0),
+            condition: crate::kernel::program_expression::int32_literal(0),
             invariant: Vec::new(),
             invariant_checks: Vec::new(),
             effect_checks: vec![inherited_check(range)],
@@ -1957,7 +1976,7 @@ mod resource_frame_substitution_tests {
             natural_exit_target: None,
         };
         let substituted =
-            substitute_pointer_variable_in_c_statement(&statement, from, &replacement);
+            substitute_pointer_variable_in_execution_statement(&statement, from, &replacement);
         let ProgramStatement::While { effect_checks, .. } = substituted else {
             panic!("substitution changed the statement shape");
         };
@@ -1985,7 +2004,8 @@ mod resource_frame_substitution_tests {
                 )
                 .with_resource_summary(Vec::new(), Vec::new())
                 .with_resource_derived_mutable_frame();
-        let substituted = substitute_pointer_variable_in_c_function(&function, from, &replacement);
+        let substituted =
+            substitute_pointer_variable_in_program_function(&function, from, &replacement);
         assert!(substituted.resource_derived_mutable_frame());
         assert_eq!(
             substituted.contract_mutable()[0].base,
@@ -2361,66 +2381,66 @@ fn collect_proposition_bound_variables_one(
                 collect_term_bound_variables(argument, variables);
             }
         }
-        Proposition::CExpressionEvaluates {
+        Proposition::ProgramExpressionEvaluates {
             state,
             expression,
             outcome,
         } => {
-            collect_c_state_bound_variables(state, variables);
-            collect_c_expression_bound_variables(expression, variables);
+            collect_execution_state_bound_variables(state, variables);
+            collect_program_expression_bound_variables(expression, variables);
             collect_expression_outcome_bound_variables(outcome, variables);
         }
-        Proposition::CConditionEvaluates {
+        Proposition::ProgramConditionEvaluates {
             state, condition, ..
         } => {
-            collect_c_state_bound_variables(state, variables);
-            collect_c_expression_bound_variables(condition, variables);
+            collect_execution_state_bound_variables(state, variables);
+            collect_program_expression_bound_variables(condition, variables);
         }
-        Proposition::CStatementExecutes {
+        Proposition::ProgramStatementExecutes {
             state,
             statement,
             outcome,
         }
-        | Proposition::CStatementVerifies {
+        | Proposition::ProgramStatementVerifies {
             state,
             statement,
             outcome,
         } => {
-            collect_c_state_bound_variables(state, variables);
-            collect_c_statement_bound_variables(statement, variables);
+            collect_execution_state_bound_variables(state, variables);
+            collect_execution_statement_bound_variables(statement, variables);
             collect_statement_outcome_bound_variables(outcome, variables);
         }
-        Proposition::CFunctionExecutes {
+        Proposition::ProgramFunctionExecutes {
             state,
             function,
             arguments,
             outcome,
         }
-        | Proposition::CFunctionVerifies {
+        | Proposition::ProgramFunctionVerifies {
             state,
             function,
             arguments,
             outcome,
         } => {
-            collect_c_state_bound_variables(state, variables);
-            collect_c_function_bound_variables(function, variables);
+            collect_execution_state_bound_variables(state, variables);
+            collect_program_function_bound_variables(function, variables);
             for argument in arguments {
-                collect_c_expression_bound_variables(argument, variables);
+                collect_program_expression_bound_variables(argument, variables);
             }
             collect_function_outcome_bound_variables(outcome, variables);
         }
-        Proposition::CFunctionSatisfiesSpecification {
+        Proposition::ProgramFunctionSatisfiesSpecification {
             function,
             specification,
         }
-        | Proposition::CFunctionPartiallySatisfiesSpecification {
+        | Proposition::ProgramFunctionPartiallySatisfiesSpecification {
             function,
             specification,
         } => {
-            collect_c_function_bound_variables(function, variables);
-            collect_c_function_specification_bound_variables(specification, variables);
+            collect_program_function_bound_variables(function, variables);
+            collect_program_function_specification_bound_variables(specification, variables);
         }
-        Proposition::CMemoryLoads {
+        Proposition::MemoryLoads {
             memory,
             pointer,
             outcome,
@@ -2429,16 +2449,16 @@ fn collect_proposition_bound_variables_one(
             collect_pointer_bound_variables(pointer, variables);
             collect_expression_outcome_bound_variables(outcome, variables);
         }
-        Proposition::CMemoryReadDefined {
+        Proposition::MemoryReadDefined {
             memory, pointer, ..
         }
-        | Proposition::CMemoryCanStore {
+        | Proposition::MemoryCanStore {
             memory, pointer, ..
         } => {
             collect_memory_bound_variables(memory, variables);
             collect_pointer_bound_variables(pointer, variables);
         }
-        Proposition::CMemoryLoadable {
+        Proposition::MemoryLoadable {
             memory,
             base,
             bytes,
@@ -2448,24 +2468,24 @@ fn collect_proposition_bound_variables_one(
             collect_pointer_bound_variables(base, variables);
             collect_bitvector_bound_variables(bytes, variables);
         }
-        Proposition::CResourceViewable { memory, resource } => {
+        Proposition::ResourceViewable { memory, resource } => {
             collect_memory_bound_variables(memory, variables);
             collect_resource_bound_variables(resource, variables);
         }
-        Proposition::CResourceSeparate { left, right }
-        | Proposition::CResourceContains {
+        Proposition::ResourceSeparate { left, right }
+        | Proposition::ResourceContains {
             parent: left,
             child: right,
         } => {
             collect_resource_bound_variables(left, variables);
             collect_resource_bound_variables(right, variables);
         }
-        Proposition::CResourceComposition(resources) => {
+        Proposition::ResourceComposition(resources) => {
             for fact in resources.facts() {
                 collect_resource_bound_variables(fact.resource(), variables);
             }
         }
-        Proposition::CMemoryMutatesOnly {
+        Proposition::MemoryMutatesOnly {
             before,
             after,
             writes,
@@ -2476,7 +2496,7 @@ fn collect_proposition_bound_variables_one(
                 collect_pointer_bound_variables(pointer, variables);
             }
         }
-        Proposition::CMemoryEffectSummary {
+        Proposition::MemoryEffectSummary {
             before,
             after,
             mutable_ranges,
@@ -2489,7 +2509,7 @@ fn collect_proposition_bound_variables_one(
                 collect_bitvector_bound_variables(range.bound_terms().1, variables);
             }
         }
-        Proposition::CHeapAllocationFreed {
+        Proposition::HeapAllocationFreed {
             before,
             after,
             allocation_base,
@@ -2520,7 +2540,7 @@ fn collect_term_bound_variables(term: &Term, variables: &mut BTreeSet<Variable>)
         Term::Bitvector32(bits) => collect_bitvector_bound_variables(bits, variables),
         Term::Integer(integer) => collect_integer_bound_variables(integer, variables),
         Term::PointerOffset(offset) => collect_pointer_offset_bound_variables(offset, variables),
-        Term::ProgramValue(value) => collect_c_value_bound_variables(value, variables),
+        Term::ProgramValue(value) => collect_program_value_bound_variables(value, variables),
         Term::Sequence(sequence) => collect_sequence_bound_variables(sequence, variables),
         Term::Algebraic(term) => collect_algebraic_bound_variables(term, variables),
         Term::ExpressionOutcome(outcome) => {
@@ -2532,7 +2552,7 @@ fn collect_term_bound_variables(term: &Term, variables: &mut BTreeSet<Variable>)
         Term::FunctionOutcome(outcome) => {
             collect_function_outcome_bound_variables(outcome, variables)
         }
-        Term::ExecutionState(state) => collect_c_state_bound_variables(state, variables),
+        Term::ExecutionState(state) => collect_execution_state_bound_variables(state, variables),
         Term::Memory(memory) => collect_memory_bound_variables(memory, variables),
     }
 }
@@ -2541,7 +2561,7 @@ fn collect_sequence_bound_variables(sequence: &SequenceTerm, variables: &mut BTr
     match sequence.node.as_ref() {
         SequenceTermNode::Literal(values) => {
             for value in values.iter() {
-                collect_c_value_bound_variables(value, variables);
+                collect_program_value_bound_variables(value, variables);
             }
         }
         SequenceTermNode::Concat(left, right) => {
@@ -2560,15 +2580,15 @@ fn collect_expression_value_bound_variables(
             collect_scoped_leaf_bound_variables(leaf, variables)
         });
     } else {
-        collect_c_value_bound_variables(&value.native(), variables);
+        collect_program_value_bound_variables(&value.native(), variables);
     }
 }
 
-fn collect_c_value_bound_variables(value: &ProgramValue, variables: &mut BTreeSet<Variable>) {
+fn collect_program_value_bound_variables(value: &ProgramValue, variables: &mut BTreeSet<Variable>) {
     match value {
         ProgramValue::PointerInteger(record) => {
-            collect_c_value_bound_variables(&record.numeric, variables);
-            collect_c_value_bound_variables(
+            collect_program_value_bound_variables(&record.numeric, variables);
+            collect_program_value_bound_variables(
                 &ProgramValue::Pointer(*record.pointer.clone()),
                 variables,
             );
@@ -2601,32 +2621,32 @@ fn collect_algebraic_value_bound_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match value {
-        AlgebraicValue::C(value) => collect_c_value_bound_variables(value, variables),
+        AlgebraicValue::Program(value) => collect_program_value_bound_variables(value, variables),
         AlgebraicValue::Integer(value) => collect_integer_bound_variables(value, variables),
         AlgebraicValue::Algebraic(value) => collect_algebraic_bound_variables(value, variables),
     }
 }
 
-fn collect_c_expression_bound_variables(
+fn collect_program_expression_bound_variables(
     expression: &ProgramExpression,
     variables: &mut BTreeSet<Variable>,
 ) {
     match expression {
-        ProgramExpression::Value(value) => collect_c_value_bound_variables(value, variables),
+        ProgramExpression::Value(value) => collect_program_value_bound_variables(value, variables),
         ProgramExpression::Variable(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::CallResult { .. } => {}
         ProgramExpression::Cast { expression, .. } => {
-            collect_c_expression_bound_variables(expression, variables);
+            collect_program_expression_bound_variables(expression, variables);
         }
         ProgramExpression::Conditional {
             condition,
             then_branch,
             else_branch,
         } => {
-            collect_c_expression_bound_variables(condition, variables);
-            collect_c_expression_bound_variables(then_branch, variables);
-            collect_c_expression_bound_variables(else_branch, variables);
+            collect_program_expression_bound_variables(condition, variables);
+            collect_program_expression_bound_variables(then_branch, variables);
+            collect_program_expression_bound_variables(else_branch, variables);
         }
         ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }
@@ -2636,11 +2656,11 @@ fn collect_c_expression_bound_variables(
         | ProgramExpression::EnumIs {
             value: expression, ..
         } => {
-            collect_c_expression_bound_variables(expression, variables);
+            collect_program_expression_bound_variables(expression, variables);
         }
         ProgramExpression::EnumConstruct { fields, .. } => {
             for field in fields {
-                collect_c_expression_bound_variables(field, variables);
+                collect_program_expression_bound_variables(field, variables);
             }
         }
         ProgramExpression::AddressOf(body)
@@ -2648,21 +2668,21 @@ fn collect_c_expression_bound_variables(
         | ProgramExpression::Not(body)
         | ProgramExpression::Load(body)
         | ProgramExpression::BitwiseNot(body) => {
-            collect_c_expression_bound_variables(body, variables)
+            collect_program_expression_bound_variables(body, variables)
         }
         ProgramExpression::PointerOffsetBytes { pointer, .. }
         | ProgramExpression::Subobject { pointer, .. }
         | ProgramExpression::TypedLoad { pointer, .. } => {
-            collect_c_expression_bound_variables(pointer, variables)
+            collect_program_expression_bound_variables(pointer, variables)
         }
         crate::kernel::binary_c_expression!(left, right) => {
-            collect_c_expression_bound_variables(left, variables);
-            collect_c_expression_bound_variables(right, variables);
+            collect_program_expression_bound_variables(left, variables);
+            collect_program_expression_bound_variables(right, variables);
         }
     }
 }
 
-pub(in crate::kernel) fn collect_c_statement_bound_variables(
+pub(in crate::kernel) fn collect_execution_statement_bound_variables(
     statement: &ProgramStatement,
     variables: &mut BTreeSet<Variable>,
 ) {
@@ -2679,7 +2699,7 @@ pub(in crate::kernel) fn collect_c_statement_bound_variables(
         }
         | ProgramStatement::DeclareAggregate { .. } => {}
         ProgramStatement::ForStep { step, .. } => {
-            collect_c_statement_bound_variables(step, variables);
+            collect_execution_statement_bound_variables(step, variables);
         }
         ProgramStatement::Declare {
             initializer: Some(expression),
@@ -2694,55 +2714,55 @@ pub(in crate::kernel) fn collect_c_statement_bound_variables(
         }
         | ProgramStatement::LoopTest {
             condition: expression,
-        } => collect_c_expression_bound_variables(expression, variables),
+        } => collect_program_expression_bound_variables(expression, variables),
         ProgramStatement::CallAssign { arguments, .. }
         | ProgramStatement::Call { arguments, .. }
         | ProgramStatement::CallResult { arguments, .. } => {
             for argument in arguments {
-                collect_c_expression_bound_variables(argument, variables);
+                collect_program_expression_bound_variables(argument, variables);
             }
         }
         ProgramStatement::HeapAllocate { bytes, .. } => {
-            collect_c_expression_bound_variables(bytes, variables)
+            collect_program_expression_bound_variables(bytes, variables)
         }
         ProgramStatement::HeapFree { pointer } => {
-            collect_c_expression_bound_variables(pointer, variables)
+            collect_program_expression_bound_variables(pointer, variables)
         }
         ProgramStatement::Seq(statements) => {
             for statement in statements.iter() {
-                collect_c_statement_bound_variables(statement, variables);
+                collect_execution_statement_bound_variables(statement, variables);
             }
         }
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
         } => {
-            collect_c_statement_bound_variables(try_body, variables);
-            collect_c_statement_bound_variables(handler, variables);
+            collect_execution_statement_bound_variables(try_body, variables);
+            collect_execution_statement_bound_variables(handler, variables);
         }
         ProgramStatement::Store { pointer, value }
         | ProgramStatement::TypedStore { pointer, value, .. } => {
-            collect_c_expression_bound_variables(pointer, variables);
-            collect_c_expression_bound_variables(value, variables);
+            collect_program_expression_bound_variables(pointer, variables);
+            collect_program_expression_bound_variables(value, variables);
         }
         ProgramStatement::CopyAggregate { target, source, .. }
         | ProgramStatement::InitializeScalarArray { target, source, .. } => {
-            collect_c_expression_bound_variables(target, variables);
-            collect_c_expression_bound_variables(source, variables);
+            collect_program_expression_bound_variables(target, variables);
+            collect_program_expression_bound_variables(source, variables);
         }
         ProgramStatement::Update {
             target, operand, ..
         } => {
-            collect_c_expression_bound_variables(target, variables);
-            collect_c_expression_bound_variables(operand, variables);
+            collect_program_expression_bound_variables(target, variables);
+            collect_program_expression_bound_variables(operand, variables);
         }
         ProgramStatement::If {
             condition,
             then_branch,
             else_branch,
         } => {
-            collect_c_expression_bound_variables(condition, variables);
-            collect_c_statement_bound_variables(then_branch, variables);
-            collect_c_statement_bound_variables(else_branch, variables);
+            collect_program_expression_bound_variables(condition, variables);
+            collect_execution_statement_bound_variables(then_branch, variables);
+            collect_execution_statement_bound_variables(else_branch, variables);
         }
         ProgramStatement::While {
             condition,
@@ -2752,7 +2772,7 @@ pub(in crate::kernel) fn collect_c_statement_bound_variables(
             body,
             ..
         } => {
-            collect_c_expression_bound_variables(condition, variables);
+            collect_program_expression_bound_variables(condition, variables);
             for proposition in invariant {
                 collect_proposition_bound_variables(proposition, variables);
             }
@@ -2762,12 +2782,12 @@ pub(in crate::kernel) fn collect_c_statement_bound_variables(
             for check in effect_checks {
                 collect_loop_effect_bound_variables(check.effect(), variables);
             }
-            collect_c_statement_bound_variables(body, variables);
+            collect_execution_statement_bound_variables(body, variables);
         }
         ProgramStatement::Switch { expression, cases } => {
-            collect_c_expression_bound_variables(expression, variables);
+            collect_program_expression_bound_variables(expression, variables);
             for case in cases {
-                collect_c_statement_bound_variables(&case.body, variables);
+                collect_execution_statement_bound_variables(&case.body, variables);
             }
         }
     }
@@ -2776,24 +2796,24 @@ pub(in crate::kernel) fn collect_c_statement_bound_variables(
 fn collect_loop_effect_bound_variables(effect: &LoopEffect, variables: &mut BTreeSet<Variable>) {
     if let LoopEffect::Mutable(segments) = effect {
         for segment in segments {
-            collect_c_memory_segment_bound_variables(segment, variables);
+            collect_memory_segment_bound_variables(segment, variables);
         }
     }
 }
 
-fn collect_c_memory_segment_bound_variables(
+fn collect_memory_segment_bound_variables(
     segment: &MemorySegment,
     variables: &mut BTreeSet<Variable>,
 ) {
-    collect_c_expression_bound_variables(&segment.base, variables);
-    collect_c_expression_bound_variables(&segment.start, variables);
-    collect_c_expression_bound_variables(&segment.end, variables);
+    collect_program_expression_bound_variables(&segment.base, variables);
+    collect_program_expression_bound_variables(&segment.start, variables);
+    collect_program_expression_bound_variables(&segment.end, variables);
     if let Some(guard) = segment.guard() {
         collect_spec_proposition_bound_variables(guard, variables);
     }
 }
 
-pub(in crate::kernel) fn collect_c_state_bound_variables(
+pub(in crate::kernel) fn collect_execution_state_bound_variables(
     state: &ExecutionState,
     variables: &mut BTreeSet<Variable>,
 ) {
@@ -2819,10 +2839,12 @@ pub(in crate::kernel) fn collect_statement_outcome_bound_variables(
         StatementOutcome::Normal(state)
         | StatementOutcome::Break(state)
         | StatementOutcome::Continue(state)
-        | StatementOutcome::Jump { state, .. } => collect_c_state_bound_variables(state, variables),
+        | StatementOutcome::Jump { state, .. } => {
+            collect_execution_state_bound_variables(state, variables)
+        }
         StatementOutcome::Return { value, state } | StatementOutcome::Throw { value, state } => {
             collect_expression_value_bound_variables(value, variables);
-            collect_c_state_bound_variables(state, variables);
+            collect_execution_state_bound_variables(state, variables);
         }
         StatementOutcome::VerificationDiverges
         | StatementOutcome::UndefinedBehavior(_)
@@ -2837,7 +2859,7 @@ fn collect_function_outcome_bound_variables(
     match outcome {
         FunctionOutcome::Return { value, state } | FunctionOutcome::Throw { value, state } => {
             collect_expression_value_bound_variables(value, variables);
-            collect_c_state_bound_variables(state, variables);
+            collect_execution_state_bound_variables(state, variables);
         }
         FunctionOutcome::VerificationDiverges
         | FunctionOutcome::UndefinedBehavior(_)
@@ -2870,105 +2892,104 @@ fn collect_spec_proposition_bound_variables(
     }
 }
 
-fn collect_c_resource_spec_bound_variables(
+fn collect_resource_spec_bound_variables(
     resource: &ResourceSpec,
     variables: &mut BTreeSet<Variable>,
 ) {
     match resource.term() {
         ResourceTerm::Instance { resource, .. } => {
-            collect_c_resource_term_bound_variables(resource, variables)
+            collect_resource_term_bound_variables(resource, variables)
         }
         ResourceTerm::PopulationAuthority { protected, .. } => {
-            collect_c_resource_spec_bound_variables(&protected.resource, variables)
+            collect_resource_spec_bound_variables(&protected.resource, variables)
         }
         ResourceTerm::MutexGuard { mutex, .. } | ResourceTerm::MutexLive { mutex, .. } => {
-            collect_c_expression_bound_variables(mutex, variables)
+            collect_program_expression_bound_variables(mutex, variables)
         }
         ResourceTerm::MutexUse {
             mutex, protected, ..
         } => {
-            collect_c_expression_bound_variables(mutex, variables);
+            collect_program_expression_bound_variables(mutex, variables);
             if let Some(protected) = protected {
-                collect_c_resource_spec_bound_variables(&protected.resource, variables);
+                collect_resource_spec_bound_variables(&protected.resource, variables);
             }
         }
         ResourceTerm::Publication { flag, payload, .. } => {
-            collect_c_expression_bound_variables(flag, variables);
-            collect_c_resource_spec_bound_variables(&payload.resource, variables);
+            collect_program_expression_bound_variables(flag, variables);
+            collect_resource_spec_bound_variables(&payload.resource, variables);
         }
-        ResourceTerm::Memory(segment) => {
-            collect_c_memory_segment_bound_variables(segment, variables)
-        }
+        ResourceTerm::Memory(segment) => collect_memory_segment_bound_variables(segment, variables),
         ResourceTerm::Composite { arguments, .. } | ResourceTerm::Token { arguments, .. } => {
             for argument in arguments {
-                collect_c_expression_bound_variables(argument, variables);
+                collect_program_expression_bound_variables(argument, variables);
             }
         }
         ResourceTerm::Iterated(spec) => {
             for expression in spec.expressions() {
-                collect_c_expression_bound_variables(expression, variables);
+                collect_program_expression_bound_variables(expression, variables);
             }
         }
     }
     if let ResourceQuantity::Count(quantity) = resource.quantity() {
-        collect_c_expression_bound_variables(quantity, variables);
+        collect_program_expression_bound_variables(quantity, variables);
     }
 }
 
-fn collect_c_resource_term_bound_variables(
+fn collect_resource_term_bound_variables(
     resource: &ResourceTerm,
     variables: &mut BTreeSet<Variable>,
 ) {
     match resource {
         ResourceTerm::Instance { resource, .. } => {
-            collect_c_resource_term_bound_variables(resource, variables)
+            collect_resource_term_bound_variables(resource, variables)
         }
         ResourceTerm::PopulationAuthority { protected, .. } => {
-            collect_c_resource_spec_bound_variables(&protected.resource, variables)
+            collect_resource_spec_bound_variables(&protected.resource, variables)
         }
         ResourceTerm::MutexGuard { mutex, .. } | ResourceTerm::MutexLive { mutex, .. } => {
-            collect_c_expression_bound_variables(mutex, variables)
+            collect_program_expression_bound_variables(mutex, variables)
         }
         ResourceTerm::MutexUse {
             mutex, protected, ..
         } => {
-            collect_c_expression_bound_variables(mutex, variables);
+            collect_program_expression_bound_variables(mutex, variables);
             if let Some(protected) = protected {
-                collect_c_resource_spec_bound_variables(&protected.resource, variables);
+                collect_resource_spec_bound_variables(&protected.resource, variables);
             }
         }
         ResourceTerm::Publication { flag, payload, .. } => {
-            collect_c_expression_bound_variables(flag, variables);
-            collect_c_resource_spec_bound_variables(&payload.resource, variables);
+            collect_program_expression_bound_variables(flag, variables);
+            collect_resource_spec_bound_variables(&payload.resource, variables);
         }
-        ResourceTerm::Memory(segment) => {
-            collect_c_memory_segment_bound_variables(segment, variables)
-        }
+        ResourceTerm::Memory(segment) => collect_memory_segment_bound_variables(segment, variables),
         ResourceTerm::Composite { arguments, .. } | ResourceTerm::Token { arguments, .. } => {
             for argument in arguments {
-                collect_c_expression_bound_variables(argument, variables);
+                collect_program_expression_bound_variables(argument, variables);
             }
         }
         ResourceTerm::Iterated(spec) => {
             for expression in spec.expressions() {
-                collect_c_expression_bound_variables(expression, variables);
+                collect_program_expression_bound_variables(expression, variables);
             }
         }
     }
 }
 
-pub(in crate::kernel) fn collect_c_function_bound_variables(
+pub(in crate::kernel) fn collect_program_function_bound_variables(
     function: &ProgramFunction,
     variables: &mut BTreeSet<Variable>,
 ) {
-    collect_c_function_contract_interface_bound_variables(function.contract_interface(), variables);
-    collect_c_statement_bound_variables(function.body(), variables);
+    collect_program_function_contract_interface_bound_variables(
+        function.contract_interface(),
+        variables,
+    );
+    collect_execution_statement_bound_variables(function.body(), variables);
 }
 
 /// Collects only bound variables in the body-independent contract interface.
 /// This is the companion to the bitvector collector used for named callback
 /// contracts; no template statement or storage is traversed.
-pub(in crate::kernel) fn collect_c_function_contract_interface_bound_variables(
+pub(in crate::kernel) fn collect_program_function_contract_interface_bound_variables(
     interface: &FunctionContractInterface,
     variables: &mut BTreeSet<Variable>,
 ) {
@@ -2979,7 +3000,7 @@ pub(in crate::kernel) fn collect_c_function_contract_interface_bound_variables(
         .chain(interface.resource_ensures())
         .chain(interface.resource_constructors())
     {
-        collect_c_resource_spec_bound_variables(resource, variables);
+        collect_resource_spec_bound_variables(resource, variables);
     }
     for proposition in interface
         .contract_requires()
@@ -2990,17 +3011,17 @@ pub(in crate::kernel) fn collect_c_function_contract_interface_bound_variables(
         collect_spec_proposition_bound_variables(proposition, variables);
     }
     for segment in interface.contract_mutable() {
-        collect_c_memory_segment_bound_variables(segment, variables);
+        collect_memory_segment_bound_variables(segment, variables);
     }
 }
 
-fn collect_c_function_specification_bound_variables(
+fn collect_program_function_specification_bound_variables(
     specification: &FunctionSpecification,
     variables: &mut BTreeSet<Variable>,
 ) {
-    collect_c_state_bound_variables(specification.state(), variables);
+    collect_execution_state_bound_variables(specification.state(), variables);
     for argument in specification.arguments() {
-        collect_c_expression_bound_variables(argument, variables);
+        collect_program_expression_bound_variables(argument, variables);
     }
     for requirement in specification.requires() {
         collect_proposition_bound_variables(requirement, variables);
@@ -3013,7 +3034,7 @@ fn collect_expression_outcome_bound_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     if let ExpressionOutcome::Value(value) = outcome {
-        collect_c_value_bound_variables(value, variables);
+        collect_program_value_bound_variables(value, variables);
     }
 }
 
@@ -3104,7 +3125,7 @@ fn collect_memory_bound_variables(memory: &Memory, variables: &mut BTreeSet<Vari
         #[cfg(test)]
         count_memory_bound_cell_visit();
         collect_pointer_bound_variables(pointer, variables);
-        collect_c_value_bound_variables(value, variables);
+        collect_program_value_bound_variables(value, variables);
     }
     // A run's slots are named uniformly per spelling shape wherever
     // `run_shape_representatives` says so, and then mention the same bound
@@ -3115,7 +3136,7 @@ fn collect_memory_bound_variables(memory: &Memory, variables: &mut BTreeSet<Vari
             .unwrap_or_else(|| run.live_indexes().collect());
         for index in slots {
             collect_pointer_bound_variables(&run.slot_pointer(index), variables);
-            collect_c_value_bound_variables(&run.value(index), variables);
+            collect_program_value_bound_variables(&run.value(index), variables);
         }
     }
 }
@@ -3156,7 +3177,7 @@ fn collect_memory_bound_variables_entering(
             #[cfg(test)]
             count_memory_bound_cell_visit();
             collect_pointer_bound_variables(pointer, variables);
-            collect_c_value_bound_variables(value, variables);
+            collect_program_value_bound_variables(value, variables);
         }
     }
     for (_, after) in base.cells.run_diff(&memory.cells) {
@@ -3167,7 +3188,7 @@ fn collect_memory_bound_variables_entering(
             .unwrap_or_else(|| run.live_indexes().collect());
         for index in slots {
             collect_pointer_bound_variables(&run.slot_pointer(index), variables);
-            collect_c_value_bound_variables(&run.value(index), variables);
+            collect_program_value_bound_variables(&run.value(index), variables);
         }
     }
 }
@@ -3206,7 +3227,7 @@ fn collect_resource_bound_variables(resource: &Resource, variables: &mut BTreeSe
                 .visit_values(|v| collect_algebraic_value_bound_variables(v, variables));
             collect_pointer_bound_variables(&right.flag, variables);
             if let Some(value) = &right.observed {
-                collect_c_value_bound_variables(value, variables);
+                collect_program_value_bound_variables(value, variables);
             }
         }
         Resource::Instance(instance) => {
@@ -3342,7 +3363,7 @@ fn collect_bitvector_bound_variables(term: &MachineTerm, variables: &mut BTreeSe
                         });
                     }
                     PureFunctionArgument::Value(value) => {
-                        collect_c_value_bound_variables(value, variables)
+                        collect_program_value_bound_variables(value, variables)
                     }
                     PureFunctionArgument::Algebraic(term) => {
                         collect_algebraic_bound_variables(term, variables)
@@ -3352,7 +3373,7 @@ fn collect_bitvector_bound_variables(term: &MachineTerm, variables: &mut BTreeSe
                         memory, pointer, ..
                     } => {
                         collect_memory_bound_variables(memory, variables);
-                        collect_c_value_bound_variables(pointer, variables);
+                        collect_program_value_bound_variables(pointer, variables);
                     }
                 }
             }
@@ -3439,7 +3460,7 @@ fn collect_algebraic_bound_variables(term: &AlgebraicTerm, variables: &mut BTree
                         });
                     }
                     PureFunctionArgument::Value(value) => {
-                        collect_c_value_bound_variables(value, variables)
+                        collect_program_value_bound_variables(value, variables)
                     }
                     PureFunctionArgument::Algebraic(term) => {
                         collect_algebraic_bound_variables(term, variables)
@@ -3449,7 +3470,7 @@ fn collect_algebraic_bound_variables(term: &AlgebraicTerm, variables: &mut BTree
                         memory, pointer, ..
                     } => {
                         collect_memory_bound_variables(memory, variables);
-                        collect_c_value_bound_variables(pointer, variables);
+                        collect_program_value_bound_variables(pointer, variables);
                     }
                 }
             }
@@ -3519,7 +3540,7 @@ fn collect_condition_bound_variables(
                         });
                     }
                     PureFunctionArgument::Value(value) => {
-                        collect_c_value_bound_variables(value, variables)
+                        collect_program_value_bound_variables(value, variables)
                     }
                     PureFunctionArgument::Algebraic(term) => {
                         collect_algebraic_bound_variables(term, variables)
@@ -3529,7 +3550,7 @@ fn collect_condition_bound_variables(
                         memory, pointer, ..
                     } => {
                         collect_memory_bound_variables(memory, variables);
-                        collect_c_value_bound_variables(pointer, variables);
+                        collect_program_value_bound_variables(pointer, variables);
                     }
                 }
             }
@@ -3584,9 +3605,9 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
         Term::PointerOffset(offset) => Term::PointerOffset(
             substitute_bitvector_variable_in_pointer_offset(offset, from, to),
         ),
-        Term::ProgramValue(value) => {
-            Term::ProgramValue(substitute_bitvector_variable_in_c_value(value, from, to))
-        }
+        Term::ProgramValue(value) => Term::ProgramValue(
+            substitute_bitvector_variable_in_program_value(value, from, to),
+        ),
         Term::Sequence(sequence) => Term::Sequence(substitute_bitvector_variable_in_sequence(
             sequence, from, to,
         )),
@@ -3600,7 +3621,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
                         from,
                         to,
                     ) {
-                        AlgebraicValue::C(value) => {
+                        AlgebraicValue::Program(value) => {
                             AlgebraicTermNode::memory_load_from_carrier(&value)
                                 .unwrap_or_else(|| term.node.clone())
                         }
@@ -3673,19 +3694,19 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
             },
         }),
         Term::ExpressionOutcome(outcome) => Term::ExpressionOutcome(
-            substitute_bitvector_variable_in_c_expression_outcome(outcome, from, to),
+            substitute_bitvector_variable_in_program_expression_outcome(outcome, from, to),
         ),
         Term::StatementOutcome(outcome) => Term::StatementOutcome(Box::new(
-            substitute_bitvector_variable_in_c_statement_outcome(outcome, from, to),
+            substitute_bitvector_variable_in_execution_statement_outcome(outcome, from, to),
         )),
         Term::FunctionOutcome(outcome) => Term::FunctionOutcome(Box::new(
-            substitute_bitvector_variable_in_c_function_outcome(outcome, from, to),
+            substitute_bitvector_variable_in_program_function_outcome(outcome, from, to),
         )),
         Term::Memory(memory) => {
             Term::Memory(substitute_bitvector_variable_in_memory(memory, from, to))
         }
         Term::ExecutionState(state) => Term::ExecutionState(Box::new(
-            substitute_bitvector_variable_in_c_state(state, from, to),
+            substitute_bitvector_variable_in_execution_state(state, from, to),
         )),
     }
 }
@@ -3971,7 +3992,7 @@ fn validate_integer_pure_proposition(
         Proposition::ConditionIs(condition, _) => {
             validate_integer_pure_condition(condition, collector)
         }
-        Proposition::CMemoryReadDefined { .. } | Proposition::CMemoryLoadable { .. } => {
+        Proposition::MemoryReadDefined { .. } | Proposition::MemoryLoadable { .. } => {
             // A symbolic array read contributes this obligation to the
             // existential body.  It is a supported C carrier as long as its
             // pointer and byte-count expressions are rewritten by the same
@@ -3996,11 +4017,11 @@ fn validate_integer_pure_proposition(
             if !matches!(
                 sort,
                 Sort::Integer
-                    | Sort::CInt32
-                    | Sort::CInt64
-                    | Sort::CMachineInteger(_)
-                    | Sort::CPointer(_)
-                    | Sort::CObjectPointer(_, _)
+                    | Sort::ProgramInt32
+                    | Sort::ProgramInt64
+                    | Sort::ProgramInteger(_)
+                    | Sort::ProgramPointer(_)
+                    | Sort::ProgramObjectPointer(_, _)
             ) {
                 return Err(IntegerPureSubstitutionError::UnsupportedSort);
             }
@@ -4013,11 +4034,11 @@ fn validate_integer_pure_proposition(
             if !matches!(
                 sort,
                 Sort::Integer
-                    | Sort::CInt32
-                    | Sort::CInt64
-                    | Sort::CMachineInteger(_)
-                    | Sort::CPointer(_)
-                    | Sort::CObjectPointer(_, _)
+                    | Sort::ProgramInt32
+                    | Sort::ProgramInt64
+                    | Sort::ProgramInteger(_)
+                    | Sort::ProgramPointer(_)
+                    | Sort::ProgramObjectPointer(_, _)
             ) {
                 return Err(IntegerPureSubstitutionError::UnsupportedSort);
             }
@@ -4122,7 +4143,7 @@ enum PropositionBinaryOperator {
 
 enum IntegerPropositionScope {
     Integer(crate::kernel::proof::term_rewrite::IntegerSubstitutionScope),
-    C(crate::kernel::proof::term_rewrite::ProgramValueSubstitutionScope),
+    Program(crate::kernel::proof::term_rewrite::ProgramValueSubstitutionScope),
 }
 
 /// Iterative proposition traversal for checked pure substitution.  The
@@ -4188,8 +4209,7 @@ fn substitute_pure_proposition_with_walker(
                             *value,
                         ));
                     }
-                    Proposition::CMemoryReadDefined { .. }
-                    | Proposition::CMemoryLoadable { .. } => {
+                    Proposition::MemoryReadDefined { .. } | Proposition::MemoryLoadable { .. } => {
                         rewritten.push(rewrite_integer_memory_loadable_with_walker(
                             proposition,
                             walker,
@@ -4305,8 +4325,8 @@ fn substitute_pure_proposition_with_walker(
                     IntegerPropositionScope::Integer(scope) => {
                         walker.pop_integer_substitution_scope(scope);
                     }
-                    IntegerPropositionScope::C(scope) => {
-                        walker.pop_c_substitution_scope(scope);
+                    IntegerPropositionScope::Program(scope) => {
+                        walker.pop_program_substitution_scope(scope);
                     }
                 }
                 let body = rewritten.pop().expect("quantifier rewrite result");
@@ -4347,11 +4367,11 @@ fn queue_integer_quantifier_rewrite<'a>(
     let is_integer = *sort == Sort::Integer;
     let is_c = matches!(
         sort,
-        Sort::CInt32
-            | Sort::CInt64
-            | Sort::CMachineInteger(_)
-            | Sort::CPointer(_)
-            | Sort::CObjectPointer(_, _)
+        Sort::ProgramInt32
+            | Sort::ProgramInt64
+            | Sort::ProgramInteger(_)
+            | Sort::ProgramPointer(_)
+            | Sort::ProgramObjectPointer(_, _)
     );
     if !is_integer && !is_c {
         return Err(IntegerPureSubstitutionError::UnsupportedSort);
@@ -4360,7 +4380,7 @@ fn queue_integer_quantifier_rewrite<'a>(
     let renamed = if is_integer {
         !shadowed && var != from && walker.replacement_contains_integer_variable(var)
     } else {
-        walker.replacement_contains_c_variable(var)
+        walker.replacement_contains_program_variable(var)
     };
     if walker.work_exhausted() {
         return Err(IntegerPureSubstitutionError::WorkLimitExceeded);
@@ -4392,7 +4412,7 @@ fn queue_integer_quantifier_rewrite<'a>(
         )
     } else {
         (
-            IntegerPropositionScope::C(walker.push_c_substitution_scope(var, new_var)),
+            IntegerPropositionScope::Program(walker.push_program_substitution_scope(var, new_var)),
             shadowed,
         )
     };
@@ -4428,7 +4448,7 @@ fn rewrite_integer_memory_loadable_with_walker(
     proposition: &Proposition,
     walker: &mut crate::kernel::proof::term_rewrite::TermRewrite<'_>,
 ) -> Result<Proposition, IntegerPureSubstitutionError> {
-    if let Proposition::CMemoryReadDefined {
+    if let Proposition::MemoryReadDefined {
         memory,
         pointer,
         value_type,
@@ -4441,13 +4461,13 @@ fn rewrite_integer_memory_loadable_with_walker(
             unreachable!("pointer rewrite changed its carrier")
         };
         integer_substitution_refusal(walker.refusal())?;
-        return Ok(Proposition::CMemoryReadDefined {
+        return Ok(Proposition::MemoryReadDefined {
             memory: memory.clone(),
             pointer: pointer.pointer().clone(),
             value_type: *value_type,
         });
     }
-    let Proposition::CMemoryLoadable {
+    let Proposition::MemoryLoadable {
         memory,
         base,
         bytes,
@@ -4468,7 +4488,7 @@ fn rewrite_integer_memory_loadable_with_walker(
     }
     let bytes = walker.bits(bytes);
     integer_substitution_refusal(walker.refusal())?;
-    Ok(Proposition::CMemoryLoadable {
+    Ok(Proposition::MemoryLoadable {
         // Snapshots are immutable proof-state identities.  Keep the same
         // handle and rewrite only the selected address/width expressions.
         memory: memory.clone(),
@@ -4671,15 +4691,15 @@ fn substitute_bitvector_variable_in_algebraic_term(
     term
 }
 
-pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression(
+pub(in crate::kernel) fn substitute_bitvector_variable_in_program_expression(
     expression: &ProgramExpression,
     from: Variable,
     to: &MachineTerm,
 ) -> ProgramExpression {
     match expression {
-        ProgramExpression::Value(value) => {
-            ProgramExpression::Value(substitute_bitvector_variable_in_c_value(value, from, to))
-        }
+        ProgramExpression::Value(value) => ProgramExpression::Value(
+            substitute_bitvector_variable_in_program_value(value, from, to),
+        ),
         ProgramExpression::Variable(name) => ProgramExpression::Variable(name.clone()),
         ProgramExpression::FunctionAddress(name) => {
             ProgramExpression::FunctionAddress(name.clone())
@@ -4694,7 +4714,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression(
             pointee_constant,
             explicit_qualification,
         } => ProgramExpression::Cast {
-            expression: Box::new(substitute_bitvector_variable_in_c_expression(
+            expression: Box::new(substitute_bitvector_variable_in_program_expression(
                 expression, from, to,
             )),
             target_type: *target_type,
@@ -4709,15 +4729,15 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression(
             then_branch,
             else_branch,
         } => ProgramExpression::Conditional {
-            condition: Box::new(substitute_bitvector_variable_in_c_expression(
+            condition: Box::new(substitute_bitvector_variable_in_program_expression(
                 condition, from, to,
             )),
-            then_branch: Box::new(substitute_bitvector_variable_in_c_expression(
+            then_branch: Box::new(substitute_bitvector_variable_in_program_expression(
                 then_branch,
                 from,
                 to,
             )),
-            else_branch: Box::new(substitute_bitvector_variable_in_c_expression(
+            else_branch: Box::new(substitute_bitvector_variable_in_program_expression(
                 else_branch,
                 from,
                 to,
@@ -4727,13 +4747,13 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression(
             expression,
             classification,
         } => ProgramExpression::FloatClassification {
-            expression: Box::new(substitute_bitvector_variable_in_c_expression(
+            expression: Box::new(substitute_bitvector_variable_in_program_expression(
                 expression, from, to,
             )),
             classification: *classification,
         },
         ProgramExpression::FloatNegate(expression) => ProgramExpression::FloatNegate(Box::new(
-            substitute_bitvector_variable_in_c_expression(expression, from, to),
+            substitute_bitvector_variable_in_program_expression(expression, from, to),
         )),
         ProgramExpression::EnumConstruct {
             enum_type,
@@ -4744,7 +4764,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression(
             variant: variant.clone(),
             fields: fields
                 .iter()
-                .map(|field| substitute_bitvector_variable_in_c_expression(field, from, to))
+                .map(|field| substitute_bitvector_variable_in_program_expression(field, from, to))
                 .collect(),
         },
         ProgramExpression::EnumField {
@@ -4752,45 +4772,45 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression(
             variant,
             index,
         } => ProgramExpression::EnumField {
-            value: Box::new(substitute_bitvector_variable_in_c_expression(
+            value: Box::new(substitute_bitvector_variable_in_program_expression(
                 value, from, to,
             )),
             variant: variant.clone(),
             index: *index,
         },
         ProgramExpression::EnumIs { value, variant } => ProgramExpression::EnumIs {
-            value: Box::new(substitute_bitvector_variable_in_c_expression(
+            value: Box::new(substitute_bitvector_variable_in_program_expression(
                 value, from, to,
             )),
             variant: variant.clone(),
         },
         ProgramExpression::AddressOf(body) => ProgramExpression::AddressOf(Box::new(
-            substitute_bitvector_variable_in_c_expression(body, from, to),
+            substitute_bitvector_variable_in_program_expression(body, from, to),
         )),
         ProgramExpression::CheckedObjectAddress(body) => {
             ProgramExpression::CheckedObjectAddress(Box::new(
-                substitute_bitvector_variable_in_c_expression(body, from, to),
+                substitute_bitvector_variable_in_program_expression(body, from, to),
             ))
         }
         ProgramExpression::PointerOffsetBytes { pointer, bytes } => {
             ProgramExpression::PointerOffsetBytes {
-                pointer: Box::new(substitute_bitvector_variable_in_c_expression(
+                pointer: Box::new(substitute_bitvector_variable_in_program_expression(
                     pointer, from, to,
                 )),
                 bytes: *bytes,
             }
         }
         ProgramExpression::Subobject { pointer, width } => ProgramExpression::Subobject {
-            pointer: Box::new(substitute_bitvector_variable_in_c_expression(
+            pointer: Box::new(substitute_bitvector_variable_in_program_expression(
                 pointer, from, to,
             )),
             width: *width,
         },
         ProgramExpression::Not(body) => ProgramExpression::Not(Box::new(
-            substitute_bitvector_variable_in_c_expression(body, from, to),
+            substitute_bitvector_variable_in_program_expression(body, from, to),
         )),
         ProgramExpression::Load(body) => ProgramExpression::Load(Box::new(
-            substitute_bitvector_variable_in_c_expression(body, from, to),
+            substitute_bitvector_variable_in_program_expression(body, from, to),
         )),
         ProgramExpression::TypedLoad {
             pointer,
@@ -4800,7 +4820,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression(
             access_class,
             source,
         } => ProgramExpression::TypedLoad {
-            pointer: Box::new(substitute_bitvector_variable_in_c_expression(
+            pointer: Box::new(substitute_bitvector_variable_in_program_expression(
                 pointer, from, to,
             )),
             value_type: *value_type,
@@ -4810,173 +4830,173 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression(
             source: source.clone(),
         },
         ProgramExpression::LessThan(left, right) => ProgramExpression::LessThan(
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 left, from, to,
             )),
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 right, from, to,
             )),
         ),
         ProgramExpression::LessEqual(left, right) => ProgramExpression::LessEqual(
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 left, from, to,
             )),
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 right, from, to,
             )),
         ),
         ProgramExpression::GreaterThan(left, right) => ProgramExpression::GreaterThan(
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 left, from, to,
             )),
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 right, from, to,
             )),
         ),
         ProgramExpression::GreaterEqual(left, right) => ProgramExpression::GreaterEqual(
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 left, from, to,
             )),
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 right, from, to,
             )),
         ),
         ProgramExpression::Equal(left, right) => ProgramExpression::Equal(
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 left, from, to,
             )),
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 right, from, to,
             )),
         ),
         ProgramExpression::NotEqual(left, right) => ProgramExpression::NotEqual(
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 left, from, to,
             )),
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 right, from, to,
             )),
         ),
         ProgramExpression::And(left, right) => ProgramExpression::And(
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 left, from, to,
             )),
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 right, from, to,
             )),
         ),
         ProgramExpression::Or(left, right) => ProgramExpression::Or(
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 left, from, to,
             )),
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 right, from, to,
             )),
         ),
         ProgramExpression::Add(left, right) => ProgramExpression::Add(
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 left, from, to,
             )),
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 right, from, to,
             )),
         ),
         ProgramExpression::Subtract(left, right) => ProgramExpression::Subtract(
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 left, from, to,
             )),
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 right, from, to,
             )),
         ),
         ProgramExpression::Multiply(left, right) => ProgramExpression::Multiply(
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 left, from, to,
             )),
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 right, from, to,
             )),
         ),
         ProgramExpression::Divide(left, right) => ProgramExpression::Divide(
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 left, from, to,
             )),
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 right, from, to,
             )),
         ),
         ProgramExpression::Remainder(left, right) => ProgramExpression::Remainder(
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 left, from, to,
             )),
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 right, from, to,
             )),
         ),
         ProgramExpression::ShiftLeft(left, right) => ProgramExpression::ShiftLeft(
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 left, from, to,
             )),
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 right, from, to,
             )),
         ),
         ProgramExpression::RustShiftLeft(left, right) => ProgramExpression::RustShiftLeft(
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 left, from, to,
             )),
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 right, from, to,
             )),
         ),
         ProgramExpression::ShiftRight(left, right) => ProgramExpression::ShiftRight(
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 left, from, to,
             )),
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 right, from, to,
             )),
         ),
         ProgramExpression::RustShiftRight(left, right) => ProgramExpression::RustShiftRight(
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 left, from, to,
             )),
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 right, from, to,
             )),
         ),
         ProgramExpression::BitwiseAnd(left, right) => ProgramExpression::BitwiseAnd(
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 left, from, to,
             )),
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 right, from, to,
             )),
         ),
         ProgramExpression::BitwiseOr(left, right) => ProgramExpression::BitwiseOr(
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 left, from, to,
             )),
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 right, from, to,
             )),
         ),
         ProgramExpression::BitwiseXor(left, right) => ProgramExpression::BitwiseXor(
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 left, from, to,
             )),
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 right, from, to,
             )),
         ),
         ProgramExpression::BitwiseNot(expression) => ProgramExpression::BitwiseNot(Box::new(
-            substitute_bitvector_variable_in_c_expression(expression, from, to),
+            substitute_bitvector_variable_in_program_expression(expression, from, to),
         )),
         ProgramExpression::Index(left, right) => ProgramExpression::Index(
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 left, from, to,
             )),
-            Box::new(substitute_bitvector_variable_in_c_expression(
+            Box::new(substitute_bitvector_variable_in_program_expression(
                 right, from, to,
             )),
         ),
@@ -5854,7 +5874,7 @@ fn substitute_bitvector_variable_in_shared_memory(
         return substituted;
     }
     let substituted =
-        crate::kernel::intern_c_memory(rewrite_memory_snapshot(memory.memory(), from, to));
+        crate::kernel::intern_memory(rewrite_memory_snapshot(memory.memory(), from, to));
     if substituted == *memory {
         record_memory_lacks_variable(identity, from);
     }
@@ -5881,13 +5901,13 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_memory(
     // A snapshot carried by value (a loadability or effect proposition) is
     // interned only to consult and fill the absent-variable memo; interning
     // an already-registered snapshot is a shallow lookup.
-    let shared = crate::kernel::intern_c_memory(memory.clone());
+    let shared = crate::kernel::intern_memory(memory.clone());
     let identity = shared.arena_id();
     if memory_lacks_variable(identity, from) {
         return memory.clone();
     }
     let substituted = rewrite_memory_snapshot(memory, from, to);
-    if crate::kernel::intern_c_memory(substituted.clone()) == shared {
+    if crate::kernel::intern_memory(substituted.clone()) == shared {
         record_memory_lacks_variable(identity, from);
     }
     substituted
@@ -5999,7 +6019,7 @@ fn substitute_bitvector_variable_in_memory_contents(
         |pointer, value| {
             (
                 substitute_bitvector_variable_in_pointer(pointer, from, to),
-                substitute_bitvector_variable_in_c_value(value, from, to),
+                substitute_bitvector_variable_in_program_value(value, from, to),
             )
         },
         |run| run_slot_named_by_load_variable(run, from),
@@ -6033,7 +6053,7 @@ fn substitute_bitvector_variable_in_memory_contents(
                             substitute_bitvector_variable_in_pointer(pointer, from, to),
                             *c_type,
                         ),
-                        substitute_bitvector_variable_in_c_value(value, from, to),
+                        substitute_bitvector_variable_in_program_value(value, from, to),
                     )
                 })
                 .collect(),
@@ -6159,7 +6179,9 @@ fn substitute_bitvector_variable_in_memory_contents(
                                         substitute_bitvector_variable_in_pointer_offset(
                                             offset, from, to,
                                         ),
-                                        substitute_bitvector_variable_in_c_value(value, from, to),
+                                        substitute_bitvector_variable_in_program_value(
+                                            value, from, to,
+                                        ),
                                     )
                                 })
                                 .collect(),
@@ -6169,7 +6191,7 @@ fn substitute_bitvector_variable_in_memory_contents(
                 .collect(),
             effective_types: memory.heap.effective_types.map_entries(
                 |pointer| substitute_bitvector_variable_in_pointer(pointer, from, to),
-                |value| substitute_bitvector_variable_in_c_value(value, from, to),
+                |value| substitute_bitvector_variable_in_program_value(value, from, to),
             ),
         }),
     };
@@ -6184,7 +6206,7 @@ fn substitute_bitvector_variable_in_memory_contents(
     result
 }
 
-pub(in crate::kernel) fn substitute_bitvector_variable_in_c_value(
+pub(in crate::kernel) fn substitute_bitvector_variable_in_program_value(
     value: &ProgramValue,
     from: Variable,
     to: &MachineTerm,
@@ -6192,7 +6214,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_value(
     match value {
         ProgramValue::PointerInteger(record) => ProgramValue::PointerInteger(PointerIntegerValue {
             kind: record.kind.clone(),
-            numeric: Box::new(substitute_bitvector_variable_in_c_value(
+            numeric: Box::new(substitute_bitvector_variable_in_program_value(
                 &record.numeric,
                 from,
                 to,
@@ -6252,7 +6274,10 @@ fn pointer_capture_avoiding_quantifier_body(
     let mut replacement_variables = BTreeSet::new();
     collect_pointer_bound_variables(replacement, &mut replacement_variables);
     if !replacement_variables.contains(&binder)
-        || !matches!(sort, Sort::CPointer(_) | Sort::CObjectPointer(_, _))
+        || !matches!(
+            sort,
+            Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _)
+        )
     {
         return (body.clone(), binder);
     }
@@ -6262,8 +6287,8 @@ fn pointer_capture_avoiding_quantifier_body(
     reserved.extend(replacement_variables);
     let fresh = KernelVariableGenerator::fresh_for(0, reserved).next();
     let pointer = match sort {
-        Sort::CPointer(ProgramType::FunctionPointer(_)) => Pointer::symbolic_function(fresh),
-        Sort::CPointer(_) | Sort::CObjectPointer(_, _) => Pointer::symbolic(fresh),
+        Sort::ProgramPointer(ProgramType::FunctionPointer(_)) => Pointer::symbolic_function(fresh),
+        Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _) => Pointer::symbolic(fresh),
         _ => unreachable!("pointer capture avoidance only handles pointer binders"),
     };
     (
@@ -6282,9 +6307,9 @@ fn substitute_pointer_variable_in_term(term: &Term, from: Variable, to: &Pointer
                 .term(term)
         }
         Term::Bitvector32(_) | Term::PointerOffset(_) => term.clone(),
-        Term::ProgramValue(value) => {
-            Term::ProgramValue(substitute_pointer_variable_in_c_value(value, from, to))
-        }
+        Term::ProgramValue(value) => Term::ProgramValue(
+            substitute_pointer_variable_in_program_value(value, from, to),
+        ),
         Term::Sequence(sequence) => {
             Term::Sequence(substitute_pointer_variable_in_sequence(sequence, from, to))
         }
@@ -6293,19 +6318,19 @@ fn substitute_pointer_variable_in_term(term: &Term, from: Variable, to: &Pointer
             node: substitute_pointer_variable_in_algebraic_term_node(term, from, to),
         }),
         Term::ExpressionOutcome(outcome) => Term::ExpressionOutcome(
-            substitute_pointer_variable_in_c_expression_outcome(outcome, from, to),
+            substitute_pointer_variable_in_program_expression_outcome(outcome, from, to),
         ),
         Term::StatementOutcome(outcome) => Term::StatementOutcome(Box::new(
-            substitute_pointer_variable_in_c_statement_outcome(outcome, from, to),
+            substitute_pointer_variable_in_execution_statement_outcome(outcome, from, to),
         )),
         Term::FunctionOutcome(outcome) => Term::FunctionOutcome(Box::new(
-            substitute_pointer_variable_in_c_function_outcome(outcome, from, to),
+            substitute_pointer_variable_in_program_function_outcome(outcome, from, to),
         )),
         Term::Memory(memory) => {
             Term::Memory(substitute_pointer_variable_in_memory(memory, from, to))
         }
         Term::ExecutionState(state) => Term::ExecutionState(Box::new(
-            substitute_pointer_variable_in_c_state(state, from, to),
+            substitute_pointer_variable_in_execution_state(state, from, to),
         )),
     }
 }
@@ -6323,8 +6348,10 @@ fn substitute_pointer_variable_in_algebraic_term_node(
                 from,
                 to,
             ) {
-                AlgebraicValue::C(value) => AlgebraicTermNode::memory_load_from_carrier(&value)
-                    .unwrap_or_else(|| term.node.clone()),
+                AlgebraicValue::Program(value) => {
+                    AlgebraicTermNode::memory_load_from_carrier(&value)
+                        .unwrap_or_else(|| term.node.clone())
+                }
                 _ => term.node.clone(),
             }
         }
@@ -6435,7 +6462,7 @@ fn substitute_pointer_variable_in_condition(
     }
 }
 
-fn substitute_pointer_variable_in_c_value(
+fn substitute_pointer_variable_in_program_value(
     value: &ProgramValue,
     from: Variable,
     to: &Pointer,
@@ -6487,15 +6514,15 @@ fn substitute_pointer_variable_in_pointer(
     }
 }
 
-fn substitute_pointer_variable_in_c_expression(
+fn substitute_pointer_variable_in_program_expression(
     expression: &ProgramExpression,
     from: Variable,
     to: &Pointer,
 ) -> ProgramExpression {
     match expression {
-        ProgramExpression::Value(value) => {
-            ProgramExpression::Value(substitute_pointer_variable_in_c_value(value, from, to))
-        }
+        ProgramExpression::Value(value) => ProgramExpression::Value(
+            substitute_pointer_variable_in_program_value(value, from, to),
+        ),
         ProgramExpression::Variable(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::CallResult { .. } => expression.clone(),
@@ -6508,7 +6535,7 @@ fn substitute_pointer_variable_in_c_expression(
             pointee_constant,
             explicit_qualification,
         } => ProgramExpression::Cast {
-            expression: Box::new(substitute_pointer_variable_in_c_expression(
+            expression: Box::new(substitute_pointer_variable_in_program_expression(
                 expression, from, to,
             )),
             target_type: *target_type,
@@ -6523,15 +6550,15 @@ fn substitute_pointer_variable_in_c_expression(
             then_branch,
             else_branch,
         } => ProgramExpression::Conditional {
-            condition: Box::new(substitute_pointer_variable_in_c_expression(
+            condition: Box::new(substitute_pointer_variable_in_program_expression(
                 condition, from, to,
             )),
-            then_branch: Box::new(substitute_pointer_variable_in_c_expression(
+            then_branch: Box::new(substitute_pointer_variable_in_program_expression(
                 then_branch,
                 from,
                 to,
             )),
-            else_branch: Box::new(substitute_pointer_variable_in_c_expression(
+            else_branch: Box::new(substitute_pointer_variable_in_program_expression(
                 else_branch,
                 from,
                 to,
@@ -6541,13 +6568,13 @@ fn substitute_pointer_variable_in_c_expression(
             expression,
             classification,
         } => ProgramExpression::FloatClassification {
-            expression: Box::new(substitute_pointer_variable_in_c_expression(
+            expression: Box::new(substitute_pointer_variable_in_program_expression(
                 expression, from, to,
             )),
             classification: *classification,
         },
         ProgramExpression::FloatNegate(expression) => ProgramExpression::FloatNegate(Box::new(
-            substitute_pointer_variable_in_c_expression(expression, from, to),
+            substitute_pointer_variable_in_program_expression(expression, from, to),
         )),
         ProgramExpression::EnumConstruct {
             enum_type,
@@ -6558,7 +6585,7 @@ fn substitute_pointer_variable_in_c_expression(
             variant: variant.clone(),
             fields: fields
                 .iter()
-                .map(|field| substitute_pointer_variable_in_c_expression(field, from, to))
+                .map(|field| substitute_pointer_variable_in_program_expression(field, from, to))
                 .collect(),
         },
         ProgramExpression::EnumField {
@@ -6566,36 +6593,42 @@ fn substitute_pointer_variable_in_c_expression(
             variant,
             index,
         } => ProgramExpression::EnumField {
-            value: Box::new(substitute_pointer_variable_in_c_expression(value, from, to)),
+            value: Box::new(substitute_pointer_variable_in_program_expression(
+                value, from, to,
+            )),
             variant: variant.clone(),
             index: *index,
         },
         ProgramExpression::EnumIs { value, variant } => ProgramExpression::EnumIs {
-            value: Box::new(substitute_pointer_variable_in_c_expression(value, from, to)),
+            value: Box::new(substitute_pointer_variable_in_program_expression(
+                value, from, to,
+            )),
             variant: variant.clone(),
         },
         ProgramExpression::AddressOf(body) => ProgramExpression::AddressOf(Box::new(
-            substitute_pointer_variable_in_c_expression(body, from, to),
+            substitute_pointer_variable_in_program_expression(body, from, to),
         )),
-        ProgramExpression::CheckedObjectAddress(body) => ProgramExpression::CheckedObjectAddress(
-            Box::new(substitute_pointer_variable_in_c_expression(body, from, to)),
-        ),
+        ProgramExpression::CheckedObjectAddress(body) => {
+            ProgramExpression::CheckedObjectAddress(Box::new(
+                substitute_pointer_variable_in_program_expression(body, from, to),
+            ))
+        }
         ProgramExpression::PointerOffsetBytes { pointer, bytes } => {
             ProgramExpression::PointerOffsetBytes {
-                pointer: Box::new(substitute_pointer_variable_in_c_expression(
+                pointer: Box::new(substitute_pointer_variable_in_program_expression(
                     pointer, from, to,
                 )),
                 bytes: *bytes,
             }
         }
         ProgramExpression::Subobject { pointer, width } => ProgramExpression::Subobject {
-            pointer: Box::new(substitute_pointer_variable_in_c_expression(
+            pointer: Box::new(substitute_pointer_variable_in_program_expression(
                 pointer, from, to,
             )),
             width: *width,
         },
         ProgramExpression::Load(body) => ProgramExpression::Load(Box::new(
-            substitute_pointer_variable_in_c_expression(body, from, to),
+            substitute_pointer_variable_in_program_expression(body, from, to),
         )),
         ProgramExpression::TypedLoad {
             pointer,
@@ -6605,7 +6638,7 @@ fn substitute_pointer_variable_in_c_expression(
             access_class,
             source,
         } => ProgramExpression::TypedLoad {
-            pointer: Box::new(substitute_pointer_variable_in_c_expression(
+            pointer: Box::new(substitute_pointer_variable_in_program_expression(
                 pointer, from, to,
             )),
             value_type: *value_type,
@@ -6615,7 +6648,9 @@ fn substitute_pointer_variable_in_c_expression(
             source: source.clone(),
         },
         ProgramExpression::Not(body) | ProgramExpression::BitwiseNot(body) => {
-            let body = Box::new(substitute_pointer_variable_in_c_expression(body, from, to));
+            let body = Box::new(substitute_pointer_variable_in_program_expression(
+                body, from, to,
+            ));
             match expression {
                 ProgramExpression::Not(_) => ProgramExpression::Not(body),
                 ProgramExpression::BitwiseNot(_) => ProgramExpression::BitwiseNot(body),
@@ -6623,8 +6658,12 @@ fn substitute_pointer_variable_in_c_expression(
             }
         }
         crate::kernel::binary_c_expression!(left, right) => {
-            let left = Box::new(substitute_pointer_variable_in_c_expression(left, from, to));
-            let right = Box::new(substitute_pointer_variable_in_c_expression(right, from, to));
+            let left = Box::new(substitute_pointer_variable_in_program_expression(
+                left, from, to,
+            ));
+            let right = Box::new(substitute_pointer_variable_in_program_expression(
+                right, from, to,
+            ));
             match expression {
                 ProgramExpression::LessThan(_, _) => ProgramExpression::LessThan(left, right),
                 ProgramExpression::LessEqual(_, _) => ProgramExpression::LessEqual(left, right),
@@ -6682,7 +6721,7 @@ pub(crate) fn substitute_pointer_variable_in_memory(
             |pointer, value| {
                 (
                     substitute_pointer_variable_in_pointer(pointer, from, to),
-                    substitute_pointer_variable_in_c_value(value, from, to),
+                    substitute_pointer_variable_in_program_value(value, from, to),
                 )
             },
             // A symbolic storage run's pointer slots each point into the
@@ -6705,7 +6744,7 @@ pub(crate) fn substitute_pointer_variable_in_memory(
                             substitute_pointer_variable_in_pointer(pointer, from, to),
                             *c_type,
                         ),
-                        substitute_pointer_variable_in_c_value(value, from, to),
+                        substitute_pointer_variable_in_program_value(value, from, to),
                     )
                 })
                 .collect(),
@@ -6833,7 +6872,9 @@ pub(crate) fn substitute_pointer_variable_in_memory(
                                 .map(|(offset, value)| {
                                     (
                                         offset.clone(),
-                                        substitute_pointer_variable_in_c_value(value, from, to),
+                                        substitute_pointer_variable_in_program_value(
+                                            value, from, to,
+                                        ),
                                     )
                                 })
                                 .collect(),
@@ -6843,7 +6884,7 @@ pub(crate) fn substitute_pointer_variable_in_memory(
                 .collect(),
             effective_types: memory.heap.effective_types.map_entries(
                 |pointer| substitute_pointer_variable_in_pointer(pointer, from, to),
-                |value| substitute_pointer_variable_in_c_value(value, from, to),
+                |value| substitute_pointer_variable_in_program_value(value, from, to),
             ),
         }),
     };
@@ -6926,7 +6967,7 @@ fn substitute_pointer_variable_in_spec_algebraic_expression(
                 fields: fields
                     .iter()
                     .map(|field| match field {
-                        SpecAlgebraicValue::C(field) => SpecAlgebraicValue::C(
+                        SpecAlgebraicValue::Program(field) => SpecAlgebraicValue::Program(
                             substitute_pointer_variable_in_spec_expression(field, from, to),
                         ),
                         SpecAlgebraicValue::Integer(field) => {
@@ -7010,9 +7051,9 @@ fn substitute_pointer_variable_in_spec_expression(
                 destination: *destination,
             }
         }
-        SpecExpression::Value(value) => {
-            SpecExpression::Value(substitute_pointer_variable_in_c_value(value, from, to))
-        }
+        SpecExpression::Value(value) => SpecExpression::Value(
+            substitute_pointer_variable_in_program_value(value, from, to),
+        ),
         SpecExpression::AlgebraicMatch { scrutinee, arms } => SpecExpression::AlgebraicMatch {
             scrutinee: Box::new(substitute_pointer_variable_in_spec_algebraic_expression(
                 scrutinee, from, to,
@@ -7028,7 +7069,7 @@ fn substitute_pointer_variable_in_spec_expression(
                 .collect(),
         },
         SpecExpression::ProgramExpression(expression) => SpecExpression::ProgramExpression(
-            substitute_pointer_variable_in_c_expression(expression, from, to),
+            substitute_pointer_variable_in_program_expression(expression, from, to),
         ),
         SpecExpression::CountedResourceCount { name, arguments } => {
             SpecExpression::CountedResourceCount {
@@ -7742,7 +7783,7 @@ mod pointee_const_return_tests {
         .with_pointer_pointee_constant(true)
         .with_pointer_pointee_volatile(true);
         assert_eq!(
-            substitute_bitvector_variable_in_c_value(
+            substitute_bitvector_variable_in_program_value(
                 &value,
                 Variable(919),
                 &MachineTerm::constant(0)
@@ -7750,11 +7791,11 @@ mod pointee_const_return_tests {
             value
         );
         assert_eq!(
-            substitute_pointer_variable_in_c_value(&value, Variable(919), &Pointer::null()),
+            substitute_pointer_variable_in_program_value(&value, Variable(919), &Pointer::null()),
             value
         );
         let replaced =
-            substitute_pointer_variable_in_c_value(&value, Variable(918), &Pointer::null());
+            substitute_pointer_variable_in_program_value(&value, Variable(918), &Pointer::null());
         assert!(matches!(replaced, ProgramValue::Pointer(pointer)
             if pointer.is_null() && pointer.pointee_constant() && pointer.pointee_volatile()));
     }
@@ -7765,11 +7806,11 @@ mod pointee_const_return_tests {
             ProgramType::UInt8Pointer,
             "text",
             Vec::new(),
-            c_return(c_int32_literal(0)),
+            program_return(crate::kernel::program_expression::int32_literal(0)),
         )
         .with_return_pointee_constant(true);
         assert!(
-            substitute_bitvector_variable_in_c_function(
+            substitute_bitvector_variable_in_program_function(
                 &function,
                 Variable(914),
                 &MachineTerm::constant(0),
@@ -7777,7 +7818,7 @@ mod pointee_const_return_tests {
             .return_pointee_is_constant()
         );
         assert!(
-            substitute_pointer_variable_in_c_function(
+            substitute_pointer_variable_in_program_function(
                 &function,
                 Variable(914),
                 &Pointer::symbolic(Variable(915)),
@@ -7908,7 +7949,7 @@ mod integer_function_traversal_tests {
     use super::*;
 
     #[test]
-    fn integer_applications_rewrite_c_and_nested_integer_arguments() {
+    fn integer_applications_rewrite_program_and_nested_integer_arguments() {
         let from = Variable(817);
         let machine = MachineTerm::Variable(from);
         let make = |machine: MachineTerm| {
@@ -7959,7 +8000,7 @@ mod integer_match_substitution_scope_tests {
     fn symbolic_match(body: IntegerTerm, binding: Variable) -> IntegerTerm {
         symbolic_match_with_binding(
             body,
-            AlgebraicValue::C(ProgramValue::Int32(MachineTerm::Variable(binding))),
+            AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(binding))),
         )
     }
 
@@ -7990,7 +8031,7 @@ mod integer_match_substitution_scope_tests {
                 AlgebraicIntegerMatchArm {
                     binding_names: Default::default(),
                     variant: "Left".into(),
-                    bindings: vec![AlgebraicValue::C(ProgramValue::Int32(
+                    bindings: vec![AlgebraicValue::Program(ProgramValue::Int32(
                         MachineTerm::Variable(binding),
                     ))],
                     body: body.clone().into(),
@@ -7998,7 +8039,7 @@ mod integer_match_substitution_scope_tests {
                 AlgebraicIntegerMatchArm {
                     binding_names: Default::default(),
                     variant: "Right".into(),
-                    bindings: vec![AlgebraicValue::C(ProgramValue::Int32(
+                    bindings: vec![AlgebraicValue::Program(ProgramValue::Int32(
                         MachineTerm::Variable(binding),
                     ))],
                     body: body.into(),
@@ -8029,7 +8070,7 @@ mod integer_match_substitution_scope_tests {
         let IntegerTerm::AlgebraicMatch { arms, .. } = rewritten else {
             panic!("expected algebraic match")
         };
-        let AlgebraicValue::C(ProgramValue::Int32(MachineTerm::Variable(fresh))) =
+        let AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(fresh))) =
             arms[0].bindings[0]
         else {
             panic!("expected C binder")
@@ -8122,7 +8163,7 @@ mod integer_match_substitution_scope_tests {
         };
         assert_eq!(
             arms[0].bindings[0],
-            AlgebraicValue::C(ProgramValue::Int32(MachineTerm::Variable(y),))
+            AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(y),))
         );
         let IntegerTerm::PureFunctionApplication(application) = arms[0].body.as_ref() else {
             panic!("expected application body")
@@ -8158,14 +8199,14 @@ mod integer_match_substitution_scope_tests {
                 ))],
             ));
             let rewritten = substitute_bitvector_variable_in_integer(
-                &symbolic_match_with_binding(body, AlgebraicValue::C(carrier.clone())),
+                &symbolic_match_with_binding(body, AlgebraicValue::Program(carrier.clone())),
                 source,
                 &MachineTerm::Variable(replacement),
             );
             let IntegerTerm::AlgebraicMatch { arms, .. } = rewritten else {
                 panic!("expected algebraic match")
             };
-            assert_ne!(arms[0].bindings[0], AlgebraicValue::C(carrier));
+            assert_ne!(arms[0].bindings[0], AlgebraicValue::Program(carrier));
         }
     }
 
@@ -8245,7 +8286,7 @@ mod integer_mixed_quantifier_tests {
     }
 
     #[test]
-    fn integer_atom_capture_avoidance_preserves_c_variable_carrier() {
+    fn integer_atom_capture_avoidance_preserves_program_variable_carrier() {
         let from = Variable(88);
         let bound = Variable(89);
         let source = Proposition::ForAll {
@@ -8287,7 +8328,7 @@ mod integer_mixed_quantifier_tests {
 
     #[test]
     fn integer_witness_replacement_reserves_registered_pointer_integer() {
-        let memory = crate::kernel::intern_c_memory(
+        let memory = crate::kernel::intern_memory(
             crate::kernel::Memory::new().with_block("integer-witness-capture", 64),
         );
         let source = Variable(9_100);
@@ -8360,7 +8401,7 @@ mod integer_mixed_quantifier_tests {
         ));
     }
 
-    fn c_int_equality(left: Variable, right: Variable) -> Proposition {
+    fn program_int_equality(left: Variable, right: Variable) -> Proposition {
         Proposition::Equal(
             Term::Bitvector32(MachineTerm::Variable(left)),
             Term::Bitvector32(MachineTerm::Variable(right)),
@@ -8368,7 +8409,7 @@ mod integer_mixed_quantifier_tests {
     }
 
     #[test]
-    fn integer_substitution_freshens_nested_c_binder_by_carrier() {
+    fn integer_substitution_freshens_nested_program_binder_by_carrier() {
         let source = Variable(9_200);
         let c_binder = Variable(9_201);
         let replacement = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
@@ -8378,13 +8419,13 @@ mod integer_mixed_quantifier_tests {
         let proposition = Proposition::ForAll {
             name: Default::default(),
             var: c_binder,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(Proposition::And(
                 Box::new(Proposition::Equal(
                     Term::Integer(IntegerTerm::var(source)),
                     Term::Integer(IntegerTerm::constant_i64(0)),
                 )),
-                Box::new(c_int_equality(c_binder, c_binder)),
+                Box::new(program_int_equality(c_binder, c_binder)),
             )),
         };
 
@@ -8406,22 +8447,22 @@ mod integer_mixed_quantifier_tests {
                 Term::Integer(IntegerTerm::Constant(_))
             )
         ));
-        assert_eq!(*c_goal, c_int_equality(fresh, fresh));
+        assert_eq!(*c_goal, program_int_equality(fresh, fresh));
     }
 
     #[test]
-    fn integer_source_is_not_shadowed_by_same_id_c_binder() {
+    fn integer_source_is_not_shadowed_by_same_id_program_binder() {
         let source = Variable(9_210);
         let proposition = Proposition::ForAll {
             name: Default::default(),
             var: source,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(Proposition::And(
                 Box::new(Proposition::Equal(
                     Term::Integer(IntegerTerm::var(source)),
                     Term::Integer(IntegerTerm::constant_i64(0)),
                 )),
-                Box::new(c_int_equality(source, source)),
+                Box::new(program_int_equality(source, source)),
             )),
         };
         let Proposition::ForAll { var, body, .. } =
@@ -8445,11 +8486,11 @@ mod integer_mixed_quantifier_tests {
                 Term::Integer(IntegerTerm::constant_i64(0)),
             )
         );
-        assert_eq!(*c_goal, c_int_equality(source, source));
+        assert_eq!(*c_goal, program_int_equality(source, source));
     }
 
     #[test]
-    fn integer_substitution_preserves_nested_c_integer_pointer_scopes() {
+    fn integer_substitution_preserves_nested_program_integer_pointer_scopes() {
         let source = Variable(9_220);
         let outer_c = Variable(9_221);
         let inner_integer = outer_c;
@@ -8471,7 +8512,7 @@ mod integer_mixed_quantifier_tests {
         let proposition = Proposition::ForAll {
             name: Default::default(),
             var: outer_c,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(Proposition::Exists {
                 name: "inner".into(),
                 var: inner_integer,
@@ -8479,7 +8520,7 @@ mod integer_mixed_quantifier_tests {
                 body: Box::new(Proposition::ForAll {
                     name: Default::default(),
                     var: inner_pointer,
-                    sort: Sort::CPointer(ProgramType::Int32Pointer),
+                    sort: Sort::ProgramPointer(ProgramType::Int32Pointer),
                     body: Box::new(Proposition::And(
                         Box::new(Proposition::Equal(
                             Term::Integer(IntegerTerm::var(source)),
@@ -8582,7 +8623,7 @@ mod integer_range_fold_substitution_tests {
         let item = Variable(1004101);
         let accumulator = Variable(1004102);
         let format = MachineIntegerType::Int32;
-        let leaf = KernelTerm::variable(KernelType::C(ProgramType::Int32), item);
+        let leaf = KernelTerm::variable(KernelType::Program(ProgramType::Int32), item);
         let root =
             KernelTerm::machine_binary_shared(format, MachineBinaryOp::Add, [leaf.clone(), leaf]);
         let replacement = SharedMachineIntegerTerm::from_shared(format, root.clone()).unwrap();
@@ -8591,7 +8632,7 @@ mod integer_range_fold_substitution_tests {
             IntegerTerm::constant_i64(0),
             accumulator,
             item,
-            c_item(source),
+            program_item(source),
         );
         let from = MachineTerm::Variable(source);
         let exports = KernelTermExport::machine_export_count();
@@ -8623,14 +8664,14 @@ mod integer_range_fold_substitution_tests {
         }
     }
 
-    fn c_item(value: Variable) -> IntegerTerm {
+    fn program_item(value: Variable) -> IntegerTerm {
         IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
             MachineTerm::Variable(value),
         ))
     }
 
-    fn c_item_value(value: MachineTerm) -> IntegerTerm {
+    fn program_item_value(value: MachineTerm) -> IntegerTerm {
         IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
             value,
@@ -8646,10 +8687,10 @@ mod integer_range_fold_substitution_tests {
         let accumulator = Variable(70_003);
         let body = IntegerTerm::add(
             IntegerTerm::add(
-                IntegerTerm::add(c_item(source), c_item(item)),
-                c_item(free_y_plus_one),
+                IntegerTerm::add(program_item(source), program_item(item)),
+                program_item(free_y_plus_one),
             ),
-            c_item(free_zero),
+            program_item(free_zero),
         );
         let fold = IntegerTerm::range_fold(
             int32_index(MachineTerm::constant(0), MachineTerm::constant(1)),
@@ -8699,10 +8740,10 @@ mod integer_range_fold_substitution_tests {
     fn int32_fold_substitution_keeps_bound_item_but_rewrites_endpoints_and_initial() {
         let source = Variable(70_010);
         let accumulator = Variable(70_011);
-        let body = c_item(source);
+        let body = program_item(source);
         let fold = IntegerTerm::range_fold(
             int32_index(MachineTerm::Variable(source), MachineTerm::Variable(source)),
-            c_item(source),
+            program_item(source),
             accumulator,
             source,
             body,
@@ -8812,7 +8853,7 @@ mod integer_range_fold_substitution_tests {
     #[test]
     fn int32_fold_substitution_rejects_non_machine_item_value() {
         let item = Variable(70_050);
-        let body = c_item(item);
+        let body = program_item(item);
         let result = instantiate_integer_range_fold_step(
             &body,
             Variable(70_051),
@@ -8830,7 +8871,7 @@ mod integer_range_fold_substitution_tests {
     #[test]
     fn int32_fold_substitution_rejects_wrong_width_machine_item_value() {
         let item = Variable(70_053);
-        let body = c_item(item);
+        let body = program_item(item);
         let malformed = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::UInt32,
             MachineTerm::Variable(Variable(70_054)),
@@ -8858,14 +8899,13 @@ mod integer_range_fold_substitution_tests {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(binder), 4),
         };
-        let source =
-            crate::kernel::intern_c_memory(Memory::new().with_block("unrelated", 4).store(
-                Pointer {
-                    block: PointerBlock::Concrete("unrelated".into()),
-                    offset: PointerOffsetTerm::Constant(0),
-                },
-                ProgramValue::Int32(MachineTerm::constant(7)),
-            ));
+        let source = crate::kernel::intern_memory(Memory::new().with_block("unrelated", 4).store(
+            Pointer {
+                block: PointerBlock::Concrete("unrelated".into()),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            ProgramValue::Int32(MachineTerm::constant(7)),
+        ));
         crate::kernel::eval::record_load_access_width(source.memory(), &pointer, 4);
         let original = crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
             source.clone(),
@@ -8904,7 +8944,7 @@ mod integer_range_fold_substitution_tests {
     fn quantified_load_substitution_preserves_access_width() {
         let _session = crate::kernel::VerificationSession::enter();
         for bytes in [4, 8] {
-            let memory = crate::kernel::intern_c_memory(Memory::new());
+            let memory = crate::kernel::intern_memory(Memory::new());
             let binder = Variable(70_156 + u64::from(bytes));
             let pointer = Pointer {
                 block: PointerBlock::ExternalArgument,
@@ -8944,7 +8984,7 @@ mod integer_range_fold_substitution_tests {
     #[test]
     fn int32_fold_substitution_rewrites_registered_load_address_only() {
         let item = Variable(70_056);
-        let memory = crate::kernel::intern_c_memory(Memory::new().with_block("array", 16));
+        let memory = crate::kernel::intern_memory(Memory::new().with_block("array", 16));
         let pointer = Pointer {
             block: PointerBlock::Concrete("array".into()),
             offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(item), 4),
@@ -8966,7 +9006,7 @@ mod integer_range_fold_substitution_tests {
             Variable(70_057),
             &IntegerTerm::constant_i64(0),
             item,
-            &c_item_value(MachineTerm::constant(0)),
+            &program_item_value(MachineTerm::constant(0)),
             Some(MachineIntegerType::Int32),
         )
         .expect("the checked fold step should preserve the registered load");
@@ -8988,7 +9028,7 @@ mod integer_range_fold_substitution_tests {
     #[test]
     fn int32_fold_substitution_canonicalizes_nonzero_load_base() {
         let item = Variable(70_058);
-        let memory = crate::kernel::intern_c_memory(Memory::new().with_block("array", 16));
+        let memory = crate::kernel::intern_memory(Memory::new().with_block("array", 16));
         let pointer = Pointer {
             block: PointerBlock::Concrete("array".into()),
             offset: PointerOffsetTerm::Add(
@@ -9016,7 +9056,7 @@ mod integer_range_fold_substitution_tests {
             Variable(70_059),
             &IntegerTerm::constant_i64(0),
             item,
-            &c_item_value(MachineTerm::constant(0)),
+            &program_item_value(MachineTerm::constant(0)),
             Some(MachineIntegerType::Int32),
         )
         .expect("the checked fold step should preserve the registered load");
@@ -9093,19 +9133,19 @@ mod resource_reference_substitution_tests {
     fn reference_resource() -> Resource {
         let schema = ResourceFieldSchema::new(vec![(
             "value".into(),
-            ResourceFieldType::C(ProgramType::Int32),
+            ResourceFieldType::Program(ProgramType::Int32),
         )])
         .unwrap();
         let leaf = ResourceInstance::new(
             Variable(200),
             "cell".into(),
             vec![
-                AlgebraicValue::C(ProgramValue::Int32(MachineTerm::Variable(Variable(100)))),
-                AlgebraicValue::C(ProgramValue::pointer(Pointer::symbolic(Variable(101)))),
+                AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(Variable(100)))),
+                AlgebraicValue::Program(ProgramValue::pointer(Pointer::symbolic(Variable(101)))),
             ]
             .into(),
             schema.clone(),
-            vec![AlgebraicValue::C(ProgramValue::Int32(
+            vec![AlgebraicValue::Program(ProgramValue::Int32(
                 MachineTerm::Variable(Variable(102)),
             ))]
             .into(),
@@ -9116,7 +9156,7 @@ mod resource_reference_substitution_tests {
             "middle".into(),
             vec![].into(),
             schema.clone(),
-            vec![AlgebraicValue::C(int32(0))].into(),
+            vec![AlgebraicValue::Program(int32(0))].into(),
         )
         .unwrap()
         .with_resource_arguments(vec![ResourceReference::from_instance(&leaf)]);
@@ -9126,7 +9166,7 @@ mod resource_reference_substitution_tests {
                 "wrapper".into(),
                 vec![].into(),
                 schema,
-                vec![AlgebraicValue::C(int32(0))].into(),
+                vec![AlgebraicValue::Program(int32(0))].into(),
             )
             .unwrap()
             .with_resource_arguments(vec![ResourceReference::from_instance(&middle)]),
@@ -9136,14 +9176,13 @@ mod resource_reference_substitution_tests {
     #[test]
     fn substitutions_reach_nested_reference_values_without_changing_occurrences() {
         let source = reference_resource();
-        let replaced = substitute_bitvector_variable_in_c_resource(
+        let replaced = substitute_bitvector_variable_in_resource(
             &source,
             Variable(100),
             &MachineTerm::constant(7),
         );
         let pointer = Pointer::symbolic(Variable(103));
-        let replaced =
-            substitute_pointer_variable_in_c_resource(&replaced, Variable(101), &pointer);
+        let replaced = substitute_pointer_variable_in_resource(&replaced, Variable(101), &pointer);
         let Resource::Instance(instance) = replaced else {
             unreachable!()
         };
@@ -9155,8 +9194,8 @@ mod resource_reference_substitution_tests {
         assert_eq!(
             leaf.description().arguments(),
             &[
-                AlgebraicValue::C(int32(7)),
-                AlgebraicValue::C(ProgramValue::pointer(pointer))
+                AlgebraicValue::Program(int32(7)),
+                AlgebraicValue::Program(ProgramValue::pointer(pointer))
             ]
         );
         let mut variables = BTreeSet::new();
@@ -9173,10 +9212,7 @@ mod resource_reference_substitution_tests {
         let mut bound = BTreeSet::new();
         collect_resource_bound_variables(&resource, &mut bound);
         let mut bitvectors = BTreeSet::new();
-        crate::kernel::reasoning::collect_c_resource_bitvector_variables(
-            &resource,
-            &mut bitvectors,
-        );
+        crate::kernel::reasoning::collect_resource_bitvector_variables(&resource, &mut bitvectors);
         // Free scalar variables belong to the bitvector collector; the
         // bound-variable collector includes symbolic pointer identities.
         assert!(!bound.contains(&Variable(100)));
@@ -9220,7 +9256,7 @@ mod checked_singleton_substitution_tests {
                 Term::Integer(IntegerTerm::var(variable)),
             )
         );
-        for sort in [Sort::CInt32, Sort::Integer] {
+        for sort in [Sort::ProgramInt32, Sort::Integer] {
             for exists in [false, true] {
                 let wrap = |body| {
                     if exists {
@@ -9239,7 +9275,7 @@ mod checked_singleton_substitution_tests {
                         }
                     }
                 };
-                let expected = if sort == Sort::CInt32 {
+                let expected = if sort == Sort::ProgramInt32 {
                     leaf.clone()
                 } else {
                     replaced.clone()
@@ -9346,7 +9382,7 @@ mod checked_singleton_substitution_tests {
             source = Proposition::ForAll {
                 name: Default::default(),
                 var: Variable(80_000 + index),
-                sort: Sort::CInt32,
+                sort: Sort::ProgramInt32,
                 body: Box::new(source),
             };
         }

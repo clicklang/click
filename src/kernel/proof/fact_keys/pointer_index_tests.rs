@@ -41,7 +41,7 @@ fn quantified(variable: Variable, offset: PointerOffsetTerm) -> Proposition {
     Proposition::ForAll {
         var: variable,
         name: crate::kernel::BinderName::written("index"),
-        sort: Sort::CMachineInteger(MachineIntegerType::Int32),
+        sort: Sort::ProgramInteger(MachineIntegerType::Int32),
         body: Box::new(fact(offset)),
     }
 }
@@ -194,7 +194,7 @@ fn pointer_index_keys_erase_snapshots_only_for_candidate_selection() {
     );
     let make = |memory, kind| {
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(memory),
+            crate::kernel::intern_memory(memory),
             Box::new(pointer.clone()),
             kind,
         );
@@ -249,7 +249,7 @@ fn pointer_index_fold_keys_restore_shadowed_binders_and_keep_free_variables() {
             MachineBinaryOp::Add,
             [
                 repeated,
-                KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(bound)),
+                KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(bound)),
             ],
         );
         quantified(

@@ -63,7 +63,7 @@ checked. Each one costs completeness, expansion, or a readable report.
   Reads through it are resolved from the recorded layout when lowered.
   In the function's own proof the parameter is the input itself: the entry
   declares its object holding its own entry values
-  (`kernel::c_function_input_objects_state`), so `p.f` names the value and
+  (`kernel::program_function_input_objects_state`), so `p.f` names the value and
   the body's private copy and its result are computed from that name
   (`mdtests/a_by_value_struct_parameter_is_one_value_in_its_own_proof.md`).
   A heap allocation keeps its nullable return value as `<region>.result` and

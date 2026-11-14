@@ -53,12 +53,14 @@ fn local_storage_classification_stops_at_a_fixed_ownership_gap() {
                 .with_resource_context(resources);
             let function = reader_for_input("classify_local_storage", 1024);
             let environment = environment(&function);
-            let arguments = [c_pointer_value(pointer.clone())];
+            let arguments = [crate::kernel::program_expression::pointer_value(
+                pointer.clone(),
+            )];
             let mut queries = Vec::new();
             for _ in 0..3 {
                 let ((paths, work), maps) = crate::persistent::measure_persistent_work(|| {
                     crate::instrumentation::measure_deterministic_work(|| {
-                        execute_c_function_call_paths(
+                        execute_program_function_call_paths(
                             &state,
                             &function,
                             &arguments,
@@ -158,10 +160,12 @@ fn returning_one_borrowed_owner_does_not_rebuild_its_memory_block() {
             let ((paths, call_work), call_maps) =
                 crate::persistent::measure_persistent_work(|| {
                     crate::instrumentation::measure_deterministic_work(|| {
-                        execute_c_function_call_paths(
+                        execute_program_function_call_paths(
                             &state,
                             &function,
-                            &[c_pointer_value(pointer.clone())],
+                            &[crate::kernel::program_expression::pointer_value(
+                                pointer.clone(),
+                            )],
                             &facts,
                             ExecutionContext::execute_bodies(&environment),
                             &mut ExecutionBudget::new(),

@@ -28,8 +28,12 @@ fn loop_view_partition_uses_alias_graph_without_scanning_ambient_ranges() {
         .assume_condition(ConditionTerm::pointer_equal(alias.clone(), target), true);
     let spec = ResourceSpec::new(
         ResourceTerm::Memory(
-            MemorySegment::new(c_variable("cursor"), c_int32_literal(0), c_int32_literal(4))
-                .with_element_width(1),
+            MemorySegment::new(
+                crate::kernel::program_expression::variable("cursor"),
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::program_expression::int32_literal(4),
+            )
+            .with_element_width(1),
         ),
         ResourceAccessMode::View,
         ResourceQuantity::One,

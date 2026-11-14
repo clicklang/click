@@ -873,7 +873,7 @@ mod exact_word_address_tests {
         let memory = Memory::new();
         let read = |memory| {
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(memory),
+                crate::kernel::intern_memory(memory),
                 Box::new(pointer.clone()),
                 LoadKind::Bits64,
             )
@@ -1135,7 +1135,7 @@ mod exact_word_address_tests {
         let assumptions = PureFactContext::new()
             .assume_condition(ConditionTerm::pointer_aligned(pointer.clone(), 4), true);
         let mut obligations = Vec::new();
-        let encoded = cast_c_value_to_type(
+        let encoded = cast_program_value_to_type(
             ProgramValue::Pointer(
                 PointerValue::new(pointer.clone(), ProgramType::Int32Pointer)
                     .with_object_class(Some(class.clone())),
@@ -1146,7 +1146,7 @@ mod exact_word_address_tests {
             &assumptions,
         )
         .unwrap();
-        let decoded = cast_c_value_to_type(
+        let decoded = cast_program_value_to_type(
             encoded.clone(),
             ProgramType::Float64Pointer,
             IntegerConversion::Modular,
@@ -1611,7 +1611,7 @@ mod retained_tag_tests {
         let memory = Memory::new().with_block("tag-cell", 8);
         let read = |memory| {
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(memory),
+                crate::kernel::intern_memory(memory),
                 Box::new(cell.clone()),
                 LoadKind::Bits64,
             )

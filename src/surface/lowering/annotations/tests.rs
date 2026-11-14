@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn addressed_result_members_bind_the_builtin_and_preserve_explicit_c_names() {
+fn addressed_result_members_bind_the_builtin_and_preserve_explicit_program_names() {
     let state = ExecutionState::new();
     let snapshots = RecordedSnapshots::new();
     let predicates = PredicateEnvironment::new(&[]);
@@ -20,7 +20,7 @@ fn addressed_result_members_bind_the_builtin_and_preserve_explicit_c_names() {
     );
     context.contract_result_in_scope = true;
     let member = |name: &str| {
-        crate::kernel::c_typed_load(
+        crate::kernel::program_expression::typed_load(
             ProgramExpression::Subobject {
                 pointer: Box::new(ProgramExpression::PointerOffsetBytes {
                     pointer: Box::new(ProgramExpression::Variable(name.into())),
@@ -33,7 +33,7 @@ fn addressed_result_members_bind_the_builtin_and_preserve_explicit_c_names() {
     };
     for (base, expected, in_scope, operand_name) in [
         (
-            ContractExpression::CFragment(ProgramExpression::Variable("result".into())),
+            ContractExpression::ProgramExpression(ProgramExpression::Variable("result".into())),
             crate::kernel::C_CONTRACT_RESULT_NAME,
             true,
             "result",
@@ -45,7 +45,7 @@ fn addressed_result_members_bind_the_builtin_and_preserve_explicit_c_names() {
             "result",
         ),
         (
-            ContractExpression::CFragment(ProgramExpression::Variable("bound".into())),
+            ContractExpression::ProgramExpression(ProgramExpression::Variable("bound".into())),
             "bound",
             false,
             "bound",
@@ -123,7 +123,7 @@ fn struct_pointer_arithmetic_through_uint64_cast_uses_layout_width() {
         explicit_qualification: false,
     };
     let lowered = lowerer
-        .lower_c_fragment_to_spec(&cast, &context)
+        .lower_program_expression_to_spec(&cast, &context)
         .expect("pointer arithmetic should lower");
     let SpecExpression::Cast(pointer, ProgramType::UInt64) = lowered else {
         panic!("expected a preserved uint64 cast around pointer arithmetic");
@@ -205,12 +205,12 @@ fn nested_snapshot_propositions_lower_with_small_frames_and_linear_visits() {
             let atom = || ClickProposition::Comparison {
                 left: ContractExpression::At {
                     selector: SnapshotSelector::Mark("before".into()),
-                    expression: Box::new(ContractExpression::CFragment(
+                    expression: Box::new(ContractExpression::ProgramExpression(
                         ProgramExpression::Variable("x".into()),
                     )),
                 },
                 operator: ComparisonOperator::Equal,
-                right: ContractExpression::CFragment(ProgramExpression::Value(int32(7))),
+                right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(7))),
             };
             for depth in [4, 8, 16, 32] {
                 let mut proposition = atom();

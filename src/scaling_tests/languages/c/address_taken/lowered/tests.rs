@@ -7,11 +7,11 @@ use super::*;
 #[test]
 fn imported_addressability_work_scales_with_body_size() {
     for count in [16, 64, 256] {
-        let mut body = c_skip();
+        let mut body = program_skip();
         for index in 0..count {
-            body = c_seq(
+            body = program_seq(
                 body,
-                c_declare(format!("capture_{index}"), ProgramType::Int32Pointer),
+                program_declare(format!("capture_{index}"), ProgramType::Int32Pointer),
             );
         }
         let function = imported(body);

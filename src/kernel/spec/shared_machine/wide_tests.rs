@@ -110,8 +110,8 @@ fn wide_casts_match_all_existing_integer_directions() {
 fn wide_reads_keep_type_and_snapshot_in_casts_and_observations() {
     let _session = VerificationSession::enter();
     let address = Pointer::symbolic(Variable(995703));
-    let before = crate::kernel::intern_c_memory(Memory::new());
-    let after = crate::kernel::intern_c_memory(
+    let before = crate::kernel::intern_memory(Memory::new());
+    let after = crate::kernel::intern_memory(
         Memory::new().store(address.clone(), ProgramValue::Int32(7u32.into())),
     );
     for format in [MachineIntegerType::Int128, MachineIntegerType::UInt128] {
@@ -177,7 +177,7 @@ fn supported_wide_arithmetic_matches_native_values_and_domains() {
                                 MachineTerm::Variable(Variable(id)),
                             ),
                             5 => MachineTerm::MemoryLoad(
-                                crate::kernel::intern_c_memory(Memory::new()),
+                                crate::kernel::intern_memory(Memory::new()),
                                 Box::new(Pointer::symbolic(Variable(id))),
                                 crate::kernel::LoadKind::of_type(format.c_type()).unwrap(),
                             ),

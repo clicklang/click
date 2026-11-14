@@ -116,7 +116,7 @@ fn constructor_clause(payload: ProgramValue) -> SpecProposition {
         algebraic_type: ty,
         node: SpecAlgebraicExpressionNode::Constructor {
             variant: "At".into(),
-            fields: vec![SpecAlgebraicValue::C(SpecExpression::Value(payload))],
+            fields: vec![SpecAlgebraicValue::Program(SpecExpression::Value(payload))],
         },
     };
     SpecProposition::AlgebraicComparison {

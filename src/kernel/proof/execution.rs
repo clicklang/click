@@ -144,7 +144,7 @@ impl ExecutionEvidence {
     pub(crate) fn push(&mut self, event: CheckedExecutionEvent) {
         match &event {
             CheckedExecutionEvent::Statement(theorem) => {
-                if let Proposition::CStatementVerifies { outcome, .. } =
+                if let Proposition::ProgramStatementVerifies { outcome, .. } =
                     checked_evidence_conclusion(theorem)
                 {
                     self.origin = Some(Arc::new(outcome.clone()));
@@ -380,7 +380,7 @@ impl CheckedReturnProposition {
             || !value.matches_native(outcome.result.as_ref())
             || outcome.state.locals() != state.locals()
             || outcome.state.aggregate_destination != state.aggregate_destination
-            || !crate::kernel::api::contract_certification::c_memories_definitionally_equal(
+            || !crate::kernel::api::contract_certification::memories_definitionally_equal(
                 outcome.state.memory(),
                 state.memory(),
                 proof.root_assumptions().assumptions(),
@@ -838,7 +838,7 @@ fn checks_population_authority_exchange(
     if quantity.as_const() != Some(1) {
         return Err("population authority rewrite requires unit ownership".into());
     }
-    let [crate::kernel::AlgebraicValue::C(ProgramValue::Pointer(pointer))] =
+    let [crate::kernel::AlgebraicValue::Program(ProgramValue::Pointer(pointer))] =
         description.arguments()
     else {
         return Err("population authority rewrite requires one pointer anchor".into());
@@ -1049,7 +1049,7 @@ fn checks_population_member_exchange(
         arguments.clone(),
         crate::kernel::ResourceFieldSchema::new(vec![]).expect("empty resource schema"),
     );
-    let Some(crate::kernel::AlgebraicValue::C(ProgramValue::Pointer(pointer))) =
+    let Some(crate::kernel::AlgebraicValue::Program(ProgramValue::Pointer(pointer))) =
         description.arguments().first()
     else {
         return Err("population member rewrite requires one pointer anchor".into());
@@ -1255,7 +1255,7 @@ fn memory_only_adds_named_cells(
         };
         return Err(format!("changed non-cell memory state ({changed})"));
     }
-    let base = crate::kernel::intern_c_memory(before.clone());
+    let base = crate::kernel::intern_memory(before.clone());
     for change in before.cells.diff(&after.cells) {
         let crate::kernel::SnapshotMapChange::Added(pointer) = change else {
             return Err("removed or rewrote an existing cell".into());
@@ -1444,7 +1444,7 @@ fn cached_body_loadability(
     allowed: &std::collections::BTreeSet<Proposition>,
     comparisons: &mut HashMap<((u32, u32), (u32, u32)), bool>,
 ) -> bool {
-    let Proposition::CMemoryLoadable {
+    let Proposition::MemoryLoadable {
         memory,
         base,
         bytes,
@@ -1454,8 +1454,8 @@ fn cached_body_loadability(
         return false;
     };
     let key = (
-        crate::kernel::intern_c_memory_ref(memory).arena_id(),
-        crate::kernel::intern_c_memory_ref(body_memory).arena_id(),
+        crate::kernel::intern_memory_ref(memory).arena_id(),
+        crate::kernel::intern_memory_ref(body_memory).arena_id(),
     );
     if !*comparisons.entry(key).or_insert_with(|| {
         crate::kernel::api::contract_certification::memories_match_up_to_cached_reads(
@@ -1465,7 +1465,7 @@ fn cached_body_loadability(
     }) {
         return false;
     }
-    allowed.contains(&Proposition::CMemoryLoadable {
+    allowed.contains(&Proposition::MemoryLoadable {
         memory: body_memory.clone(),
         base: base.clone(),
         bytes: bytes.clone(),
@@ -1645,7 +1645,7 @@ impl CheckedResourceRewrite {
         }
         if exposing {
             memory_only_adds_named_cells(before_state.memory(), after_state.memory())?;
-        } else if !crate::kernel::api::contract_certification::c_memories_definitionally_equal(
+        } else if !crate::kernel::api::contract_certification::memories_definitionally_equal(
             before_state.memory(),
             after_state.memory(),
             assumptions,
@@ -1683,7 +1683,7 @@ impl CheckedResourceRewrite {
         let mut evaluation = folded.clone().with_resource_context(projected);
         for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
             let value = argument
-                .as_c_value()
+                .as_program_value()
                 .ok_or("authority control requires C arguments")?;
             if value.c_type() != parameter.c_type() {
                 return Err("authority control argument type mismatch".into());
@@ -1931,13 +1931,13 @@ impl CheckedResourceRewrite {
         let mut allowed = child_context.observable_facts_assuming_valid(assumptions);
         for child in expanded.facts() {
             if let Some(owned) = child.owned_resource() {
-                allowed.push(Proposition::CResourceContains {
+                allowed.push(Proposition::ResourceContains {
                     parent: Box::new(selected.resource().clone()),
                     child: Box::new(owned.clone()),
                 })
             }
         }
-        allowed.push(Proposition::CResourceComposition(child_context));
+        allowed.push(Proposition::ResourceComposition(child_context));
         if introduced.iter().any(|fact| {
             !allowed.contains(fact)
                 && !assumptions.proves_exact(fact)
@@ -2306,7 +2306,7 @@ impl CheckedResourceRewrite {
                 let child_context = ResourceContext::new_with_equalities(assumptions)
                     .unchecked_with_facts(children.iter().cloned());
                 let mut allowed = child_context.observable_facts_assuming_valid(assumptions);
-                allowed.push(Proposition::CResourceComposition(child_context.clone()));
+                allowed.push(Proposition::ResourceComposition(child_context.clone()));
                 if let Some(propositions) =
                     crate::kernel::functions::evaluate_composite_resource_relation_propositions(
                         selected,
@@ -2396,14 +2396,14 @@ impl CheckedResourceRewrite {
                     return Err("member body access has the wrong resource exchange".into());
                 }
                 if now_open {
-                memory_only_adds_named_cells(before_state.memory(), after_state.memory())?;
-            } else if !crate::kernel::api::contract_certification::c_memories_definitionally_equal(
-                before_state.memory(),
-                after_state.memory(),
-                assumptions,
-            ) {
-                return Err("member body close changed C memory".into());
-            }
+                    memory_only_adds_named_cells(before_state.memory(), after_state.memory())?;
+                } else if !crate::kernel::api::contract_certification::memories_definitionally_equal(
+                    before_state.memory(),
+                    after_state.memory(),
+                    assumptions,
+                ) {
+                    return Err("member body close changed C memory".into());
+                }
                 let same_bindings = match (
                     &before_state.resource_bindings,
                     &after_state.resource_bindings,
@@ -2586,7 +2586,7 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
                         &allowed,
                         &mut cached_comparisons,
                     )
-                    && !(matches!(fact, Proposition::CMemoryReadDefined { .. })
+                    && !(matches!(fact, Proposition::MemoryReadDefined { .. })
                         && assumptions.proves_atomic_memory_or_resource(fact))
             }) {
                 *rejected_fact = Some(Arc::new(RejectedResourceRewriteFact {
@@ -2919,7 +2919,7 @@ impl CheckedResourceObservation {
         concrete_after = concrete_after.with_resource_context(before_state.resources.clone());
         if concrete_after != *before_state
             || (memory_only_adds_named_cells(before_state.memory(), after_state.memory()).is_err()
-                && !crate::kernel::api::contract_certification::c_memories_definitionally_equal(
+                && !crate::kernel::api::contract_certification::memories_definitionally_equal(
                     before_state.memory(),
                     after_state.memory(),
                     assumptions,
@@ -3008,7 +3008,7 @@ impl CheckedResourceObservation {
         let child_context =
             ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(children);
         let mut allowed = child_context.observable_facts_assuming_valid(assumptions);
-        allowed.push(Proposition::CResourceComposition(child_context.clone()));
+        allowed.push(Proposition::ResourceComposition(child_context.clone()));
         let relation_authority = ResourceFact::own(observed.resource().clone());
         if projects_body
             && let Some(propositions) =
@@ -3080,7 +3080,7 @@ fn resource_composition_is_supported_by(
     available: &ResourceContext,
     assumptions: &PureFactContext,
 ) -> bool {
-    let Proposition::CResourceComposition(required) = proposition else {
+    let Proposition::ResourceComposition(required) = proposition else {
         return false;
     };
     // Observing the exact checked context needs no resource consumption.
@@ -3120,10 +3120,13 @@ impl CheckedFunctionEntry {
         expected_entry_state: &ExecutionState,
         assumptions: PureFactContext,
     ) -> Result<Arc<Self>, RuntimeError> {
-        let entry_state = crate::kernel::c_function_entry_state(caller_state, function, arguments)
-            .ok_or_else(|| {
-                RuntimeError::FunctionContract("could not bind the function entry arguments".into())
-            })?;
+        let entry_state =
+            crate::kernel::program_function_entry_state(caller_state, function, arguments)
+                .ok_or_else(|| {
+                    RuntimeError::FunctionContract(
+                        "could not bind the function entry arguments".into(),
+                    )
+                })?;
         if &entry_state != expected_entry_state {
             return Err(RuntimeError::FunctionContract(
                 "the checked function entry does not match the proof entry".into(),
@@ -3179,7 +3182,7 @@ impl CheckedFunctionEntry {
             return Some(self.entry_state.clone());
         }
         let rebased_entry =
-            crate::kernel::c_function_entry_state(caller_state, function, arguments)?;
+            crate::kernel::program_function_entry_state(caller_state, function, arguments)?;
         crate::kernel::api::function_entry_representation_states_match(
             function,
             &self.entry_state,
@@ -4113,13 +4116,13 @@ fn construct_interface_abstraction(
     let join_next_kernel_variable = arms[0]
         .next_kernel_variable
         .max(arms[1].next_kernel_variable);
-    let abstract_then = crate::kernel::abstract_c_state_for_interface_join_across(
+    let abstract_then = crate::kernel::abstract_execution_state_for_interface_join_across(
         arms[0].reached_state(),
         &sibling_states,
         join_next_kernel_variable,
     )
     .map_err(|_| "the then interface state could not be abstracted")?;
-    let abstract_else = crate::kernel::abstract_c_state_for_interface_join_across(
+    let abstract_else = crate::kernel::abstract_execution_state_for_interface_join_across(
         arms[1].reached_state(),
         &sibling_states,
         join_next_kernel_variable,
@@ -4355,7 +4358,7 @@ fn branch_split_starts_at_parent(
         return false;
     }
     let Some(entry_state) =
-        crate::kernel::c_function_entry_state(parent.reached_state(), function, arguments)
+        crate::kernel::program_function_entry_state(parent.reached_state(), function, arguments)
     else {
         return false;
     };
@@ -4829,7 +4832,7 @@ fn interface_chain_memory_matches(
     recorded: &Memory,
     assumptions: &PureFactContext,
 ) -> bool {
-    use crate::kernel::api::contract_certification::c_memories_definitionally_equal;
+    use crate::kernel::api::contract_certification::memories_definitionally_equal;
     // End the lifetimes first: with them the memories are usually the same
     // snapshot, which the comparison answers without looking at a cell.
     let mut ended: Option<Memory> = None;
@@ -4843,7 +4846,7 @@ fn interface_chain_memory_matches(
             );
         }
     }
-    c_memories_definitionally_equal(ended.as_ref().unwrap_or(produced), recorded, assumptions)
+    memories_definitionally_equal(ended.as_ref().unwrap_or(produced), recorded, assumptions)
 }
 
 #[cfg(test)]
@@ -4867,9 +4870,9 @@ fn checked_interface_effect_facts(
 fn is_memory_effect(proposition: &Proposition) -> bool {
     matches!(
         proposition,
-        Proposition::CMemoryMutatesOnly { .. }
-            | Proposition::CMemoryEffectSummary { .. }
-            | Proposition::CHeapAllocationFreed { .. }
+        Proposition::MemoryMutatesOnly { .. }
+            | Proposition::MemoryEffectSummary { .. }
+            | Proposition::HeapAllocationFreed { .. }
     )
 }
 
@@ -4893,13 +4896,13 @@ fn arm_effects_follow_memory_steps(
     effects: &(impl ExecutionFactSource + ?Sized),
     assumptions: &PureFactContext,
 ) -> bool {
-    use crate::kernel::api::contract_certification::c_memories_definitionally_equal;
+    use crate::kernel::api::contract_certification::memories_definitionally_equal;
     let mut effects = effects
         .fact_iter()
         .filter_map(|fact| match fact.proposition() {
-            Proposition::CMemoryMutatesOnly { before, after, .. }
-            | Proposition::CMemoryEffectSummary { before, after, .. }
-            | Proposition::CHeapAllocationFreed { before, after, .. } => Some((before, after)),
+            Proposition::MemoryMutatesOnly { before, after, .. }
+            | Proposition::MemoryEffectSummary { before, after, .. }
+            | Proposition::HeapAllocationFreed { before, after, .. } => Some((before, after)),
             _ => None,
         })
         .peekable();
@@ -4916,10 +4919,10 @@ fn arm_effects_follow_memory_steps(
         while memory != &step.after {
             if let Some((_, after)) = effects.next_if(|(before, _)| *before == memory) {
                 memory = after;
-            } else if c_memories_definitionally_equal(memory, &step.after, assumptions) {
+            } else if memories_definitionally_equal(memory, &step.after, assumptions) {
                 break;
             } else if let Some((_, after)) = effects
-                .next_if(|(before, _)| c_memories_definitionally_equal(memory, before, assumptions))
+                .next_if(|(before, _)| memories_definitionally_equal(memory, before, assumptions))
             {
                 memory = after;
             } else {
@@ -4957,7 +4960,7 @@ fn checked_interface_effect_facts_along(
         let mut memory = split_state.memory().clone();
         for fact in arm_effect_facts[arm_index].fact_iter() {
             match fact.proposition() {
-                Proposition::CMemoryMutatesOnly {
+                Proposition::MemoryMutatesOnly {
                     before,
                     after,
                     writes: changed,
@@ -4991,7 +4994,7 @@ fn checked_interface_effect_facts_along(
                         }
                     }
                 }
-                Proposition::CMemoryEffectSummary {
+                Proposition::MemoryEffectSummary {
                     before,
                     after,
                     mutable_ranges,
@@ -5024,7 +5027,7 @@ fn checked_interface_effect_facts_along(
                         }
                     }
                 }
-                Proposition::CHeapAllocationFreed {
+                Proposition::HeapAllocationFreed {
                     before,
                     after,
                     allocation_base,
@@ -5058,7 +5061,7 @@ fn checked_interface_effect_facts_along(
             let facts = heap_frees[0]
                 .iter()
                 .map(|(allocation_base, bytes, after)| {
-                    ExecutionPureFact::certified(Proposition::CHeapAllocationFreed {
+                    ExecutionPureFact::certified(Proposition::HeapAllocationFreed {
                         before: split_state.memory().clone(),
                         after: after.clone(),
                         allocation_base: allocation_base.clone(),
@@ -5071,7 +5074,7 @@ fn checked_interface_effect_facts_along(
         return Ok(common_non_memory_effect_facts(arm_effect_facts));
     }
     let proposition = if ranges.is_empty() {
-        Proposition::CMemoryMutatesOnly {
+        Proposition::MemoryMutatesOnly {
             before: split_state.memory().clone(),
             after: joined_state.memory().clone(),
             writes,
@@ -5088,7 +5091,7 @@ fn checked_interface_effect_facts_along(
                 ranges.push(range);
             }
         }
-        Proposition::CMemoryEffectSummary {
+        Proposition::MemoryEffectSummary {
             before: split_state.memory().clone(),
             after: joined_state.memory().clone(),
             mutable_ranges: ranges,
@@ -5106,7 +5109,7 @@ fn conditional_heap_frees(
         arm_effect_facts[arm_index]
             .fact_iter()
             .filter_map(|fact| match fact.proposition() {
-                Proposition::CHeapAllocationFreed {
+                Proposition::HeapAllocationFreed {
                     allocation_base,
                     bytes,
                     ..
@@ -5177,9 +5180,9 @@ fn common_non_memory_effect_facts(
             fact.is_certified()
                 && !matches!(
                     fact.proposition(),
-                    Proposition::CMemoryMutatesOnly { .. }
-                        | Proposition::CMemoryEffectSummary { .. }
-                        | Proposition::CHeapAllocationFreed { .. }
+                    Proposition::MemoryMutatesOnly { .. }
+                        | Proposition::MemoryEffectSummary { .. }
+                        | Proposition::HeapAllocationFreed { .. }
                 )
                 && arm_effect_facts[1].fact_iter().any(|other| other == *fact)
         })
@@ -5451,7 +5454,7 @@ impl InterfaceReadPremises {
         let mut index = Self::default();
         for premise in premises {
             crate::instrumentation::record_deterministic_work(1);
-            let Proposition::CMemoryLoadable {
+            let Proposition::MemoryLoadable {
                 memory,
                 base,
                 bytes,
@@ -5472,7 +5475,7 @@ impl InterfaceReadPremises {
     }
 
     fn for_goal(&self, goal: &Proposition) -> Option<&Proposition> {
-        let Proposition::CMemoryLoadable { memory, base, .. } = goal else {
+        let Proposition::MemoryLoadable { memory, base, .. } = goal else {
             return None;
         };
         crate::instrumentation::record_deterministic_work(1);
@@ -5484,13 +5487,13 @@ impl InterfaceReadPremises {
 
 pub(super) fn interface_read_is_subrange(goal: &Proposition, premise: &Proposition) -> bool {
     let (
-        Proposition::CMemoryLoadable {
+        Proposition::MemoryLoadable {
             memory,
             base,
             bytes,
             wide: false,
         },
-        Proposition::CMemoryLoadable {
+        Proposition::MemoryLoadable {
             memory: source_memory,
             base: source_base,
             bytes: source_bytes,
@@ -5652,7 +5655,7 @@ impl CheckedCallOutcomeSplit {
              expected: &StatementOutcome,
              path_facts: &[Proposition],
              obligations: &[crate::kernel::ProofObligation]| {
-                let Proposition::CStatementVerifies {
+                let Proposition::ProgramStatementVerifies {
                     state: proved_state,
                     statement: proved_statement,
                     outcome,
@@ -5727,7 +5730,7 @@ impl CheckedCallOutcomeSplit {
         .all(|(theorem, expected)| {
             matches!(
                 crate::kernel::api::proof_evidence_conclusion(theorem),
-                Proposition::CStatementVerifies {
+                Proposition::ProgramStatementVerifies {
                     state: proved_state,
                     statement: proved_statement,
                     outcome,
@@ -5748,7 +5751,7 @@ impl CheckedBranchSplit {
             return Err(CheckedBranchSplitError::InvalidEvidence);
         };
         let condition = condition.clone();
-        let evaluation = crate::kernel::prove_symbolic_c_condition_evaluation(
+        let evaluation = crate::kernel::prove_symbolic_program_condition_evaluation(
             state.clone(),
             condition.clone(),
             root_facts.assumptions().clone(),
@@ -5764,7 +5767,7 @@ impl CheckedBranchSplit {
                 while let Proposition::Implies(_, body) = conclusion {
                     conclusion = body;
                 }
-                let Proposition::CConditionEvaluates {
+                let Proposition::ProgramConditionEvaluates {
                     state: proved_state,
                     condition: proved_condition,
                     outcome,
@@ -6159,8 +6162,8 @@ fn checked_evidence_conclusion(theorem: &Theorem) -> &Proposition {
 
 fn statement_call_havoc_views(theorem: &Theorem) -> Vec<crate::kernel::SharedMemory> {
     let (before, outcome) = match checked_evidence_conclusion(theorem) {
-        Proposition::CStatementExecutes { state, outcome, .. }
-        | Proposition::CStatementVerifies { state, outcome, .. } => (state.memory(), outcome),
+        Proposition::ProgramStatementExecutes { state, outcome, .. }
+        | Proposition::ProgramStatementVerifies { state, outcome, .. } => (state.memory(), outcome),
         _ => return Vec::new(),
     };
     let after = match outcome {
@@ -6174,8 +6177,8 @@ fn statement_call_havoc_views(theorem: &Theorem) -> Vec<crate::kernel::SharedMem
         | StatementOutcome::UndefinedBehavior(_)
         | StatementOutcome::RuntimeError(_) => return Vec::new(),
     };
-    let before = crate::kernel::intern_c_memory_ref(before);
-    let mut current = crate::kernel::intern_c_memory_ref(after);
+    let before = crate::kernel::intern_memory_ref(before);
+    let mut current = crate::kernel::intern_memory_ref(after);
     let mut calls = Vec::new();
     while current != before {
         let Some(derivation) = current.derivation() else {
@@ -6256,8 +6259,8 @@ fn collect_checked_callees<'e>(
         match event {
             CheckedExecutionEvent::Statement(theorem) => {
                 match checked_evidence_conclusion(theorem) {
-                    Proposition::CStatementExecutes { statement, .. }
-                    | Proposition::CStatementVerifies { statement, .. } => {
+                    Proposition::ProgramStatementExecutes { statement, .. }
+                    | Proposition::ProgramStatementVerifies { statement, .. } => {
                         crate::kernel::termination::checked_statement_calls(
                             statement, seen, callees,
                         );
@@ -6697,12 +6700,12 @@ fn checked_statement_event(
     statement: &ProgramStatement,
 ) -> Option<StatementOutcome> {
     let (proved_state, proved_statement, outcome) = match checked_evidence_conclusion(theorem) {
-        Proposition::CStatementExecutes {
+        Proposition::ProgramStatementExecutes {
             state,
             statement,
             outcome,
         }
-        | Proposition::CStatementVerifies {
+        | Proposition::ProgramStatementVerifies {
             state,
             statement,
             outcome,
@@ -6720,7 +6723,7 @@ fn checked_condition_event(
     tail: Option<ProgramStatement>,
 ) -> Option<Option<ProgramStatement>> {
     let (proved_state, proved_condition, value) = match checked_evidence_conclusion(theorem) {
-        Proposition::CConditionEvaluates {
+        Proposition::ProgramConditionEvaluates {
             state,
             condition,
             outcome: ConditionOutcome::Value(value),
@@ -6957,8 +6960,8 @@ fn check_evidence_events(
         if let CheckedExecutionEvent::Statement(theorem) = event
             && matches!(
                 checked_evidence_conclusion(theorem),
-                Proposition::CStatementExecutes { statement, .. }
-                | Proposition::CStatementVerifies { statement, .. }
+                Proposition::ProgramStatementExecutes { statement, .. }
+                | Proposition::ProgramStatementVerifies { statement, .. }
                     if matches!(**statement, ProgramStatement::Skip)
             )
             && !remaining.as_ref().is_some_and(|source| {
@@ -7252,7 +7255,7 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
                 if completed.is_some() {
                     return Err("a trace continues past its completing theorem");
                 }
-                let Proposition::CStatementVerifies { outcome, .. } =
+                let Proposition::ProgramStatementVerifies { outcome, .. } =
                     checked_evidence_conclusion(theorem)
                 else {
                     return Err("retained statement evidence has a non-statement conclusion");
@@ -7392,7 +7395,7 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
                     // This is read validity, not ownership or a value equality;
                     // no ambient range search or cross-snapshot transport occurs.
                     let materialized_read = matches!(fact,
-                        Proposition::CMemoryLoadable { memory, base, bytes, wide: false }
+                        Proposition::MemoryLoadable { memory, base, bytes, wide: false }
                             if bytes.as_const().is_some_and(|width|
                                 width > 0 && memory.is_loadable_concretely(base, width)));
                     if !materialized_read
@@ -7402,7 +7405,7 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
                             state.resources(),
                             executed_under,
                         )
-                        && !matches!(fact, Proposition::CResourceComposition(resources)
+                        && !matches!(fact, Proposition::ResourceComposition(resources)
                             if ResourceContext::new()
                                 .try_compose_with_facts(resources.facts().iter().cloned(), executed_under)
                                 .is_ok())
@@ -7830,12 +7833,13 @@ fn validate_checked_event_shapes_after<'e>(
         let right_shape = if statement {
             matches!(
                 checked_evidence_conclusion(theorem),
-                Proposition::CStatementExecutes { .. } | Proposition::CStatementVerifies { .. }
+                Proposition::ProgramStatementExecutes { .. }
+                    | Proposition::ProgramStatementVerifies { .. }
             )
         } else {
             matches!(
                 checked_evidence_conclusion(theorem),
-                Proposition::CConditionEvaluates { .. }
+                Proposition::ProgramConditionEvaluates { .. }
             )
         };
         if !right_shape {
@@ -8144,8 +8148,8 @@ impl ExecutionProofCore {
             .map(|view| self.checked_call_events.new_event(view))
             .collect::<Vec<_>>();
         let before = match checked_evidence_conclusion(&theorem) {
-            Proposition::CStatementExecutes { state, .. }
-            | Proposition::CStatementVerifies { state, .. } => Some(state.as_ref()),
+            Proposition::ProgramStatementExecutes { state, .. }
+            | Proposition::ProgramStatementVerifies { state, .. } => Some(state.as_ref()),
             _ => None,
         };
         let after = match &outcome {
@@ -8168,7 +8172,7 @@ impl ExecutionProofCore {
         if let Some(fp) = &self.last_footprint
             && let Some(bound) = &fp.resource_bound
         {
-            let fact = Proposition::CResourceContains {
+            let fact = Proposition::ResourceContains {
                 parent: Box::new(bound.clone()),
                 child: Box::new(Resource::Footprint(fp.clone())),
             };
@@ -8197,8 +8201,8 @@ impl ExecutionProofCore {
         {
             let at_loop_test = matches!(
                 checked_evidence_conclusion(&theorem),
-                Proposition::CStatementExecutes { statement, .. }
-                    | Proposition::CStatementVerifies { statement, .. }
+                Proposition::ProgramStatementExecutes { statement, .. }
+                    | Proposition::ProgramStatementVerifies { statement, .. }
                     if matches!(statement.as_ref(), ProgramStatement::LoopTest { .. })
             );
             match &outcome {
@@ -8589,7 +8593,7 @@ impl ExecutionProofCore {
                 _ => None,
             })?;
         match checked_evidence_conclusion(theorem) {
-            Proposition::CStatementVerifies {
+            Proposition::ProgramStatementVerifies {
                 outcome: StatementOutcome::Return { value, .. },
                 ..
             } => Some((value.clone(), state)),
@@ -8757,7 +8761,7 @@ impl ExecutionProofCore {
         if !matches!(self.frontier.position, FrontierPosition::FunctionEntry) {
             return Ok(Cow::Borrowed(&self.state));
         }
-        crate::kernel::c_function_entry_state(&self.state, function, arguments)
+        crate::kernel::program_function_entry_state(&self.state, function, arguments)
             .map(Cow::Owned)
             .ok_or_else(|| EvidenceRefusal::from("the function's arguments do not bind at entry"))
     }
@@ -8774,9 +8778,12 @@ impl ExecutionProofCore {
             .as_ref()
             .ok_or("an entry interface requires a checked function entry")?;
         let caller = entry.caller_state().clone();
-        let bound =
-            crate::kernel::c_function_entry_state(&self.state, &entry.function, &entry.arguments)
-                .ok_or("the interface could not bind function arguments")?;
+        let bound = crate::kernel::program_function_entry_state(
+            &self.state,
+            &entry.function,
+            &entry.arguments,
+        )
+        .ok_or("the interface could not bind function arguments")?;
         let source = Arc::new(entry.function.body().clone());
         if self
             .evidence_state
@@ -8989,7 +8996,7 @@ impl ExecutionProofCore {
         let running_state = self.running_state(function, arguments)?.into_owned();
         let (proved_state, proved_statement, outcome) =
             match crate::kernel::api::proof_evidence_conclusion(theorem) {
-                Proposition::CStatementVerifies {
+                Proposition::ProgramStatementVerifies {
                     state,
                     statement,
                     outcome,
@@ -9141,7 +9148,7 @@ impl ExecutionProofCore {
         let running_state = self.running_state(function, arguments)?;
         let (proved_state, proved_condition, value) =
             match crate::kernel::api::proof_evidence_conclusion(theorem) {
-                Proposition::CConditionEvaluates {
+                Proposition::ProgramConditionEvaluates {
                     state,
                     condition,
                     outcome: ConditionOutcome::Value(value),
@@ -9608,17 +9615,17 @@ impl ExecutionProofCore {
             #[cfg(test)]
             MATCH_SCOPE_INDEX_BUILDS.with(|count| count.set(count.get() + 1));
             let mut reserved = std::collections::BTreeSet::new();
-            crate::kernel::reasoning::collect_c_state_bitvector_variables(
+            crate::kernel::reasoning::collect_execution_state_bitvector_variables(
                 &self.initial_match_scope,
                 &mut reserved,
             );
-            crate::kernel::reasoning::collect_c_state_bound_variables(
+            crate::kernel::reasoning::collect_execution_state_bound_variables(
                 &self.initial_match_scope,
                 &mut reserved,
             );
             if let Some(entry) = self.function_entry.as_ref() {
                 reserved.extend(crate::kernel::proposition_variables(
-                    &Proposition::CFunctionExecutes {
+                    &Proposition::ProgramFunctionExecutes {
                         state: Box::new(entry.caller_state.clone()),
                         function: Box::new(entry.function.as_ref().clone()),
                         arguments: entry.arguments.clone(),
@@ -9793,8 +9800,8 @@ impl ExecutionProofCore {
                         .iter()
                         .enumerate()
                         .map(|(index, field)| match field {
-                            crate::kernel::AlgebraicValue::C(value) => {
-                                crate::kernel::AlgebraicValue::C(value.clone())
+                            crate::kernel::AlgebraicValue::Program(value) => {
+                                crate::kernel::AlgebraicValue::Program(value.clone())
                             }
                             crate::kernel::AlgebraicValue::Algebraic(_) => {
                                 crate::kernel::arm_algebraic_payload_spelling(value, variant, index)
@@ -10094,13 +10101,13 @@ impl ExecutionProofCore {
             &self.checked_call_events,
         )?;
         if self.frontier.is_at_function_entry() && !self.frontier.entry_member_prefix {
-            observation.before_state = crate::kernel::c_function_entry_state(
+            observation.before_state = crate::kernel::program_function_entry_state(
                 &observation.before_state,
                 function,
                 arguments,
             )
             .ok_or("resource observation could not bind the function entry state")?;
-            observation.after_state = crate::kernel::c_function_entry_state(
+            observation.after_state = crate::kernel::program_function_entry_state(
                 &observation.after_state,
                 function,
                 arguments,
@@ -10154,7 +10161,7 @@ impl ExecutionProofCore {
         // Before any evidence, the core holds the caller-side state and the
         // trace holds entry-bound states, as for a resource rewrite here.
         if self.frontier.is_at_function_entry() && !self.frontier.entry_member_prefix {
-            application.before_state = crate::kernel::c_function_entry_state(
+            application.before_state = crate::kernel::program_function_entry_state(
                 &application.before_state,
                 function,
                 function_arguments,
@@ -10162,7 +10169,7 @@ impl ExecutionProofCore {
             .ok_or_else(|| {
                 Refused("a tactic application could not bind the function entry state".into())
             })?;
-            application.after_state = crate::kernel::c_function_entry_state(
+            application.after_state = crate::kernel::program_function_entry_state(
                 &application.after_state,
                 function,
                 function_arguments,
@@ -10274,9 +10281,12 @@ impl ExecutionProofCore {
             // have opened the authority wrapper. Bind their checked successor
             // to the callee entry before exchanging the member. The checked
             // rewrite chain must still connect to the original entry.
-            let bound_before =
-                crate::kernel::c_function_entry_state(self.reached_state(), function, arguments)
-                    .ok_or("entry member change could not bind function arguments")?;
+            let bound_before = crate::kernel::program_function_entry_state(
+                self.reached_state(),
+                function,
+                arguments,
+            )
+            .ok_or("entry member change could not bind function arguments")?;
             let (bound_after, bound_witness) = bound_before.checked_population_member_exchange(
                 selected,
                 produce,
@@ -10402,12 +10412,18 @@ impl ExecutionProofCore {
             return_observation: None,
         };
         if self.frontier.is_at_function_entry() && !self.frontier.entry_member_prefix {
-            rewrite.before_state =
-                crate::kernel::c_function_entry_state(&rewrite.before_state, function, arguments)
-                    .ok_or("resource rewrite could not bind the function entry state")?;
-            rewrite.after_state =
-                crate::kernel::c_function_entry_state(&rewrite.after_state, function, arguments)
-                    .ok_or("resource rewrite could not bind its successor entry state")?;
+            rewrite.before_state = crate::kernel::program_function_entry_state(
+                &rewrite.before_state,
+                function,
+                arguments,
+            )
+            .ok_or("resource rewrite could not bind the function entry state")?;
+            rewrite.after_state = crate::kernel::program_function_entry_state(
+                &rewrite.after_state,
+                function,
+                arguments,
+            )
+            .ok_or("resource rewrite could not bind its successor entry state")?;
         }
         if self.evidence_state.is_some() {
             self.evidence_state = Some(rewrite.after_state.clone());
@@ -10598,14 +10614,20 @@ impl ExecutionProofCore {
             loan_holds,
         )?;
         if self.frontier.is_at_function_entry() && !self.frontier.entry_member_prefix {
-            rewrite.before_state =
-                crate::kernel::c_function_entry_state(&rewrite.before_state, function, arguments)
-                    .ok_or_else(|| {
-                    "resource rewrite could not bind the function entry state".to_string()
-                })?;
-            rewrite.after_state =
-                crate::kernel::c_function_entry_state(&rewrite.after_state, function, arguments)
-                    .ok_or("resource rewrite could not bind its successor entry state")?;
+            rewrite.before_state = crate::kernel::program_function_entry_state(
+                &rewrite.before_state,
+                function,
+                arguments,
+            )
+            .ok_or_else(|| {
+                "resource rewrite could not bind the function entry state".to_string()
+            })?;
+            rewrite.after_state = crate::kernel::program_function_entry_state(
+                &rewrite.after_state,
+                function,
+                arguments,
+            )
+            .ok_or("resource rewrite could not bind its successor entry state")?;
         }
         if self.evidence_state.is_some() {
             self.evidence_state = Some(rewrite.after_state.clone());
@@ -11460,7 +11482,7 @@ impl ExecutionProofCore {
             }
         });
         if !has_checked_entry {
-            crate::kernel::c_function_entry_state(
+            crate::kernel::program_function_entry_state(
                 candidates.state(),
                 function,
                 candidates.arguments(),
@@ -11516,13 +11538,14 @@ impl ExecutionProofCore {
             } else {
                 completed.clone()
             };
-            let (outcome, obligations) = crate::kernel::c_function_outcome_from_statement_outcome(
-                candidates.state(),
-                function,
-                publication_completed,
-                candidate.obligations().to_vec(),
-                &statement_assumptions,
-            );
+            let (outcome, obligations) =
+                crate::kernel::program_function_outcome_from_statement_outcome(
+                    candidates.state(),
+                    function,
+                    publication_completed,
+                    candidate.obligations().to_vec(),
+                    &statement_assumptions,
+                );
             if !outcome.equal_up_to_unused_creation_ledgers(candidate.outcome()) {
                 return Err("a published path outcome is not its trace's outcome");
             }
@@ -11640,7 +11663,7 @@ impl ExecutionProofCore {
                 ),
                 None => candidate.loan_evidence().clone(),
             };
-            let proposition = Proposition::CFunctionVerifies {
+            let proposition = Proposition::ProgramFunctionVerifies {
                 state: Box::new(candidates.state().clone()),
                 function: Box::new(function.clone()),
                 arguments: candidates.arguments().to_vec(),

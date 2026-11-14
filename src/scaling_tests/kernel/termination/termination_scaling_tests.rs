@@ -182,7 +182,7 @@ fn many_ranked_loops_in_one_function_cost_linear_termination_work() {
         ProgramStatement::While {
             condition: ProgramExpression::LessThan(
                 Box::new(i.clone()),
-                Box::new(crate::kernel::c_int32_literal(4)),
+                Box::new(crate::kernel::program_expression::int32_literal(4)),
             ),
             invariant: Vec::new(),
             invariant_checks: Vec::new(),
@@ -190,7 +190,7 @@ fn many_ranked_loops_in_one_function_cost_linear_termination_work() {
             resource_specs: Vec::new(),
             ranking_measures: vec![RankingComponent::ProgramExpression(
                 ProgramExpression::Subtract(
-                    Box::new(crate::kernel::c_int32_literal(4)),
+                    Box::new(crate::kernel::program_expression::int32_literal(4)),
                     Box::new(i),
                 ),
             )],
@@ -240,9 +240,9 @@ fn many_ranked_loops_in_one_function_cost_linear_termination_work() {
             checked_callees: None,
             applied_tactics: Default::default(),
         }];
-        let heights = c_termination_height_plan(&rules, &[]);
+        let heights = program_termination_height_plan(&rules, &[]);
         let (verdicts, check_work) = crate::instrumentation::measure_deterministic_work(|| {
-            c_verified_function_termination_rules(
+            program_verified_function_termination_rules(
                 &rules,
                 &[],
                 &loop_rules,

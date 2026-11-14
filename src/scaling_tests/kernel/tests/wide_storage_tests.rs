@@ -6,7 +6,9 @@ use super::*;
 
 #[test]
 fn wide_storage_exact_load_and_validation_work_ignore_unrelated_memory() {
-    let value = literal(c_uint128_literal(u128::MAX));
+    let value = literal(crate::kernel::program_expression::uint128_literal(
+        u128::MAX,
+    ));
     let mut samples = Vec::new();
     for size in [16, 64, 256, 1024] {
         let mut memory = Memory::new()
@@ -17,12 +19,13 @@ fn wide_storage_exact_load_and_validation_work_ignore_unrelated_memory() {
                 block: format!("wide-unrelated-{index}").into(),
                 offset: PointerOffsetTerm::Constant(0),
             };
-            memory = memory
-                .with_block(pointer.block.clone(), 4)
-                .store(pointer, literal(c_int32_literal(index)));
+            memory = memory.with_block(pointer.block.clone(), 4).store(
+                pointer,
+                literal(crate::kernel::program_expression::int32_literal(index)),
+            );
         }
         let raw = MachineTerm::MemoryLoad(
-            intern_c_memory(memory.clone()),
+            intern_memory(memory.clone()),
             Box::new(address(0)),
             LoadKind::UInt128,
         );

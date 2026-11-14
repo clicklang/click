@@ -65,7 +65,7 @@ fn specification_execution_handoff_keeps_the_produced_root_and_debts() {
 }
 
 #[test]
-fn c_fragment_handoff_preserves_values_and_errors() {
+fn program_expression_handoff_preserves_values_and_errors() {
     let _session = crate::kernel::VerificationSession::enter();
     for expression in [
         ProgramExpression::Value(ProgramValue::UInt32(MachineTerm::uint32_constant(7))),
@@ -81,7 +81,7 @@ fn c_fragment_handoff_preserves_values_and_errors() {
     ] {
         let expected = {
             let _scope = crate::kernel::eval::SpecificationReadScope::enter();
-            evaluate_c_expression_paths(
+            evaluate_program_expression_paths(
                 &ExecutionState::new(),
                 &expression,
                 &PureFactContext::new(),

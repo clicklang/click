@@ -869,7 +869,7 @@ impl EqualityGraph {
                     // The authority uses the producer-only naming context,
                     // which reads this thread's read table itself.
                     drop(reads);
-                    let stored = crate::kernel::eval::pointer_read_over_write_c_value(&read);
+                    let stored = crate::kernel::eval::pointer_read_over_write_program_value(&read);
                     reads = self.logical_reads.lock().expect("logical pointer reads");
                     if let Some(stored) = stored {
                         pending.push(stored.pointer().clone());
@@ -1837,7 +1837,7 @@ impl EqualityGraph {
                     AlgebraicTermNode::Constructor { fields, .. } => {
                         for field in fields {
                             match field {
-                                AlgebraicValue::C(value) => pending.push(Work::Value(value)),
+                                AlgebraicValue::Program(value) => pending.push(Work::Value(value)),
                                 AlgebraicValue::Algebraic(term) => {
                                     pending.push(Work::Algebraic(term))
                                 }
@@ -3189,7 +3189,7 @@ impl EqualityGraph {
                     term: &crate::kernel::KernelTerm,
                     child: bool| {
             let ty = MachineIntegerType::from_c_type(match term.ty() {
-                crate::kernel::KernelType::C(ty) => *ty,
+                crate::kernel::KernelType::Program(ty) => *ty,
                 _ => return None,
             })?;
             if ty.format().bits() != 32 {
@@ -3280,7 +3280,7 @@ impl EqualityGraph {
             return term.clone();
         }
         let result = MachineIntegerType::from_c_type(match term.ty() {
-            crate::kernel::KernelType::C(ty) => *ty,
+            crate::kernel::KernelType::Program(ty) => *ty,
             _ => return term.clone(),
         })
         .expect("machine operand");
@@ -3888,8 +3888,8 @@ mod tests {
     fn explicit_pointer_load_identity_is_typed_and_congruent() {
         let p = at(symbolic(51_100), 0);
         let q = at(symbolic(51_101), 0);
-        let memory = crate::kernel::intern_c_memory(Memory::new().with_block(p.block.clone(), 8));
-        let later = crate::kernel::intern_c_memory(
+        let memory = crate::kernel::intern_memory(Memory::new().with_block(p.block.clone(), 8));
+        let later = crate::kernel::intern_memory(
             memory
                 .memory()
                 .clone()
@@ -3964,7 +3964,7 @@ mod tests {
 
     #[test]
     fn explicit_pointer_load_congruence_is_branch_local_and_order_independent() {
-        let memory = crate::kernel::intern_c_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(Memory::new());
         let p = at(symbolic(51_201), 0);
         let q = at(symbolic(51_202), 0);
         let left = Pointer::loaded_value(&memory, &p);
@@ -3999,7 +3999,7 @@ mod tests {
     // must nevertheless see it, including when learned after registration.
     #[test]
     fn typed_reads_follow_whole_address_congruence() {
-        let memory = crate::kernel::intern_c_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(Memory::new());
         let p = at_offset(
             symbolic(910_001),
             PointerOffsetTerm::scale_int32(index(910_002), 8),
@@ -4024,7 +4024,7 @@ mod tests {
                 &left,
                 &Pointer::loaded_value(&memory, &q.offset_by_bytes(8))
             ));
-            let changed = crate::kernel::intern_c_memory(
+            let changed = crate::kernel::intern_memory(
                 memory
                     .memory()
                     .clone()
@@ -4036,11 +4036,10 @@ mod tests {
 
     #[test]
     fn loads_at_equal_pointers_of_one_snapshot_are_one_value() {
-        let memory = crate::kernel::intern_c_memory(
-            crate::kernel::Memory::new().with_block(symbolic(51), 16),
-        );
+        let memory =
+            crate::kernel::intern_memory(crate::kernel::Memory::new().with_block(symbolic(51), 16));
         // A later snapshot where the cell `p` addresses was written.
-        let other_memory = crate::kernel::intern_c_memory(memory.memory().clone().store(
+        let other_memory = crate::kernel::intern_memory(memory.memory().clone().store(
             at(symbolic(41), 0),
             ProgramValue::Int32(MachineTerm::constant(7)),
         ));
@@ -4073,7 +4072,7 @@ mod tests {
 
     #[test]
     fn congruent_loads_merge_their_existing_explicit_classes() {
-        let memory = crate::kernel::intern_c_memory(
+        let memory = crate::kernel::intern_memory(
             crate::kernel::Memory::new().with_block(symbolic(101), 16),
         );
         let p = at(symbolic(102), 0);
@@ -4118,7 +4117,7 @@ mod tests {
             .clone()
             .store(other.clone(), ProgramValue::Int32(MachineTerm::constant(3)));
         let name = |memory: &crate::kernel::Memory| {
-            let memory = crate::kernel::intern_c_memory(memory.clone());
+            let memory = crate::kernel::intern_memory(memory.clone());
             PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
                 &memory,
                 &cell,
@@ -4186,7 +4185,7 @@ mod tests {
 
     #[test]
     fn load_congruence_is_independent_of_equality_insertion_order() {
-        let memory = crate::kernel::intern_c_memory(Memory::new().with_block(symbolic(201), 16));
+        let memory = crate::kernel::intern_memory(Memory::new().with_block(symbolic(201), 16));
         let p = at(symbolic(202), 0);
         let q = at(symbolic(203), 16);
         let lp = named_load(&memory, &at(p.block.clone(), 8));
@@ -4224,7 +4223,7 @@ mod tests {
 
     #[test]
     fn nested_load_congruence_propagates_a_late_merge_without_a_depth_cutoff() {
-        let memory = crate::kernel::intern_c_memory(Memory::new().with_block(symbolic(301), 16));
+        let memory = crate::kernel::intern_memory(Memory::new().with_block(symbolic(301), 16));
         let p = at(symbolic(302), 0);
         let q = at(symbolic(303), 0);
         let mut left = p.clone();
@@ -4245,7 +4244,7 @@ mod tests {
 
     #[test]
     fn congruence_registration_and_merges_are_isolated_between_branches() {
-        let memory = crate::kernel::intern_c_memory(Memory::new().with_block(symbolic(401), 16));
+        let memory = crate::kernel::intern_memory(Memory::new().with_block(symbolic(401), 16));
         let p = at(symbolic(402), 0);
         let q = at(symbolic(403), 0);
         let lp = named_load(&memory, &p);
@@ -4266,7 +4265,7 @@ mod tests {
 
     #[test]
     fn restricted_context_drops_derived_load_equalities() {
-        let memory = crate::kernel::intern_c_memory(Memory::new().with_block(symbolic(801), 16));
+        let memory = crate::kernel::intern_memory(Memory::new().with_block(symbolic(801), 16));
         let p = at(symbolic(802), 0);
         let q = at(symbolic(803), 0);
         let x = at(symbolic(804), 0);
@@ -4290,7 +4289,7 @@ mod tests {
 
     #[test]
     fn a_small_load_is_not_a_pointer_load_and_can_later_be_registered_as_one() {
-        let memory = crate::kernel::intern_c_memory(Memory::new().with_block(symbolic(901), 16));
+        let memory = crate::kernel::intern_memory(Memory::new().with_block(symbolic(901), 16));
         let p = at(symbolic(902), 0);
         let q = at(symbolic(903), 0);
         let small = at(
@@ -4332,7 +4331,7 @@ mod tests {
     fn shifted_raw_pointer_reads_import_only_exact_retained_dependencies() {
         let base = Pointer::symbolic(Variable(51_401));
         let address = base.offset_by_bytes(8);
-        let memory = crate::kernel::intern_c_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(Memory::new());
         let ProgramValue::Pointer(raw) = memory
             .memory()
             .symbolic_pointer_load(&address, ProgramType::Int32Pointer)
@@ -4373,7 +4372,7 @@ mod tests {
             &scalar_indexed.offset_by_bytes(24),
             &model.offset_by_bytes(24)
         ));
-        let later = crate::kernel::intern_c_memory(memory.memory().clone().store(
+        let later = crate::kernel::intern_memory(memory.memory().clone().store(
             address.clone(),
             ProgramValue::UInt64(MachineTerm::int64_constant(9)),
         ));
@@ -4392,7 +4391,7 @@ mod tests {
     #[test]
     fn scalar_read_congruence_imports_shifted_raw_pointer_dependencies() {
         let address = Pointer::symbolic(Variable(51_411)).offset_by_bytes(8);
-        let memory = crate::kernel::intern_c_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(Memory::new());
         let ProgramValue::Pointer(raw) = memory
             .memory()
             .symbolic_pointer_load(&address, ProgramType::Int32Pointer)

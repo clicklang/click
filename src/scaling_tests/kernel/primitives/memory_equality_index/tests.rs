@@ -21,7 +21,7 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
         };
         let before = Memory::new();
         let read = |context: &PureFactContext, memory: &Memory, address: &Pointer| {
-            let snapshot = crate::kernel::intern_c_memory_ref(memory);
+            let snapshot = crate::kernel::intern_memory_ref(memory);
             let variable = crate::kernel::load_variable_for_cell_with_origin(
                 &snapshot,
                 address,
@@ -44,7 +44,7 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
         let range = |base| MemoryRange::new_with_element_width(base, 0u32.into(), count.clone(), 4);
         let field_range =
             MemoryRange::new_with_element_width(field.clone(), 0u32.into(), 2u32.into(), 4);
-        let separation = Proposition::CResourceSeparate {
+        let separation = Proposition::ResourceSeparate {
             left: Box::new(Resource::Memory(field_range.clone())),
             right: Box::new(Resource::Memory(range(source.clone()))),
         };
@@ -675,7 +675,7 @@ fn logical_field_coordinates_keep_symbolic_offsets_without_scanning_aliases() {
         }
         resources.synchronize_memory_equalities(&PureFactContext::new());
         let mut context = PureFactContext::new()
-            .assume_proposition(Proposition::CResourceComposition(resources))
+            .assume_proposition(Proposition::ResourceComposition(resources))
             .assume_condition(
                 ConditionTerm::pointer_equal(owner.clone(), alias.clone()),
                 true,

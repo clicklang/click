@@ -1,11 +1,11 @@
 use super::*;
 
 fn storage_function(name: &str, globals: Vec<Global>) -> ProgramFunction {
-    c_function(
+    program_function(
         ProgramType::Int32,
         name,
         vec![],
-        c_return(c_int32_literal(0)),
+        program_return(crate::kernel::program_expression::int32_literal(0)),
     )
     .with_global_variables(globals)
 }
@@ -30,7 +30,7 @@ fn static_declaration_preserves_a_cell_materialized_before_its_block() {
     let pointer = Memory::static_pointer("increment", "calls");
     let state = ExecutionState::new().with_memory(Memory::new().store(pointer.clone(), int32(37)));
     assert!(!state.memory().has_block(&pointer.block));
-    let initialized = initialize_c_function_globals(&state, &function);
+    let initialized = initialize_program_function_globals(&state, &function);
     assert!(initialized.memory().has_block(&pointer.block));
     assert_eq!(
         initialized.memory().load(&pointer),
@@ -50,7 +50,7 @@ fn ordinary_function_entry_does_not_restore_static_initializers() {
             int32(11),
         )]);
 
-    let ordinary = initialize_c_function_globals(&ExecutionState::new(), &function);
+    let ordinary = initialize_program_function_globals(&ExecutionState::new(), &function);
     assert!(
         ordinary
             .memory()
@@ -72,7 +72,8 @@ fn ordinary_function_entry_does_not_restore_static_initializers() {
         ExpressionOutcome::Value(int32(11))
     );
 
-    let startup = initialize_c_program_storage([function]).expect("no run limit is installed");
+    let startup =
+        initialize_program_program_storage([function]).expect("no run limit is installed");
     assert_eq!(
         startup.memory().load(&Memory::global_pointer("state")),
         ExpressionOutcome::Value(int32(7))
@@ -90,14 +91,14 @@ fn startup_coalesces_declarations_and_calls_cannot_replenish_ownership() {
     let global = Global::new("state", ProgramType::Int32, int32(7));
     let left = storage_function("left", vec![global.clone()]);
     let right = storage_function("right", vec![global]);
-    let startup =
-        initialize_c_program_storage([left.clone(), right]).expect("no run limit is installed");
+    let startup = initialize_program_program_storage([left.clone(), right])
+        .expect("no run limit is installed");
     let owned = scalar_ownership("state");
     let assumptions = PureFactContext::new();
     assert_eq!(startup.resources().facts().len(), 1);
     assert!(startup.resources().satisfies_fact(&owned, &assumptions));
     assert!(
-        !initialize_c_function_globals(&ExecutionState::new(), &left)
+        !initialize_program_function_globals(&ExecutionState::new(), &left)
             .resources()
             .satisfies_fact(&owned, &assumptions)
     );
@@ -113,12 +114,12 @@ fn startup_coalesces_declarations_and_calls_cannot_replenish_ownership() {
             .is_none()
     );
     let state = startup.with_resource_context(consumed).with_memory(
-        initialize_c_function_globals(&ExecutionState::new(), &left)
+        initialize_program_function_globals(&ExecutionState::new(), &left)
             .memory()
             .clone()
             .store(Memory::global_pointer("state"), int32(19)),
     );
-    let call = initialize_c_function_globals(&state, &left);
+    let call = initialize_program_function_globals(&state, &left);
     assert!(!call.resources().satisfies_fact(&owned, &assumptions));
     assert_eq!(
         call.memory().load(&Memory::global_pointer("state")),
@@ -144,7 +145,8 @@ fn startup_preserves_private_identities_and_const_permissions() {
                 .with_constant(true),
         ],
     );
-    let state = initialize_c_program_storage([left, right]).expect("no run limit is installed");
+    let state =
+        initialize_program_program_storage([left, right]).expect("no run limit is installed");
     let assumptions = PureFactContext::new();
     assert_eq!(state.resources().facts().len(), 2);
     assert!(
@@ -190,9 +192,9 @@ fn startup_contract_cannot_be_packaged_as_an_ordinary_rule() {
             vec![FunctionContractClaim::body_safety()],
             true,
         );
-    assert!(c_recursive_function_contract_hypothesis(function.clone()).is_none());
-    assert!(c_external_function_rule(function.clone()).is_none());
-    assert!(c_verified_function_rule(function, &[]).is_none());
+    assert!(program_recursive_function_contract_hypothesis(function.clone()).is_none());
+    assert!(program_external_function_rule(function.clone()).is_none());
+    assert!(program_verified_function_rule(function, &[]).is_none());
 }
 
 #[test]
@@ -201,11 +203,11 @@ fn binding_program_entry_does_not_upgrade_literal_views_to_ownership() {
         .with_string_literals(vec![StringLiteral::new("text", vec![b'x', 0])])
         .with_program_entry();
     let startup =
-        initialize_c_program_storage([function.clone()]).expect("no run limit is installed");
-    let entry = initialize_c_function_globals(&startup, &function);
+        initialize_program_program_storage([function.clone()]).expect("no run limit is installed");
+    let entry = initialize_program_function_globals(&startup, &function);
     assert_eq!(entry.resources().facts().len(), 1);
     assert!(entry.resources().facts()[0].is_view());
-    let ordinary = initialize_c_function_globals(&ExecutionState::new(), &function);
+    let ordinary = initialize_program_function_globals(&ExecutionState::new(), &function);
     assert!(ordinary.resources().facts().is_empty());
 }
 
@@ -232,8 +234,8 @@ fn startup_includes_uncalled_local_statics_and_typed_arrays() {
             vec![uint16(7), uint16(9)],
         ),
     ]);
-    let startup =
-        initialize_c_program_storage([left, right, array]).expect("no run limit is installed");
+    let startup = initialize_program_program_storage([left, right, array])
+        .expect("no run limit is installed");
     assert_eq!(startup.resources().facts().len(), 3);
     assert_eq!(
         startup
@@ -309,7 +311,7 @@ fn a_symbolic_global_array_entry_holds_exactly_the_per_element_cells() {
             // load handle cannot outlive the registry defining its pointer read.
             let _session = crate::kernel::VerificationSession::enter();
             let function = function_with_global_array(element_type, length);
-            let entry = initialize_c_function_globals(&ExecutionState::new(), &function);
+            let entry = initialize_program_function_globals(&ExecutionState::new(), &function);
             let base = Memory::global_pointer("buf");
             let width = element_type.byte_width();
             assert_eq!(
@@ -317,8 +319,7 @@ fn a_symbolic_global_array_entry_holds_exactly_the_per_element_cells() {
                 1,
                 "{element_type:?}[{length}] is one run"
             );
-            let source =
-                crate::kernel::intern_c_memory(symbolic_memory_base(entry.memory(), &base));
+            let source = crate::kernel::intern_memory(symbolic_memory_base(entry.memory(), &base));
             let slot = |index: u32| base.offset_by_bytes(index * width);
             // An object pointer's entry load records no width.
             let expected_width = (!element_type.is_object_pointer()).then_some(width);
@@ -379,7 +380,7 @@ fn a_symbolic_global_array_entry_holds_exactly_the_per_element_cells() {
 /// block beside an unrelated one.
 fn another_context_base(element_type: ProgramType, length: u32) -> SharedMemory {
     let base = Memory::global_pointer("buf");
-    crate::kernel::intern_c_memory(
+    crate::kernel::intern_memory(
         Memory::new()
             .with_block_without_derivation(base.block, length * element_type.byte_width())
             .with_block_without_derivation(Memory::global_pointer("unrelated").block, 4),
@@ -399,12 +400,12 @@ fn a_symbolic_global_array_declared_from_another_base_is_still_one_run() {
     assert!(crate::kernel::eval::declare_symbolic_array_access_widths(
         &other, &base, 4, length, 4
     ));
-    let entry = initialize_c_function_globals(
+    let entry = initialize_program_function_globals(
         &ExecutionState::new(),
         &function_with_global_array(element_type, length),
     );
     assert_eq!(entry.memory().cells.representation_len(), 1);
-    let own = crate::kernel::intern_c_memory(symbolic_memory_base(entry.memory(), &base));
+    let own = crate::kernel::intern_memory(symbolic_memory_base(entry.memory(), &base));
     assert!(own != other);
     for source in [&own, &other] {
         for index in [0, length / 2, length - 1] {
@@ -458,8 +459,8 @@ fn function_with_initialized_arrays(length: u32, constant: bool) -> ProgramFunct
 fn an_initialized_array_at_startup_holds_exactly_the_per_element_stores() {
     for length in [4u32, 5, 64, 65, 300] {
         let function = function_with_initialized_arrays(length, false);
-        let startup =
-            initialize_c_program_storage([function.clone()]).expect("no run limit is installed");
+        let startup = initialize_program_program_storage([function.clone()])
+            .expect("no run limit is installed");
         let mut reference = Memory::new();
         let mut per_element =
             |pointer: Pointer, element_type: ProgramType, contents: &ArrayContents| {
@@ -561,8 +562,8 @@ fn function_with_aggregate_arrays(length: u32, wide: u32, constant: bool) -> Pro
 fn an_aggregate_array_at_startup_holds_exactly_the_per_field_stores() {
     for (length, wide) in [(3u32, 0u32), (4, 0), (5, 12), (12, 8), (65, 0), (3, 100)] {
         let function = function_with_aggregate_arrays(length, wide, false);
-        let startup =
-            initialize_c_program_storage([function.clone()]).expect("no run limit is installed");
+        let startup = initialize_program_program_storage([function.clone()])
+            .expect("no run limit is installed");
         let layout = node_layout(wide);
         let mut reference = Memory::new();
         for (pointer, initializers) in [
@@ -657,7 +658,7 @@ fn a_symbolic_aggregate_array_at_function_entry_holds_exactly_the_per_struct_cel
     for length in [1u32, 2, 5, 64, 65] {
         let _session = crate::kernel::VerificationSession::enter();
         let function = function_with_aggregate_arrays(length, 0, false);
-        let entry = initialize_c_function_globals(&ExecutionState::new(), &function);
+        let entry = initialize_program_function_globals(&ExecutionState::new(), &function);
         let layout = node_layout(0);
         let mut reference = Memory::new();
         for pointer in [

@@ -11,7 +11,7 @@ fn charon_panics_are_obligations() {
     let p = Project::from_fixture("design/charon-trial/panics");
     fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(SIDECAR, &prepared)
+    ProgramVerificationSession::new_program_prepared(SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     for (before, expected) in [
         (
@@ -58,7 +58,7 @@ fn charon_panics_are_obligations() {
             "verifying \"panics.rs\";\n{}",
             function.replacen(before, &format!("{header}\n"), 1)
         );
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        let error = ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
             .err()
             .unwrap_or_else(|| panic!("`{before}` without its requirement must fail"));
         let rendered = format!("{error:?} {error}");
@@ -90,7 +90,7 @@ fn charon_refused_panic_names_its_condition() {
         ),
     ] {
         let invalid = format!("verifying \"panics.rs\";\n{function}\n");
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        let error = ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
             .err()
             .unwrap_or_else(|| panic!("`{function}` must fail"));
         let rendered = error.to_string();
@@ -105,9 +105,9 @@ fn charon_assert_eq_macro_checks_operands_and_preserves_caller_origin() {
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
     let valid = "verifying \"borrow.rs\"; fn q(x: u32, y: u32) -> u32 { requires x == y; ensures result == x; }";
-    C0VerificationSession::new_program_prepared(valid, &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared(valid, &prepared).unwrap();
     let invalid = valid.replace("requires x == y;", "requires x != y;");
-    let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+    let error = ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
         .err()
         .expect("unequal inputs must reach the assertion panic");
     assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);

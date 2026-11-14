@@ -44,12 +44,12 @@ struct Affine {
     constant: i64,
 }
 
-fn c_expression_constant(expression: &ProgramExpression) -> Option<i64> {
+fn program_expression_constant(expression: &ProgramExpression) -> Option<i64> {
     match expression {
         ProgramExpression::Value(ProgramValue::Int32(term)) => {
             term.as_const().map(|value| value as i32 as i64)
         }
-        ProgramExpression::Cast { expression, .. } => c_expression_constant(expression),
+        ProgramExpression::Cast { expression, .. } => program_expression_constant(expression),
         _ => None,
     }
 }
@@ -57,7 +57,7 @@ fn c_expression_constant(expression: &ProgramExpression) -> Option<i64> {
 /// Reads `expression` as an affine function of `index` with constant
 /// coefficients, or `None` when it is not one.
 fn affine_in(expression: &ProgramExpression, index: &str) -> Option<Affine> {
-    if let Some(constant) = c_expression_constant(expression) {
+    if let Some(constant) = program_expression_constant(expression) {
         return Some(Affine {
             coefficient: 0,
             constant,
@@ -127,7 +127,7 @@ fn indexed_load_base<'a>(
 }
 
 fn side_as_c(expression: &ContractExpression) -> Result<ProgramExpression, String> {
-    resource_body_c_fragment(expression).ok_or_else(|| {
+    resource_body_program_expression(expression).ok_or_else(|| {
         format!(
             "`{}` is not a C expression",
             crate::surface::diagnostics::describe_contract_expression(expression)
@@ -256,13 +256,13 @@ pub(in crate::surface) fn iterated_clause_shape(
         ((true, lower), (false, upper)) | ((false, upper), (true, lower)) => (lower, upper),
         _ => return Err(bounded()),
     };
-    if crate::surface::validation::c_expression_uses_variable(&lower, index)
-        || crate::surface::validation::c_expression_uses_variable(&upper, index)
+    if crate::surface::validation::program_expression_uses_variable(&lower, index)
+        || crate::surface::validation::program_expression_uses_variable(&upper, index)
     {
         return Err(bounded());
     }
     let element = &clause.element;
-    if crate::surface::validation::c_expression_uses_variable(&element.base, index) {
+    if crate::surface::validation::program_expression_uses_variable(&element.base, index) {
         return Err(format!(
             "the element base must not depend on `{index}`; write the index in the range, `base[{index}..{index} + 1]`"
         ));
@@ -333,7 +333,7 @@ pub(in crate::surface) fn iterated_clause_shape(
                 (None, Some(base)) => (base.clone(), left),
                 _ => return Err(refusal()),
             };
-            if crate::surface::validation::c_expression_uses_variable(&base, index) || crate::surface::validation::c_expression_uses_variable(&value, index)
+            if crate::surface::validation::program_expression_uses_variable(&base, index) || crate::surface::validation::program_expression_uses_variable(&value, index)
             {
                 return Err(refusal());
             }
@@ -374,7 +374,7 @@ fn iterated_clause_as_proposition(clause: &IteratedResourceClause) -> ClickPropo
         None => ClickProposition::And(Box::new(clause.range.clone()), Box::new(element)),
     };
     ClickProposition::ForAll {
-        click_type: ClickType::C(C0Type::Int32),
+        click_type: ClickType::Program(C0Type::Int32),
         name: clause.binder.clone(),
         written_name: None,
         body: Box::new(body),
@@ -483,7 +483,7 @@ pub(in crate::surface) fn lower_iterated_clause_with_values(
         other => Err(ClickError::new(format!(
             "the {what} of the iterated ownership clause of `{}` evaluated to `{}`, not a pointer",
             clause.owner,
-            crate::surface::diagnostics::describe_c_value(
+            crate::surface::diagnostics::describe_program_value(
                 &other,
                 crate::surface::ParameterBinding::default()
             )
@@ -494,7 +494,7 @@ pub(in crate::surface) fn lower_iterated_clause_with_values(
         other => Err(ClickError::new(format!(
             "the {what} of the iterated ownership clause of `{}` evaluated to `{}`, not an `int32`",
             clause.owner,
-            crate::surface::diagnostics::describe_c_value(
+            crate::surface::diagnostics::describe_program_value(
                 &other,
                 crate::surface::ParameterBinding::default()
             )

@@ -138,7 +138,7 @@ pub(super) fn unify_click_type(
             validation::describe_click_type(pattern),
             validation::describe_click_type(actual)
         )),
-        ClickType::C(C0Type::ParameterPointer(name)) if allowed.contains(name.name()) => {
+        ClickType::Program(C0Type::ParameterPointer(name)) if allowed.contains(name.name()) => {
             let pointee = actual
                 .c_type()
                 .and_then(|ty| ty.pointee_type())
@@ -162,7 +162,7 @@ pub(super) fn unify_click_type(
                         substitution,
                     );
                 }
-                _ => ClickType::C(pointee),
+                _ => ClickType::Program(pointee),
             };
             unify_click_type(
                 &ClickType::Parameter(name.name().to_owned()),
@@ -171,8 +171,10 @@ pub(super) fn unify_click_type(
                 substitution,
             )
         }
-        ClickType::C(expected) => match actual {
-            ClickType::C(actual) if validation::click_types_compatible(*actual, *expected) => {
+        ClickType::Program(expected) => match actual {
+            ClickType::Program(actual)
+                if validation::click_types_compatible(*actual, *expected) =>
+            {
                 Ok(())
             }
             _ => Err(format!(
@@ -244,7 +246,9 @@ pub(super) fn instantiate_click_type(
                     )
                 })
             }),
-        ClickType::C(C0Type::ParameterPointer(name)) if substitution.contains_key(name.name()) => {
+        ClickType::Program(C0Type::ParameterPointer(name))
+            if substitution.contains_key(name.name()) =>
+        {
             let element = substitution
                 .get(name.name())
                 .ok_or_else(|| format!("unresolved pointer element type `{}`", name.name()))?;
@@ -259,7 +263,7 @@ pub(super) fn instantiate_click_type(
                 // stays a pointer to it, as a generic declaration that
                 // calls another at its own `T` writes.
                 TypeArgument::Value(ClickType::Parameter(parameter)) => {
-                    return Ok(ClickType::C(C0Type::ParameterPointer(
+                    return Ok(ClickType::Program(C0Type::ParameterPointer(
                         crate::kernel::TypeParameterName::intern(parameter),
                     )));
                 }
@@ -279,10 +283,10 @@ pub(super) fn instantiate_click_type(
                     c_type: pointer,
                     struct_name: struct_name.clone(),
                 },
-                _ => ClickType::C(pointer),
+                _ => ClickType::Program(pointer),
             })
         }
-        ClickType::C(_) | ClickType::CObjectPointer { .. } => Ok(click_type.clone()),
+        ClickType::Program(_) | ClickType::CObjectPointer { .. } => Ok(click_type.clone()),
         ClickType::Integer => Ok(ClickType::Integer),
         ClickType::Algebraic(application) => Ok(ClickType::Algebraic(instantiate_algebraic_type(
             application,
@@ -349,8 +353,8 @@ fn primitive_kernel_type_name(name: &str, arguments: &[AlgebraicValueType]) -> S
             AlgebraicValueType::Algebraic { name, .. } => name.clone(),
             AlgebraicValueType::Parameter(name) => format!("[rigid {name}]"),
             AlgebraicValueType::Integer => "Integer".to_string(),
-            AlgebraicValueType::C(c_type) => {
-                validation::describe_click_type(&ClickType::C(c0_type_from_kernel(*c_type)))
+            AlgebraicValueType::Program(c_type) => {
+                validation::describe_click_type(&ClickType::Program(c0_type_from_kernel(*c_type)))
             }
             AlgebraicValueType::ObjectPointer(c_type, class) => format!("{c_type:?} [{class:?}]"),
         }
@@ -382,7 +386,7 @@ pub(crate) fn primitive_instance_of(
 /// rigid type itself, is `Vec<uint32>`.
 pub(super) fn primitive_instance_value_type(click_type: &ClickType) -> Option<ClickType> {
     let kernel_name = match click_type {
-        ClickType::C(C0Type::Parameter(name)) => name.name(),
+        ClickType::Program(C0Type::Parameter(name)) => name.name(),
         ClickType::Algebraic(application) if application.rigid => application.name.as_str(),
         _ => return None,
     };
@@ -429,7 +433,7 @@ pub(super) fn click_type_from_algebraic_value_type(value_type: &AlgebraicValueTy
             name: name.clone(),
             arguments: Vec::new(),
         }),
-        AlgebraicValueType::C(c_type) => ClickType::C(c0_type_from_kernel(*c_type)),
+        AlgebraicValueType::Program(c_type) => ClickType::Program(c0_type_from_kernel(*c_type)),
         AlgebraicValueType::ObjectPointer(c_type, class) => {
             ClickType::from_object_pointer_class(c0_type_from_kernel(*c_type), class)
         }
@@ -597,10 +601,10 @@ pub(super) fn instantiate_function_for_surface_call_with_variables(
         .iter()
         .zip(arguments)
         .map(|(parameter, argument)| match parameter.click_type() {
-            ClickType::Resource | ClickType::C(C0Type::ParameterPointer(_)) => {
+            ClickType::Resource | ClickType::Program(C0Type::ParameterPointer(_)) => {
                 syntactic_expression_type(argument, variables)
             }
-            ClickType::C(_) | ClickType::CObjectPointer { .. } => {
+            ClickType::Program(_) | ClickType::CObjectPointer { .. } => {
                 Some(parameter.click_type().clone())
             }
             ClickType::Algebraic(_) | ClickType::Parameter(_) | ClickType::Integer => {
@@ -625,8 +629,8 @@ pub(super) fn instantiate_function_for_surface_call_with_variables(
 /// spelling is not evidence that the original object has that class; the
 /// existing kernel argument/constructor check still consumes the value.
 pub(super) fn explicit_cast_click_type(expression: &ContractExpression) -> Option<ClickType> {
-    let (ContractExpression::CFragment(lowered) | ContractExpression::CUnary { lowered, .. }) =
-        expression
+    let (ContractExpression::ProgramExpression(lowered)
+    | ContractExpression::CUnary { lowered, .. }) = expression
     else {
         return None;
     };
@@ -644,25 +648,26 @@ pub(super) fn explicit_cast_click_type(expression: &ContractExpression) -> Optio
             c_type,
             struct_name: struct_name.clone(),
         },
-        _ => ClickType::C(c_type),
+        _ => ClickType::Program(c_type),
     })
 }
 
-pub(super) fn click_type_from_c_value(value: &ProgramValue) -> ClickType {
+pub(super) fn click_type_from_program_value(value: &ProgramValue) -> ClickType {
     let c_type = c0_type_from_kernel(value.c_type());
     if let ProgramValue::Pointer(pointer) = value
         && let Some(class) = pointer.object_class()
     {
         return ClickType::from_object_pointer_class(c_type, &class);
     }
-    ClickType::C(c_type)
+    ClickType::Program(c_type)
 }
 
 pub(super) fn default_numeral_click_type(expression: &ContractExpression) -> Option<ClickType> {
-    let ProgramExpression::Value(value) = contract_expression_as_c_fragment(expression)? else {
+    let ProgramExpression::Value(value) = contract_expression_as_program_expression(expression)?
+    else {
         return None;
     };
-    Some(click_type_from_c_value(&value))
+    Some(click_type_from_program_value(&value))
 }
 
 pub(super) fn syntactic_expression_type(
@@ -681,11 +686,11 @@ pub(super) fn syntactic_expression_type(
         | ContractExpression::AlgebraicConstructor { algebraic_type, .. } => {
             Some(ClickType::Algebraic(algebraic_type.clone()))
         }
-        ContractExpression::CFragment(ProgramExpression::Value(value)) => {
-            Some(click_type_from_c_value(value))
+        ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
+            Some(click_type_from_program_value(value))
         }
         ContractExpression::Binding(name)
-        | ContractExpression::CFragment(ProgramExpression::Variable(name)) => {
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
             variables.get(name).cloned()
         }
         ContractExpression::Old(inner)
@@ -703,7 +708,7 @@ pub(super) fn concrete_variable_types(
 ) -> BTreeMap<String, ClickType> {
     values
         .iter()
-        .map(|(name, value)| (name.clone(), click_type_from_c_value(value)))
+        .map(|(name, value)| (name.clone(), click_type_from_program_value(value)))
         .chain(algebraic_values.iter().map(|(name, value)| {
             (
                 name.clone(),
@@ -746,10 +751,10 @@ pub(super) fn instantiate_predicate_for_surface_call(
         .iter()
         .zip(arguments)
         .map(|(parameter, argument)| match parameter.click_type() {
-            ClickType::Resource | ClickType::C(C0Type::ParameterPointer(_)) => {
+            ClickType::Resource | ClickType::Program(C0Type::ParameterPointer(_)) => {
                 syntactic_expression_type(argument, variables)
             }
-            ClickType::C(_) | ClickType::CObjectPointer { .. } => {
+            ClickType::Program(_) | ClickType::CObjectPointer { .. } => {
                 Some(parameter.click_type().clone())
             }
             ClickType::Algebraic(_) | ClickType::Parameter(_) | ClickType::Integer => {
@@ -1535,7 +1540,7 @@ mod theorem_statement_tests {
     fn application_instantiates_clauses_but_omits_proof_and_proof_locations() {
         let file = crate::surface::parse("theorem identity<T>(x: T) { requires x == x; ensures x == x by { have x == x by solve(); assumption(); } }").unwrap();
         let definition = &file.theorem_definitions()[0];
-        let substitution = BTreeMap::from([("T".into(), ClickType::C(C0Type::Int32).into())]);
+        let substitution = BTreeMap::from([("T".into(), ClickType::Program(C0Type::Int32).into())]);
         let declaration = instantiate_theorem(definition, &substitution).unwrap();
         let statement = instantiate_theorem_statement(definition, &substitution).unwrap();
         assert_eq!(declaration.parameters(), statement.parameters());

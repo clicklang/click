@@ -26,7 +26,7 @@ fn stored_pointer_block_queries_scale_with_new_read_definitions() {
                 slot.clone(),
                 ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer),
             );
-            pointer = Pointer::loaded_value(&intern_c_memory_ref(&memory), &slot);
+            pointer = Pointer::loaded_value(&intern_memory_ref(&memory), &slot);
             reads.push(pointer.clone());
         }
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -60,7 +60,7 @@ fn structural_read_comparison_forms_scale_with_selected_observations() {
         for index in 0..selected + unrelated {
             memory = memory.store(address(index), ProgramValue::Int32(37u32.into()));
         }
-        let memory = intern_c_memory(memory);
+        let memory = intern_memory(memory);
         let goals: Vec<_> = (0..selected)
             .map(|index| {
                 let read = MachineTerm::MemoryLoad(
@@ -124,7 +124,7 @@ fn algebraic_read_comparison_forms_scale_with_selected_observations() {
                 ProgramValue::Parameter(Box::new(stored(index))),
             );
         }
-        let memory = intern_c_memory(memory);
+        let memory = intern_memory(memory);
         let goals: Vec<_> = (0..selected)
             .map(|index| {
                 let read = AlgebraicTerm {

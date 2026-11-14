@@ -4,8 +4,8 @@ fn cold_offset_evidence_misses_do_not_export_shared_dags() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let mut left = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1008120));
-        let mut right = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1008121));
+        let mut left = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(1008120));
+        let mut right = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(1008121));
         for _ in 0..size {
             left = KernelTerm::machine_binary_shared(
                 ty,
@@ -45,8 +45,8 @@ fn shared_offset_source_paths_scale_with_selected_dags() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let mut left = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1008140));
-        let mut right = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1008141));
+        let mut left = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(1008140));
+        let mut right = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(1008141));
         for _ in 0..size {
             left = KernelTerm::machine_binary_shared(
                 ty,

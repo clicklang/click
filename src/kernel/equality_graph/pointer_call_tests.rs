@@ -41,7 +41,7 @@ fn pointer_calls_follow_late_model_aliases_and_displaced_addresses() {
     let _session = VerificationSession::enter();
     let ty = super::algebraic_tests::model_type(
         "Handle",
-        AlgebraicValueType::C(ProgramType::Int32Pointer),
+        AlgebraicValueType::Program(ProgramType::Int32Pointer),
     );
     let a = super::algebraic_tests::variable(&ty, 10);
     let b = super::algebraic_tests::variable(&ty, 11);
@@ -135,7 +135,7 @@ fn nested_pointer_calls_feed_scalar_calls_and_checked_reads() {
         name: "count".into(),
         arguments: vec![pointer_argument(p)],
     };
-    let memory = intern_c_memory(Memory::new());
+    let memory = intern_memory(Memory::new());
     let read = |p| {
         MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
             &memory,

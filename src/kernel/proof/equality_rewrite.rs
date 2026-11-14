@@ -1256,7 +1256,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
             return Ok(rewritten);
         }
     }
-    fn rewrite_c_value(
+    fn rewrite_program_value(
         value: &ProgramValue,
         rewrite_term: &impl Fn(&MachineTerm) -> MachineTerm,
         rewrite_pointer: &impl Fn(&Pointer) -> Pointer,
@@ -1266,7 +1266,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
             ProgramValue::PointerInteger(record) => {
                 ProgramValue::PointerInteger(PointerIntegerValue {
                     kind: record.kind.clone(),
-                    numeric: Box::new(rewrite_c_value(
+                    numeric: Box::new(rewrite_program_value(
                         &record.numeric,
                         rewrite_term,
                         rewrite_pointer,
@@ -1370,7 +1370,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                                 PureFunctionArgument::SharedMachine(rewrite_shared(value))
                             }
                             PureFunctionArgument::Value(value) => {
-                                PureFunctionArgument::Value(rewrite_c_value(
+                                PureFunctionArgument::Value(rewrite_program_value(
                                     value,
                                     rewrite_term,
                                     rewrite_pointer,
@@ -1394,7 +1394,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                                 element_type,
                             } => PureFunctionArgument::ArrayRef {
                                 memory: memory.clone(),
-                                pointer: rewrite_c_value(
+                                pointer: rewrite_program_value(
                                     pointer,
                                     rewrite_term,
                                     rewrite_pointer,
@@ -1431,7 +1431,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
         rewrite_shared: &impl Fn(&SharedMachineIntegerTerm) -> SharedMachineIntegerTerm,
     ) -> AlgebraicValue {
         match value {
-            AlgebraicValue::C(value) => AlgebraicValue::C(rewrite_c_value(
+            AlgebraicValue::Program(value) => AlgebraicValue::Program(rewrite_program_value(
                 value,
                 rewrite_term,
                 rewrite_pointer,
@@ -1651,12 +1651,12 @@ fn rewrite_atomic_proposition_by_exact_equality(
             }
         }
         let rewritten = match goal {
-            Proposition::CMemoryLoadable {
+            Proposition::MemoryLoadable {
                 memory,
                 base,
                 bytes,
                 wide,
-            } => Proposition::CMemoryLoadable {
+            } => Proposition::MemoryLoadable {
                 // Same-block pointer equalities use offsets rather than the
                 // PointerEqual carrier. Substitute the selected address while
                 // retaining the exact snapshot and readable byte extent.
@@ -1776,20 +1776,18 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 };
                 Proposition::ConditionIs(rewritten, *expected)
             }
-            Proposition::CResourceSeparate {
+            Proposition::ResourceSeparate {
                 left: goal_left,
                 right: goal_right,
-            } => Proposition::CResourceSeparate {
+            } => Proposition::ResourceSeparate {
                 left: Box::new(rewrite_resource_offset(goal_left, left, right)),
                 right: Box::new(rewrite_resource_offset(goal_right, left, right)),
             },
-            Proposition::CResourceViewable { memory, resource } => {
-                crate::kernel::resource_viewable(
-                    memory,
-                    rewrite_resource_offset(resource, left, right),
-                )
-            }
-            Proposition::CResourceContains { parent, child } => Proposition::CResourceContains {
+            Proposition::ResourceViewable { memory, resource } => crate::kernel::resource_viewable(
+                memory,
+                rewrite_resource_offset(resource, left, right),
+            ),
+            Proposition::ResourceContains { parent, child } => Proposition::ResourceContains {
                 parent: Box::new(rewrite_resource_offset(parent, left, right)),
                 child: Box::new(rewrite_resource_offset(child, left, right)),
             },
@@ -2004,13 +2002,13 @@ fn rewrite_atomic_proposition_by_exact_equality(
             }
         }
         let rewritten = match goal {
-            Proposition::CMemoryLoadable {
+            Proposition::MemoryLoadable {
                 memory,
                 base,
                 bytes,
                 wide,
             } => {
-                Proposition::CMemoryLoadable {
+                Proposition::MemoryLoadable {
                     // Clone only shared snapshot roots. Equality changes the
                     // selected address, never the memory or view extent.
                     memory: memory.clone(),
@@ -2501,25 +2499,25 @@ fn rewrite_atomic_proposition_by_exact_equality(
             };
             Proposition::ConditionIs(rewritten_condition, *expected)
         }
-        Proposition::CResourceSeparate {
+        Proposition::ResourceSeparate {
             left: goal_left,
             right: goal_right,
-        } => Proposition::CResourceSeparate {
+        } => Proposition::ResourceSeparate {
             left: Box::new(rewrite_resource_term(goal_left)),
             right: Box::new(rewrite_resource_term(goal_right)),
         },
-        Proposition::CResourceViewable { memory, resource } => {
+        Proposition::ResourceViewable { memory, resource } => {
             crate::kernel::resource_viewable(memory, rewrite_resource_term(resource))
         }
-        Proposition::CResourceContains { parent, child } => Proposition::CResourceContains {
+        Proposition::ResourceContains { parent, child } => Proposition::ResourceContains {
             parent: Box::new(rewrite_resource_term(parent)),
             child: Box::new(rewrite_resource_term(child)),
         },
-        Proposition::CMemoryReadDefined {
+        Proposition::MemoryReadDefined {
             memory,
             pointer,
             value_type,
-        } => Proposition::CMemoryReadDefined {
+        } => Proposition::MemoryReadDefined {
             memory: memory.clone(),
             pointer: Pointer {
                 block: pointer.block.clone(),
@@ -2527,12 +2525,12 @@ fn rewrite_atomic_proposition_by_exact_equality(
             },
             value_type: *value_type,
         },
-        Proposition::CMemoryLoadable {
+        Proposition::MemoryLoadable {
             memory,
             base,
             bytes,
             wide,
-        } => Proposition::CMemoryLoadable {
+        } => Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: Pointer {
                 block: base.block.clone(),
@@ -2643,7 +2641,7 @@ mod tests {
     fn address_rewrite_preserves_the_registered_read_width_without_prior_target_reads() {
         for bytes in [4, 8] {
             let _session = VerificationSession::enter();
-            let memory = intern_c_memory(Memory::new());
+            let memory = intern_memory(Memory::new());
             let index = MachineTerm::Variable(Variable(73_001));
             let base = Pointer {
                 block: PointerBlock::ExternalArgument,
@@ -2673,7 +2671,7 @@ mod tests {
     #[test]
     fn address_rewrite_reaches_legacy_pointer_reads_beyond_eight_levels() {
         let _session = VerificationSession::enter();
-        let memory = crate::kernel::intern_c_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(Memory::new());
         let from = Pointer::symbolic(Variable(998_930));
         let to = Pointer::symbolic(Variable(998_931));
         let other = from.clone();
@@ -2714,7 +2712,7 @@ mod tests {
         let to = Pointer::symbolic(Variable(998_941));
         let stored = ProgramValue::pointer(Pointer::symbolic(Variable(998_942)));
         let memory = Memory::new().store(to.clone(), stored);
-        let memory = crate::kernel::intern_c_memory(memory);
+        let memory = crate::kernel::intern_memory(memory);
         let cited =
             Proposition::ConditionIs(ConditionTerm::pointer_equal(from.clone(), to.clone()), true);
         let facts = ProofFacts::default().with_fact(cited.clone());
@@ -2768,7 +2766,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let from = Pointer::symbolic(Variable(998_960));
         let to = Pointer::symbolic(Variable(998_961));
-        let memory = crate::kernel::intern_c_memory(
+        let memory = crate::kernel::intern_memory(
             Memory::new().store(to.clone(), ProgramValue::Int32(7u32.into())),
         );
         let read = |address: &Pointer| {
@@ -3030,7 +3028,7 @@ mod tests {
         let goal = Proposition::ForAll {
             name: Default::default(),
             var: variable,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(Proposition::ConditionIs(
                 observed_native_condition(
                     MachineIntegerType::Int32,
@@ -3070,7 +3068,7 @@ mod tests {
     fn modular_rewrite_retains_shared_residue_operands() {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let x = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1007190));
+        let x = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(1007190));
         let root = KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [x.clone(), x]);
         let observed = |format| {
             IntegerTerm::Machine(
@@ -3324,7 +3322,7 @@ mod tests {
     fn native_read_rewrite_preserves_literal_guards_of_integer_claims() {
         let _session = crate::kernel::VerificationSession::enter();
         let read = MachineTerm::MemoryLoad(
-            intern_c_memory(Memory::new()),
+            intern_memory(Memory::new()),
             Box::new(Pointer::symbolic(Variable(193_024))),
             LoadKind::Int32,
         );
@@ -3636,7 +3634,7 @@ mod tests {
             IntegerTerm::from_machine(
                 MachineIntegerType::Int64,
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_c_memory(memory),
+                    crate::kernel::intern_memory(memory),
                     Box::new(pointer.clone()),
                     LoadKind::Bits64,
                 ),
@@ -3839,7 +3837,7 @@ mod tests {
             crate::kernel::eval::declare_load_access_width(&pointer, if wide { 8 } else { 4 });
             let load = |memory: &Memory, pointer: Pointer, kind| {
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_c_memory_ref(memory),
+                    crate::kernel::intern_memory_ref(memory),
                     Box::new(pointer),
                     kind,
                 )
@@ -3959,7 +3957,7 @@ mod tests {
         let after = before.clone().with_block("local:compound-rewrite-work", 4);
         let expression = |memory: &Memory, size| {
             let mut term = MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory_ref(memory),
+                crate::kernel::intern_memory_ref(memory),
                 Box::new(pointer.clone()),
                 LoadKind::Bits64,
             );
@@ -4036,7 +4034,7 @@ mod tests {
         );
         let load = |memory| {
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(memory),
+                crate::kernel::intern_memory(memory),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             )
@@ -4085,7 +4083,7 @@ mod tests {
         let quantified = |body| Proposition::ForAll {
             name: Default::default(),
             var: bound,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(body),
         };
 
@@ -4110,7 +4108,7 @@ mod tests {
         let existential = Proposition::Exists {
             name: "witness".to_string(),
             var: bound,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(atom(variable(free), MachineTerm::constant(0))),
         };
         assert!(
@@ -4174,7 +4172,7 @@ mod wide_range_reader_tests {
             MachineTerm::uint64_constant(1 << 33),
             4,
         );
-        let goal = Proposition::CResourceContains {
+        let goal = Proposition::ResourceContains {
             parent: Box::new(Resource::Memory(wide.clone())),
             child: Box::new(Resource::Memory(wide.clone())),
         };
@@ -4215,7 +4213,7 @@ mod wide_bound_equality_reader_tests {
             end.clone(),
             1,
         );
-        let goal = Proposition::CResourceContains {
+        let goal = Proposition::ResourceContains {
             parent: Box::new(Resource::Memory(wide.clone())),
             child: Box::new(Resource::Memory(wide.clone())),
         };

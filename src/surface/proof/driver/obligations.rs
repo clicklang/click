@@ -1028,7 +1028,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         }
 
         if do_while {
-            let condition_may_continue = crate::kernel::c_loop_condition_may_continue(
+            let condition_may_continue = crate::kernel::loop_condition_may_continue(
                 &execution.core.state,
                 condition,
                 &driver_proof.back_edge_assumptions(execution),

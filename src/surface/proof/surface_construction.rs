@@ -91,7 +91,7 @@ fn checked_surface_fact_in_state_with_assumptions(
             }
         }
     }
-    let kernel_memories = c_condition_fact_memories(kernel);
+    let kernel_memories = program_condition_fact_memories(kernel);
     if !kernel_memories.is_empty()
         && kernel_memories
             .iter()
@@ -197,14 +197,14 @@ fn proposition_snapshot_memories(proposition: &Proposition) -> Vec<Memory> {
             | Proposition::Predicate { .. }
             | Proposition::Equal(_, _)
     ) {
-        return c_condition_fact_memories(proposition);
+        return program_condition_fact_memories(proposition);
     }
     let mut memories = Vec::new();
     let mut pending = vec![proposition];
     while let Some(proposition) = pending.pop() {
         match proposition {
             Proposition::ConditionIs(_, _) => {
-                for memory in c_condition_fact_memories(proposition) {
+                for memory in program_condition_fact_memories(proposition) {
                     if !memories.contains(&memory) {
                         memories.push(memory);
                     }
@@ -345,9 +345,9 @@ fn checked_surface_comparison_fact_in_state_with_availability(
             .collect::<BTreeMap<_, _>>();
         let mut names = BTreeMap::<Variable, Option<String>>::new();
         for (name, expression) in bindings.iter() {
-            if let ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::Int32(
-                MachineTerm::Variable(variable),
-            ))) = expression
+            if let ContractExpression::ProgramExpression(ProgramExpression::Value(
+                ProgramValue::Int32(MachineTerm::Variable(variable)),
+            )) = expression
             {
                 names
                     .entry(*variable)
@@ -413,7 +413,7 @@ fn checked_surface_comparison_fact_in_state_with_availability(
         if matches!(
             surface,
             ClickProposition::Defined { expression }
-                if !super::surface_certificates::contract_expression_mentions_c_local(
+                if !super::surface_certificates::contract_expression_mentions_program_local(
                     expression,
                     &parameter_names,
                 )

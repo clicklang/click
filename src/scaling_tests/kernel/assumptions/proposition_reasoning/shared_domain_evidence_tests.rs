@@ -6,7 +6,7 @@ fn domain_source_selection_ignores_unrelated_prefix_and_preserves_branches() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let variable = |id| KernelTerm::variable(KernelType::C(ty.c_type()), Variable(id));
+        let variable = |id| KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(id));
         let root = KernelTerm::machine_binary_shared(
             ty,
             Op::Multiply,

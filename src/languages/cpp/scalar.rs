@@ -227,9 +227,9 @@ pub(super) fn convert(
     target: ScalarKind,
 ) -> ProgramExpression {
     if source.is_integer() && target.is_integer() {
-        kernel::c_integer_cast_modulo(value, target.kernel_type())
+        kernel::program_expression::integer_cast_modulo(value, target.kernel_type())
     } else {
-        kernel::c_cast(value, target.kernel_type())
+        kernel::program_expression::cast(value, target.kernel_type())
     }
 }
 
@@ -481,16 +481,18 @@ mod tests {
                 source,
                 target,
             );
-            let actual =
-                kernel::prove_c_expression_evaluation(kernel::ExecutionState::new(), converted)
-                    .unwrap();
-            let expected = kernel::prove_c_expression_evaluation(
+            let actual = kernel::prove_program_expression_evaluation(
+                kernel::ExecutionState::new(),
+                converted,
+            )
+            .unwrap();
+            let expected = kernel::prove_program_expression_evaluation(
                 kernel::ExecutionState::new(),
                 target.parse_literal(expected).unwrap().kernel_expression(),
             )
             .unwrap();
             let outcome = |theorem: &kernel::Theorem| {
-                let kernel::Proposition::CExpressionEvaluates { outcome, .. } =
+                let kernel::Proposition::ProgramExpressionEvaluates { outcome, .. } =
                     theorem.proposition()
                 else {
                     panic!("expected expression evaluation");
@@ -501,10 +503,10 @@ mod tests {
         }
         // Nonconstant casts retain the checked runtime operation and its
         // language-specific policy; constant folding does not erase operands.
-        let variable = crate::kernel::c_variable("wide");
+        let variable = crate::kernel::program_expression::variable("wide");
         assert_eq!(
             convert(variable.clone(), ScalarKind::UInt64, ScalarKind::Int64),
-            kernel::c_integer_cast_modulo(variable, ProgramType::Int64)
+            kernel::program_expression::integer_cast_modulo(variable, ProgramType::Int64)
         );
     }
 }

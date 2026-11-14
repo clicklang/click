@@ -58,7 +58,7 @@ fn pure_pointer_arguments_respect_match_binders_and_avoid_capture() {
     let free = Variable(501);
     let variants: std::sync::Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
         name: "Node".into(),
-        fields: vec![AlgebraicValueType::C(ProgramType::Int32Pointer)],
+        fields: vec![AlgebraicValueType::Program(ProgramType::Int32Pointer)],
     }]
     .into();
     let algebraic_type = AlgebraicType {
@@ -82,7 +82,7 @@ fn pure_pointer_arguments_respect_match_binders_and_avoid_capture() {
         arms: vec![AlgebraicBitvectorMatchArm {
             binding_names: Default::default(),
             variant: "Node".into(),
-            bindings: vec![AlgebraicValue::C(ProgramValue::typed_pointer(
+            bindings: vec![AlgebraicValue::Program(ProgramValue::typed_pointer(
                 Pointer::symbolic(bound),
                 ProgramType::Int32Pointer,
             ))],
@@ -104,7 +104,7 @@ fn pure_pointer_arguments_respect_match_binders_and_avoid_capture() {
         panic!("lost match")
     };
     assert_eq!(rewrite.refusal(), None);
-    let AlgebraicValue::C(ProgramValue::Pointer(renamed)) = &arms[0].bindings[0] else {
+    let AlgebraicValue::Program(ProgramValue::Pointer(renamed)) = &arms[0].bindings[0] else {
         panic!("lost binder")
     };
     assert_ne!(renamed.pointer(), &Pointer::symbolic(bound));
@@ -209,7 +209,7 @@ fn numeric_pointer_rewrites_preserve_origin_and_selected_extent() {
 #[test]
 fn full_pointer_rewrite_changes_read_storage_without_inventing_its_origin() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = intern_c_memory(Memory::new());
+    let memory = intern_memory(Memory::new());
     let p = PointerValue::new(Pointer::symbolic(Variable(421)), ProgramType::Int32Pointer);
     let q = PointerValue::new(Pointer::symbolic(Variable(422)), ProgramType::Int32Pointer);
     let other = Pointer::symbolic(Variable(423));
@@ -250,7 +250,7 @@ fn full_pointer_rewrite_changes_read_storage_without_inventing_its_origin() {
 #[test]
 fn memory_relationship_rewrite_transports_only_a_complete_pointer_carrier() {
     let _session = crate::kernel::VerificationSession::enter();
-    let snapshot = intern_c_memory(Memory::new());
+    let snapshot = intern_memory(Memory::new());
     let storage = Pointer::symbolic(Variable(424_100));
     let source = PointerValue::from_read(
         Pointer::symbolic(Variable(424_101)),
@@ -268,10 +268,13 @@ fn memory_relationship_rewrite_transports_only_a_complete_pointer_carrier() {
             width: 4u32.into(),
         }),
     );
-    let relationship = |value: &PointerValue| Proposition::CResourceContains {
+    let relationship = |value: &PointerValue| Proposition::ResourceContains {
         parent: Box::new(Resource::Composite {
             name: "holder".into(),
-            arguments: vec![AlgebraicValue::C(ProgramValue::Pointer(value.clone()))].into(),
+            arguments: vec![AlgebraicValue::Program(ProgramValue::Pointer(
+                value.clone(),
+            ))]
+            .into(),
         }),
         child: Box::new(Resource::Memory(MemoryRange::from_pointer_value(
             value,
@@ -286,7 +289,7 @@ fn memory_relationship_rewrite_transports_only_a_complete_pointer_carrier() {
     assert!(full.refusal().is_none());
     let mut numeric = TermRewrite::for_pointer_exact(source.pointer(), target.pointer());
     let rewritten = numeric.proposition(&input);
-    let Proposition::CResourceContains { child, .. } = rewritten else {
+    let Proposition::ResourceContains { child, .. } = rewritten else {
         panic!("containment")
     };
     let Resource::Memory(range) = child.as_ref() else {
@@ -301,7 +304,7 @@ fn memory_relationship_rewrite_transports_only_a_complete_pointer_carrier() {
 #[test]
 fn a_full_pointer_rewrite_does_not_adopt_another_read_carrier_at_the_same_address() {
     let _session = crate::kernel::VerificationSession::enter();
-    let snapshot = intern_c_memory(Memory::new());
+    let snapshot = intern_memory(Memory::new());
     let raw = Pointer::symbolic(Variable(424_110));
     let source = PointerValue::from_read(
         raw.clone(),
@@ -322,7 +325,7 @@ fn a_full_pointer_rewrite_does_not_adopt_another_read_carrier_at_the_same_addres
         },
         ProgramType::Int32Pointer,
     );
-    let input = Proposition::CResourceSeparate {
+    let input = Proposition::ResourceSeparate {
         left: Box::new(Resource::Memory(MemoryRange::from_pointer_value(
             &unrelated,
             0u32.into(),
@@ -336,7 +339,7 @@ fn a_full_pointer_rewrite_does_not_adopt_another_read_carrier_at_the_same_addres
         ))),
     };
     let mut rewrite = TermRewrite::for_pointer_value_exact(&source, &target);
-    let Proposition::CResourceSeparate { left, .. } = rewrite.proposition(&input) else {
+    let Proposition::ResourceSeparate { left, .. } = rewrite.proposition(&input) else {
         panic!("separation")
     };
     let Resource::Memory(range) = left.as_ref() else {
@@ -349,7 +352,7 @@ fn a_full_pointer_rewrite_does_not_adopt_another_read_carrier_at_the_same_addres
 }
 
 #[test]
-fn full_c_argument_pointer_rewrite_reaches_a_displaced_copy() {
+fn full_program_argument_pointer_rewrite_reaches_a_displaced_copy() {
     let parameter = |id| {
         PointerValue::new(
             Pointer {
@@ -445,7 +448,7 @@ fn displaced_symbolic_pointer_rewrite_keeps_selected_bounds() {
 }
 
 #[test]
-fn displaced_c_argument_rewrite_inherits_known_replacement_bounds() {
+fn displaced_program_argument_rewrite_inherits_known_replacement_bounds() {
     let parameter = |id| {
         PointerValue::new(
             Pointer {
@@ -516,7 +519,7 @@ fn displaced_copy_keeps_a_domain_not_named_by_the_full_equality() {
             width: 4u32.into(),
         },
     ));
-    let memory = intern_c_memory(Memory::new());
+    let memory = intern_memory(Memory::new());
     let source = PointerValue::from_read(
         numeric.clone(),
         ProgramType::UInt8Pointer,

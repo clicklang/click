@@ -5,14 +5,14 @@ use std::path::{Path, PathBuf};
 use cpp_imports::{checked_in_files, first_import_difference, same_import};
 
 use click::cli::{
-    CInput, MdTestExpectation, export_cpp_mdtest_import, prepare_mdtest_inputs,
-    read_c_inputs_for_project, read_click_project, read_mdtest, read_mdtest_project_if_needed,
-    source_refs,
+    MdTestExpectation, VerificationInput, export_cpp_mdtest_import, prepare_mdtest_inputs,
+    read_click_project, read_mdtest, read_mdtest_project_if_needed,
+    read_verification_inputs_for_project, source_refs,
 };
 use click::instrumentation::{self, ArtifactReuseRejection, HiddenPrerequisiteRoute};
 use click::surface::{
-    c0_tactic_source_position, project_tactic_source_position, verify_c0_project,
-    verify_c0_sources, verify_program_prepared_project,
+    c_tactic_source_position, project_tactic_source_position, verify_c_project, verify_c_sources,
+    verify_program_prepared_project,
 };
 
 #[path = "support/cpp_imports.rs"]
@@ -670,7 +670,7 @@ fn run_mdtest(path: &Path) -> Result<(), String> {
         let source = fs::read_to_string(path)
             .map_err(|error| format!("failed to read `{}`: {error}", path.display()))?;
         let project = read_click_project(path, &source)?;
-        let inputs = read_c_inputs_for_project(path, &source, &project)?;
+        let inputs = read_verification_inputs_for_project(path, &source, &project)?;
         let (_, verification) =
             click::surface::verify_project_with_summary(&project, &inputs.program_inputs())
                 .map_err(|error| error.report())?;
@@ -692,16 +692,16 @@ fn run_mdtest(path: &Path) -> Result<(), String> {
     })?;
     let verify = || -> Result<(), (String, String)> {
         match (&inputs, &project) {
-            (CInput::Bundle(sources), Some(project)) => {
-                verify_c0_project(project, &source_refs(sources)).map(|_| ())
+            (VerificationInput::Bundle(sources), Some(project)) => {
+                verify_c_project(project, &source_refs(sources)).map(|_| ())
             }
-            (CInput::Bundle(sources), None) => {
-                verify_c0_sources(click_source, &source_refs(sources)).map(|_| ())
+            (VerificationInput::Bundle(sources), None) => {
+                verify_c_sources(click_source, &source_refs(sources)).map(|_| ())
             }
-            (CInput::PreparedProgram(import), Some(project)) => {
+            (VerificationInput::PreparedProgram(import), Some(project)) => {
                 verify_program_prepared_project(project, import).map(|_| ())
             }
-            (CInput::PreparedProgram(_), None) | (CInput::Prepared(_), _) => {
+            (VerificationInput::PreparedProgram(_), None) | (VerificationInput::Prepared(_), _) => {
                 unreachable!("every prepared mdtest input reads a Click project")
             }
         }
@@ -721,19 +721,21 @@ fn run_mdtest(path: &Path) -> Result<(), String> {
             &samples,
             |claim, source_index| {
                 let position = match (&inputs, &project) {
-                    (CInput::Bundle(sources), Some(project)) => project_tactic_source_position(
-                        project,
-                        &ProgramInputs::Bundle(source_refs(sources)),
-                        claim,
-                        source_index,
-                    ),
-                    (CInput::Bundle(sources), None) => c0_tactic_source_position(
+                    (VerificationInput::Bundle(sources), Some(project)) => {
+                        project_tactic_source_position(
+                            project,
+                            &ProgramInputs::Bundle(source_refs(sources)),
+                            claim,
+                            source_index,
+                        )
+                    }
+                    (VerificationInput::Bundle(sources), None) => c_tactic_source_position(
                         click_source,
                         &source_refs(sources),
                         claim,
                         source_index,
                     ),
-                    (CInput::PreparedProgram(import), Some(project)) => {
+                    (VerificationInput::PreparedProgram(import), Some(project)) => {
                         project_tactic_source_position(
                             project,
                             &ProgramInputs::program(import),

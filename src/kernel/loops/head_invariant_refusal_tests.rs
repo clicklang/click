@@ -4,7 +4,7 @@ fn nonnegative_i() -> SpecProposition {
     SpecProposition::Comparison {
         left: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
         operator: ComparisonOperator::LessEqual,
-        right: SpecExpression::ProgramExpression(c_variable("i")),
+        right: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable("i")),
     }
 }
 

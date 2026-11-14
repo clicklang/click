@@ -11,7 +11,7 @@ use click::languages::cpp::PreparedCppImport;
 #[path = "support/cpp_description.rs"]
 mod cpp_description;
 use click::surface::{
-    C0VerificationSession, display_source_names, expand_project_claim_source_by_label,
+    ProgramVerificationSession, display_source_names, expand_project_claim_source_by_label,
     expand_project_tactic_source_at, project_smart_tactic_source_sites,
     project_tactic_source_position, verify_program_prepared_project,
 };
@@ -415,7 +415,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
             Some(RoundingPhase::FullExpansion | RoundingPhase::Tools)
         ) {
             Some(
-                C0VerificationSession::new_program_prepared_project(&project, &import)
+                ProgramVerificationSession::new_program_prepared_project(&project, &import)
                     .unwrap_or_else(|error| panic!("{selected}: {}", error.message())),
             )
         } else {
@@ -580,7 +580,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
         verify_program_prepared_project(&rewritten, &import)
             .expect("expanded upstream proof reverifies");
         let (session, _) =
-            C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
+            ProgramVerificationSession::new_program_prepared_project(&project, &import).unwrap();
         // Expansion may remove every smart tactic. Select the resulting
         // claim itself for the retained-session check.
         let offset = expanded.find("ensures ").expect("upstream result claim");
@@ -647,7 +647,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
         let rewritten = project.with_entry_source(expanded.clone());
         verify_program_prepared_project(&rewritten, &import).unwrap();
         let (session, _) =
-            C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
+            ProgramVerificationSession::new_program_prepared_project(&project, &import).unwrap();
         let position = project_tactic_source_position(
             &rewritten,
             &ProgramInputs::program(&import),
@@ -1384,7 +1384,7 @@ fn pinned_std_byte_values_verify_with_native_integer_contracts_offline() {
     let rewritten = project.with_entry_source(expanded.clone());
     verify_program_prepared_project(&rewritten, &import).unwrap();
     let (session, _) =
-        C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
+        ProgramVerificationSession::new_program_prepared_project(&project, &import).unwrap();
     let position = project_tactic_source_position(
         &rewritten,
         &ProgramInputs::program(&import),
@@ -1786,8 +1786,9 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
     }
     // A retained session's environment names its own kernel tables, which
     // every verification above replaces, so the session starts after them.
-    let (session, _) = C0VerificationSession::new_program_prepared_project(&project, &imported)
-        .expect("start a retained audit session on the same import");
+    let (session, _) =
+        ProgramVerificationSession::new_program_prepared_project(&project, &imported)
+            .expect("start a retained audit session on the same import");
     for (expanded, next) in &session_checks {
         session
             .verify_at_project(expanded, next.line, next.column)
@@ -4270,7 +4271,7 @@ fn check_pinned_byte_proof(root: &Path, import: &PreparedCppImport, source: &str
     let rewritten = project.with_entry_source(expanded.clone());
     verify_program_prepared_project(&rewritten, import).unwrap();
     let (session, _) =
-        C0VerificationSession::new_program_prepared_project(&project, import).unwrap();
+        ProgramVerificationSession::new_program_prepared_project(&project, import).unwrap();
     let position = project_tactic_source_position(
         &rewritten,
         &ProgramInputs::program(import),

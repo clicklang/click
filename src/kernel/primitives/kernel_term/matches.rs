@@ -28,7 +28,9 @@ pub struct KernelConstructor {
 
 fn import_value(import: &mut KernelTermImport, value: &AlgebraicValue) -> KernelTerm {
     match value {
-        AlgebraicValue::C(value) => import.argument(&PureFunctionArgument::Value(value.clone())),
+        AlgebraicValue::Program(value) => {
+            import.argument(&PureFunctionArgument::Value(value.clone()))
+        }
         AlgebraicValue::Integer(value) => import.integer(&value.clone().into()),
         AlgebraicValue::Algebraic(value) => {
             import.argument(&PureFunctionArgument::Algebraic(value.clone()))
@@ -41,7 +43,7 @@ fn export_value(
     value: &KernelTerm,
 ) -> Result<AlgebraicValue, &'static str> {
     match export.argument(value)? {
-        PureFunctionArgument::Value(value) => Ok(AlgebraicValue::C(value)),
+        PureFunctionArgument::Value(value) => Ok(AlgebraicValue::Program(value)),
         PureFunctionArgument::Integer(value) => Ok(AlgebraicValue::Integer(value.as_ref().clone())),
         PureFunctionArgument::Algebraic(value) => Ok(AlgebraicValue::Algebraic(value)),
         _ => Err("unsupported match field carrier"),
@@ -77,12 +79,12 @@ impl KernelMatchArm {
             .map(|value| {
                 // A word variable declaration has no expression tree to
                 // export. Reify its existing typed descriptor directly.
-                if let (KernelType::C(ty), KernelTermNode::Variable(variable)) =
+                if let (KernelType::Program(ty), KernelTermNode::Variable(variable)) =
                     (value.ty(), value.node())
                     && let Some(format) = MachineIntegerType::from_c_type(*ty)
                 {
                     crate::instrumentation::record_deterministic_work(1);
-                    return Ok(AlgebraicValue::C(machine::wrap_exact(
+                    return Ok(AlgebraicValue::Program(machine::wrap_exact(
                         format,
                         MachineTerm::Variable(*variable),
                     )));
@@ -176,7 +178,7 @@ impl KernelMatch {
             })
             .collect();
         Some(
-            Self::new(KernelType::C(format.c_type()), scrutinee, arms)
+            Self::new(KernelType::Program(format.c_type()), scrutinee, arms)
                 .expect("native machine match types"),
         )
     }
@@ -247,7 +249,7 @@ impl KernelMatch {
         &self,
         export: &mut KernelTermExport,
     ) -> Result<MachineTerm, &'static str> {
-        let KernelType::C(ty) = self.result_type else {
+        let KernelType::Program(ty) = self.result_type else {
             return Err("expected machine match");
         };
         if MachineIntegerType::from_c_type(ty).is_none() {
@@ -472,7 +474,10 @@ mod tests {
                 }],
             };
             let common = KernelMatch::import_machine(&mut import, format, &native).unwrap();
-            assert_eq!(common.arguments[1].ty(), &KernelType::C(format.c_type()));
+            assert_eq!(
+                common.arguments[1].ty(),
+                &KernelType::Program(format.c_type())
+            );
             assert_eq!(common.export_machine(&mut export).unwrap(), native);
         }
         let native = AlgebraicTerm {
@@ -530,7 +535,7 @@ mod tests {
             KernelMatch::new(
                 KernelType::Integer,
                 scrutinee,
-                vec![arm("Box", KernelType::C(ProgramType::Int32))]
+                vec![arm("Box", KernelType::Program(ProgramType::Int32))]
             )
             .is_err()
         );

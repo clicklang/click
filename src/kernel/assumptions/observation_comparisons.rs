@@ -52,7 +52,7 @@ impl ResourceKey {
             .iter()
             .map(|argument| {
                 crate::instrumentation::record_deterministic_work(1);
-                if let AlgebraicValue::C(value) = argument {
+                if let AlgebraicValue::Program(value) = argument {
                     let term = match value {
                         ProgramValue::Int8(t)
                         | ProgramValue::UInt8(t)
@@ -150,14 +150,14 @@ impl PropositionKey {
                         (Self::Exact(proposition.clone()), false)
                     }
                 }
-                Proposition::CResourceContains { parent, child } => (
+                Proposition::ResourceContains { parent, child } => (
                     Self::Contains(
                         Box::new(ResourceKey::new(parent)),
                         Box::new(ResourceKey::new(child)),
                     ),
                     true,
                 ),
-                Proposition::CResourceSeparate { left, right } => (
+                Proposition::ResourceSeparate { left, right } => (
                     Self::Separate(
                         Box::new(ResourceKey::new(left)),
                         Box::new(ResourceKey::new(right)),
@@ -600,7 +600,7 @@ mod compound_observation_lookup_tests {
     fn scaled_word_sources_retain_shared_indices_and_exact_authority() {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let x = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(991440));
+        let x = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(991440));
         let root = KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [x.clone(), x]);
         let zero = MachineTerm::constant(0);
         for truth in [false, true] {
@@ -723,8 +723,8 @@ mod compound_observation_lookup_tests {
             ty,
             MachineBinaryOp::Multiply,
             [
-                KernelTerm::variable(KernelType::C(ty.c_type()), Variable(989001)),
-                KernelTerm::variable(KernelType::C(ty.c_type()), Variable(989002)),
+                KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(989001)),
+                KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(989002)),
             ],
         );
         let retained = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();
@@ -899,13 +899,16 @@ mod resource_relation_tests {
     fn relation(term: MachineTerm, pointer: PointerValue, separate: bool) -> Proposition {
         let left = Resource::Composite {
             name: "storage".into(),
-            arguments: vec![AlgebraicValue::C(ProgramValue::Pointer(pointer.clone()))].into(),
+            arguments: vec![AlgebraicValue::Program(ProgramValue::Pointer(
+                pointer.clone(),
+            ))]
+            .into(),
         };
         let right = Resource::Composite {
             name: "allocation".into(),
             arguments: vec![
-                AlgebraicValue::C(ProgramValue::Pointer(pointer)),
-                AlgebraicValue::C(ProgramValue::Int32(MachineTerm::machine_binary(
+                AlgebraicValue::Program(ProgramValue::Pointer(pointer)),
+                AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::machine_binary(
                     MachineIntegerType::Int32,
                     crate::kernel::MachineBinaryOp::Multiply,
                     term,
@@ -915,12 +918,12 @@ mod resource_relation_tests {
             .into(),
         };
         if separate {
-            Proposition::CResourceSeparate {
+            Proposition::ResourceSeparate {
                 left: Box::new(left),
                 right: Box::new(right),
             }
         } else {
-            Proposition::CResourceContains {
+            Proposition::ResourceContains {
                 parent: Box::new(left),
                 child: Box::new(right),
             }
@@ -931,8 +934,8 @@ mod resource_relation_tests {
     fn resource_relation_keys_match_read_names_without_erasing_their_identity() {
         let _session = crate::kernel::VerificationSession::enter();
         let address = Pointer::symbolic(Variable(3_219_300));
-        let memory = crate::kernel::intern_c_memory(Memory::new());
-        let other_memory = crate::kernel::intern_c_memory(
+        let memory = crate::kernel::intern_memory(Memory::new());
+        let other_memory = crate::kernel::intern_memory(
             Memory::new().store(address.clone(), ProgramValue::Int32(9u32.into())),
         );
         let name = crate::kernel::eval::load_variable_for_exact_cell(

@@ -103,7 +103,7 @@ fn held_composite_resource_clause(
     let arguments = arguments
         .iter()
         .map(|argument| match argument {
-            AlgebraicValue::C(value) => {
+            AlgebraicValue::Program(value) => {
                 crate::surface::proof::surface_synthesis::synthesize_surface_value(
                     value,
                     parameter_binding,

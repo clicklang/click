@@ -119,13 +119,13 @@ fn publication_in_one_branch_keeps_sibling_input_pairing() {
 fn cell_index_follows_completed_pointer_reads_and_preserves_snapshots() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = Memory::new();
-    let snapshot = crate::kernel::intern_c_memory(memory.clone());
+    let snapshot = crate::kernel::intern_memory(memory.clone());
     let (a, b) = (
         Pointer::symbolic(Variable(852_010)),
         Pointer::symbolic(Variable(852_011)),
     );
     let read = |address: &Pointer| {
-        let paths = crate::kernel::eval::evaluate_c_memory_load_paths(
+        let paths = crate::kernel::eval::evaluate_memory_load_paths(
             &memory,
             address.clone(),
             ProgramType::Int64Pointer,
@@ -224,7 +224,7 @@ fn cell_index_follows_completed_pointer_reads_and_preserves_snapshots() {
     }
     assert!(!shifted.permits_memory_read(&y.offset_by_bytes(8), 4, &facts));
     assert!(shifted.permits_memory_read(&old.offset_by_bytes(8), 4, &facts));
-    let later = crate::kernel::intern_c_memory(memory.with_block("later", 8));
+    let later = crate::kernel::intern_memory(memory.with_block("later", 8));
     assert!(!resources.permits_memory_read(&Pointer::loaded_value(&later, &a), 4, &connected));
     assert!(
         resources
@@ -571,7 +571,7 @@ fn interval_candidates_ignore_unrelated_scalar_equalities() {
 fn interval_candidates_follow_loaded_pointer_origins_without_spelling_retry() {
     let a = Pointer::symbolic(Variable(895_010));
     let b = Pointer::symbolic(Variable(895_011));
-    let snapshot = crate::kernel::intern_c_memory(Memory::new());
+    let snapshot = crate::kernel::intern_memory(Memory::new());
     let x = Pointer::loaded_value(&snapshot, &a);
     let y = Pointer::loaded_value(&snapshot, &b);
     let initial = PureFactContext::new();
@@ -626,7 +626,7 @@ fn interval_candidates_follow_loaded_pointer_origins_without_spelling_retry() {
             .memory_write_range(&y.offset_by_bytes(30), 4, &connected)
             .is_none()
     );
-    let later = crate::kernel::intern_c_memory(Memory::new().with_block("later", 8));
+    let later = crate::kernel::intern_memory(Memory::new().with_block("later", 8));
     let other_snapshot = Pointer::loaded_value(&later, &Pointer::symbolic(Variable(895_010)));
     assert!(!resources.permits_memory_read(&other_snapshot.offset_by_bytes(8), 4, &connected));
 }
@@ -727,7 +727,7 @@ fn interval_alignment_retains_query_and_occurrence_checkpoint() {
 fn unpublished_loaded_intervals_do_not_claim_complete_supplier_coverage() {
     let a = Pointer::symbolic(Variable(895_060));
     let b = Pointer::symbolic(Variable(895_061));
-    let memory = crate::kernel::intern_c_memory(Memory::new());
+    let memory = crate::kernel::intern_memory(Memory::new());
     let x = Pointer::loaded_value(&memory, &a);
     let y = Pointer::loaded_value(&memory, &b);
     let facts = PureFactContext::new().assume_condition(ConditionTerm::pointer_equal(a, b), true);
@@ -1058,7 +1058,7 @@ fn object_evidence_uses_provenance_classes_and_live_nonempty_occurrences() {
 // incremental class index, not just return true from an equality query.
 #[test]
 fn typed_read_congruence_publishes_late_ownership_class_updates() {
-    let memory = crate::kernel::intern_c_memory(Memory::new());
+    let memory = crate::kernel::intern_memory(Memory::new());
     let p = Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Variable(Variable(998_001)),
@@ -1229,11 +1229,11 @@ fn remove_suppliers_with_late_read_definition(register_query: bool) {
         block: PointerBlock::Heap(989_800),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let first = crate::kernel::intern_c_memory(
+    let first = crate::kernel::intern_memory(
         Memory::new().store(unrelated.clone(), ProgramValue::UInt32(1u32.into())),
     );
     let named = name(&first, &cell);
-    let later = crate::kernel::intern_c_memory(
+    let later = crate::kernel::intern_memory(
         first
             .memory()
             .clone()

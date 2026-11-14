@@ -2513,14 +2513,14 @@ impl MemoryRange {
         match self.wide_bounds() {
             None => {
                 let (base, bytes) = self.byte_footprint();
-                Proposition::CMemoryLoadable {
+                Proposition::MemoryLoadable {
                     memory: memory.clone(),
                     base,
                     bytes,
                     wide: false,
                 }
             }
-            Some((start, end)) => Proposition::CMemoryLoadable {
+            Some((start, end)) => Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: self.start_pointer(),
                 bytes: wide_loadable_byte_count(
@@ -3061,7 +3061,7 @@ fn collect_stated_loadable_extent_guards(
         // A wide range's object-size guard, in the element form its contract
         // states. Only a citation asks for it: a 32-bit-free count has no
         // further guard a proof owes.
-        Proposition::CMemoryLoadable {
+        Proposition::MemoryLoadable {
             bytes, wide: true, ..
         } => {
             if !every_spelling {
@@ -3095,7 +3095,7 @@ fn collect_stated_loadable_extent_guards(
                 guards.push(guard);
             }
         }
-        Proposition::CMemoryLoadable { bytes, .. } => {
+        Proposition::MemoryLoadable { bytes, .. } => {
             let Some(element_width) = stated_extent_element_width(bytes) else {
                 return;
             };
@@ -3381,7 +3381,7 @@ fn collect_stated_separation_memory_ranges<'a>(
             collect_stated_separation_memory_ranges(left, ranges);
             collect_stated_separation_memory_ranges(right, ranges);
         }
-        Proposition::CResourceSeparate { left, right } => {
+        Proposition::ResourceSeparate { left, right } => {
             let mut pending = vec![right.as_ref(), left.as_ref()];
             while let Some(resource) = pending.pop() {
                 crate::instrumentation::record_deterministic_work(1);
@@ -3865,7 +3865,7 @@ impl ExecutionEnvironment {
     ///
     /// There is no public constructor for [`RecursionAnchor`], so this is
     /// reached only through
-    /// [`crate::kernel::c_execution_environment_with_recursion_anchor`],
+    /// [`crate::kernel::program_execution_environment_with_recursion_anchor`],
     /// which derives the anchor from the function's own declared measure.
     pub(in crate::kernel) fn with_recursion_anchor(mut self, anchor: RecursionAnchor) -> Self {
         self.recursion_anchor = Some(std::sync::Arc::new(anchor));
@@ -4022,7 +4022,7 @@ impl ExecutionEnvironment {
                     // prerequisites is kernel proof planning.
                     assumptions.proves_exact(required)
                         || match required {
-                            Proposition::CMemoryLoadable {
+                            Proposition::MemoryLoadable {
                                 memory,
                                 base,
                                 bytes,

@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel::{ProgramType, c_function};
+use crate::kernel::{ProgramType, program_function};
 
 #[test]
 fn exact_composition_observation_accepts_retained_views_but_not_foreign_ownership() {
@@ -12,7 +12,7 @@ fn exact_composition_observation_accepts_retained_views_but_not_foreign_ownershi
     ]);
     let assumptions = PureFactContext::default();
     assert!(resource_composition_is_supported_by(
-        &Proposition::CResourceComposition(context.clone()),
+        &Proposition::ResourceComposition(context.clone()),
         &context,
         &assumptions,
     ));
@@ -24,7 +24,7 @@ fn exact_composition_observation_accepts_retained_views_but_not_foreign_ownershi
             1.into(),
         )));
     assert!(resource_composition_is_supported_by(
-        &Proposition::CResourceComposition(context.clone()),
+        &Proposition::ResourceComposition(context.clone()),
         &framed,
         &assumptions,
     ));
@@ -32,7 +32,7 @@ fn exact_composition_observation_accepts_retained_views_but_not_foreign_ownershi
         .clone()
         .unchecked_with_fact(context.facts()[0].clone());
     assert!(!resource_composition_is_supported_by(
-        &Proposition::CResourceComposition(duplicated),
+        &Proposition::ResourceComposition(duplicated),
         &framed,
         &assumptions,
     ));
@@ -46,7 +46,7 @@ fn exact_composition_observation_accepts_retained_views_but_not_foreign_ownershi
             1.into(),
         )));
     assert!(!resource_composition_is_supported_by(
-        &Proposition::CResourceComposition(foreign),
+        &Proposition::ResourceComposition(foreign),
         &context,
         &assumptions,
     ));
@@ -218,7 +218,7 @@ fn checked_member_events_conserve_one_occurrence_and_reject_forged_deltas() {
         name: description.family().to_owned(),
         arguments: description.arguments().to_vec().into(),
     });
-    let function = c_function(
+    let function = program_function(
         ProgramType::Void,
         "value",
         vec![],
@@ -321,19 +321,22 @@ fn member_exchange_requires_both_external_body_ownership_and_checked_extent() {
     });
     let definition = CompositeResourceDefinition::new(
         "reference",
-        vec![crate::kernel::c_parameter("p", ProgramType::Int32Pointer)],
+        vec![crate::kernel::program_parameter(
+            "p",
+            ProgramType::Int32Pointer,
+        )],
         None,
         false,
         vec![ResourceSpec::owned_memory(
             crate::kernel::MemorySegment::new(
                 ProgramExpression::Value(ProgramValue::pointer(external.clone())),
-                crate::kernel::c_int32_literal(0),
-                crate::kernel::c_int32_literal(1),
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::program_expression::int32_literal(1),
             ),
         )],
         vec![],
     );
-    let function = c_function(ProgramType::Void, "member", vec![], ProgramStatement::Skip)
+    let function = program_function(ProgramType::Void, "member", vec![], ProgramStatement::Skip)
         .with_composite_resource_definitions(vec![definition.clone()]);
     let (empty, _) = state
         .checked_population_authority_exchange(&authority, true, &PureFactContext::new())
@@ -348,7 +351,7 @@ fn member_exchange_requires_both_external_body_ownership_and_checked_extent() {
             .checked_population_member_exchange(&member, true, &definition, &PureFactContext::new())
             .is_err()
     );
-    let extent = |bytes| Proposition::CMemoryLoadable {
+    let extent = |bytes| Proposition::MemoryLoadable {
         memory: owned.memory().clone(),
         base: external.clone(),
         bytes: MachineTerm::constant(bytes),
@@ -421,7 +424,7 @@ fn checked_member_exchange_transfers_exact_contained_resource() {
                 ResourceSpec::token(
                     crate::kernel::ResourceAccessMode::Own,
                     "payload".into(),
-                    vec![crate::kernel::c_int32_literal(7)],
+                    vec![crate::kernel::program_expression::int32_literal(7)],
                     vec![ProgramType::Int32],
                 ),
             )
@@ -434,20 +437,23 @@ fn checked_member_exchange_transfers_exact_contained_resource() {
                 ResourceSpec::composite(
                     crate::kernel::ResourceAccessMode::Own,
                     "payload".into(),
-                    vec![crate::kernel::c_variable("p")],
+                    vec![crate::kernel::program_expression::variable("p")],
                     vec![ProgramType::Int32Pointer],
                 ),
             )
         };
         let definition = CompositeResourceDefinition::new(
             "reference",
-            vec![crate::kernel::c_parameter("p", ProgramType::Int32Pointer)],
+            vec![crate::kernel::program_parameter(
+                "p",
+                ProgramType::Int32Pointer,
+            )],
             None,
             false,
             vec![child_spec],
             vec![],
         );
-        let function = c_function(
+        let function = program_function(
             ProgramType::Void,
             "member",
             vec![],
@@ -549,7 +555,10 @@ fn member_body_facts_require_checked_birth_and_reject_forged_consumption_facts()
     let definition = |right| {
         CompositeResourceDefinition::new(
             "reference",
-            vec![crate::kernel::c_parameter("p", ProgramType::Int32Pointer)],
+            vec![crate::kernel::program_parameter(
+                "p",
+                ProgramType::Int32Pointer,
+            )],
             None,
             false,
             vec![],
@@ -566,7 +575,7 @@ fn member_body_facts_require_checked_birth_and_reject_forged_consumption_facts()
             .is_err()
     );
     let definition = definition(1);
-    let function = c_function(
+    let function = program_function(
         ProgramType::Void,
         "member",
         vec![],
@@ -620,7 +629,7 @@ fn member_body_facts_require_checked_birth_and_reject_forged_consumption_facts()
 
 #[test]
 fn checked_member_events_exchange_private_memory_and_reject_duplicate_birth() {
-    use crate::kernel::{MemorySegment, c_int32_literal, c_parameter, c_variable};
+    use crate::kernel::{MemorySegment, program_parameter};
 
     let (before, authority) = source_state();
     let Resource::PopulationAuthority(description) = authority.resource() else {
@@ -630,7 +639,7 @@ fn checked_member_events_exchange_private_memory_and_reject_duplicate_birth() {
         name: description.family().to_owned(),
         arguments: description.arguments().to_vec().into(),
     });
-    let [crate::kernel::AlgebraicValue::C(ProgramValue::Pointer(pointer))] =
+    let [crate::kernel::AlgebraicValue::Program(ProgramValue::Pointer(pointer))] =
         description.arguments()
     else {
         unreachable!()
@@ -642,18 +651,18 @@ fn checked_member_events_exchange_private_memory_and_reject_duplicate_birth() {
     ));
     let definition = CompositeResourceDefinition::new(
         "reference",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![ResourceSpec::owned_memory(MemorySegment::new(
-            c_variable("p"),
-            c_int32_literal(0),
-            c_int32_literal(1),
+            crate::kernel::program_expression::variable("p"),
+            crate::kernel::program_expression::int32_literal(0),
+            crate::kernel::program_expression::int32_literal(1),
         ))],
         vec![],
     )
     .with_authorized(true);
-    let function = c_function(
+    let function = program_function(
         ProgramType::Void,
         "value",
         vec![],
@@ -806,7 +815,7 @@ fn generic_resource_observations_cannot_check_under_authority_history() {
     let (before, _) = source_state();
     let selected = ResourceFact::own_composite("reference".into(), Vec::new());
     let facts = ProofFacts::default();
-    let function = c_function(
+    let function = program_function(
         ProgramType::Void,
         "value",
         vec![],

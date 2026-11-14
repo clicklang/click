@@ -14,7 +14,7 @@ fn scalar_expression(expression: &SpecExpression) -> bool {
     use SpecExpression::*;
     match expression {
         Value(_) => true,
-        ProgramExpression(expression) => scalar_c_expression(expression),
+        ProgramExpression(expression) => scalar_program_expression(expression),
         Add(a, b)
         | Subtract(a, b)
         | Multiply(a, b)
@@ -31,12 +31,12 @@ fn scalar_expression(expression: &SpecExpression) -> bool {
         _ => false,
     }
 }
-fn scalar_c_expression(expression: &ProgramExpression) -> bool {
+fn scalar_program_expression(expression: &ProgramExpression) -> bool {
     use ProgramExpression::*;
     match expression {
         Value(_) | Variable(_) => true,
         Cast { expression, .. } | Not(expression) | BitwiseNot(expression) => {
-            scalar_c_expression(expression)
+            scalar_program_expression(expression)
         }
         Add(a, b)
         | Subtract(a, b)
@@ -55,7 +55,7 @@ fn scalar_c_expression(expression: &ProgramExpression) -> bool {
         | LessThan(a, b)
         | LessEqual(a, b)
         | GreaterThan(a, b)
-        | GreaterEqual(a, b) => scalar_c_expression(a) && scalar_c_expression(b),
+        | GreaterEqual(a, b) => scalar_program_expression(a) && scalar_program_expression(b),
         _ => false,
     }
 }
@@ -252,7 +252,7 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
     let (condition, value) = source_condition(head, spec, assumptions)?;
     let schema = ResourceFieldSchema::new(vec![(
         "active".into(),
-        ResourceFieldType::C(ProgramType::Int32),
+        ResourceFieldType::Program(ProgramType::Int32),
     )])
     .unwrap();
     let name = format!("$conditional-loop-guard:{}", identity.0);
@@ -273,7 +273,9 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
         name.clone(),
         vec![],
         Some(SpecProposition::Comparison {
-            left: SpecExpression::ProgramExpression(c_variable("active")),
+            left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
+                "active",
+            )),
             operator: ComparisonOperator::NotEqual,
             right: SpecExpression::Value(int32(0)),
         }),
@@ -405,7 +407,7 @@ pub(in crate::kernel) fn normalize_direct_loop_guards(
         if source_mutex(&state, &carrier.source, assumptions)? != *mutex {
             return Err("conditional loop guard changed its mutex".into());
         }
-        if head_instance.fields().first() == Some(&AlgebraicValue::C(value.clone()))
+        if head_instance.fields().first() == Some(&AlgebraicValue::Program(value.clone()))
             && state.resources.owned_instance(carrier.head.identity()) == Some(head_instance)
             && state.mutex_ledger.as_ref().is_some_and(|next| {
                 matches!(

@@ -25,7 +25,7 @@ fn charge_seq_spine(statements: &ProgramStatementSequence) {
 }
 
 /// The one library call the execution model implements itself instead of
-/// looking up a function; see `c0_statement_calls`.
+/// looking up a function; see `c_statement_calls`.
 const MODELED_REALLOC: &str = "realloc";
 
 fn error(message: impl Into<String>) -> TerminationError {
@@ -53,17 +53,21 @@ fn variable_minus_positive(expression: &ProgramExpression, variable: &str) -> Op
     int32_literal(right).filter(|step| *step > 0)
 }
 
-fn substitute_c_expression_variables(
+fn substitute_program_expression_variables(
     expression: &ProgramExpression,
     substitutions: &BTreeMap<String, ProgramExpression>,
 ) -> ProgramExpression {
     use ProgramExpression::*;
-    let unary =
-        |body: &ProgramExpression| Box::new(substitute_c_expression_variables(body, substitutions));
+    let unary = |body: &ProgramExpression| {
+        Box::new(substitute_program_expression_variables(body, substitutions))
+    };
     let binary = |left: &ProgramExpression, right: &ProgramExpression| {
         (
-            Box::new(substitute_c_expression_variables(left, substitutions)),
-            Box::new(substitute_c_expression_variables(right, substitutions)),
+            Box::new(substitute_program_expression_variables(left, substitutions)),
+            Box::new(substitute_program_expression_variables(
+                right,
+                substitutions,
+            )),
         )
     };
     match expression {
@@ -102,7 +106,7 @@ fn substitute_c_expression_variables(
             variant: variant.clone(),
             fields: fields
                 .iter()
-                .map(|field| substitute_c_expression_variables(field, substitutions))
+                .map(|field| substitute_program_expression_variables(field, substitutions))
                 .collect(),
         },
         EnumField {
@@ -249,13 +253,13 @@ fn substitute_c_expression_variables(
     }
 }
 
-fn resolve_c_expression_aliases(
+fn resolve_program_expression_aliases(
     expression: &ProgramExpression,
     aliases: &BTreeMap<String, ProgramExpression>,
 ) -> ProgramExpression {
     let mut resolved = expression.clone();
     for _ in 0..=aliases.len() {
-        let next = substitute_c_expression_variables(&resolved, aliases);
+        let next = substitute_program_expression_variables(&resolved, aliases);
         if next == resolved {
             break;
         }
@@ -279,7 +283,7 @@ fn instantiate_structural_guard(
     let instantiate = |expression: &SpecExpression| match expression {
         SpecExpression::Value(value) => Some(SpecExpression::Value(value.clone())),
         SpecExpression::ProgramExpression(expression) => Some(SpecExpression::ProgramExpression(
-            substitute_c_expression_variables(expression, substitutions),
+            substitute_program_expression_variables(expression, substitutions),
         )),
         _ => None,
     };
@@ -413,7 +417,7 @@ fn branch_establishes_structural_guard(
     // A subobject narrowing does not change the value a comparison reads, as
     // it does not change which child a call passes.
     let structural = |expression: &ProgramExpression| {
-        substitute_c_expression_variables(expression, &BTreeMap::new())
+        substitute_program_expression_variables(expression, &BTreeMap::new())
     };
     normalized(&structural(branch_condition), branch_value) == normalized(&structural(guard), true)
 }
@@ -469,7 +473,7 @@ fn check_structural_recursive_call(
         .map(|(parameter, argument)| {
             (
                 parameter.clone(),
-                resolve_c_expression_aliases(argument, &path.aliases),
+                resolve_program_expression_aliases(argument, &path.aliases),
             )
         })
         .collect::<BTreeMap<_, _>>();
@@ -478,12 +482,12 @@ fn check_structural_recursive_call(
     let call_measure_arguments = callee
         .arguments
         .iter()
-        .map(|argument| substitute_c_expression_variables(argument, &parameter_substitutions))
+        .map(|argument| substitute_program_expression_variables(argument, &parameter_substitutions))
         .collect::<Vec<_>>();
     let structural = |arguments: &[ProgramExpression]| {
         arguments
             .iter()
-            .map(|argument| substitute_c_expression_variables(argument, &BTreeMap::new()))
+            .map(|argument| substitute_program_expression_variables(argument, &BTreeMap::new()))
             .collect::<Vec<_>>()
     };
     let call_children = structural(&call_measure_arguments);
@@ -560,7 +564,7 @@ impl TerminationWalk for StructuralMeasureWalk<'_> {
             } => Ok(paths
                 .into_iter()
                 .map(|mut path| {
-                    let expression = resolve_c_expression_aliases(expression, &path.aliases);
+                    let expression = resolve_program_expression_aliases(expression, &path.aliases);
                     path.aliases.insert(name.clone(), expression);
                     path
                 })
@@ -616,7 +620,7 @@ impl TerminationWalk for StructuralMeasureWalk<'_> {
         paths
             .into_iter()
             .map(|mut path| {
-                let condition = resolve_c_expression_aliases(condition, &path.aliases);
+                let condition = resolve_program_expression_aliases(condition, &path.aliases);
                 path.conditions.push((condition, taken));
                 path
             })
@@ -653,11 +657,11 @@ fn structural_recursion_paths(
     .continuing)
 }
 
-fn c_expression_mentions_variable(expression: &ProgramExpression, variable: &str) -> bool {
+fn program_expression_mentions_variable(expression: &ProgramExpression, variable: &str) -> bool {
     // Substitution also normalizes subobject wrappers, even when no variable
     // is replaced. Such normalization cannot establish a free occurrence.
     let mut variables = BTreeSet::new();
-    collect_c_expression_variables(expression, &mut variables);
+    collect_program_expression_variables(expression, &mut variables);
     variables.contains(variable)
 }
 
@@ -678,7 +682,7 @@ fn assume_structural_path(
     for obligation in obligations {
         let proposition = obligation.proposition();
         let decided = match proposition {
-            Proposition::CMemoryLoadable { .. } => true,
+            Proposition::MemoryLoadable { .. } => true,
             Proposition::ConditionIs(condition, value) => {
                 assumptions.decide(condition) == Some(*value)
             }
@@ -697,13 +701,13 @@ fn assume_structural_path(
     Some(())
 }
 
-fn evaluate_structural_c_expression(
+fn evaluate_structural_program_expression(
     state: &ExecutionState,
     expression: &ProgramExpression,
     assumptions: &mut PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> Option<ProgramValue> {
-    let paths = evaluate_c_expression_paths(state, expression, assumptions, budget).ok()?;
+    let paths = evaluate_program_expression_paths(state, expression, assumptions, budget).ok()?;
     let [path] = paths.as_slice() else {
         return None;
     };
@@ -764,7 +768,7 @@ fn call_passes_witness_child(
         let mut assumptions = entry_assumptions.clone();
         let mut body_state = ExecutionState::new();
         for (parameter, argument) in definition.parameters().iter().zip(&measure.arguments) {
-            let Some(value) = evaluate_structural_c_expression(
+            let Some(value) = evaluate_structural_program_expression(
                 &parameter_state,
                 argument,
                 &mut assumptions,
@@ -806,7 +810,7 @@ fn call_passes_witness_child(
             assumptions = assumptions.assume_proposition(path.proposition.clone());
         }
         for (expected, actual) in child.arguments.iter().zip(call_measure_arguments) {
-            let Some(expected) = evaluate_structural_c_expression(
+            let Some(expected) = evaluate_structural_program_expression(
                 &body_state,
                 expected,
                 &mut assumptions,
@@ -814,7 +818,7 @@ fn call_passes_witness_child(
             ) else {
                 continue 'children;
             };
-            let Some(actual) = evaluate_structural_c_expression(
+            let Some(actual) = evaluate_structural_program_expression(
                 &parameter_state,
                 actual,
                 &mut assumptions,
@@ -907,12 +911,12 @@ fn structural_resource_children(
         definition
             .witnesses()
             .iter()
-            .any(|witness| c_expression_mentions_variable(expression, witness.name()))
+            .any(|witness| program_expression_mentions_variable(expression, witness.name()))
     };
     let mentions_binding = |expression: &ProgramExpression, bound: &BTreeSet<String>| {
         bound
             .iter()
-            .any(|binding| c_expression_mentions_variable(expression, binding))
+            .any(|binding| program_expression_mentions_variable(expression, binding))
     };
     let structural_children = |contained: &[ResourceSpec],
                                bound: &BTreeSet<String>|
@@ -943,7 +947,9 @@ fn structural_resource_children(
                 children.push(
                     child_arguments
                         .iter()
-                        .map(|argument| substitute_c_expression_variables(argument, &substitutions))
+                        .map(|argument| {
+                            substitute_program_expression_variables(argument, &substitutions)
+                        })
                         .collect::<Vec<_>>(),
                 );
             }
@@ -972,9 +978,9 @@ fn structural_resource_children(
                         .arguments
                         .iter()
                         .filter_map(|argument| match argument {
-                            SpecExpression::ProgramExpression(argument) => {
-                                Some(substitute_c_expression_variables(argument, &substitutions))
-                            }
+                            SpecExpression::ProgramExpression(argument) => Some(
+                                substitute_program_expression_variables(argument, &substitutions),
+                            ),
                             _ => None,
                         })
                         .collect::<Vec<_>>(),
@@ -1228,7 +1234,10 @@ fn expression_address_taken_locals(expression: &ProgramExpression, names: &mut B
     }
 }
 
-fn collect_c_expression_variables(expression: &ProgramExpression, names: &mut BTreeSet<String>) {
+fn collect_program_expression_variables(
+    expression: &ProgramExpression,
+    names: &mut BTreeSet<String>,
+) {
     use ProgramExpression::*;
     match expression {
         Variable(name) => {
@@ -1256,10 +1265,10 @@ fn collect_c_expression_variables(expression: &ProgramExpression, names: &mut BT
         }
         | Not(expression)
         | BitwiseNot(expression)
-        | Load(expression) => collect_c_expression_variables(expression, names),
+        | Load(expression) => collect_program_expression_variables(expression, names),
         EnumConstruct { fields, .. } => {
             for field in fields {
-                collect_c_expression_variables(field, names);
+                collect_program_expression_variables(field, names);
             }
         }
         Conditional {
@@ -1267,9 +1276,9 @@ fn collect_c_expression_variables(expression: &ProgramExpression, names: &mut BT
             then_branch,
             else_branch,
         } => {
-            collect_c_expression_variables(condition, names);
-            collect_c_expression_variables(then_branch, names);
-            collect_c_expression_variables(else_branch, names);
+            collect_program_expression_variables(condition, names);
+            collect_program_expression_variables(then_branch, names);
+            collect_program_expression_variables(else_branch, names);
         }
         LessThan(left, right)
         | LessEqual(left, right)
@@ -1292,10 +1301,10 @@ fn collect_c_expression_variables(expression: &ProgramExpression, names: &mut BT
         | BitwiseOr(left, right)
         | BitwiseXor(left, right)
         | Index(left, right) => {
-            collect_c_expression_variables(left, names);
-            collect_c_expression_variables(right, names);
+            collect_program_expression_variables(left, names);
+            collect_program_expression_variables(right, names);
         }
-        TypedLoad { pointer, .. } => collect_c_expression_variables(pointer, names),
+        TypedLoad { pointer, .. } => collect_program_expression_variables(pointer, names),
         Value(_) | FunctionAddress(_) => {}
     }
 }
@@ -1417,7 +1426,7 @@ fn reject_address_escaped_measure(
 /// escapes, before the back-edge bundle is built. A store through that
 /// pointer, here or inside a callee, could change the component without a
 /// ranked update, so the declaration is refused rather than proved.
-pub(super) fn c_reject_address_escaped_loop_measures(
+pub(super) fn program_reject_address_escaped_loop_measures(
     function_name: &str,
     measures: &[RankingComponent],
     addressed: &BTreeSet<String>,
@@ -1435,7 +1444,7 @@ fn reject_address_escaped_expression_measure(
     addressed: &BTreeSet<String>,
 ) -> Result<(), TerminationError> {
     let mut variables = BTreeSet::new();
-    collect_c_expression_variables(measure, &mut variables);
+    collect_program_expression_variables(measure, &mut variables);
     for variable in variables {
         reject_address_escaped_measure(function_name, &variable, addressed)?;
     }
@@ -1454,7 +1463,7 @@ struct MeasureReads {
 
 impl MeasureReads {
     /// The first C read, by spelling, for a refusal that names it.
-    fn first_c_read(&self) -> Option<String> {
+    fn first_program_read(&self) -> Option<String> {
         self.variables
             .iter()
             .next()
@@ -1489,7 +1498,7 @@ fn reject_address_escaped_ranking_component(
             let mut reads = MeasureReads::default();
             (
                 source,
-                collect_spec_c_variables(SpecNode::Expression(expression), &mut reads)
+                collect_spec_program_variables(SpecNode::Expression(expression), &mut reads)
                     .map(|()| reads),
             )
         }
@@ -1497,7 +1506,8 @@ fn reject_address_escaped_ranking_component(
             let mut reads = MeasureReads::default();
             (
                 source,
-                collect_spec_c_variables(SpecNode::Integer(expression), &mut reads).map(|()| reads),
+                collect_spec_program_variables(SpecNode::Integer(expression), &mut reads)
+                    .map(|()| reads),
             )
         }
     };
@@ -1509,7 +1519,7 @@ fn reject_address_escaped_ranking_component(
         ))
     })?;
     if reads.model
-        && let Some(read) = reads.first_c_read()
+        && let Some(read) = reads.first_program_read()
     {
         return Err(error(format!(
             "the `decreases` component `{source}` in `{function_name}` reads a resource binder's \
@@ -1540,7 +1550,7 @@ type UncollectedForm = &'static str;
 ///
 /// Work is linear in the expression, which is the declared component; nothing
 /// ambient is scanned.
-fn collect_spec_c_variables(
+fn collect_spec_program_variables(
     root: SpecNode<'_>,
     reads: &mut MeasureReads,
 ) -> Result<(), UncollectedForm> {
@@ -1550,7 +1560,7 @@ fn collect_spec_c_variables(
                 charge_termination_work(1);
                 match expression {
                     SpecExpression::ProgramExpression(expression) => {
-                        collect_c_expression_variables(expression, &mut reads.variables);
+                        collect_program_expression_variables(expression, &mut reads.variables);
                     }
                     SpecExpression::MemoryLoad { .. } => reads.memory = true,
                     SpecExpression::Value(_)
@@ -1639,7 +1649,7 @@ fn statement_calls(statement: &ProgramStatement, calls: &mut BTreeSet<String>) {
 
 /// The functions `function`'s body calls by name: the call graph of a body a
 /// typed frontend lowered itself, which has no C syntax to read calls from.
-pub fn c_function_callees(function: &ProgramFunction) -> BTreeSet<String> {
+pub fn program_function_callees(function: &ProgramFunction) -> BTreeSet<String> {
     let mut calls = BTreeSet::new();
     statement_calls(&function.source_body, &mut calls);
     calls
@@ -2304,7 +2314,7 @@ pub(super) struct RankingMeasureReader<'a> {
 /// the memory's content at that state. Its loadability is still returned as
 /// an obligation, so the value a proof reasons about is one the program could
 /// observe. A volatile read is refused, since it is not a function of state.
-pub(super) fn c_ranking_measure_term(
+pub(super) fn ranking_measure_term(
     component: &RankingComponent,
     state: &ExecutionState,
     reader: &mut RankingMeasureReader<'_>,
@@ -2317,7 +2327,7 @@ pub(super) fn c_ranking_measure_term(
         // declaration rather than of the assignment order that produced the
         // state.
         RankingComponent::ProgramExpression(expression) => {
-            c_ranking_measure_term_unfolded(expression, state, reader)
+            ranking_measure_term_unfolded(expression, state, reader)
                 .map(RankingMachineTerm::folded_measure_value)
         }
         RankingComponent::Pure { expression, .. } => {
@@ -2437,7 +2447,7 @@ fn mixed_ranking_carrier_message(component: &RankingComponent) -> String {
         "the `decreases` component `{}` read in different carriers at the two states (a machine \
          int32, uint32, int64, or uint64, or a mathematical Integer), so its two values cannot be ranked \
          against each other",
-        c_ranking_measure_display(component)
+        ranking_measure_display(component)
     )
 }
 
@@ -2636,7 +2646,7 @@ impl RankingMachineTerm {
 }
 
 /// The value of one memory read inside a measure, at `state`.
-fn c_ranking_measure_read(
+fn ranking_measure_read(
     expression: &ProgramExpression,
     state: &ExecutionState,
     reader: &mut RankingMeasureReader<'_>,
@@ -2647,13 +2657,14 @@ fn c_ranking_measure_read(
     ) {
         return Err("a termination measure may not read a volatile object".into());
     }
-    let paths = evaluate_c_expression_paths(state, expression, reader.assumptions, reader.budget)
-        .map_err(|error| {
-        format!(
-            "could not evaluate a termination measure's read: it stopped at {}",
-            error.describe()
-        )
-    })?;
+    let paths =
+        evaluate_program_expression_paths(state, expression, reader.assumptions, reader.budget)
+            .map_err(|error| {
+                format!(
+                    "could not evaluate a termination measure's read: it stopped at {}",
+                    error.describe()
+                )
+            })?;
     let [path] = paths.as_slice() else {
         return Err(
             "a termination measure's read must have exactly one value at this state".into(),
@@ -2673,7 +2684,7 @@ fn c_ranking_measure_read(
     Ok(value)
 }
 
-fn c_ranking_measure_term_unfolded(
+fn ranking_measure_term_unfolded(
     expression: &ProgramExpression,
     state: &ExecutionState,
     reader: &mut RankingMeasureReader<'_>,
@@ -2689,8 +2700,8 @@ fn c_ranking_measure_term_unfolded(
         reader: &mut RankingMeasureReader<'_>,
         operations: (Operation, Operation, Operation, Operation),
     ) -> Result<RankingMachineTerm, String> {
-        let left = c_ranking_measure_term_unfolded(left, state, reader)?;
-        let right = c_ranking_measure_term_unfolded(right, state, reader)?;
+        let left = ranking_measure_term_unfolded(left, state, reader)?;
+        let right = ranking_measure_term_unfolded(right, state, reader)?;
         let machine_type = RankingMachineTerm::common_type(&left, &right);
         let operation = match machine_type {
             Int32 => operations.0,
@@ -2712,8 +2723,8 @@ fn c_ranking_measure_term_unfolded(
         reader: &mut RankingMeasureReader<'_>,
         operations: (Operation, Operation),
     ) -> Result<RankingMachineTerm, String> {
-        let left = c_ranking_measure_term_unfolded(left, state, reader)?;
-        let right = c_ranking_measure_term_unfolded(right, state, reader)?;
+        let left = ranking_measure_term_unfolded(left, state, reader)?;
+        let right = ranking_measure_term_unfolded(right, state, reader)?;
         let operation = match left.machine_type {
             Int32 => operations.0,
             UInt32 => operations.1,
@@ -2749,7 +2760,7 @@ fn c_ranking_measure_term_unfolded(
             target_type: ProgramType::Int32 | ProgramType::UInt8,
             ..
         } => {
-            let value = c_ranking_measure_term_unfolded(expression, state, reader)?;
+            let value = ranking_measure_term_unfolded(expression, state, reader)?;
             Ok(RankingMachineTerm {
                 machine_type: Int32,
                 term: value.convert(Int32),
@@ -2765,7 +2776,7 @@ fn c_ranking_measure_term_unfolded(
                 ProgramType::Int64 => Int64,
                 _ => UInt64,
             };
-            let value = c_ranking_measure_term_unfolded(expression, state, reader)?;
+            let value = ranking_measure_term_unfolded(expression, state, reader)?;
             Ok(RankingMachineTerm {
                 machine_type,
                 term: value.convert(machine_type),
@@ -2780,9 +2791,9 @@ fn c_ranking_measure_term_unfolded(
             then_branch,
             else_branch,
         } => {
-            let (condition, value) = c_ranking_measure_condition_term(condition, state, reader)?;
-            let then_value = c_ranking_measure_term_unfolded(then_branch, state, reader)?;
-            let else_value = c_ranking_measure_term_unfolded(else_branch, state, reader)?;
+            let (condition, value) = ranking_measure_condition_term(condition, state, reader)?;
+            let then_value = ranking_measure_term_unfolded(then_branch, state, reader)?;
+            let else_value = ranking_measure_term_unfolded(else_branch, state, reader)?;
             let machine_type = RankingMachineTerm::common_type(&then_value, &else_value);
             if matches!(machine_type, UInt64 | Int64) {
                 return Err(
@@ -2869,7 +2880,7 @@ fn c_ranking_measure_term_unfolded(
                 MachineTerm::int64_remainder,
             ),
         ),
-        RustShiftLeft(..) | RustShiftRight(..) => c_ranking_measure_read(expression, state, reader),
+        RustShiftLeft(..) | RustShiftRight(..) => ranking_measure_read(expression, state, reader),
         ShiftLeft(left, right) => shift(
             left,
             right,
@@ -2924,7 +2935,7 @@ fn c_ranking_measure_term_unfolded(
             ),
         ),
         BitwiseNot(value) => {
-            let value = c_ranking_measure_term_unfolded(value, state, reader)?;
+            let value = ranking_measure_term_unfolded(value, state, reader)?;
             let machine_type = value.machine_type;
             let term = if matches!(machine_type, UInt64 | Int64) {
                 MachineTerm::uint64_bitwise_not(value.term)
@@ -2943,9 +2954,7 @@ fn c_ranking_measure_term_unfolded(
         | Subobject { .. } => Err(
             "termination measures may only use scalar int32 or unsigned integer expressions".into(),
         ),
-        Load(_) | TypedLoad { .. } | Index(_, _) => {
-            c_ranking_measure_read(expression, state, reader)
-        }
+        Load(_) | TypedLoad { .. } | Index(_, _) => ranking_measure_read(expression, state, reader),
         LessThan(_, _)
         | LessEqual(_, _)
         | GreaterThan(_, _)
@@ -2960,7 +2969,7 @@ fn c_ranking_measure_term_unfolded(
     }
 }
 
-fn c_ranking_measure_condition_term(
+fn ranking_measure_condition_term(
     expression: &ProgramExpression,
     state: &ExecutionState,
     reader: &mut RankingMeasureReader<'_>,
@@ -2984,8 +2993,8 @@ fn c_ranking_measure_condition_term(
         reader: &mut RankingMeasureReader<'_>,
         relation: Relation,
     ) -> Result<ConditionTerm, String> {
-        let left = c_ranking_measure_term_unfolded(left, state, reader)?;
-        let right = c_ranking_measure_term_unfolded(right, state, reader)?;
+        let left = ranking_measure_term_unfolded(left, state, reader)?;
+        let right = ranking_measure_term_unfolded(right, state, reader)?;
         let machine_type = RankingMachineTerm::common_type(&left, &right);
         let (left, right) = (left.convert(machine_type), right.convert(machine_type));
         Ok(match (machine_type, relation) {
@@ -3027,14 +3036,14 @@ fn c_ranking_measure_condition_term(
         Equal(left, right) => Ok((compare(left, right, state, reader, Relation::Equal)?, true)),
         NotEqual(left, right) => Ok((compare(left, right, state, reader, Relation::Equal)?, false)),
         Not(inner) => {
-            let (condition, value) = c_ranking_measure_condition_term(inner, state, reader)?;
+            let (condition, value) = ranking_measure_condition_term(inner, state, reader)?;
             Ok((condition, !value))
         }
         And(_, _) | Or(_, _) => {
             Err("compound boolean conditions are not atomic ranking measure conditions".into())
         }
         _ => {
-            let value = c_ranking_measure_term_unfolded(expression, state, reader)?;
+            let value = ranking_measure_term_unfolded(expression, state, reader)?;
             Ok((
                 if matches!(value.machine_type, UInt64 | Int64) {
                     ConditionTerm::uint64_equal(value.term, MachineTerm::uint64_constant(0))
@@ -3063,7 +3072,7 @@ fn c_ranking_measure_condition_term(
 ///
 /// Work is the declared measure, and the evaluation it needs; nothing
 /// ambient is scanned.
-pub(super) fn c_function_recursion_anchor(
+pub(super) fn program_function_recursion_anchor(
     function: &ProgramFunction,
     entry_state: &ExecutionState,
     assumptions: &PureFactContext,
@@ -3111,11 +3120,11 @@ pub(super) fn c_function_recursion_anchor(
     let measure = components
         .iter()
         .map(|component| {
-            c_ranking_measure_term(component, entry_state, &mut reader).map_err(|error| {
+            ranking_measure_term(component, entry_state, &mut reader).map_err(|error| {
                 format!(
                     "the `decreases` measure `{}` of `{}` could not be read at its own entry \
                      state: {error}",
-                    c_ranking_measure_display(component),
+                    ranking_measure_display(component),
                     function.name()
                 )
             })
@@ -3172,7 +3181,7 @@ pub(super) fn collect_recursion_descent_obligations(
         return Err(format!(
             "`{callee}`'s `decreases` measure `{}` has {} components, but `{}`'s has {}; the \
              members of a recursive component must declare measures of one shape",
-            c_ranking_measures_display(components),
+            ranking_measures_display(components),
             components.len(),
             anchor.function(),
             anchor.measure().len()
@@ -3186,11 +3195,11 @@ pub(super) fn collect_recursion_descent_obligations(
     let called = components
         .iter()
         .map(|component| {
-            c_ranking_measure_term(component, state, &mut reader).map_err(|error| {
+            ranking_measure_term(component, state, &mut reader).map_err(|error| {
                 format!(
                     "the `decreases` measure `{}` of `{callee}` could not be read at the recursive \
                      call: {error}",
-                    c_ranking_measure_display(component)
+                    ranking_measure_display(component)
                 )
             })
         })
@@ -3218,7 +3227,7 @@ pub(super) fn collect_recursion_descent_obligations(
                 .with_introductions(LoweringIntroductions::new())
                 .with_context(format!(
                     "{context}: `{}` is nonnegative at the recursive call",
-                    c_ranking_measure_display(component)
+                    ranking_measure_display(component)
                 )),
         );
     }
@@ -3231,7 +3240,7 @@ pub(super) fn collect_recursion_descent_obligations(
         .with_introductions(LoweringIntroductions::new())
         .with_context(format!(
             "{context}: `{}` decreases at the recursive call",
-            c_ranking_measures_display(components)
+            ranking_measures_display(components)
         )),
     );
     Ok(obligations)
@@ -3276,7 +3285,7 @@ pub(super) fn ranking_lexicographic_decrease_proposition(
 }
 
 /// The display form of one `decreases` component, for bundle member contexts.
-pub(super) fn c_ranking_measure_display(measure: &RankingComponent) -> String {
+pub(super) fn ranking_measure_display(measure: &RankingComponent) -> String {
     match measure {
         RankingComponent::ProgramExpression(expression) => termination_measure_display(expression),
         // A pure component is shown as it was declared: its lowered form is a
@@ -3288,14 +3297,14 @@ pub(super) fn c_ranking_measure_display(measure: &RankingComponent) -> String {
 }
 
 /// The display form of a whole `decreases` clause.
-pub(super) fn c_ranking_measures_display(measures: &[RankingComponent]) -> String {
-    join_measure_components(measures.iter().map(c_ranking_measure_display))
+pub(super) fn ranking_measures_display(measures: &[RankingComponent]) -> String {
+    join_measure_components(measures.iter().map(ranking_measure_display))
 }
 
 /// The identity spelling of one `decreases` component: what a pure
 /// component's written source is built from and compared with (see
 /// [`termination_measure_key`]).
-pub(super) fn c_ranking_measure_key(measure: &RankingComponent) -> String {
+pub(super) fn ranking_measure_key(measure: &RankingComponent) -> String {
     match measure {
         RankingComponent::ProgramExpression(expression) => termination_measure_key(expression),
         RankingComponent::Pure { source, .. } | RankingComponent::PureInteger { source, .. } => {
@@ -4470,7 +4479,7 @@ fn termination_call_graph<'a>(
 ///
 /// * the certified function's own contract interface carries the measure.
 ///   The plan is untrusted and names only a spelling; the interface is what
-///   [`crate::kernel::c_execution_environment_with_recursion_anchor`] reads
+///   [`crate::kernel::program_execution_environment_with_recursion_anchor`] reads
 ///   to build the anchor, and the certified [`ProgramFunction`] here is the one the
 ///   rule was issued for, so a measure present here is a measure that was
 ///   anchored. A plan claiming a measure the interface does not carry is a
@@ -4739,14 +4748,14 @@ fn self_call_loop_indices(
 /// callee outside its own recursive cycle. The members of a cycle share a
 /// height.
 ///
-/// The result is untrusted. [`c_verified_function_termination_rules`] checks
+/// The result is untrusted. [`program_verified_function_termination_rules`] checks
 /// at every call site that the callee is not above its caller, and treats
 /// every call between equal heights as a recursive edge that a declared
 /// measure must rank, so a wrong height can only refuse a function or fail
 /// the check; it cannot certify one. This is Tarjan's algorithm with an
 /// explicit stack, so a call chain as deep as the project is long costs heap
 /// and not machine stack. Work is linear in the nodes and their call edges.
-pub fn c_termination_height_plan(
+pub fn program_termination_height_plan(
     partial_rules: &[VerifiedFunctionRule],
     inline_bodies: &[&ProgramFunction],
 ) -> BTreeMap<String, usize> {
@@ -4918,7 +4927,7 @@ pub struct TerminationVerdicts {
 /// rules and returns the independently usable subset proved to terminate.
 ///
 /// The judgment is local descent. `heights` is an untrusted proposal, as
-/// [`c_termination_height_plan`] makes one: every call must reach a callee
+/// [`program_termination_height_plan`] makes one: every call must reach a callee
 /// that is not above its caller, a strictly lower callee must already have
 /// evidence, and a callee at the caller's own height is a recursive edge that
 /// the caller's declared measure must rank. Soundness is one induction on the
@@ -4941,7 +4950,7 @@ pub struct TerminationVerdicts {
 /// a pointer may assume, so a function that requires one of these admits an
 /// execution of its pointer calls that never returns, and receives no
 /// evidence whatever its callees do.
-pub fn c_verified_function_termination_rules(
+pub fn program_verified_function_termination_rules(
     partial_rules: &[VerifiedFunctionRule],
     plan_entries: &[FunctionTerminationPlan],
     verified_loop_rules: &BTreeMap<String, Vec<VerifiedLoopRule>>,
@@ -5449,9 +5458,9 @@ mod address_escape_tests {
             access_class: None,
             source: ExpressionLoadSource::none(),
         };
-        assert!(c_expression_mentions_variable(&child, "p"));
+        assert!(program_expression_mentions_variable(&child, "p"));
         for name in ["identity", "value", "left_model", "right_model"] {
-            assert!(!c_expression_mentions_variable(&child, name));
+            assert!(!program_expression_mentions_variable(&child, name));
         }
     }
 
@@ -5908,10 +5917,7 @@ mod ranking_member_tests {
         let loadable = obligations
             .iter()
             .filter(|obligation| {
-                matches!(
-                    obligation.proposition(),
-                    Proposition::CMemoryLoadable { .. }
-                )
+                matches!(obligation.proposition(), Proposition::MemoryLoadable { .. })
             })
             .count();
         assert_eq!(loadable, 0, "logical ranking terms grant no validity");
@@ -6185,8 +6191,8 @@ mod local_descent_tests {
     /// A loop the proof summarized: it carries an invariant, so execution
     /// never ran it to its exit and only a measure can rank it.
     fn summarized_loop(condition: u32) -> ProgramStatement {
-        crate::kernel::c_while(
-            crate::kernel::c_int32_literal(condition),
+        crate::kernel::program_while(
+            crate::kernel::program_expression::int32_literal(condition),
             vec![Proposition::ConditionIs(
                 ConditionTerm::Constant(true),
                 true,
@@ -6202,7 +6208,7 @@ mod local_descent_tests {
         for callee in callees {
             body = ProgramStatement::seq(
                 Arc::new(body),
-                Arc::new(crate::kernel::c_call(*callee, Vec::new())),
+                Arc::new(crate::kernel::program_call(*callee, Vec::new())),
             );
         }
         for _ in 0..loops {
@@ -6223,7 +6229,7 @@ mod local_descent_tests {
         heights: &BTreeMap<String, usize>,
         assumed: &[&str],
     ) -> Result<TerminationVerdicts, TerminationError> {
-        c_verified_function_termination_rules(
+        program_verified_function_termination_rules(
             rules,
             plans,
             &BTreeMap::new(),
@@ -6260,7 +6266,7 @@ mod local_descent_tests {
             rule("pong", &["ping", "leaf"], 0),
         ];
         assert_eq!(
-            c_termination_height_plan(&rules, &[]),
+            program_termination_height_plan(&rules, &[]),
             heights(&[
                 ("leaf", 0),
                 ("middle", 1),
@@ -6313,7 +6319,7 @@ mod local_descent_tests {
             rule("pong", &["ping"], 0),
             rule("bystander", &[], 0),
         ];
-        let plan = c_termination_height_plan(&rules, &[]);
+        let plan = program_termination_height_plan(&rules, &[]);
         let verdicts = check(&rules, &[], &plan, &[]).expect("the plan checks");
         assert_eq!(terminating(&verdicts), BTreeSet::from(["bystander"]));
         assert!(matches!(
@@ -6331,7 +6337,7 @@ mod local_descent_tests {
     #[test]
     fn a_callee_outside_the_run_terminates_only_when_assumed() {
         let rules = [rule("caller", &["outside"], 0)];
-        let plan = c_termination_height_plan(&rules, &[]);
+        let plan = program_termination_height_plan(&rules, &[]);
         let refused = check(&rules, &[], &plan, &[]).expect("the plan checks");
         assert_eq!(
             refused.refusals["caller"],
@@ -6350,8 +6356,8 @@ mod local_descent_tests {
             rule("spins", &[], 1),
             rule("idle", &[], 0),
         ];
-        let plan = c_termination_height_plan(&rules, &[]);
-        let verdicts = c_verified_function_termination_rules(
+        let plan = program_termination_height_plan(&rules, &[]);
+        let verdicts = program_verified_function_termination_rules(
             &rules,
             &[],
             &BTreeMap::new(),
@@ -6385,16 +6391,16 @@ mod local_descent_tests {
     fn a_refused_cycle_member_withdraws_the_measured_member_that_calls_it() {
         // `void NAME(int32 n) { if (n > 0) { CALLEE(n - 1); } LOOPS }`
         let countdown = |name: &str, callee: &str, loops: usize| {
-            let mut body = crate::kernel::c_if(
-                crate::kernel::c_greater_than(
-                    crate::kernel::c_variable("n"),
-                    crate::kernel::c_int32_literal(0),
+            let mut body = crate::kernel::program_if(
+                crate::kernel::program_expression::greater_than(
+                    crate::kernel::program_expression::variable("n"),
+                    crate::kernel::program_expression::int32_literal(0),
                 ),
-                crate::kernel::c_call(
+                crate::kernel::program_call(
                     callee,
-                    vec![crate::kernel::c_subtract(
-                        crate::kernel::c_variable("n"),
-                        crate::kernel::c_int32_literal(1),
+                    vec![crate::kernel::program_expression::subtract(
+                        crate::kernel::program_expression::variable("n"),
+                        crate::kernel::program_expression::int32_literal(1),
                     )],
                 ),
                 ProgramStatement::Skip,
@@ -6410,7 +6416,7 @@ mod local_descent_tests {
                 function: ProgramFunction::new(
                     ProgramType::Void,
                     name,
-                    vec![crate::kernel::c_parameter("n", ProgramType::Int32)],
+                    vec![crate::kernel::program_parameter("n", ProgramType::Int32)],
                     body,
                 ),
             }
@@ -6423,7 +6429,7 @@ mod local_descent_tests {
         // Both visiting orders: the refused member sorts first, then last.
         for (sound, spins) in [("ping", "a_spins"), ("ping", "z_spins")] {
             let rules = [countdown(sound, spins, 0), countdown(spins, sound, 1)];
-            let plan = c_termination_height_plan(&rules, &[]);
+            let plan = program_termination_height_plan(&rules, &[]);
             let verdicts = check(&rules, &[measured(sound), measured(spins)], &plan, &[])
                 .expect("both recursive edges descend");
             assert!(terminating(&verdicts).is_empty(), "{verdicts:?}");
@@ -6442,15 +6448,15 @@ mod local_descent_tests {
 
     #[test]
     fn checked_frontier_measure_needs_no_plan_but_does_not_cover_other_loops() {
-        let source_loop = crate::kernel::c_while(
-            crate::kernel::c_int32_literal(1),
+        let source_loop = crate::kernel::program_while(
+            crate::kernel::program_expression::int32_literal(1),
             Vec::new(),
             ProgramStatement::Skip,
         );
         let body = ProgramStatement::seq(Arc::new(source_loop.clone()), Arc::new(source_loop));
         let ranking = |value| {
             LoopTerminationMeasure::Ranking(vec![RankingMeasureKey::ProgramExpression(
-                crate::kernel::c_int32_literal(value),
+                crate::kernel::program_expression::int32_literal(value),
             )])
         };
         let certified = BTreeMap::from([(0, ranking(1))]);
@@ -6479,8 +6485,8 @@ mod local_descent_tests {
     #[test]
     fn loop_lookup_numbers_loops_inside_try_catch_as_the_check_does() {
         let spin = |condition: u32| {
-            crate::kernel::c_while(
-                crate::kernel::c_int32_literal(condition),
+            crate::kernel::program_while(
+                crate::kernel::program_expression::int32_literal(condition),
                 Vec::new(),
                 ProgramStatement::Skip,
             )
@@ -6533,7 +6539,7 @@ mod local_descent_tests {
         for callee in callees {
             body = ProgramStatement::seq(
                 Arc::new(body),
-                Arc::new(crate::kernel::c_call(*callee, Vec::new())),
+                Arc::new(crate::kernel::program_call(*callee, Vec::new())),
             );
         }
         for taken in takes {
@@ -6542,7 +6548,7 @@ mod local_descent_tests {
                 Arc::new(ProgramStatement::Assign {
                     source: Default::default(),
                     name: "slot".to_string(),
-                    expression: crate::kernel::c_function_address(*taken),
+                    expression: crate::kernel::program_expression::function_address(*taken),
                 }),
             );
         }
@@ -6550,9 +6556,9 @@ mod local_descent_tests {
             Some(object) => {
                 body = ProgramStatement::seq(
                     Arc::new(body),
-                    Arc::new(crate::kernel::c_call(object, Vec::new())),
+                    Arc::new(crate::kernel::program_call(object, Vec::new())),
                 );
-                vec![crate::kernel::c_parameter(
+                vec![crate::kernel::program_parameter(
                     object,
                     ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
                 )]
@@ -6578,7 +6584,7 @@ mod local_descent_tests {
             pointer_rule("sort", &[], Some("callback"), &[]),
             pointer_rule("compare", &[], None, &[]),
         ];
-        let plan = c_termination_height_plan(&rules, &[]);
+        let plan = program_termination_height_plan(&rules, &[]);
         let verdicts = check(&rules, &[], &plan, &[]).expect("the plan checks");
         assert_eq!(
             terminating(&verdicts),
@@ -6596,7 +6602,7 @@ mod local_descent_tests {
             pointer_rule("spin", &["apply"], None, &["spin"]),
             pointer_rule("apply", &[], Some("callback"), &[]),
         ];
-        let plan = c_termination_height_plan(&rules, &[]);
+        let plan = program_termination_height_plan(&rules, &[]);
         let verdicts = check(&rules, &[], &plan, &[]).expect("the plan checks");
         assert!(terminating(&verdicts).is_empty(), "{verdicts:?}");
         assert_eq!(
@@ -6627,7 +6633,7 @@ mod local_descent_tests {
             pointer_rule("handler", &["dispatch"], None, &[]),
             pointer_rule("bystander", &[], None, &[]),
         ];
-        let plan = c_termination_height_plan(&rules, &[]);
+        let plan = program_termination_height_plan(&rules, &[]);
         let verdicts = check(&rules, &[], &plan, &[]).expect("the plan checks");
         // Taking an address is not a call, so `install` itself returns.
         assert_eq!(
@@ -6653,7 +6659,7 @@ mod local_descent_tests {
             pointer_rule("apply", &[], Some("callback"), &[]),
             rule("loops", &[], 1),
         ];
-        let plan = c_termination_height_plan(&rules, &[]);
+        let plan = program_termination_height_plan(&rules, &[]);
         let verdicts = check(&rules, &[], &plan, &[]).expect("the plan checks");
         assert!(terminating(&verdicts).is_empty(), "{verdicts:?}");
         assert_eq!(verdicts.unsuitable_callbacks.len(), 1);
@@ -6684,7 +6690,7 @@ mod local_descent_tests {
                 )],
             });
         let rules = [pointer_rule("caller", &["applies"], None, &[]), applies];
-        let plan = c_termination_height_plan(&rules, &[]);
+        let plan = program_termination_height_plan(&rules, &[]);
         let contracts = BTreeSet::from(["Spinner".to_string()]);
 
         // A contract with no marker leaves the pointer call authorized.
@@ -6694,7 +6700,7 @@ mod local_descent_tests {
             BTreeSet::from(["applies", "caller"])
         );
 
-        let verdicts = c_verified_function_termination_rules(
+        let verdicts = program_verified_function_termination_rules(
             &rules,
             &[],
             &BTreeMap::new(),
@@ -6723,7 +6729,7 @@ mod local_descent_tests {
 
         // The marker on `applies` answers for exactly this call, so it is
         // needed, not redundant.
-        let verdicts = c_verified_function_termination_rules(
+        let verdicts = program_verified_function_termination_rules(
             &rules,
             &[],
             &BTreeMap::new(),
@@ -6760,15 +6766,15 @@ mod local_descent_tests {
                 ProgramType::Void,
                 name,
                 Vec::new(),
-                crate::kernel::c_while(
-                    crate::kernel::c_int32_literal(0),
+                crate::kernel::program_while(
+                    crate::kernel::program_expression::int32_literal(0),
                     Vec::new(),
                     ProgramStatement::Skip,
                 ),
             ),
         };
         let rules = [bare("counts"), rule("summarized", &[], 1)];
-        let plan = c_termination_height_plan(&rules, &[]);
+        let plan = program_termination_height_plan(&rules, &[]);
         let verdicts = check(&rules, &[], &plan, &[]).expect("the plan checks");
         assert_eq!(terminating(&verdicts), BTreeSet::from(["counts"]));
         assert_eq!(
@@ -6781,8 +6787,8 @@ mod local_descent_tests {
         let helper = bare("helper").function.with_inline_body();
         let caller = [rule("caller", &["helper"], 0)];
         let bodies = [&helper];
-        let plan = c_termination_height_plan(&caller, &bodies);
-        let verdicts = c_verified_function_termination_rules(
+        let plan = program_termination_height_plan(&caller, &bodies);
+        let verdicts = program_verified_function_termination_rules(
             &caller,
             &[],
             &BTreeMap::new(),
@@ -6805,8 +6811,8 @@ mod local_descent_tests {
     /// summarized, and a loop a rule names was.
     #[test]
     fn a_frame_checked_loop_is_granted_only_from_a_concrete_certification() {
-        let framed = crate::kernel::c_while_with_invariant_and_effect_checks(
-            crate::kernel::c_int32_literal(0),
+        let framed = crate::kernel::program_while_with_invariant_and_effect_checks(
+            crate::kernel::program_expression::int32_literal(0),
             Vec::new(),
             Vec::new(),
             vec![crate::kernel::LoopEffectCheck::new_with_origin(
@@ -6832,8 +6838,8 @@ mod local_descent_tests {
             )
             .is_empty()
         );
-        let explicit = crate::kernel::c_while_with_invariant_and_effect_checks(
-            crate::kernel::c_int32_literal(0),
+        let explicit = crate::kernel::program_while_with_invariant_and_effect_checks(
+            crate::kernel::program_expression::int32_literal(0),
             Vec::new(),
             Vec::new(),
             vec![crate::kernel::LoopEffectCheck::new_with_origin(
@@ -6855,8 +6861,8 @@ mod local_descent_tests {
     #[test]
     fn executed_loops_are_granted_only_when_the_bodies_agree() {
         let spin = |condition: u32| {
-            crate::kernel::c_while(
-                crate::kernel::c_int32_literal(condition),
+            crate::kernel::program_while(
+                crate::kernel::program_expression::int32_literal(condition),
                 Vec::new(),
                 ProgramStatement::Skip,
             )
@@ -6883,8 +6889,8 @@ mod local_descent_tests {
     /// not evidence that concrete execution ran every path to an exit.
     #[test]
     fn an_empty_checked_loop_rule_is_not_concrete_termination_evidence() {
-        let body = crate::kernel::c_while(
-            crate::kernel::c_int32_literal(1),
+        let body = crate::kernel::program_while(
+            crate::kernel::program_expression::int32_literal(1),
             Vec::new(),
             ProgramStatement::Skip,
         );
@@ -6899,7 +6905,7 @@ mod local_descent_tests {
     #[test]
     fn the_modeled_realloc_returns_without_being_assumed() {
         let rules = [rule("grows", &["realloc"], 0)];
-        let plan = c_termination_height_plan(&rules, &[]);
+        let plan = program_termination_height_plan(&rules, &[]);
         let verdicts = check(&rules, &[], &plan, &[]).expect("the plan checks");
         assert_eq!(terminating(&verdicts), BTreeSet::from(["grows"]));
         assert!(verdicts.refusals.is_empty());
@@ -6911,7 +6917,7 @@ mod local_descent_tests {
     #[test]
     fn an_unranked_loop_does_not_hide_the_loops_after_it() {
         let rules = [rule("two_loops", &[], 2)];
-        let plan = c_termination_height_plan(&rules, &[]);
+        let plan = program_termination_height_plan(&rules, &[]);
         let verdicts = check(&rules, &[], &plan, &[]).expect("the plan checks");
         assert_eq!(
             verdicts.refusals["two_loops"],
@@ -6954,7 +6960,7 @@ mod local_descent_tests {
                 }
             })
             .collect::<Vec<_>>();
-        let plan = c_termination_height_plan(&rules, &[]);
+        let plan = program_termination_height_plan(&rules, &[]);
         assert_eq!(plan[&name(0)], LENGTH - 1);
         assert_eq!(plan[&name(LENGTH - 1)], 0);
         let verdicts = check(&rules, &[], &plan, &[]).expect("the plan checks");
@@ -6973,9 +6979,13 @@ mod local_descent_tests {
     ) -> VerifiedFunctionRule {
         let mut body = ProgramStatement::Skip;
         for callee in std::iter::once(&name).chain(callees) {
-            let call = crate::kernel::c_call(*callee, Vec::new());
+            let call = crate::kernel::program_call(*callee, Vec::new());
             let call = if in_loop {
-                crate::kernel::c_while(crate::kernel::c_int32_literal(1), Vec::new(), call)
+                crate::kernel::program_while(
+                    crate::kernel::program_expression::int32_literal(1),
+                    Vec::new(),
+                    call,
+                )
             } else {
                 call
             };
@@ -7044,7 +7054,7 @@ mod local_descent_tests {
     #[test]
     fn a_tactic_recursing_through_its_applications_needs_a_measure() {
         let rules = [tactic_rule("convert", false)];
-        let plan = c_termination_height_plan(&rules, &[]);
+        let plan = program_termination_height_plan(&rules, &[]);
         let verdicts = check(&rules, &[], &plan, &[]).expect("the plan checks");
         assert!(terminating(&verdicts).is_empty());
         assert!(matches!(
@@ -7058,7 +7068,7 @@ mod local_descent_tests {
     #[test]
     fn a_tactic_recursing_through_its_applications_refuses_a_parameter_measure() {
         let rules = [tactic_rule("convert", false)];
-        let plan = c_termination_height_plan(&rules, &[]);
+        let plan = program_termination_height_plan(&rules, &[]);
         let error = check(
             &rules,
             &[FunctionTerminationPlan {
@@ -7083,7 +7093,7 @@ mod local_descent_tests {
     #[test]
     fn a_tactic_recursing_through_its_applications_is_ranked_by_an_expression() {
         let rules = [tactic_rule("convert", true)];
-        let plan = c_termination_height_plan(&rules, &[]);
+        let plan = program_termination_height_plan(&rules, &[]);
         let verdicts = check(&rules, &[expression_plan("convert")], &plan, &[])
             .expect("the expression measure ranks the recorded recursion");
         assert_eq!(terminating(&verdicts), BTreeSet::from(["convert"]));
@@ -7095,7 +7105,7 @@ mod local_descent_tests {
     #[test]
     fn an_expression_measure_ranks_direct_self_recursion() {
         let rules = [recursive_rule("drain", &[], true, false, false)];
-        let plan = c_termination_height_plan(&rules, &[]);
+        let plan = program_termination_height_plan(&rules, &[]);
         let verdicts =
             check(&rules, &[expression_plan("drain")], &plan, &[]).expect("the plan checks");
         assert_eq!(terminating(&verdicts), BTreeSet::from(["drain"]));
@@ -7107,7 +7117,7 @@ mod local_descent_tests {
     #[test]
     fn an_expression_plan_without_a_declared_measure_is_rejected() {
         let rules = [recursive_rule("drain", &[], false, false, false)];
-        let plan = c_termination_height_plan(&rules, &[]);
+        let plan = program_termination_height_plan(&rules, &[]);
         let error = check(&rules, &[expression_plan("drain")], &plan, &[])
             .expect_err("an undeclared measure must not check");
         assert!(
@@ -7175,7 +7185,7 @@ mod local_descent_tests {
     #[test]
     fn an_expression_measure_ranks_an_inline_bodied_helper_with_a_rule() {
         let rules = [recursive_rule("drain", &[], true, true, false)];
-        let plan = c_termination_height_plan(&rules, &[]);
+        let plan = program_termination_height_plan(&rules, &[]);
         let verdicts = check(&rules, &[expression_plan("drain")], &plan, &[])
             .expect("a ruled inline helper is ranked like any function");
         assert_eq!(terminating(&verdicts), BTreeSet::from(["drain"]));
@@ -7199,7 +7209,7 @@ mod local_descent_tests {
         let body = ProgramStatement::seq(
             Arc::new(ProgramStatement::Skip),
             Arc::new(ProgramStatement::While {
-                condition: crate::kernel::c_int32_literal(1),
+                condition: crate::kernel::program_expression::int32_literal(1),
                 invariant: vec![Proposition::ConditionIs(
                     ConditionTerm::Constant(true),
                     true,
@@ -7212,7 +7222,7 @@ mod local_descent_tests {
                 do_while: false,
                 backedge_target: None,
                 natural_exit_target: None,
-                body: Box::new(crate::kernel::c_call(name, Vec::new())),
+                body: Box::new(crate::kernel::program_call(name, Vec::new())),
             }),
         );
         VerifiedFunctionRule {
@@ -7277,12 +7287,12 @@ mod local_descent_tests {
         plans: &[FunctionTerminationPlan],
         loop_rules: &BTreeMap<String, Vec<VerifiedLoopRule>>,
     ) -> Result<TerminationVerdicts, TerminationError> {
-        c_verified_function_termination_rules(
+        program_verified_function_termination_rules(
             rules,
             plans,
             loop_rules,
             &[],
-            &c_termination_height_plan(rules, &[]),
+            &program_termination_height_plan(rules, &[]),
             &BTreeSet::new(),
             &BTreeSet::new(),
             &BTreeSet::new(),
@@ -7366,7 +7376,7 @@ mod local_descent_tests {
     #[test]
     fn a_parameter_measure_is_unaffected_by_a_declared_expression_measure() {
         let rules = [recursive_rule("drain", &[], false, false, false)];
-        let plan = c_termination_height_plan(&rules, &[]);
+        let plan = program_termination_height_plan(&rules, &[]);
         let numeric = FunctionTerminationPlan {
             function_name: "drain".to_string(),
             recursive_measure: Some(FunctionTerminationMeasure::NumericParameter(0)),
@@ -7418,7 +7428,7 @@ mod termination_scaling_tests {
     fn calls_body(callees: &[String]) -> ProgramStatement {
         match callees {
             [] => ProgramStatement::Skip,
-            [only] => crate::kernel::c_call(only.clone(), Vec::new()),
+            [only] => crate::kernel::program_call(only.clone(), Vec::new()),
             _ => {
                 let (left, right) = callees.split_at(callees.len() / 2);
                 ProgramStatement::seq(Arc::new(calls_body(left)), Arc::new(calls_body(right)))
@@ -7462,10 +7472,10 @@ mod termination_scaling_tests {
         inspect: impl FnOnce(&BTreeMap<String, usize>, &TerminationVerdicts),
     ) -> Sample {
         let (heights, plan_work) = crate::instrumentation::measure_deterministic_work(|| {
-            c_termination_height_plan(rules, &[])
+            program_termination_height_plan(rules, &[])
         });
         let (verdicts, check_work) = crate::instrumentation::measure_deterministic_work(|| {
-            c_verified_function_termination_rules(
+            program_verified_function_termination_rules(
                 rules,
                 &[],
                 &BTreeMap::new(),
@@ -7540,7 +7550,7 @@ mod checked_callee_certification_tests {
                 ProgramType::Void,
                 "caller",
                 vec![],
-                crate::kernel::c_call("callee", vec![]),
+                crate::kernel::program_call("callee", vec![]),
             ),
             loop_semantics: LoopSemantics::ApplyVerifiedRules,
             applied_tactics: Default::default(),

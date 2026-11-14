@@ -19,7 +19,7 @@ fn a_symbolic_global_array_entry_costs_the_same_whatever_its_length() {
             crate::kernel::eval::clear_load_variable_registry();
             let function = function_with_global_array(element_type, length);
             let (entry, work) = crate::instrumentation::measure_deterministic_work(|| {
-                initialize_c_function_globals(&ExecutionState::new(), &function)
+                initialize_program_function_globals(&ExecutionState::new(), &function)
             });
             (length, work, entry.memory().cells.representation_len())
         });
@@ -67,9 +67,9 @@ fn a_symbolic_global_array_names_only_the_elements_a_function_reads() {
             let registered = crate::kernel::eval::load_variable_registry_len;
             let before_entry = registered();
             let (entry, entry_work) = crate::instrumentation::measure_deterministic_work(|| {
-                let entry = initialize_c_function_globals(&ExecutionState::new(), &function);
+                let entry = initialize_program_function_globals(&ExecutionState::new(), &function);
                 let mut variables = std::collections::BTreeSet::new();
-                crate::kernel::reasoning::collect_c_state_bitvector_variables(
+                crate::kernel::reasoning::collect_execution_state_bitvector_variables(
                     &entry,
                     &mut variables,
                 );
@@ -137,7 +137,8 @@ fn an_initialized_array_at_startup_costs_the_same_whatever_its_length() {
         let _session = crate::kernel::VerificationSession::enter();
         let function = function_with_initialized_arrays(length, false);
         let (startup, startup_work) = crate::instrumentation::measure_deterministic_work(|| {
-            initialize_c_program_storage([function.clone()]).expect("no run limit is installed")
+            initialize_program_program_storage([function.clone()])
+                .expect("no run limit is installed")
         });
         let buf = Memory::global_pointer("buf");
         let counts = Memory::static_pointer("main", "counts");
@@ -196,7 +197,7 @@ fn a_constant_array_at_function_entry_costs_the_same_whatever_its_length() {
         let _session = crate::kernel::VerificationSession::enter();
         let function = function_with_initialized_arrays(length, true);
         let (entry, work) = crate::instrumentation::measure_deterministic_work(|| {
-            initialize_c_function_globals(&ExecutionState::new(), &function)
+            initialize_program_function_globals(&ExecutionState::new(), &function)
         });
         let buf = Memory::global_pointer("buf");
         assert_eq!(
@@ -229,7 +230,8 @@ fn an_aggregate_array_at_startup_costs_the_same_whatever_its_length() {
         let _session = crate::kernel::VerificationSession::enter();
         let function = function_with_aggregate_arrays(length, 0, false);
         let (startup, startup_work) = crate::instrumentation::measure_deterministic_work(|| {
-            initialize_c_program_storage([function.clone()]).expect("no run limit is installed")
+            initialize_program_program_storage([function.clone()])
+                .expect("no run limit is installed")
         });
         let pool = Memory::global_pointer("pool");
         let slots = Memory::static_pointer("main", "slots");
@@ -298,7 +300,7 @@ fn a_symbolic_aggregate_array_at_function_entry_costs_the_same_whatever_its_leng
         let function = function_with_aggregate_arrays(length, 0, false);
         let registered = crate::kernel::eval::load_variable_registry_len();
         let (entry, entry_work) = crate::instrumentation::measure_deterministic_work(|| {
-            initialize_c_function_globals(&ExecutionState::new(), &function)
+            initialize_program_function_globals(&ExecutionState::new(), &function)
         });
         let pool = Memory::global_pointer("pool");
         let (loads, load_work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -350,7 +352,7 @@ fn a_symbolic_global_array_declared_from_another_base_costs_the_same_whatever_it
         ));
         let function = function_with_global_array(ProgramType::Int32, length);
         let (entry, work) = crate::instrumentation::measure_deterministic_work(|| {
-            initialize_c_function_globals(&ExecutionState::new(), &function)
+            initialize_program_function_globals(&ExecutionState::new(), &function)
         });
         (length, work, entry.memory().cells.representation_len())
     });

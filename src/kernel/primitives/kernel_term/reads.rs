@@ -48,7 +48,7 @@ impl KernelTerm {
             return None;
         }
         Some(Self::intern(
-            KernelType::C(format.c_type()),
+            KernelType::Program(format.c_type()),
             KernelTermNode::MemoryLoad {
                 memory: memory.clone(),
                 address: address.clone(),
@@ -92,7 +92,7 @@ mod tests {
     fn scalar_reads_retain_exact_descriptors_and_survive_registry_reset() {
         let _session = VerificationSession::enter();
         let address = Pointer::symbolic(Variable(993100));
-        let memory = intern_c_memory(Memory::new().store(
+        let memory = intern_memory(Memory::new().store(
             address.clone(),
             ProgramValue::Int32(MachineTerm::constant(7)),
         ));
@@ -129,8 +129,8 @@ mod tests {
     fn scalar_read_identity_distinguishes_snapshot_address_and_kind() {
         let _session = VerificationSession::enter();
         let address = Pointer::symbolic(Variable(993110));
-        let memory = intern_c_memory(Memory::new());
-        let written = intern_c_memory(Memory::new().store(
+        let memory = intern_memory(Memory::new());
+        let written = intern_memory(Memory::new().store(
             address.clone(),
             ProgramValue::Int32(MachineTerm::constant(7)),
         ));
@@ -158,7 +158,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::Int32;
         let raw = MachineTerm::MemoryLoad(
-            intern_c_memory(Memory::new()),
+            intern_memory(Memory::new()),
             Box::new(Pointer::symbolic(Variable(993120))),
             LoadKind::Int32,
         );
@@ -177,7 +177,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::UInt32;
         let raw = MachineTerm::MemoryLoad(
-            intern_c_memory(Memory::new()),
+            intern_memory(Memory::new()),
             Box::new(Pointer::symbolic(Variable(993126))),
             LoadKind::UInt32,
         );
@@ -202,7 +202,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::Int32;
         let raw = MachineTerm::MemoryLoad(
-            intern_c_memory(Memory::new()),
+            intern_memory(Memory::new()),
             Box::new(Pointer::symbolic(Variable(993125))),
             LoadKind::Int32,
         );
@@ -223,8 +223,8 @@ mod tests {
     fn nested_scalar_reads_retain_both_snapshots_without_registered_names() {
         let _session = VerificationSession::enter();
         let p = Pointer::symbolic(Variable(993140));
-        let before = intern_c_memory(Memory::new());
-        let after = intern_c_memory(
+        let before = intern_memory(Memory::new());
+        let after = intern_memory(
             Memory::new().store(p.clone(), ProgramValue::Int32(MachineTerm::constant(1))),
         );
         let nested = |inner: SharedMemory, outer: SharedMemory, kind| {
@@ -265,10 +265,10 @@ mod tests {
     fn nested_read_identity_does_not_compare_snapshot_contents_across_arenas() {
         let first = {
             let _session = VerificationSession::enter();
-            intern_c_memory(Memory::new())
+            intern_memory(Memory::new())
         };
         let _session = VerificationSession::enter();
-        let second = intern_c_memory(Memory::new());
+        let second = intern_memory(Memory::new());
         assert_ne!(first.arena_id(), second.arena_id());
         assert_eq!(first, second); // Same contents, distinct snapshot identities.
         let read = |memory| {
@@ -326,7 +326,7 @@ mod tests {
             (MachineIntegerType::Int64, LoadKind::Bits64, true),
         ] {
             let read = MachineTerm::MemoryLoad(
-                intern_c_memory(Memory::new()),
+                intern_memory(Memory::new()),
                 Box::new(Pointer::symbolic(Variable(993160))),
                 kind,
             );
@@ -368,7 +368,7 @@ mod tests {
     fn forming_an_outer_read_does_not_fold_the_index_read_to_its_stored_value() {
         let _session = VerificationSession::enter();
         let p = Pointer::symbolic(Variable(993162));
-        let memory = intern_c_memory(
+        let memory = intern_memory(
             Memory::new().store(p.clone(), ProgramValue::Int32(MachineTerm::constant(3))),
         );
         let index = crate::kernel::eval::canonical_form_of_load(memory.clone(), p, LoadKind::Int32);
@@ -437,7 +437,7 @@ mod tests {
             ),
         };
         let native = MachineTerm::MemoryLoad(
-            intern_c_memory(Memory::new()),
+            intern_memory(Memory::new()),
             Box::new(address),
             LoadKind::Int32,
         );

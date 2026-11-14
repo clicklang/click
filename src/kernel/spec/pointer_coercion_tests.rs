@@ -54,7 +54,7 @@ fn implicit_void_pointer_coercions_preserve_complete_views_in_both_evaluators() 
             pointee_constant: false,
             explicit_qualification: false,
         };
-        let paths = evaluate_c_expression_paths(
+        let paths = evaluate_program_expression_paths(
             &state,
             &native,
             &context,
@@ -128,7 +128,7 @@ fn implicit_void_pointer_coercion_rejects_function_pointers() {
         pointee_constant: false,
         explicit_qualification: false,
     };
-    let paths = evaluate_c_expression_paths(
+    let paths = evaluate_program_expression_paths(
         &state,
         &native,
         &context,
@@ -162,7 +162,7 @@ fn native_pointer_word_round_trip_does_not_promote_declared_class_to_evidence() 
             source.clone()
         };
         let context = PureFactContext::new();
-        let word = crate::kernel::eval::cast_c_value_to_type(
+        let word = crate::kernel::eval::cast_program_value_to_type(
             ProgramValue::Pointer(source),
             ProgramType::UInt64,
             crate::kernel::eval::IntegerConversion::Modular,
@@ -179,7 +179,7 @@ fn native_pointer_word_round_trip_does_not_promote_declared_class_to_evidence() 
             pointee_constant: false,
             explicit_qualification: false,
         };
-        let paths = evaluate_c_expression_paths(
+        let paths = evaluate_program_expression_paths(
             &ExecutionState::new(),
             &expression,
             &context,

@@ -1366,9 +1366,9 @@ pub(in crate::surface) fn contract_segment_referenced_names(
     segment: &ContractSegment,
 ) -> BTreeSet<String> {
     let mut names = BTreeSet::new();
-    collect_c_expression_referenced_names(&segment.base, &mut names);
-    collect_c_expression_referenced_names(&segment.start, &mut names);
-    collect_c_expression_referenced_names(&segment.end, &mut names);
+    collect_program_expression_referenced_names(&segment.base, &mut names);
+    collect_program_expression_referenced_names(&segment.start, &mut names);
+    collect_program_expression_referenced_names(&segment.end, &mut names);
     names
 }
 
@@ -1403,7 +1403,7 @@ pub(in crate::surface) fn collect_resource_subject_referenced_names(
     }
 }
 
-pub(in crate::surface) fn collect_c_expression_referenced_names(
+pub(in crate::surface) fn collect_program_expression_referenced_names(
     expression: &ProgramExpression,
     names: &mut BTreeSet<String>,
 ) {
@@ -1415,16 +1415,16 @@ pub(in crate::surface) fn collect_c_expression_referenced_names(
             names.insert(name.clone());
         }
         ProgramExpression::Cast { expression, .. } | ProgramExpression::FloatNegate(expression) => {
-            collect_c_expression_referenced_names(expression, names);
+            collect_program_expression_referenced_names(expression, names);
         }
         ProgramExpression::Conditional {
             condition,
             then_branch,
             else_branch,
         } => {
-            collect_c_expression_referenced_names(condition, names);
-            collect_c_expression_referenced_names(then_branch, names);
-            collect_c_expression_referenced_names(else_branch, names);
+            collect_program_expression_referenced_names(condition, names);
+            collect_program_expression_referenced_names(then_branch, names);
+            collect_program_expression_referenced_names(else_branch, names);
         }
         ProgramExpression::FloatClassification { expression, .. }
         | ProgramExpression::EnumField {
@@ -1433,32 +1433,32 @@ pub(in crate::surface) fn collect_c_expression_referenced_names(
         | ProgramExpression::EnumIs {
             value: expression, ..
         } => {
-            collect_c_expression_referenced_names(expression, names);
+            collect_program_expression_referenced_names(expression, names);
         }
         ProgramExpression::EnumConstruct { fields, .. } => {
             for field in fields {
-                collect_c_expression_referenced_names(field, names);
+                collect_program_expression_referenced_names(field, names);
             }
         }
         ProgramExpression::AddressOf(expression)
         | ProgramExpression::CheckedObjectAddress(expression)
         | ProgramExpression::Not(expression)
         | ProgramExpression::Load(expression) => {
-            collect_c_expression_referenced_names(expression, names);
+            collect_program_expression_referenced_names(expression, names);
         }
         ProgramExpression::PointerOffsetBytes { pointer, .. }
         | ProgramExpression::Subobject { pointer, .. } => {
-            collect_c_expression_referenced_names(pointer, names);
+            collect_program_expression_referenced_names(pointer, names);
         }
         ProgramExpression::TypedLoad { pointer, .. } => {
-            collect_c_expression_referenced_names(pointer, names);
+            collect_program_expression_referenced_names(pointer, names);
         }
         crate::kernel::binary_c_expression!(left, right) => {
-            collect_c_expression_referenced_names(left, names);
-            collect_c_expression_referenced_names(right, names);
+            collect_program_expression_referenced_names(left, names);
+            collect_program_expression_referenced_names(right, names);
         }
         ProgramExpression::BitwiseNot(expression) => {
-            collect_c_expression_referenced_names(expression, names);
+            collect_program_expression_referenced_names(expression, names);
         }
     }
 }

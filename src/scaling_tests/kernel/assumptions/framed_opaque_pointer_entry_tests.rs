@@ -11,7 +11,7 @@ fn an_opaque_candidate_does_not_walk_its_unusable_memory_frame() {
         let base = Memory::new();
         let raw = Pointer::symbolic(Variable(995_080));
         let previous = PointerValue::new(
-            Pointer::loaded_value(&intern_c_memory_ref(&base), &field),
+            Pointer::loaded_value(&intern_memory_ref(&base), &field),
             ProgramType::Int32Pointer,
         )
         .with_address(raw.clone());
@@ -30,7 +30,7 @@ fn an_opaque_candidate_does_not_walk_its_unusable_memory_frame() {
             );
         }
         let current = PointerValue::new(
-            Pointer::loaded_value(&intern_c_memory_ref(&memory), &field),
+            Pointer::loaded_value(&intern_memory_ref(&memory), &field),
             ProgramType::Int32Pointer,
         )
         .with_address(raw);
@@ -95,7 +95,7 @@ fn framed_pointer_refusals_do_not_scan_same_address_sources() {
                 ProgramValue::UInt64(MachineTerm::uint64_constant(index)),
             );
             let source = PointerValue::new(
-                Pointer::loaded_value(&intern_c_memory_ref(&memory), &field),
+                Pointer::loaded_value(&intern_memory_ref(&memory), &field),
                 ProgramType::Int32Pointer,
             )
             .with_address(raw.clone());
@@ -105,7 +105,7 @@ fn framed_pointer_refusals_do_not_scan_same_address_sources() {
             );
         }
         let current = PointerValue::new(
-            Pointer::loaded_value(&intern_c_memory_ref(&Memory::new()), &field),
+            Pointer::loaded_value(&intern_memory_ref(&Memory::new()), &field),
             ProgramType::Int32Pointer,
         )
         .with_address(raw);

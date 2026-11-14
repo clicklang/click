@@ -26,25 +26,25 @@ use crate::kernel::{
     SpecAlgebraicExpression, SpecExpression, SpecMemory, SpecPredicateArgument, SpecProposition,
     SpecResource, StatementOutcome, SymbolicExecution, Term, TerminationRefusal,
     TerminationVerdicts, Theorem, UnsuitableCallback, Variable, VerifiedLoopRule,
-    VerifiedPureTheorem as KernelVerifiedPureTheorem, abstract_c_state_for_join,
-    assume_universally_quantified_pure_implication, c_assign, c_condition_fact_memories,
-    c_contract_refinement_context, c_declare, c_do_while_preservation_contexts,
-    c_do_while_with_invariant_and_effect_checks, c_function,
-    c_function_contract_claims_from_completions, c_function_contract_entry_state,
-    c_function_contract_refinement_arguments, c_function_contract_refinement_context,
-    c_function_entry_state, c_function_termination_plan, c_if, c_loop_invariants_hold_at_entry,
-    c_loop_preservation_contexts, c_pointer_offsets_proven_equal_for_effect,
-    c_resources_directly_match, c_seq, c_termination_height_plan, c_typed_pointer_value,
-    c_unverified_function_contract_claims_diagnostic, c_verified_function_rule,
-    c_verified_function_termination_rules, c_while_with_invariant_and_effect_checks, int32,
-    prove_c_condition_fact_transport,
-    prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure_theorems,
-    prove_c_function_contract_refinement, prove_int32_le_antisymmetric,
-    prove_owned_resource_quantity_nonnegative, prove_symbolic_c_condition_evaluation,
-    prove_symbolic_c_loop_exit_with_proven_phases_using_budget,
-    prove_symbolic_c_statement_verification_paths_with_environment_and_loop_rule_using_budget,
-    prove_universally_quantified_pure_implication,
-    prove_universally_quantified_pure_implication_by_int32_rewrites,
+    VerifiedPureTheorem as KernelVerifiedPureTheorem, abstract_execution_state_for_join,
+    assume_universally_quantified_pure_implication, contract_refinement_context, int32,
+    loop_invariants_hold_at_entry, loop_preservation_contexts, program_assign,
+    program_condition_fact_memories, program_declare, program_do_while_preservation_contexts,
+    program_do_while_with_invariant_and_effect_checks, program_function,
+    program_function_contract_claims_from_completions, program_function_contract_entry_state,
+    program_function_contract_refinement_arguments, program_function_contract_refinement_context,
+    program_function_entry_state, program_function_termination_plan, program_if,
+    program_pointer_offsets_proven_equal_for_effect, program_seq, program_termination_height_plan,
+    program_unverified_function_contract_claims_diagnostic, program_verified_function_rule,
+    program_verified_function_termination_rules, program_while_with_invariant_and_effect_checks,
+    prove_int32_le_antisymmetric, prove_owned_resource_quantity_nonnegative,
+    prove_program_condition_fact_transport,
+    prove_program_function_contract_execution_paths_with_checked_artifacts_and_pure_theorems,
+    prove_program_function_contract_refinement,
+    prove_symbolic_execution_statement_verification_paths_with_environment_and_loop_rule_using_budget,
+    prove_symbolic_loop_exit_with_proven_phases_using_budget,
+    prove_symbolic_program_condition_evaluation, prove_universally_quantified_pure_implication,
+    prove_universally_quantified_pure_implication_by_int32_rewrites, resources_directly_match,
     substitute_int32_variable_in_proposition,
 };
 use crate::languages::c::syntax::{self, C0Expression, C0Type, LongRank};
@@ -52,8 +52,10 @@ use crate::persistent::PersistentMap;
 
 fn contract_expression_function_address(expression: &ContractExpression) -> Option<&str> {
     match expression {
-        ContractExpression::CFragment(ProgramExpression::FunctionAddress(name)) => Some(name),
-        ContractExpression::CFragment(ProgramExpression::AddressOf(expression)) => {
+        ContractExpression::ProgramExpression(ProgramExpression::FunctionAddress(name)) => {
+            Some(name)
+        }
+        ContractExpression::ProgramExpression(ProgramExpression::AddressOf(expression)) => {
             match expression.as_ref() {
                 ProgramExpression::Variable(name) => Some(name),
                 _ => None,
@@ -97,13 +99,13 @@ pub use crate::source::SourceContainer;
 use checking::*;
 pub(crate) use expansion::click_import_sites_in_container;
 pub use expansion::{
-    CProofClaim, ClaimExpansion, ClaimLocationError, ClaimLocationScope, ClickImportSite,
+    ClaimExpansion, ClaimLocationError, ClaimLocationScope, ClickImportSite, ContractProofClaim,
     ProofSourceIndex, SelectedTacticExpansion, SmartTacticCandidate, SmartTacticSelectionError,
-    SmartTacticSourceSite, SourceClaim, SourcePosition, c0_select_smart_tactic,
-    c0_smart_tactic_source_sites, c0_tactic_source_position, claim_at,
-    click_declaration_source_position, click_import_sites, expand_c0_claim_source,
-    expand_c0_claim_source_by_label, expand_c0_prepared_claim_source_by_label,
-    expand_c0_prepared_tactic_source_at, expand_c0_tactic_source_at, expand_c0_tactics_source_at,
+    SmartTacticSourceSite, SourceClaim, SourcePosition, c_select_smart_tactic,
+    c_smart_tactic_source_sites, c_tactic_source_position, claim_at,
+    click_declaration_source_position, click_import_sites, expand_c_claim_source,
+    expand_c_claim_source_by_label, expand_c_prepared_claim_source_by_label,
+    expand_c_prepared_tactic_source_at, expand_c_tactic_source_at, expand_c_tactics_source_at,
     expand_claim_by_label, expand_program_prepared_claim_source_by_label,
     expand_program_prepared_tactic_source_at, expand_project_claim_source_by_label,
     expand_project_tactic_source_at, expand_project_tactics_source_at, expand_tactics_source_at,
@@ -144,19 +146,18 @@ use validation::{
     proposition_contains_old_expression, proposition_contains_resource_count,
     standard_library_theorem_definitions, standard_library_theorem_index,
 };
-pub(in crate::surface) use verification::CSourceContext;
+pub(in crate::surface) use verification::ProgramSourceContext;
 pub(in crate::surface) use verification::*;
 pub use verification::{
-    C0IncrementalSelection, CProjectSummary, CProofArtifactIdentity, ModelAssumption, ModelFamily,
-    ProgramInputs, SorryAdmission, SummarizedVerification, c0_external_dependencies,
-    c0_function_names, c0_incremental_selection, c0_prepared_external_dependencies,
-    c0_project_function_names, parse, project_selected_proof_names, project_summary,
-    take_sorry_admissions, verify_c0_prepared_project, verify_c0_prepared_sources,
-    verify_c0_prepared_sources_functions, verify_c0_project, verify_c0_sources,
-    verify_c0_sources_at, verify_c0_sources_functions, verify_click_theorems,
-    verify_program_prepared_project, verify_project_at, verify_project_functions,
-    verify_project_theorem, verify_project_with_summary, verify_sources_at,
-    verify_standard_library, with_allow_sorry,
+    IncrementalSelection, ModelAssumption, ModelFamily, ProgramInputs, ProjectVerificationSummary,
+    ProofArtifactIdentity, SorryAdmission, SummarizedVerification, c_external_dependencies,
+    c_function_names, c_incremental_selection, c_prepared_external_dependencies,
+    c_project_function_names, parse, project_selected_proof_names, project_summary,
+    take_sorry_admissions, verify_c_prepared_project, verify_c_prepared_sources,
+    verify_c_prepared_sources_functions, verify_c_project, verify_c_sources, verify_c_sources_at,
+    verify_c_sources_functions, verify_click_theorems, verify_program_prepared_project,
+    verify_project_at, verify_project_functions, verify_project_theorem,
+    verify_project_with_summary, verify_sources_at, verify_standard_library, with_allow_sorry,
 };
 mod proof_trace;
 pub use proof::{without_implicit_solve, without_implicit_solve_for_claim};
@@ -487,12 +488,14 @@ pub(crate) fn rust_library_iterator(iterator: &syntax::RustLoopIterator) -> Opti
 pub(crate) fn rust_library_iterator_type(iterator: &syntax::RustLoopIterator) -> Option<ClickType> {
     rust_library_iterator(iterator)?;
     if let syntax::RustIteratorKind::SliceLibrary(name) = iterator.kind {
-        return generics::primitive_instance_value_type(&ClickType::C(C0Type::Parameter(name)));
+        return generics::primitive_instance_value_type(&ClickType::Program(C0Type::Parameter(
+            name,
+        )));
     }
     Some(ClickType::Algebraic(AlgebraicTypeApplication {
         rigid: false,
         name: "ChunksExact".to_string(),
-        arguments: vec![ClickType::C(C0Type::UInt8)],
+        arguments: vec![ClickType::Program(C0Type::UInt8)],
     }))
 }
 
@@ -548,7 +551,7 @@ pub(crate) fn rust_iterator_method(
             ));
         }
     };
-    Ok(ContractExpression::CFragment(expression))
+    Ok(ContractExpression::ProgramExpression(expression))
 }
 
 /// The Rust spelling of the importer's iterator state variable `name` in a
@@ -575,7 +578,9 @@ pub(crate) fn rust_iterator_spelling(
             .iter()
             .find_map(|accessor| {
                 (rust_iterator_method(iterator, accessor).ok()?
-                    == ContractExpression::CFragment(ProgramExpression::Variable(name.to_string())))
+                    == ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                        name.to_string(),
+                    )))
                 .then(|| {
                     if current == Some(index) {
                         format!("iter.{accessor}")
@@ -605,7 +610,7 @@ pub(crate) fn loop_iterator_bindings(
     if let Some(local) = rust_library_iterator(&iterator) {
         return vec![(
             "iter".to_string(),
-            ContractExpression::CFragment(ProgramExpression::Variable(local.to_string())),
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(local.to_string())),
         )];
     }
     rust_iterator_accessors(iterator.kind)
@@ -1067,7 +1072,7 @@ pub enum ClickType {
     /// instantiated to concrete types at applications, or rigid arbitrary
     /// types when checking theorem declarations, before crossing into Kernel Click.
     Parameter(String),
-    C(C0Type),
+    Program(C0Type),
     /// A C pointer type whose generic payload retains its declared struct.
     CObjectPointer {
         c_type: C0Type,
@@ -1083,7 +1088,7 @@ impl ClickType {
         match self {
             Self::Resource => None,
             Self::Parameter(_) => None,
-            Self::C(c_type) | Self::CObjectPointer { c_type, .. } => Some(*c_type),
+            Self::Program(c_type) | Self::CObjectPointer { c_type, .. } => Some(*c_type),
             Self::Integer => None,
             Self::Algebraic(_) => None,
         }
@@ -1129,7 +1134,7 @@ impl AlgebraicTypeApplication {
     pub(in crate::surface) fn of_enum_c_type(c_type: C0Type) -> Option<Self> {
         // A Rust `Vec<u32>` is the library's primitive `Vec<uint32>`.
         if let Some(ClickType::Algebraic(application)) =
-            generics::primitive_instance_value_type(&ClickType::C(c_type))
+            generics::primitive_instance_value_type(&ClickType::Program(c_type))
         {
             return Some(application);
         }
@@ -1142,9 +1147,11 @@ impl AlgebraicTypeApplication {
                     .arguments
                     .iter()
                     .map(|argument| match argument {
-                        crate::kernel::AlgebraicValueType::C(c_type) => Some(ClickType::C(
-                            crate::surface::generics::c0_type_from_kernel(*c_type),
-                        )),
+                        crate::kernel::AlgebraicValueType::Program(c_type) => {
+                            Some(ClickType::Program(
+                                crate::surface::generics::c0_type_from_kernel(*c_type),
+                            ))
+                        }
                         // A crate enum payload, `Result<u32, ParseError>`'s
                         // error, is that enum's `spec enum`.
                         crate::kernel::AlgebraicValueType::Algebraic { name, arguments }
@@ -1681,7 +1688,7 @@ pub struct FunctionBlock {
     /// Empty when the block was built without a source (tests), in which
     /// case each requirement counts as its own clause.
     requirement_source_clauses: Vec<usize>,
-    decreases: Option<CFunctionDecrease>,
+    decreases: Option<FunctionDecrease>,
     /// Rust arguments pass through MIR temporaries. Rank numeric recursion
     /// at the checked call rather than by the C body's direct `n - K` shape.
     /// This is selected by the source language, not signature presentation.
@@ -1752,11 +1759,11 @@ fn source_positions(sources: impl Iterator<Item = Option<usize>>) -> Vec<(usize,
 ///
 /// Decision D6: the clause is one expression, and functions and resources
 /// share one namespace, so the parser cannot tell which kind of measure it
-/// read. It stores [`CFunctionDecrease::Unresolved`], and declared-resource
+/// read. It stores [`FunctionDecrease::Unresolved`], and declared-resource
 /// expansion — the pass that knows every declared resource and every contract
 /// binder — classifies it into one of the resolved forms below.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CFunctionDecrease {
+pub enum FunctionDecrease {
     /// The parsed expression, before resolution decides what it names.
     Unresolved(ContractExpression),
     Numeric(ContractExpression),
@@ -2457,15 +2464,17 @@ thread_local! {
 /// The specification `bool` literal `true` or `false`: a C `bool` value,
 /// exactly `1` or `0`.
 pub(crate) fn bool_literal(value: bool) -> ContractExpression {
-    ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::bool_constant(value)))
+    ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::bool_constant(
+        value,
+    )))
 }
 
 /// The value of a `bool` literal written as `true` or `false`.
 pub(crate) fn bool_literal_value(expression: &ContractExpression) -> Option<bool> {
     match expression {
-        ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::Bool(value))) => {
-            value.bool_constant_value()
-        }
+        ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Bool(
+            value,
+        ))) => value.bool_constant_value(),
         _ => None,
     }
 }
@@ -2831,7 +2840,7 @@ impl ClickProposition {
     }
 }
 
-pub(crate) fn collect_c_expression_variables(
+pub(crate) fn collect_program_expression_variables(
     expression: &ProgramExpression,
     names: &mut BTreeSet<String>,
 ) {
@@ -2843,7 +2852,7 @@ pub(crate) fn collect_c_expression_variables(
             names.insert(name.clone());
         }
         ProgramExpression::Cast { expression, .. } => {
-            collect_c_expression_variables(expression, names);
+            collect_program_expression_variables(expression, names);
         }
         ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }
@@ -2853,11 +2862,11 @@ pub(crate) fn collect_c_expression_variables(
         | ProgramExpression::EnumIs {
             value: expression, ..
         } => {
-            collect_c_expression_variables(expression, names);
+            collect_program_expression_variables(expression, names);
         }
         ProgramExpression::EnumConstruct { fields, .. } => {
             for field in fields {
-                collect_c_expression_variables(field, names);
+                collect_program_expression_variables(field, names);
             }
         }
         ProgramExpression::Conditional {
@@ -2865,9 +2874,9 @@ pub(crate) fn collect_c_expression_variables(
             then_branch,
             else_branch,
         } => {
-            collect_c_expression_variables(condition, names);
-            collect_c_expression_variables(then_branch, names);
-            collect_c_expression_variables(else_branch, names);
+            collect_program_expression_variables(condition, names);
+            collect_program_expression_variables(then_branch, names);
+            collect_program_expression_variables(else_branch, names);
         }
         ProgramExpression::AddressOf(inner)
         | ProgramExpression::CheckedObjectAddress(inner)
@@ -2877,11 +2886,11 @@ pub(crate) fn collect_c_expression_variables(
         | ProgramExpression::BitwiseNot(inner)
         | ProgramExpression::Load(inner)
         | ProgramExpression::TypedLoad { pointer: inner, .. } => {
-            collect_c_expression_variables(inner, names);
+            collect_program_expression_variables(inner, names);
         }
         crate::kernel::binary_c_expression!(left, right) => {
-            collect_c_expression_variables(left, names);
-            collect_c_expression_variables(right, names);
+            collect_program_expression_variables(left, names);
+            collect_program_expression_variables(right, names);
         }
     }
 }
@@ -2890,9 +2899,9 @@ fn collect_current_segment_variables(segment: &ContractSegment, names: &mut BTre
     if segment.state != ContractSegmentState::Current {
         return;
     }
-    collect_c_expression_variables(&segment.base, names);
-    collect_c_expression_variables(&segment.start, names);
-    collect_c_expression_variables(&segment.end, names);
+    collect_program_expression_variables(&segment.base, names);
+    collect_program_expression_variables(&segment.start, names);
+    collect_program_expression_variables(&segment.end, names);
 }
 
 fn collect_current_resource_clause_variables(
@@ -3020,12 +3029,12 @@ pub(crate) fn collect_current_contract_expression_variables(
             lowered: expression,
             ..
         }
-        | ContractExpression::CFragment(expression) => {
-            collect_c_expression_variables(expression, names);
+        | ContractExpression::ProgramExpression(expression) => {
+            collect_program_expression_variables(expression, names);
         }
         ContractExpression::Field { base, lowered, .. } => {
             collect_current_contract_expression_variables(base, names);
-            collect_c_expression_variables(lowered, names);
+            collect_program_expression_variables(lowered, names);
         }
         ContractExpression::ArrayIndex {
             base,
@@ -3037,7 +3046,7 @@ pub(crate) fn collect_current_contract_expression_variables(
             for index in indexes {
                 collect_current_contract_expression_variables(index, names);
             }
-            collect_c_expression_variables(lowered, names);
+            collect_program_expression_variables(lowered, names);
         }
         ContractExpression::Binding(name) => {
             names.insert(name.clone());
@@ -3231,7 +3240,7 @@ pub enum SurfaceTerm {
     /// it does not denote C pointer arithmetic or allocate C memory.
     SequenceConcat(Box<ContractExpression>, Box<ContractExpression>),
     /// A C expression fragment appearing inside Surface Click.
-    CFragment(ProgramExpression),
+    ProgramExpression(ProgramExpression),
     /// A C unary operation whose operand retains source and binding syntax.
     /// Scalar casts and typed loads may also wrap a pure or historical expression. `operand` is authoritative;
     /// in that case `lowered` retains the cast metadata with a placeholder, and
@@ -3394,13 +3403,13 @@ fn model_field_variable(value: &crate::kernel::AlgebraicValue) -> Option<crate::
             AlgebraicTermNode::Variable(variable) => Some(variable),
             _ => None,
         },
-        AlgebraicValue::C(ProgramValue::Parameter(term)) => match term.node {
+        AlgebraicValue::Program(ProgramValue::Parameter(term)) => match term.node {
             AlgebraicTermNode::Variable(variable) => Some(variable),
             _ => None,
         },
-        AlgebraicValue::C(crate::kernel::integer_c_value!(MachineTerm::Variable(variable))) => {
-            Some(*variable)
-        }
+        AlgebraicValue::Program(
+            crate::kernel::integer_c_value!(MachineTerm::Variable(variable)),
+        ) => Some(*variable),
         _ => None,
     }
 }
@@ -3723,8 +3732,8 @@ impl RecordedSnapshots {
                 let crate::kernel::Resource::Footprint(previous) = previous else {
                     unreachable!()
                 };
-                crate::kernel::intern_c_memory_ref(&previous.after)
-                    != crate::kernel::intern_c_memory_ref(&effect.before)
+                crate::kernel::intern_memory_ref(&previous.after)
+                    != crate::kernel::intern_memory_ref(&effect.before)
                     || !previous
                         .after_resources
                         .shares_storage_with(&effect.before_resources)
@@ -3759,7 +3768,7 @@ impl RecordedSnapshots {
         let before_state = self.get(&before).ok_or("missing footprint entry")?;
         let after_state = self.get(&after).ok_or("missing footprint exit")?;
         let memory_is = |a: &crate::kernel::Memory, b: &crate::kernel::Memory| {
-            crate::kernel::intern_c_memory_ref(a) == crate::kernel::intern_c_memory_ref(b)
+            crate::kernel::intern_memory_ref(a) == crate::kernel::intern_memory_ref(b)
         };
         let covered = if start == end {
             memory_is(before_state.memory(), after_state.memory())
@@ -3802,8 +3811,8 @@ impl RecordedSnapshots {
             end,
             end.checked_sub(1)
                 .and_then(|i| self.effect_log.get(i).cloned()),
-            crate::kernel::intern_c_memory_ref(before_state.memory()),
-            crate::kernel::intern_c_memory_ref(after_state.memory()),
+            crate::kernel::intern_memory_ref(before_state.memory()),
+            crate::kernel::intern_memory_ref(after_state.memory()),
         );
         if let Some(value) = self.footprint_values.lock().unwrap().get(&key) {
             return Ok(value.clone());
@@ -6707,7 +6716,7 @@ impl ProofMatch {
     /// The C local an execution-generated `match` splits on.
     pub(in crate::surface) fn scrutinee_name(&self) -> &str {
         match &self.scrutinee {
-            ContractExpression::CFragment(ProgramExpression::Variable(name)) => name,
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => name,
             _ => "",
         }
     }
@@ -7719,7 +7728,9 @@ fn field_projection(definition: &ClickFunctionDefinition) -> Option<crate::kerne
     let names = |expression: &ContractExpression| match expression {
         ContractExpression::Binding(name)
         | ContractExpression::AlgebraicVariable { name, .. }
-        | ContractExpression::CFragment(ProgramExpression::Variable(name)) => Some(name.clone()),
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+            Some(name.clone())
+        }
         _ => None,
     };
     let ContractExpression::AlgebraicMatch { scrutinee, arms } = definition.body()? else {
@@ -7870,7 +7881,7 @@ fn contract_expression_reads_memory(
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::Binding(_)
         | ContractExpression::CBinding(_)
-        | ContractExpression::CFragment(
+        | ContractExpression::ProgramExpression(
             ProgramExpression::Variable(_) | ProgramExpression::Value(_),
         ) => false,
         // `address(p)` of a name is that pointer value's integer
@@ -7890,7 +7901,7 @@ fn contract_expression_reads_memory(
         {
             contract_expression_reads_memory(operand, callees)
         }
-        ContractExpression::CFragment(ProgramExpression::Cast {
+        ContractExpression::ProgramExpression(ProgramExpression::Cast {
             expression,
             target_type: ProgramType::UInt64,
             ..
@@ -7907,7 +7918,7 @@ fn contract_expression_reads_memory(
         | ContractExpression::ResourceField(_)
         | ContractExpression::ResourceCount(_)
         | ContractExpression::ResourceWildcard
-        | ContractExpression::CFragment(_)
+        | ContractExpression::ProgramExpression(_)
         | ContractExpression::CUnary { .. }
         | ContractExpression::Field { .. }
         | ContractExpression::Index(_, _)
@@ -8176,7 +8187,7 @@ impl TheoremEnvironment {
 }
 
 #[derive(Clone, Eq, PartialEq)]
-pub struct VerifiedCTheorem {
+pub struct VerifiedProgramTheorem {
     pub source_path: String,
     /// Fixed-size identity of all selected compiler imports on which this
     /// theorem depends, when verification used the prepared-import route.
@@ -8185,13 +8196,13 @@ pub struct VerifiedCTheorem {
     /// and resource semantics under which this theorem was checked. `None`
     /// denotes a theorem assembled by a legacy internal path that has not yet
     /// crossed the shared verification boundary.
-    pub artifact_identity: Option<verification::CProofArtifactIdentity>,
+    pub artifact_identity: Option<verification::ProofArtifactIdentity>,
     /// The C implementation target this theorem was checked under. Set when
     /// the artifact crosses the shared verification boundary; a legacy
     /// internal path leaves the default target in place.
     pub target: crate::languages::c::target::CTarget,
     /// The CLI proof boundary under which this artifact was produced.
-    pub selection: Option<CProofSelection>,
+    pub selection: Option<ProofSelection>,
     /// Shared by every theorem one proof issued, like `proof_tactics`: the
     /// block carries the whole grouped proof, and a proof issues a theorem
     /// per path and claim.
@@ -8224,13 +8235,13 @@ pub struct VerifiedCTheorem {
 // Retained executions and proof states share large graphs. Formatting a
 // verification result (notably unwrap_err's unexpected-success panic) must
 // identify the artifact without recursively dumping those graphs.
-impl fmt::Debug for VerifiedCTheorem {
+impl fmt::Debug for VerifiedProgramTheorem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let claim = match &self.claim {
             VerifiedClaim::Ensure { index, .. } => ("ensures", *index),
             VerifiedClaim::ExceptionalEnsure { index, .. } => ("exceptional ensures", *index),
         };
-        f.debug_struct("VerifiedCTheorem")
+        f.debug_struct("VerifiedProgramTheorem")
             .field("source_path", &self.source_path)
             .field("function", &self.function_block.signature().name())
             .field("claim", &claim)
@@ -8241,7 +8252,7 @@ impl fmt::Debug for VerifiedCTheorem {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CProofSelection {
+pub struct ProofSelection {
     pub entry_module: Option<String>,
     pub selected_proofs: Vec<String>,
     pub assumed_theorems: Vec<String>,
@@ -8550,14 +8561,14 @@ fn current_timing_tactic() -> Option<TimingTacticContext> {
 }
 
 #[derive(Clone)]
-pub struct C0VerificationSession {
+pub struct ProgramVerificationSession {
     c_sources: Vec<(String, String)>,
     click_project: Option<ClickProject>,
     pub(crate) prepared_imports: Option<Vec<crate::languages::c::compiler_import::PreparedCImport>>,
     pub(crate) prepared_program_import: Option<crate::languages::PreparedProgram>,
     baseline_file: ClickFile,
     verified_function_environment: ExecutionEnvironment,
-    environment_identity: verification::CProofArtifactIdentity,
+    environment_identity: verification::ProofArtifactIdentity,
     /// The kernel generation `verified_function_environment` was built
     /// under. Its snapshots live in this thread's kernel tables, which the
     /// next fresh verification on the thread replaces.
@@ -9084,7 +9095,9 @@ impl FunctionBlock {
             .map(|(from, to)| {
                 (
                     from.clone(),
-                    ContractExpression::CFragment(crate::kernel::c_variable(to.clone())),
+                    ContractExpression::ProgramExpression(
+                        crate::kernel::program_expression::variable(to.clone()),
+                    ),
                 )
             })
             .collect::<BTreeMap<_, _>>();
@@ -9164,8 +9177,11 @@ impl FunctionBlock {
         }
         let mut alias = self.dispatch_alias(name);
         for (parameter, c_type) in alias.signature.parameters.iter_mut().zip(parameter_types) {
-            if matches!(parameter.click_type, ClickType::C(C0Type::Parameter(_))) {
-                parameter.click_type = ClickType::C(*c_type);
+            if matches!(
+                parameter.click_type,
+                ClickType::Program(C0Type::Parameter(_))
+            ) {
+                parameter.click_type = ClickType::Program(*c_type);
             }
         }
         if matches!(alias.signature.return_type, C0Type::Parameter(_)) {
@@ -9304,13 +9320,13 @@ impl FunctionBlock {
     }
 
     /// The label of `claim`.
-    pub(in crate::surface) fn claim_label(&self, claim: expansion::CProofClaim) -> String {
+    pub(in crate::surface) fn claim_label(&self, claim: expansion::ContractProofClaim) -> String {
         match claim {
-            expansion::CProofClaim::Ensure(index) => self.ensure_claim_label(index),
-            expansion::CProofClaim::ExceptionalEnsure(index) => {
+            expansion::ContractProofClaim::Ensure(index) => self.ensure_claim_label(index),
+            expansion::ContractProofClaim::ExceptionalEnsure(index) => {
                 self.exceptional_ensure_claim_label(index)
             }
-            expansion::CProofClaim::Grouped => self.contract_claim_label(),
+            expansion::ContractProofClaim::Grouped => self.contract_claim_label(),
         }
     }
 
@@ -9318,21 +9334,24 @@ impl FunctionBlock {
     /// when the block has one, then the first ensure or exceptional ensure
     /// with that label. A flattened aggregate clause's members share their
     /// clause's label; this selects the first, whose source proof they share.
-    pub(in crate::surface) fn claim_by_label(&self, label: &str) -> Option<expansion::CProofClaim> {
+    pub(in crate::surface) fn claim_by_label(
+        &self,
+        label: &str,
+    ) -> Option<expansion::ContractProofClaim> {
         // Every label of this block starts with its name and a dot.
         label
             .strip_prefix(self.signature.name())?
             .strip_prefix('.')?;
         if label == self.contract_claim_label() && self.covering_proof().is_some() {
-            return Some(expansion::CProofClaim::Grouped);
+            return Some(expansion::ContractProofClaim::Grouped);
         }
         (0..self.ensures.len())
             .find(|index| self.ensure_claim_label(*index) == label)
-            .map(expansion::CProofClaim::Ensure)
+            .map(expansion::ContractProofClaim::Ensure)
             .or_else(|| {
                 (0..self.exceptional_ensures.len())
                     .find(|index| self.exceptional_ensure_claim_label(*index) == label)
-                    .map(expansion::CProofClaim::ExceptionalEnsure)
+                    .map(expansion::ContractProofClaim::ExceptionalEnsure)
             })
     }
 
@@ -9348,7 +9367,7 @@ impl FunctionBlock {
         )
     }
 
-    pub fn decreases(&self) -> Option<&CFunctionDecrease> {
+    pub fn decreases(&self) -> Option<&FunctionDecrease> {
         self.decreases.as_ref()
     }
 
@@ -9546,7 +9565,7 @@ impl FunctionSignature {
                 c_type: self.return_type,
                 struct_name: struct_name.clone(),
             },
-            _ => ClickType::C(self.return_type),
+            _ => ClickType::Program(self.return_type),
         }
     }
 
@@ -9579,7 +9598,7 @@ impl FunctionSignature {
             use crate::kernel::AlgebraicValueType as V;
             match ty {
                 V::Parameter(_) => true,
-                V::C(crate::kernel::ProgramType::Parameter(name)) => abstract_type(*name),
+                V::Program(crate::kernel::ProgramType::Parameter(name)) => abstract_type(*name),
                 V::Algebraic { arguments, .. } => arguments.iter().any(abstract_value_type),
                 _ => false,
             }
@@ -9600,7 +9619,7 @@ impl FunctionParameter {
             ClickType::Parameter(_) => {
                 panic!("a generic Click parameter has no concrete C type")
             }
-            ClickType::C(c_type) | ClickType::CObjectPointer { c_type, .. } => *c_type,
+            ClickType::Program(c_type) | ClickType::CObjectPointer { c_type, .. } => *c_type,
             ClickType::Integer => panic!("a mathematical Integer parameter has no C type"),
             ClickType::Algebraic(_) => {
                 panic!("an algebraic Click parameter has no C type")
@@ -10063,7 +10082,7 @@ fn collect_unfold_tactic_names(tactics: &[ProofTactic], names: &mut Vec<String>)
     }
 }
 
-impl VerifiedCTheorem {
+impl VerifiedProgramTheorem {
     /// The concrete C implementation assumptions used by this verifier.
     /// Results are not claims of portability to other target profiles.
     pub fn target(&self) -> crate::languages::c::target::CTarget {

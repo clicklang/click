@@ -100,12 +100,12 @@ impl Parser {
     ) -> ShadowedLet {
         let (operand, machine_type) = match click_type {
             Some(ClickType::Integer) => (LocalOperand::Integer, None),
-            Some(ClickType::C(c_type))
+            Some(ClickType::Program(c_type))
                 if c_type.is_pointer() || matches!(c_type, C0Type::Float32 | C0Type::Float64) =>
             {
                 (LocalOperand::COnly, None)
             }
-            Some(ClickType::C(c_type)) => (LocalOperand::Machine, Some(*c_type)),
+            Some(ClickType::Program(c_type)) => (LocalOperand::Machine, Some(*c_type)),
             Some(_) => (LocalOperand::Unknown, None),
             None => match value {
                 Some(value) if self.integer_operand(value) => (LocalOperand::Integer, None),
@@ -165,7 +165,7 @@ impl Parser {
         match value {
             ContractExpression::Binding(name)
             | ContractExpression::CBinding(name)
-            | ContractExpression::CFragment(ProgramExpression::Variable(name))
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
                 if self.local_operand(&LocalOperands::new(), name).is_some() =>
             {
                 self.local_operand(&LocalOperands::new(), name) == Some(LocalOperand::COnly)
@@ -366,9 +366,9 @@ impl Parser {
             suffix: Some(suffix),
         };
         match literal.native_value(negative) {
-            Ok(fixed) => Ok(ContractExpression::CFragment(ProgramExpression::Value(
-                fixed,
-            ))),
+            Ok(fixed) => Ok(ContractExpression::ProgramExpression(
+                ProgramExpression::Value(fixed),
+            )),
             Err(_) => {
                 let (least, greatest) = suffix.range();
                 let spelling = self.machine_type_spelling(c_type);
@@ -442,7 +442,7 @@ impl Parser {
             // `c(name)` is the program's binding, never a Click Integer.
             ContractExpression::CBinding(_) => false,
             ContractExpression::Binding(name)
-            | ContractExpression::CFragment(ProgramExpression::Variable(name)) => {
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
                 match self.local_operand(scope, name) {
                     Some(operand) => operand == LocalOperand::Integer,
                     None => self.integer_leaf(expression),
@@ -461,7 +461,7 @@ impl Parser {
             }
             ContractExpression::CBinding(_) => false,
             ContractExpression::Binding(name)
-            | ContractExpression::CFragment(ProgramExpression::Variable(name)) => {
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
                 self.names.contains_any(NameKind::INTEGERS, name)
                     || crate::surface::is_loop_iterations_spelling(name)
                     || matches!(
@@ -543,14 +543,14 @@ impl Parser {
             }),
             ContractExpression::Binding(name)
             | ContractExpression::CBinding(name)
-            | ContractExpression::CFragment(ProgramExpression::Variable(name))
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
                 if self.local_operand(scope, name).is_some() =>
             {
                 self.local_operand(scope, name) == Some(LocalOperand::COnly)
             }
             ContractExpression::Binding(name)
             | ContractExpression::CBinding(name)
-            | ContractExpression::CFragment(ProgramExpression::Variable(name))
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
                 if matches!(
                     self.names.arm_binding_types.get(name),
                     Some(AlgebraicFieldType::C { c_type, .. }) if c_type.is_pointer()
@@ -573,7 +573,7 @@ impl Parser {
                 true
             }
             // An address, `&r->arr[0]`, or a value cast to a pointer type.
-            ContractExpression::CFragment(
+            ContractExpression::ProgramExpression(
                 ProgramExpression::AddressOf(_) | ProgramExpression::CheckedObjectAddress(_),
             )
             | ContractExpression::CUnary {
@@ -581,14 +581,16 @@ impl Parser {
                     ProgramExpression::AddressOf(_) | ProgramExpression::CheckedObjectAddress(_),
                 ..
             } => true,
-            ContractExpression::CFragment(ProgramExpression::Cast { target_type, .. })
+            ContractExpression::ProgramExpression(ProgramExpression::Cast {
+                target_type, ..
+            })
             | ContractExpression::CUnary {
                 lowered: ProgramExpression::Cast { target_type, .. },
                 ..
             } if target_type.is_pointer() => true,
             ContractExpression::Binding(name)
             | ContractExpression::CBinding(name)
-            | ContractExpression::CFragment(ProgramExpression::Variable(name)) => {
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
                 let c_only = |c_type: &C0Type| {
                     c_type.is_pointer() || matches!(c_type, C0Type::Float32 | C0Type::Float64)
                 };
@@ -599,7 +601,10 @@ impl Parser {
                         && !self.names.c_parameter_types.contains_key(name)
                         && self.current_result_c_type.as_ref().is_some_and(c_only))
             }
-            ContractExpression::CFragment(ProgramExpression::TypedLoad { value_type, .. })
+            ContractExpression::ProgramExpression(ProgramExpression::TypedLoad {
+                value_type,
+                ..
+            })
             | ContractExpression::CUnary {
                 lowered: ProgramExpression::TypedLoad { value_type, .. },
                 ..
@@ -611,7 +616,7 @@ impl Parser {
                 value_type.is_pointer()
                     || matches!(value_type, ProgramType::Float32 | ProgramType::Float64)
             }
-            ContractExpression::CFragment(cast @ ProgramExpression::Cast { .. })
+            ContractExpression::ProgramExpression(cast @ ProgramExpression::Cast { .. })
             | ContractExpression::CUnary {
                 lowered: cast @ ProgramExpression::Cast { .. },
                 ..
@@ -705,7 +710,7 @@ impl Parser {
             ContractExpression::IntegerLiteral(value) => ContractExpression::IntegerLiteral(value),
             ContractExpression::Binding(ref name)
             | ContractExpression::CBinding(ref name)
-            | ContractExpression::CFragment(ProgramExpression::Variable(ref name))
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(ref name))
                 if self.local_operand(scope, name) == Some(LocalOperand::Unknown) =>
             {
                 expression
@@ -753,7 +758,7 @@ impl Parser {
             ContractExpression::IntegerLiteral(_) => None,
             ContractExpression::Binding(name)
             | ContractExpression::CBinding(name)
-            | ContractExpression::CFragment(ProgramExpression::Variable(name))
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
                 if self.local_operand(scope, name).is_some() =>
             {
                 (self.local_operand(scope, name) == Some(LocalOperand::Machine))
@@ -778,7 +783,7 @@ impl Parser {
             } => self.machine_operand_type(inner),
             ContractExpression::Binding(name)
             | ContractExpression::CBinding(name)
-            | ContractExpression::CFragment(ProgramExpression::Variable(name)) => self
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => self
                 .names
                 .c_parameter_types
                 .get(name)
@@ -790,19 +795,18 @@ impl Parser {
                         .then_some(self.current_result_c_type)
                         .flatten()
                 }),
-            ContractExpression::CFragment(lowered) | ContractExpression::CUnary { lowered, .. } => {
-                match lowered {
-                    ProgramExpression::Value(value) => Some(
-                        crate::surface::generics::c0_type_from_kernel(value.c_type()),
-                    ),
-                    ProgramExpression::TypedLoad { value_type, .. }
-                    | ProgramExpression::Cast {
-                        target_type: value_type,
-                        ..
-                    } => Some(crate::surface::generics::c0_type_from_kernel(*value_type)),
-                    _ => None,
-                }
-            }
+            ContractExpression::ProgramExpression(lowered)
+            | ContractExpression::CUnary { lowered, .. } => match lowered {
+                ProgramExpression::Value(value) => Some(
+                    crate::surface::generics::c0_type_from_kernel(value.c_type()),
+                ),
+                ProgramExpression::TypedLoad { value_type, .. }
+                | ProgramExpression::Cast {
+                    target_type: value_type,
+                    ..
+                } => Some(crate::surface::generics::c0_type_from_kernel(*value_type)),
+                _ => None,
+            },
             ContractExpression::Field {
                 lowered: ProgramExpression::TypedLoad { value_type, .. },
                 ..

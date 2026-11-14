@@ -5,7 +5,8 @@ fn growing_shared_range_certificates_reuse_endpoints_without_exports() {
     let measure = |count| {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let variable = |n| KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(n));
+        let variable =
+            |n| KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(n));
         let mut root = variable(1_000_200);
         let mut facts = PureFactContext::new();
         let exports = KernelTermExport::machine_export_count();

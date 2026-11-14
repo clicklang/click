@@ -165,7 +165,10 @@ fn partial_value_binding_join_cannot_supply_a_missing_read_or_drop_declared_stor
     let _session = crate::kernel::VerificationSession::enter();
     let empty = ExecutionState::new();
     let value = empty.clone().with_local("temporary", int32(1));
-    let body = c_assign("temporary", c_int32_literal(1));
+    let body = program_assign(
+        "temporary",
+        crate::kernel::program_expression::int32_literal(1),
+    );
     let mut exits = [empty.clone(), value.clone()];
     discard_loop_exit_partial_value_bindings(&empty, &body, &mut exits);
     assert!(
@@ -217,7 +220,7 @@ fn numeric_float_equality_does_not_materialize_positive_zero_bits() {
     // This equation also permits a negative-zero representation. Filling
     // the cache with positive-zero bits would make a later bitwise read false.
     let facts = [ExecutionPureFact::new(
-        c_value_comparison_proposition(&load, ComparisonOperator::Equal, &zero).unwrap(),
+        program_value_comparison_proposition(&load, ComparisonOperator::Equal, &zero).unwrap(),
     )];
     let mut states = vec![
         ExecutionState::new().with_memory(memory.clone().store(pointer.clone(), zero)),
@@ -250,9 +253,9 @@ fn joined_call_epochs_do_not_transport_uncached_loads_or_hide_real_blocks() {
             .unwrap();
     let zero = int32(0);
     let old_fact =
-        c_value_comparison_proposition(&old_load, ComparisonOperator::Equal, &zero).unwrap();
+        program_value_comparison_proposition(&old_load, ComparisonOperator::Equal, &zero).unwrap();
     let new_fact =
-        c_value_comparison_proposition(&new_load, ComparisonOperator::Equal, &zero).unwrap();
+        program_value_comparison_proposition(&new_load, ComparisonOperator::Equal, &zero).unwrap();
     assert!(
         !PureFactContext::new()
             .assume_proposition(old_fact)

@@ -72,7 +72,7 @@ impl TermRewrite<'_> {
             };
             let result = result.with_machine_observation_type(
                 MachineIntegerType::from_c_type(match term.ty() {
-                    KernelType::C(ty) => *ty,
+                    KernelType::Program(ty) => *ty,
                     _ => unreachable!("machine operand"),
                 })
                 .expect("machine operand type"),

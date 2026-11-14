@@ -112,7 +112,7 @@ fn solve_retains_recorded_load_address_equality_premises() {
     let mut samples = Vec::new();
     for count in [8u64, 16, 32, 64, 128] {
         let term = |index: u64| MachineTerm::Variable(Variable(9_330_000 + index));
-        let memory = intern_c_memory(Memory::new().with_block("indexed", 8));
+        let memory = intern_memory(Memory::new().with_block("indexed", 8));
         let load = |offset| {
             crate::kernel::canonical_term(&MachineTerm::MemoryLoad(
                 memory.clone(),
@@ -168,13 +168,13 @@ fn native_view_prefix_retains_only_its_order_path() {
         let second = le(middle, n.clone());
         let memory = Memory::new();
         let base = Pointer::symbolic(Variable(9_340_002));
-        let source = Proposition::CMemoryLoadable {
+        let source = Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
             bytes: n.clone(),
             wide: true,
         };
-        let goal = Proposition::CMemoryLoadable {
+        let goal = Proposition::MemoryLoadable {
             memory,
             base,
             bytes: MachineTerm::uint64_constant(1),
@@ -230,7 +230,7 @@ fn solve_retains_common_base_pointer_equality_for_load_congruence() {
         for index in 2..count {
             context = context.assume_proposition(equality(pointer(0), pointer(index)));
         }
-        let memory = intern_c_memory(Memory::new().with_block("indexed", 4096));
+        let memory = intern_memory(Memory::new().with_block("indexed", 4096));
         let load = |index| {
             let mut at = pointer(index);
             at.offset = PointerOffsetTerm::Add(

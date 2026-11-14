@@ -3,7 +3,7 @@ use crate::kernel::{bits32_constant, constant_u32};
 use crate::surface::PredicateEnvironment;
 use std::collections::BTreeSet;
 
-pub(in crate::surface) fn c_expression_uses_variable(
+pub(in crate::surface) fn program_expression_uses_variable(
     expression: &ProgramExpression,
     variable: &str,
 ) -> bool {
@@ -13,7 +13,7 @@ pub(in crate::surface) fn c_expression_uses_variable(
         | ProgramExpression::CallResult { .. } => false,
         ProgramExpression::Variable(name) => name == variable,
         ProgramExpression::Cast { expression, .. } => {
-            c_expression_uses_variable(expression, variable)
+            program_expression_uses_variable(expression, variable)
         }
         ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }
@@ -22,18 +22,18 @@ pub(in crate::surface) fn c_expression_uses_variable(
         }
         | ProgramExpression::EnumIs {
             value: expression, ..
-        } => c_expression_uses_variable(expression, variable),
+        } => program_expression_uses_variable(expression, variable),
         ProgramExpression::EnumConstruct { fields, .. } => fields
             .iter()
-            .any(|field| c_expression_uses_variable(field, variable)),
+            .any(|field| program_expression_uses_variable(field, variable)),
         ProgramExpression::Conditional {
             condition,
             then_branch,
             else_branch,
         } => {
-            c_expression_uses_variable(condition, variable)
-                || c_expression_uses_variable(then_branch, variable)
-                || c_expression_uses_variable(else_branch, variable)
+            program_expression_uses_variable(condition, variable)
+                || program_expression_uses_variable(then_branch, variable)
+                || program_expression_uses_variable(else_branch, variable)
         }
         ProgramExpression::AddressOf(expression)
         | ProgramExpression::CheckedObjectAddress(expression)
@@ -51,10 +51,10 @@ pub(in crate::surface) fn c_expression_uses_variable(
         | ProgramExpression::Subobject {
             pointer: expression,
             ..
-        } => c_expression_uses_variable(expression, variable),
+        } => program_expression_uses_variable(expression, variable),
         crate::kernel::binary_c_expression!(left, right) => {
-            c_expression_uses_variable(left, variable)
-                || c_expression_uses_variable(right, variable)
+            program_expression_uses_variable(left, variable)
+                || program_expression_uses_variable(right, variable)
         }
     }
 }
@@ -87,7 +87,7 @@ pub(in crate::surface) fn contains_old_expression(expression: &ContractExpressio
         }
         ContractExpression::Old(_) => true,
         ContractExpression::QualifiedC { .. }
-        | ContractExpression::CFragment(_)
+        | ContractExpression::ProgramExpression(_)
         | ContractExpression::CBinding(_)
         | ContractExpression::ResourceWildcard => false,
         ContractExpression::ResourceCount(resource) => match resource.as_ref() {
@@ -164,7 +164,7 @@ pub(in crate::surface) fn contains_resource_count(expression: &ContractExpressio
         }
         ContractExpression::ResourceCount(_) => true,
         ContractExpression::QualifiedC { .. }
-        | ContractExpression::CFragment(_)
+        | ContractExpression::ProgramExpression(_)
         | ContractExpression::CBinding(_)
         | ContractExpression::ResourceWildcard => false,
         ContractExpression::Field { base, .. }
@@ -435,7 +435,7 @@ pub(in crate::surface) fn collect_resource_count_families(
                 }
             }
             ContractExpression::QualifiedC { .. }
-            | ContractExpression::CFragment(_)
+            | ContractExpression::ProgramExpression(_)
             | ContractExpression::CBinding(_)
             | ContractExpression::ResourceWildcard => {}
         }
@@ -531,7 +531,7 @@ fn contract_segment_contains_old_expression(segment: &ContractSegment) -> bool {
     [&segment.base, &segment.start, &segment.end]
         .into_iter()
         .any(|expression| {
-            contains_old_expression(&ContractExpression::CFragment(expression.clone()))
+            contains_old_expression(&ContractExpression::ProgramExpression(expression.clone()))
         })
 }
 
@@ -639,7 +639,7 @@ pub(in crate::surface) fn contains_at_expression(expression: &ContractExpression
         }
         ContractExpression::At { .. } => true,
         ContractExpression::QualifiedC { .. }
-        | ContractExpression::CFragment(_)
+        | ContractExpression::ProgramExpression(_)
         | ContractExpression::CBinding(_)
         | ContractExpression::ResourceWildcard => false,
         ContractExpression::ResourceCount(resource) => match resource.as_ref() {
@@ -693,7 +693,7 @@ fn contract_segment_contains_at_expression(segment: &ContractSegment) -> bool {
     [&segment.base, &segment.start, &segment.end]
         .into_iter()
         .any(|expression| {
-            contains_at_expression(&ContractExpression::CFragment(expression.clone()))
+            contains_at_expression(&ContractExpression::ProgramExpression(expression.clone()))
         })
 }
 
@@ -832,7 +832,7 @@ fn collect_click_function_calls_one(expression: &ContractExpression, calls: &mut
             collect_click_function_calls(right, calls);
         }
         ContractExpression::QualifiedC { .. }
-        | ContractExpression::CFragment(_)
+        | ContractExpression::ProgramExpression(_)
         | ContractExpression::CBinding(_)
         | ContractExpression::ResourceWildcard => {}
         ContractExpression::ResourceCount(resource) => {
@@ -904,7 +904,10 @@ fn collect_click_function_calls_in_segment(
     calls: &mut BTreeSet<String>,
 ) {
     for expression in [&segment.base, &segment.start, &segment.end] {
-        collect_click_function_calls(&ContractExpression::CFragment(expression.clone()), calls);
+        collect_click_function_calls(
+            &ContractExpression::ProgramExpression(expression.clone()),
+            calls,
+        );
     }
 }
 
@@ -1064,11 +1067,11 @@ pub(super) fn validate_well_founded_click_recursion(
             && matches!(measure, Some(ClickRecursionMeasure::Int32 { .. }))
             && (!matches!(
                 definition.return_type(),
-                ClickType::C(C0Type::Int32 | C0Type::Bool)
+                ClickType::Program(C0Type::Int32 | C0Type::Bool)
             ) || definition
                 .parameters()
                 .iter()
-                .any(|parameter| parameter.click_type() != &ClickType::C(C0Type::Int32)))
+                .any(|parameter| parameter.click_type() != &ClickType::Program(C0Type::Int32)))
         {
             return Err(ClickError::new(format!(
                 "recursive pure function `{name}` currently supports only int32 parameters and an int32 or bool result"
@@ -1154,7 +1157,7 @@ fn click_function_decreases_parameter(
         )));
     };
     match parameter.click_type() {
-        ClickType::C(C0Type::Int32) => Ok(Some(ClickRecursionMeasure::Int32 {
+        ClickType::Program(C0Type::Int32) => Ok(Some(ClickRecursionMeasure::Int32 {
             parameter: name.to_string(),
         })),
         ClickType::Algebraic(algebraic_type) => Ok(Some(ClickRecursionMeasure::Algebraic {
@@ -1172,7 +1175,7 @@ fn contract_expression_variable(expression: &ContractExpression) -> Option<&str>
     match expression {
         ContractExpression::Binding(name)
         | ContractExpression::AlgebraicVariable { name, .. }
-        | ContractExpression::CFragment(ProgramExpression::Variable(name))
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
         | ContractExpression::CBinding(name) => Some(name),
         _ => None,
     }
@@ -1180,7 +1183,7 @@ fn contract_expression_variable(expression: &ContractExpression) -> Option<&str>
 
 fn contract_expression_int32_constant(expression: &ContractExpression) -> Option<i64> {
     let ProgramExpression::Value(ProgramValue::Int32(bits32_constant!(value))) =
-        contract_expression_as_c_fragment(expression)?
+        contract_expression_as_program_expression(expression)?
     else {
         return None;
     };
@@ -1389,7 +1392,7 @@ fn validate_recursive_calls_in_expression(
             recurse(right, lower_bounds, structural_subterms)
         }
         ContractExpression::QualifiedC { .. }
-        | ContractExpression::CFragment(_)
+        | ContractExpression::ProgramExpression(_)
         | ContractExpression::CBinding(_)
         | ContractExpression::ResourceWildcard => Ok(()),
         ContractExpression::ResourceCount(resource) => {

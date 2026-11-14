@@ -338,7 +338,7 @@ mod tests {
         };
         assert!(!pointer.supports_object_class(&class()));
         let context = PureFactContext::new();
-        let word = super::super::eval::cast_c_value_to_type(
+        let word = super::super::eval::cast_program_value_to_type(
             ProgramValue::Pointer(pointer.clone()),
             ProgramType::UInt64,
             super::super::eval::IntegerConversion::Modular,
@@ -347,7 +347,7 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(word, ProgramValue::PointerInteger(_)));
-        let decoded = super::super::eval::cast_c_value_to_type(
+        let decoded = super::super::eval::cast_program_value_to_type(
             word,
             ProgramType::Int32Pointer,
             super::super::eval::IntegerConversion::Modular,
@@ -398,7 +398,7 @@ mod tests {
             &Memory::new(),
             &facts
         ));
-        let word = super::super::eval::cast_c_value_to_type(
+        let word = super::super::eval::cast_program_value_to_type(
             original,
             ProgramType::UInt64,
             super::super::eval::IntegerConversion::Modular,
@@ -406,7 +406,7 @@ mod tests {
             &PureFactContext::new(),
         )
         .unwrap();
-        let decoded = super::super::eval::cast_c_value_to_type(
+        let decoded = super::super::eval::cast_program_value_to_type(
             word,
             ProgramType::Int32Pointer,
             super::super::eval::IntegerConversion::Modular,

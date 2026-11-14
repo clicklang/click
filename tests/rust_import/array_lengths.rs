@@ -32,7 +32,7 @@ fn charon_array_lengths_preserve_unchanged_sources_and_reject_false_claims() {
         } else {
             ARRAYS_SIDECAR
         };
-        C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+        ProgramVerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
         let invalid = sidecar.replace("ensures result == 0u64;", "ensures result == 1u64;");
         assert_ne!(invalid, sidecar);
         let head = if bounds { "fn empty_len(" } else { "fn empty(" };
@@ -68,7 +68,7 @@ fn charon_array_lengths_live_refresh_and_compiler_rejections() {
     for bounds in [false, true] {
         let p = project(bounds);
         p.refresh().unwrap();
-        C0VerificationSession::new_program_prepared(
+        ProgramVerificationSession::new_program_prepared(
             if bounds {
                 BOUNDS_SIDECAR
             } else {
@@ -115,10 +115,12 @@ fn charon_rust_integer_literals_preserve_native_array_contracts() {
         .replace("9u32", "0o11_u32");
     assert_ne!(sidecar, ARRAYS_SIDECAR);
     fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
-    C0VerificationSession::new_program_prepared(&sidecar, p.prepared().unwrap()).unwrap();
+    ProgramVerificationSession::new_program_prepared(&sidecar, p.prepared().unwrap()).unwrap();
     assert_cli(&p, &["expand", "--claim", "length.ensures_0", "--in-place"]);
     assert_cli(&p, &["verify"]);
     let invalid = sidecar.replace("ensures result == 0o3usize;", "ensures result == 0o4usize;");
     assert_ne!(invalid, sidecar);
-    assert!(C0VerificationSession::new_program_prepared(&invalid, p.prepared().unwrap()).is_err());
+    assert!(
+        ProgramVerificationSession::new_program_prepared(&invalid, p.prepared().unwrap()).is_err()
+    );
 }

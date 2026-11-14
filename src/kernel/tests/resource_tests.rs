@@ -49,7 +49,7 @@ fn separation_candidates_preserve_derived_aliases_and_loaded_bases() {
         .unchecked_with_fact(owner(base(a.clone())))
         .unchecked_with_fact(owner(base(b.clone())));
     let holds = |context: PureFactContext| {
-        context.assume_proposition(Proposition::CResourceComposition(frame.clone()))
+        context.assume_proposition(Proposition::ResourceComposition(frame.clone()))
     };
     let separated = |context: &PureFactContext| {
         context.proves_resource_separate(&query(base(alias.clone())), &query(base(b.clone())))
@@ -88,7 +88,7 @@ fn separation_candidates_preserve_derived_aliases_and_loaded_bases() {
     let slot = Pointer::symbolic(Variable(989_799));
     let snapshot = Memory::new().store(slot.clone(), ProgramValue::Int32(a.clone()));
     let loaded = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory(snapshot),
+        crate::kernel::intern_memory(snapshot),
         Box::new(slot),
         LoadKind::Int32,
     );
@@ -96,7 +96,7 @@ fn separation_candidates_preserve_derived_aliases_and_loaded_bases() {
         .unchecked_with_fact(owner(base(loaded)))
         .unchecked_with_fact(owner(base(b.clone())));
     let facts =
-        PureFactContext::new().assume_proposition(Proposition::CResourceComposition(loaded_frame));
+        PureFactContext::new().assume_proposition(Proposition::ResourceComposition(loaded_frame));
     assert!(facts.proves_resource_separate(&query(base(a.clone())), &query(base(b.clone()))));
     assert!(!facts.proves_resource_separate(&query(base(a.clone())), &query(base(a))));
 }
@@ -127,7 +127,7 @@ fn separation_candidates_follow_a_block_alias_to_the_owner() {
         )
     };
     let unrelated =
-        PureFactContext::new().assume_proposition(Proposition::CResourceComposition(frame.clone()));
+        PureFactContext::new().assume_proposition(Proposition::ResourceComposition(frame.clone()));
     assert!(!query(&unrelated), "an unowned range proves nothing");
     let aliased = unrelated.assume_condition(
         ConditionTerm::pointer_equal(loaded.clone(), parameter.clone()),
@@ -138,7 +138,11 @@ fn separation_candidates_follow_a_block_alias_to_the_owner() {
 
 #[test]
 fn normalized_resource_specs_validate_families_and_preserve_transfer_metadata() {
-    let segment = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(2));
+    let segment = MemorySegment::new(
+        crate::kernel::program_expression::variable("p"),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(2),
+    );
     let memory_view = ResourceSpec::new(
         ResourceTerm::Memory(segment.clone()),
         ResourceAccessMode::View,
@@ -192,7 +196,7 @@ fn normalized_resource_specs_validate_families_and_preserve_transfer_metadata() 
     assert_eq!(token_owner.snapshot(), ResourceSnapshot::Post);
 
     let counted = ResourceSpec::quantified(
-        c_int32_literal(3),
+        crate::kernel::program_expression::int32_literal(3),
         token_owner.clone(),
         ResourceTransferRole::Consume,
         ResourceSnapshot::Current,
@@ -203,12 +207,12 @@ fn normalized_resource_specs_validate_families_and_preserve_transfer_metadata() 
     assert!(matches!(
         ResourceSpec::new(
             ResourceTerm::Memory(MemorySegment::new(
-                c_variable("p"),
-                c_int32_literal(0),
-                c_int32_literal(1),
+                crate::kernel::program_expression::variable("p"),
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::program_expression::int32_literal(1),
             )),
             ResourceAccessMode::Own,
-            ResourceQuantity::Count(c_int32_literal(2)),
+            ResourceQuantity::Count(crate::kernel::program_expression::int32_literal(2)),
             ResourceTransferRole::Consume,
             ResourceSnapshot::Entry,
         ),
@@ -219,7 +223,7 @@ fn normalized_resource_specs_validate_families_and_preserve_transfer_metadata() 
     ));
     assert!(matches!(
         ResourceSpec::quantified(
-            c_int32_literal(2),
+            crate::kernel::program_expression::int32_literal(2),
             composite_view,
             ResourceTransferRole::Consume,
             ResourceSnapshot::Current,
@@ -830,7 +834,7 @@ fn instance_memory_fixture() -> (
 ) {
     let schema = ResourceFieldSchema::new(vec![(
         "value".into(),
-        ResourceFieldType::C(ProgramType::Int32),
+        ResourceFieldType::Program(ProgramType::Int32),
     )])
     .unwrap();
     let pointer = Pointer {
@@ -847,13 +851,13 @@ fn instance_memory_fixture() -> (
     .unwrap();
     let definition = CompositeResourceDefinition::new(
         "cell",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![ResourceSpec::owned_memory(MemorySegment {
-            base: c_variable("p"),
-            start: c_int32_literal(0),
-            end: c_int32_literal(1),
+            base: crate::kernel::program_expression::variable("p"),
+            start: crate::kernel::program_expression::int32_literal(0),
+            end: crate::kernel::program_expression::int32_literal(1),
             element_width: 4,
             guard: None,
             uninitialized: false,
@@ -885,16 +889,20 @@ fn inactive_instance_quantity_does_not_imply_nonnegativity() {
     .unwrap();
     definition.contains = vec![
         ResourceSpec::quantified(
-            c_variable("value"),
+            crate::kernel::program_expression::variable("value"),
             unit,
             ResourceTransferRole::Consume,
             ResourceSnapshot::Current,
         )
         .unwrap()
         .with_guard(SpecProposition::Comparison {
-            left: SpecExpression::ProgramExpression(c_int32_literal(0)),
+            left: SpecExpression::ProgramExpression(
+                crate::kernel::program_expression::int32_literal(0),
+            ),
             operator: ComparisonOperator::Equal,
-            right: SpecExpression::ProgramExpression(c_int32_literal(1)),
+            right: SpecExpression::ProgramExpression(
+                crate::kernel::program_expression::int32_literal(1),
+            ),
         }),
     ];
     let assumptions = PureFactContext::new();
@@ -933,9 +941,9 @@ fn recursive_child_fixture() -> (
     let ty = resource_index_type(
         "Tree",
         vec![
-            AlgebraicValueType::C(ProgramType::Int32Pointer),
+            AlgebraicValueType::Program(ProgramType::Int32Pointer),
             tree.clone(),
-            AlgebraicValueType::C(ProgramType::Int32Pointer),
+            AlgebraicValueType::Program(ProgramType::Int32Pointer),
             tree,
         ],
     );
@@ -990,14 +998,18 @@ fn recursive_child_fixture() -> (
                         name: "left".into(),
                         resource: "cell".into(),
                         binding: Variable(90),
-                        arguments: vec![SpecExpression::ProgramExpression(c_variable("lp"))],
+                        arguments: vec![SpecExpression::ProgramExpression(
+                            crate::kernel::program_expression::variable("lp"),
+                        )],
                         field_bindings: vec![ResourceChildField::Constructor(1)],
                     },
                     ResourceChildSpec {
                         name: "right".into(),
                         resource: "cell".into(),
                         binding: Variable(91),
-                        arguments: vec![SpecExpression::ProgramExpression(c_variable("rp"))],
+                        arguments: vec![SpecExpression::ProgramExpression(
+                            crate::kernel::program_expression::variable("rp"),
+                        )],
                         field_bindings: vec![ResourceChildField::Constructor(3)],
                     },
                 ],
@@ -1116,10 +1128,11 @@ fn independent_children_kernel_consumes_names_and_accepts_replacements() {
 fn unfolding_a_child_retains_its_checked_pointer_read_in_the_callers_graph() {
     let (instance, mut definition, state) = recursive_child_fixture();
     let arm = &mut definition.matched.as_mut().unwrap().arms[1];
-    arm.contains[0].memory_segment_mut().unwrap().end = c_int32_literal(2);
+    arm.contains[0].memory_segment_mut().unwrap().end =
+        crate::kernel::program_expression::int32_literal(2);
     arm.children[0].arguments = vec![SpecExpression::ProgramExpression(
         ProgramExpression::TypedLoad {
-            pointer: Box::new(c_variable("p")),
+            pointer: Box::new(crate::kernel::program_expression::variable("p")),
             value_type: ProgramType::Int32Pointer,
             volatile: false,
             pointee_constant: false,
@@ -1127,7 +1140,7 @@ fn unfolding_a_child_retains_its_checked_pointer_read_in_the_callers_graph() {
             source: Default::default(),
         },
     )];
-    let AlgebraicValue::C(ProgramValue::Pointer(parent)) = &instance.arguments()[0] else {
+    let AlgebraicValue::Program(ProgramValue::Pointer(parent)) = &instance.arguments()[0] else {
         unreachable!()
     };
     let stored = PointerValue::new(Pointer::symbolic(Variable(559)), ProgramType::Int32Pointer);
@@ -1135,8 +1148,7 @@ fn unfolding_a_child_retains_its_checked_pointer_read_in_the_callers_graph() {
         parent.pointer().clone(),
         ProgramValue::Pointer(stored.clone()),
     ));
-    let observed =
-        Pointer::loaded_value(&intern_c_memory(state.memory().clone()), parent.pointer());
+    let observed = Pointer::loaded_value(&intern_memory(state.memory().clone()), parent.pointer());
     let equation = ExecutionPureFact::logical_read_equation(stored, observed)
         .proposition()
         .clone();
@@ -1313,11 +1325,13 @@ fn recursive_child_kernel_keeps_unknown_submodels_folded() {
 fn instance_memory_guard_requires_a_proved_case_and_exposes_only_that_case() {
     let (instance, mut definition, state) = instance_memory_fixture();
     definition.condition = Some(SpecProposition::Comparison {
-        left: SpecExpression::ProgramExpression(c_variable("p")),
+        left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable("p")),
         operator: ComparisonOperator::NotEqual,
-        right: SpecExpression::ProgramExpression(c_int32_literal(0)),
+        right: SpecExpression::ProgramExpression(crate::kernel::program_expression::int32_literal(
+            0,
+        )),
     });
-    let ProgramValue::Pointer(pointer) = instance.arguments()[0].as_c_value().unwrap() else {
+    let ProgramValue::Pointer(pointer) = instance.arguments()[0].as_program_value().unwrap() else {
         panic!("fixture pointer");
     };
     let guard = ConditionTerm::pointer_equal(pointer.pointer().clone(), Pointer::null());
@@ -1333,7 +1347,7 @@ fn instance_memory_guard_requires_a_proved_case_and_exposes_only_that_case() {
         assert_eq!(
             facts
                 .iter()
-                .any(|fact| matches!(fact, Proposition::CMemoryLoadable { .. })),
+                .any(|fact| matches!(fact, Proposition::MemoryLoadable { .. })),
             !is_null
         );
         assert!(rewrite_resource_instance(&open, &instance, &definition, &unknown, false).is_err());
@@ -1423,7 +1437,7 @@ fn resource_match_kernel_checks_schema_case_and_ownership() {
     assert!(
         !facts
             .iter()
-            .any(|fact| matches!(fact, Proposition::CMemoryLoadable { .. }))
+            .any(|fact| matches!(fact, Proposition::MemoryLoadable { .. }))
     );
     assert!(rewrite_resource_instance(&empty, &instance, &definition, &set, false).is_err());
     let (open, _) = rewrite_resource_instance(&state, &instance, &definition, &set, true).unwrap();
@@ -1472,7 +1486,7 @@ fn resource_match_kernel_checks_schema_case_and_ownership() {
             _ => {
                 body.arms[1]
                     .binding_types
-                    .push(AlgebraicValueType::C(ProgramType::Int32));
+                    .push(AlgebraicValueType::Program(ProgramType::Int32));
             }
         }
         assert!(rewrite_resource_instance(&state, &instance, &invalid, &set, true).is_err());
@@ -1537,7 +1551,10 @@ fn field_instance(identity: u64, model: AlgebraicTerm, revision: u32) -> Resourc
             "model".into(),
             ResourceFieldType::Algebraic(model.algebraic_type.clone()),
         ),
-        ("revision".into(), ResourceFieldType::C(ProgramType::Int32)),
+        (
+            "revision".into(),
+            ResourceFieldType::Program(ProgramType::Int32),
+        ),
     ])
     .unwrap();
     ResourceInstance::new(
@@ -1681,14 +1698,14 @@ fn resource_instances_distinguish_identity_from_equal_field_state() {
     let assumptions =
         empty.assume_proposition(Proposition::Equal(Term::Algebraic(m), Term::Algebraic(n)));
     assert!(context.satisfies_fact(&equal_state, &assumptions));
-    assert!(c_resources_directly_match(
+    assert!(resources_directly_match(
         owned.resource(),
         equal_state.resource(),
         &assumptions
     ));
     for wrong in [other_identity.clone(), changed_scalar] {
         assert!(!context.satisfies_fact(&wrong, &assumptions));
-        assert!(!c_resources_directly_match(
+        assert!(!resources_directly_match(
             owned.resource(),
             wrong.resource(),
             &assumptions
@@ -1913,8 +1930,8 @@ fn resource_instance_substitution_preserves_identity_without_memory_authority() 
     let ty = resource_index_type(
         "Payload",
         vec![
-            AlgebraicValueType::C(ProgramValue::pointer(pointer.clone()).c_type()),
-            AlgebraicValueType::C(ProgramType::Int32),
+            AlgebraicValueType::Program(ProgramValue::pointer(pointer.clone()).c_type()),
+            AlgebraicValueType::Program(ProgramType::Int32),
         ],
     );
     let make = |p: Pointer, value: MachineTerm| {
@@ -1938,19 +1955,19 @@ fn resource_instance_substitution_preserves_identity_without_memory_authority() 
     ] {
         assert!(!context.satisfies_fact(&required, &assumptions));
     }
-    let numeric = crate::kernel::reasoning::substitute_bitvector_variable_in_c_resource(
+    let numeric = crate::kernel::reasoning::substitute_bitvector_variable_in_resource(
         &source,
         Variable(11),
         &MachineTerm::constant(7),
     );
     let substituted = crate::kernel::reasoning::substitute_pointer_variable_in_proposition(
-        &Proposition::CResourceComposition(
+        &Proposition::ResourceComposition(
             ResourceContext::new().unchecked_with_fact(ResourceFact::own(numeric)),
         ),
         Variable(10),
         &target,
     );
-    let expected = Proposition::CResourceComposition(
+    let expected = Proposition::ResourceComposition(
         ResourceContext::new()
             .unchecked_with_fact(ResourceFact::own(make(target, MachineTerm::constant(7)))),
     );
@@ -1967,7 +1984,10 @@ fn resource_field_schemas_are_typed_shared_and_non_countable() {
             "model".into(),
             ResourceFieldType::Algebraic(resource_index_type("Mark", vec![])),
         ),
-        ("revision".into(), ResourceFieldType::C(ProgramType::Int32)),
+        (
+            "revision".into(),
+            ResourceFieldType::Program(ProgramType::Int32),
+        ),
     ];
     let schema = ResourceFieldSchema::new(fields.clone()).unwrap();
     assert_eq!(schema.fields(), fields);
@@ -1980,15 +2000,21 @@ fn resource_field_schemas_are_typed_shared_and_non_countable() {
     assert!(ResourceFieldSchema::new(vec![]).unwrap().is_fieldless());
     assert!(ResourceFieldSchema::new(vec![fields[0].clone(), fields[0].clone()]).is_none());
     assert!(
-        ResourceFieldSchema::new(vec![("".into(), ResourceFieldType::C(ProgramType::Int32))])
-            .is_none()
+        ResourceFieldSchema::new(vec![(
+            "".into(),
+            ResourceFieldType::Program(ProgramType::Int32)
+        )])
+        .is_none()
     );
     for ty in [
         ProgramType::Void,
         ProgramType::Int32Array(3),
         ProgramType::FunctionPointer(CallbackSignature::from_encoded(1)),
     ] {
-        assert!(ResourceFieldSchema::new(vec![("bad".into(), ResourceFieldType::C(ty))]).is_none());
+        assert!(
+            ResourceFieldSchema::new(vec![("bad".into(), ResourceFieldType::Program(ty))])
+                .is_none()
+        );
     }
     let mut malformed = resource_index_type("Mark", vec![]);
     malformed.name = "Wrong".into();
@@ -2009,7 +2035,7 @@ fn resource_field_schema_clones_share_storage_at_multiple_sizes() {
                 .map(|i| {
                     (
                         format!("field_{i}"),
-                        ResourceFieldType::C(ProgramType::Int32),
+                        ResourceFieldType::Program(ProgramType::Int32),
                     )
                 })
                 .collect(),
@@ -2110,7 +2136,7 @@ fn symbolic_resource_indices_preserve_types_equality_and_linear_transfer() {
         ] {
             let assumptions = empty.clone().assume_proposition(equality);
             assert!(facts.satisfies_fact(&renamed, &assumptions));
-            assert!(c_resources_directly_match(
+            assert!(resources_directly_match(
                 owned.resource(),
                 renamed.resource(),
                 &assumptions
@@ -2138,7 +2164,7 @@ fn symbolic_resource_indices_distinguish_constructors() {
     };
     let clear = indexed_resource(constructor("Clear"), false);
     let set = indexed_resource(constructor("Set"), false);
-    assert!(!c_resources_directly_match(
+    assert!(!resources_directly_match(
         &clear,
         &set,
         &PureFactContext::new()
@@ -2155,8 +2181,8 @@ fn symbolic_resource_indices_substitute_nested_payloads_without_memory_authority
     let ty = resource_index_type(
         "Payload",
         vec![
-            AlgebraicValueType::C(ProgramValue::pointer(pointer.clone()).c_type()),
-            AlgebraicValueType::C(ProgramType::Int32),
+            AlgebraicValueType::Program(ProgramValue::pointer(pointer.clone()).c_type()),
+            AlgebraicValueType::Program(ProgramType::Int32),
         ],
     );
     let model = |p: Pointer, value: MachineTerm| AlgebraicTerm {
@@ -2164,8 +2190,8 @@ fn symbolic_resource_indices_substitute_nested_payloads_without_memory_authority
         node: AlgebraicTermNode::Constructor {
             variant: "Set".into(),
             fields: vec![
-                AlgebraicValue::C(ProgramValue::pointer(p)),
-                AlgebraicValue::C(int32(value)),
+                AlgebraicValue::Program(ProgramValue::pointer(p)),
+                AlgebraicValue::Program(int32(value)),
             ],
         },
     };
@@ -2177,12 +2203,12 @@ fn symbolic_resource_indices_substitute_nested_payloads_without_memory_authority
     assert!(!context.satisfies_fact(&ResourceFact::view_memory(memory.clone()), &empty));
     assert!(!context.satisfies_fact(&ResourceFact::own_memory(memory), &empty));
 
-    let numeric = crate::kernel::reasoning::substitute_bitvector_variable_in_c_resource(
+    let numeric = crate::kernel::reasoning::substitute_bitvector_variable_in_resource(
         &original,
         Variable(990_021),
         &MachineTerm::constant(7),
     );
-    let source = Proposition::CResourceComposition(
+    let source = Proposition::ResourceComposition(
         ResourceContext::new().unchecked_with_fact(ResourceFact::own(numeric)),
     );
     let substituted = crate::kernel::reasoning::substitute_pointer_variable_in_proposition(
@@ -2190,7 +2216,7 @@ fn symbolic_resource_indices_substitute_nested_payloads_without_memory_authority
         Variable(990_020),
         &target,
     );
-    let expected = Proposition::CResourceComposition(ResourceContext::new().unchecked_with_fact(
+    let expected = Proposition::ResourceComposition(ResourceContext::new().unchecked_with_fact(
         ResourceFact::own(indexed_resource(
             model(target, MachineTerm::constant(7)),
             false,
@@ -3309,16 +3335,19 @@ fn definitional_equality_reassembles_a_composite_only_where_its_facts_hold() {
     };
     let definition = CompositeResourceDefinition::new(
         "zero_cell",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![ResourceSpec::owned_memory(MemorySegment::new(
-            c_variable("p"),
-            c_int32_literal(0),
-            c_int32_literal(1),
+            crate::kernel::program_expression::variable("p"),
+            crate::kernel::program_expression::int32_literal(0),
+            crate::kernel::program_expression::int32_literal(1),
         ))],
         vec![SpecProposition::Comparison {
-            left: SpecExpression::ProgramExpression(c_index(c_variable("p"), c_int32_literal(0))),
+            left: SpecExpression::ProgramExpression(crate::kernel::program_expression::index(
+                crate::kernel::program_expression::variable("p"),
+                crate::kernel::program_expression::int32_literal(0),
+            )),
             operator: ComparisonOperator::Equal,
             right: SpecExpression::Value(int32(0)),
         }],
@@ -3488,10 +3517,10 @@ fn resource_context_observes_write_separation() {
         .expect("adjacent writes should be a valid resource context");
 
     assert_eq!(facts.len(), 1);
-    assert!(matches!(facts[0], Proposition::CResourceComposition(_)));
+    assert!(matches!(facts[0], Proposition::ResourceComposition(_)));
     assert!(crate::kernel::search::ProofSearch::proves(
         &(PureFactContext::new()),
-        &Proposition::CResourceSeparate {
+        &Proposition::ResourceSeparate {
             left: Box::new(Resource::Memory(left)),
             right: Box::new(Resource::Memory(right)),
         }
@@ -3530,14 +3559,14 @@ fn resource_context_observes_same_and_cross_family_separation() {
         });
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
-        &Proposition::CResourceSeparate {
+        &Proposition::ResourceSeparate {
             left: Box::new(token.clone()),
             right: Box::new(other_token),
         }
     ));
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
-        &Proposition::CResourceSeparate {
+        &Proposition::ResourceSeparate {
             left: Box::new(memory),
             right: Box::new(token),
         }
@@ -3564,7 +3593,7 @@ fn observable_abstract_resources_use_one_indexed_composition() {
             });
         assert!(crate::kernel::search::ProofSearch::proves(
             &(assumptions),
-            &Proposition::CResourceSeparate {
+            &Proposition::ResourceSeparate {
                 left: Box::new(context.facts()[0].resource().clone()),
                 right: Box::new(context.facts()[size - 1].resource().clone()),
             }
@@ -3623,18 +3652,18 @@ fn resource_separation_covers_larger_memory_range() {
     let left_combined = Resource::Memory(memory_range(base.clone(), 0, 2));
     let right = Resource::Memory(memory_range(base, 10, 11));
     let assumptions = PureFactContext::new()
-        .assume_proposition(Proposition::CResourceSeparate {
+        .assume_proposition(Proposition::ResourceSeparate {
             left: Box::new(left_first),
             right: Box::new(right.clone()),
         })
-        .assume_proposition(Proposition::CResourceSeparate {
+        .assume_proposition(Proposition::ResourceSeparate {
             left: Box::new(left_second),
             right: Box::new(right.clone()),
         });
 
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
-        &Proposition::CResourceSeparate {
+        &Proposition::ResourceSeparate {
             left: Box::new(left_combined),
             right: Box::new(right),
         }
@@ -3657,7 +3686,7 @@ fn resource_separation_transports_across_equal_memory_ranges() {
     let equal_resource =
         Resource::Memory(memory_range(equal_data.clone(), 0, equal_length.clone()));
     let assumptions = PureFactContext::new()
-        .assume_proposition(Proposition::CResourceSeparate {
+        .assume_proposition(Proposition::ResourceSeparate {
             left: Box::new(target_resource.clone()),
             right: Box::new(original_resource),
         })
@@ -3669,7 +3698,7 @@ fn resource_separation_transports_across_equal_memory_ranges() {
 
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
-        &Proposition::CResourceSeparate {
+        &Proposition::ResourceSeparate {
             left: Box::new(target_resource),
             right: Box::new(equal_resource),
         }
@@ -3689,18 +3718,18 @@ fn resource_contains_projects_separation_to_children() {
     let child = Resource::Memory(memory_range(base.clone(), 0, 1));
     let other = Resource::Memory(memory_range(base.clone(), 1, 2));
     let assumptions = PureFactContext::new()
-        .assume_proposition(Proposition::CResourceSeparate {
+        .assume_proposition(Proposition::ResourceSeparate {
             left: Box::new(parent.clone()),
             right: Box::new(other.clone()),
         })
-        .assume_proposition(Proposition::CResourceContains {
+        .assume_proposition(Proposition::ResourceContains {
             parent: Box::new(parent),
             child: Box::new(child.clone()),
         });
 
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
-        &Proposition::CResourceSeparate {
+        &Proposition::ResourceSeparate {
             left: Box::new(child),
             right: Box::new(other),
         }
@@ -3715,7 +3744,7 @@ fn assumed_resource_composition_has_exact_membership() {
             &PureFactContext::new(),
         )
         .unwrap();
-    let proposition = Proposition::CResourceComposition(resources);
+    let proposition = Proposition::ResourceComposition(resources);
     let empty = PureFactContext::new();
     assert!(!empty.contains_assumed_exact(&proposition));
     let context = empty.assume_proposition(proposition.clone());
@@ -4153,16 +4182,19 @@ fn dependent_pair_entry_fixture() -> (
     let cell = |base| {
         ResourceSpec::owned_memory(MemorySegment::new(
             base,
-            c_int32_literal(0),
-            c_int32_literal(2),
+            crate::kernel::program_expression::int32_literal(0),
+            crate::kernel::program_expression::int32_literal(2),
         ))
     };
     let definition = CompositeResourceDefinition::new(
         "dependent_pair",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
-        vec![cell(c_variable("p")), cell(next(c_variable("p")))],
+        vec![
+            cell(crate::kernel::program_expression::variable("p")),
+            cell(next(crate::kernel::program_expression::variable("p"))),
+        ],
         vec![],
     );
     let pointer = Pointer {
@@ -4182,12 +4214,16 @@ fn dependent_pair_entry_fixture() -> (
         )
         .unwrap()
     };
-    let second = next(next(c_variable("node")));
+    let second = next(next(crate::kernel::program_expression::variable("node")));
     let third = next(second.clone());
     (
         state,
         definition,
-        vec![clause(c_variable("node")), clause(second), clause(third)],
+        vec![
+            clause(crate::kernel::program_expression::variable("node")),
+            clause(second),
+            clause(third),
+        ],
     )
 }
 
@@ -4266,8 +4302,8 @@ fn resource_clauses_with_no_evaluable_order_name_two_positions() {
                     ),
                 }),
             ))),
-            start: c_int32_literal(0),
-            end: c_int32_literal(1),
+            start: crate::kernel::program_expression::int32_literal(0),
+            end: crate::kernel::program_expression::int32_literal(1),
             element_width: 4,
             guard: None,
             uninitialized: false,
@@ -4314,7 +4350,7 @@ fn arm_selection_type(nullary: &[&str], payload: &str) -> AlgebraicType {
         })
         .chain([AlgebraicVariantType {
             name: payload.into(),
-            fields: vec![AlgebraicValueType::C(ProgramType::Int32)],
+            fields: vec![AlgebraicValueType::Program(ProgramType::Int32)],
         }])
         .collect::<Vec<_>>()
         .into();
@@ -4356,7 +4392,7 @@ fn resource_model_arm_selection_decides_only_entailed_arms() {
         arm_selection_constructor(
             &ty,
             "Filled",
-            vec![AlgebraicValue::C(ProgramValue::Int32(
+            vec![AlgebraicValue::Program(ProgramValue::Int32(
                 MachineTerm::constant(value),
             ))],
         )
@@ -4396,14 +4432,14 @@ fn resource_model_arm_selection_decides_only_entailed_arms() {
     let witness = arm_selection_constructor(
         &ty,
         "Filled",
-        vec![AlgebraicValue::C(ProgramValue::Int32(
+        vec![AlgebraicValue::Program(ProgramValue::Int32(
             MachineTerm::Variable(Variable(77)),
         ))],
     );
     let witnessed = PureFactContext::new().assume_proposition(Proposition::Exists {
         name: "v".to_string(),
         var: Variable(77),
-        sort: Sort::CInt32,
+        sort: Sort::ProgramInt32,
         body: Box::new(equal(&model, &witness)),
     });
     assert_eq!(
@@ -4477,8 +4513,8 @@ fn expanded_resource_clause_diagnostics_keep_source_positions() {
                     ),
                 }),
             ))),
-            start: c_int32_literal(0),
-            end: c_int32_literal(1),
+            start: crate::kernel::program_expression::int32_literal(0),
+            end: crate::kernel::program_expression::int32_literal(1),
             element_width: 4,
             guard: None,
             uninitialized: false,
@@ -4524,7 +4560,7 @@ fn symbolic_supplied_range_wakes_concrete_pending_dependency() {
     };
     let length = MachineTerm::Variable(Variable(9_903));
     let load = |pointer: Pointer| ProgramExpression::TypedLoad {
-        pointer: Box::new(c_pointer_value(pointer)),
+        pointer: Box::new(crate::kernel::program_expression::pointer_value(pointer)),
         value_type: ProgramType::Int32Pointer,
         volatile: false,
         pointee_constant: false,
@@ -4534,7 +4570,7 @@ fn symbolic_supplied_range_wakes_concrete_pending_dependency() {
     let owned = |base: ProgramExpression, end: ProgramExpression| {
         ResourceSpec::owned_memory(MemorySegment {
             base,
-            start: c_int32_literal(0),
+            start: crate::kernel::program_expression::int32_literal(0),
             end,
             element_width: 4,
             guard: None,
@@ -4544,14 +4580,20 @@ fn symbolic_supplied_range_wakes_concrete_pending_dependency() {
     };
     let clauses = vec![
         // A waits on the concrete cell at `intermediate`, but is listed first.
-        owned(load(intermediate.clone()), c_int32_literal(1)),
+        owned(
+            load(intermediate.clone()),
+            crate::kernel::program_expression::int32_literal(1),
+        ),
         // B is the symbolic provider for that cell.  Its base load waits on C.
         owned(
             load(seed.clone()),
             ProgramExpression::Value(int32(length.clone())),
         ),
         // C is the only clause that can evaluate on the first pass.
-        owned(c_pointer_value(seed.clone()), c_int32_literal(1)),
+        owned(
+            crate::kernel::program_expression::pointer_value(seed.clone()),
+            crate::kernel::program_expression::int32_literal(1),
+        ),
     ];
     let memory = Memory::new()
         .store(seed, ProgramValue::pointer(intermediate.clone()))
@@ -4650,7 +4692,7 @@ fn observed_projection_tracks_loaded_address_prerequisite() {
         .with_block("loaded-address-unrelated", 4)
         .store(selector.clone(), int32(0));
     let selector_load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory_ref(&memory),
+        crate::kernel::intern_memory_ref(&memory),
         Box::new(selector.clone()),
         crate::kernel::LoadKind::Int32,
     );
@@ -4726,7 +4768,7 @@ fn observed_projection_tracks_loaded_base_and_start_prerequisites() {
         .with_block("base-start-unrelated", 4)
         .store(selector.clone(), int16(0));
     let selector_load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory_ref(&memory),
+        crate::kernel::intern_memory_ref(&memory),
         Box::new(selector.clone()),
         crate::kernel::LoadKind::Int32,
     );
@@ -6192,7 +6234,7 @@ mod residue_bounds {
 fn named_population_members_keep_identity_and_fields_independent_of_count() {
     let schema = ResourceFieldSchema::new(vec![(
         "serial".into(),
-        ResourceFieldType::C(ProgramType::Int32),
+        ResourceFieldType::Program(ProgramType::Int32),
     )])
     .unwrap();
     let block = PointerBlock::Heap(940_501);
@@ -6218,7 +6260,7 @@ fn named_population_members_keep_identity_and_fields_independent_of_count() {
         .unwrap();
     let definition = CompositeResourceDefinition::new(
         "ticket",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![],
@@ -6357,7 +6399,7 @@ fn predicate_population_snapshot_reads_saved_count_without_transfer_rights() {
     });
     let definition = CompositeResourceDefinition::new(
         "member",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![],
@@ -6387,7 +6429,7 @@ fn predicate_population_snapshot_reads_saved_count_without_transfer_rights() {
         arguments: vec![Some(SpecExpression::Value(ProgramValue::pointer(pointer)))],
     };
     let read = |state: &ExecutionState| {
-        c_evaluate_spec_expression_at_state(state, &expression, None, &assumptions)
+        program_evaluate_speprogram_expression_at_state(state, &expression, None, &assumptions)
             .unwrap()
             .0
     };
@@ -6409,7 +6451,7 @@ fn predicate_population_snapshot_reads_saved_count_without_transfer_rights() {
         arguments,
         ResourceFieldSchema::new(vec![(
             "serial".into(),
-            ResourceFieldType::C(ProgramType::Int32),
+            ResourceFieldType::Program(ProgramType::Int32),
         )])
         .unwrap(),
         vec![int32(7).into()].into(),
@@ -6549,7 +6591,7 @@ fn wide_range_observer_transport_rejects_changed_cells_and_low_word_equalities()
         ProgramValue::UInt64(MachineTerm::uint64_constant(3)),
     );
     let old = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory(before.clone()),
+        crate::kernel::intern_memory(before.clone()),
         Box::new(pointer.clone()),
         LoadKind::Bits64,
     );
@@ -6564,7 +6606,7 @@ fn wide_range_observer_transport_rejects_changed_cells_and_low_word_equalities()
         ProgramValue::UInt64(MachineTerm::uint64_constant((1u64 << 32) + 3)),
     );
     let changed = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory(after),
+        crate::kernel::intern_memory(after),
         Box::new(pointer),
         LoadKind::Bits64,
     );
@@ -7775,7 +7817,7 @@ fn direct_constant_overlap_keeps_byte_widths_translations_and_alias_refusals() {
                 let stated_separate =
                     assumptions
                         .clone()
-                        .assume_proposition(Proposition::CResourceSeparate {
+                        .assume_proposition(Proposition::ResourceSeparate {
                             left: Box::new(Resource::Memory(held.clone())),
                             right: Box::new(Resource::Memory(query.clone())),
                         });

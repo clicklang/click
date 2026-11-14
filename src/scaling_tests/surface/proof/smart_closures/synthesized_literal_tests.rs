@@ -181,7 +181,7 @@ fn native_signed_certificate_results_do_not_walk_ambient_facts() {
         conclusion: 0,
     };
     let surface = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(ProgramExpression::Variable("x".into())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".into())),
         operator: ComparisonOperator::LessEqual,
         right: ContractExpression::IntegerLiteral("1".into()),
     };

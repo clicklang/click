@@ -374,7 +374,7 @@ fn snapshot_blind_proposition_key_one(proposition: &Proposition) -> SnapshotBlin
         Proposition::Not(body) => {
             SnapshotBlindPropositionKey::Not(Box::new(snapshot_blind_proposition_key(body)))
         }
-        Proposition::CResourceSeparate { .. } if proposition.memory_separation().is_some() => {
+        Proposition::ResourceSeparate { .. } if proposition.memory_separation().is_some() => {
             let (left, right) = proposition
                 .memory_separation()
                 .expect("the guard matched a memory separation");
@@ -599,7 +599,7 @@ fn snapshot_blind_pointer_offset_key(offset: &PointerOffsetTerm) -> SnapshotBlin
 /// checked premises. Bound variables use structural ordinals and free
 /// variables retain their kernel identities. Raw bitvector loads outside a
 /// loadability atom remain snapshot-blind on this selection path, while a
-/// `CMemoryLoadable` atom retains the exact snapshot that is part of its
+/// `MemoryLoadable` atom retains the exact snapshot that is part of its
 /// checked premise.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) struct QuantifiedEquivalenceKey(AlphaPropositionKey);
@@ -650,12 +650,12 @@ enum AlphaPropositionKey {
         name: String,
         arguments: Vec<AlphaPredicateArgumentKey>,
     },
-    CMemoryReadDefined {
+    MemoryReadDefined {
         memory: AlphaSnapshotKey,
         pointer: AlphaPointerKey,
         value_type: ProgramType,
     },
-    CMemoryLoadable {
+    MemoryLoadable {
         memory: AlphaSnapshotKey,
         base: AlphaPointerKey,
         bytes: AlphaBitvectorKey,
@@ -906,7 +906,7 @@ enum AlphaAlgebraicKey {
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum AlphaAlgebraicValueKey {
-    C(AlphaProgramValueKey),
+    Program(AlphaProgramValueKey),
     Integer(AlphaIntegerKey),
     Algebraic(AlphaAlgebraicKey),
 }
@@ -2144,7 +2144,7 @@ fn alpha_pointer_key_with_bindings<const ALLOW_LOADS: bool>(
     })
 }
 
-fn alpha_c_value_key_with_bindings<const ALLOW_LOADS: bool>(
+fn alpha_program_value_key_with_bindings<const ALLOW_LOADS: bool>(
     value: &ProgramValue,
     bindings: &mut AlphaBindings,
     next_binder: &mut usize,
@@ -2255,8 +2255,8 @@ fn alpha_algebraic_key_with_bindings<const ALLOW_LOADS: bool>(
                 .iter()
                 .map(|field| {
                     Some(match field {
-                        AlgebraicValue::C(value) => AlphaAlgebraicValueKey::C(
-                            alpha_c_value_key_with_bindings::<ALLOW_LOADS>(
+                        AlgebraicValue::Program(value) => AlphaAlgebraicValueKey::Program(
+                            alpha_program_value_key_with_bindings::<ALLOW_LOADS>(
                                 value,
                                 bindings,
                                 next_binder,
@@ -2320,7 +2320,7 @@ fn alpha_pure_function_argument_key_with_bindings<const ALLOW_LOADS: bool>(
             ))
         }
         PureFunctionArgument::Value(value) => AlphaPureFunctionArgumentKey::Value(
-            alpha_c_value_key_with_bindings::<ALLOW_LOADS>(value, bindings, next_binder)?,
+            alpha_program_value_key_with_bindings::<ALLOW_LOADS>(value, bindings, next_binder)?,
         ),
         PureFunctionArgument::Integer(value) => AlphaPureFunctionArgumentKey::Integer(
             alpha_integer_key_with_bindings(value, bindings, next_binder)?,
@@ -2333,8 +2333,8 @@ fn alpha_pure_function_argument_key_with_bindings<const ALLOW_LOADS: bool>(
             pointer,
             element_type,
         } => AlphaPureFunctionArgumentKey::ArrayRef {
-            memory: AlphaSnapshotKey::new(&crate::kernel::intern_c_memory_ref(memory)),
-            pointer: alpha_c_value_key_with_bindings::<ALLOW_LOADS>(
+            memory: AlphaSnapshotKey::new(&crate::kernel::intern_memory_ref(memory)),
+            pointer: alpha_program_value_key_with_bindings::<ALLOW_LOADS>(
                 pointer,
                 bindings,
                 next_binder,
@@ -2748,12 +2748,12 @@ fn alpha_condition_key_with_bindings<const ALLOW_LOADS: bool>(
             alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(right, bindings, next_binder)?,
         ),
         ConditionTerm::PointerValueEqual(left, right) => AlphaConditionKey::PointerValueEqual(
-            Box::new(alpha_c_value_key_with_bindings::<ALLOW_LOADS>(
+            Box::new(alpha_program_value_key_with_bindings::<ALLOW_LOADS>(
                 &ProgramValue::Pointer((**left).clone()),
                 bindings,
                 next_binder,
             )?),
-            Box::new(alpha_c_value_key_with_bindings::<ALLOW_LOADS>(
+            Box::new(alpha_program_value_key_with_bindings::<ALLOW_LOADS>(
                 &ProgramValue::Pointer((**right).clone()),
                 bindings,
                 next_binder,
@@ -3067,7 +3067,7 @@ mod proposition_identity_tests {
     fn local_definedness_fact(memory: &Memory, variable: u64) -> Proposition {
         forall(
             variable,
-            Proposition::CMemoryReadDefined {
+            Proposition::MemoryReadDefined {
                 memory: memory.clone(),
                 pointer: Pointer {
                     block: "local:defined-array".into(),
@@ -3384,19 +3384,19 @@ mod proposition_identity_tests {
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(9)),
         );
-        let left = Proposition::CMemoryLoadable {
+        let left = Proposition::MemoryLoadable {
             memory: left_memory.clone(),
             base: pointer.clone(),
             bytes: MachineTerm::constant(1),
             wide: false,
         };
-        let same = Proposition::CMemoryLoadable {
+        let same = Proposition::MemoryLoadable {
             memory: left_memory,
             base: pointer.clone(),
             bytes: MachineTerm::constant(1),
             wide: false,
         };
-        let changed = Proposition::CMemoryLoadable {
+        let changed = Proposition::MemoryLoadable {
             memory: right_memory,
             base: pointer,
             bytes: MachineTerm::constant(1),
@@ -3413,7 +3413,7 @@ mod proposition_identity_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let memory = Memory::new().with_block("identity-registered-load", 8);
-        let shared_memory = crate::kernel::intern_c_memory_ref(&memory);
+        let shared_memory = crate::kernel::intern_memory_ref(&memory);
         // The spelled side is a raw `MemoryLoad` term, which records no
         // width, so the named side must stand in the same width the
         // term-derived naming path assumes for it.
@@ -3449,7 +3449,7 @@ mod proposition_identity_tests {
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(9)),
         );
-        let changed_shared = crate::kernel::intern_c_memory_ref(&changed_memory);
+        let changed_shared = crate::kernel::intern_memory_ref(&changed_memory);
         let changed_load = crate::kernel::load_variable_for_cell_with_origin(
             &changed_shared,
             &pointer,
@@ -3553,19 +3553,19 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                     Some(match argument {
                         Term::ExecutionState(state) => {
                             AlphaPredicateArgumentKey::StateMemory(AlphaSnapshotKey::new(
-                                &crate::kernel::intern_c_memory_ref(state.memory()),
+                                &crate::kernel::intern_memory_ref(state.memory()),
                             ))
                         }
                         Term::Memory(memory) => AlphaPredicateArgumentKey::Memory(
-                            AlphaSnapshotKey::new(&crate::kernel::intern_c_memory_ref(memory)),
+                            AlphaSnapshotKey::new(&crate::kernel::intern_memory_ref(memory)),
                         ),
-                        Term::ProgramValue(value) => {
-                            AlphaPredicateArgumentKey::Value(alpha_c_value_key_with_bindings::<
-                                ALLOW_LOADS,
-                            >(
-                                value, bindings, next_binder
-                            )?)
-                        }
+                        Term::ProgramValue(value) => AlphaPredicateArgumentKey::Value(
+                            alpha_program_value_key_with_bindings::<ALLOW_LOADS>(
+                                value,
+                                bindings,
+                                next_binder,
+                            )?,
+                        ),
                         Term::Integer(value) => AlphaPredicateArgumentKey::Integer(
                             alpha_integer_key_with_bindings(value, bindings, next_binder)?,
                         ),
@@ -3581,7 +3581,7 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                 })
                 .collect::<Option<Vec<_>>>()?,
         },
-        Proposition::CMemoryReadDefined {
+        Proposition::MemoryReadDefined {
             memory,
             pointer,
             value_type,
@@ -3594,8 +3594,8 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
             bindings.snapshot_aware = true;
             let key = (|| -> Option<AlphaPropositionKey> {
                 alpha_work_checkpoint(bindings, 1)?;
-                let snapshot = crate::kernel::intern_c_memory_ref(memory);
-                Some(AlphaPropositionKey::CMemoryReadDefined {
+                let snapshot = crate::kernel::intern_memory_ref(memory);
+                Some(AlphaPropositionKey::MemoryReadDefined {
                     memory: AlphaSnapshotKey {
                         identity: snapshot.local_read_definedness_identity(pointer),
                         _snapshot: snapshot.clone(),
@@ -3611,7 +3611,7 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
             bindings.snapshot_aware = prior_snapshot_aware;
             key?
         }
-        Proposition::CMemoryLoadable {
+        Proposition::MemoryLoadable {
             memory,
             base,
             bytes,
@@ -3632,8 +3632,8 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
             bindings.snapshot_aware = true;
             let key = (|| -> Option<AlphaPropositionKey> {
                 alpha_work_checkpoint(bindings, 1)?;
-                let snapshot = crate::kernel::intern_c_memory_ref(memory);
-                Some(AlphaPropositionKey::CMemoryLoadable {
+                let snapshot = crate::kernel::intern_memory_ref(memory);
+                Some(AlphaPropositionKey::MemoryLoadable {
                     memory: AlphaSnapshotKey::new(&snapshot),
                     base: alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
                         base,
@@ -3903,7 +3903,7 @@ fn checked_proposition_contains_memory_loadability(proposition: &Proposition) ->
         return Err(());
     }
     match proposition {
-        Proposition::CMemoryLoadable { .. } | Proposition::CMemoryReadDefined { .. } => Ok(true),
+        Proposition::MemoryLoadable { .. } | Proposition::MemoryReadDefined { .. } => Ok(true),
         Proposition::And(left, right)
         | Proposition::Or(left, right)
         | Proposition::Implies(left, right) => {
@@ -4342,8 +4342,8 @@ mod snapshot_alpha_tests {
             block: "snapshot-alpha".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let before = crate::kernel::intern_c_memory(Memory::new().with_block("snapshot-alpha", 8));
-        let after = crate::kernel::intern_c_memory(
+        let before = crate::kernel::intern_memory(Memory::new().with_block("snapshot-alpha", 8));
+        let after = crate::kernel::intern_memory(
             before
                 .as_ref()
                 .clone()
@@ -4376,7 +4376,7 @@ mod snapshot_alpha_tests {
     #[test]
     fn snapshot_alpha_rejects_unknown_registered_loads() {
         let unknown_load = Variable((1 << 40) + 313);
-        let memory = crate::kernel::intern_c_memory(Memory::new().with_block("snapshot-alpha", 8));
+        let memory = crate::kernel::intern_memory(Memory::new().with_block("snapshot-alpha", 8));
         let term = IntegerTerm::range_fold(
             int32_index(),
             IntegerTerm::constant_i64(0),
@@ -4404,8 +4404,8 @@ mod snapshot_alpha_tests {
             block: "snapshot-alpha".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let before = crate::kernel::intern_c_memory(Memory::new().with_block("snapshot-alpha", 8));
-        let after = crate::kernel::intern_c_memory(before.as_ref().clone().store(
+        let before = crate::kernel::intern_memory(Memory::new().with_block("snapshot-alpha", 8));
+        let after = crate::kernel::intern_memory(before.as_ref().clone().store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(11)),
         ));
@@ -4467,7 +4467,7 @@ mod snapshot_alpha_tests {
     #[test]
     fn snapshot_alpha_renames_a_binder_under_a_loaded_pointer_block() {
         let block = "loaded-pointer-block-alpha";
-        let memory = crate::kernel::intern_c_memory(Memory::new().with_block(block, 16));
+        let memory = crate::kernel::intern_memory(Memory::new().with_block(block, 16));
         let field = |offset: i64| Pointer {
             block: block.into(),
             offset: PointerOffsetTerm::Constant(offset),
@@ -4501,7 +4501,7 @@ mod snapshot_alpha_tests {
             Proposition::ForAll {
                 name: Default::default(),
                 var: binder,
-                sort: Sort::CInt32,
+                sort: Sort::ProgramInt32,
                 body: Box::new(Proposition::ConditionIs(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
@@ -4528,7 +4528,7 @@ mod snapshot_alpha_tests {
     #[test]
     fn snapshot_alpha_explicit_and_registered_loads_share_nested_identity() {
         let block = "snapshot-alpha-equivalent-loads";
-        let memory = crate::kernel::intern_c_memory(Memory::new().with_block(block, 64));
+        let memory = crate::kernel::intern_memory(Memory::new().with_block(block, 64));
         let first_pointer = Pointer {
             block: block.into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -4605,7 +4605,7 @@ mod snapshot_alpha_tests {
     }
 
     #[test]
-    fn snapshot_alpha_accepts_free_c_endpoints_and_body_values() {
+    fn snapshot_alpha_accepts_free_program_endpoints_and_body_values() {
         let start = Variable(319_000);
         let end = Variable(319_001);
         let payload = Variable(319_002);
@@ -4644,8 +4644,8 @@ mod snapshot_alpha_tests {
             block: "snapshot-alpha".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let before = crate::kernel::intern_c_memory(Memory::new().with_block("snapshot-alpha", 8));
-        let after = crate::kernel::intern_c_memory(
+        let before = crate::kernel::intern_memory(Memory::new().with_block("snapshot-alpha", 8));
+        let after = crate::kernel::intern_memory(
             before
                 .as_ref()
                 .clone()
@@ -4684,8 +4684,8 @@ mod snapshot_alpha_tests {
             block: "snapshot-alpha".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let before = crate::kernel::intern_c_memory(Memory::new().with_block("snapshot-alpha", 8));
-        let after = crate::kernel::intern_c_memory(before.as_ref().clone().store(
+        let before = crate::kernel::intern_memory(Memory::new().with_block("snapshot-alpha", 8));
+        let after = crate::kernel::intern_memory(before.as_ref().clone().store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(5)),
         ));
@@ -4724,7 +4724,7 @@ mod snapshot_alpha_tests {
 
     fn registered_load_chain(depth: usize) -> (SharedMemory, Variable) {
         let block = format!("snapshot-alpha-registry-{depth}");
-        let memory = crate::kernel::intern_c_memory(Memory::new().with_block(block.clone(), 4096));
+        let memory = crate::kernel::intern_memory(Memory::new().with_block(block.clone(), 4096));
         let mut pointer = Pointer {
             block: block.into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -4754,7 +4754,7 @@ mod snapshot_alpha_tests {
 
     fn registered_load_branching_chain(depth: usize) -> (SharedMemory, Variable) {
         let block = format!("snapshot-alpha-registry-branch-{depth}");
-        let memory = crate::kernel::intern_c_memory(Memory::new().with_block(block.clone(), 4096));
+        let memory = crate::kernel::intern_memory(Memory::new().with_block(block.clone(), 4096));
         let mut pointer = Pointer {
             block: block.into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -4840,7 +4840,7 @@ mod snapshot_alpha_tests {
     #[test]
     fn snapshot_alpha_drops_unreachable_registered_load_snapshots() {
         let early_memory =
-            crate::kernel::intern_c_memory(Memory::new().with_block("snapshot-alpha-early", 8));
+            crate::kernel::intern_memory(Memory::new().with_block("snapshot-alpha-early", 8));
         let early_term: SharedIntegerTerm =
             fold(&early_memory, Variable(324_000), Variable(324_001)).into();
         let early_key = integer_fold_alpha_key(&early_term).expect("early fold key");
@@ -4848,7 +4848,7 @@ mod snapshot_alpha_tests {
 
         for index in 0..64u64 {
             let block = format!("snapshot-alpha-temporary-{index}");
-            let memory = crate::kernel::intern_c_memory(Memory::new().with_block(block.clone(), 8));
+            let memory = crate::kernel::intern_memory(Memory::new().with_block(block.clone(), 8));
             let term: SharedIntegerTerm = IntegerTerm::range_fold(
                 int32_index(),
                 IntegerTerm::constant_i64(0),
@@ -4882,7 +4882,7 @@ mod snapshot_alpha_tests {
         let mut trigger_key = None;
         for index in 0..16u64 {
             let block = format!("snapshot-alpha-cleanup-trigger-{index}");
-            let memory = crate::kernel::intern_c_memory(Memory::new().with_block(block.clone(), 8));
+            let memory = crate::kernel::intern_memory(Memory::new().with_block(block.clone(), 8));
             let term: SharedIntegerTerm = IntegerTerm::range_fold(
                 int32_index(),
                 IntegerTerm::constant_i64(0),
@@ -4966,7 +4966,7 @@ mod machine_quantifier_identity_tests {
                     let quantified = |condition, truth| Proposition::ForAll {
                         var: Variable(981),
                         name: crate::kernel::BinderName::written("i"),
-                        sort: Sort::CMachineInteger(format),
+                        sort: Sort::ProgramInteger(format),
                         body: Box::new(Proposition::ConditionIs(condition, truth)),
                     };
                     assert!(
@@ -4993,7 +4993,7 @@ mod machine_quantifier_identity_tests {
         let quantified = |variable, wide, bound| Proposition::Exists {
             name: "x".into(),
             var: Variable(variable),
-            sort: Sort::CInt64,
+            sort: Sort::ProgramInt64,
             body: Box::new(Proposition::ConditionIs(
                 if wide {
                     ConditionTerm::Compare {
@@ -5029,7 +5029,7 @@ mod machine_quantifier_identity_tests {
         let Proposition::Exists { sort, .. } = &mut unsigned else {
             unreachable!()
         };
-        *sort = Sort::CMachineInteger(MachineIntegerType::UInt64);
+        *sort = Sort::ProgramInteger(MachineIntegerType::UInt64);
         assert!(!propositions_are_alpha_equal(&wide, &unsigned));
     }
 }

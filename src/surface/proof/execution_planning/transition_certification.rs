@@ -313,7 +313,7 @@ pub(in crate::surface::proof) fn certified_proof_condition_split(
                         pure_facts.assumptions(),
                         kind,
                     ),
-                    crate::surface::diagnostics::describe_c_statement_site()
+                    crate::surface::diagnostics::describe_execution_statement_site()
                 )).with_reported_assertion_goal(kind.required_goal().cloned())),
                 ConditionOutcome::RuntimeError(error) => Err(proof_condition_runtime_error(
                     context_label,
@@ -347,7 +347,7 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
         assumptions = assumptions.defer_non_exact_loadability_obligations();
         assumptions = assumptions.defer_non_exact_condition_reasoning();
     }
-    let evaluation = prove_symbolic_c_condition_evaluation(
+    let evaluation = prove_symbolic_program_condition_evaluation(
         state.clone(),
         condition.clone(),
         assumptions.clone(),
@@ -430,7 +430,7 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                 }
             }
             match implication_body(path.theorem().proposition()) {
-                Proposition::CConditionEvaluates {
+                Proposition::ProgramConditionEvaluates {
                     outcome: ConditionOutcome::Value(is_true),
                     ..
                 } => Ok(CertifiedConditionTransition {
@@ -444,7 +444,7 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                         .collect(),
                     theorem: path.theorem().clone(),
                 }),
-                Proposition::CConditionEvaluates {
+                Proposition::ProgramConditionEvaluates {
                     outcome: ConditionOutcome::UndefinedBehavior(kind),
                     ..
                 } => Err(ClickError::new(format!(
@@ -456,15 +456,15 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                         &assumptions,
                         kind,
                     ),
-                    crate::surface::diagnostics::describe_c_statement_site()
+                    crate::surface::diagnostics::describe_execution_statement_site()
                 )).with_reported_assertion_goal(kind.required_goal().cloned())),
-                Proposition::CConditionEvaluates {
+                Proposition::ProgramConditionEvaluates {
                     outcome: ConditionOutcome::RuntimeError(error),
                     ..
                 } => Err(ClickError::new(format!(
                     "{context_label} could not verify the C condition: {}{}",
                     crate::surface::diagnostics::describe_runtime_error_over_locals(error, state),
-                    crate::surface::diagnostics::describe_c_statement_site(),
+                    crate::surface::diagnostics::describe_execution_statement_site(),
                 )).with_kind(crate::surface::diagnostics::runtime_refusal_kind(error))),
                 proposition => Err(ClickError::new(format!(
                     "{context_label} saw unexpected condition theorem `{}`",
@@ -508,7 +508,7 @@ pub(in crate::surface) fn certified_statement_transitions(
         .with_next_opaque_call(*next_opaque_call);
     let executed_under = assumptions.clone();
     let execute = || {
-        prove_symbolic_c_statement_verification_paths_with_environment_and_loop_rule_using_budget(
+        prove_symbolic_execution_statement_verification_paths_with_environment_and_loop_rule_using_budget(
             state.clone(),
             statement.clone(),
             assumptions,
@@ -560,7 +560,7 @@ pub(in crate::surface::proof) fn certified_loop_exit_transitions_with_proven_pha
     crate::instrumentation::record_deterministic_work(
         final_exit_candidates.len() + break_exits.len() + return_exits.len(),
     );
-    let (execution, loop_rule) = prove_symbolic_c_loop_exit_with_proven_phases_using_budget(
+    let (execution, loop_rule) = prove_symbolic_loop_exit_with_proven_phases_using_budget(
         state.clone(),
         statement.clone(),
         assumptions,
@@ -706,7 +706,7 @@ fn certified_transitions_from_execution(
             // contract boundaries refuse with `FunctionContract`.
             let rejected_contract_call = matches!(
                 implication_body(path.theorem().proposition()),
-                Proposition::CStatementVerifies {
+                Proposition::ProgramStatementVerifies {
                     outcome: StatementOutcome::RuntimeError(
                         crate::kernel::RuntimeError::FunctionContract(_)
                             | crate::kernel::RuntimeError::UnsuppliedResourceValue(_)
@@ -731,7 +731,7 @@ fn certified_transitions_from_execution(
                         .unwrap_or_default();
                     refuse_or_probe(prerequisite_policy, ClickError::new(format!(
                         "{context_label} requires an explicit prerequisite proof{description}{}",
-                        crate::surface::diagnostics::describe_c_statement_site()
+                        crate::surface::diagnostics::describe_execution_statement_site()
                     )).with_unresolved_requirement(obligation)
                         .with_assertion_condition(
                             crate::surface::proof::fact_reasoning::asserted_condition(proposition, statement),
@@ -909,7 +909,7 @@ fn certified_transitions_from_execution(
                 "statement result publication",
             );
             let introduced_facts = statement_facts.clone();
-            let Proposition::CStatementVerifies {
+            let Proposition::ProgramStatementVerifies {
                 state: _,
                 outcome,
                 ..
@@ -934,7 +934,7 @@ fn certified_transitions_from_execution(
                         continue;
                     };
                     let Some((frame_premises, theorem_target)) =
-                        crate::kernel::c_condition_fact_transport_parts(theorem, source)
+                        crate::kernel::program_condition_fact_transport_parts(theorem, source)
                     else {
                         continue;
                     };
@@ -1071,7 +1071,7 @@ fn generated_load_source_events_from_facts(
 #[cfg(test)]
 mod condition_transition_tests {
     use super::*;
-    use crate::kernel::{RuntimeError, c_load, c_variable};
+    use crate::kernel::RuntimeError;
 
     #[test]
     fn condition_transition_still_checks_execution_obligations() {
@@ -1082,7 +1082,9 @@ mod condition_transition_tests {
                 offset: PointerOffsetTerm::Constant(0),
             }),
         );
-        let condition = c_load(c_variable("p"));
+        let condition = crate::kernel::program_expression::load(
+            crate::kernel::program_expression::variable("p"),
+        );
 
         let error = match certified_condition_transitions(
             &state,
@@ -1106,7 +1108,7 @@ mod condition_transition_tests {
 
     #[test]
     fn generated_load_binding_collection_tombstones_conflicting_keys() {
-        let memory = crate::kernel::intern_c_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(Memory::new());
         let pointer = Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),

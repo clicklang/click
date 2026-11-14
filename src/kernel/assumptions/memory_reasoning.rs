@@ -240,7 +240,7 @@ impl PureFactContext {
             let Some(facts) = self.memory_read_defined_facts.get(&key) else {
                 return false;
             };
-            let exact = Proposition::CMemoryReadDefined {
+            let exact = Proposition::MemoryReadDefined {
                 memory: memory.clone(),
                 pointer: pointer.clone(),
                 value_type,
@@ -253,7 +253,7 @@ impl PureFactContext {
             if facts.len() != 1 {
                 return false;
             }
-            let Some(Proposition::CMemoryReadDefined {
+            let Some(Proposition::MemoryReadDefined {
                 memory: before,
                 pointer: source,
                 ..
@@ -390,7 +390,7 @@ impl PureFactContext {
         // Exact evidence is an indexed lookup even when its address holds
         // many other views. Choosing a different premise belongs to search.
         crate::instrumentation::record_deterministic_work(1);
-        if self.contains_assumed_exact(&Proposition::CMemoryLoadable {
+        if self.contains_assumed_exact(&Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
             bytes: bytes.clone(),
@@ -418,7 +418,7 @@ impl PureFactContext {
         let narrow_cover = self
             .memory_loadable_exact_candidates_for_base(base)
             .filter_map(|fact| match fact {
-                Proposition::CMemoryLoadable {
+                Proposition::MemoryLoadable {
                     bytes: int32_constant!(held),
                     wide: false,
                     ..
@@ -441,7 +441,7 @@ impl PureFactContext {
         let prefix = self
             .memory_loadable_exact_candidates_for_base(base)
             .any(|fact| {
-                let Proposition::CMemoryLoadable {
+                let Proposition::MemoryLoadable {
                     memory: before,
                     base: source_base,
                     bytes: source_bytes,
@@ -508,7 +508,7 @@ impl PureFactContext {
         bytes: &MachineTerm,
     ) -> bool {
         crate::instrumentation::record_deterministic_work(1);
-        let Proposition::CMemoryLoadable {
+        let Proposition::MemoryLoadable {
             memory: before,
             base: source,
             bytes: held,
@@ -602,7 +602,7 @@ impl PureFactContext {
         if proved {
             record_implicit_reasoning_provenance(
                 self,
-                &Proposition::CMemoryLoadable {
+                &Proposition::MemoryLoadable {
                     memory: memory.clone(),
                     base: base.clone(),
                     bytes: bytes.clone(),
@@ -622,7 +622,7 @@ impl PureFactContext {
         // Exact evidence is an indexed lookup even when its address holds
         // many other views. Choosing a different premise belongs to search.
         crate::instrumentation::record_deterministic_work(1);
-        if self.contains_assumed_exact(&Proposition::CMemoryLoadable {
+        if self.contains_assumed_exact(&Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
             bytes: bytes.clone(),
@@ -655,7 +655,7 @@ impl PureFactContext {
             .memory_loadable_candidates_for_base(base)
             .any(|proposition| {
                 crate::instrumentation::record_deterministic_work(1);
-                let Proposition::CMemoryLoadable {
+                let Proposition::MemoryLoadable {
                     memory: range_memory,
                     base: range_base,
                     bytes: range_bytes,
@@ -692,7 +692,7 @@ impl PureFactContext {
         if let Some(width) = bytes.as_const().filter(|width| *width > 0)
             && self.memory_loadable_candidates_for_base(base).any(|fact| {
                 crate::instrumentation::record_deterministic_work(1);
-                let Proposition::CMemoryLoadable {
+                let Proposition::MemoryLoadable {
                     memory: range_memory,
                     base: range_base,
                     bytes: range_bytes,
@@ -730,7 +730,7 @@ impl PureFactContext {
         let mut ranges = self
             .memory_loadable_candidates_for_base(base)
             .filter_map(|proposition| {
-                let Proposition::CMemoryLoadable {
+                let Proposition::MemoryLoadable {
                     memory: range_memory,
                     base: range_base,
                     bytes: range_bytes,
@@ -781,8 +781,8 @@ impl PureFactContext {
                     && fact_memory.forgotten.ended_local_blocks == memory.forgotten.ended_local_blocks
                     && fact_memory.heap == memory.heap)
                 || memory_range_still_available(fact_memory, memory, fact_base, self)
-                || crate::kernel::api::c_memories_canonically_equal(fact_memory, memory)
-                || crate::kernel::api::c_memories_connected_by_effects(fact_memory, memory, self)
+                || crate::kernel::api::memories_canonically_equal(fact_memory, memory)
+                || crate::kernel::api::memories_connected_by_effects(fact_memory, memory, self)
         };
         let equal = |left: &MachineTerm, right: &MachineTerm| {
             let left = self.simplify_bitvector_under_assumptions(left);
@@ -801,7 +801,7 @@ impl PureFactContext {
         let mut regions = self
             .memory_loadable_candidates_for_base(base)
             .filter_map(|fact| {
-                let Proposition::CMemoryLoadable {
+                let Proposition::MemoryLoadable {
                     memory: fact_memory,
                     base: fact_base,
                     bytes: fact_bytes,
@@ -816,10 +816,7 @@ impl PureFactContext {
                         crate::kernel::api::canonicalize_pointer_loads(fact_base),
                         fact_bytes.clone(),
                         fact_memory == memory
-                            || crate::kernel::api::c_memories_canonically_equal(
-                                fact_memory,
-                                memory,
-                            ),
+                            || crate::kernel::api::memories_canonically_equal(fact_memory, memory),
                     )
                 })
             })
@@ -866,7 +863,7 @@ impl PureFactContext {
             let mut suffixes = self
                 .memory_loadable_candidates_for_base(&endpoint)
                 .filter_map(|fact| {
-                    let Proposition::CMemoryLoadable {
+                    let Proposition::MemoryLoadable {
                         memory: before,
                         base: address,
                         bytes: extent,
@@ -881,7 +878,7 @@ impl PureFactContext {
                             crate::kernel::api::canonicalize_pointer_loads(address),
                             extent.clone(),
                             before == memory
-                                || crate::kernel::api::c_memories_canonically_equal(before, memory),
+                                || crate::kernel::api::memories_canonically_equal(before, memory),
                         )
                     })
                 })
@@ -971,7 +968,7 @@ impl PureFactContext {
         // Exact evidence is an indexed lookup even when its address holds
         // many other views. Choosing a different premise belongs to search.
         crate::instrumentation::record_deterministic_work(1);
-        if self.contains_assumed_exact(&Proposition::CMemoryLoadable {
+        if self.contains_assumed_exact(&Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
             bytes: bytes.clone(),
@@ -995,7 +992,7 @@ impl PureFactContext {
         }
         self.memory_loadable_candidates_for_base(base)
             .any(|proposition| {
-                let Proposition::CMemoryLoadable {
+                let Proposition::MemoryLoadable {
                     memory: range_memory,
                     base: range_base,
                     bytes: range_bytes,
@@ -2057,7 +2054,7 @@ impl PureFactContext {
         }
         record_implicit_reasoning_provenance(
             self,
-            &Proposition::CResourceComposition((*resources).clone()),
+            &Proposition::ResourceComposition((*resources).clone()),
         );
         true
     }
@@ -2362,7 +2359,7 @@ impl PureFactContext {
                 .inspect(|(resources, _, _)| {
                     record_implicit_reasoning_provenance(
                         self,
-                        &Proposition::CResourceComposition((*resources).clone()),
+                        &Proposition::ResourceComposition((*resources).clone()),
                     );
                 })
                 .is_some()
@@ -2532,7 +2529,7 @@ impl PureFactContext {
             if let Some((resources, _, _)) = found {
                 record_implicit_reasoning_provenance(
                     self,
-                    &Proposition::CResourceComposition(resources.clone()),
+                    &Proposition::ResourceComposition(resources.clone()),
                 );
             }
             found.is_some()
@@ -2620,7 +2617,7 @@ impl PureFactContext {
                         if proved {
                             record_implicit_reasoning_provenance(
                                 self,
-                                &Proposition::CResourceComposition(resources.clone()),
+                                &Proposition::ResourceComposition(resources.clone()),
                             );
                         }
                         proved
@@ -2665,7 +2662,7 @@ impl PureFactContext {
                         if proved {
                             record_implicit_reasoning_provenance(
                                 self,
-                                &Proposition::CResourceComposition(resources.clone()),
+                                &Proposition::ResourceComposition(resources.clone()),
                             );
                         }
                         proved
@@ -3209,7 +3206,7 @@ impl PureFactContext {
                 return true;
             }
             for proposition in self.resource_contains_candidates(&current) {
-                let Proposition::CResourceContains {
+                let Proposition::ResourceContains {
                     parent: fact_parent,
                     child: fact_child,
                 } = proposition
@@ -3237,7 +3234,7 @@ impl PureFactContext {
         }
         // Memory is addressed: two pointers with equal addresses name the
         // same bytes, whatever objects they designate. A C pointer comparison
-        // states exactly that (`c_pointer_comparison_condition`). Such a
+        // states exactly that (`program_pointer_comparison_condition`). Such a
         // fact files its address endpoints by object, so a context with none
         // filed asks nothing.
         if self.equality_graph.has_wide_pointer_sources()
@@ -3680,7 +3677,7 @@ impl PureFactContext {
             "resource separation: residual facts",
             || {
                 scan_facts(&|proposition| {
-                    let Proposition::CResourceSeparate {
+                    let Proposition::ResourceSeparate {
                         left: fact_left,
                         right: fact_right,
                     } = proposition
@@ -3903,7 +3900,7 @@ impl PureFactContext {
                         .flat_map(crate::persistent::PersistentSet::iter)
                     {
                         crate::instrumentation::record_deterministic_work(1);
-                        let Proposition::CResourceContains { parent, .. } = fact else {
+                        let Proposition::ResourceContains { parent, .. } = fact else {
                             continue;
                         };
                         match &**parent {
@@ -4171,7 +4168,7 @@ impl PureFactContext {
         }
         candidates.extend(self.nonmemory_separation_facts.iter());
         for proposition in candidates {
-            let Proposition::CResourceSeparate { left, right } = proposition else {
+            let Proposition::ResourceSeparate { left, right } = proposition else {
                 continue;
             };
             if self.resource_separation_conflicts_with_equalities(left, right) {
@@ -5797,7 +5794,7 @@ mod seeded_interval_adjacency_tests {
             block: "wide-run-adjacency".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let source = crate::kernel::intern_c_memory(Memory::new());
+        let source = crate::kernel::intern_memory(Memory::new());
         let run = CellRun::new(
             base.clone(),
             1,
@@ -5887,7 +5884,7 @@ mod shallow_composition_separation_tests {
     use super::*;
 
     fn owner_of(pointers: &[Pointer]) -> Proposition {
-        Proposition::CResourceComposition(ResourceContext::new().unchecked_with_facts(
+        Proposition::ResourceComposition(ResourceContext::new().unchecked_with_facts(
             pointers.iter().map(|pointer| {
                 ResourceFact::own_memory(MemoryRange::new_with_element_width(
                     pointer.clone(),
@@ -5948,7 +5945,7 @@ mod shallow_composition_separation_tests {
     }
 
     fn separate(left: u64, right: u64) -> Proposition {
-        Proposition::CResourceSeparate {
+        Proposition::ResourceSeparate {
             left: Box::new(Resource::Memory(cells(left))),
             right: Box::new(Resource::Memory(cells(right))),
         }
@@ -5992,7 +5989,7 @@ mod shallow_composition_separation_tests {
     #[test]
     fn composition_cover_with_a_token_container_ignores_unrelated_compositions() {
         let holder = token("cover-holder");
-        let contains = Proposition::CResourceContains {
+        let contains = Proposition::ResourceContains {
             parent: Box::new(holder.clone()),
             child: Box::new(Resource::Memory(cells(9_211))),
         };
@@ -6013,7 +6010,7 @@ mod shallow_composition_separation_tests {
                 facts.proves_resource_separate(&left, &right)
             });
             assert!(!separate);
-            let held = facts.assume_proposition(Proposition::CResourceComposition(
+            let held = facts.assume_proposition(Proposition::ResourceComposition(
                 ResourceContext::new().unchecked_with_facts([
                     ResourceFact::own_memory(cells(9_210)),
                     ResourceFact::own(holder.clone()),
@@ -6063,7 +6060,7 @@ mod shallow_composition_separation_tests {
     }
 
     fn separate_resources(left: Resource, right: Resource) -> Proposition {
-        Proposition::CResourceSeparate {
+        Proposition::ResourceSeparate {
             left: Box::new(left),
             right: Box::new(right),
         }
@@ -6092,7 +6089,7 @@ mod shallow_composition_separation_tests {
             assert!(!separate);
             // A container of the left token, separate from the right one.
             let held = facts
-                .assume_proposition(Proposition::CResourceContains {
+                .assume_proposition(Proposition::ResourceContains {
                     parent: Box::new(token("apart-container")),
                     child: Box::new(left.clone()),
                 })
@@ -6113,7 +6110,7 @@ mod shallow_composition_separation_tests {
     fn token_ownership_ignores_unrelated_compositions() {
         let owning =
             |tokens: &[Resource]| {
-                Proposition::CResourceComposition(ResourceContext::new().unchecked_with_facts(
+                Proposition::ResourceComposition(ResourceContext::new().unchecked_with_facts(
                     tokens.iter().map(|token| ResourceFact::own(token.clone())),
                 ))
             };
@@ -6147,7 +6144,7 @@ mod shallow_composition_separation_tests {
     fn composite_ownership_ignores_compositions_of_other_roots() {
         let boxed = |variable: u64| Resource::Composite {
             name: "boxed".into(),
-            arguments: vec![crate::kernel::AlgebraicValue::C(
+            arguments: vec![crate::kernel::AlgebraicValue::Program(
                 crate::kernel::ProgramValue::Pointer(crate::kernel::PointerValue::new(
                     symbolic(variable),
                     crate::kernel::ProgramType::Int32Pointer,
@@ -6156,7 +6153,7 @@ mod shallow_composition_separation_tests {
             .into(),
         };
         let owning = |members: &[Resource]| {
-            Proposition::CResourceComposition(
+            Proposition::ResourceComposition(
                 ResourceContext::new().unchecked_with_facts(
                     members
                         .iter()
@@ -6242,7 +6239,7 @@ mod wide_separation_index_tests {
         };
         let left = wide(pointer(0));
         let right = wide(pointer(1));
-        let fact = Proposition::CResourceSeparate {
+        let fact = Proposition::ResourceSeparate {
             left: Box::new(Resource::Memory(left.clone())),
             right: Box::new(Resource::Memory(right.clone())),
         };
@@ -6292,7 +6289,7 @@ mod shared_range_index_tests {
 
     fn retained_index() -> SharedMachineIntegerTerm {
         let x = KernelTerm::variable(
-            KernelType::C(MachineIntegerType::Int32.c_type()),
+            KernelType::Program(MachineIntegerType::Int32.c_type()),
             Variable(1018301),
         );
         let one =

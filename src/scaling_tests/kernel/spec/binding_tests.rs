@@ -70,7 +70,8 @@ fn selected_let_lookup_does_not_scan_other_lexical_values() {
     for size in [16, 64, 256] {
         let _session = VerificationSession::enter();
         let state = ExecutionState::new();
-        let selected = KernelTerm::variable(KernelType::C(ProgramType::UInt64), Variable(992420));
+        let selected =
+            KernelTerm::variable(KernelType::Program(ProgramType::UInt64), Variable(992420));
         let mut values = crate::persistent::PersistentMap::default();
         for index in 0..size {
             values.insert(format!("other_{index}"), selected.clone());

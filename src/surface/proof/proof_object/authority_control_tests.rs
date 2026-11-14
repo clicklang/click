@@ -46,9 +46,11 @@ const C_SOURCE: &str = "int32 read_ref(int32** p) { int32* obj = *p; return *obj
 #[test]
 fn opening_control_retains_loaded_pointer_facts() {
     let _session = crate::kernel::VerificationSession::enter();
-    let file =
-        crate::surface::verification::parse_c0_click_file(CONTROL_SOURCE, &[("f.c", C_SOURCE)])
-            .unwrap();
+    let file = crate::surface::verification::parse_click_file_with_c_sources(
+        CONTROL_SOURCE,
+        &[("f.c", C_SOURCE)],
+    )
+    .unwrap();
     let parsed = syntax::parse_function(C_SOURCE).unwrap();
     let block = &file.function_blocks()[0];
     let predicates = PredicateEnvironment::new(file.predicate_definitions());

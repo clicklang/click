@@ -130,7 +130,7 @@ pub(crate) fn forall_loadable_range_parts(
     proposition: &Proposition,
 ) -> Option<(Vec<Proposition>, &Proposition)> {
     let Proposition::ForAll {
-        sort: Sort::CInt32,
+        sort: Sort::ProgramInt32,
         body,
         ..
     } = proposition
@@ -143,7 +143,7 @@ pub(crate) fn forall_loadable_range_parts(
         collect_proposition_conjuncts(premise, &mut premises);
         conclusion = rest.as_ref();
     }
-    matches!(conclusion, Proposition::CMemoryLoadable { .. }).then_some((premises, conclusion))
+    matches!(conclusion, Proposition::MemoryLoadable { .. }).then_some((premises, conclusion))
 }
 
 fn exact_predecessor_base(term: &MachineTerm) -> Option<MachineTerm> {
@@ -341,32 +341,32 @@ impl PureFactContext {
         proposition: &Proposition,
     ) -> bool {
         match proposition {
-            Proposition::CMemoryReadDefined {
+            Proposition::MemoryReadDefined {
                 memory,
                 pointer,
                 value_type,
             } => self.proves_memory_read_defined(memory, pointer, *value_type),
-            Proposition::CMemoryLoadable {
+            Proposition::MemoryLoadable {
                 memory,
                 base,
                 bytes,
                 wide: true,
             } => self.proves_native_memory_loadable(memory, base, bytes),
-            Proposition::CMemoryLoadable {
+            Proposition::MemoryLoadable {
                 memory,
                 base,
                 bytes,
                 wide: false,
             } => self.proves_memory_loadable(memory, base, bytes),
-            Proposition::CMemoryCanStore {
+            Proposition::MemoryCanStore {
                 memory,
                 pointer,
                 byte_width,
             } => self.proves_memory_access(memory, pointer, *byte_width),
-            Proposition::CResourceSeparate { left, right } => {
+            Proposition::ResourceSeparate { left, right } => {
                 self.proves_resource_separate(left, right)
             }
-            Proposition::CResourceContains { parent, child } => {
+            Proposition::ResourceContains { parent, child } => {
                 self.proves_resource_contains(parent, child)
             }
             _ => false,
@@ -552,18 +552,18 @@ impl PureFactContext {
                         || self.prop_facts.contains(proposition)
                 }
             },
-            Proposition::CMemoryReadDefined {
+            Proposition::MemoryReadDefined {
                 memory,
                 pointer,
                 value_type,
             } => self.proves_memory_read_defined(memory, pointer, *value_type),
-            Proposition::CMemoryLoadable {
+            Proposition::MemoryLoadable {
                 memory,
                 base,
                 bytes,
                 wide: true,
             } => self.proves_native_memory_loadable(memory, base, bytes),
-            Proposition::CMemoryLoadable {
+            Proposition::MemoryLoadable {
                 memory,
                 base,
                 bytes,
@@ -579,7 +579,7 @@ impl PureFactContext {
                         #[cfg(test)]
                         crate::kernel::memory_provenance::CARRIED_LOADABLE_VISITS
                             .with(|visits| visits.set(visits.get() + 1));
-                        let Proposition::CMemoryLoadable {
+                        let Proposition::MemoryLoadable {
                             memory: fact_memory,
                             base: fact_base,
                             bytes: fact_bytes,
@@ -602,7 +602,7 @@ impl PureFactContext {
                                 );
                             base_match
                                 && bytes_match
-                                && crate::kernel::api::c_memories_connected_by_effects(
+                                && crate::kernel::api::memories_connected_by_effects(
                                     fact_memory,
                                     memory,
                                     self,
@@ -620,17 +620,17 @@ impl PureFactContext {
                             && self.proves_memory_loadable(memory, base, &simplified)
                     }
             }
-            Proposition::CMemoryCanStore {
+            Proposition::MemoryCanStore {
                 memory,
                 pointer,
                 byte_width,
             } => self.proves_memory_access(memory, pointer, *byte_width),
-            Proposition::CResourceSeparate { left, right } => {
+            Proposition::ResourceSeparate { left, right } => {
                 (self.prop_facts.contains(proposition)
                     && !self.resource_separation_conflicts_with_equalities(left, right))
                     || self.proves_resource_separate(left, right)
             }
-            Proposition::CResourceContains { parent, child } => {
+            Proposition::ResourceContains { parent, child } => {
                 self.prop_facts.contains(proposition)
                     || self.proves_resource_contains(parent, child)
             }
@@ -791,7 +791,7 @@ impl PureFactContext {
         }
         if !matches!(
             sort,
-            Sort::CInt32 | Sort::CInt64 | Sort::CMachineInteger(_) | Sort::Bitvector32
+            Sort::ProgramInt32 | Sort::ProgramInt64 | Sort::ProgramInteger(_) | Sort::Bitvector32
         ) {
             return false;
         }
@@ -802,7 +802,7 @@ impl PureFactContext {
         for conjunct in &conjuncts {
             let (left, right) = match (sort, conjunct) {
                 (
-                    Sort::CInt64 | Sort::CMachineInteger(MachineIntegerType::UInt64),
+                    Sort::ProgramInt64 | Sort::ProgramInteger(MachineIntegerType::UInt64),
                     Proposition::ConditionIs(
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int64,
@@ -814,9 +814,9 @@ impl PureFactContext {
                     ),
                 ) => (left, right),
                 (
-                    Sort::CInt32
+                    Sort::ProgramInt32
                     | Sort::Bitvector32
-                    | Sort::CMachineInteger(
+                    | Sort::ProgramInteger(
                         MachineIntegerType::Int8
                         | MachineIntegerType::Int16
                         | MachineIntegerType::UInt8
@@ -891,7 +891,7 @@ impl PureFactContext {
         ) {
             let Proposition::ForAll {
                 var,
-                sort: Sort::CInt32,
+                sort: Sort::ProgramInt32,
                 body,
                 ..
             } = quantified
@@ -1987,7 +1987,7 @@ impl SelectedFacts<'_> {
         if let AtomicPropositionDerivationEvidence::ForallInt32Instantiation(selected) = evidence {
             let Proposition::ForAll {
                 var,
-                sort: Sort::CInt32,
+                sort: Sort::ProgramInt32,
                 body,
                 ..
             } = &selected.quantified
@@ -3224,7 +3224,7 @@ impl PureFactContext {
         let Some((premises, conclusion)) = forall_loadable_range_parts(proposition) else {
             return false;
         };
-        let Proposition::CMemoryLoadable { bytes, .. } = conclusion else {
+        let Proposition::MemoryLoadable { bytes, .. } = conclusion else {
             return false;
         };
         if bytes.as_const() != Some(1) || !self.proves_exact(source) {
@@ -5356,7 +5356,7 @@ mod guided_condition_instantiation_tests {
 
     fn array_read(index: MachineTerm, kind: LoadKind) -> MachineTerm {
         MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(Memory::new()),
+            crate::kernel::intern_memory(Memory::new()),
             Box::new(Pointer {
                 block: "quantified-cells".into(),
                 offset: PointerOffsetTerm::scale_int32(index, 4),
@@ -5629,7 +5629,8 @@ mod shared_domain_evidence_tests {
         for rule in 0..4 {
             let _session = crate::kernel::VerificationSession::enter();
             let ty = MachineIntegerType::Int32;
-            let variable = |id| KernelTerm::variable(KernelType::C(ty.c_type()), Variable(id));
+            let variable =
+                |id| KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(id));
             let root = |a, b| {
                 KernelTerm::machine_binary_shared(ty, Op::Multiply, [variable(a), variable(b)])
             };
@@ -5843,8 +5844,14 @@ mod shared_wide_order_evidence_tests {
                             ty,
                             MachineBinaryOp::Multiply,
                             [
-                                KernelTerm::variable(KernelType::C(ty.c_type()), Variable(id)),
-                                KernelTerm::variable(KernelType::C(ty.c_type()), Variable(987000)),
+                                KernelTerm::variable(
+                                    KernelType::Program(ty.c_type()),
+                                    Variable(id),
+                                ),
+                                KernelTerm::variable(
+                                    KernelType::Program(ty.c_type()),
+                                    Variable(987000),
+                                ),
                             ],
                         ),
                     )
@@ -5934,7 +5941,8 @@ mod shared_wide_order_evidence_tests {
         use crate::kernel::proof::ProofFacts;
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let variable = |id| KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(id));
+        let variable =
+            |id| KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(id));
         let observe =
             |root| IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, root).unwrap());
         let measure = MachineTerm::Variable(Variable(987120));
@@ -5965,7 +5973,8 @@ mod shared_wide_order_evidence_tests {
     fn shared_signed_order_path_keeps_constant_tail_and_strictness() {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let variable = |id| KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(id));
+        let variable =
+            |id| KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(id));
         let root = KernelTerm::machine_binary_shared(
             ty,
             MachineBinaryOp::Multiply,
@@ -6009,11 +6018,11 @@ mod shared_wide_order_evidence_tests {
     #[test]
     fn wide_order_evidence_connects_mixed_load_syntax_only_at_its_registered_variable() {
         use crate::kernel::{
-            LoadKind, MachineOperandView, Memory, Pointer, PointerOffsetTerm, intern_c_memory,
+            LoadKind, MachineOperandView, Memory, Pointer, PointerOffsetTerm, intern_memory,
         };
         for ty in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
             let _session = crate::kernel::VerificationSession::enter();
-            let memory = intern_c_memory(Memory::new().with_block("wide-order", 16));
+            let memory = intern_memory(Memory::new().with_block("wide-order", 16));
             let load = |offset| {
                 MachineTerm::MemoryLoad(
                     memory.clone(),
@@ -6095,7 +6104,7 @@ mod retained_individual_order_tests {
     fn individual_order_steps_retain_exact_sources_and_branch_authority() {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let x = KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(995201));
+        let x = KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(995201));
         let value =
             KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Multiply, [x.clone(), x]);
         let upper = MachineTerm::constant(100);

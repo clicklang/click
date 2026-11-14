@@ -15,11 +15,11 @@ fn node_layout() -> AggregateLayout {
 }
 
 fn copy_function() -> ProgramFunction {
-    c_function(
+    program_function(
         ProgramType::VoidPointer,
         "copy_result",
-        vec![c_parameter("source", ProgramType::VoidPointer)],
-        c_return(c_variable("source")),
+        vec![program_parameter("source", ProgramType::VoidPointer)],
+        program_return(crate::kernel::program_expression::variable("source")),
     )
     .with_return_aggregate_layout(node_layout())
 }
@@ -32,9 +32,9 @@ fn pointer(value: &ProgramValue) -> Pointer {
 }
 
 fn allocate_destination(state: &ExecutionState, name: &str) -> ExecutionState {
-    let paths = crate::kernel::eval::execute_c_statement_paths(
+    let paths = crate::kernel::eval::execute_execution_statement_paths(
         state,
-        &c_allocate_aggregate_destination(name, node_layout()),
+        &program_allocate_aggregate_destination(name, node_layout()),
         &PureFactContext::new(),
         ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
@@ -86,32 +86,32 @@ fn raw_construction_allocation_owns_storage_without_initializing_values() {
 
 fn destination_procedure(name: &str, body: ProgramStatement) -> ProgramFunction {
     let storage = ResourceSpec::owned_memory(MemorySegment::new(
-        c_variable("destination"),
-        c_int32_literal(0),
-        c_int32_literal(4),
+        crate::kernel::program_expression::variable("destination"),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(4),
     ));
-    c_function(
+    program_function(
         ProgramType::Void,
         name,
         vec![
-            c_parameter("destination", ProgramType::Int32Pointer),
-            c_parameter("input", ProgramType::Int32),
+            program_parameter("destination", ProgramType::Int32Pointer),
+            program_parameter("input", ProgramType::Int32),
         ],
-        c_seq(body, c_return(c_void_value())),
+        program_seq(body, program_return(program_void_value())),
     )
     .with_resource_summary(vec![storage.clone()], vec![storage])
 }
 
 fn construction_function(name: &str, body: ProgramStatement) -> ProgramFunction {
     let storage = ResourceSpec::owned_memory(MemorySegment::new(
-        c_variable(C_CONTRACT_RESULT_NAME),
-        c_int32_literal(0),
-        c_int32_literal(4),
+        crate::kernel::program_expression::variable(C_CONTRACT_RESULT_NAME),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(4),
     ));
-    c_function(
+    program_function(
         ProgramType::VoidPointer,
         name,
-        vec![c_parameter("input", ProgramType::Int32)],
+        vec![program_parameter("input", ProgramType::Int32)],
         body,
     )
     .with_construction_return(node_layout())
@@ -119,20 +119,24 @@ fn construction_function(name: &str, body: ProgramStatement) -> ProgramFunction 
 }
 
 fn node_construction_body() -> ProgramStatement {
-    let destination = c_variable(C_CONTRACT_RESULT_NAME);
-    let field = c_cast(
-        c_pointer_offset_bytes(destination.clone(), 8),
+    let destination = crate::kernel::program_expression::variable(C_CONTRACT_RESULT_NAME);
+    let field = crate::kernel::program_expression::cast(
+        crate::kernel::program_expression::pointer_offset_bytes(destination.clone(), 8),
         ProgramType::Int32Pointer,
     );
-    c_seq(
-        c_typed_store(
+    program_seq(
+        program_typed_store(
             destination.clone(),
             field.clone(),
             ProgramType::Int32Pointer,
         ),
-        c_seq(
-            c_typed_store(field, c_variable("input"), ProgramType::Int32),
-            c_return(destination),
+        program_seq(
+            program_typed_store(
+                field,
+                crate::kernel::program_expression::variable("input"),
+                ProgramType::Int32,
+            ),
+            program_return(destination),
         ),
     )
 }
@@ -144,9 +148,15 @@ fn construction_return_preserves_exact_destination_through_two_factories() {
     let forward = |name: &str, callee: &str| {
         construction_function(
             name,
-            c_seq(
-                c_call_assign(C_CONTRACT_RESULT_NAME, callee, vec![c_variable("input")]),
-                c_return(c_variable(C_CONTRACT_RESULT_NAME)),
+            program_seq(
+                program_call_assign(
+                    C_CONTRACT_RESULT_NAME,
+                    callee,
+                    vec![crate::kernel::program_expression::variable("input")],
+                ),
+                program_return(crate::kernel::program_expression::variable(
+                    C_CONTRACT_RESULT_NAME,
+                )),
             ),
         )
     };
@@ -158,10 +168,10 @@ fn construction_return_preserves_exact_destination_through_two_factories() {
     );
     let destination = caller.locals.slot("node").unwrap().clone();
     let caller = caller.with_aggregate_return_destination(destination.clone(), node_layout());
-    let paths = execute_c_function_call_paths(
+    let paths = execute_program_function_call_paths(
         &caller,
         &outer,
-        &[c_int32_literal(37)],
+        &[crate::kernel::program_expression::int32_literal(37)],
         &PureFactContext::new(),
         ExecutionContext::execute_bodies(
             &ExecutionEnvironment::new()
@@ -219,10 +229,10 @@ fn construction_return_rejects_missing_binding_authority_and_partial_values() {
         ),
         selected.clone().with_memory(Memory::new()),
     ] {
-        let paths = execute_c_function_call_paths(
+        let paths = execute_program_function_call_paths(
             &caller,
             &function,
-            &[c_int32_literal(37)],
+            &[crate::kernel::program_expression::int32_literal(37)],
             &PureFactContext::new(),
             ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
             &mut ExecutionBudget::default(),
@@ -236,22 +246,27 @@ fn construction_return_rejects_missing_binding_authority_and_partial_values() {
     }
     let partial = construction_function(
         "partial_node",
-        c_seq(
-            c_typed_store(
-                c_variable(C_CONTRACT_RESULT_NAME),
-                c_cast(
-                    c_pointer_offset_bytes(c_variable(C_CONTRACT_RESULT_NAME), 8),
+        program_seq(
+            program_typed_store(
+                crate::kernel::program_expression::variable(C_CONTRACT_RESULT_NAME),
+                crate::kernel::program_expression::cast(
+                    crate::kernel::program_expression::pointer_offset_bytes(
+                        crate::kernel::program_expression::variable(C_CONTRACT_RESULT_NAME),
+                        8,
+                    ),
                     ProgramType::Int32Pointer,
                 ),
                 ProgramType::Int32Pointer,
             ),
-            c_return(c_variable(C_CONTRACT_RESULT_NAME)),
+            program_return(crate::kernel::program_expression::variable(
+                C_CONTRACT_RESULT_NAME,
+            )),
         ),
     );
-    let paths = execute_c_function_call_paths(
+    let paths = execute_program_function_call_paths(
         &selected,
         &partial,
-        &[c_int32_literal(37)],
+        &[crate::kernel::program_expression::int32_literal(37)],
         &PureFactContext::new(),
         ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
@@ -266,35 +281,42 @@ fn construction_return_rejects_missing_binding_authority_and_partial_values() {
 #[test]
 fn construction_destination_can_alias_an_argument_without_becoming_fresh() {
     let _session = crate::kernel::VerificationSession::enter();
-    let result = c_variable(C_CONTRACT_RESULT_NAME);
-    let field = c_cast(
-        c_pointer_offset_bytes(result.clone(), 8),
+    let result = crate::kernel::program_expression::variable(C_CONTRACT_RESULT_NAME);
+    let field = crate::kernel::program_expression::cast(
+        crate::kernel::program_expression::pointer_offset_bytes(result.clone(), 8),
         ProgramType::Int32Pointer,
     );
     let storage = ResourceSpec::owned_memory(MemorySegment::new(
         result.clone(),
-        c_int32_literal(0),
-        c_int32_literal(4),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(4),
     ));
     for read_before_write in [false, true] {
         let write = if read_before_write {
-            c_typed_store(
+            program_typed_store(
                 field.clone(),
-                c_typed_load(c_variable("alias"), ProgramType::Int32),
+                crate::kernel::program_expression::typed_load(
+                    crate::kernel::program_expression::variable("alias"),
+                    ProgramType::Int32,
+                ),
                 ProgramType::Int32,
             )
         } else {
-            c_typed_store(c_variable("alias"), c_int32_literal(7), ProgramType::Int32)
+            program_typed_store(
+                crate::kernel::program_expression::variable("alias"),
+                crate::kernel::program_expression::int32_literal(7),
+                ProgramType::Int32,
+            )
         };
-        let function = c_function(
+        let function = program_function(
             ProgramType::VoidPointer,
             "alias_node",
-            vec![c_parameter("alias", ProgramType::Int32Pointer)],
-            c_seq(
+            vec![program_parameter("alias", ProgramType::Int32Pointer)],
+            program_seq(
                 write,
-                c_seq(
-                    c_typed_store(result.clone(), field.clone(), ProgramType::Int32Pointer),
-                    c_return(result.clone()),
+                program_seq(
+                    program_typed_store(result.clone(), field.clone(), ProgramType::Int32Pointer),
+                    program_return(result.clone()),
                 ),
             ),
         )
@@ -306,10 +328,12 @@ fn construction_destination_can_alias_an_argument_without_becoming_fresh() {
         );
         let at = raw.locals.slot("node").unwrap().clone();
         let selected = raw.with_aggregate_return_destination(at.clone(), node_layout());
-        let paths = execute_c_function_call_paths(
+        let paths = execute_program_function_call_paths(
             &selected,
             &function,
-            &[c_pointer_value(at.offset_by_bytes(8))],
+            &[crate::kernel::program_expression::pointer_value(
+                at.offset_by_bytes(8),
+            )],
             &PureFactContext::new(),
             ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
             &mut ExecutionBudget::default(),
@@ -342,33 +366,37 @@ fn construction_destination_can_alias_an_argument_without_becoming_fresh() {
 fn construction_temporary_retirement_preserves_copies_and_external_backing() {
     for points_to_self in [false, true] {
         let _session = crate::kernel::VerificationSession::enter();
-        let result = c_variable(C_CONTRACT_RESULT_NAME);
-        let field = c_cast(
-            c_pointer_offset_bytes(result.clone(), 8),
+        let result = crate::kernel::program_expression::variable(C_CONTRACT_RESULT_NAME);
+        let field = crate::kernel::program_expression::cast(
+            crate::kernel::program_expression::pointer_offset_bytes(result.clone(), 8),
             ProgramType::Int32Pointer,
         );
         let owner = ResourceSpec::owned_memory(MemorySegment::new(
             result.clone(),
-            c_int32_literal(0),
-            c_int32_literal(4),
+            crate::kernel::program_expression::int32_literal(0),
+            crate::kernel::program_expression::int32_literal(4),
         ));
-        let factory = c_function(
+        let factory = program_function(
             ProgramType::VoidPointer,
             "materialize_descriptor",
-            vec![c_parameter("backing", ProgramType::Int32Pointer)],
-            c_seq(
-                c_typed_store(
+            vec![program_parameter("backing", ProgramType::Int32Pointer)],
+            program_seq(
+                program_typed_store(
                     result.clone(),
                     if points_to_self {
                         field.clone()
                     } else {
-                        c_variable("backing")
+                        crate::kernel::program_expression::variable("backing")
                     },
                     ProgramType::Int32Pointer,
                 ),
-                c_seq(
-                    c_typed_store(field, c_int32_literal(37), ProgramType::Int32),
-                    c_return(result),
+                program_seq(
+                    program_typed_store(
+                        field,
+                        crate::kernel::program_expression::int32_literal(37),
+                        ProgramType::Int32,
+                    ),
+                    program_return(result),
                 ),
             ),
         )
@@ -376,20 +404,27 @@ fn construction_temporary_retirement_preserves_copies_and_external_backing() {
         .with_resource_summary(vec![owner.clone()], vec![owner]);
         let environment = ExecutionEnvironment::new().with_function(factory);
         let sequence =
-            |statements: Vec<ProgramStatement>| statements.into_iter().reduce(c_seq).unwrap();
+            |statements: Vec<ProgramStatement>| statements.into_iter().reduce(program_seq).unwrap();
         let prefix = sequence(vec![
-            c_declare("backing", ProgramType::Int32),
-            c_assign("backing", c_int32_literal(23)),
-            c_allocate_aggregate_destination("node", node_layout()),
-            c_allocate_aggregate_destination("temporary", node_layout()),
-            c_call_assign(
+            program_declare("backing", ProgramType::Int32),
+            program_assign(
+                "backing",
+                crate::kernel::program_expression::int32_literal(23),
+            ),
+            program_allocate_aggregate_destination("node", node_layout()),
+            program_allocate_aggregate_destination("temporary", node_layout()),
+            program_call_assign(
                 "temporary",
                 "materialize_descriptor",
-                vec![c_addr_of("backing")],
+                vec![crate::kernel::program_expression::addr_of("backing")],
             ),
-            c_copy_aggregate(c_variable("node"), c_variable("temporary"), node_layout()),
+            program_copy_aggregate(
+                crate::kernel::program_expression::variable("node"),
+                crate::kernel::program_expression::variable("temporary"),
+                node_layout(),
+            ),
         ]);
-        let paths = execute_c_statement_paths(
+        let paths = execute_execution_statement_paths(
             &ExecutionState::new().with_population_creation_tracking(),
             &prefix,
             &PureFactContext::new(),
@@ -421,8 +456,8 @@ fn construction_temporary_retirement_preserves_copies_and_external_backing() {
             backing.clone()
         };
         assert_eq!(pointer(&copied), referent);
-        let retirement = c_end_automatic_lifetimes(vec!["temporary".into()]);
-        let checked = prove_symbolic_c_execution_paths_with_environment(
+        let retirement = program_end_automatic_lifetimes(vec!["temporary".into()]);
+        let checked = prove_symbolic_program_execution_paths_with_environment(
             state.as_ref().clone(),
             retirement,
             PureFactContext::new(),
@@ -433,11 +468,11 @@ fn construction_temporary_retirement_preserves_copies_and_external_backing() {
             panic!("one retirement path");
         };
         let after = match crate::kernel::api::proof_evidence_conclusion(path.theorem()) {
-            Proposition::CStatementExecutes {
+            Proposition::ProgramStatementExecutes {
                 outcome: StatementOutcome::Normal(after),
                 ..
             }
-            | Proposition::CStatementVerifies {
+            | Proposition::ProgramStatementVerifies {
                 outcome: StatementOutcome::Normal(after),
                 ..
             } => after,
@@ -462,9 +497,12 @@ fn construction_temporary_retirement_preserves_copies_and_external_backing() {
                 .memory_write_range(&temporary, 16, &PureFactContext::new())
                 .is_none()
         );
-        let read = execute_c_statement_paths(
+        let read = execute_execution_statement_paths(
             after,
-            &c_return(c_typed_load(c_pointer_value(referent), ProgramType::Int32)),
+            &program_return(crate::kernel::program_expression::typed_load(
+                crate::kernel::program_expression::pointer_value(referent),
+                ProgramType::Int32,
+            )),
             &PureFactContext::new(),
             ExecutionContext::execute_bodies(&environment),
             &mut ExecutionBudget::default(),
@@ -492,11 +530,11 @@ fn construction_destination_survives_substitution_and_requires_agreement_at_join
         .with_population_creation_tracking()
         .with_aggregate_return_destination(Pointer::symbolic(variable), node_layout());
     let mut variables = BTreeSet::new();
-    collect_c_state_bitvector_variables(&state, &mut variables);
+    collect_execution_state_bitvector_variables(&state, &mut variables);
     assert!(variables.contains(&variable));
-    let proposition = Proposition::CStatementVerifies {
+    let proposition = Proposition::ProgramStatementVerifies {
         state: Box::new(state.clone()),
-        statement: Box::new(c_skip()),
+        statement: Box::new(program_skip()),
         outcome: StatementOutcome::Normal(Box::new(state.clone())),
     };
     let at = Memory::frame_local_pointer(15, "caller");
@@ -505,7 +543,7 @@ fn construction_destination_survives_substitution_and_requires_agreement_at_join
         variable,
         &at,
     );
-    let Proposition::CStatementVerifies {
+    let Proposition::ProgramStatementVerifies {
         state: mapped,
         outcome: StatementOutcome::Normal(after),
         ..
@@ -516,7 +554,9 @@ fn construction_destination_survives_substitution_and_requires_agreement_at_join
     assert_eq!(mapped.aggregate_destination.as_ref().unwrap().pointer, at);
     assert_eq!(mapped.aggregate_destination, after.aggregate_destination);
     assert!(!state.shares_non_memory_storage_with(&mapped));
-    assert!(abstract_c_state_for_interface_join_across(&state, &[&state, &mapped], 0).is_err());
+    assert!(
+        abstract_execution_state_for_interface_join_across(&state, &[&state, &mapped], 0).is_err()
+    );
 }
 
 // This tests the existing explicit-destination procedure building block,
@@ -525,30 +565,43 @@ fn construction_destination_survives_substitution_and_requires_agreement_at_join
 #[test]
 fn supplied_constructor_destination_survives_two_procedure_boundaries() {
     let _session = crate::kernel::VerificationSession::enter();
-    let field = c_pointer_offset_bytes(c_variable("destination"), 8);
+    let field = crate::kernel::program_expression::pointer_offset_bytes(
+        crate::kernel::program_expression::variable("destination"),
+        8,
+    );
     let constructor = destination_procedure(
         "initialize_node",
-        c_seq(
-            c_typed_store(
-                c_variable("destination"),
+        program_seq(
+            program_typed_store(
+                crate::kernel::program_expression::variable("destination"),
                 field.clone(),
                 ProgramType::Int32Pointer,
             ),
-            c_typed_store(field, c_variable("input"), ProgramType::Int32),
+            program_typed_store(
+                field,
+                crate::kernel::program_expression::variable("input"),
+                ProgramType::Int32,
+            ),
         ),
     );
     let forward = destination_procedure(
         "forward_node",
-        c_call(
+        program_call(
             "initialize_node",
-            vec![c_variable("destination"), c_variable("input")],
+            vec![
+                crate::kernel::program_expression::variable("destination"),
+                crate::kernel::program_expression::variable("input"),
+            ],
         ),
     );
     let outer = destination_procedure(
         "outer_node",
-        c_call(
+        program_call(
             "forward_node",
-            vec![c_variable("destination"), c_variable("input")],
+            vec![
+                crate::kernel::program_expression::variable("destination"),
+                crate::kernel::program_expression::variable("input"),
+            ],
         ),
     );
     let caller = allocate_destination(
@@ -557,10 +610,13 @@ fn supplied_constructor_destination_survives_two_procedure_boundaries() {
     );
     let destination = caller.locals.slot("caller_node").unwrap().clone();
     assert!(!caller.memory.has_initialized_bytes_at(&destination, 16));
-    let paths = execute_c_function_call_paths(
+    let paths = execute_program_function_call_paths(
         &caller,
         &outer,
-        &[c_pointer_value(destination.clone()), c_int32_literal(37)],
+        &[
+            crate::kernel::program_expression::pointer_value(destination.clone()),
+            crate::kernel::program_expression::int32_literal(37),
+        ],
         &PureFactContext::new(),
         ExecutionContext::execute_bodies(
             &ExecutionEnvironment::new()
@@ -718,7 +774,7 @@ fn aggregate_copy_result_preserves_unrelated_entry_byte_history() {
     let before = Memory::new().with_block(input.block.clone(), 1);
     let read = |memory: &Memory| {
         MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(memory.clone()),
+            crate::kernel::intern_memory(memory.clone()),
             Box::new(input.clone()),
             LoadKind::UInt8,
         )
@@ -850,10 +906,10 @@ fn symbolic_construction_storage_is_unreadable_until_written() {
                         1u32.into(),
                     )),
                 ));
-            let paths = execute_c_statement_paths(
+            let paths = execute_execution_statement_paths(
                 &state,
-                &c_return(c_typed_load(
-                    c_pointer_value(source.clone()),
+                &program_return(crate::kernel::program_expression::typed_load(
+                    crate::kernel::program_expression::pointer_value(source.clone()),
                     ProgramType::Int32,
                 )),
                 &assumptions,
@@ -916,9 +972,9 @@ fn symbolic_construction_storage_respects_known_aliases() {
                             1u32.into(),
                         )),
                     ));
-                let paths = execute_c_statement_paths(
+                let paths = execute_execution_statement_paths(
                     &state,
-                    &c_return(c_typed_load(
+                    &program_return(crate::kernel::program_expression::typed_load(
                         ProgramExpression::Value(ProgramValue::Pointer(
                             PointerValue::new(source.clone(), ProgramType::Int32Pointer)
                                 .with_address(read.clone()),
@@ -1047,11 +1103,11 @@ fn construction_object_offsets_participate_in_fresh_variable_collection() {
     crate::kernel::reasoning::collect_memory_bitvector_variables_whole(&mapped, &mut whole);
     assert!(whole.contains(&offset_variable));
     assert!(!whole.contains(&source_variable));
-    let before = crate::kernel::intern_c_memory(mapped.clone());
+    let before = crate::kernel::intern_memory(mapped.clone());
     let mut cached = BTreeSet::new();
     crate::kernel::reasoning::collect_shared_memory_bitvector_variables(&before, &mut cached);
     assert_eq!(cached, whole);
-    let after = crate::kernel::intern_c_memory(mapped.store(
+    let after = crate::kernel::intern_memory(mapped.store(
         Memory::frame_local_pointer(22, "unrelated"),
         ProgramValue::Int32(37u32.into()),
     ));
@@ -1073,7 +1129,7 @@ fn construction_initialization_cannot_be_erased_or_seeded_by_a_proof_shortcut() 
                 source.clone(),
                 ProgramType::Int32,
                 1,
-                crate::kernel::intern_c_memory(raw.clone())
+                crate::kernel::intern_memory(raw.clone())
             )
             .is_err()
     );
@@ -1097,7 +1153,7 @@ fn forgotten_construction_writes_keep_their_address_variables_reserved() {
     let written = Memory::new()
         .with_uninitialized_block(source.block.clone(), 4)
         .store(alias.clone(), ProgramValue::Int32(37u32.into()));
-    let before = crate::kernel::intern_c_memory(written.clone());
+    let before = crate::kernel::intern_memory(written.clone());
     let mut variables = BTreeSet::new();
     crate::kernel::reasoning::collect_shared_memory_bitvector_variables(&before, &mut variables);
     assert!(variables.contains(&alias_variable));
@@ -1112,7 +1168,7 @@ fn forgotten_construction_writes_keep_their_address_variables_reserved() {
     crate::kernel::reasoning::collect_memory_bitvector_variables_whole(&forgotten, &mut whole);
     let mut cached = BTreeSet::new();
     crate::kernel::reasoning::collect_shared_memory_bitvector_variables(
-        &crate::kernel::intern_c_memory(forgotten),
+        &crate::kernel::intern_memory(forgotten),
         &mut cached,
     );
     assert!(cached.contains(&alias_variable));
@@ -1125,20 +1181,27 @@ fn forgotten_construction_writes_keep_their_address_variables_reserved() {
 fn construction_parameter_completion_checks_original_storage() {
     let _session = crate::kernel::VerificationSession::enter();
     for complete in [false, true] {
-        let field = c_cast(
-            c_pointer_offset_bytes(c_variable("destination"), 8),
+        let field = crate::kernel::program_expression::cast(
+            crate::kernel::program_expression::pointer_offset_bytes(
+                crate::kernel::program_expression::variable("destination"),
+                8,
+            ),
             ProgramType::Int32Pointer,
         );
-        let body = c_seq(
-            c_typed_store(
-                c_variable("destination"),
+        let body = program_seq(
+            program_typed_store(
+                crate::kernel::program_expression::variable("destination"),
                 field.clone(),
                 ProgramType::Int32Pointer,
             ),
             if complete {
-                c_typed_store(field, c_variable("input"), ProgramType::Int32)
+                program_typed_store(
+                    field,
+                    crate::kernel::program_expression::variable("input"),
+                    ProgramType::Int32,
+                )
             } else {
-                c_skip()
+                program_skip()
             },
         );
         let function = destination_procedure("initialize_node", body)
@@ -1148,10 +1211,13 @@ fn construction_parameter_completion_checks_original_storage() {
             "node",
         );
         let at = caller.locals.slot("node").unwrap().clone();
-        let paths = execute_c_function_call_paths(
+        let paths = execute_program_function_call_paths(
             &caller,
             &function,
-            &[c_pointer_value(at.clone()), c_int32_literal(37)],
+            &[
+                crate::kernel::program_expression::pointer_value(at.clone()),
+                crate::kernel::program_expression::int32_literal(37),
+            ],
             &PureFactContext::new(),
             ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
             &mut ExecutionBudget::default(),
@@ -1186,16 +1252,19 @@ fn construction_parameter_completion_checks_original_storage() {
     }
     // Reassigning the parameter to an unrelated initialized object does not
     // complete the original destination.
-    let function = c_function(
+    let function = program_function(
         ProgramType::Void,
         "redirect_constructor",
         vec![
-            c_parameter("destination", ProgramType::Int32Pointer),
-            c_parameter("other", ProgramType::Int32Pointer),
+            program_parameter("destination", ProgramType::Int32Pointer),
+            program_parameter("other", ProgramType::Int32Pointer),
         ],
-        c_seq(
-            c_assign("destination", c_variable("other")),
-            c_return(c_void_value()),
+        program_seq(
+            program_assign(
+                "destination",
+                crate::kernel::program_expression::variable("other"),
+            ),
+            program_return(program_void_value()),
         ),
     )
     .with_construction_parameter(0, node_layout());
@@ -1210,10 +1279,13 @@ fn construction_parameter_completion_checks_original_storage() {
     let other = caller.locals.slot("other").unwrap().clone();
     let memory = caller.memory.clone().with_initialized_object(&other, 16);
     let caller = caller.with_memory(memory);
-    let paths = execute_c_function_call_paths(
+    let paths = execute_program_function_call_paths(
         &caller,
         &function,
-        &[c_pointer_value(at), c_pointer_value(other)],
+        &[
+            crate::kernel::program_expression::pointer_value(at),
+            crate::kernel::program_expression::pointer_value(other),
+        ],
         &PureFactContext::new(),
         ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
@@ -1251,32 +1323,36 @@ fn value_only_constructor_preserves_descriptor_across_result_copy_chains() {
             AggregateField::new("extent", 8, ProgramType::UInt64),
         ],
     );
-    let destination = c_variable("destination");
+    let destination = crate::kernel::program_expression::variable("destination");
     let owner = ResourceSpec::owned_memory(
-        MemorySegment::new(destination.clone(), c_int32_literal(0), c_int32_literal(16))
-            .with_element_width(1),
+        MemorySegment::new(
+            destination.clone(),
+            crate::kernel::program_expression::int32_literal(0),
+            crate::kernel::program_expression::int32_literal(16),
+        )
+        .with_element_width(1),
     );
-    let constructor = c_function(
+    let constructor = program_function(
         ProgramType::Void,
         "construct_descriptor",
         vec![
-            c_parameter("destination", ProgramType::Int32Pointer),
-            c_parameter("backing", ProgramType::Int32Pointer),
-            c_parameter("extent", ProgramType::UInt64),
+            program_parameter("destination", ProgramType::Int32Pointer),
+            program_parameter("backing", ProgramType::Int32Pointer),
+            program_parameter("extent", ProgramType::UInt64),
         ],
-        c_seq(
-            c_typed_store(
+        program_seq(
+            program_typed_store(
                 destination.clone(),
-                c_variable("backing"),
+                crate::kernel::program_expression::variable("backing"),
                 ProgramType::Int32Pointer,
             ),
-            c_seq(
-                c_typed_store(
-                    c_pointer_offset_bytes(destination, 8),
-                    c_variable("extent"),
+            program_seq(
+                program_typed_store(
+                    crate::kernel::program_expression::pointer_offset_bytes(destination, 8),
+                    crate::kernel::program_expression::variable("extent"),
                     ProgramType::UInt64,
                 ),
-                c_return(c_void_value()),
+                program_return(program_void_value()),
             ),
         ),
     )
@@ -1286,47 +1362,53 @@ fn value_only_constructor_preserves_descriptor_across_result_copy_chains() {
     for copies in [0, 1, 3] {
         let _session = crate::kernel::VerificationSession::enter();
         let mut statements = vec![
-            c_declare("backing", ProgramType::Int32),
-            c_assign("backing", c_int32_literal(23)),
-            c_allocate_aggregate_destination("result", layout.clone()),
+            program_declare("backing", ProgramType::Int32),
+            program_assign(
+                "backing",
+                crate::kernel::program_expression::int32_literal(23),
+            ),
+            program_allocate_aggregate_destination("result", layout.clone()),
         ];
         let names = (0..copies)
             .map(|index| format!("temporary_{index}"))
             .collect::<Vec<_>>();
         for name in &names {
-            statements.push(c_allocate_aggregate_destination(name, layout.clone()));
+            statements.push(program_allocate_aggregate_destination(name, layout.clone()));
         }
         let first = names.first().map_or("result", String::as_str);
-        statements.push(c_call(
+        statements.push(program_call(
             "construct_descriptor",
             vec![
-                c_cast(c_variable(first), ProgramType::Int32Pointer),
-                c_addr_of("backing"),
-                c_uint64_literal(37),
+                crate::kernel::program_expression::cast(
+                    crate::kernel::program_expression::variable(first),
+                    ProgramType::Int32Pointer,
+                ),
+                crate::kernel::program_expression::addr_of("backing"),
+                crate::kernel::program_expression::uint64_literal(37),
             ],
         ));
         for (index, name) in names.iter().enumerate() {
             let target = names.get(index + 1).map_or("result", String::as_str);
-            statements.push(c_copy_aggregate(
-                c_variable(target),
-                c_variable(name),
+            statements.push(program_copy_aggregate(
+                crate::kernel::program_expression::variable(target),
+                crate::kernel::program_expression::variable(name),
                 layout.clone(),
             ));
         }
         if !names.is_empty() {
-            statements.push(c_end_automatic_lifetimes(
+            statements.push(program_end_automatic_lifetimes(
                 names.iter().rev().cloned().collect(),
             ));
         }
         // Ordinary local storage has implicit authority rather than a range fact.
         // Writing through the saved backing pointer checks that retirement kept it.
-        statements.push(c_typed_store(
-            c_addr_of("backing"),
-            c_int32_literal(24),
+        statements.push(program_typed_store(
+            crate::kernel::program_expression::addr_of("backing"),
+            crate::kernel::program_expression::int32_literal(24),
             ProgramType::Int32,
         ));
-        let statement = statements.into_iter().reduce(c_seq).unwrap();
-        let checked = prove_symbolic_c_execution_paths_with_environment(
+        let statement = statements.into_iter().reduce(program_seq).unwrap();
+        let checked = prove_symbolic_program_execution_paths_with_environment(
             ExecutionState::new().with_population_creation_tracking(),
             statement,
             PureFactContext::new(),
@@ -1337,11 +1419,11 @@ fn value_only_constructor_preserves_descriptor_across_result_copy_chains() {
             panic!("one descriptor construction path");
         };
         let state = match crate::kernel::api::proof_evidence_conclusion(path.theorem()) {
-            Proposition::CStatementExecutes {
+            Proposition::ProgramStatementExecutes {
                 outcome: StatementOutcome::Normal(state),
                 ..
             }
-            | Proposition::CStatementVerifies {
+            | Proposition::ProgramStatementVerifies {
                 outcome: StatementOutcome::Normal(state),
                 ..
             } => state,
@@ -1399,11 +1481,15 @@ fn copying_unknown_pointer_field_preserves_its_value_after_source_retirement() {
         true,
     )
     .unwrap();
-    let checked = prove_symbolic_c_execution_paths_with_environment(
+    let checked = prove_symbolic_program_execution_paths_with_environment(
         state,
-        c_seq(
-            c_copy_aggregate(c_variable("target"), c_variable("source"), node_layout()),
-            c_end_automatic_lifetimes(vec!["source".into()]),
+        program_seq(
+            program_copy_aggregate(
+                crate::kernel::program_expression::variable("target"),
+                crate::kernel::program_expression::variable("source"),
+                node_layout(),
+            ),
+            program_end_automatic_lifetimes(vec!["source".into()]),
         ),
         PureFactContext::new(),
         ExecutionEnvironment::new(),
@@ -1413,11 +1499,11 @@ fn copying_unknown_pointer_field_preserves_its_value_after_source_retirement() {
         panic!("one checked copy path");
     };
     let state = match crate::kernel::api::proof_evidence_conclusion(path.theorem()) {
-        Proposition::CStatementExecutes {
+        Proposition::ProgramStatementExecutes {
             outcome: StatementOutcome::Normal(state),
             ..
         }
-        | Proposition::CStatementVerifies {
+        | Proposition::ProgramStatementVerifies {
             outcome: StatementOutcome::Normal(state),
             ..
         } => state,

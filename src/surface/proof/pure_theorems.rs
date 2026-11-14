@@ -2,7 +2,7 @@ use super::*;
 use crate::kernel::AlgebraicValueType;
 use crate::kernel::CompareRelation;
 use crate::kernel::MachineIntegerType;
-use crate::kernel::c_function_contract_refinement_obligations;
+use crate::kernel::program_function_contract_refinement_obligations;
 
 const STRUCTURAL_INDUCTION_VARIABLE_BASE: u64 = 1 << 60;
 
@@ -120,7 +120,7 @@ pub(in crate::surface) fn verify_theorem_definition(
         .parameters()
         .iter()
         .filter_map(|parameter| match parameter.click_type() {
-            ClickType::C(C0Type::ParameterPointer(element)) => Some(element.name()),
+            ClickType::Program(C0Type::ParameterPointer(element)) => Some(element.name()),
             _ => None,
         })
         .collect::<BTreeSet<_>>();
@@ -131,7 +131,7 @@ pub(in crate::surface) fn verify_theorem_definition(
             (
                 name.clone(),
                 generics::TypeArgument::from(if pointer_elements.contains(name.as_str()) {
-                    ClickType::C(C0Type::Parameter(crate::kernel::TypeParameterName::intern(
+                    ClickType::Program(C0Type::Parameter(crate::kernel::TypeParameterName::intern(
                         name,
                     )))
                 } else {
@@ -163,7 +163,7 @@ pub(in crate::surface) fn verify_theorem_definition(
         let mut instance = substitution.clone();
         instance.insert(
             index_parameter.to_string(),
-            generics::TypeArgument::from(ClickType::C(index_type)),
+            generics::TypeArgument::from(ClickType::Program(index_type)),
         );
         verified.extend(instantiate(&instance)?);
     }
@@ -260,7 +260,7 @@ impl PureTheoremContext {
             if let Some(value) = self.values.get(&name) {
                 substitutions.insert(
                     name.clone(),
-                    ContractExpression::CFragment(ProgramExpression::Value(value.clone())),
+                    ContractExpression::ProgramExpression(ProgramExpression::Value(value.clone())),
                 );
             } else if let Some(value) = self.integer_values.get(&name) {
                 // This spelling cannot be written by a source-level binder.
@@ -350,9 +350,9 @@ impl PureTheoremContext {
                     name: name.clone(),
                     click_type: click_type.clone(),
                     value: Box::new(value),
-                    body: Box::new(ContractExpression::CFragment(ProgramExpression::Variable(
-                        name.clone(),
-                    ))),
+                    body: Box::new(ContractExpression::ProgramExpression(
+                        ProgramExpression::Variable(name.clone()),
+                    )),
                 }
             } else {
                 value
@@ -403,7 +403,7 @@ pub(super) fn induction_argument_name(argument: &ContractExpression) -> Option<&
     match argument {
         ContractExpression::Binding(name)
         | ContractExpression::AlgebraicVariable { name, .. }
-        | ContractExpression::CFragment(ProgramExpression::Variable(name)) => Some(name),
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => Some(name),
         _ => None,
     }
 }
@@ -623,9 +623,9 @@ pub(super) fn pure_induction_hypothesis(
         name: Default::default(),
         var: variable,
         sort: if unsigned {
-            Sort::CMachineInteger(MachineIntegerType::UInt64)
+            Sort::ProgramInteger(MachineIntegerType::UInt64)
         } else {
-            Sort::CInt32
+            Sort::ProgramInt32
         },
         body: Box::new(body),
     })
@@ -1040,7 +1040,8 @@ fn check_pure_structural_induction(
             let binding_expression = ContractExpression::Binding(binding.clone());
             constructor_arguments.push(binding_expression.clone());
             match field_type {
-                AlgebraicValueType::C(c_type) | AlgebraicValueType::ObjectPointer(c_type, _) => {
+                AlgebraicValueType::Program(c_type)
+                | AlgebraicValueType::ObjectPointer(c_type, _) => {
                     if matches!(
                         c_type,
                         ProgramType::Void
@@ -1069,7 +1070,7 @@ fn check_pure_structural_induction(
                     branch_context.values.insert(
                         binding.clone(),
                         field_type
-                            .symbolic_c_value(variable)
+                            .symbolic_program_value(variable)
                             .expect("C model field"),
                     );
                 }
@@ -1460,7 +1461,7 @@ pub(in crate::surface) fn assumed_theorem_certification_authorities(
             || !theorem
                 .parameters()
                 .iter()
-                .all(|parameter| parameter.click_type() == &ClickType::C(C0Type::Int32))
+                .all(|parameter| parameter.click_type() == &ClickType::Program(C0Type::Int32))
         {
             continue;
         }
@@ -1513,7 +1514,7 @@ pub(in crate::surface) fn assumed_theorem_certification_authorities(
                 |body, variable| Proposition::ForAll {
                     name: Default::default(),
                     var: *variable,
-                    sort: Sort::CInt32,
+                    sort: Sort::ProgramInt32,
                     body: Box::new(body),
                 },
             );
@@ -2198,7 +2199,9 @@ fn verify_contract_refinement_theorem(
     let concrete_target = contract_expression_function_address(argument);
     let symbolic_binding = match argument {
         ContractExpression::Binding(name)
-        | ContractExpression::CFragment(ProgramExpression::Variable(name)) => Some(name.as_str()),
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+            Some(name.as_str())
+        }
         _ => None,
     };
     if concrete_target.is_none() && symbolic_binding.is_none() {
@@ -2320,7 +2323,7 @@ fn verify_contract_refinement_theorem(
     })?;
     let refinement = match (concrete_target, &source_contract) {
         (Some(target), None) => {
-            c_function_contract_refinement_context(function_environment, name, spec_definitions.predicates.function_execution_name(target), &target_values).ok_or_else(
+            program_function_contract_refinement_context(function_environment, name, spec_definitions.predicates.function_execution_name(target), &target_values).ok_or_else(
                 || {
                     ClickError::new(format!(
                         "`{claim_label}`: `{target}` is not a verified or external function compatible with contract `{name}`"
@@ -2335,7 +2338,7 @@ fn verify_contract_refinement_theorem(
                     "`{claim_label}`: symbolic callback `{binding}` has no theorem value"
                 ))
             })?;
-            c_contract_refinement_context(
+            contract_refinement_context(
                 function_environment,
                 name,
                 &target_values,
@@ -2351,7 +2354,7 @@ fn verify_contract_refinement_theorem(
         }
         _ => unreachable!("refinement subject classification is exhaustive"),
     };
-    let argument_values = c_function_contract_refinement_arguments(&refinement);
+    let argument_values = program_function_contract_refinement_arguments(&refinement);
     // The contract's value parameters trail its call parameters; the
     // refinement binds them to the conclusion's values.
     let all_parameters = contract_definition
@@ -2375,8 +2378,8 @@ fn verify_contract_refinement_theorem(
             "`{claim_label}`: contract-refinement proof does not establish `{name}({subject})`"
         ))
     };
-    let obligations =
-        c_function_contract_refinement_obligations(&refinement).ok_or_else(refinement_failure)?;
+    let obligations = program_function_contract_refinement_obligations(&refinement)
+        .ok_or_else(refinement_failure)?;
     let arguments = argument_values
         .iter()
         .cloned()
@@ -2454,7 +2457,7 @@ fn verify_contract_refinement_theorem(
         None => return Err(refinement_failure().with_search_failures(search.finish())),
     };
     let checked = proof.completed_proposition()?;
-    let kernel_authority = prove_c_function_contract_refinement(
+    let kernel_authority = prove_program_function_contract_refinement(
         &refinement,
         goal.clone(),
         &checked,
@@ -3264,7 +3267,7 @@ pub(super) fn click_function_applications(
                 }
             }
             ContractExpression::QualifiedC { .. }
-            | ContractExpression::CFragment(_)
+            | ContractExpression::ProgramExpression(_)
             | ContractExpression::ArrayIndex { .. }
             | ContractExpression::CBinding(_)
             | ContractExpression::ResourceWildcard => {}
@@ -3335,9 +3338,9 @@ pub(super) fn induction_application_surface_premises(
     setup: &PureInductionSetup,
     argument: &ContractExpression,
 ) -> Result<Vec<ClickProposition>, ClickError> {
-    let zero = ContractExpression::CFragment(ProgramExpression::Value(int32(0)));
+    let zero = ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0)));
     let current =
-        ContractExpression::CFragment(ProgramExpression::Variable(setup.parameter.clone()));
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(setup.parameter.clone()));
     let mut premises = vec![
         ClickProposition::Comparison {
             left: zero,
@@ -3701,11 +3704,11 @@ mod tests {
             let source = format!(
                 "theorem guarded({parameters}) {{ {guard} {observation} ensures to_integer({expression}) == 1 by {{ assumption(); }} }}"
             );
-            crate::surface::verify_c0_sources(&source, &[]).unwrap();
+            crate::surface::verify_c_sources(&source, &[]).unwrap();
             let expanded =
-                crate::surface::expand_c0_claim_source_by_label(&source, &[], "guarded.ensures_0")
+                crate::surface::expand_c_claim_source_by_label(&source, &[], "guarded.ensures_0")
                     .unwrap();
-            crate::surface::verify_c0_sources(&expanded, &[]).unwrap();
+            crate::surface::verify_c_sources(&expanded, &[]).unwrap();
             for invalid in [
                 source.replace(&guard, ""),
                 source.replace(&guard, &format!("requires defined({wrong_expression});")),
@@ -3715,23 +3718,23 @@ mod tests {
                 ),
             ] {
                 assert!(
-                    crate::surface::verify_c0_sources(&invalid, &[]).is_err(),
+                    crate::surface::verify_c_sources(&invalid, &[]).is_err(),
                     "{invalid}"
                 );
             }
             let caller = format!(
                 "{source} theorem caller({parameters}) {{ {guard} {observation} ensures to_integer({expression}) == 1 by {{ apply(guarded({arguments})); assumption(); }} }}"
             );
-            crate::surface::verify_c0_sources(&caller, &[]).unwrap();
+            crate::surface::verify_c_sources(&caller, &[]).unwrap();
         }
         let source = "theorem byte_at_next(bytes: uint8[], n: int32, value: Integer) { requires defined(n + 1); requires value == to_integer(bytes[n + 1] as int32); ensures value == to_integer(bytes[n + 1] as int32) by { assumption(); } }";
-        crate::surface::verify_c0_sources(source, &[]).unwrap();
+        crate::surface::verify_c_sources(source, &[]).unwrap();
         assert!(
-            crate::surface::verify_c0_sources(&source.replace("requires defined(n + 1);", ""), &[])
+            crate::surface::verify_c_sources(&source.replace("requires defined(n + 1);", ""), &[])
                 .is_err()
         );
         let missing_call_guard = "theorem guarded(n: int32) { requires defined(n + 1); requires to_integer(n + 1) == 1; ensures n == n by { normalize(); } } theorem caller(n: int32) { ensures n == n by { apply(guarded(n)); normalize(); } }";
-        assert!(crate::surface::verify_c0_sources(missing_call_guard, &[]).is_err());
+        assert!(crate::surface::verify_c_sources(missing_call_guard, &[]).is_err());
     }
 
     #[test]
@@ -3797,8 +3800,8 @@ mod tests {
         }
         for label in ["application.ensures_0", "extraction.ensures_0"] {
             let expanded =
-                crate::surface::expand_c0_claim_source_by_label(source, &[], label).unwrap();
-            crate::surface::verify_c0_sources(&expanded, &[]).unwrap();
+                crate::surface::expand_c_claim_source_by_label(source, &[], label).unwrap();
+            crate::surface::verify_c_sources(&expanded, &[]).unwrap();
         }
     }
 
@@ -3825,13 +3828,13 @@ mod tests {
             ));
             assert!(verified.kernel_authority.is_some());
             let label = format!("{}.ensures_0", verified.theorem_definition.name());
-            crate::surface::verify_c0_sources(source, &[]).unwrap();
+            crate::surface::verify_c_sources(source, &[]).unwrap();
             let expanded =
-                crate::surface::expand_c0_claim_source_by_label(source, &[], &label).unwrap();
-            crate::surface::verify_c0_sources(&expanded, &[]).unwrap();
+                crate::surface::expand_c_claim_source_by_label(source, &[], &label).unwrap();
+            crate::surface::verify_c_sources(&expanded, &[]).unwrap();
             assert_eq!(
                 expanded,
-                crate::surface::expand_c0_claim_source_by_label(&expanded, &[], &label).unwrap()
+                crate::surface::expand_c_claim_source_by_label(&expanded, &[], &label).unwrap()
             );
         }
     }
@@ -3847,21 +3850,21 @@ mod tests {
             .split_once("\n```")
             .unwrap()
             .0;
-        crate::surface::verify_c0_sources(source, &[]).unwrap();
+        crate::surface::verify_c_sources(source, &[]).unwrap();
         let expanded =
-            crate::surface::expand_c0_claim_source_by_label(source, &[], "guarded_count.ensures_0")
+            crate::surface::expand_c_claim_source_by_label(source, &[], "guarded_count.ensures_0")
                 .unwrap();
-        crate::surface::verify_c0_sources(&expanded, &[]).unwrap();
+        crate::surface::verify_c_sources(&expanded, &[]).unwrap();
         let missing_evidence = source.replace(
             "apply(ih(n - 1));",
             "apply(ih(n - 1)) using { 0 <= n - 1; n - 1 < n; }",
         );
-        assert!(crate::surface::verify_c0_sources(&missing_evidence, &[]).is_err());
+        assert!(crate::surface::verify_c_sources(&missing_evidence, &[]).is_err());
         let false_claim = source.replace(
             "ensures guarded_countdown(n) == 0 and",
             "ensures guarded_countdown(n) == 1 and",
         );
-        assert!(crate::surface::verify_c0_sources(&false_claim, &[]).is_err());
+        assert!(crate::surface::verify_c_sources(&false_claim, &[]).is_err());
     }
 
     #[test]
@@ -3942,13 +3945,10 @@ mod tests {
         let verified = verify_instantiation_theorem(source)
             .expect("obtained witnesses must resolve in later pure tactics");
         assert!(verified.kernel_authority.is_some());
-        let expanded = crate::surface::expand_c0_claim_source_by_label(
-            source,
-            &[],
-            "obtained_int32.ensures_0",
-        )
-        .unwrap();
-        crate::surface::verify_c0_sources(&expanded, &[]).unwrap();
+        let expanded =
+            crate::surface::expand_c_claim_source_by_label(source, &[], "obtained_int32.ensures_0")
+                .unwrap();
+        crate::surface::verify_c_sources(&expanded, &[]).unwrap();
     }
 
     #[test]
@@ -4147,16 +4147,16 @@ mod tests {
             .split_once("\n```")
             .unwrap()
             .0;
-        crate::surface::verify_c0_sources(source, &[]).unwrap();
-        let expanded = crate::surface::expand_c0_claim_source_by_label(
+        crate::surface::verify_c_sources(source, &[]).unwrap();
+        let expanded = crate::surface::expand_c_claim_source_by_label(
             source,
             &[],
             "instantiate_bound_caller.ensures_0",
         )
         .unwrap();
         assert_ne!(source, expanded);
-        crate::surface::verify_c0_sources(&expanded, &[]).unwrap();
-        let repeated = crate::surface::expand_c0_claim_source_by_label(
+        crate::surface::verify_c_sources(&expanded, &[]).unwrap();
+        let repeated = crate::surface::expand_c_claim_source_by_label(
             &expanded,
             &[],
             "instantiate_bound_caller.ensures_0",

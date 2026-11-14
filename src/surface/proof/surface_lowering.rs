@@ -9,7 +9,7 @@ pub(super) fn promote_integer_expression(
     surface_bindings: &crate::persistent::PersistentMap<String, ContractExpression>,
 ) -> ContractExpression {
     match expression {
-        ContractExpression::CFragment(ProgramExpression::Variable(name))
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
             if integer_values.get(name).is_some() && surface_bindings.get(name).is_none() =>
         {
             ContractExpression::Binding(name.clone())
@@ -722,7 +722,9 @@ impl<'a> Proof<'a> {
             .focused_outcome_data()
             .filter(|data| data.core.is_exceptional)
             .map(|data| {
-                ContractExpression::CFragment(ProgramExpression::Value((*data.core.result).clone()))
+                ContractExpression::ProgramExpression(ProgramExpression::Value(
+                    (*data.core.result).clone(),
+                ))
             });
         names
             .into_iter()
@@ -930,9 +932,9 @@ impl<'a> Proof<'a> {
                             state.locals().get(&name).map(|value| {
                                 (
                                     name,
-                                    ContractExpression::CFragment(ProgramExpression::Value(
-                                        value.clone().into_native(),
-                                    )),
+                                    ContractExpression::ProgramExpression(
+                                        ProgramExpression::Value(value.clone().into_native()),
+                                    ),
                                 )
                             })
                         })
@@ -940,7 +942,7 @@ impl<'a> Proof<'a> {
                     if !substitutions.is_empty() {
                         *argument = substitute_contract_expression(
                             argument,
-                            crate::surface::lowering::ContractSubstitutions::for_current_c_values(
+                            crate::surface::lowering::ContractSubstitutions::for_current_program_values(
                                 &substitutions,
                             ),
                         )?;

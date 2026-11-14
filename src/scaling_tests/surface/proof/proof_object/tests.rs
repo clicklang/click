@@ -412,9 +412,9 @@ fn loop_entry_solve_keeps_checked_unspellable_assumptions_and_scales() {
     // tables do not spell. The producer's kernel judgment is authoritative;
     // its source proposition is a presentation, not a replacement judgment.
     let surface = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(ProgramExpression::Variable("x".into())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".into())),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(ProgramExpression::Value(int32(0))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
     };
     let goal = Proposition::ConditionIs(
         ConditionTerm::uint64_less_than(
@@ -557,7 +557,7 @@ fn choose_projection_walk_is_deterministic_across_selected_body_sizes() {
         let source = Proposition::Exists {
             name: "source_value".to_string(),
             var: chosen_variable,
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(body),
         };
         let owner = CallerSourceOwnerId::ordinary("test.c", "identity");
@@ -692,7 +692,7 @@ fn explicit_loop_have_retains_checked_body_and_complete_invariant_bundle() {
     let resources = ResourceEnvironment::new(file.resource_definitions());
     let environment = ExecutionEnvironment::new();
     let arguments = vec![ProgramExpression::Value(int32(7))];
-    let value = ContractExpression::CFragment(ProgramExpression::Value(int32(7)));
+    let value = ContractExpression::ProgramExpression(ProgramExpression::Value(int32(7)));
     let surface = ClickProposition::PredicateCall {
         name: "selected".into(),
         arguments: vec![value.clone()],
@@ -720,9 +720,9 @@ fn explicit_loop_have_retains_checked_body_and_complete_invariant_bundle() {
         ),
     ];
     let legacy_surface = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(ProgramExpression::Value(int32(7))),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(7))),
         operator: ComparisonOperator::LessEqual,
-        right: ContractExpression::CFragment(ProgramExpression::Value(int32(8))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(8))),
     };
     let mut samples = Vec::new();
     for size in [16, 32, 64, 128] {
@@ -1418,8 +1418,9 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
         },
         true,
     );
-    let expression =
-        |name: &str| ContractExpression::CFragment(ProgramExpression::Variable(name.into()));
+    let expression = |name: &str| {
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(name.into()))
+    };
     let equality_surface = ClickProposition::Comparison {
         left: expression("x"),
         operator: ComparisonOperator::Equal,
@@ -1428,7 +1429,9 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
     let goal_surface = ClickProposition::Comparison {
         left: expression("x"),
         operator: ComparisonOperator::LessThan,
-        right: ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::UInt64(bound))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(
+            ProgramValue::UInt64(bound),
+        )),
     };
     let mut costs = Vec::new();
     for ambient in [0, 16, 64, 256, 1024] {
@@ -1530,9 +1533,9 @@ fn loop_entry_wide_extent_guard_retains_its_own_source_and_scales() {
             start: start.clone(),
             end: end.clone(),
             surface: ContractSegmentSurface::Range {
-                base: ContractExpression::CFragment(base),
-                start: ContractExpression::CFragment(start),
-                end: ContractExpression::CFragment(end),
+                base: ContractExpression::ProgramExpression(base),
+                start: ContractExpression::ProgramExpression(start),
+                end: ContractExpression::ProgramExpression(end),
             },
         },
     };
@@ -1610,9 +1613,11 @@ fn completed_goal_retention_validates_current_source_after_stale_recording() {
     let old_goal = bound(entry_len.clone());
     let current_goal = bound(current_len.clone());
     let surface = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(ProgramExpression::Variable("len".into())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Variable("len".into())),
         operator: ComparisonOperator::LessEqual,
-        right: ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::UInt64(limit))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(
+            ProgramValue::UInt64(limit),
+        )),
     };
     let entry = ExecutionState::new().with_local("len", ProgramValue::UInt64(entry_len));
     let snapshots = RecordedSnapshots::new();
@@ -1696,7 +1701,7 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
     let mut samples = Vec::new();
     for size in [4usize, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = crate::kernel::intern_c_memory(
+        let memory = crate::kernel::intern_memory(
             crate::kernel::Memory::new().with_block("rewrite_reads", 4096),
         );
         let mut facts = Vec::new();
@@ -2070,7 +2075,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
             );
             memory = memory.store(pointer.clone(), ProgramValue::UInt32(stored.clone()));
             let load = MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory_ref(&memory),
+                crate::kernel::intern_memory_ref(&memory),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,
             );
@@ -2338,7 +2343,7 @@ fn check_impossible_offset_rewrite_search(already_intrinsic: bool, native: bool)
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
     let scalar = |index: usize| {
-        ContractExpression::CFragment(ProgramExpression::Variable(format!("offset{index}")))
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(format!("offset{index}")))
     };
     let integer = |index| ContractExpression::Call {
         name: "to_integer".into(),
@@ -2552,9 +2557,9 @@ fn typed_intro_records_bound_spellings_without_scanning_ambient_facts() {
     let context = pure_identity_fixture();
     let truth = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
     let surface_truth = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(ProgramExpression::Value(int32(0))),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(ProgramExpression::Value(int32(0))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
     };
     let samples = [4, 16, 64, 256].map(|size| {
         let facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
@@ -2568,7 +2573,7 @@ fn typed_intro_records_bound_spellings_without_scanning_ambient_facts() {
                 body: Box::new(truth.clone()),
             },
             ClickProposition::ForAll {
-                click_type: ClickType::C(syntax::C0Type::UInt8),
+                click_type: ClickType::Program(syntax::C0Type::UInt8),
                 name: "byte".into(),
                 written_name: None,
                 body: Box::new(surface_truth.clone()),
@@ -2693,9 +2698,9 @@ fn exact_goal_solve_stops_at_assumption_as_related_and_unrelated_facts_grow() {
     };
     let goal = bound(variable.clone(), 3);
     let surface = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(ProgramExpression::Variable("x".into())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".into())),
         operator: ComparisonOperator::LessThan,
-        right: ContractExpression::CFragment(ProgramExpression::Value(int32(3))),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(3))),
     };
     for related in [false, true] {
         let mut previous = None;
@@ -2866,13 +2871,13 @@ fn cold_theorem_application_ignores_declaration_proof_length() {
             "have x == x by solve(); ".repeat(size)
         );
         // Verification is declaration work; measure only the application below.
-        crate::surface::verify_c0_sources(&source, &[]).unwrap();
+        crate::surface::verify_c_sources(&source, &[]).unwrap();
         let file = crate::surface::parse(&source).unwrap();
         // Sensitivity control: the removed proof-instantiation path grows with
         // this same input, while complete explicit application must stay flat.
         let substitution = std::collections::BTreeMap::from([(
             "T".into(),
-            ClickType::C(syntax::C0Type::Int32).into(),
+            ClickType::Program(syntax::C0Type::Int32).into(),
         )]);
         let (declaration, proof_work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::surface::generics::instantiate_theorem(

@@ -13,7 +13,8 @@ fn retained_equality_aliases_reuse_one_coordinate_across_growing_prefixes() {
         let mut samples = Vec::new();
         for size in [16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
-            let mut root = KernelTerm::variable(KernelType::C(format.c_type()), Variable(993251));
+            let mut root =
+                KernelTerm::variable(KernelType::Program(format.c_type()), Variable(993251));
             let y = MachineTerm::Variable(Variable(993252));
             let mut facts = DifferenceGraph::new();
             let exports = KernelTermExport::machine_export_count();

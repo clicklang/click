@@ -175,7 +175,7 @@ fn shared_reassociated_add_domains_keep_operands_and_required_guards() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let variable = |id| KernelTerm::variable(KernelType::C(ty.c_type()), Variable(id));
+        let variable = |id| KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(id));
         let add = |a, b| KernelTerm::machine_binary_shared(ty, Op::Add, [a, b]);
         let a = add(variable(972_000), variable(972_001));
         let b = variable(972_002);
@@ -250,15 +250,15 @@ fn automatic_scalar_ownership_work_is_independent_of_unrelated_storage() {
         let state = ExecutionState::new()
             .with_memory(memory)
             .with_resource_context(resources);
-        let statement = c_seq(
-            c_declare("word", ProgramType::UInt32),
-            c_seq(
-                c_assign("word", c_uint32_literal(7)),
-                c_return(c_variable("word")),
+        let statement = program_seq(
+            program_declare("word", ProgramType::UInt32),
+            program_seq(
+                program_assign("word", crate::kernel::program_expression::uint32_literal(7)),
+                program_return(crate::kernel::program_expression::variable("word")),
             ),
         );
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
-            execute_c_statement_paths(
+            execute_execution_statement_paths(
                 &state,
                 &statement,
                 &PureFactContext::new(),

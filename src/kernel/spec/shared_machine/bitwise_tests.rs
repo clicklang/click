@@ -58,7 +58,7 @@ fn bitwise_all_promotions_match_native_terms_without_exports() {
                         (MachineBinaryOp::BitwiseOr, BitwiseOperation::Or),
                         (MachineBinaryOp::BitwiseXor, BitwiseOperation::Xor),
                     ] {
-                        let expected = apply_c_bitwise_binary(
+                        let expected = apply_program_bitwise_binary(
                             a.value_from_term(left.clone()),
                             b.value_from_term(right.clone()),
                             ExecutionFacts::default(),
@@ -101,7 +101,7 @@ fn bitwise_not_and_annotated_narrow_match_native() {
         ] {
             for shared in [false, true] {
                 let value = input(format, &term, shared);
-                let expected = apply_c_bitwise_not(
+                let expected = apply_program_bitwise_not(
                     format.value_from_term(term.clone()),
                     ExecutionFacts::default(),
                     Vec::new(),

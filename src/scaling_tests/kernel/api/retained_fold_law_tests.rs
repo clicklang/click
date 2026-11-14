@@ -4,7 +4,8 @@ fn fold_laws_retain_cold_shared_endpoint_dags() {
         let mut samples = Vec::new();
         for depth in [16, 64, 256] {
             let _session = VerificationSession::enter();
-            let mut root = KernelTerm::variable(KernelType::C(format.c_type()), Variable(1005100));
+            let mut root =
+                KernelTerm::variable(KernelType::Program(format.c_type()), Variable(1005100));
             for _ in 0..depth {
                 root = KernelTerm::machine_binary_shared(
                     format,

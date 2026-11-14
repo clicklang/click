@@ -301,7 +301,7 @@ impl Gen {
                 1 => SpecAlgebraicExpressionNode::Constructor {
                     variant: "One".into(),
                     fields: vec![match self.pick(3) {
-                        0 => SpecAlgebraicValue::C(self.expr(d)),
+                        0 => SpecAlgebraicValue::Program(self.expr(d)),
                         1 => SpecAlgebraicValue::Integer(self.int(d)),
                         _ => SpecAlgebraicValue::Algebraic(self.alg(d)),
                     }],

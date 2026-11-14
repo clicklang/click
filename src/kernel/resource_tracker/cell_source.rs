@@ -2012,7 +2012,7 @@ mod separated_range_frame_tests {
         let backing = MemoryRange::new(data.clone(), start.clone(), end.clone());
         let descriptor = MemoryRange::new(field.clone(), 0u32.into(), 4u32.into());
         let facts = vec![
-            Proposition::CResourceSeparate {
+            Proposition::ResourceSeparate {
                 left: Box::new(Resource::Memory(backing)),
                 right: Box::new(Resource::Memory(descriptor)),
             },
@@ -2033,8 +2033,8 @@ mod separated_range_frame_tests {
             .cloned()
             .fold(PureFactContext::new(), PureFactContext::assume_proposition);
         let initial = Memory::new();
-        let before = crate::kernel::intern_c_memory_ref(&initial);
-        let after = crate::kernel::intern_c_memory(initial.store(
+        let before = crate::kernel::intern_memory_ref(&initial);
+        let after = crate::kernel::intern_memory(initial.store(
             data.offset_by_elements(actual_index, 4),
             ProgramValue::Int32(1u32.into()),
         ));
@@ -2070,7 +2070,7 @@ mod separated_range_frame_tests {
                 "without {missing:?}"
             );
         }
-        let partial = crate::kernel::intern_c_memory(
+        let partial = crate::kernel::intern_memory(
             memory
                 .memory()
                 .clone()
@@ -2095,7 +2095,7 @@ mod separated_range_frame_tests {
         };
         let backing = MemoryRange::new(field.offset_by_bytes(8), 0u32.into(), 1u32.into());
         let descriptor = MemoryRange::new(field.clone(), 0u32.into(), 2u32.into());
-        let context = PureFactContext::new().assume_proposition(Proposition::CResourceSeparate {
+        let context = PureFactContext::new().assume_proposition(Proposition::ResourceSeparate {
             left: Box::new(Resource::Memory(backing.clone())),
             right: Box::new(Resource::Memory(descriptor)),
         });
@@ -2306,7 +2306,7 @@ mod cache_independence_tests {
                 block: "bounded-cache-independence".into(),
                 offset: PointerOffsetTerm::Constant(0),
             };
-            let before = crate::kernel::intern_c_memory(
+            let before = crate::kernel::intern_memory(
                 Memory::new().store(address.clone(), crate::kernel::int32(7)),
             );
             let mut memory = before.memory().clone();
@@ -2316,7 +2316,7 @@ mod cache_independence_tests {
                     crate::kernel::int32(9),
                 );
             }
-            let after = crate::kernel::intern_c_memory(memory);
+            let after = crate::kernel::intern_memory(memory);
             let context = PureFactContext::new();
             let query =
                 || memory_dag_cell_source_with_stop(&after, &address, 4, &context, false).unwrap();
@@ -2349,7 +2349,8 @@ mod shared_range_bound_evidence_tests {
     fn range_bounds_retain_shared_sources_and_checked_successor_links() {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let variable = |n| KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(n));
+        let variable =
+            |n| KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(n));
         let product = KernelTerm::machine_binary_shared(
             format,
             MachineBinaryOp::Multiply,

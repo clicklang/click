@@ -1,9 +1,9 @@
 use super::*;
 
 fn free_once(state: &ExecutionState, name: &str, facts: &PureFactContext) -> StatementOutcome {
-    let mut paths = execute_c_statement_paths(
+    let mut paths = execute_execution_statement_paths(
         state,
-        &c_heap_free(c_variable(name)),
+        &program_heap_free(crate::kernel::program_expression::variable(name)),
         facts,
         ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),

@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn token_discovery_follows_a_producer_defined_pointer_read() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = crate::kernel::intern_c_memory(Memory::new());
+    let memory = crate::kernel::intern_memory(Memory::new());
     let field = Pointer {
         block: "local:field".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -73,7 +73,7 @@ mod scaling_tests {
 #[test]
 fn definitions_registered_after_publication_select_existing_payloads() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = crate::kernel::intern_c_memory(Memory::new());
+    let memory = crate::kernel::intern_memory(Memory::new());
     let field = Pointer {
         block: "local:late_field".into(),
         offset: PointerOffsetTerm::Constant(0),

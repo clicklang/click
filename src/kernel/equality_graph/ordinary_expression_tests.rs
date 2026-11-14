@@ -240,7 +240,7 @@ fn all_integer_argument_types_follow_model_aliases_without_losing_tags() {
     let _session = crate::kernel::VerificationSession::enter();
     let ty = super::algebraic_tests::model_type(
         "AllIntegerArgs",
-        AlgebraicValueType::C(ProgramType::Int32),
+        AlgebraicValueType::Program(ProgramType::Int32),
     );
     let x = super::algebraic_tests::variable(&ty, 940_021);
     let y = super::algebraic_tests::variable(&ty, 940_022);

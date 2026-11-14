@@ -3,7 +3,7 @@ use super::*;
 fn schema() -> ResourceFieldSchema {
     ResourceFieldSchema::new(vec![(
         "value".into(),
-        ResourceFieldType::C(ProgramType::Int32),
+        ResourceFieldType::Program(ProgramType::Int32),
     )])
     .unwrap()
 }
@@ -26,7 +26,7 @@ fn definition() -> CompositeResourceDefinition {
             ResourceFamily::Composite,
             ResourceAccessMode::Own,
             "cell".into(),
-            vec![c_variable("p")],
+            vec![crate::kernel::program_expression::variable("p")],
             vec![ProgramType::Int32],
             ResourceTransferRole::Borrow,
             ResourceSnapshot::Current,
@@ -39,7 +39,7 @@ fn definition() -> CompositeResourceDefinition {
     .with_source_arguments(vec!["p".into()]);
     CompositeResourceDefinition::new(
         "wrapper",
-        vec![c_parameter("p", ProgramType::Int32)],
+        vec![program_parameter("p", ProgramType::Int32)],
         None,
         false,
         vec![],
@@ -140,14 +140,16 @@ fn owning_definition() -> CompositeResourceDefinition {
         name: "cell".into(),
         resource: "cell".into(),
         binding: Variable(90),
-        arguments: vec![SpecExpression::ProgramExpression(c_variable("p"))],
+        arguments: vec![SpecExpression::ProgramExpression(
+            crate::kernel::program_expression::variable("p"),
+        )],
         field_bindings: vec![ResourceChildField::Parent(0)],
     }])
 }
 fn child_definition() -> CompositeResourceDefinition {
     CompositeResourceDefinition::new(
         "cell",
-        vec![c_parameter("p", ProgramType::Int32)],
+        vec![program_parameter("p", ProgramType::Int32)],
         None,
         false,
         vec![],
@@ -290,7 +292,7 @@ fn section_reference_lookup_does_not_duplicate_existing_owned_instances() {
                 ResourceFamily::Composite,
                 ResourceAccessMode::Own,
                 instance.name().into(),
-                vec![c_int32_literal(3)],
+                vec![crate::kernel::program_expression::int32_literal(3)],
                 vec![ProgramType::Int32],
                 ResourceTransferRole::Borrow,
                 ResourceSnapshot::Current,
@@ -318,11 +320,11 @@ fn section_reference_lookup_does_not_duplicate_existing_owned_instances() {
     .unwrap();
     assert_eq!(result.0.owned_instance(child.identity()), Some(&child));
     assert_eq!(result.0.owned_instance(record.identity()), Some(&record));
-    let function = c_function(
+    let function = program_function(
         ProgramType::Int32,
         "return_refs",
         vec![],
-        c_return(c_int32_literal(0)),
+        program_return(crate::kernel::program_expression::int32_literal(0)),
     )
     .with_resource_summary(vec![], specs.clone());
     let returned = evaluate_function_return_resource_context(

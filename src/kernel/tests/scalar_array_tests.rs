@@ -165,19 +165,20 @@ fn compact_scalar_array_operations_require_complete_read_and_write_authority() {
             let state = ExecutionState::new()
                 .with_memory(if copy { seeded(4) } else { fresh(4) })
                 .with_resource_context(ResourceContext::new().unchecked_with_facts(resources));
-            let statement = c_initialize_scalar_array(
-                c_pointer_value(target.clone()),
+            let statement = program_initialize_scalar_array(
+                crate::kernel::program_expression::pointer_value(target.clone()),
                 if copy {
-                    c_pointer_value(source.clone())
+                    crate::kernel::program_expression::pointer_value(source.clone())
                 } else {
-                    c_uint32_literal(7)
+                    crate::kernel::program_expression::uint32_literal(7)
                 },
                 ProgramType::UInt32,
                 4,
                 copy,
             );
-            let theorem = prove_c_statement_execution(state, statement).unwrap();
-            let Proposition::CStatementExecutes { outcome, .. } = theorem.proposition() else {
+            let theorem = prove_execution_statement_execution(state, statement).unwrap();
+            let Proposition::ProgramStatementExecutes { outcome, .. } = theorem.proposition()
+            else {
                 panic!()
             };
             if complete {
@@ -202,11 +203,11 @@ fn compact_scalar_array_operations_require_complete_read_and_write_authority() {
             own_memory_fact(target.clone(), 0, 4),
             view_memory_fact(source.clone(), 0, 3),
         ]));
-    let theorem = prove_c_statement_execution(
+    let theorem = prove_execution_statement_execution(
         state,
-        c_initialize_scalar_array(
-            c_pointer_value(target),
-            c_pointer_value(source),
+        program_initialize_scalar_array(
+            crate::kernel::program_expression::pointer_value(target),
+            crate::kernel::program_expression::pointer_value(source),
             ProgramType::UInt32,
             4,
             true,
@@ -215,7 +216,7 @@ fn compact_scalar_array_operations_require_complete_read_and_write_authority() {
     .unwrap();
     assert!(matches!(
         theorem.proposition(),
-        Proposition::CStatementExecutes {
+        Proposition::ProgramStatementExecutes {
             outcome: StatementOutcome::RuntimeError(RuntimeError::MissingResource { .. }),
             ..
         }
@@ -225,26 +226,26 @@ fn compact_scalar_array_operations_require_complete_read_and_write_authority() {
 #[test]
 fn compact_scalar_array_zero_length_needs_no_byte_authority() {
     let state = ExecutionState::new().with_memory(fresh(0));
-    let statement = c_seq(
-        c_initialize_scalar_array(
-            c_pointer_value(pointer("local:array-source", 0)),
-            c_uint32_literal(7),
+    let statement = program_seq(
+        program_initialize_scalar_array(
+            crate::kernel::program_expression::pointer_value(pointer("local:array-source", 0)),
+            crate::kernel::program_expression::uint32_literal(7),
             ProgramType::UInt32,
             0,
             false,
         ),
-        c_initialize_scalar_array(
-            c_pointer_value(pointer("local:array-target", 0)),
-            c_pointer_value(pointer("local:array-source", 0)),
+        program_initialize_scalar_array(
+            crate::kernel::program_expression::pointer_value(pointer("local:array-target", 0)),
+            crate::kernel::program_expression::pointer_value(pointer("local:array-source", 0)),
             ProgramType::UInt32,
             0,
             true,
         ),
     );
-    let theorem = prove_c_statement_execution(state, statement).unwrap();
+    let theorem = prove_execution_statement_execution(state, statement).unwrap();
     assert!(matches!(
         theorem.proposition(),
-        Proposition::CStatementExecutes {
+        Proposition::ProgramStatementExecutes {
             outcome: StatementOutcome::Normal(_),
             ..
         }
@@ -262,11 +263,11 @@ fn compact_scalar_array_initialization_rejects_readonly_storage_and_pointer_qual
             .with_resource_context(own_memory_context(target.clone(), 0, 4));
         let pointer = PointerValue::new(target.clone(), ProgramType::UInt32Pointer)
             .with_pointee_constant(!readonly_block);
-        let theorem = prove_c_statement_execution(
+        let theorem = prove_execution_statement_execution(
             state,
-            c_initialize_scalar_array(
+            program_initialize_scalar_array(
                 ProgramExpression::Value(ProgramValue::Pointer(pointer)),
-                c_uint32_literal(7),
+                crate::kernel::program_expression::uint32_literal(7),
                 ProgramType::UInt32,
                 4,
                 false,
@@ -275,17 +276,17 @@ fn compact_scalar_array_initialization_rejects_readonly_storage_and_pointer_qual
         .unwrap();
         assert!(matches!(
             theorem.proposition(),
-            Proposition::CStatementExecutes {
+            Proposition::ProgramStatementExecutes {
                 outcome: StatementOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),
                 ..
             }
         ));
     }
-    let theorem = prove_c_statement_execution(
+    let theorem = prove_execution_statement_execution(
         ExecutionState::new().with_memory(fresh(0)),
-        c_initialize_scalar_array(
-            c_pointer_value(target),
-            c_void_value(),
+        program_initialize_scalar_array(
+            crate::kernel::program_expression::pointer_value(target),
+            program_void_value(),
             ProgramType::Void,
             0,
             false,
@@ -294,7 +295,7 @@ fn compact_scalar_array_initialization_rejects_readonly_storage_and_pointer_qual
     .unwrap();
     assert!(matches!(
         theorem.proposition(),
-        Proposition::CStatementExecutes {
+        Proposition::ProgramStatementExecutes {
             outcome: StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
             ..
         }
@@ -333,26 +334,26 @@ fn compact_scalar_array_initialization_cannot_bypass_an_active_view_loan() {
         .with_loan_view_bindings(bindings);
     for fresh in [true, false] {
         let statement = if fresh {
-            c_initialize_scalar_array(
-                c_pointer_value(target.clone()),
-                c_uint32_literal(7),
+            program_initialize_scalar_array(
+                crate::kernel::program_expression::pointer_value(target.clone()),
+                crate::kernel::program_expression::uint32_literal(7),
                 ProgramType::UInt32,
                 4,
                 false,
             )
         } else {
-            c_write_scalar_array_region(
-                c_pointer_value(target.clone()),
-                c_uint32_literal(7),
+            program_write_scalar_array_region(
+                crate::kernel::program_expression::pointer_value(target.clone()),
+                crate::kernel::program_expression::uint32_literal(7),
                 ProgramType::UInt32,
                 4,
                 false,
             )
         };
-        let theorem = prove_c_statement_execution(state.clone(), statement).unwrap();
+        let theorem = prove_execution_statement_execution(state.clone(), statement).unwrap();
         assert!(matches!(
             theorem.proposition(),
-            Proposition::CStatementExecutes {
+            Proposition::ProgramStatementExecutes {
                 outcome: StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(_)),
                 ..
             }
@@ -472,15 +473,15 @@ fn compact_array_region_execution_requires_full_authority_and_mutable_storage() 
         let state = ExecutionState::new()
             .with_memory(Memory::new().with_block_or_read_only(target.block.clone(), 24, readonly))
             .with_resource_context(ResourceContext::new().unchecked_with_facts(vec![resource]));
-        let statement = c_write_scalar_array_region(
-            c_pointer_value(target),
-            c_uint32_literal(7),
+        let statement = program_write_scalar_array_region(
+            crate::kernel::program_expression::pointer_value(target),
+            crate::kernel::program_expression::uint32_literal(7),
             ProgramType::UInt32,
             4,
             false,
         );
-        let theorem = prove_c_statement_execution(state, statement).unwrap();
-        let Proposition::CStatementExecutes { outcome, .. } = theorem.proposition() else {
+        let theorem = prove_execution_statement_execution(state, statement).unwrap();
+        let Proposition::ProgramStatementExecutes { outcome, .. } = theorem.proposition() else {
             panic!()
         };
         assert_eq!(
@@ -492,15 +493,18 @@ fn compact_array_region_execution_requires_full_authority_and_mutable_storage() 
 
 #[test]
 fn compact_array_region_write_refreshes_an_addressed_scalar_local() {
-    let declaration = prove_c_statement_execution(
+    let declaration = prove_execution_statement_execution(
         ExecutionState::new(),
-        c_seq(
-            c_declare("value", ProgramType::UInt32),
-            c_assign("value", c_uint32_literal(42)),
+        program_seq(
+            program_declare("value", ProgramType::UInt32),
+            program_assign(
+                "value",
+                crate::kernel::program_expression::uint32_literal(42),
+            ),
         ),
     )
     .unwrap();
-    let Proposition::CStatementExecutes {
+    let Proposition::ProgramStatementExecutes {
         outcome: StatementOutcome::Normal(state),
         ..
     } = declaration.proposition()
@@ -511,18 +515,18 @@ fn compact_array_region_write_refreshes_an_addressed_scalar_local() {
     let state = state.clone().with_resource_context(
         ResourceContext::new().unchecked_with_facts([own_memory_fact(target, 0, 1)]),
     );
-    let theorem = prove_c_statement_execution(
+    let theorem = prove_execution_statement_execution(
         state,
-        c_write_scalar_array_region(
-            c_addr_of("value"),
-            c_uint32_literal(7),
+        program_write_scalar_array_region(
+            crate::kernel::program_expression::addr_of("value"),
+            crate::kernel::program_expression::uint32_literal(7),
             ProgramType::UInt32,
             1,
             false,
         ),
     )
     .unwrap();
-    let Proposition::CStatementExecutes {
+    let Proposition::ProgramStatementExecutes {
         outcome: StatementOutcome::Normal(state),
         ..
     } = theorem.proposition()

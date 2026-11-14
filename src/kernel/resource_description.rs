@@ -191,7 +191,7 @@ impl ResourceDescription {
             || self.arguments().len() != 1
             || !matches!(
                 self.arguments()[0],
-                AlgebraicValue::C(super::ProgramValue::Pointer(_))
+                AlgebraicValue::Program(super::ProgramValue::Pointer(_))
             )
             || !self.resource_arguments().is_empty()
         {
@@ -260,7 +260,7 @@ mod tests {
             vec![int32(argument).into()].into(),
             ResourceFieldSchema::new(vec![(
                 "value".into(),
-                ResourceFieldType::C(ProgramType::Int32),
+                ResourceFieldType::Program(ProgramType::Int32),
             )])
             .unwrap(),
             vec![int32(observed).into()].into(),
@@ -316,7 +316,7 @@ mod tests {
         let mut different_schema = later;
         different_schema.schema = ResourceFieldSchema::new(vec![(
             "other".into(),
-            ResourceFieldType::C(ProgramType::Int32),
+            ResourceFieldType::Program(ProgramType::Int32),
         )])
         .unwrap();
         assert_ne!(
@@ -405,13 +405,11 @@ mod tests {
         assert!(
             !ResourceDescription::from_instance(&wrapper).matches_instance(&wrong, &assumptions)
         );
-        assert!(
-            !crate::kernel::memory_provenance::c_resources_directly_match(
-                &Resource::Instance(wrapper.clone()),
-                &Resource::Instance(wrong.clone()),
-                &assumptions,
-            )
-        );
+        assert!(!crate::kernel::memory_provenance::resources_directly_match(
+            &Resource::Instance(wrapper.clone()),
+            &Resource::Instance(wrong.clone()),
+            &assumptions,
+        ));
         let context = ResourceContext::new()
             .try_compose_with_fact(ResourceFact::own(Resource::Instance(wrapper)), &assumptions)
             .unwrap();

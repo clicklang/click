@@ -77,7 +77,7 @@ fn scalar_array_copy_after_call_captures_unknown_initialized_values_compactly() 
         );
         assert!(after_call.has_initialized_bytes_at(&source, count * 4));
         assert_eq!(after_call.cells.runs_in_block(&source.block).count(), 0);
-        let snapshot = intern_c_memory_ref(&after_call);
+        let snapshot = intern_memory_ref(&after_call);
         let (copied, work) = crate::instrumentation::measure_deterministic_work(|| {
             after_call
                 .initialize_scalar_array(

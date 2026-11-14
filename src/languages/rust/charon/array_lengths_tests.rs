@@ -1,5 +1,5 @@
 use super::*;
-use crate::surface::C0VerificationSession;
+use crate::surface::ProgramVerificationSession;
 
 const ARTIFACT: &[u8] =
     include_bytes!("../../../../design/charon-trial/array-lengths/.click/bounds/bounds.rs.ullbc");
@@ -121,7 +121,7 @@ fn charon_scalar_array_length_metadata_has_bounded_shape_and_proof_work() {
             "verifying \"bounds.rs\"; fn {name}(values: &[{ty}; {length}]) -> usize {{ ensures result == {length}u64; }}"
         );
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
-            C0VerificationSession::new_program_prepared(&claim, &prepared)
+            ProgramVerificationSession::new_program_prepared(&claim, &prepared)
         });
         verified.unwrap();
         samples.push((nodes(function.body()), work));

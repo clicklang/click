@@ -72,14 +72,14 @@ impl<'a> Analysis<'a> {
             .copied()
     }
 
-    fn c_origins(&self, value: &ProgramExpression) -> Origins {
+    fn program_origins(&self, value: &ProgramExpression) -> Origins {
         match value {
             ProgramExpression::Variable(name) => self
                 .bindings
                 .get(name.as_str())
                 .cloned()
                 .unwrap_or_default(),
-            ProgramExpression::Cast { expression, .. } => self.c_origins(expression),
+            ProgramExpression::Cast { expression, .. } => self.program_origins(expression),
             _ => None,
         }
     }
@@ -100,7 +100,7 @@ impl<'a> Analysis<'a> {
         }
         crate::instrumentation::record_deterministic_work(1);
         let result = match value {
-            SpecExpression::ProgramExpression(value) => self.c_origins(value),
+            SpecExpression::ProgramExpression(value) => self.program_origins(value),
             SpecExpression::Cast(value, _) | SpecExpression::LoopEntrySnapshot(value) => {
                 self.origins(value)
             }
@@ -185,7 +185,7 @@ impl<'a> Analysis<'a> {
                         if let Some(schema) = self.fields(&expression.algebraic_type, variant) {
                             for (field, ty) in fields.iter().zip(schema) {
                                 if let (
-                                    SpecAlgebraicValue::C(value),
+                                    SpecAlgebraicValue::Program(value),
                                     AlgebraicValueType::ObjectPointer(_, class),
                                 ) = (field, ty)
                                 {
@@ -348,7 +348,13 @@ impl<'a> Analysis<'a> {
                 let schema = self.fields(&value.algebraic_type, variant)?;
                 fields.iter().zip(schema).find_map(|(field, ty)| {
                     crate::instrumentation::record_deterministic_work(1);
-                    let (SpecAlgebraicValue::C(value), AlgebraicValueType::ObjectPointer(_, class)) = (field, ty) else { return None; };
+                    let (
+                        SpecAlgebraicValue::Program(value),
+                        AlgebraicValueType::ObjectPointer(_, class),
+                    ) = (field, ty)
+                    else {
+                        return None;
+                    };
                     direct_result(value).then(|| class.clone())
                 })
             }
@@ -408,7 +414,7 @@ mod tests {
         );
     }
     #[test]
-    fn quantified_names_do_not_strengthen_same_named_c_inputs() {
+    fn quantified_names_do_not_strengthen_same_named_program_inputs() {
         let spec = SpecProposition::ForAllPointer {
             name: "p".to_string(),
             variable: Variable(501),

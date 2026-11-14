@@ -18,7 +18,7 @@ fn shared_bound_consumers_preserve_dag_operands() {
                     true,
                 );
             }
-            let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(994201));
+            let mut root = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(994201));
             let observe = |term| IntegerTerm::from_machine(ty, term).unwrap();
             let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
                 for level in 0..size {
@@ -82,7 +82,7 @@ fn shared_comparison_class_queries_do_not_export_dag_prefixes() {
                     true,
                 );
             }
-            let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(994401));
+            let mut root = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(994401));
             let right = MachineTerm::Variable(Variable(994402));
             let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
                 for level in 0..size {
@@ -144,7 +144,7 @@ fn shared_exact_order_walk_visits_dag_endpoints_once() {
         for ambient in [0, 64] {
             let _session = crate::kernel::VerificationSession::enter();
             let ty = MachineIntegerType::Int32;
-            let variable = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(997001));
+            let variable = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(997001));
             let first = SharedMachineIntegerTerm::from_shared(
                 ty,
                 KernelTerm::machine_binary_shared(
@@ -199,7 +199,8 @@ fn shared_exact_order_walk_visits_dag_endpoints_once() {
                     last.operand_view(),
                     true
                 ));
-                let missing = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(997002));
+                let missing =
+                    KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(997002));
                 assert!(!facts.has_exact_order_path_views(
                     first.operand_view(),
                     V::Shared(&missing),

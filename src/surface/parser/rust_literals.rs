@@ -207,9 +207,9 @@ impl IntegerLiteral {
 
     pub(super) fn contract_expression(&self, negative: bool) -> Result<ContractExpression, String> {
         if self.suffix.is_some() {
-            return Ok(ContractExpression::CFragment(ProgramExpression::Value(
-                self.native_value(negative)?,
-            )));
+            return Ok(ContractExpression::ProgramExpression(
+                ProgramExpression::Value(self.native_value(negative)?),
+            ));
         }
         let expression = ContractExpression::IntegerLiteral(self.digits.clone());
         Ok(if negative {
@@ -235,7 +235,7 @@ impl IntegerLiteral {
         Ok(if negative { -value } else { value })
     }
 
-    pub(super) fn c_expression(&self, negative: bool) -> Result<C0Expression, String> {
+    pub(super) fn program_expression(&self, negative: bool) -> Result<C0Expression, String> {
         let value = if self.suffix.is_some() {
             self.native_value(negative)?
         } else {

@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use click::languages::c::compiler_import::PreparedCImport;
 use click::surface::{
-    expand_c0_prepared_tactic_source_at, verify_c0_prepared_sources, verify_sources_at,
+    expand_c_prepared_tactic_source_at, verify_c_prepared_sources, verify_sources_at,
 };
 use serde_json::json;
 
@@ -201,7 +201,7 @@ fn compiler_import_fixture_verifies_targets_and_checked_expansion() {
     create_lock(&project.config()).expect("lock real compiler input");
     let imports = load_imports(&project.config()).expect("offline locked import");
     let proof = project.proof();
-    let verified = verify_c0_prepared_sources(&proof, &imports).expect("compiler-backed proof");
+    let verified = verify_c_prepared_sources(&proof, &imports).expect("compiler-backed proof");
     assert!(!verified.is_empty());
     for theorem in verified {
         assert_eq!(
@@ -218,10 +218,10 @@ fn compiler_import_fixture_verifies_targets_and_checked_expansion() {
     let column = offset - proof[..offset].rfind('\n').unwrap();
     verify_sources_at(&proof, &ProgramInputs::Prepared(&imports), line, column)
         .expect("targeted imported proof");
-    let expanded = expand_c0_prepared_tactic_source_at(&proof, &imports, line, column)
+    let expanded = expand_c_prepared_tactic_source_at(&proof, &imports, line, column)
         .expect("checked compiler-backed tactic expansion");
     assert_ne!(expanded, proof);
-    verify_c0_prepared_sources(&expanded, &imports).expect("expanded certificate verifies");
+    verify_c_prepared_sources(&expanded, &imports).expect("expanded certificate verifies");
     let sites =
         click::surface::smart_tactic_source_sites(&proof, &ProgramInputs::Prepared(&imports))
             .unwrap();
@@ -237,7 +237,7 @@ fn compiler_import_fixture_verifies_targets_and_checked_expansion() {
         &positions,
     )
     .unwrap();
-    verify_c0_prepared_sources(&batch.source, &imports).expect("batch compiler-backed expansion");
+    verify_c_prepared_sources(&batch.source, &imports).expect("batch compiler-backed expansion");
     let scoped = click::surface::ClickProject::new(
         "main.click",
         [click::surface::ClickModuleSource::new(
@@ -252,11 +252,11 @@ fn compiler_import_fixture_verifies_targets_and_checked_expansion() {
         &positions,
     )
     .unwrap();
-    click::surface::verify_c0_prepared_project(&scoped.with_entry_source(batch.source), &imports)
+    click::surface::verify_c_prepared_project(&scoped.with_entry_source(batch.source), &imports)
         .expect("batch project compiler-backed expansion");
     fs::write(project.0.join("main.click"), &expanded).unwrap();
     let reloaded = load_imports(&project.config()).expect("proof edits do not invalidate C input");
-    verify_c0_prepared_sources(&expanded, &reloaded).expect("offline imported expanded proof");
+    verify_c_prepared_sources(&expanded, &reloaded).expect("offline imported expanded proof");
 }
 
 #[test]
@@ -270,9 +270,9 @@ fn compiler_import_define_changes_require_refresh_and_change_the_proof() {
     create_lock(&project.config()).unwrap();
     let second = load_imports(&project.config()).unwrap();
     assert_ne!(first[0].identity(), second[0].identity());
-    assert!(verify_c0_prepared_sources(&project.proof(), &second).is_err());
+    assert!(verify_c_prepared_sources(&project.proof(), &second).is_err());
     let corrected = project.proof().replace("15", "7");
-    verify_c0_prepared_sources(&corrected, &second).expect("changed compiler-selected branch");
+    verify_c_prepared_sources(&corrected, &second).expect("changed compiler-selected branch");
 }
 
 #[test]
@@ -311,7 +311,7 @@ fn compiler_import_header_and_artifact_changes_cannot_reuse_a_lock() {
     assert!(load_imports(&project.config()).is_err());
     create_lock(&project.config()).unwrap();
     let imports = load_imports(&project.config()).unwrap();
-    verify_c0_prepared_sources(&project.proof().replace("15", "16"), &imports)
+    verify_c_prepared_sources(&project.proof().replace("15", "16"), &imports)
         .expect("changed configured system header has checked behavior");
 }
 
@@ -326,7 +326,7 @@ fn compiler_import_lowering_error_points_to_original_header() {
     .unwrap();
     create_lock(&project.config()).unwrap();
     let imports = load_imports(&project.config()).unwrap();
-    let error = verify_c0_prepared_sources(&project.proof(), &imports).unwrap_err();
+    let error = verify_c_prepared_sources(&project.proof(), &imports).unwrap_err();
     assert!(
         error.message().contains("context.h:2"),
         "{}",
@@ -344,18 +344,18 @@ fn compiler_import_reproduces_header_existence_and_preserves_unsupported_bodies(
     ).unwrap();
     create_lock(&project.config()).unwrap();
     let imports = load_imports(&project.config()).unwrap();
-    verify_c0_prepared_sources(&project.proof(), &imports).unwrap();
+    verify_c_prepared_sources(&project.proof(), &imports).unwrap();
     let original_identity = imports[0].identity().to_string();
     fs::write(project.0.join("optional.h"), "#define OPTIONAL_VALUE 16\n").unwrap();
     // A locked import means the prepared snapshot, including the absence of
     // this header. Only an explicit refresh selects the newly added header.
     let still_locked = load_imports(&project.config()).unwrap();
     assert_eq!(still_locked[0].identity(), original_identity);
-    verify_c0_prepared_sources(&project.proof(), &still_locked).unwrap();
+    verify_c_prepared_sources(&project.proof(), &still_locked).unwrap();
     create_lock(&project.config()).unwrap();
     let imports = load_imports(&project.config()).unwrap();
     assert_ne!(imports[0].identity(), original_identity);
-    verify_c0_prepared_sources(&project.proof().replace("15", "16"), &imports).unwrap();
+    verify_c_prepared_sources(&project.proof().replace("15", "16"), &imports).unwrap();
 
     // The sidecar does not mention this function. Its effects still must reach
     // the C frontend and be rejected, rather than be removed as metadata.
@@ -365,7 +365,7 @@ fn compiler_import_reproduces_header_existence_and_preserves_unsupported_bodies(
     create_lock(&project.config()).unwrap();
     let imports = load_imports(&project.config()).unwrap();
     assert!(imports[0].source().contains("unmentioned"));
-    assert!(verify_c0_prepared_sources(&project.proof().replace("15", "16"), &imports).is_err());
+    assert!(verify_c_prepared_sources(&project.proof().replace("15", "16"), &imports).is_err());
 }
 
 #[test]
@@ -416,7 +416,7 @@ fn compiler_import_results_bind_helpers_in_other_translation_units() {
     let proof = format!("verifying \"helper.c\";\n{}", project.proof());
     create_lock(&project.config()).unwrap();
     let first = load_imports(&project.config()).unwrap();
-    let verified = verify_c0_prepared_sources(&proof, &first).unwrap();
+    let verified = verify_c_prepared_sources(&proof, &first).unwrap();
     let identity = verified[0].import_identity.clone().unwrap();
     assert_eq!(
         identity.len(),
@@ -430,14 +430,14 @@ fn compiler_import_results_bind_helpers_in_other_translation_units() {
     );
     let reversed = first.iter().rev().cloned().collect::<Vec<_>>();
     assert_eq!(
-        verify_c0_prepared_sources(&proof, &reversed).unwrap()[0]
+        verify_c_prepared_sources(&proof, &reversed).unwrap()[0]
             .import_identity
             .as_deref(),
         Some(identity.as_str())
     );
     let duplicate = [first[0].clone(), first[0].clone(), first[1].clone()];
     assert!(
-        verify_c0_prepared_sources(&proof, &duplicate)
+        verify_c_prepared_sources(&proof, &duplicate)
             .unwrap_err()
             .message()
             .contains("duplicate")
@@ -455,7 +455,7 @@ fn compiler_import_results_bind_helpers_in_other_translation_units() {
         second[0].identity(),
         "the calling C unit itself did not change"
     );
-    let changed = verify_c0_prepared_sources(&proof.replace("15", "16"), &second).unwrap();
+    let changed = verify_c_prepared_sources(&proof.replace("15", "16"), &second).unwrap();
     assert_ne!(
         changed[0].import_identity.as_deref(),
         Some(identity.as_str())
@@ -474,12 +474,12 @@ fn compiler_import_preserves_explicit_external_assumption_reporting() {
     let proof = "target \"x86_64-unknown-linux-gnu\";\nmode \"kernel\";\nverifying \"main.c\";\nextern int32 external_identity(int32 x) { requires x >= 0; ensures result == x; }\nint32 caller(int32 x) { requires x >= 0; ensures result == x; }\n";
     create_lock(&project.config()).unwrap();
     let imports = load_imports(&project.config()).unwrap();
-    let assumptions = click::surface::c0_prepared_external_dependencies(proof, &imports).unwrap();
+    let assumptions = click::surface::c_prepared_external_dependencies(proof, &imports).unwrap();
     assert_eq!(
         assumptions.get("caller"),
         Some(&vec!["external_identity".to_string()])
     );
-    verify_c0_prepared_sources(proof, &imports).unwrap();
+    verify_c_prepared_sources(proof, &imports).unwrap();
 }
 
 fn configure_userspace(project: &Project) {
@@ -520,24 +520,24 @@ int answer(void) { return ANSWER; }
     let proof = "target \"x86_64-unknown-linux-gnu\"; verifying \"main.c\"; int answer() { ensures result == 42; }";
     create_lock(&project.config()).unwrap();
     let imports = load_imports(&project.config()).unwrap();
-    let verified = verify_c0_prepared_sources(proof, &imports).unwrap();
+    let verified = verify_c_prepared_sources(proof, &imports).unwrap();
     assert!(verified.iter().all(|theorem| {
         theorem.target() == click::languages::c::target::CTarget::X86_64LinuxUserspace
             && theorem.import_identity.as_deref() == Some(imports[0].identity())
     }));
     let column = proof.find("ensures result == 42;").unwrap() + 1;
-    let expanded = expand_c0_prepared_tactic_source_at(proof, &imports, 1, column).unwrap();
-    verify_c0_prepared_sources(&expanded, &imports).unwrap();
+    let expanded = expand_c_prepared_tactic_source_at(proof, &imports, 1, column).unwrap();
+    verify_c_prepared_sources(&expanded, &imports).unwrap();
     // Both whole-file and selected-site checking must reject a target mismatch.
     let wrong = proof.replace("verifying", "mode \"kernel\"; verifying");
-    let error = verify_c0_prepared_sources(&wrong, &imports).unwrap_err();
+    let error = verify_c_prepared_sources(&wrong, &imports).unwrap_err();
     assert!(
         error.message().contains("but the sidecar selects"),
         "{error:?}"
     );
     let column = wrong.find("ensures result == 42;").unwrap() + 1;
     assert!(verify_sources_at(&wrong, &ProgramInputs::Prepared(&imports), 1, column).is_err());
-    assert!(expand_c0_prepared_tactic_source_at(&wrong, &imports, 1, column).is_err());
+    assert!(expand_c_prepared_tactic_source_at(&wrong, &imports, 1, column).is_err());
     // Opened headers remain lock dependencies even when their bytes do not
     // affect the selected function.
     fs::write(project.0.join("profile.h"), "/* changed header */\n").unwrap();
@@ -566,8 +566,8 @@ fn userspace_and_kernel_imports_have_distinct_identity_for_identical_c() {
     );
     assert_ne!(kernel[0].identity(), userspace[0].identity());
     let proof = "target \"x86_64-unknown-linux-gnu\"; verifying \"main.c\"; int answer() { ensures result == 42; }";
-    assert!(verify_c0_prepared_sources(proof, &kernel).is_err());
-    verify_c0_prepared_sources(proof, &userspace).unwrap();
+    assert!(verify_c_prepared_sources(proof, &kernel).is_err());
+    verify_c_prepared_sources(proof, &userspace).unwrap();
 }
 
 #[test]
@@ -633,14 +633,14 @@ fn compiler_import_dependency_closure_projection_is_an_explicit_checked_option()
     let imports = load_imports(&project.config()).expect("load the projected import");
     assert!(!imports[0].source().contains("unused_stray"));
     assert!(imports[0].source().contains("from_header"));
-    verify_c0_prepared_sources(&project.proof(), &imports).expect("the kept proof verifies");
+    verify_c_prepared_sources(&project.proof(), &imports).expect("the kept proof verifies");
 
     // Without the projection the same artifact is refused at the stray
     // assembly, and the configuration change is a different lock.
     fs::write(project.config(), &original_config).unwrap();
     create_lock(&project.config()).expect("lock the whole import");
     let imports = load_imports(&project.config()).expect("load the whole import");
-    let error = verify_c0_prepared_sources(&project.proof(), &imports)
+    let error = verify_c_prepared_sources(&project.proof(), &imports)
         .expect_err("the whole unit includes the stray assembly");
     assert!(
         error.message().contains("inline assembly"),
@@ -724,8 +724,7 @@ fn pinned_zlib_empty_contract_verifies_offline_and_relocates() {
     let imports =
         zlib_imports(root.path(), ZLIB_ADLER32).expect("offline locked zlib source closure");
     let proof = fs::read_to_string(root.path().join("empty.click")).unwrap();
-    let verified =
-        verify_c0_prepared_sources(&proof, &imports).expect("unchanged zlib empty input");
+    let verified = verify_c_prepared_sources(&proof, &imports).expect("unchanged zlib empty input");
     assert_eq!(verified.len(), 1);
     assert_eq!(
         verified[0].import_identity.as_deref(),
@@ -738,11 +737,11 @@ fn pinned_zlib_empty_contract_verifies_offline_and_relocates() {
         .count()
         + 1;
     let column = offset - proof[..offset].rfind('\n').unwrap();
-    let expanded = expand_c0_prepared_tactic_source_at(&proof, &imports, line, column)
+    let expanded = expand_c_prepared_tactic_source_at(&proof, &imports, line, column)
         .expect("checked zlib execution expansion");
-    verify_c0_prepared_sources(&expanded, &imports).expect("expanded zlib contract");
+    verify_c_prepared_sources(&expanded, &imports).expect("expanded zlib contract");
     let false_claim = proof.replace("ensures result == 1u64", "ensures result == 2u64");
-    assert!(verify_c0_prepared_sources(&false_claim, &imports).is_err());
+    assert!(verify_c_prepared_sources(&false_claim, &imports).is_err());
     let header = root.path().join("../../vendor/zlib-1.3.1/zutil.h");
     fs::write(
         &header,
@@ -772,7 +771,7 @@ fn pinned_zlib_one_byte_matches_checked_shared_specification_offline() {
             "import \"byte.click\";",
             include_str!("../design/adler32/project/zlib/byte.click"),
         );
-    let verified = verify_c0_prepared_sources(&proof, &imports).expect("shared one-byte checksum");
+    let verified = verify_c_prepared_sources(&proof, &imports).expect("shared one-byte checksum");
     let implementation = verified
         .iter()
         .find(|claim| claim.function_block.signature().name() == "adler32_z")
@@ -788,9 +787,9 @@ fn pinned_zlib_one_byte_matches_checked_shared_specification_offline() {
         .count()
         + 1;
     let column = offset - proof[..offset].rfind('\n').unwrap();
-    let expanded = expand_c0_prepared_tactic_source_at(&proof, &imports, line, column)
+    let expanded = expand_c_prepared_tactic_source_at(&proof, &imports, line, column)
         .expect("checked original return expansion");
-    verify_c0_prepared_sources(&expanded, &imports).expect("expanded shared checksum proof");
+    verify_c_prepared_sources(&expanded, &imports).expect("expanded shared checksum proof");
     for invalid in [
         proof.replace(
             "ensures to_integer(result) == adler_spec_checksum_u64(old(buf), 1u64, 1, 0);",
@@ -833,7 +832,7 @@ fn pinned_zlib_short_loop_matches_checked_shared_specification_offline() {
             1,
         )
         .replace("import \"../adler32-spec-bridge.click\";", "");
-    let checked = verify_c0_prepared_sources(&proof, &imports)
+    let checked = verify_c_prepared_sources(&proof, &imports)
         .expect("short-loop shared checksum, termination, and input preservation");
     assert_eq!(
         checked
@@ -859,9 +858,9 @@ fn pinned_zlib_short_loop_matches_checked_shared_specification_offline() {
         .count()
         + 1;
     let column = offset - proof[..offset].rfind('\n').unwrap();
-    let expanded = expand_c0_prepared_tactic_source_at(&proof, &imports, line, column)
+    let expanded = expand_c_prepared_tactic_source_at(&proof, &imports, line, column)
         .expect("checked original loop-entry expansion");
-    verify_c0_prepared_sources(&expanded, &imports).expect("expanded short-loop checksum proof");
+    verify_c_prepared_sources(&expanded, &imports).expect("expanded short-loop checksum proof");
     for invalid in [
         proof.replace("views buf[0u64..len];", "views buf[0u64..len - 1u64];"),
         proof.replacen("views buf[0u64..len];", "", 1),
@@ -894,15 +893,15 @@ fn pinned_zlib_null_reset_is_independent_of_seed_and_nonunit_length() {
     let root = zlib_project();
     let imports = zlib_imports(root.path(), ZLIB_ADLER32).unwrap();
     let proof = include_str!("../design/adler32/project/zlib/reset.click");
-    verify_c0_prepared_sources(proof, &imports).expect("unchanged C null reset path");
+    verify_c_prepared_sources(proof, &imports).expect("unchanged C null reset path");
     assert!(
-        verify_c0_prepared_sources(&proof.replace("result == 1u64", "result == 2u64"), &imports)
+        verify_c_prepared_sources(&proof.replace("result == 1u64", "result == 2u64"), &imports)
             .is_err()
     );
     // The original source's one-byte fast path precedes its null check.
     // That path needs byte-read authority and is outside the reset contract.
     assert!(
-        verify_c0_prepared_sources(
+        verify_c_prepared_sources(
             &proof.replace("requires len != 1u64;", "requires len == 1u64;"),
             &imports
         )
@@ -973,7 +972,7 @@ fn adler_c_rust_correspondence_expands_with_checked_dependencies() {
         "adler_c_rust_results.ensures_0",
         "adler_c_rust_reset.ensures_0",
     ] {
-        expanded = click::surface::expand_c0_claim_source_by_label(&expanded, &[], label)
+        expanded = click::surface::expand_c_claim_source_by_label(&expanded, &[], label)
             .expect("checked C/Rust correspondence expansion");
     }
     click::surface::verify_click_theorems(&expanded)
@@ -1038,7 +1037,7 @@ fn pinned_zlib_sixteen_block_matches_checked_shared_specification_offline() {
             "import \"../adler32-spec-bridge.click\";",
             &adler_specifications(),
         );
-    let checked = verify_c0_prepared_sources(&proof, &imports)
+    let checked = verify_c_prepared_sources(&proof, &imports)
         .expect("DO16 shared checksum, termination, byte preservation, and all helper bodies");
     let contracts: Vec<_> = checked
         .iter()
@@ -1058,9 +1057,9 @@ fn pinned_zlib_sixteen_block_matches_checked_shared_specification_offline() {
         .count()
         + 1;
     let column = offset - proof[..offset].rfind('\n').unwrap();
-    let expanded = expand_c0_prepared_tactic_source_at(&proof, &imports, line, column)
+    let expanded = expand_c_prepared_tactic_source_at(&proof, &imports, line, column)
         .expect("checked original DO16 loop-entry expansion");
-    verify_c0_prepared_sources(&expanded, &imports).expect("expanded DO16 checksum proof");
+    verify_c_prepared_sources(&expanded, &imports).expect("expanded DO16 checksum proof");
     for invalid in [
         proof.replacen("views buf[0u64..len];", "", 1),
         proof.replacen("views buf[0u64..len];", "views buf[0u64..len - 1u64];", 1),
@@ -1080,7 +1079,7 @@ fn pinned_zlib_sixteen_block_matches_checked_shared_specification_offline() {
         ),
     ] {
         assert_ne!(proof, invalid);
-        assert!(verify_c0_prepared_sources(&invalid, &imports).is_err());
+        assert!(verify_c_prepared_sources(&invalid, &imports).is_err());
     }
 }
 
@@ -1115,7 +1114,7 @@ fn pinned_zlib_repeated_blocks_match_checked_shared_specification_offline() {
             "import \"../adler32-spec-bridge.click\";",
             &adler_specifications(),
         );
-    let checked = verify_c0_prepared_sources(&proof, &imports)
+    let checked = verify_c_prepared_sources(&proof, &imports)
         .expect("repeated-block checksum, termination, byte preservation, and all helper bodies");
     let contracts: Vec<_> = checked
         .iter()
@@ -1128,13 +1127,13 @@ fn pinned_zlib_repeated_blocks_match_checked_shared_specification_offline() {
             Some(imports[0].identity())
         );
     }
-    let expanded = click::surface::expand_c0_prepared_claim_source_by_label(
+    let expanded = click::surface::expand_c_prepared_claim_source_by_label(
         &proof,
         &imports,
         "adler32_z.contract",
     )
     .expect("checked complete repeated-block certificate expansion");
-    verify_c0_prepared_sources(&expanded, &imports)
+    verify_c_prepared_sources(&expanded, &imports)
         .expect("expanded repeated-block checksum and every helper body");
     for invalid in [
         proof.replacen("views buf[0u64..len];", "", 1),
@@ -1155,7 +1154,7 @@ fn pinned_zlib_repeated_blocks_match_checked_shared_specification_offline() {
         ),
     ] {
         assert_ne!(proof, invalid);
-        assert!(verify_c0_prepared_sources(&invalid, &imports).is_err());
+        assert!(verify_c_prepared_sources(&invalid, &imports).is_err());
     }
 }
 
@@ -1194,7 +1193,7 @@ fn pinned_zlib_nmax_batch_matches_checked_shared_specification_offline() {
             "import \"../adler32-spec-bridge.click\";",
             &adler_specifications(),
         );
-    let checked = verify_c0_prepared_sources(&proof, &imports)
+    let checked = verify_c_prepared_sources(&proof, &imports)
         .expect("NMAX batch checksum, termination, byte preservation, and all helper bodies");
     let contracts: Vec<_> = checked
         .iter()
@@ -1207,13 +1206,13 @@ fn pinned_zlib_nmax_batch_matches_checked_shared_specification_offline() {
             Some(imports[0].identity())
         );
     }
-    let expanded = click::surface::expand_c0_prepared_claim_source_by_label(
+    let expanded = click::surface::expand_c_prepared_claim_source_by_label(
         &proof,
         &imports,
         "adler32_z.contract",
     )
     .expect("checked complete NMAX batch certificate expansion");
-    verify_c0_prepared_sources(&expanded, &imports)
+    verify_c_prepared_sources(&expanded, &imports)
         .expect("expanded NMAX batch checksum and every helper body");
     for invalid in [
         proof.replacen("views buf[0u64..len];", "", 1),
@@ -1234,7 +1233,7 @@ fn pinned_zlib_nmax_batch_matches_checked_shared_specification_offline() {
         ),
     ] {
         assert_ne!(proof, invalid);
-        assert!(verify_c0_prepared_sources(&invalid, &imports).is_err());
+        assert!(verify_c_prepared_sources(&invalid, &imports).is_err());
     }
 }
 
@@ -1356,7 +1355,7 @@ fn pinned_zlib_seeded_batch_lemmas_have_checked_bodies() {
         "zlib_stream_scalar_read_bound.ensures_1",
         "zlib_stream_concat_bound.ensures_0",
     ] {
-        expanded = click::surface::expand_c0_claim_source_by_label(&expanded, &[], label)
+        expanded = click::surface::expand_c_claim_source_by_label(&expanded, &[], label)
             .expect("checked seeded batch certificate expansion");
     }
     click::surface::verify_click_theorems(&expanded)
@@ -1482,16 +1481,16 @@ fn compiler_import_supplies_clicks_modeled_headers_beside_project_flags() {
         "{lock}"
     );
     let imports = load_imports(&config).expect("offline import");
-    verify_c0_prepared_sources(LABEL_PROOF, &imports).expect("strlen binds to Click's contract");
+    verify_c_prepared_sources(LABEL_PROOF, &imports).expect("strlen binds to Click's contract");
     // The call is checked against the contract: without its precondition
     // the proof fails, and so does a claim the length does not decide.
     let unreadable = LABEL_PROOF.replace(
         "    let n: uint64;\n    views click::cstr::cstr_at(label, n);\n",
         "",
     );
-    assert!(verify_c0_prepared_sources(&unreadable, &imports).is_err());
+    assert!(verify_c_prepared_sources(&unreadable, &imports).is_err());
     let false_claim = LABEL_PROOF.replace("result == 0 or result == 1", "result == 1");
-    assert!(verify_c0_prepared_sources(&false_claim, &imports).is_err());
+    assert!(verify_c_prepared_sources(&false_claim, &imports).is_err());
     create_lock(&config).unwrap();
     assert_eq!(
         artifact,
@@ -1709,7 +1708,7 @@ fn pinned_zlib_stream_matches_checked_shared_specification_offline() {
             "import \"../adler32-spec-bridge.click\";",
             &adler_specifications(),
         );
-    let checked = verify_c0_prepared_sources(&proof, &imports).expect(
+    let checked = verify_c_prepared_sources(&proof, &imports).expect(
         "multi-batch and tail checksum, termination, byte preservation, and all helper bodies",
     );
     let contracts: Vec<_> = checked
@@ -1727,13 +1726,13 @@ fn pinned_zlib_stream_matches_checked_shared_specification_offline() {
             Some(imports[0].identity())
         );
     }
-    let expanded = click::surface::expand_c0_prepared_claim_source_by_label(
+    let expanded = click::surface::expand_c_prepared_claim_source_by_label(
         &proof,
         &imports,
         "adler32_z.contract",
     )
     .expect("checked complete multi-batch and tail certificate expansion");
-    verify_c0_prepared_sources(&expanded, &imports)
+    verify_c_prepared_sources(&expanded, &imports)
         .expect("expanded multi-batch and tail checksum and every helper body");
     for invalid in [
         proof.replacen("views buf[0u64..len];", "", 1),
@@ -1755,7 +1754,7 @@ fn pinned_zlib_stream_matches_checked_shared_specification_offline() {
         ),
     ] {
         assert_ne!(proof, invalid);
-        assert!(verify_c0_prepared_sources(&invalid, &imports).is_err());
+        assert!(verify_c_prepared_sources(&invalid, &imports).is_err());
     }
 }
 
@@ -1806,7 +1805,7 @@ fn pinned_zlib_full_stream_matches_checked_shared_specification_offline() {
             "import \"../adler32-spec-bridge.click\";",
             &adler_specifications(),
         );
-    let checked = verify_c0_prepared_sources(&proof, &imports).expect(
+    let checked = verify_c_prepared_sources(&proof, &imports).expect(
         "full signed-range checksum, termination, byte preservation, and all helper bodies",
     );
     let contracts: Vec<_> = checked
@@ -1824,13 +1823,13 @@ fn pinned_zlib_full_stream_matches_checked_shared_specification_offline() {
             Some(imports[0].identity())
         );
     }
-    let expanded = click::surface::expand_c0_prepared_claim_source_by_label(
+    let expanded = click::surface::expand_c_prepared_claim_source_by_label(
         &proof,
         &imports,
         "adler32_z.contract",
     )
     .expect("checked complete full-range certificate expansion");
-    verify_c0_prepared_sources(&expanded, &imports)
+    verify_c_prepared_sources(&expanded, &imports)
         .expect("expanded full-range checksum and every helper body");
     for invalid in [
         proof.replacen("views buf[0u64..len];", "", 1),
@@ -1852,7 +1851,7 @@ fn pinned_zlib_full_stream_matches_checked_shared_specification_offline() {
         ),
     ] {
         assert_ne!(proof, invalid);
-        assert!(verify_c0_prepared_sources(&invalid, &imports).is_err());
+        assert!(verify_c_prepared_sources(&invalid, &imports).is_err());
     }
 }
 
@@ -1916,7 +1915,7 @@ fn pinned_zlib_full_stream_lemmas_have_checked_bodies() {
         "zlib_full_chunk_bound.ensures_0",
         "zlib_full_pack_order.ensures_0",
     ] {
-        expanded = click::surface::expand_c0_claim_source_by_label(&expanded, &[], label)
+        expanded = click::surface::expand_c_claim_source_by_label(&expanded, &[], label)
             .expect("checked full-range helper certificate expansion");
     }
     click::surface::verify_click_theorems(&expanded)
@@ -1996,7 +1995,7 @@ fn pinned_zlib_canonical_seed_matches_checked_shared_specification_offline() {
             "import \"../adler32-spec-bridge.click\";",
             &adler_specifications(),
         );
-    let checked = verify_c0_prepared_sources(&proof, &imports).expect(
+    let checked = verify_c_prepared_sources(&proof, &imports).expect(
         "canonical-seed signed-range checksum, termination, byte preservation, and all helper bodies",
     );
     let contracts: Vec<_> = checked
@@ -2014,13 +2013,13 @@ fn pinned_zlib_canonical_seed_matches_checked_shared_specification_offline() {
             Some(imports[0].identity())
         );
     }
-    let expanded = click::surface::expand_c0_prepared_claim_source_by_label(
+    let expanded = click::surface::expand_c_prepared_claim_source_by_label(
         &proof,
         &imports,
         "adler32_z.contract",
     )
     .expect("checked complete canonical-seed full-range certificate expansion");
-    verify_c0_prepared_sources(&expanded, &imports)
+    verify_c_prepared_sources(&expanded, &imports)
         .expect("expanded canonical-seed full-range checksum and every helper body");
     for invalid in [
         proof.replacen("views buf[0u64..len];", "", 1),
@@ -2042,7 +2041,7 @@ fn pinned_zlib_canonical_seed_matches_checked_shared_specification_offline() {
         ),
     ] {
         assert_ne!(proof, invalid);
-        assert!(verify_c0_prepared_sources(&invalid, &imports).is_err());
+        assert!(verify_c_prepared_sources(&invalid, &imports).is_err());
     }
 }
 
@@ -2107,7 +2106,7 @@ fn pinned_zlib_canonical_seed_lemmas_have_checked_bodies() {
         "zlib_canonical_pack.ensures_1",
         "zlib_packed_integer_seed.ensures_0",
     ] {
-        expanded = click::surface::expand_c0_claim_source_by_label(&expanded, &[], label)
+        expanded = click::surface::expand_c_claim_source_by_label(&expanded, &[], label)
             .expect("checked full-range helper certificate expansion");
     }
     click::surface::verify_click_theorems(&expanded)
@@ -2192,7 +2191,7 @@ fn pinned_zlib_incremental_c_matches_checked_shared_specification_offline() {
             "import \"../adler32-spec-bridge.click\";",
             &adler_specifications(),
         );
-    let checked = verify_c0_prepared_sources(&proof, &imports).expect(
+    let checked = verify_c_prepared_sources(&proof, &imports).expect(
         "canonical-seed signed-range checksum, termination, byte preservation, and all helper bodies",
     );
     let contracts: Vec<_> = checked
@@ -2210,13 +2209,13 @@ fn pinned_zlib_incremental_c_matches_checked_shared_specification_offline() {
             Some(imports[0].identity())
         );
     }
-    let expanded = click::surface::expand_c0_prepared_claim_source_by_label(
+    let expanded = click::surface::expand_c_prepared_claim_source_by_label(
         &proof,
         &imports,
         "click_zlib_incremental.contract",
     )
     .expect("checked complete canonical-seed full-range certificate expansion");
-    verify_c0_prepared_sources(&expanded, &imports)
+    verify_c_prepared_sources(&expanded, &imports)
         .expect("expanded canonical-seed full-range checksum and every helper body");
     for invalid in [
         proof.replacen("requires split <= len;", "requires split <= len + 1u64;", 1),
@@ -2230,7 +2229,7 @@ fn pinned_zlib_incremental_c_matches_checked_shared_specification_offline() {
         ),
     ] {
         assert_ne!(proof, invalid);
-        assert!(verify_c0_prepared_sources(&invalid, &imports).is_err());
+        assert!(verify_c_prepared_sources(&invalid, &imports).is_err());
     }
 }
 
@@ -2316,8 +2315,8 @@ fn project_unit_verifies_an_external_tree_in_place() {
         .lock()
         .expect("lock the external unit");
     assert_eq!(tree(&upstream), before, "the external tree gains no files");
-    let load = |sidecar: &Path| match click::cli::read_c_inputs(sidecar, &proof)? {
-        click::cli::CInput::Prepared(imports) => Ok(imports),
+    let load = |sidecar: &Path| match click::cli::read_verification_inputs(sidecar, &proof)? {
+        click::cli::VerificationInput::Prepared(imports) => Ok(imports),
         _ => Err("expected the unit's prepared sources".to_string()),
     };
     let imports = load(&sidecar).expect("load the locked unit");
@@ -2331,7 +2330,7 @@ fn project_unit_verifies_an_external_tree_in_place() {
             "../../vendor/label-1.0/src/label_copy.c"
         ]
     );
-    verify_c0_prepared_sources(&proof, &imports).expect("the external unit verifies");
+    verify_c_prepared_sources(&proof, &imports).expect("the external unit verifies");
 
     let moved = base.join("moved");
     fs::rename(&root, &moved).unwrap();

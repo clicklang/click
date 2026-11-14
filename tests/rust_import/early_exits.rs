@@ -10,7 +10,7 @@ fn charon_loop_early_exits_verify() {
     let p = Project::from_fixture("design/charon-trial/early-exits");
     fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(SIDECAR, &prepared)
+    ProgramVerificationSession::new_program_prepared(SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     for (before, after, expected) in [
         // The early `return true` needs a byte to read.
@@ -51,7 +51,7 @@ fn charon_loop_early_exits_verify() {
             "verifying \"exits.rs\";\n{}",
             function.replacen(before, after, 1)
         );
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        let error = ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
             .err()
             .unwrap_or_else(|| panic!("`{before}` -> `{after}` must fail"));
         let rendered = format!("{error:?} {error}");

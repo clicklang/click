@@ -1,12 +1,12 @@
 use super::*;
 
 fn slice_type() -> AlgebraicType {
-    let arguments = vec![AlgebraicValueType::C(ProgramType::UInt8)];
+    let arguments = vec![AlgebraicValueType::Program(ProgramType::UInt8)];
     let variants: std::sync::Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
         name: "Slice".to_string(),
         fields: vec![
-            AlgebraicValueType::C(ProgramType::UInt8Pointer),
-            AlgebraicValueType::C(ProgramType::UInt64),
+            AlgebraicValueType::Program(ProgramType::UInt8Pointer),
+            AlgebraicValueType::Program(ProgramType::UInt64),
         ],
     }]
     .into();
@@ -31,11 +31,11 @@ fn subslice(length: u64) -> AlgebraicTerm {
         node: AlgebraicTermNode::Constructor {
             variant: "Slice".to_string(),
             fields: vec![
-                AlgebraicValue::C(ProgramValue::typed_pointer(
+                AlgebraicValue::Program(ProgramValue::typed_pointer(
                     Pointer::null(),
                     ProgramType::UInt8Pointer,
                 )),
-                AlgebraicValue::C(ProgramValue::UInt64(MachineTerm::uint64_constant(length))),
+                AlgebraicValue::Program(ProgramValue::UInt64(MachineTerm::uint64_constant(length))),
             ],
         },
     }

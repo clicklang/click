@@ -19,7 +19,7 @@ fn load_byte(
     value_type: ProgramType,
     byte_order: Option<ByteOrder>,
 ) -> ExpressionOutcome {
-    let paths = evaluate_c_memory_load_paths(
+    let paths = evaluate_memory_load_paths(
         memory,
         word(offset),
         value_type,
@@ -70,7 +70,7 @@ fn store_byte(memory: Memory, offset: i64, byte: ProgramValue, byte_order: ByteO
         pointee_constant: false,
         source: Default::default(),
     };
-    let paths = execute_c_statement_paths(
+    let paths = execute_execution_statement_paths(
         &state,
         &statement,
         &PureFactContext::new(),

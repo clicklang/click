@@ -758,7 +758,7 @@ mod tests {
                 0
             }
         }
-        let state = Rejected(Proposition::CMemoryReadDefined {
+        let state = Rejected(Proposition::MemoryReadDefined {
             memory: Memory::new(),
             pointer: Pointer::symbolic(Variable(987_001)),
             value_type: ProgramType::Int32,
@@ -799,7 +799,7 @@ mod tests {
                 0
             }
         }
-        let read = |memory| Proposition::CMemoryReadDefined {
+        let read = |memory| Proposition::MemoryReadDefined {
             memory,
             pointer: Pointer::symbolic(Variable(987_002)),
             value_type: ProgramType::Int32,
@@ -992,7 +992,7 @@ mod tests {
                 )
             }
         }
-        let at = |memory| Proposition::CMemoryLoadable {
+        let at = |memory| Proposition::MemoryLoadable {
             memory,
             base: Pointer {
                 block: PointerBlock::ExternalArgument,

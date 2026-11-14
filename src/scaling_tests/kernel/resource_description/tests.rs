@@ -17,7 +17,7 @@ fn cloning_a_description_shares_storage_independently_of_argument_count() {
                 .into(),
             ResourceFieldSchema::new(vec![(
                 "value".into(),
-                ResourceFieldType::C(ProgramType::Int32),
+                ResourceFieldType::Program(ProgramType::Int32),
             )])
             .unwrap(),
             vec![int32(1).into()].into(),

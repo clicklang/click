@@ -407,7 +407,7 @@ impl SnapshotLabels {
     }
 
     fn recorded_memory_point(&self, memory: &Memory) -> Option<String> {
-        let memory = crate::kernel::intern_c_memory_ref(memory);
+        let memory = crate::kernel::intern_memory_ref(memory);
         let (selector, _) = self
             .recorded_snapshots
             .as_ref()?
@@ -524,7 +524,7 @@ impl SnapshotLabels {
             Some(MemoryConstructionKind::Transform { .. }) => {
                 return "a memory derived from another state for one read".into();
             }
-            None => match crate::kernel::intern_c_memory_ref(memory).derivation() {
+            None => match crate::kernel::intern_memory_ref(memory).derivation() {
                 Some(edge) => edge,
                 None => return "an intermediate memory".into(),
             },
@@ -967,7 +967,7 @@ fn is_entry_memory(memory: &Memory) -> bool {
         let edge = match current.diagnostic_construction() {
             Some(crate::kernel::MemoryConstructionKind::Transition(edge)) => edge.clone(),
             Some(_) => return false,
-            None => match crate::kernel::intern_c_memory_ref(&current).derivation() {
+            None => match crate::kernel::intern_memory_ref(&current).derivation() {
                 Some(edge) => edge,
                 None => return false,
             },
@@ -1253,7 +1253,7 @@ pub(crate) fn render_integer_term_labeled(
 }
 
 /// One C value in source syntax, under the report's labels.
-pub(crate) fn render_c_value_labeled(
+pub(crate) fn render_program_value_labeled(
     value: &crate::kernel::ProgramValue,
     labels: &mut SnapshotLabels,
 ) -> String {
@@ -1435,7 +1435,7 @@ impl Renderer<'_> {
                 self.proposition(body);
                 self.bound_names.pop();
             }
-            Proposition::CMemoryLoadable {
+            Proposition::MemoryLoadable {
                 memory,
                 base,
                 bytes,
@@ -1453,7 +1453,7 @@ impl Renderer<'_> {
                 self.bitvector(bytes);
                 self.push(")");
             }
-            Proposition::CMemoryCanStore {
+            Proposition::MemoryCanStore {
                 memory,
                 pointer,
                 byte_width,
@@ -1464,7 +1464,7 @@ impl Renderer<'_> {
                 self.pointer(pointer);
                 self.fmt(format_args!(", bytes={byte_width})"));
             }
-            Proposition::CMemoryReadDefined {
+            Proposition::MemoryReadDefined {
                 memory, pointer, ..
             } => {
                 self.push("defined-read(");
@@ -1473,7 +1473,7 @@ impl Renderer<'_> {
                 self.pointer(pointer);
                 self.push(")");
             }
-            Proposition::CMemoryLoads {
+            Proposition::MemoryLoads {
                 memory,
                 pointer,
                 outcome,
@@ -1486,25 +1486,25 @@ impl Renderer<'_> {
                 self.outcome(outcome);
                 self.push(")");
             }
-            Proposition::CResourceSeparate { left, right } => {
+            Proposition::ResourceSeparate { left, right } => {
                 self.resource(left);
                 self.push(" separate ");
                 self.resource(right);
             }
-            Proposition::CResourceViewable { memory, resource } => {
+            Proposition::ResourceViewable { memory, resource } => {
                 self.push("viewable(");
                 self.resource(resource);
                 self.push(" in ");
                 self.memory(memory);
                 self.push(")");
             }
-            Proposition::CResourceContains { parent, child } => {
+            Proposition::ResourceContains { parent, child } => {
                 self.resource(parent);
                 self.push(" contains ");
                 self.resource(child);
             }
-            Proposition::CResourceComposition(context) => self.resource_composition(context),
-            Proposition::CMemoryMutatesOnly {
+            Proposition::ResourceComposition(context) => self.resource_composition(context),
+            Proposition::MemoryMutatesOnly {
                 before,
                 after,
                 writes,
@@ -1526,7 +1526,7 @@ impl Renderer<'_> {
                 }
                 self.push(")");
             }
-            Proposition::CMemoryEffectSummary {
+            Proposition::MemoryEffectSummary {
                 before,
                 after,
                 mutable_ranges,
@@ -1537,7 +1537,7 @@ impl Renderer<'_> {
                 self.memory(after);
                 self.fmt(format_args!(", ranges={})", mutable_ranges.len()));
             }
-            Proposition::CHeapAllocationFreed {
+            Proposition::HeapAllocationFreed {
                 before,
                 after,
                 allocation_base,
@@ -1553,7 +1553,7 @@ impl Renderer<'_> {
                 self.bitvector(bytes.bytes());
                 self.push(")");
             }
-            Proposition::CExpressionEvaluates {
+            Proposition::ProgramExpressionEvaluates {
                 state,
                 expression: _,
                 outcome,
@@ -1564,7 +1564,7 @@ impl Renderer<'_> {
                 self.outcome(outcome);
                 self.push(")");
             }
-            Proposition::CConditionEvaluates {
+            Proposition::ProgramConditionEvaluates {
                 state,
                 condition: _,
                 outcome,
@@ -1575,19 +1575,19 @@ impl Renderer<'_> {
                 self.condition_outcome(outcome);
                 self.push(")");
             }
-            Proposition::CStatementExecutes {
+            Proposition::ProgramStatementExecutes {
                 state,
                 statement: _,
                 outcome,
             }
-            | Proposition::CStatementVerifies {
+            | Proposition::ProgramStatementVerifies {
                 state,
                 statement: _,
                 outcome,
             } => {
                 self.push("statement-");
                 self.push(
-                    if matches!(proposition, Proposition::CStatementVerifies { .. }) {
+                    if matches!(proposition, Proposition::ProgramStatementVerifies { .. }) {
                         "verifies"
                     } else {
                         "executes"
@@ -1599,13 +1599,13 @@ impl Renderer<'_> {
                 self.statement_outcome(outcome);
                 self.push(")");
             }
-            Proposition::CFunctionExecutes {
+            Proposition::ProgramFunctionExecutes {
                 state,
                 function: _,
                 arguments,
                 outcome,
             }
-            | Proposition::CFunctionVerifies {
+            | Proposition::ProgramFunctionVerifies {
                 state,
                 function: _,
                 arguments,
@@ -1620,10 +1620,10 @@ impl Renderer<'_> {
                 self.function_outcome(outcome);
                 self.push(")");
             }
-            Proposition::CFunctionSatisfiesSpecification { .. } => {
+            Proposition::ProgramFunctionSatisfiesSpecification { .. } => {
                 self.push("function-satisfies(<C function specification>)")
             }
-            Proposition::CFunctionPartiallySatisfiesSpecification { .. } => {
+            Proposition::ProgramFunctionPartiallySatisfiesSpecification { .. } => {
                 self.push("function-partially-satisfies(<C function specification>)")
             }
         }
@@ -1667,7 +1667,7 @@ impl Renderer<'_> {
             AlgebraicValueType::ObjectPointer(_, class) => {
                 self.push(&format!("{}*", class.spelling()))
             }
-            AlgebraicValueType::C(ty) => self.fmt(format_args!("{ty:?}")),
+            AlgebraicValueType::Program(ty) => self.fmt(format_args!("{ty:?}")),
             AlgebraicValueType::Integer => self.push("Integer"),
             AlgebraicValueType::Algebraic { name, arguments } => {
                 self.push(name);
@@ -1803,7 +1803,7 @@ impl Renderer<'_> {
         }
         self.depth += 1;
         match value {
-            AlgebraicValue::C(value) => self.cvalue(value),
+            AlgebraicValue::Program(value) => self.cvalue(value),
             AlgebraicValue::Integer(value) => self.integer(value),
             AlgebraicValue::Algebraic(value) => self.algebraic(value),
         }
@@ -1849,7 +1849,7 @@ impl Renderer<'_> {
                 if self.trace_facts {
                     self.fmt(format_args!(
                         "array-ref<{}>(",
-                        crate::kernel::c_type_spelling(*element_type)
+                        crate::kernel::program_type_spelling(*element_type)
                     ));
                 } else {
                     self.push("array-ref(");
@@ -1867,7 +1867,7 @@ impl Renderer<'_> {
         // capture or evaluation refusal most often names, so print the
         // operation instead of a placeholder.
         if let Some((operator, a, b)) = c.as_bitvector_comparison() {
-            let symbol = operator.c_symbol();
+            let symbol = operator.program_symbol();
             if operator.is_overflow() {
                 self.overflow_condition_bv(a, b, operator.operand_type(), symbol);
             } else {
@@ -2636,7 +2636,7 @@ impl Renderer<'_> {
                 if self.trace_facts {
                     self.fmt(format_args!(
                         "ptr<{}>(",
-                        crate::kernel::c_type_spelling(p.c_type())
+                        crate::kernel::program_type_spelling(p.c_type())
                     ));
                     self.pointer(p);
                     self.push(")");
@@ -2708,7 +2708,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let cell = Pointer::symbolic(Variable(989_100));
         let memory = Memory::new().with_block("unrelated", 4);
-        let projected = crate::kernel::canonical_c_memory_for_pointer_load(&memory, &cell);
+        let projected = crate::kernel::canonical_program_memory_for_pointer_load(&memory, &cell);
         let head = ExecutionState::new().with_memory(memory.clone());
         let mut snapshots = RecordedSnapshots::new();
         snapshots.insert(
@@ -2970,7 +2970,7 @@ mod tests {
     }
 
     fn loadable_at(memory: Memory) -> Proposition {
-        Proposition::CMemoryLoadable {
+        Proposition::MemoryLoadable {
             memory,
             base: Pointer {
                 block: crate::kernel::PointerBlock::ExternalArgument,
@@ -3101,7 +3101,7 @@ mod tests {
     }
 
     #[test]
-    fn machine_and_c_value_types_remain_visible() {
+    fn machine_and_program_value_types_remain_visible() {
         let int32 = render_proposition(&Proposition::Equal(
             Term::ProgramValue(crate::kernel::ProgramValue::Int32(MachineTerm::constant(1))),
             Term::ProgramValue(crate::kernel::ProgramValue::UInt32(MachineTerm::constant(
@@ -3116,7 +3116,7 @@ mod tests {
     fn trace_resource_names_its_arguments_without_debug_state() {
         let resource = ResourceFact::View(Resource::Token {
             name: "child_ref".into(),
-            arguments: std::sync::Arc::from([AlgebraicValue::C(
+            arguments: std::sync::Arc::from([AlgebraicValue::Program(
                 crate::kernel::ProgramValue::Int32(MachineTerm::constant(7)),
             )]),
         });
@@ -3137,7 +3137,7 @@ mod wide_range_reader_tests {
             MachineTerm::uint64_constant(1 << 33),
             4,
         );
-        let fact = Proposition::CResourceContains {
+        let fact = Proposition::ResourceContains {
             parent: Box::new(Resource::Memory(wide.clone())),
             child: Box::new(Resource::Memory(wide)),
         };
@@ -3166,7 +3166,7 @@ mod resource_detail_tests {
                 flag.clone(),
                 ResourceDescription::new(
                     "payload".into(),
-                    vec![AlgebraicValue::C(ProgramValue::Int32(
+                    vec![AlgebraicValue::Program(ProgramValue::Int32(
                         MachineTerm::constant(value),
                     ))]
                     .into(),

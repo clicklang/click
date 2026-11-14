@@ -11,7 +11,7 @@ fn view_misses_do_not_enumerate_pointer_alias_classes() {
                 .add_equality(&base, &Pointer::symbolic(Variable(810_001 + index)));
         }
         let memory = Memory::new();
-        let goal = Proposition::CMemoryLoadable {
+        let goal = Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
             bytes: 4096.into(),
@@ -49,7 +49,7 @@ fn selected_view_checks_alias_coordinates_without_enumerating_the_class() {
                     MachineTerm::constant(n as u32)
                 }
             };
-            let fact = Proposition::CMemoryLoadable {
+            let fact = Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: source.clone(),
                 bytes: extent(16),
@@ -64,7 +64,7 @@ fn selected_view_checks_alias_coordinates_without_enumerating_the_class() {
                     .add_equality(&root, &Pointer::symbolic(Variable(821_000 + index)));
             }
             let prove = |pointer: &Pointer, bytes| {
-                context.proves_atomic_without_search(&Proposition::CMemoryLoadable {
+                context.proves_atomic_without_search(&Proposition::MemoryLoadable {
                     memory: memory.clone(),
                     base: pointer.clone(),
                     bytes: extent(bytes),
@@ -106,7 +106,7 @@ fn view_misses_ignore_a_growing_exact_alias_star_in_one_block() {
             offset: PointerOffsetTerm::Variable(Variable(id)),
         };
         let base = pointer(830_000);
-        let mut context = PureFactContext::new().assume_proposition(Proposition::CMemoryLoadable {
+        let mut context = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
             memory: Memory::new(),
             base: Pointer::symbolic(Variable(839_000)),
             bytes: 16.into(),
@@ -118,7 +118,7 @@ fn view_misses_ignore_a_growing_exact_alias_star_in_one_block() {
                 true,
             );
         }
-        let goal = Proposition::CMemoryLoadable {
+        let goal = Proposition::MemoryLoadable {
             memory: Memory::new(),
             base: base.clone(),
             bytes: 4096.into(),
@@ -149,7 +149,7 @@ fn indexed_storage_source_handles_displaced_aliases_beside_other_views() {
         };
         let mut query = source.clone();
         let memory = Memory::new();
-        let mut context = PureFactContext::new().assume_proposition(Proposition::CMemoryLoadable {
+        let mut context = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: source.clone(),
             bytes: 1024.into(),
@@ -161,7 +161,7 @@ fn indexed_storage_source_handles_displaced_aliases_beside_other_views() {
                 .equality_graph
                 .add_equality(&query.offset_by_bytes(4), &next);
             query = next;
-            context = context.assume_proposition(Proposition::CMemoryLoadable {
+            context = context.assume_proposition(Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: Pointer::symbolic(Variable(850_000 + index)),
                 bytes: 4.into(),
@@ -197,7 +197,7 @@ fn selected_alias_view_cannot_cross_distinct_allocations() {
     let memory = Memory::new();
     // Even an inconsistent graph edge cannot turn a different allocation
     // into this source's storage during a memory query.
-    let mut context = PureFactContext::new().assume_proposition(Proposition::CMemoryLoadable {
+    let mut context = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: source.clone(),
         bytes: 16.into(),
@@ -227,7 +227,7 @@ fn selected_views_follow_same_block_aliases_without_walking_the_star() {
                 }
             };
             let mut context =
-                PureFactContext::new().assume_proposition(Proposition::CMemoryLoadable {
+                PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
                     memory: memory.clone(),
                     base: source.clone(),
                     bytes: extent(16),
@@ -244,7 +244,7 @@ fn selected_views_follow_same_block_aliases_without_walking_the_star() {
                 for _ in 0..4 {
                     for (bytes, expected) in [(8, true), (32, false)] {
                         assert_eq!(
-                            context.proves_atomic_without_search(&Proposition::CMemoryLoadable {
+                            context.proves_atomic_without_search(&Proposition::MemoryLoadable {
                                 memory: memory.clone(),
                                 base: query.clone(),
                                 bytes: extent(bytes),

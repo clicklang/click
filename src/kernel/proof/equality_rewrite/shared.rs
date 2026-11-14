@@ -255,7 +255,7 @@ fn leaf(term: &KernelTerm) -> Option<MachineTerm> {
     }
 }
 fn format(term: &KernelTerm) -> T {
-    let KernelType::C(ty) = term.ty() else {
+    let KernelType::Program(ty) = term.ty() else {
         unreachable!("shared machine carrier")
     };
     T::from_c_type(*ty).expect("machine format")
@@ -1049,9 +1049,9 @@ mod tests {
     #[test]
     fn opaque_sources_match_canonical_reads_without_export() {
         let _session = VerificationSession::enter();
-        let memory = intern_c_memory(Memory::new().with_block("opaque-canonical", 16));
+        let memory = intern_memory(Memory::new().with_block("opaque-canonical", 16));
         let pointer = Memory::global_pointer("opaque-canonical");
-        let later = intern_c_memory(memory.memory().clone().store(
+        let later = intern_memory(memory.memory().clone().store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::Variable(Variable(1006433))),
         ));
@@ -1283,7 +1283,7 @@ mod tests {
     fn exact_rewrite_shared_reads_match_canonical_sources_and_retain_addresses() {
         let _session = VerificationSession::enter();
         let pointer = Memory::global_pointer("shared-exact-load");
-        let memory = intern_c_memory(Memory::new().with_block("shared-exact-load", 16));
+        let memory = intern_memory(Memory::new().with_block("shared-exact-load", 16));
         let raw =
             MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), LoadKind::Int32);
         let named = crate::kernel::eval::canonical_term(&raw);

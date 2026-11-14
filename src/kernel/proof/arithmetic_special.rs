@@ -4669,7 +4669,7 @@ mod tests {
         let next = pointer(PointerOffsetTerm::Constant(0));
         let address = MachineTerm::pointer_address(next.clone());
         let raw = MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(crate::kernel::Memory::new()),
+            crate::kernel::intern_memory(crate::kernel::Memory::new()),
             Box::new(next.clone()),
             crate::kernel::LoadKind::Bits64,
         );

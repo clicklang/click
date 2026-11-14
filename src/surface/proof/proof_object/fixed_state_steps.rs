@@ -56,13 +56,13 @@ mod projection_path_tests {
 
     fn surface_leaf() -> ClickProposition {
         ClickProposition::Comparison {
-            left: ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::Int32(
-                MachineTerm::constant(0),
-            ))),
+            left: ContractExpression::ProgramExpression(ProgramExpression::Value(
+                ProgramValue::Int32(MachineTerm::constant(0)),
+            )),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::Int32(
-                MachineTerm::constant(0),
-            ))),
+            right: ContractExpression::ProgramExpression(ProgramExpression::Value(
+                ProgramValue::Int32(MachineTerm::constant(0)),
+            )),
         }
     }
 
@@ -1256,7 +1256,7 @@ impl<'a> Proof<'a> {
         let mut locals = self.state().locals().clone();
         locals.values = locals.values.with_inserted(
             choice.name.clone(),
-            ContractExpression::CFragment(ProgramExpression::Value(chosen.clone())),
+            ContractExpression::ProgramExpression(ProgramExpression::Value(chosen.clone())),
         );
         locals.next_choice_variable = chosen_variable.0.saturating_add(1);
         let added_facts = if self.facts().contains_top_level(&chosen_fact) {
@@ -1371,7 +1371,7 @@ impl<'a> Proof<'a> {
                 sort if sort.machine_integer_type().is_some() => {
                     locals.values = locals.values.with_inserted(
                         name.clone(),
-                        ContractExpression::CFragment(ProgramExpression::Value(
+                        ContractExpression::ProgramExpression(ProgramExpression::Value(
                             sort.machine_integer_type()
                                 .unwrap()
                                 .symbolic_value(variable),
@@ -1381,7 +1381,7 @@ impl<'a> Proof<'a> {
                 sort if sort.pointer_type().is_some() => {
                     locals.values = locals.values.with_inserted(
                         name.clone(),
-                        ContractExpression::CFragment(ProgramExpression::Value(
+                        ContractExpression::ProgramExpression(ProgramExpression::Value(
                             sort.symbolic_pointer_value(variable)
                                 .expect("pointer choice sort"),
                         )),
@@ -1432,7 +1432,10 @@ impl<'a> Proof<'a> {
         // `size_t` length is chosen the same way as an `int32` index.
         if let Some((chosen_body, variable, sort)) = first_opened
             && (sort.machine_integer_type().is_some()
-                || matches!(sort, Sort::CPointer(_) | Sort::CObjectPointer(_, _)))
+                || matches!(
+                    sort,
+                    Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _)
+                ))
             && let Some(projection) =
                 self.build_existential_projection(binding, &chosen_body, variable, &sort)?
             && let Some(branch) = transition.branch.as_mut()
@@ -1518,7 +1521,9 @@ impl<'a> Proof<'a> {
                         &surface,
                         &BTreeMap::from([(
                             name.clone(),
-                            ContractExpression::CFragment(ProgramExpression::Value(chosen.clone())),
+                            ContractExpression::ProgramExpression(ProgramExpression::Value(
+                                chosen.clone(),
+                            )),
                         )]),
                     )
                     .map_err(|message| self.step_error(message))?;
@@ -1743,7 +1748,9 @@ impl<'a> Proof<'a> {
                         &surface,
                         &BTreeMap::from([(
                             choice.name.clone(),
-                            ContractExpression::CFragment(ProgramExpression::Value(chosen.clone())),
+                            ContractExpression::ProgramExpression(ProgramExpression::Value(
+                                chosen.clone(),
+                            )),
                         )]),
                     )
                     .map_err(|message| {
@@ -1983,11 +1990,11 @@ impl<'a> Proof<'a> {
                 } => self.apply_pure_algebraic_witness(witness),
                 Proposition::Exists {
                     sort:
-                        Sort::CInt32
-                        | Sort::CInt64
-                        | Sort::CMachineInteger(_)
-                        | Sort::CPointer(_)
-                        | Sort::CObjectPointer(_, _),
+                        Sort::ProgramInt32
+                        | Sort::ProgramInt64
+                        | Sort::ProgramInteger(_)
+                        | Sort::ProgramPointer(_)
+                        | Sort::ProgramObjectPointer(_, _),
                     ..
                 } => self.apply_pure_machine_witness(witness),
                 _ => self.apply_pure_integer_witness(witness),
@@ -2231,7 +2238,7 @@ impl<'a> Proof<'a> {
                     sort.machine_integer_type().unwrap().c_type()
                 }
                 Proposition::Exists {
-                    sort: Sort::CPointer(c_type) | Sort::CObjectPointer(c_type, _),
+                    sort: Sort::ProgramPointer(c_type) | Sort::ProgramObjectPointer(c_type, _),
                     ..
                 } => *c_type,
                 _ => unreachable!("pure machine witness dispatch requires a C binder"),
@@ -2733,21 +2740,22 @@ impl<'a> Proof<'a> {
                 "could not evaluate `instantiate` argument: {message}"
             ))
         })?;
-        let uint64 = Sort::CMachineInteger(crate::kernel::MachineIntegerType::UInt64);
+        let uint64 = Sort::ProgramInteger(crate::kernel::MachineIntegerType::UInt64);
         match (binder, value) {
-            (Sort::CInt32, ProgramValue::Int32(argument)) => {
+            (Sort::ProgramInt32, ProgramValue::Int32(argument)) => {
                 Ok(InstanceArgument::Machine(argument))
             }
             (binder, ProgramValue::UInt64(argument)) if *binder == uint64 => {
                 Ok(InstanceArgument::Machine(argument))
             }
-            (Sort::CPointer(_) | Sort::CObjectPointer(_, _), ProgramValue::Pointer(pointer)) => {
-                Ok(InstanceArgument::Pointer(pointer))
-            }
+            (
+                Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _),
+                ProgramValue::Pointer(pointer),
+            ) => Ok(InstanceArgument::Pointer(pointer)),
             (binder, _) if *binder == uint64 => {
                 Err(self.step_error("`instantiate` argument did not evaluate to uint64"))
             }
-            (Sort::CPointer(_) | Sort::CObjectPointer(_, _), _) => {
+            (Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _), _) => {
                 Err(self.step_error("`instantiate` argument did not evaluate to a pointer"))
             }
             _ => Err(self.step_error("`instantiate` argument did not evaluate to int32")),
@@ -2829,7 +2837,7 @@ impl<'a> Proof<'a> {
         // is refused by the kernel below; it is read as `int32` here.
         let binder = match &lowered_quantified {
             Proposition::ForAll { sort, .. } => sort.clone(),
-            _ => Sort::CInt32,
+            _ => Sort::ProgramInt32,
         };
         let argument = self.capture_instantiate_argument(argument, &binder)?;
         // Freeze the evaluated argument so `old`/`at` inside the quantified
@@ -2837,16 +2845,16 @@ impl<'a> Proof<'a> {
         // An `Integer` instance keeps no frozen spelling: the recorded
         // lowering below is optional, and only C values have a fragment form.
         let surface_argument = match &argument {
-            InstanceArgument::Machine(value) => {
-                Some(ContractExpression::CFragment(ProgramExpression::Value(
-                    if binder == Sort::CMachineInteger(crate::kernel::MachineIntegerType::UInt64) {
+            InstanceArgument::Machine(value) => Some(ContractExpression::ProgramExpression(
+                ProgramExpression::Value(
+                    if binder == Sort::ProgramInteger(crate::kernel::MachineIntegerType::UInt64) {
                         ProgramValue::UInt64(value.clone())
                     } else {
                         ProgramValue::Int32(value.clone())
                     },
-                )))
-            }
-            InstanceArgument::Pointer(pointer) => Some(ContractExpression::CFragment(
+                ),
+            )),
+            InstanceArgument::Pointer(pointer) => Some(ContractExpression::ProgramExpression(
                 ProgramExpression::Value(ProgramValue::Pointer(pointer.clone())),
             )),
             InstanceArgument::Integer(_) => None,
@@ -3343,16 +3351,16 @@ impl<'a> Proof<'a> {
         let surface = self.substitute_fixed_state_locals_in_proposition(surface)?;
         let chosen_body = match checked_source {
             Proposition::Exists { var, body, .. } => match binding {
-                ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::Int32(_))) => {
-                    substitute_int32_variable_in_proposition(
-                        &body,
-                        var,
-                        MachineTerm::Variable(projection.chosen_variable),
-                    )
-                }
-                ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::Pointer(
-                    pointer,
-                ))) => crate::kernel::substitute_pointer_value_in_proposition(&body, var, pointer)
+                ContractExpression::ProgramExpression(ProgramExpression::Value(
+                    ProgramValue::Int32(_),
+                )) => substitute_int32_variable_in_proposition(
+                    &body,
+                    var,
+                    MachineTerm::Variable(projection.chosen_variable),
+                ),
+                ContractExpression::ProgramExpression(ProgramExpression::Value(
+                    ProgramValue::Pointer(pointer),
+                )) => crate::kernel::substitute_pointer_value_in_proposition(&body, var, pointer)
                     .map_err(|error| self.step_error(&error))?,
                 _ => return Ok(None),
             },
@@ -3828,7 +3836,7 @@ impl<'a> Proof<'a> {
         loadable_surface_range_endpoints(goal)?;
         let target = describe_click_proposition(goal);
         let accepted = match self.goal()? {
-            Proposition::CMemoryLoadable {
+            Proposition::MemoryLoadable {
                 memory,
                 base,
                 bytes,
@@ -4338,10 +4346,10 @@ fn loadable_surface_range_endpoints(
 /// for `variable`: a machine integer of any width, or a pointer offset.
 fn binding_names_chosen_variable(binding: &ContractExpression, variable: Variable) -> bool {
     match binding {
-        ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::Pointer(pointer))) => {
-            pointer.pointer().offset == PointerOffsetTerm::Variable(variable)
-        }
-        ContractExpression::CFragment(ProgramExpression::Value(value)) => {
+        ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(
+            pointer,
+        ))) => pointer.pointer().offset == PointerOffsetTerm::Variable(variable),
+        ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
             crate::kernel::MachineIntegerType::from_c_type(value.c_type())
                 .is_some_and(|integer| *value == integer.symbolic_value(variable))
         }

@@ -2613,7 +2613,7 @@ mod owned_anchor_tests {
     }
 
     fn owner_of(pointers: &[Pointer]) -> Proposition {
-        Proposition::CResourceComposition(ResourceContext::new().unchecked_with_facts(
+        Proposition::ResourceComposition(ResourceContext::new().unchecked_with_facts(
             pointers.iter().map(|pointer| {
                 ResourceFact::own_memory(MemoryRange::new_with_element_width(
                     pointer.clone(),
@@ -2642,7 +2642,8 @@ mod shared_wide_decision_tests {
     fn wide_constant_decision_reads_shared_values_and_intervals() {
         let _session = crate::kernel::VerificationSession::enter();
         for format in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
-            let variable = KernelTerm::variable(KernelType::C(format.c_type()), Variable(997561));
+            let variable =
+                KernelTerm::variable(KernelType::Program(format.c_type()), Variable(997561));
             let operand = SharedMachineIntegerTerm::from_shared(
                 format,
                 KernelTerm::machine_binary_shared(
@@ -2804,7 +2805,8 @@ mod exact_word_order_tests {
             (MachineIntegerType::Int32, i32::MIN as u32, i32::MAX as u32),
             (MachineIntegerType::UInt32, 0, u32::MAX),
         ] {
-            let variable = KernelTerm::variable(KernelType::C(format.c_type()), Variable(189311));
+            let variable =
+                KernelTerm::variable(KernelType::Program(format.c_type()), Variable(189311));
             let root = KernelTerm::machine_binary_shared(
                 format,
                 MachineBinaryOp::Add,
@@ -3041,7 +3043,7 @@ mod shared_order_pipeline_tests {
         use crate::kernel::{KernelTerm, KernelTermExport, KernelType, SharedMachineIntegerTerm};
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let x = KernelTerm::variable(KernelType::C(format.c_type()), Variable(997621));
+        let x = KernelTerm::variable(KernelType::Program(format.c_type()), Variable(997621));
         let zero = KernelTermImport::default()
             .machine_arithmetic(format, &0u32.into())
             .unwrap();
@@ -3077,8 +3079,8 @@ mod shared_equality_dispatch_tests {
             for reversed in [false, true] {
                 let _session = crate::kernel::VerificationSession::enter();
                 let ty = MachineIntegerType::UInt64;
-                let x = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(983001));
-                let y = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(983002));
+                let x = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(983001));
+                let y = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(983002));
                 let sum = KernelTerm::machine_binary_shared(ty, Op::Add, [x, y]);
                 let literal = |n| {
                     crate::kernel::KernelTermImport::default()
@@ -3173,7 +3175,8 @@ mod shared_equality_dispatch_tests {
         for ty in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
             for case in 0..16 {
                 let _session = crate::kernel::VerificationSession::enter();
-                let variable = |id| KernelTerm::variable(KernelType::C(ty.c_type()), Variable(id));
+                let variable =
+                    |id| KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(id));
                 let x = variable(981001);
                 let y = variable(981002);
                 let z = variable(981003);
@@ -3346,9 +3349,9 @@ mod shared_equality_dispatch_tests {
             for width in [0, 4, 8] {
                 let _session = crate::kernel::VerificationSession::enter();
                 let ty = MachineIntegerType::Int32;
-                let x = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(983001));
-                let y = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(983002));
-                let z = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(983003));
+                let x = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(983001));
+                let y = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(983002));
+                let z = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(983003));
                 let product = KernelTerm::machine_binary_shared(ty, Op::Multiply, [x, y]);
                 let native_product = MachineTerm::logical_machine_binary(
                     ty,
@@ -3423,9 +3426,9 @@ mod intrinsic_context_tests {
 
     #[test]
     fn intrinsic_read_definitions_follow_growth_restore_and_new_sessions() {
-        use crate::kernel::{Memory, Pointer, VerificationSession, intern_c_memory};
+        use crate::kernel::{Memory, Pointer, VerificationSession, intern_memory};
         let check = || {
-            let memory = intern_c_memory(Memory::new().with_block("intrinsic", 16));
+            let memory = intern_memory(Memory::new().with_block("intrinsic", 16));
             let address = Pointer::symbolic(Variable(986010));
             let value = Pointer::symbolic(Variable(986011));
             let application = Pointer::loaded_value(&memory, &address);
@@ -3459,8 +3462,8 @@ mod shared_singleton_bound_evidence_tests {
             format,
             MachineBinaryOp::Multiply,
             [
-                KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(994001)),
-                KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(994002)),
+                KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(994001)),
+                KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(994002)),
             ],
         );
         let observation = SharedMachineIntegerTerm::from_shared(format, root).unwrap();
@@ -3696,7 +3699,7 @@ mod shared_offset_evidence_tests {
         let memory = crate::kernel::Memory::new().with_block("offset-evidence", 4);
         let read = |memory| {
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(memory),
+                crate::kernel::intern_memory(memory),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             )

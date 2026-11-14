@@ -106,7 +106,7 @@ fn grouped_function_proof_checks_every_claim() {
                 ensures result != value;
             }
         "#;
-    let error = verify_c0_sources(click_source, &[("identity.c", c_source)])
+    let error = verify_c_sources(click_source, &[("identity.c", c_source)])
         .expect_err("every grouped postcondition must be checked");
 
     assert!(
@@ -139,7 +139,7 @@ fn grouped_function_certificates_share_finalized_specification() {
                 ensures p[0] == value;
             }
         "#;
-    let verified = verify_c0_sources(click_source, &[("set.c", c_source)])
+    let verified = verify_c_sources(click_source, &[("set.c", c_source)])
         .expect("grouped function should verify");
     let specifications = verified
         .iter()
@@ -170,7 +170,7 @@ fn grouped_solve_completes_the_proof_execution_without_a_body_rerun() {
             }
         "#;
     let _ = crate::kernel::take_checked_function_body_execution_count();
-    let verified = verify_c0_sources(click_source, &[("set.c", c_source)])
+    let verified = verify_c_sources(click_source, &[("set.c", c_source)])
         .expect("grouped solve proof should verify");
     let expected_tactics = [ProofTactic::SmartExecute, ProofTactic::ImplicitSolve];
 
@@ -214,7 +214,7 @@ fn grouped_resource_predicate_proof_completes_without_a_body_rerun() {
         "#;
 
     let _ = crate::kernel::take_checked_function_body_execution_count();
-    let verified = verify_c0_sources(click_source, &[("return_zero.c", c_source)])
+    let verified = verify_c_sources(click_source, &[("return_zero.c", c_source)])
         .expect("resource predicate proof should verify");
 
     assert_eq!(verified.len(), 2);
@@ -266,7 +266,7 @@ fn parses_composite_resource_definition() {
     assert_eq!(
         resource.parameters(),
         &[FunctionParameter {
-            click_type: ClickType::C(C0Type::Int32Pointer),
+            click_type: ClickType::Program(C0Type::Int32Pointer),
             name: "flag".to_string(),
             struct_name: None,
             function_pointer_signature: None,

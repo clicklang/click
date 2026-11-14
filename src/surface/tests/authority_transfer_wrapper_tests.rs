@@ -34,7 +34,7 @@ fn authority_transfer_wrapper_preserves_each_existing_child() {
         }
     "#;
     let c = "int32 package(int32 object) { return object; } int32 unpack(int32 object) { return object; }";
-    verify_c0_project(&project(source), &[("wrapper.c", c)])
+    verify_c_project(&project(source), &[("wrapper.c", c)])
         .expect("wrappers transfer existing child ownership in both directions");
 }
 
@@ -51,7 +51,7 @@ fn authority_transfer_wrapper_cannot_create_a_missing_child() {
             }
         }
     "#;
-    let error = verify_c0_project(
+    let error = verify_c_project(
         &project(source),
         &[(
             "wrapper.c",
@@ -77,7 +77,7 @@ fn authority_transfer_wrapper_cannot_bypass_member_birth_checks() {
             step_until(function.exit);
         }
     "#;
-    let error = verify_c0_project(
+    let error = verify_c_project(
         &project(source),
         &[("wrapper.c", "int32 value(void) { int32 x = 7; return x; }")],
     )
@@ -109,7 +109,7 @@ fn authority_transfer_wrapper_preserves_a_tracked_member() {
         }
     "#;
     let c = "int32 run(void) { int32* p = malloc(4); if (p == 0) return 0; free(p); return 1; }";
-    verify_c0_project(&project(source), &[("wrapper.c", c)])
+    verify_c_project(&project(source), &[("wrapper.c", c)])
         .expect("packaging and unpackaging preserve the tracked member and its population");
 }
 
@@ -135,7 +135,7 @@ fn authority_member_wrapper_requires_population_cleanup_before_free() {
         }
     "#;
     let c = "int32 run(void) { int32* p = malloc(4); if (p == 0) return 0; free(p); return 1; }";
-    let error = verify_c0_project(&project(source), &[("wrapper.c", c)]).expect_err(
+    let error = verify_c_project(&project(source), &[("wrapper.c", c)]).expect_err(
         "a registered outer member must be consumed and both authorities retired before free",
     );
     assert!(
@@ -167,7 +167,7 @@ fn authority_transfer_wrapper_cannot_rewrite_its_own_tracked_family_at_outcome()
         }
     "#;
     let c = "int32* run(void) { int32* p = malloc(4); if (p == 0) return 0; return p; }";
-    let error = verify_c0_project(&project(source), &[("wrapper.c", c)])
+    let error = verify_c_project(&project(source), &[("wrapper.c", c)])
         .expect_err("a registered family cannot become an ordinary wrapper after return");
     assert!(
         error
@@ -179,7 +179,7 @@ fn authority_transfer_wrapper_cannot_rewrite_its_own_tracked_family_at_outcome()
 
 #[test]
 fn authority_transfer_wrapper_preserves_adjacent_mixed_width_memory_frame() {
-    verify_c0_project(
+    verify_c_project(
         &project(MEMORY_FRAME_SOURCE),
         &[("wrapper.c", MEMORY_FRAME_C)],
     )
@@ -217,7 +217,7 @@ const MEMORY_FRAME_C: &str = "struct Frame { int64 wide; int32 narrow; }; int32 
 fn authority_transfer_wrapper_memory_frame_expands_and_rechecks_retained_proof() {
     let sources = [("wrapper.c", MEMORY_FRAME_C)];
     let original = project(MEMORY_FRAME_SOURCE);
-    let (session, verified) = C0VerificationSession::new_project(&original, &sources)
+    let (session, verified) = ProgramVerificationSession::new_project(&original, &sources)
         .expect("retain the unchanged wrapper proof");
     let expanded = ["package.produces_0", "unpack.produces_0"].map(|label| {
         expand_checked_function_claim(MEMORY_FRAME_SOURCE, &verified, label)
@@ -232,7 +232,7 @@ fn authority_transfer_wrapper_memory_frame_expands_and_rechecks_retained_proof()
         .expect("the retained exchange still checks");
     drop(session);
     for expanded in expanded {
-        verify_c0_project(&project(&expanded), &sources)
+        verify_c_project(&project(&expanded), &sources)
             .expect("the expanded exchange preserves both borrowed fields");
     }
 }
@@ -251,7 +251,7 @@ fn authority_transfer_wrapper_memory_frame_cannot_supply_missing_or_duplicate_ch
             "unfold(held(object)); unfold(held(object));",
         ),
     ] {
-        verify_c0_project(&project(&source), &[("wrapper.c", MEMORY_FRAME_C)])
+        verify_c_project(&project(&source), &[("wrapper.c", MEMORY_FRAME_C)])
             .expect_err("borrowed fields cannot manufacture wrapper or child authority");
     }
 }
@@ -266,7 +266,7 @@ fn separately_proved_resource_clauses_cannot_duplicate_a_borrowed_unit() {
             produces Permit(object) by { step_until(function.exit); assumption(); }
         }
     "#;
-    let error = verify_c0_project(
+    let error = verify_c_project(
         &project(source),
         &[(
             "wrapper.c",

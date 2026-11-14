@@ -35,7 +35,7 @@ pub(super) fn execute(
             vec![],
         )]);
     };
-    for target in evaluate_c_expression_paths(state, target, assumptions, budget)? {
+    for target in evaluate_program_expression_paths(state, target, assumptions, budget)? {
         let target_pointer = match target.outcome {
             ExpressionOutcome::Value(ProgramValue::Pointer(pointer)) => pointer,
             outcome => {
@@ -49,7 +49,7 @@ pub(super) fn execute(
         };
         let selected =
             assumptions_with_path_context(assumptions, &target.facts, &target.obligations);
-        for source in evaluate_c_expression_paths(state, source, &selected, budget)? {
+        for source in evaluate_program_expression_paths(state, source, &selected, budget)? {
             let Some((facts, mut obligations)) = merge_execution_pure_facts_and_obligations(
                 &target.facts,
                 &target.obligations,
@@ -70,7 +70,7 @@ pub(super) fn execute(
             let value = if copy {
                 Some(value)
             } else {
-                crate::kernel::functions::coerce_c_value_with_pointee_constant(
+                crate::kernel::functions::coerce_program_value_with_pointee_constant(
                     value,
                     element_type,
                     false,

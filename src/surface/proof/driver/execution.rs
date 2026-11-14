@@ -5701,7 +5701,7 @@ mod tests {
             let c_source = null_checked_allocation_chain(count);
             let proof = nested_null_check_proof(count);
             DEEPEST_REGION_DEPTH.with(|deepest| deepest.set(0));
-            crate::surface::verify_c0_sources(&proof, &[("chain.c", &c_source)])
+            crate::surface::verify_c_sources(&proof, &[("chain.c", &c_source)])
                 .unwrap_or_else(|error| panic!("{count} cases: {}", error.message()));
             let deepest = DEEPEST_REGION_DEPTH.with(std::cell::Cell::get);
             assert!(

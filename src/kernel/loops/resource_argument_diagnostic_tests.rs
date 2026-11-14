@@ -6,7 +6,8 @@ fn missing_argument_read_retains_the_actual_snapshot_and_permission() {
         "p",
         ProgramValue::pointer(Pointer::symbolic(Variable(985_910))),
     );
-    let expression = c_load(c_variable("p"));
+    let expression =
+        crate::kernel::program_expression::load(crate::kernel::program_expression::variable("p"));
     let assumptions = PureFactContext::new();
     let mut budget = ExecutionBudget::default();
     let mut diagnostic = None;

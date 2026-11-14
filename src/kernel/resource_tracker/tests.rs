@@ -2,7 +2,7 @@
 // recorded edges directly, so a stop kind is pinned by the edge that produced
 // it rather than by a proof that happens to reach it.
 use super::*;
-use crate::kernel::intern_c_memory;
+use crate::kernel::intern_memory;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 fn block(name: &str) -> PointerBlock {
@@ -21,7 +21,7 @@ fn one() -> ProgramValue {
 }
 
 fn point(memory: &Memory) -> ProgramPoint {
-    ProgramPoint::at(&intern_c_memory(memory.clone()))
+    ProgramPoint::at(&intern_memory(memory.clone()))
 }
 
 fn entry_memory() -> Memory {
@@ -475,8 +475,8 @@ fn a_release_is_based_on_the_memory_it_started_from() {
     let live = entry_memory()
         .with_heap_allocation_claim(fresh.clone(), HeapExtent::int32(16))
         .expect("a fresh allocation claim");
-    let before = intern_c_memory(live.clone());
-    let freed = intern_c_memory(
+    let before = intern_memory(live.clone());
+    let freed = intern_memory(
         live.free_heap_block(&fresh, &PureFactContext::new())
             .expect("the allocation is live, so it can be released"),
     );
@@ -687,7 +687,7 @@ fn a_version_mismatch_names_the_resource_and_both_points() {
         .store(at(PointerBlock::Symbolic(Variable(80)), 0), one());
     let load = |memory: &Memory| {
         MachineTerm::MemoryLoad(
-            intern_c_memory(memory.clone()),
+            intern_memory(memory.clone()),
             Box::new(cell.clone()),
             crate::kernel::LoadKind::Int32,
         )
@@ -763,7 +763,10 @@ mod saved_states {
 
     fn schema() -> ResourceFieldSchema {
         ResourceFieldSchema::new(vec![
-            ("rank".into(), ResourceFieldType::C(ProgramType::Int32)),
+            (
+                "rank".into(),
+                ResourceFieldType::Program(ProgramType::Int32),
+            ),
             ("mark".into(), ResourceFieldType::Integer),
         ])
         .unwrap()
@@ -776,7 +779,7 @@ mod saved_states {
             vec![ProgramValue::Int32(MachineTerm::constant(7)).into()].into(),
             schema(),
             vec![
-                AlgebraicValue::C(ProgramValue::Int32(MachineTerm::constant(rank))),
+                AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::constant(rank))),
                 AlgebraicValue::Integer(IntegerTerm::constant(num_bigint::BigInt::from(mark))),
             ]
             .into(),
@@ -953,7 +956,7 @@ mod footprints {
     /// The rule's answer for the step that produced `after`, asked about a
     /// footprint that is `Some(ranges)` when the kernel could name it.
     fn effect(after: &Memory, ranges: Option<&[MemoryRange]>) -> StepEffect {
-        let produced = intern_c_memory(after.clone());
+        let produced = intern_memory(after.clone());
         let derivation = produced
             .derivation()
             .expect("the constructed step records an edge");
@@ -1019,7 +1022,7 @@ mod footprints {
     #[test]
     fn a_store_through_a_loaded_pointer_reaches_every_stated_footprint() {
         let cells = entry_memory();
-        let source = intern_c_memory(cells.clone());
+        let source = intern_memory(cells.clone());
         let p = Pointer::loaded_value(&source, &at(block("global:cells"), 0));
         let q = Pointer::loaded_value(&source, &at(block("global:cells"), 8));
         let after = cells.store(q.offset_by_bytes(8), one());
@@ -1078,7 +1081,7 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
             ProgramValue::Int32(MachineTerm::constant(7)),
         );
     assert_eq!(after.known_value(&cell), None, "the store dropped the cell");
-    let after = intern_c_memory(after);
+    let after = intern_memory(after);
     let index_is_zero = |value| {
         PureFactContext::new().assume_proposition(Proposition::ConditionIs(
             ConditionTerm::equal(index.clone(), MachineTerm::constant(0)),
@@ -1090,7 +1093,7 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
         None,
         "source discovery does not cross the cache-forgetting and store edges"
     );
-    let effect = Proposition::CMemoryMutatesOnly {
+    let effect = Proposition::MemoryMutatesOnly {
         before: before.clone(),
         after: after.memory().clone(),
         writes: vec![(written, 4)],
@@ -1264,8 +1267,8 @@ fn branch_join_typed_agreement_checks_alias_premises_and_access_width() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let before = entry_memory();
-    let left = intern_c_memory(before.clone().store(at(block("local:f:i"), 0), one()));
-    let right = intern_c_memory(before.store(alias.clone(), one()));
+    let left = intern_memory(before.clone().store(at(block("local:f:i"), 0), one()));
+    let right = intern_memory(before.store(alias.clone(), one()));
     let bare = PureFactContext::new();
     let separated = bare.clone().assume_condition(
         ConditionTerm::pointer_equal(alias, at(cell.block.clone(), 8)),
@@ -1319,10 +1322,10 @@ fn transport_diagnostic_retains_the_actual_cell_walk_and_scope() {
     use crate::kernel::{
         take_transport_cell_walk_diagnostics, with_transport_cell_walk_diagnostics,
     };
-    let entry = intern_c_memory(entry_memory());
+    let entry = intern_memory(entry_memory());
     let pointer = at(block("global:g"), 0);
-    let changed = intern_c_memory(entry.memory().clone().store(pointer.clone(), one()));
-    let after = intern_c_memory(
+    let changed = intern_memory(entry.memory().clone().store(pointer.clone(), one()));
+    let after = intern_memory(
         changed
             .memory()
             .clone()
@@ -1383,7 +1386,7 @@ fn named_cell_stop_retains_the_decision_made_by_its_walk() {
     let _session = crate::kernel::VerificationSession::enter();
     let read = Pointer::symbolic(crate::kernel::Variable(981_201));
     let write = Pointer::symbolic(crate::kernel::Variable(981_202));
-    let memory = intern_c_memory(Memory::new().store(write.clone(), one()));
+    let memory = intern_memory(Memory::new().store(write.clone(), one()));
     let here = ProgramPoint::at(&memory);
     let named = last_same_named_cell(&read, 4, &here).expect("named cell");
     assert!(matches!(
@@ -1420,7 +1423,7 @@ fn a_forgotten_observation_retains_only_its_complete_typed_value() {
     use crate::kernel::{LoadKind, ProgramType};
     crate::kernel::memory_provenance::with_extended_dag_bridging(|| {
         let pointer = at(block("global:g"), 0);
-        let source = intern_c_memory(entry_memory());
+        let source = intern_memory(entry_memory());
         let observed = source.memory().clone().materialize_cell_from_source(
             pointer.clone(),
             ProgramType::Int32,
@@ -1428,7 +1431,7 @@ fn a_forgotten_observation_retains_only_its_complete_typed_value() {
         );
         let value = observed.known_value(&pointer).unwrap();
         let assumptions = PureFactContext::new();
-        let forgotten = intern_c_memory(observed.without_possible_aliasing_cells(
+        let forgotten = intern_memory(observed.without_possible_aliasing_cells(
             &pointer.offset_by_bytes(1),
             1,
             &assumptions,
@@ -1443,7 +1446,7 @@ fn a_forgotten_observation_retains_only_its_complete_typed_value() {
             memory_dag_cell_source_with_stop(&forgotten, &pointer, 8, &assumptions, true).unwrap();
         assert_ne!(stop, CellWalkStop::RetainedValue);
         assert!(wide.resolved_value(&pointer, LoadKind::Bits64).is_none());
-        let changed = intern_c_memory(forgotten.memory().clone().store(pointer.clone(), one()));
+        let changed = intern_memory(forgotten.memory().clone().store(pointer.clone(), one()));
         let (cell, stop) =
             memory_dag_cell_source_with_stop(&changed, &pointer, 4, &assumptions, true).unwrap();
         assert_eq!(stop, CellWalkStop::Affected);
@@ -1472,7 +1475,7 @@ fn structural_read_dependencies_keep_the_observed_point_and_exact_width() {
     let _session = crate::kernel::VerificationSession::enter();
     let entry = entry_memory();
     let pointer = at(block("global:g"), 0);
-    let origin = intern_c_memory(entry.store(at(block("global:h"), 0), one()));
+    let origin = intern_memory(entry.store(at(block("global:h"), 0), one()));
     crate::kernel::eval::record_load_access_width(origin.memory(), &pointer, 4);
     let read = crate::kernel::eval::canonical_form_of_load(
         origin.clone(),

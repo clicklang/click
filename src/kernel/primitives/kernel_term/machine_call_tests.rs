@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn machine_call_roots_preserve_types_arguments_and_native_roundtrips() {
     let _session = crate::kernel::VerificationSession::enter();
-    let input = KernelTerm::variable(KernelType::C(ProgramType::UInt32), Variable(995800));
+    let input = KernelTerm::variable(KernelType::Program(ProgramType::UInt32), Variable(995800));
     let native = SharedPureApplication::intern(
         "f".into(),
         vec![PureFunctionArgument::Value(ProgramValue::UInt32(
@@ -36,7 +36,7 @@ fn machine_call_roots_preserve_types_arguments_and_native_roundtrips() {
             root,
             KernelTermImport::default().machine_call(format, &retained)
         );
-        assert_eq!(root.ty(), &KernelType::C(format.c_type()));
+        assert_eq!(root.ty(), &KernelType::Program(format.c_type()));
         assert_eq!(root.children(), &[input.clone()]);
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         assert_eq!(
@@ -128,8 +128,8 @@ fn machine_call_roots_preserve_opaque_producer_payloads() {
 fn machine_call_argument_order_and_read_snapshots_remain_distinct() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = Pointer::symbolic(Variable(995802));
-    let before = crate::kernel::intern_c_memory(Memory::new());
-    let after = crate::kernel::intern_c_memory(
+    let before = crate::kernel::intern_memory(Memory::new());
+    let after = crate::kernel::intern_memory(
         Memory::new().store(pointer.clone(), ProgramValue::Int32(7u32.into())),
     );
     let calls = [before, after].map(|memory| {

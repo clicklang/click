@@ -246,9 +246,11 @@ fn contract_expression_for_instantiation_value(value: &MachineTerm) -> Option<Co
     let bits32_constant!(bits) = value else {
         return None;
     };
-    Some(ContractExpression::CFragment(ProgramExpression::Value(
-        ProgramValue::Int32(MachineTerm::constant(constant_u32(*bits))),
-    )))
+    Some(ContractExpression::ProgramExpression(
+        ProgramExpression::Value(ProgramValue::Int32(MachineTerm::constant(constant_u32(
+            *bits,
+        )))),
+    ))
 }
 
 /// Plans an explicit universal-instantiation certificate: one listed
@@ -267,7 +269,7 @@ pub(super) fn plan_explicit_forall_instantiation(
         else {
             continue;
         };
-        if *sort != Sort::CInt32 {
+        if *sort != Sort::ProgramInt32 {
             continue;
         }
         let other_kernels = premise_pairs
@@ -321,7 +323,7 @@ pub(super) fn plan_explicit_forall_instantiation_transport(
         let Proposition::ForAll { sort, .. } = kernel else {
             continue;
         };
-        if *sort != Sort::CInt32 {
+        if *sort != Sort::ProgramInt32 {
             continue;
         }
         let discharge_kernels = premise_pairs
@@ -384,7 +386,7 @@ fn plan_explicit_universal_conclusion_discharge(
 ) -> Option<Vec<ProofTactic>> {
     let Proposition::ForAll {
         var: premise_var,
-        sort: Sort::CInt32,
+        sort: Sort::ProgramInt32,
         body: premise_body,
         ..
     } = premise_kernel
@@ -552,7 +554,7 @@ pub(super) fn plan_explicit_forall_goal_from_premises(
 ) -> Option<Vec<ProofTactic>> {
     let Proposition::ForAll {
         var: goal_var,
-        sort: Sort::CInt32,
+        sort: Sort::ProgramInt32,
         body: goal_body,
         ..
     } = goal
@@ -597,7 +599,9 @@ pub(super) fn plan_explicit_forall_goal_from_premises(
             kernel,
             surface,
             MachineTerm::Variable(*goal_var),
-            &ContractExpression::CFragment(ProgramExpression::Variable(binder_name.clone())),
+            &ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                binder_name.clone(),
+            )),
             goal_conclusion,
             surface_goal_conclusion,
             &discharge_kernels,
@@ -812,7 +816,7 @@ fn preservation_read(
     // arithmetic expressions use their existing ordinary reasoning routes.
     if !matches!(current, ContractExpression::ResourceField(_))
         && !matches!(
-            contract_expression_as_c_fragment(&current),
+            contract_expression_as_program_expression(&current),
             Some(
                 ProgramExpression::Load(_)
                     | ProgramExpression::TypedLoad { .. }
@@ -1168,7 +1172,7 @@ fn scalar_preservation_read_leaves(
                 _ => {
                     if !matches!(expression, ContractExpression::ResourceField(_))
                         && !matches!(
-                            contract_expression_as_c_fragment(expression),
+                            contract_expression_as_program_expression(expression),
                             Some(
                                 ProgramExpression::Load(_)
                                     | ProgramExpression::TypedLoad { .. }
@@ -1422,7 +1426,7 @@ fn transport_read_subject(read: &ContractExpression) -> Option<TransportReadSubj
             .is_empty()
             .then_some(TransportReadSubject::Resource(field.identity));
     }
-    match contract_expression_as_c_fragment(read)? {
+    match contract_expression_as_program_expression(read)? {
         ProgramExpression::Load(pointer) | ProgramExpression::TypedLoad { pointer, .. } => {
             Some(TransportReadSubject::Cell(*pointer))
         }
@@ -1489,8 +1493,8 @@ pub(super) fn resource_descriptor_rewrite_steps(
         }
         for (left, right) in parts(target)?.into_iter().zip(parts(source)?) {
             if left == right
-                || contract_expression_as_c_fragment(&left)
-                    .zip(contract_expression_as_c_fragment(&right))
+                || contract_expression_as_program_expression(&left)
+                    .zip(contract_expression_as_program_expression(&right))
                     .is_some_and(|(a, b)| a == b)
             {
                 continue;
@@ -1635,7 +1639,7 @@ pub(super) fn viewability_restriction_steps(
                 matches!(
                     value,
                     ContractExpression::IntegerLiteral(_)
-                        | ContractExpression::CFragment(ProgramExpression::Value(_))
+                        | ContractExpression::ProgramExpression(ProgramExpression::Value(_))
                 )
             };
             if !literal(left) || !literal(right) {
@@ -1751,7 +1755,7 @@ pub(super) fn computed_viewability_restriction_steps(
     if base != child_base || parent_segment.state != child_segment.state {
         return None;
     }
-    let expression = contract_expression_as_c_fragment(inner_hi)?;
+    let expression = contract_expression_as_program_expression(inner_hi)?;
     let (left, right, law) = match expression {
         ProgramExpression::Add(left, right) => {
             (left, right, "click::integer::int32_add_to_integer")
@@ -1765,8 +1769,12 @@ pub(super) fn computed_viewability_restriction_steps(
         name: "to_integer".into(),
         arguments: vec![value],
     };
-    let exact_left = Box::new(observe(ContractExpression::CFragment((*left).clone())));
-    let exact_right = Box::new(observe(ContractExpression::CFragment((*right).clone())));
+    let exact_left = Box::new(observe(ContractExpression::ProgramExpression(
+        (*left).clone(),
+    )));
+    let exact_right = Box::new(observe(ContractExpression::ProgramExpression(
+        (*right).clone(),
+    )));
     let exact = if law == "click::integer::int32_add_to_integer" {
         ContractExpression::Add(exact_left, exact_right)
     } else {
@@ -1814,8 +1822,8 @@ pub(super) fn computed_viewability_restriction_steps(
             application: TheoremApplication {
                 name: law.into(),
                 arguments: vec![
-                    ContractExpression::CFragment(*left),
-                    ContractExpression::CFragment(*right),
+                    ContractExpression::ProgramExpression(*left),
+                    ContractExpression::ProgramExpression(*right),
                 ],
             },
             premises: vec![defined],
@@ -1902,7 +1910,7 @@ pub(super) fn viewability_restriction_requirements(
             bound,
             ContractExpression::IntegerLiteral(_)
                 | ContractExpression::Binding(_)
-                | ContractExpression::CFragment(
+                | ContractExpression::ProgramExpression(
                     ProgramExpression::Variable(_) | ProgramExpression::Value(_)
                 )
         )
@@ -1939,8 +1947,8 @@ pub(super) fn plan_explicit_loadability_transport(
 ) -> Option<Vec<ProofTactic>> {
     let goal_width;
     let goal_bytes = match goal {
-        Proposition::CMemoryLoadable { bytes, .. } => bytes,
-        Proposition::CMemoryReadDefined { value_type, .. } => {
+        Proposition::MemoryLoadable { bytes, .. } => bytes,
+        Proposition::MemoryReadDefined { value_type, .. } => {
             goal_width = MachineTerm::constant(value_type.byte_width());
             &goal_width
         }
@@ -1951,7 +1959,7 @@ pub(super) fn plan_explicit_loadability_transport(
         .filter(|(kernel, _)| {
             matches!(
                 kernel,
-                Proposition::CMemoryLoadable { .. } | Proposition::CMemoryReadDefined { .. }
+                Proposition::MemoryLoadable { .. } | Proposition::MemoryReadDefined { .. }
             )
         })
         .collect::<Vec<_>>();
@@ -1972,11 +1980,11 @@ pub(super) fn plan_explicit_loadability_transport(
         _ => false,
     };
     sources.sort_by_key(|(kernel, surface)| match kernel {
-        Proposition::CMemoryLoadable { bytes, .. } => (
+        Proposition::MemoryLoadable { bytes, .. } => (
             (!surface_is_range(surface)) as u8,
             (bytes == goal_bytes) as u8,
         ),
-        Proposition::CMemoryReadDefined { .. } => (0, 0),
+        Proposition::MemoryReadDefined { .. } => (0, 0),
         _ => unreachable!(),
     });
     if sources.is_empty() {
@@ -1994,8 +2002,8 @@ pub(super) fn plan_explicit_loadability_transport(
             .filter(|(kernel, _)| {
                 matches!(
                     kernel,
-                    Proposition::CMemoryLoadable { .. }
-                        | Proposition::CMemoryReadDefined { .. }
+                    Proposition::MemoryLoadable { .. }
+                        | Proposition::MemoryReadDefined { .. }
                         | Proposition::ConditionIs(_, _)
                 )
             })
@@ -2046,7 +2054,7 @@ pub(super) fn plan_explicit_loadability_transport(
         let mut tactics = Vec::new();
         // Native byte-count views can use scaled bounds or displaced bases.
         // Their existing transport is not an element-subrange certificate.
-        if !matches!(goal, Proposition::CMemoryLoadable { wide: true, .. })
+        if !matches!(goal, Proposition::MemoryLoadable { wide: true, .. })
             && let Some(requirements) =
                 viewability_restriction_requirements(surface_source, surface_goal)
         {
@@ -2217,9 +2225,9 @@ pub(super) fn spell_signed_goal(
         operands: &[(&MachineTerm, ContractExpression)],
     ) -> Option<ContractExpression> {
         if let Some(value) = term.word32_constant() {
-            return Some(ContractExpression::CFragment(ProgramExpression::Value(
-                int32(value),
-            )));
+            return Some(ContractExpression::ProgramExpression(
+                ProgramExpression::Value(int32(value)),
+            ));
         }
         if let Some((_, surface)) = operands
             .iter()
@@ -4055,7 +4063,8 @@ pub(super) fn plan_explicit_predecessor_upper_bound(
             ) else {
                 continue;
             };
-            let surface_zero = ContractExpression::CFragment(ProgramExpression::Value(int32(0)));
+            let surface_zero =
+                ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0)));
             let nonnegative = ClickProposition::Comparison {
                 left: surface_zero,
                 operator: ComparisonOperator::LessEqual,
@@ -4147,7 +4156,7 @@ fn surface_one_le_equality_source(surface: &ClickProposition) -> Option<ClickPro
             operator: ComparisonOperator::Equal,
             ..
         } => Some(ClickProposition::Comparison {
-            left: ContractExpression::CFragment(ProgramExpression::Value(int32(1))),
+            left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
             operator: ComparisonOperator::LessEqual,
             right: left.clone(),
         }),
@@ -4808,18 +4817,18 @@ pub(super) fn lower_surface_candidate_in_state_with_assumptions(
     .map_err(ClickError::new)
 }
 
-fn c_expression_mentions_c_local(
+fn program_expression_mentions_program_local(
     expression: &ProgramExpression,
     parameter_names: &BTreeSet<&str>,
 ) -> bool {
     let mut names = BTreeSet::new();
-    crate::surface::collect_c_expression_referenced_names(expression, &mut names);
+    crate::surface::collect_program_expression_referenced_names(expression, &mut names);
     names
         .iter()
         .any(|name| !parameter_names.contains(name.as_str()))
 }
 
-pub(super) fn contract_expression_mentions_c_local(
+pub(super) fn contract_expression_mentions_program_local(
     expression: &ContractExpression,
     parameter_names: &BTreeSet<&str>,
 ) -> bool {
@@ -4838,52 +4847,52 @@ pub(super) fn contract_expression_mentions_c_local(
         | ContractExpression::RegionParameter { .. } => false,
         ContractExpression::IntegerLiteral(_) => false,
         ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
-            contract_expression_mentions_c_local(inner, parameter_names)
+            contract_expression_mentions_program_local(inner, parameter_names)
         }
         ContractExpression::ResourceField(_) => false,
         ContractExpression::AlgebraicVariable { .. } => false,
         ContractExpression::Binding(name) => !parameter_names.contains(name.as_str()),
         ContractExpression::AlgebraicConstructor { arguments, .. } => arguments
             .iter()
-            .any(|argument| contract_expression_mentions_c_local(argument, parameter_names)),
+            .any(|argument| contract_expression_mentions_program_local(argument, parameter_names)),
         ContractExpression::AlgebraicMatch { scrutinee, arms } => {
-            contract_expression_mentions_c_local(scrutinee, parameter_names)
+            contract_expression_mentions_program_local(scrutinee, parameter_names)
                 || arms.iter().any(|arm| {
                     let mut arm_names = parameter_names.clone();
                     arm_names.extend(arm.bindings.iter().map(String::as_str));
-                    contract_expression_mentions_c_local(&arm.body, &arm_names)
+                    contract_expression_mentions_program_local(&arm.body, &arm_names)
                 })
         }
         ContractExpression::SequenceLiteral(elements) => elements
             .iter()
-            .any(|element| contract_expression_mentions_c_local(element, parameter_names)),
+            .any(|element| contract_expression_mentions_program_local(element, parameter_names)),
         ContractExpression::SequenceConcat(left, right) => {
-            contract_expression_mentions_c_local(left, parameter_names)
-                || contract_expression_mentions_c_local(right, parameter_names)
+            contract_expression_mentions_program_local(left, parameter_names)
+                || contract_expression_mentions_program_local(right, parameter_names)
         }
         ContractExpression::CBinding(_) | ContractExpression::ResourceWildcard => false,
         ContractExpression::ResourceCount(resource) => match resource.as_ref() {
-            ResourceClause::Declared { arguments, .. } => arguments
-                .iter()
-                .any(|argument| contract_expression_mentions_c_local(argument, parameter_names)),
+            ResourceClause::Declared { arguments, .. } => arguments.iter().any(|argument| {
+                contract_expression_mentions_program_local(argument, parameter_names)
+            }),
             _ => false,
         },
-        ContractExpression::CFragment(ProgramExpression::Variable(name)) => {
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
             !parameter_names.contains(name.as_str())
         }
-        ContractExpression::QualifiedC { .. } | ContractExpression::CFragment(_) => false,
+        ContractExpression::QualifiedC { .. } | ContractExpression::ProgramExpression(_) => false,
         ContractExpression::ArrayIndex {
             base,
             indexes,
             lowered,
             ..
         } => {
-            contract_expression_mentions_c_local(base, parameter_names)
+            contract_expression_mentions_program_local(base, parameter_names)
                 || indexes
                     .iter()
-                    .any(|index| contract_expression_mentions_c_local(index, parameter_names))
+                    .any(|index| contract_expression_mentions_program_local(index, parameter_names))
                 || (!matches!(base.as_ref(), ContractExpression::QualifiedC { .. })
-                    && c_expression_mentions_c_local(lowered, parameter_names))
+                    && program_expression_mentions_program_local(lowered, parameter_names))
         }
         ContractExpression::Field { base, .. }
         | ContractExpression::Old(base)
@@ -4891,19 +4900,19 @@ pub(super) fn contract_expression_mentions_c_local(
             expression: base, ..
         }
         | ContractExpression::BitwiseNot(base) => {
-            contract_expression_mentions_c_local(base, parameter_names)
+            contract_expression_mentions_program_local(base, parameter_names)
         }
         crate::surface::binary_contract_expression!(left, right) => {
-            contract_expression_mentions_c_local(left, parameter_names)
-                || contract_expression_mentions_c_local(right, parameter_names)
+            contract_expression_mentions_program_local(left, parameter_names)
+                || contract_expression_mentions_program_local(right, parameter_names)
         }
         ContractExpression::If {
             then_branch,
             else_branch,
             ..
         } => {
-            contract_expression_mentions_c_local(then_branch, parameter_names)
-                || contract_expression_mentions_c_local(else_branch, parameter_names)
+            contract_expression_mentions_program_local(then_branch, parameter_names)
+                || contract_expression_mentions_program_local(else_branch, parameter_names)
         }
         ContractExpression::RangeFold {
             start,
@@ -4912,28 +4921,28 @@ pub(super) fn contract_expression_mentions_c_local(
             body,
             ..
         } => {
-            contract_expression_mentions_c_local(start, parameter_names)
-                || contract_expression_mentions_c_local(end, parameter_names)
-                || contract_expression_mentions_c_local(initial, parameter_names)
-                || contract_expression_mentions_c_local(body, parameter_names)
+            contract_expression_mentions_program_local(start, parameter_names)
+                || contract_expression_mentions_program_local(end, parameter_names)
+                || contract_expression_mentions_program_local(initial, parameter_names)
+                || contract_expression_mentions_program_local(body, parameter_names)
         }
         ContractExpression::Let { value, body, .. } => {
-            contract_expression_mentions_c_local(value, parameter_names)
-                || contract_expression_mentions_c_local(body, parameter_names)
+            contract_expression_mentions_program_local(value, parameter_names)
+                || contract_expression_mentions_program_local(body, parameter_names)
         }
         ContractExpression::MethodCall {
             receiver,
             arguments,
             ..
         } => {
-            contract_expression_mentions_c_local(receiver, parameter_names)
-                || arguments
-                    .iter()
-                    .any(|argument| contract_expression_mentions_c_local(argument, parameter_names))
+            contract_expression_mentions_program_local(receiver, parameter_names)
+                || arguments.iter().any(|argument| {
+                    contract_expression_mentions_program_local(argument, parameter_names)
+                })
         }
         ContractExpression::Call { arguments, .. } => arguments
             .iter()
-            .any(|argument| contract_expression_mentions_c_local(argument, parameter_names)),
+            .any(|argument| contract_expression_mentions_program_local(argument, parameter_names)),
     }
 }
 
@@ -4949,7 +4958,7 @@ mod selected_premise_tests {
             with_tactic_work_limits,
         };
 
-        let goal = Proposition::CMemoryLoadable {
+        let goal = Proposition::MemoryLoadable {
             memory: Memory::new(),
             base: Pointer {
                 block: PointerBlock::ExternalArgument,
@@ -4966,9 +4975,13 @@ mod selected_premise_tests {
                 start: ProgramExpression::Value(int32(0)),
                 end: ProgramExpression::Value(int32(1)),
                 surface: ContractSegmentSurface::Range {
-                    base: ContractExpression::CFragment(ProgramExpression::Variable("p".into())),
-                    start: ContractExpression::CFragment(ProgramExpression::Value(int32(0))),
-                    end: ContractExpression::CFragment(ProgramExpression::Value(int32(1))),
+                    base: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                        "p".into(),
+                    )),
+                    start: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(
+                        0,
+                    ))),
+                    end: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
                 },
             },
         };
@@ -5037,19 +5050,20 @@ mod shared_goal_spelling_tests {
                 crate::kernel::MachineBinaryOp::Add,
                 [
                     KernelTerm::variable(
-                        KernelType::C(MachineIntegerType::Int32.c_type()),
+                        KernelType::Program(MachineIntegerType::Int32.c_type()),
                         variable,
                     ),
                     KernelTerm::variable(
-                        KernelType::C(MachineIntegerType::Int32.c_type()),
+                        KernelType::Program(MachineIntegerType::Int32.c_type()),
                         variable,
                     ),
                 ],
             ),
         )
         .unwrap();
-        let surface = ContractExpression::CFragment(ProgramExpression::Variable("x".into()));
-        let one = ContractExpression::CFragment(ProgramExpression::Value(int32(1)));
+        let surface =
+            ContractExpression::ProgramExpression(ProgramExpression::Variable("x".into()));
+        let one = ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1)));
         let pairs = vec![(
             Proposition::ConditionIs(
                 ConditionTerm::Compare {
@@ -5063,7 +5077,7 @@ mod shared_goal_spelling_tests {
             ClickProposition::Comparison {
                 left: surface.clone(),
                 operator: ComparisonOperator::LessEqual,
-                right: ContractExpression::CFragment(ProgramExpression::Value(int32(10))),
+                right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(10))),
             },
         )];
         let surface = ContractExpression::Add(Box::new(surface.clone()), Box::new(surface));

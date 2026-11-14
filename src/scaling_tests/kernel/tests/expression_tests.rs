@@ -49,7 +49,7 @@ fn loadable_object_provenance_lookup_ignores_unrelated_external_pointers() {
         offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
     };
     let target = external(31_070);
-    let loadable = |base| Proposition::CMemoryLoadable {
+    let loadable = |base| Proposition::MemoryLoadable {
         memory: Memory::new(),
         base,
         bytes: MachineTerm::constant(4),
@@ -175,7 +175,10 @@ fn resource_object_provenance_does_not_scan_same_raw_block() {
         offset: PointerOffsetTerm::Variable(Variable(895_000 + id)),
     };
     let target = pointer(0);
-    let expression = c_less_equal(c_variable("pointer"), c_variable("pointer"));
+    let expression = crate::kernel::program_expression::less_equal(
+        crate::kernel::program_expression::variable("pointer"),
+        crate::kernel::program_expression::variable("pointer"),
+    );
     let mut samples = Vec::new();
     for size in [16u64, 64, 256, 1024] {
         let assumptions = PureFactContext::new();
@@ -192,8 +195,9 @@ fn resource_object_provenance_does_not_scan_same_raw_block() {
             .with_local("pointer", ProgramValue::pointer(target.clone()))
             .with_resource_context(resources);
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let mut budget = ExecutionBudget::for_c_expression(&expression);
-            evaluate_c_expression_paths(&state, &expression, &assumptions, &mut budget).unwrap()
+            let mut budget = ExecutionBudget::for_program_expression(&expression);
+            evaluate_program_expression_paths(&state, &expression, &assumptions, &mut budget)
+                .unwrap()
         });
         assert!(
             paths
@@ -218,7 +222,7 @@ fn stored_pointer_bounds_ignore_unrelated_numeric_classes() {
         let read = PointerValue::from_read(
             stored.pointer().clone(),
             ProgramType::Int32Pointer,
-            &crate::kernel::intern_c_memory_ref(&memory),
+            &crate::kernel::intern_memory_ref(&memory),
             &field,
         );
         let mut context = PureFactContext::new();
@@ -243,7 +247,7 @@ fn stored_pointer_bounds_ignore_unrelated_numeric_classes() {
 fn narrow_value_range_construction_ignores_unrelated_order_facts() {
     let value = ProgramValue::UInt8(MachineTerm::Variable(Variable(986_000)));
     let state = ExecutionState::new().with_local("byte", value);
-    let expression = c_variable("byte");
+    let expression = crate::kernel::program_expression::variable("byte");
     for size in [4u64, 16, 64, 256] {
         let mut assumptions = PureFactContext::new();
         for id in 0..size {
@@ -257,11 +261,11 @@ fn narrow_value_range_construction_ignores_unrelated_order_facts() {
             );
         }
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
-            evaluate_c_expression_paths(
+            evaluate_program_expression_paths(
                 &state,
                 &expression,
                 &assumptions,
-                &mut ExecutionBudget::for_c_expression(&expression),
+                &mut ExecutionBudget::for_program_expression(&expression),
             )
             .unwrap()
         });
@@ -295,7 +299,7 @@ fn rust_bool_values_do_not_split_paths() {
     for size in [4usize, 8, 16, 32] {
         let mut state =
             ExecutionState::new().with_local("limit", int32(MachineTerm::Variable(Variable(50))));
-        let mut statement = c_skip();
+        let mut statement = program_skip();
         for index in 0..size {
             state = state
                 .with_local(
@@ -303,19 +307,21 @@ fn rust_bool_values_do_not_split_paths() {
                     int32(MachineTerm::Variable(Variable(100 + index as u64))),
                 )
                 .with_local(format!("c_{index}"), ProgramValue::bool_constant(false));
-            statement = c_seq(
+            statement = program_seq(
                 statement,
-                c_assign(
+                program_assign(
                     format!("c_{index}"),
-                    c_bool_value(c_less_than(
-                        c_variable(format!("a_{index}")),
-                        c_variable("limit"),
-                    )),
+                    crate::kernel::program_expression::bool_value(
+                        crate::kernel::program_expression::less_than(
+                            crate::kernel::program_expression::variable(format!("a_{index}")),
+                            crate::kernel::program_expression::variable("limit"),
+                        ),
+                    ),
                 ),
             );
         }
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
-            execute_c_statement_paths(
+            execute_execution_statement_paths(
                 &state,
                 &statement,
                 &PureFactContext::new(),
@@ -360,7 +366,7 @@ fn unsigned_division_domain_generation_ignores_ambient_facts() {
         let mut runs = Vec::new();
         for _ in 0..3 {
             let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
-                crate::kernel::eval::apply_c_divide(
+                crate::kernel::eval::apply_program_divide(
                     ProgramValue::UInt32(MachineTerm::Variable(Variable(992_001))),
                     ProgramValue::UInt32(MachineTerm::Variable(Variable(992_002))),
                     vec![].into(),

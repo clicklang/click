@@ -50,7 +50,7 @@ fn explicit_separation_decides_pointers_without_composition_discovery() {
                 8,
             )))
         };
-        let facts = facts.assume_proposition(Proposition::CResourceSeparate {
+        let facts = facts.assume_proposition(Proposition::ResourceSeparate {
             left: cell(left.clone()),
             right: cell(right),
         });

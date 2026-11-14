@@ -1,7 +1,7 @@
 use super::*;
 
 fn maybe_type() -> AlgebraicType {
-    let arguments = vec![AlgebraicValueType::C(ProgramType::Int32)];
+    let arguments = vec![AlgebraicValueType::Program(ProgramType::Int32)];
     let variants: std::sync::Arc<[AlgebraicVariantType]> = vec![
         AlgebraicVariantType {
             name: "None".to_string(),
@@ -9,7 +9,7 @@ fn maybe_type() -> AlgebraicType {
         },
         AlgebraicVariantType {
             name: "Some".to_string(),
-            fields: vec![AlgebraicValueType::C(ProgramType::Int32)],
+            fields: vec![AlgebraicValueType::Program(ProgramType::Int32)],
         },
     ]
     .into();
@@ -163,7 +163,7 @@ fn algebraic_integer_match_reconnects_symbolic_and_concrete_fields() {
         &[pair_arm]
     ));
     let mut bad = arm;
-    bad.binding_types = vec![AlgebraicValueType::C(ProgramType::Int32)];
+    bad.binding_types = vec![AlgebraicValueType::Program(ProgramType::Int32)];
     assert!(!spec_algebraic_result_match_arms_are_well_formed(
         &ty,
         &[bad]
@@ -183,7 +183,7 @@ fn value_or_match(scrutinee: SpecAlgebraicExpression) -> SpecExpression {
             SpecAlgebraicMatchArm {
                 variant: "Some".to_string(),
                 bindings: vec!["value".to_string()],
-                binding_types: vec![AlgebraicValueType::C(ProgramType::Int32)],
+                binding_types: vec![AlgebraicValueType::Program(ProgramType::Int32)],
                 body: SpecExpression::ProgramExpression(ProgramExpression::Variable(
                     "value".to_string(),
                 )),
@@ -207,21 +207,21 @@ fn envelope_type(maybe_type: &AlgebraicType) -> AlgebraicType {
     .into();
     let value_type = AlgebraicValueType::Algebraic {
         name: "Envelope".to_string(),
-        arguments: vec![AlgebraicValueType::C(ProgramType::Int32)],
+        arguments: vec![AlgebraicValueType::Program(ProgramType::Int32)],
     };
     let mut schemas = maybe_type.schemas.definitions().clone();
     schemas.insert(value_type, variants.clone());
     AlgebraicType {
         rigid: false,
         name: "Envelope".to_string(),
-        arguments: vec![AlgebraicValueType::C(ProgramType::Int32)],
+        arguments: vec![AlgebraicValueType::Program(ProgramType::Int32)],
         variants,
         schemas: std::sync::Arc::new(AlgebraicSchemas::new(schemas)),
     }
 }
 
 fn recursive_list_type() -> AlgebraicType {
-    let arguments = vec![AlgebraicValueType::C(ProgramType::Int32)];
+    let arguments = vec![AlgebraicValueType::Program(ProgramType::Int32)];
     let value_type = AlgebraicValueType::Algebraic {
         name: "List".to_string(),
         arguments: arguments.clone(),
@@ -234,7 +234,7 @@ fn recursive_list_type() -> AlgebraicType {
         AlgebraicVariantType {
             name: "Cons".to_string(),
             fields: vec![
-                AlgebraicValueType::C(ProgramType::Int32),
+                AlgebraicValueType::Program(ProgramType::Int32),
                 value_type.clone(),
             ],
         },
@@ -273,11 +273,11 @@ fn ungrounded_recursive_type() -> AlgebraicType {
 }
 
 fn wide_type(variant_count: usize) -> AlgebraicType {
-    let arguments = vec![AlgebraicValueType::C(ProgramType::Int32)];
+    let arguments = vec![AlgebraicValueType::Program(ProgramType::Int32)];
     let variants: std::sync::Arc<[AlgebraicVariantType]> = (0..variant_count)
         .map(|index| AlgebraicVariantType {
             name: format!("V{index}"),
-            fields: vec![AlgebraicValueType::C(ProgramType::Int32)],
+            fields: vec![AlgebraicValueType::Program(ProgramType::Int32)],
         })
         .collect::<Vec<_>>()
         .into();
@@ -368,7 +368,7 @@ fn arbitrary_algebraic_value_is_one_variable_without_eager_cases() {
 #[test]
 fn cached_pointer_read_equations_do_not_escape_symbolic_match_arms() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer_type = AlgebraicValueType::C(ProgramType::Int64Pointer);
+    let pointer_type = AlgebraicValueType::Program(ProgramType::Int64Pointer);
     let value_type = AlgebraicValueType::Algebraic {
         name: "PointerBox".into(),
         arguments: vec![],
@@ -397,7 +397,7 @@ fn cached_pointer_read_equations_do_not_escape_symbolic_match_arms() {
         algebraic_type: result_type.clone(),
         node: SpecAlgebraicExpressionNode::Constructor {
             variant: "Box".into(),
-            fields: vec![SpecAlgebraicValue::C(SpecExpression::MemoryLoad {
+            fields: vec![SpecAlgebraicValue::Program(SpecExpression::MemoryLoad {
                 memory: SpecMemory::Fixed(memory.clone()),
                 pointer: Box::new(SpecExpression::Value(ProgramValue::typed_pointer(
                     address.clone(),
@@ -461,7 +461,7 @@ fn cached_pointer_read_equations_do_not_escape_symbolic_match_arms() {
                 SpecAlgebraicResultMatchArm {
                     variant: "Some".into(),
                     bindings: vec!["unused".into()],
-                    binding_types: vec![AlgebraicValueType::C(ProgramType::Int32)],
+                    binding_types: vec![AlgebraicValueType::Program(ProgramType::Int32)],
                     binding_variables: vec![None],
                     body: Box::new(body),
                 },
@@ -495,7 +495,7 @@ fn algebraic_type_schema_is_shared_by_variable_and_constructor_terms() {
         algebraic_type: algebraic_type.clone(),
         node: AlgebraicTermNode::Constructor {
             variant: "V0".to_string(),
-            fields: vec![AlgebraicValue::C(int32(9))],
+            fields: vec![AlgebraicValue::Program(int32(9))],
         },
     };
 
@@ -516,7 +516,10 @@ fn grounded_recursive_schema_accepts_symbolic_recursive_fields() {
         algebraic_type,
         node: AlgebraicTermNode::Constructor {
             variant: "Cons".to_string(),
-            fields: vec![AlgebraicValue::C(int32(7)), AlgebraicValue::Algebraic(tail)],
+            fields: vec![
+                AlgebraicValue::Program(int32(7)),
+                AlgebraicValue::Algebraic(tail),
+            ],
         },
     };
 
@@ -660,15 +663,17 @@ fn algebraic_result_match_on_symbolic_value_remains_one_term() {
                 SpecAlgebraicResultMatchArm {
                     variant: "Some".to_string(),
                     bindings: vec!["value".to_string()],
-                    binding_types: vec![AlgebraicValueType::C(ProgramType::Int32)],
+                    binding_types: vec![AlgebraicValueType::Program(ProgramType::Int32)],
                     binding_variables: vec![None],
                     body: Box::new(SpecAlgebraicExpression {
                         algebraic_type: algebraic_type.clone(),
                         node: SpecAlgebraicExpressionNode::Constructor {
                             variant: "Some".to_string(),
-                            fields: vec![SpecAlgebraicValue::C(SpecExpression::ProgramExpression(
-                                ProgramExpression::Variable("value".to_string()),
-                            ))],
+                            fields: vec![SpecAlgebraicValue::Program(
+                                SpecExpression::ProgramExpression(ProgramExpression::Variable(
+                                    "value".to_string(),
+                                )),
+                            )],
                         },
                     }),
                 },
@@ -699,7 +704,7 @@ fn match_on_known_constructor_reduces_to_selected_arm() {
         algebraic_type: algebraic_type.clone(),
         node: SpecAlgebraicExpressionNode::Constructor {
             variant: "Some".to_string(),
-            fields: vec![SpecAlgebraicValue::C(SpecExpression::Value(int32(7)))],
+            fields: vec![SpecAlgebraicValue::Program(SpecExpression::Value(int32(7)))],
         },
     });
     let paths = evaluate_spec_expression_paths_with_loop_entry_in(
@@ -916,7 +921,7 @@ fn nominal_pointer_constructor_matches_preserve_the_checked_payload() {
             algebraic_type: ty.clone(),
             node: SpecAlgebraicExpressionNode::Constructor {
                 variant: "At".to_string(),
-                fields: vec![SpecAlgebraicValue::C(SpecExpression::Value(
+                fields: vec![SpecAlgebraicValue::Program(SpecExpression::Value(
                     payload.clone(),
                 ))],
             },
@@ -957,9 +962,11 @@ fn nominal_pointer_constructor_matches_preserve_the_checked_payload() {
                         algebraic_type: ty.clone(),
                         node: SpecAlgebraicExpressionNode::Constructor {
                             variant: "At".to_string(),
-                            fields: vec![SpecAlgebraicValue::C(SpecExpression::ProgramExpression(
-                                ProgramExpression::Variable("p".to_string()),
-                            ))],
+                            fields: vec![SpecAlgebraicValue::Program(
+                                SpecExpression::ProgramExpression(ProgramExpression::Variable(
+                                    "p".to_string(),
+                                )),
+                            )],
                         },
                     }),
                 }],
@@ -1015,7 +1022,7 @@ fn model_argument_guard_query_does_not_materialize_stored_models() {
         algebraic_type: ty.clone(),
         node: SpecAlgebraicExpressionNode::Constructor {
             variant: "Some".into(),
-            fields: vec![SpecAlgebraicValue::C(SpecExpression::Subtract(
+            fields: vec![SpecAlgebraicValue::Program(SpecExpression::Subtract(
                 Box::new(SpecExpression::Value(ProgramValue::Int32(
                     MachineTerm::Variable(Variable(90_001)),
                 ))),
@@ -1069,7 +1076,7 @@ fn maybe_constructor(payload: Option<ProgramValue>) -> AlgebraicTerm {
         algebraic_type: maybe_type(),
         node: AlgebraicTermNode::Constructor {
             variant: if payload.is_some() { "Some" } else { "None" }.into(),
-            fields: payload.into_iter().map(AlgebraicValue::C).collect(),
+            fields: payload.into_iter().map(AlgebraicValue::Program).collect(),
         },
     }
 }

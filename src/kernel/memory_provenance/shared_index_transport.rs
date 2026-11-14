@@ -122,7 +122,7 @@ pub(in crate::kernel) fn map_index_with_fold(
                 .map(std::borrow::Cow::Owned)
                 .or_else(|| view.read_source())?;
             let next = map_leaf(&leaf)?;
-            let KernelType::C(ty) = node.ty() else {
+            let KernelType::Program(ty) = node.ty() else {
                 return None;
             };
             node.rewritten_machine_leaf(MachineIntegerType::from_c_type(*ty)?, &leaf, &next)
@@ -145,7 +145,7 @@ pub(in crate::kernel) fn map_index_with_fold(
                     crate::kernel::KernelTermImport::default()
                         .condition(&ConditionTerm::truth_of_bool_word(&mapped))
                 };
-                let KernelType::C(ty) = node.ty() else {
+                let KernelType::Program(ty) = node.ty() else {
                     return None;
                 };
                 let updated = KernelTerm::machine_if_shared(
@@ -260,7 +260,7 @@ mod tests {
     fn common_call_indices_keep_roots_and_original_read_snapshots() {
         use crate::kernel::{KernelTermImport, PureFunctionArgument, SharedPureApplication};
         let _session = VerificationSession::enter();
-        let before = crate::kernel::intern_c_memory(Memory::new().with_block("call-snapshot", 8));
+        let before = crate::kernel::intern_memory(Memory::new().with_block("call-snapshot", 8));
         let address = Memory::global_pointer("call-snapshot");
         let after = before
             .memory()
@@ -563,7 +563,7 @@ mod tests {
             ProgramValue::Int32(MachineTerm::constant(7)),
         );
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(before.clone()),
+            crate::kernel::intern_memory(before.clone()),
             Box::new(pointer.clone()),
             LoadKind::Int32,
         );
@@ -609,7 +609,7 @@ mod tests {
         };
         let before = Memory::new().with_block("registered-index", 16);
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(before.clone()),
+            crate::kernel::intern_memory(before.clone()),
             Box::new(pointer.clone()),
             LoadKind::Int32,
         );
@@ -857,7 +857,7 @@ mod tests {
         ] {
             for kind in [LoadKind::Int32, LoadKind::UInt32, LoadKind::UInt8] {
                 let load = MachineTerm::MemoryLoad(
-                    crate::kernel::intern_c_memory(memory.clone()),
+                    crate::kernel::intern_memory(memory.clone()),
                     Box::new(pointer.clone()),
                     kind,
                 );
@@ -884,7 +884,7 @@ mod tests {
             offset: PointerOffsetTerm::scaled_int32_node(index.clone(), 4),
         };
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(
+            crate::kernel::intern_memory(
                 initial.store(pointer, ProgramValue::Int32(MachineTerm::constant(5))),
             ),
             Box::new(query),

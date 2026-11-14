@@ -10,7 +10,7 @@ fn charon_loop_control_verifies_break_and_continue() {
     let p = Project::from_fixture("design/charon-trial/loop-control");
     fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(SIDECAR, &prepared)
+    ProgramVerificationSession::new_program_prepared(SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     for (before, after, expected) in [
         // `scan` leaves at 3 through its `break`, not only at 0.
@@ -54,7 +54,7 @@ fn first_stop(n: i32, limit: i32) -> i32 {
 } by {
     step_until(function.exit);
 }"#;
-    C0VerificationSession::new_program_prepared(witness, &prepared)
+    ProgramVerificationSession::new_program_prepared(witness, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     let invalid = witness.replace("ensures result == 0i32;", "ensures result == limit;");
     assert_ne!(witness, invalid);
@@ -66,7 +66,7 @@ fn assert_proof_failure(
     prepared: &click::languages::rust::PreparedRustImport,
     function: &str,
 ) {
-    let error = C0VerificationSession::new_program_prepared(source, prepared)
+    let error = ProgramVerificationSession::new_program_prepared(source, prepared)
         .err()
         .unwrap_or_else(|| panic!("false claim in `{function}` must fail"));
     assert_eq!(

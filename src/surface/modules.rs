@@ -15,7 +15,7 @@ pub fn resolve_click_project(
     let entry_source = project
         .entry_source()
         .ok_or_else(|| ClickError::new(format!("missing entry module `{}`", project.entry())))?;
-    let source_context = verification::CSourceContext::bundle(c_sources);
+    let source_context = verification::ProgramSourceContext::bundle(c_sources);
     let layouts = verification::parse_c_layouts_for_target(
         entry_source,
         &source_context,
@@ -91,7 +91,7 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
             .filter_map(|imported| locals.get(imported))
             .flat_map(|file| file.click_function_definitions())
             .filter(|function| match function.return_type() {
-                ClickType::C(c_type) => {
+                ClickType::Program(c_type) => {
                     c_type.is_pointer() || matches!(c_type, C0Type::ParameterPointer(_))
                 }
                 ClickType::CObjectPointer { .. } => true,
@@ -729,7 +729,7 @@ void f(int32* p) {
             )
         };
         let c_sources = [("entry.c", "void f(int *p) {}")];
-        verify_c0_project(&project(entry), &c_sources)
+        verify_c_project(&project(entry), &c_sources)
             .expect("an imported matched child's ID must not change a caller's child family");
         let wrong_family = entry
             .replace("produces leaf: Leaf(p)", "produces inner: Other(p)")
@@ -814,14 +814,14 @@ theorem local_conditional(x: int32) {
                 .any(|definition| definition.name() == "SmallList")
         );
         super::proof::PROVED_THEOREMS.with(|proved| proved.borrow_mut().clear());
-        verify_c0_project(&project, &[])
+        verify_c_project(&project, &[])
             .expect("the local theorem should assume the imported theorem statement");
         super::proof::PROVED_THEOREMS.with(|proved| {
             assert_eq!(proved.borrow().as_slice(), ["local_conditional"]);
         });
 
         let library = ClickProject::new("models/list.click", [project.modules()[0].clone()]);
-        let error = verify_c0_project(&library, &[])
+        let error = verify_c_project(&library, &[])
             .expect_err("selecting the imported theorem's own failing proof must fail");
         assert!(error.message().contains("models/list.click"), "{error}");
     }
@@ -879,10 +879,10 @@ int32 identity(int32 x) {
             ],
         );
         let c = "int identity(int x) { return x; }";
-        verify_c0_project(&project, &[("test.c", c)])
+        verify_c_project(&project, &[("test.c", c)])
             .expect("the selected C proof may assume the imported theorem statement");
         let library = ClickProject::new("library.click", [project.modules()[0].clone()]);
-        verify_c0_project(&library, &[])
+        verify_c_project(&library, &[])
             .expect_err("selecting the theorem itself must check and reject its proof");
     }
 
@@ -918,8 +918,7 @@ void user() { ensures 0 == 1; } by { impossible(0); step_until(function.exit); s
             project_selected_proof_names(&project, &ProgramInputs::Bundle(c.to_vec())).unwrap(),
             ["function:caller", "function:user"]
         );
-        let verified =
-            verify_c0_project(&project, &c).expect("imported interfaces are assumptions");
+        let verified = verify_c_project(&project, &c).expect("imported interfaces are assumptions");
         let selection = verified[0].selection.as_ref().unwrap();
         assert_eq!(
             selection.selected_proofs,
@@ -945,11 +944,10 @@ void user() { ensures 0 == 1; } by { impossible(0); step_until(function.exit); s
             position.column,
         )
         .unwrap();
-        verify_c0_project(&project.with_entry_source(expanded), &c)
+        verify_c_project(&project.with_entry_source(expanded), &c)
             .expect("expanded caller still assumes the imported interfaces");
         let selected = ClickProject::new("library.click", [library]);
-        verify_c0_project(&selected, &c)
-            .expect_err("selecting the library checks its false proofs");
+        verify_c_project(&selected, &c).expect_err("selecting the library checks its false proofs");
         let position =
             expansion::project_tactic_source_position(&selected, &inputs, "impossible.contract", 0)
                 .unwrap();
@@ -1014,7 +1012,7 @@ tactic keep(x: int32) { ensures x == x; } by { have x == x by normalize(); }
                 ),
             ],
         );
-        let error = verify_c0_project(
+        let error = verify_c_project(
             &project,
             &[(
                 "test.c",
@@ -1048,8 +1046,8 @@ int32 identity(int32 x) { ensures result == x; }
             project_selected_proof_names(&first, &ProgramInputs::Bundle(c.to_vec())).unwrap(),
             ["function:identity"]
         );
-        let first_artifact = verify_c0_project(&first, &c).unwrap().remove(0);
-        let reordered_artifact = verify_c0_project(&reordered, &c).unwrap().remove(0);
+        let first_artifact = verify_c_project(&first, &c).unwrap().remove(0);
+        let reordered_artifact = verify_c_project(&reordered, &c).unwrap().remove(0);
         assert_eq!(
             first_artifact.artifact_identity,
             reordered_artifact.artifact_identity
@@ -1070,7 +1068,7 @@ int32 identity(int32 x) { ensures result == x; }
                 ),
             ],
         );
-        let changed_artifact = verify_c0_project(&changed, &c).unwrap().remove(0);
+        let changed_artifact = verify_c_project(&changed, &c).unwrap().remove(0);
         assert_ne!(
             reordered_artifact.artifact_identity,
             changed_artifact.artifact_identity
@@ -1134,7 +1132,7 @@ int32 identity(int32 x) { ensures result == x; }
             rewritten_position.column,
         )
         .expect("the expanded local theorem should verify without the imported proof");
-        let (session, _) = C0VerificationSession::new_project(&project, &[]).unwrap();
+        let (session, _) = ProgramVerificationSession::new_project(&project, &[]).unwrap();
         session
             .verify_at_project(
                 &expanded,
@@ -1183,7 +1181,7 @@ theorem sibling_bad() { ensures 0 == 1 by solve(); }
         super::proof::PROVED_THEOREMS.with(|proved| {
             assert_eq!(proved.borrow().as_slice(), ["selected_ok"]);
         });
-        verify_c0_project(&project, &[])
+        verify_c_project(&project, &[])
             .expect_err("file selection must still execute and reject the local sibling proof");
     }
 
@@ -1210,7 +1208,7 @@ theorem sibling_bad() { ensures 0 == 1 by solve(); }
                 "int identity(int x) { return x; }",
             ),
         ];
-        verify_c0_prepared_project(&project, &imports).unwrap();
+        verify_c_prepared_project(&project, &imports).unwrap();
         let sites = expansion::project_smart_tactic_source_sites(
             &project,
             &ProgramInputs::Prepared(&imports),

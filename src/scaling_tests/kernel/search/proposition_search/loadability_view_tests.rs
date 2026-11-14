@@ -4,7 +4,7 @@ fn ambient_loadability_enumeration_charges_every_visited_fact() {
         let state = crate::kernel::ExecutionState::new();
         let mut context = PureFactContext::new();
         for index in 0..size {
-            context = context.assume_proposition(Proposition::CMemoryLoadable {
+            context = context.assume_proposition(Proposition::MemoryLoadable {
                 memory: state.memory().clone(),
                 base: Pointer::symbolic(Variable(670_000 + index)),
                 bytes: MachineTerm::constant(4),
@@ -32,7 +32,7 @@ fn witness_collection_stops_when_its_work_budget_is_exhausted() {
         let state = crate::kernel::ExecutionState::new();
         let mut context = PureFactContext::new();
         for index in 0..size {
-            context = context.assume_proposition(Proposition::CMemoryLoadable {
+            context = context.assume_proposition(Proposition::MemoryLoadable {
                 memory: state.memory().clone(),
                 base: Pointer::symbolic(Variable(680_000 + index)),
                 bytes: MachineTerm::constant(4),
@@ -48,7 +48,7 @@ fn witness_collection_stops_when_its_work_budget_is_exhausted() {
                 crate::kernel::search::ProofSearch::derive_exists_from_witness(
                     &(context),
                     Variable(690_000),
-                    &Sort::CInt32,
+                    &Sort::ProgramInt32,
                     &body,
                 )
             })
@@ -71,7 +71,7 @@ fn ambiguous_address_enumeration_requires_search_and_charges_candidates() {
         let base = Pointer::symbolic(Variable(795_000));
         let mut context = PureFactContext::new();
         for extent in 1..=size {
-            context = context.assume_proposition(Proposition::CMemoryLoadable {
+            context = context.assume_proposition(Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: base.clone(),
                 bytes: extent.into(),

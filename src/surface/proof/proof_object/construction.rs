@@ -299,7 +299,7 @@ impl<'a> Proof<'a> {
         let mut ambient_variables = std::collections::BTreeSet::new();
         let mut source_state = ExecutionState::new().with_memory(theorem_context.memory.clone());
         for (name, value) in &theorem_context.values {
-            crate::kernel::collect_c_value_bitvector_variables(value, &mut ambient_variables);
+            crate::kernel::collect_program_value_bitvector_variables(value, &mut ambient_variables);
             source_state = source_state.with_local(name.clone(), value.clone());
         }
         for (_, value) in theorem_context.integer_values.iter() {

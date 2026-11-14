@@ -134,7 +134,7 @@ fn conjunction_lowering_visits_written_operands_not_ambient_facts() {
         }
         let mut assumptions = PureFactContext::new();
         for i in 0..ambient {
-            assumptions = assumptions.assume_proposition(Proposition::CResourceContains {
+            assumptions = assumptions.assume_proposition(Proposition::ResourceContains {
                 parent: Box::new(Resource::Parameter(Variable(i as u64))),
                 child: Box::new(Resource::Parameter(Variable(i as u64 + 1))),
             });

@@ -365,7 +365,7 @@ pub(in crate::kernel) fn condition_execution_variable_ceiling(
 pub(in crate::kernel) fn proposition_syntax_execution_variable_ceiling(
     proposition: &Proposition,
 ) -> (Option<Variable>, bool) {
-    if let Proposition::CResourceComposition(resources) = proposition {
+    if let Proposition::ResourceComposition(resources) = proposition {
         return resources.syntax_ceiling(resource_fact_syntax_execution_variable_ceiling);
     }
     execution_variable_ceiling(Some(false), |variables| {
@@ -379,7 +379,7 @@ fn resource_fact_syntax_execution_variable_ceiling(
     fact: &ResourceFact,
 ) -> (Option<Variable>, bool) {
     execution_variable_ceiling(Some(false), |variables| {
-        collect_resource_bitvector_variables(fact, variables)
+        collect_resource_fact_bitvector_variables(fact, variables)
     })
 }
 
@@ -540,98 +540,98 @@ fn collect_proposition_bitvector_variables_one(
                 collect_term_bitvector_variables(argument, variables);
             }
         }
-        Proposition::CExpressionEvaluates {
+        Proposition::ProgramExpressionEvaluates {
             state,
             expression,
             outcome,
         } => {
-            collect_c_state_bitvector_variables(state, variables);
-            collect_c_expression_bitvector_variables(expression, variables);
-            collect_c_expression_outcome_bitvector_variables(outcome, variables);
+            collect_execution_state_bitvector_variables(state, variables);
+            collect_program_expression_bitvector_variables(expression, variables);
+            collect_program_expression_outcome_bitvector_variables(outcome, variables);
         }
-        Proposition::CConditionEvaluates {
+        Proposition::ProgramConditionEvaluates {
             state, condition, ..
         } => {
-            collect_c_state_bitvector_variables(state, variables);
-            collect_c_expression_bitvector_variables(condition, variables);
+            collect_execution_state_bitvector_variables(state, variables);
+            collect_program_expression_bitvector_variables(condition, variables);
         }
-        Proposition::CStatementExecutes {
+        Proposition::ProgramStatementExecutes {
             state,
             statement,
             outcome,
         } => {
-            collect_c_state_bitvector_variables(state, variables);
-            collect_c_statement_bitvector_variables(statement, variables);
-            collect_c_statement_outcome_bitvector_variables(outcome, variables);
+            collect_execution_state_bitvector_variables(state, variables);
+            collect_execution_statement_bitvector_variables(statement, variables);
+            collect_execution_statement_outcome_bitvector_variables(outcome, variables);
         }
-        Proposition::CStatementVerifies {
+        Proposition::ProgramStatementVerifies {
             state,
             statement,
             outcome,
         } => {
-            collect_c_state_bitvector_variables(state, variables);
-            collect_c_statement_bitvector_variables(statement, variables);
-            collect_c_statement_outcome_bitvector_variables(outcome, variables);
+            collect_execution_state_bitvector_variables(state, variables);
+            collect_execution_statement_bitvector_variables(statement, variables);
+            collect_execution_statement_outcome_bitvector_variables(outcome, variables);
         }
-        Proposition::CFunctionExecutes {
+        Proposition::ProgramFunctionExecutes {
             state,
             arguments,
             function,
             outcome,
         } => {
-            collect_c_state_bitvector_variables(state, variables);
+            collect_execution_state_bitvector_variables(state, variables);
             for argument in arguments {
-                collect_c_expression_bitvector_variables(argument, variables);
+                collect_program_expression_bitvector_variables(argument, variables);
             }
-            collect_c_function_bitvector_variables(function, variables);
-            collect_c_function_outcome_bitvector_variables(outcome, variables);
+            collect_program_function_bitvector_variables(function, variables);
+            collect_program_function_outcome_bitvector_variables(outcome, variables);
         }
-        Proposition::CFunctionVerifies {
+        Proposition::ProgramFunctionVerifies {
             state,
             arguments,
             function,
             outcome,
         } => {
-            collect_c_state_bitvector_variables(state, variables);
+            collect_execution_state_bitvector_variables(state, variables);
             for argument in arguments {
-                collect_c_expression_bitvector_variables(argument, variables);
+                collect_program_expression_bitvector_variables(argument, variables);
             }
-            collect_c_function_bitvector_variables(function, variables);
-            collect_c_function_outcome_bitvector_variables(outcome, variables);
+            collect_program_function_bitvector_variables(function, variables);
+            collect_program_function_outcome_bitvector_variables(outcome, variables);
         }
-        Proposition::CFunctionSatisfiesSpecification {
+        Proposition::ProgramFunctionSatisfiesSpecification {
             function,
             specification,
         } => {
-            collect_c_function_bitvector_variables(function, variables);
-            collect_c_function_specification_bitvector_variables(specification, variables);
+            collect_program_function_bitvector_variables(function, variables);
+            collect_program_function_specification_bitvector_variables(specification, variables);
         }
-        Proposition::CFunctionPartiallySatisfiesSpecification {
+        Proposition::ProgramFunctionPartiallySatisfiesSpecification {
             function,
             specification,
         } => {
-            collect_c_function_bitvector_variables(function, variables);
-            collect_c_function_specification_bitvector_variables(specification, variables);
+            collect_program_function_bitvector_variables(function, variables);
+            collect_program_function_specification_bitvector_variables(specification, variables);
         }
-        Proposition::CMemoryLoads {
+        Proposition::MemoryLoads {
             memory,
             pointer,
             outcome,
         } => {
             collect_memory_bitvector_variables(memory, variables);
             collect_pointer_bitvector_variables(pointer, variables);
-            collect_c_expression_outcome_bitvector_variables(outcome, variables);
+            collect_program_expression_outcome_bitvector_variables(outcome, variables);
         }
-        Proposition::CMemoryReadDefined {
+        Proposition::MemoryReadDefined {
             memory, pointer, ..
         }
-        | Proposition::CMemoryCanStore {
+        | Proposition::MemoryCanStore {
             memory, pointer, ..
         } => {
             collect_memory_bitvector_variables(memory, variables);
             collect_pointer_bitvector_variables(pointer, variables);
         }
-        Proposition::CMemoryLoadable {
+        Proposition::MemoryLoadable {
             memory,
             base,
             bytes,
@@ -641,22 +641,22 @@ fn collect_proposition_bitvector_variables_one(
             collect_pointer_bitvector_variables(base, variables);
             collect_bitvector_variables(bytes, variables);
         }
-        Proposition::CResourceSeparate { left, right } => {
-            collect_c_resource_bitvector_variables(left, variables);
-            collect_c_resource_bitvector_variables(right, variables);
+        Proposition::ResourceSeparate { left, right } => {
+            collect_resource_bitvector_variables(left, variables);
+            collect_resource_bitvector_variables(right, variables);
         }
-        Proposition::CResourceComposition(resources) => {
+        Proposition::ResourceComposition(resources) => {
             collect_resource_context_bitvector_variables(resources, variables);
         }
-        Proposition::CResourceViewable { memory, resource } => {
+        Proposition::ResourceViewable { memory, resource } => {
             collect_memory_bitvector_variables(memory, variables);
-            collect_c_resource_bitvector_variables(resource, variables);
+            collect_resource_bitvector_variables(resource, variables);
         }
-        Proposition::CResourceContains { parent, child } => {
-            collect_c_resource_bitvector_variables(parent, variables);
-            collect_c_resource_bitvector_variables(child, variables);
+        Proposition::ResourceContains { parent, child } => {
+            collect_resource_bitvector_variables(parent, variables);
+            collect_resource_bitvector_variables(child, variables);
         }
-        Proposition::CMemoryMutatesOnly {
+        Proposition::MemoryMutatesOnly {
             before,
             after,
             writes,
@@ -667,7 +667,7 @@ fn collect_proposition_bitvector_variables_one(
                 collect_pointer_bitvector_variables(pointer, variables);
             }
         }
-        Proposition::CMemoryEffectSummary {
+        Proposition::MemoryEffectSummary {
             before,
             after,
             mutable_ranges,
@@ -675,10 +675,10 @@ fn collect_proposition_bitvector_variables_one(
             collect_memory_bitvector_variables(before, variables);
             collect_memory_bitvector_variables(after, variables);
             for range in mutable_ranges {
-                collect_c_memory_range_bitvector_variables(range, variables);
+                collect_memory_range_bitvector_variables(range, variables);
             }
         }
-        Proposition::CHeapAllocationFreed {
+        Proposition::HeapAllocationFreed {
             before,
             after,
             allocation_base,
@@ -714,20 +714,22 @@ pub(in crate::kernel) fn collect_term_bitvector_variables(
         Term::PointerOffset(offset) => {
             collect_pointer_offset_bitvector_variables(offset, variables)
         }
-        Term::ProgramValue(value) => collect_c_value_bitvector_variables(value, variables),
+        Term::ProgramValue(value) => collect_program_value_bitvector_variables(value, variables),
         Term::Sequence(sequence) => collect_sequence_bitvector_variables(sequence, variables),
         Term::Algebraic(term) => collect_algebraic_term_bitvector_variables(term, variables),
         Term::ExpressionOutcome(outcome) => {
-            collect_c_expression_outcome_bitvector_variables(outcome, variables);
+            collect_program_expression_outcome_bitvector_variables(outcome, variables);
         }
         Term::StatementOutcome(outcome) => {
-            collect_c_statement_outcome_bitvector_variables(outcome, variables);
+            collect_execution_statement_outcome_bitvector_variables(outcome, variables);
         }
         Term::FunctionOutcome(outcome) => {
-            collect_c_function_outcome_bitvector_variables(outcome, variables);
+            collect_program_function_outcome_bitvector_variables(outcome, variables);
         }
         Term::Memory(memory) => collect_memory_bitvector_variables(memory, variables),
-        Term::ExecutionState(state) => collect_c_state_bitvector_variables(state, variables),
+        Term::ExecutionState(state) => {
+            collect_execution_state_bitvector_variables(state, variables)
+        }
     }
 }
 
@@ -735,7 +737,7 @@ pub(in crate::kernel) fn collect_term_bitvector_variables(
 /// conditional `if condition { 1 } else { 0 }`: a walker reaches its terms as
 /// it reaches any scalar conditional's.
 fn condition_carrier(condition: &ConditionTerm) -> AlgebraicValue {
-    AlgebraicValue::C(ProgramValue::Int32(MachineTerm::If {
+    AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::If {
         condition: Box::new(condition.clone()),
         then_term: Box::new(MachineTerm::constant(1)),
         else_term: Box::new(MachineTerm::constant(0)),
@@ -748,7 +750,7 @@ fn load_carrier(
     memory: &crate::kernel::SharedMemory,
     pointer: &crate::kernel::Pointer,
 ) -> AlgebraicValue {
-    AlgebraicValue::C(ProgramValue::UInt64(
+    AlgebraicValue::Program(ProgramValue::UInt64(
         AlgebraicTermNode::memory_load_carrier(memory, pointer),
     ))
 }
@@ -796,7 +798,7 @@ fn collect_algebraic_term_bitvector_variables(
                         collect_machine_bitvector_variables(value, variables)
                     }
                     PureFunctionArgument::Value(value) => {
-                        collect_c_value_bitvector_variables(value, variables)
+                        collect_program_value_bitvector_variables(value, variables)
                     }
                     PureFunctionArgument::Algebraic(value) => {
                         collect_algebraic_term_bitvector_variables(value, variables)
@@ -808,7 +810,7 @@ fn collect_algebraic_term_bitvector_variables(
                         memory, pointer, ..
                     } => {
                         collect_memory_bitvector_variables(memory, variables);
-                        collect_c_value_bitvector_variables(pointer, variables);
+                        collect_program_value_bitvector_variables(pointer, variables);
                     }
                 }
             }
@@ -821,7 +823,9 @@ fn collect_algebraic_value_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match value {
-        AlgebraicValue::C(value) => collect_c_value_bitvector_variables(value, variables),
+        AlgebraicValue::Program(value) => {
+            collect_program_value_bitvector_variables(value, variables)
+        }
         AlgebraicValue::Integer(value) => collect_integer_variables(value, variables),
         AlgebraicValue::Algebraic(value) => {
             collect_algebraic_term_bitvector_variables(value, variables)
@@ -836,7 +840,7 @@ fn collect_sequence_bitvector_variables(
     match sequence.node.as_ref() {
         SequenceTermNode::Literal(values) => {
             for value in values.iter() {
-                collect_c_value_bitvector_variables(value, variables);
+                collect_program_value_bitvector_variables(value, variables);
             }
         }
         SequenceTermNode::Concat(left, right) => {
@@ -846,21 +850,23 @@ fn collect_sequence_bitvector_variables(
     }
 }
 
-pub(in crate::kernel) fn collect_c_expression_bitvector_variables(
+pub(in crate::kernel) fn collect_program_expression_bitvector_variables(
     expression: &ProgramExpression,
     variables: &mut BTreeSet<Variable>,
 ) {
     match expression {
-        ProgramExpression::Value(value) => collect_c_value_bitvector_variables(value, variables),
+        ProgramExpression::Value(value) => {
+            collect_program_value_bitvector_variables(value, variables)
+        }
         ProgramExpression::Variable(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::CallResult { .. } => {}
         ProgramExpression::Cast { expression, .. } => {
-            collect_c_expression_bitvector_variables(expression, variables)
+            collect_program_expression_bitvector_variables(expression, variables)
         }
         ProgramExpression::EnumConstruct { fields, .. } => {
             for field in fields {
-                collect_c_expression_bitvector_variables(field, variables);
+                collect_program_expression_bitvector_variables(field, variables);
             }
         }
         ProgramExpression::Conditional {
@@ -868,9 +874,9 @@ pub(in crate::kernel) fn collect_c_expression_bitvector_variables(
             then_branch,
             else_branch,
         } => {
-            collect_c_expression_bitvector_variables(condition, variables);
-            collect_c_expression_bitvector_variables(then_branch, variables);
-            collect_c_expression_bitvector_variables(else_branch, variables);
+            collect_program_expression_bitvector_variables(condition, variables);
+            collect_program_expression_bitvector_variables(then_branch, variables);
+            collect_program_expression_bitvector_variables(else_branch, variables);
         }
         ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }
@@ -879,31 +885,31 @@ pub(in crate::kernel) fn collect_c_expression_bitvector_variables(
         }
         | ProgramExpression::EnumIs {
             value: expression, ..
-        } => collect_c_expression_bitvector_variables(expression, variables),
+        } => collect_program_expression_bitvector_variables(expression, variables),
         ProgramExpression::AddressOf(body)
         | ProgramExpression::CheckedObjectAddress(body)
         | ProgramExpression::Not(body)
         | ProgramExpression::Load(body) => {
-            collect_c_expression_bitvector_variables(body, variables);
+            collect_program_expression_bitvector_variables(body, variables);
         }
         ProgramExpression::PointerOffsetBytes { pointer, .. }
         | ProgramExpression::Subobject { pointer, .. } => {
-            collect_c_expression_bitvector_variables(pointer, variables);
+            collect_program_expression_bitvector_variables(pointer, variables);
         }
         ProgramExpression::TypedLoad { pointer, .. } => {
-            collect_c_expression_bitvector_variables(pointer, variables);
+            collect_program_expression_bitvector_variables(pointer, variables);
         }
         crate::kernel::binary_c_expression!(left, right) => {
-            collect_c_expression_bitvector_variables(left, variables);
-            collect_c_expression_bitvector_variables(right, variables);
+            collect_program_expression_bitvector_variables(left, variables);
+            collect_program_expression_bitvector_variables(right, variables);
         }
         ProgramExpression::BitwiseNot(expression) => {
-            collect_c_expression_bitvector_variables(expression, variables);
+            collect_program_expression_bitvector_variables(expression, variables);
         }
     }
 }
 
-pub(in crate::kernel) fn collect_c_statement_bitvector_variables(
+pub(in crate::kernel) fn collect_execution_statement_bitvector_variables(
     statement: &ProgramStatement,
     variables: &mut BTreeSet<Variable>,
 ) {
@@ -920,7 +926,7 @@ pub(in crate::kernel) fn collect_c_statement_bitvector_variables(
         }
         | ProgramStatement::DeclareAggregate { .. } => {}
         ProgramStatement::ForStep { step, .. } => {
-            collect_c_statement_bitvector_variables(step, variables);
+            collect_execution_statement_bitvector_variables(step, variables);
         }
         ProgramStatement::Declare {
             initializer: Some(expression),
@@ -936,63 +942,63 @@ pub(in crate::kernel) fn collect_c_statement_bitvector_variables(
         | ProgramStatement::LoopTest {
             condition: expression,
         } => {
-            collect_c_expression_bitvector_variables(expression, variables);
+            collect_program_expression_bitvector_variables(expression, variables);
         }
         ProgramStatement::CallAssign { arguments, .. } => {
             for argument in arguments {
-                collect_c_expression_bitvector_variables(argument, variables);
+                collect_program_expression_bitvector_variables(argument, variables);
             }
         }
         ProgramStatement::Call { arguments, .. }
         | ProgramStatement::CallResult { arguments, .. } => {
             for argument in arguments {
-                collect_c_expression_bitvector_variables(argument, variables);
+                collect_program_expression_bitvector_variables(argument, variables);
             }
         }
         ProgramStatement::HeapAllocate { bytes, .. } => {
-            collect_c_expression_bitvector_variables(bytes, variables);
+            collect_program_expression_bitvector_variables(bytes, variables);
         }
         ProgramStatement::HeapFree { pointer } => {
-            collect_c_expression_bitvector_variables(pointer, variables);
+            collect_program_expression_bitvector_variables(pointer, variables);
         }
         ProgramStatement::Seq(statements) => {
             for statement in statements.iter() {
-                collect_c_statement_bitvector_variables(statement, variables);
+                collect_execution_statement_bitvector_variables(statement, variables);
             }
         }
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
         } => {
-            collect_c_statement_bitvector_variables(try_body, variables);
-            collect_c_statement_bitvector_variables(handler, variables);
+            collect_execution_statement_bitvector_variables(try_body, variables);
+            collect_execution_statement_bitvector_variables(handler, variables);
         }
         ProgramStatement::Store { pointer, value } => {
-            collect_c_expression_bitvector_variables(pointer, variables);
-            collect_c_expression_bitvector_variables(value, variables);
+            collect_program_expression_bitvector_variables(pointer, variables);
+            collect_program_expression_bitvector_variables(value, variables);
         }
         ProgramStatement::TypedStore { pointer, value, .. } => {
-            collect_c_expression_bitvector_variables(pointer, variables);
-            collect_c_expression_bitvector_variables(value, variables);
+            collect_program_expression_bitvector_variables(pointer, variables);
+            collect_program_expression_bitvector_variables(value, variables);
         }
         ProgramStatement::CopyAggregate { target, source, .. }
         | ProgramStatement::InitializeScalarArray { target, source, .. } => {
-            collect_c_expression_bitvector_variables(target, variables);
-            collect_c_expression_bitvector_variables(source, variables);
+            collect_program_expression_bitvector_variables(target, variables);
+            collect_program_expression_bitvector_variables(source, variables);
         }
         ProgramStatement::Update {
             target, operand, ..
         } => {
-            collect_c_expression_bitvector_variables(target, variables);
-            collect_c_expression_bitvector_variables(operand, variables);
+            collect_program_expression_bitvector_variables(target, variables);
+            collect_program_expression_bitvector_variables(operand, variables);
         }
         ProgramStatement::If {
             condition,
             then_branch,
             else_branch,
         } => {
-            collect_c_expression_bitvector_variables(condition, variables);
-            collect_c_statement_bitvector_variables(then_branch, variables);
-            collect_c_statement_bitvector_variables(else_branch, variables);
+            collect_program_expression_bitvector_variables(condition, variables);
+            collect_execution_statement_bitvector_variables(then_branch, variables);
+            collect_execution_statement_bitvector_variables(else_branch, variables);
         }
         ProgramStatement::While {
             condition,
@@ -1003,7 +1009,7 @@ pub(in crate::kernel) fn collect_c_statement_bitvector_variables(
             body,
             ..
         } => {
-            collect_c_expression_bitvector_variables(condition, variables);
+            collect_program_expression_bitvector_variables(condition, variables);
             for proposition in invariant {
                 collect_proposition_bitvector_variables(proposition, variables);
             }
@@ -1019,14 +1025,14 @@ pub(in crate::kernel) fn collect_c_statement_bitvector_variables(
             // check's. Skipping them would let a fresh execution variable be
             // handed out with a name the measure already uses.
             for measure in ranking_measures {
-                collect_c_ranking_component_variables(measure, variables);
+                collect_ranking_component_variables(measure, variables);
             }
-            collect_c_statement_bitvector_variables(body, variables);
+            collect_execution_statement_bitvector_variables(body, variables);
         }
         ProgramStatement::Switch { expression, cases } => {
-            collect_c_expression_bitvector_variables(expression, variables);
+            collect_program_expression_bitvector_variables(expression, variables);
             for case in cases {
-                collect_c_statement_bitvector_variables(&case.body, variables);
+                collect_execution_statement_bitvector_variables(&case.body, variables);
             }
         }
     }
@@ -1037,13 +1043,13 @@ pub(in crate::kernel) fn collect_c_statement_bitvector_variables(
 /// A component is read at the states the kernel picks and substitution
 /// rewrites it, so its variables are reserved wherever it travels: on a loop
 /// head, and on the recursion anchor of the function that declared it.
-pub(in crate::kernel) fn collect_c_ranking_component_variables(
+pub(in crate::kernel) fn collect_ranking_component_variables(
     component: &RankingComponent,
     variables: &mut BTreeSet<Variable>,
 ) {
     match component {
         RankingComponent::ProgramExpression(expression) => {
-            collect_c_expression_bitvector_variables(expression, variables);
+            collect_program_expression_bitvector_variables(expression, variables);
         }
         RankingComponent::Pure { expression, .. } => {
             collect_spec_expression_bitvector_variables(expression, variables);
@@ -1068,13 +1074,13 @@ fn collect_spec_bitvector_variables(root: SpecNode<'_>, variables: &mut BTreeSet
         use SpecNode as N;
         match node {
             N::Resource(SpecResource::Value(resource)) => {
-                collect_c_resource_bitvector_variables(resource, variables)
+                collect_resource_bitvector_variables(resource, variables)
             }
             N::Expression(SpecExpression::Value(value)) => {
-                collect_c_value_bitvector_variables(value, variables);
+                collect_program_value_bitvector_variables(value, variables);
             }
             N::Expression(SpecExpression::ProgramExpression(expression)) => {
-                collect_c_expression_bitvector_variables(expression, variables);
+                collect_program_expression_bitvector_variables(expression, variables);
             }
             N::Integer(SpecIntegerExpression::Term(term)) => {
                 collect_integer_variables(term, variables);
@@ -1223,7 +1229,7 @@ fn collect_pure_argument_bound_identities(
             collect_machine_integer_variables(value, variables);
         }
         PureFunctionArgument::Value(value) => {
-            collect_c_value_bound_identities(value, variables, integer_seen);
+            collect_program_value_bound_identities(value, variables, integer_seen);
         }
         PureFunctionArgument::Integer(value) => {
             collect_shared_integer_bound_identities(value, variables, integer_seen);
@@ -1232,7 +1238,7 @@ fn collect_pure_argument_bound_identities(
             collect_algebraic_term_bound_identities(value, variables, integer_seen);
         }
         PureFunctionArgument::ArrayRef { pointer, .. } => {
-            collect_c_value_bound_identities(pointer, variables, integer_seen);
+            collect_program_value_bound_identities(pointer, variables, integer_seen);
         }
     }
 }
@@ -1294,8 +1300,8 @@ fn collect_algebraic_value_bound_identities(
     integer_seen: &mut SeenTerms,
 ) {
     match value {
-        AlgebraicValue::C(value) => {
-            collect_c_value_bound_identities(value, variables, integer_seen);
+        AlgebraicValue::Program(value) => {
+            collect_program_value_bound_identities(value, variables, integer_seen);
         }
         AlgebraicValue::Integer(value) => {
             collect_integer_bound_identities(value, variables, integer_seen);
@@ -1306,15 +1312,15 @@ fn collect_algebraic_value_bound_identities(
     }
 }
 
-fn collect_c_value_bound_identities(
+fn collect_program_value_bound_identities(
     value: &ProgramValue,
     variables: &mut BTreeSet<Variable>,
     _integer_seen: &mut SeenTerms,
 ) {
     match value {
         ProgramValue::PointerInteger(record) => {
-            collect_c_value_bound_identities(&record.numeric, variables, _integer_seen);
-            collect_c_value_bound_identities(
+            collect_program_value_bound_identities(&record.numeric, variables, _integer_seen);
+            collect_program_value_bound_identities(
                 &ProgramValue::Pointer(*record.pointer.clone()),
                 variables,
                 _integer_seen,
@@ -1355,14 +1361,14 @@ fn collect_c_value_bound_identities(
     }
 }
 
-fn collect_c_expression_bound_identities(
+fn collect_program_expression_bound_identities(
     expression: &ProgramExpression,
     variables: &mut BTreeSet<Variable>,
     integer_seen: &mut SeenTerms,
 ) {
     match expression {
         ProgramExpression::Value(value) => {
-            collect_c_value_bound_identities(value, variables, integer_seen);
+            collect_program_value_bound_identities(value, variables, integer_seen);
         }
         ProgramExpression::Variable(_)
         | ProgramExpression::FunctionAddress(_)
@@ -1385,11 +1391,11 @@ fn collect_c_expression_bound_identities(
             ..
         }
         | ProgramExpression::BitwiseNot(expression) => {
-            collect_c_expression_bound_identities(expression, variables, integer_seen);
+            collect_program_expression_bound_identities(expression, variables, integer_seen);
         }
         ProgramExpression::EnumConstruct { fields, .. } => {
             for field in fields {
-                collect_c_expression_bound_identities(field, variables, integer_seen);
+                collect_program_expression_bound_identities(field, variables, integer_seen);
             }
         }
         ProgramExpression::Conditional {
@@ -1397,17 +1403,17 @@ fn collect_c_expression_bound_identities(
             then_branch,
             else_branch,
         } => {
-            collect_c_expression_bound_identities(condition, variables, integer_seen);
-            collect_c_expression_bound_identities(then_branch, variables, integer_seen);
-            collect_c_expression_bound_identities(else_branch, variables, integer_seen);
+            collect_program_expression_bound_identities(condition, variables, integer_seen);
+            collect_program_expression_bound_identities(then_branch, variables, integer_seen);
+            collect_program_expression_bound_identities(else_branch, variables, integer_seen);
         }
         ProgramExpression::PointerOffsetBytes { pointer, .. }
         | ProgramExpression::Subobject { pointer, .. } => {
-            collect_c_expression_bound_identities(pointer, variables, integer_seen);
+            collect_program_expression_bound_identities(pointer, variables, integer_seen);
         }
         crate::kernel::binary_c_expression!(left, right) => {
-            collect_c_expression_bound_identities(left, variables, integer_seen);
-            collect_c_expression_bound_identities(right, variables, integer_seen);
+            collect_program_expression_bound_identities(left, variables, integer_seen);
+            collect_program_expression_bound_identities(right, variables, integer_seen);
         }
     }
 }
@@ -1426,13 +1432,13 @@ fn collect_spec_bound_identities(
         use SpecNode as N;
         match node {
             N::Resource(SpecResource::Value(resource)) => {
-                collect_c_resource_bitvector_variables(resource, variables)
+                collect_resource_bitvector_variables(resource, variables)
             }
             N::Expression(SpecExpression::Value(value)) => {
-                collect_c_value_bound_identities(value, variables, integer_seen);
+                collect_program_value_bound_identities(value, variables, integer_seen);
             }
             N::Expression(SpecExpression::ProgramExpression(expression)) => {
-                collect_c_expression_bound_identities(expression, variables, integer_seen);
+                collect_program_expression_bound_identities(expression, variables, integer_seen);
             }
             N::Expression(SpecExpression::ResourceField { projection, .. })
             | N::Integer(SpecIntegerExpression::ResourceField(projection)) => {
@@ -1482,37 +1488,39 @@ pub(in crate::kernel) fn collect_loop_effect_bitvector_variables(
         LoopEffect::Immutable => {}
         LoopEffect::Mutable(segments) => {
             for segment in segments {
-                collect_c_expression_bitvector_variables(&segment.base, variables);
-                collect_c_expression_bitvector_variables(&segment.start, variables);
-                collect_c_expression_bitvector_variables(&segment.end, variables);
+                collect_program_expression_bitvector_variables(&segment.base, variables);
+                collect_program_expression_bitvector_variables(&segment.start, variables);
+                collect_program_expression_bitvector_variables(&segment.end, variables);
             }
         }
     }
 }
 
-pub(in crate::kernel) fn collect_c_expression_outcome_bitvector_variables(
+pub(in crate::kernel) fn collect_program_expression_outcome_bitvector_variables(
     outcome: &ExpressionOutcome,
     variables: &mut BTreeSet<Variable>,
 ) {
     if let ExpressionOutcome::Value(value) = outcome {
-        collect_c_value_bitvector_variables(value, variables);
+        collect_program_value_bitvector_variables(value, variables);
     }
 }
 
-pub(in crate::kernel) fn collect_c_statement_outcome_bitvector_variables(
+pub(in crate::kernel) fn collect_execution_statement_outcome_bitvector_variables(
     outcome: &StatementOutcome,
     variables: &mut BTreeSet<Variable>,
 ) {
     match outcome {
-        StatementOutcome::Normal(state) => collect_c_state_bitvector_variables(state, variables),
+        StatementOutcome::Normal(state) => {
+            collect_execution_state_bitvector_variables(state, variables)
+        }
         StatementOutcome::Break(state)
         | StatementOutcome::Continue(state)
         | StatementOutcome::Jump { state, .. } => {
-            collect_c_state_bitvector_variables(state, variables)
+            collect_execution_state_bitvector_variables(state, variables)
         }
         StatementOutcome::Return { value, state } | StatementOutcome::Throw { value, state } => {
             collect_expression_value_bitvector_variables(value, variables);
-            collect_c_state_bitvector_variables(state, variables);
+            collect_execution_state_bitvector_variables(state, variables);
         }
         StatementOutcome::VerificationDiverges
         | StatementOutcome::UndefinedBehavior(_)
@@ -1520,14 +1528,14 @@ pub(in crate::kernel) fn collect_c_statement_outcome_bitvector_variables(
     }
 }
 
-pub(in crate::kernel) fn collect_c_function_outcome_bitvector_variables(
+pub(in crate::kernel) fn collect_program_function_outcome_bitvector_variables(
     outcome: &FunctionOutcome,
     variables: &mut BTreeSet<Variable>,
 ) {
     match outcome {
         FunctionOutcome::Return { value, state } | FunctionOutcome::Throw { value, state } => {
             collect_expression_value_bitvector_variables(value, variables);
-            collect_c_state_bitvector_variables(state, variables);
+            collect_execution_state_bitvector_variables(state, variables);
         }
         FunctionOutcome::VerificationDiverges
         | FunctionOutcome::UndefinedBehavior(_)
@@ -1535,7 +1543,7 @@ pub(in crate::kernel) fn collect_c_function_outcome_bitvector_variables(
     }
 }
 
-pub(in crate::kernel) fn collect_c_state_bitvector_variables(
+pub(in crate::kernel) fn collect_execution_state_bitvector_variables(
     state: &ExecutionState,
     variables: &mut BTreeSet<Variable>,
 ) {
@@ -1563,7 +1571,7 @@ pub(in crate::kernel) fn collect_resource_context_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     for resource in resources.facts() {
-        collect_resource_bitvector_variables(resource, variables);
+        collect_resource_fact_bitvector_variables(resource, variables);
     }
 }
 
@@ -1574,23 +1582,23 @@ thread_local! {
         const { std::cell::Cell::new(0) };
 }
 
-pub(in crate::kernel) fn collect_resource_bitvector_variables(
+pub(in crate::kernel) fn collect_resource_fact_bitvector_variables(
     resource: &ResourceFact,
     variables: &mut BTreeSet<Variable>,
 ) {
     #[cfg(test)]
     COLLECTED_RESOURCE_FACTS.with(|count| count.set(count.get() + 1));
-    collect_c_resource_bitvector_variables(resource.resource(), variables);
+    collect_resource_bitvector_variables(resource.resource(), variables);
 }
 
-pub(in crate::kernel) fn collect_c_resource_bitvector_variables(
+pub(in crate::kernel) fn collect_resource_bitvector_variables(
     resource: &Resource,
     variables: &mut BTreeSet<Variable>,
 ) {
     match resource {
         Resource::Star(pair) => {
-            collect_c_resource_bitvector_variables(&pair.0, variables);
-            collect_c_resource_bitvector_variables(&pair.1, variables);
+            collect_resource_bitvector_variables(&pair.0, variables);
+            collect_resource_bitvector_variables(&pair.1, variables);
         }
         Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp => {}
         Resource::PopulationAuthority(description) => {
@@ -1618,7 +1626,7 @@ pub(in crate::kernel) fn collect_c_resource_bitvector_variables(
                 .visit_values(|v| collect_algebraic_value_bitvector_variables(v, variables));
             collect_pointer_bitvector_variables(&right.flag, variables);
             if let Some(value) = &right.observed {
-                collect_c_value_bitvector_variables(value, variables);
+                collect_program_value_bitvector_variables(value, variables);
             }
         }
         Resource::Instance(instance) => {
@@ -1632,7 +1640,7 @@ pub(in crate::kernel) fn collect_c_resource_bitvector_variables(
                 },
             );
         }
-        Resource::Memory(range) => collect_c_memory_range_bitvector_variables(range, variables),
+        Resource::Memory(range) => collect_memory_range_bitvector_variables(range, variables),
         Resource::Iterated(iterated) => {
             for pointer in iterated.pointers() {
                 collect_pointer_bitvector_variables(pointer, variables);
@@ -1649,22 +1657,22 @@ pub(in crate::kernel) fn collect_c_resource_bitvector_variables(
     }
 }
 
-pub(in crate::kernel) fn collect_c_function_bitvector_variables(
+pub(in crate::kernel) fn collect_program_function_bitvector_variables(
     function: &ProgramFunction,
     variables: &mut BTreeSet<Variable>,
 ) {
-    collect_c_function_contract_interface_bitvector_variables(
+    collect_program_function_contract_interface_bitvector_variables(
         function.contract_interface(),
         variables,
     );
-    collect_c_statement_bitvector_variables(function.body(), variables);
+    collect_execution_statement_bitvector_variables(function.body(), variables);
 }
 
 /// Collects variables from the body-independent contract interface only.
 /// Named callback application uses this collector so unrelated template
 /// statements, globals, and storage cannot affect fresh identities or
 /// callback behavior.
-pub(in crate::kernel) fn collect_c_function_contract_interface_bitvector_variables(
+pub(in crate::kernel) fn collect_program_function_contract_interface_bitvector_variables(
     interface: &FunctionContractInterface,
     variables: &mut BTreeSet<Variable>,
 ) {
@@ -1686,15 +1694,15 @@ pub(in crate::kernel) fn collect_c_function_contract_interface_bitvector_variabl
         collect_spec_proposition_bitvector_variables(proposition, variables);
     }
     for segment in interface.contract_mutable() {
-        collect_c_expression_bitvector_variables(&segment.base, variables);
-        collect_c_expression_bitvector_variables(&segment.start, variables);
-        collect_c_expression_bitvector_variables(&segment.end, variables);
+        collect_program_expression_bitvector_variables(&segment.base, variables);
+        collect_program_expression_bitvector_variables(&segment.start, variables);
+        collect_program_expression_bitvector_variables(&segment.end, variables);
         if let Some(guard) = segment.guard() {
             collect_spec_proposition_bitvector_variables(guard, variables);
         }
     }
     for measure in interface.recursion_measure().unwrap_or_default() {
-        collect_c_ranking_component_variables(measure, variables);
+        collect_ranking_component_variables(measure, variables);
     }
 }
 
@@ -1710,41 +1718,41 @@ pub(in crate::kernel) fn collect_resource_spec_bitvector_variables(
             collect_resource_spec_bitvector_variables(&protected.resource, variables)
         }
         ResourceTerm::MutexGuard { mutex, .. } | ResourceTerm::MutexLive { mutex, .. } => {
-            collect_c_expression_bitvector_variables(mutex, variables)
+            collect_program_expression_bitvector_variables(mutex, variables)
         }
         ResourceTerm::MutexUse {
             mutex, protected, ..
         } => {
-            collect_c_expression_bitvector_variables(mutex, variables);
+            collect_program_expression_bitvector_variables(mutex, variables);
             if let Some(p) = protected {
                 collect_resource_spec_bitvector_variables(&p.resource, variables);
             }
         }
         ResourceTerm::Publication { flag, payload, .. } => {
-            collect_c_expression_bitvector_variables(flag, variables);
+            collect_program_expression_bitvector_variables(flag, variables);
             collect_resource_spec_bitvector_variables(&payload.resource, variables);
         }
         ResourceTerm::Memory(segment) => {
-            collect_c_expression_bitvector_variables(&segment.base, variables);
-            collect_c_expression_bitvector_variables(&segment.start, variables);
-            collect_c_expression_bitvector_variables(&segment.end, variables);
+            collect_program_expression_bitvector_variables(&segment.base, variables);
+            collect_program_expression_bitvector_variables(&segment.start, variables);
+            collect_program_expression_bitvector_variables(&segment.end, variables);
             if let Some(guard) = segment.guard() {
                 collect_spec_proposition_bitvector_variables(guard, variables);
             }
         }
         ResourceTerm::Iterated(spec) => {
             for expression in spec.expressions() {
-                collect_c_expression_bitvector_variables(expression, variables);
+                collect_program_expression_bitvector_variables(expression, variables);
             }
         }
         ResourceTerm::Composite { arguments, .. } | ResourceTerm::Token { arguments, .. } => {
             for argument in arguments {
-                collect_c_expression_bitvector_variables(argument, variables);
+                collect_program_expression_bitvector_variables(argument, variables);
             }
         }
     }
     if let ResourceQuantity::Count(quantity) = resource.quantity() {
-        collect_c_expression_bitvector_variables(quantity, variables);
+        collect_program_expression_bitvector_variables(quantity, variables);
     }
 }
 
@@ -1760,53 +1768,53 @@ fn collect_resource_term_bitvector_variables(
             collect_resource_spec_bitvector_variables(&protected.resource, variables)
         }
         ResourceTerm::MutexGuard { mutex, .. } | ResourceTerm::MutexLive { mutex, .. } => {
-            collect_c_expression_bitvector_variables(mutex, variables)
+            collect_program_expression_bitvector_variables(mutex, variables)
         }
         ResourceTerm::MutexUse {
             mutex, protected, ..
         } => {
-            collect_c_expression_bitvector_variables(mutex, variables);
+            collect_program_expression_bitvector_variables(mutex, variables);
             if let Some(p) = protected {
                 collect_resource_spec_bitvector_variables(&p.resource, variables);
             }
         }
         ResourceTerm::Publication { flag, payload, .. } => {
-            collect_c_expression_bitvector_variables(flag, variables);
+            collect_program_expression_bitvector_variables(flag, variables);
             collect_resource_spec_bitvector_variables(&payload.resource, variables);
         }
         ResourceTerm::Memory(segment) => {
-            collect_c_expression_bitvector_variables(&segment.base, variables);
-            collect_c_expression_bitvector_variables(&segment.start, variables);
-            collect_c_expression_bitvector_variables(&segment.end, variables);
+            collect_program_expression_bitvector_variables(&segment.base, variables);
+            collect_program_expression_bitvector_variables(&segment.start, variables);
+            collect_program_expression_bitvector_variables(&segment.end, variables);
             if let Some(guard) = segment.guard() {
                 collect_spec_proposition_bitvector_variables(guard, variables);
             }
         }
         ResourceTerm::Iterated(spec) => {
             for expression in spec.expressions() {
-                collect_c_expression_bitvector_variables(expression, variables);
+                collect_program_expression_bitvector_variables(expression, variables);
             }
         }
         ResourceTerm::Composite { arguments, .. } | ResourceTerm::Token { arguments, .. } => {
             for argument in arguments {
-                collect_c_expression_bitvector_variables(argument, variables);
+                collect_program_expression_bitvector_variables(argument, variables);
             }
         }
     }
 }
 
-pub(in crate::kernel) fn collect_c_function_specification_bitvector_variables(
+pub(in crate::kernel) fn collect_program_function_specification_bitvector_variables(
     specification: &FunctionSpecification,
     variables: &mut BTreeSet<Variable>,
 ) {
-    collect_c_state_bitvector_variables(specification.state(), variables);
+    collect_execution_state_bitvector_variables(specification.state(), variables);
     for argument in specification.arguments() {
-        collect_c_expression_bitvector_variables(argument, variables);
+        collect_program_expression_bitvector_variables(argument, variables);
     }
     for requirement in specification.requires() {
         collect_proposition_bitvector_variables(requirement, variables);
     }
-    collect_c_function_outcome_bitvector_variables(specification.outcome(), variables);
+    collect_program_function_outcome_bitvector_variables(specification.outcome(), variables);
 }
 
 pub(in crate::kernel) fn collect_assumption_variables(
@@ -1895,16 +1903,22 @@ fn collect_execution_environment_variables_uncached(
     variables: &mut BTreeSet<Variable>,
 ) {
     for function in environment.functions.values() {
-        collect_c_function_bitvector_variables(function, variables);
-        collect_c_function_bound_variables(function, variables);
+        collect_program_function_bitvector_variables(function, variables);
+        collect_program_function_bound_variables(function, variables);
     }
     for contract in environment.function_contracts.values() {
-        collect_c_function_contract_interface_bitvector_variables(contract.interface(), variables);
-        collect_c_function_contract_interface_bound_variables(contract.interface(), variables);
+        collect_program_function_contract_interface_bitvector_variables(
+            contract.interface(),
+            variables,
+        );
+        collect_program_function_contract_interface_bound_variables(
+            contract.interface(),
+            variables,
+        );
     }
     for rule in environment.verified_function_rules.values() {
-        collect_c_function_bitvector_variables(&rule.function, variables);
-        collect_c_function_bound_variables(&rule.function, variables);
+        collect_program_function_bitvector_variables(&rule.function, variables);
+        collect_program_function_bound_variables(&rule.function, variables);
     }
     // The anchor holds the certified function's measure read at its entry.
     // Its variables are named by later call steps, so a fresh identity must
@@ -1928,7 +1942,7 @@ fn collect_execution_environment_variables_uncached(
             }
         }
         for component in anchor.components() {
-            collect_c_ranking_component_variables(component, variables);
+            collect_ranking_component_variables(component, variables);
         }
         // A structural anchor holds the entry instance whose model later call
         // steps compare against, so its names are reserved like a measure's.
@@ -1959,12 +1973,12 @@ fn collect_verified_loop_rule_local_variables(
     rule: &crate::kernel::VerifiedLoopRule,
     variables: &mut BTreeSet<Variable>,
 ) {
-    collect_c_state_bitvector_variables(&rule.symbolic_entry_state, variables);
-    collect_c_state_bound_variables(&rule.symbolic_entry_state, variables);
-    collect_c_statement_bitvector_variables(&rule.loop_statement, variables);
-    collect_c_statement_bound_variables(&rule.loop_statement, variables);
+    collect_execution_state_bitvector_variables(&rule.symbolic_entry_state, variables);
+    collect_execution_state_bound_variables(&rule.symbolic_entry_state, variables);
+    collect_execution_statement_bitvector_variables(&rule.loop_statement, variables);
+    collect_execution_statement_bound_variables(&rule.loop_statement, variables);
     for path in &rule.paths {
-        collect_c_statement_outcome_bitvector_variables(&path.outcome, variables);
+        collect_execution_statement_outcome_bitvector_variables(&path.outcome, variables);
         collect_statement_outcome_bound_variables(&path.outcome, variables);
         for fact in &path.facts {
             collect_proposition_bitvector_variables(fact.proposition(), variables);
@@ -1977,7 +1991,7 @@ fn collect_verified_loop_rule_local_variables(
     }
 }
 
-pub(in crate::kernel) fn collect_c_memory_range_bitvector_variables(
+pub(in crate::kernel) fn collect_memory_range_bitvector_variables(
     range: &MemoryRange,
     variables: &mut BTreeSet<Variable>,
 ) {
@@ -2149,14 +2163,14 @@ fn collect_application_connection_variables(
                 collect_machine_bitvector_variables(value, variables)
             }
             PureFunctionArgument::Value(value) => {
-                collect_c_value_bitvector_variables(value, variables)
+                collect_program_value_bitvector_variables(value, variables)
             }
             PureFunctionArgument::Algebraic(value) => {
                 collect_algebraic_term_bitvector_variables(value, variables)
             }
             PureFunctionArgument::Integer(value) => collect_integer_variables(value, variables),
             PureFunctionArgument::ArrayRef { pointer, .. } => {
-                collect_c_value_bitvector_variables(pointer, variables)
+                collect_program_value_bitvector_variables(pointer, variables)
             }
         }
     }
@@ -2531,10 +2545,10 @@ fn collect_integer_free_variables_seen(
                         });
                     }
                     PureFunctionArgument::Value(value) => {
-                        collect_c_value_integer_variables(value, variables, seen)
+                        collect_program_value_integer_variables(value, variables, seen)
                     }
                     PureFunctionArgument::ArrayRef { pointer, .. } => {
-                        collect_c_value_integer_variables(pointer, variables, seen)
+                        collect_program_value_integer_variables(pointer, variables, seen)
                     }
                 }
             }
@@ -2655,8 +2669,8 @@ fn collect_algebraic_free_integer_variables(
                     return;
                 }
                 match field {
-                    AlgebraicValue::C(value) => {
-                        collect_c_value_integer_variables(value, variables, seen)
+                    AlgebraicValue::Program(value) => {
+                        collect_program_value_integer_variables(value, variables, seen)
                     }
                     AlgebraicValue::Integer(value) => {
                         collect_integer_free_variables_seen(value, variables, seen)
@@ -2698,8 +2712,8 @@ fn collect_algebraic_free_integer_variables(
                         return;
                     }
                     match binding {
-                        AlgebraicValue::C(value) => {
-                            collect_c_value_integer_variables(value, variables, seen)
+                        AlgebraicValue::Program(value) => {
+                            collect_program_value_integer_variables(value, variables, seen)
                         }
                         AlgebraicValue::Integer(value) => {
                             collect_integer_free_variables_seen(value, variables, seen)
@@ -2730,7 +2744,7 @@ fn collect_algebraic_free_integer_variables(
                         });
                     }
                     PureFunctionArgument::Value(value) => {
-                        collect_c_value_integer_variables(value, variables, seen)
+                        collect_program_value_integer_variables(value, variables, seen)
                     }
                     PureFunctionArgument::Integer(value) => {
                         collect_shared_integer_variables_seen(value, variables, seen)
@@ -2739,7 +2753,7 @@ fn collect_algebraic_free_integer_variables(
                         collect_algebraic_free_integer_variables(value, variables, seen)
                     }
                     PureFunctionArgument::ArrayRef { pointer, .. } => {
-                        collect_c_value_integer_variables(pointer, variables, seen)
+                        collect_program_value_integer_variables(pointer, variables, seen)
                     }
                 }
             }
@@ -2805,15 +2819,15 @@ fn collect_pure_argument_integer_variables(
             });
         }
         PureFunctionArgument::Value(value) => {
-            collect_c_value_integer_variables(value, variables, seen)
+            collect_program_value_integer_variables(value, variables, seen)
         }
         PureFunctionArgument::ArrayRef { pointer, .. } => {
-            collect_c_value_integer_variables(pointer, variables, seen)
+            collect_program_value_integer_variables(pointer, variables, seen)
         }
     }
 }
 
-fn collect_c_value_integer_variables(
+fn collect_program_value_integer_variables(
     value: &ProgramValue,
     variables: &mut BTreeSet<Variable>,
     seen: &mut SeenTerms,
@@ -2823,8 +2837,8 @@ fn collect_c_value_integer_variables(
     }
     match value {
         ProgramValue::PointerInteger(record) => {
-            collect_c_value_integer_variables(&record.numeric, variables, seen);
-            collect_c_value_integer_variables(
+            collect_program_value_integer_variables(&record.numeric, variables, seen);
+            collect_program_value_integer_variables(
                 &ProgramValue::Pointer(*record.pointer.clone()),
                 variables,
                 seen,
@@ -2927,7 +2941,9 @@ fn collect_algebraic_value_integer_variables(
         return;
     }
     match value {
-        AlgebraicValue::C(value) => collect_c_value_integer_variables(value, variables, seen),
+        AlgebraicValue::Program(value) => {
+            collect_program_value_integer_variables(value, variables, seen)
+        }
         AlgebraicValue::Integer(value) => {
             collect_integer_carrier_variables_seen(value, variables, seen)
         }
@@ -2960,7 +2976,7 @@ fn collect_integer_variables_seen(
                         collect_machine_bitvector_variables(value, variables)
                     }
                     PureFunctionArgument::Value(value) => {
-                        collect_c_value_bitvector_variables(value, variables)
+                        collect_program_value_bitvector_variables(value, variables)
                     }
                     PureFunctionArgument::Integer(value) => {
                         collect_shared_integer_variables(value, variables, seen)
@@ -2972,7 +2988,7 @@ fn collect_integer_variables_seen(
                         memory, pointer, ..
                     } => {
                         collect_memory_bitvector_variables(memory, variables);
-                        collect_c_value_bitvector_variables(pointer, variables);
+                        collect_program_value_bitvector_variables(pointer, variables);
                     }
                 }
             }
@@ -3146,7 +3162,7 @@ fn collect_stored_load_connection_variables(
             CONNECTION_LOAD_DEPTH.with(|current| current.set(depth + 1));
             crate::instrumentation::record_deterministic_work(1);
             if let Some(value) = memory.memory().cells.explicitly_stored_value(pointer) {
-                collect_c_value_bitvector_variables(value, variables);
+                collect_program_value_bitvector_variables(value, variables);
             }
         }
     }
@@ -3569,7 +3585,7 @@ fn collect_pointer_capture_variables(
     collect_pointer_offset_capture_variables(&pointer.offset, variables, integer_seen);
 }
 
-fn collect_capture_variables_in_c_value(
+fn collect_capture_variables_in_program_value(
     value: &ProgramValue,
     variables: &mut BTreeSet<Variable>,
     integer_seen: &mut SeenTerms,
@@ -3579,8 +3595,8 @@ fn collect_capture_variables_in_c_value(
     }
     match value {
         ProgramValue::PointerInteger(record) => {
-            collect_capture_variables_in_c_value(&record.numeric, variables, integer_seen);
-            collect_capture_variables_in_c_value(
+            collect_capture_variables_in_program_value(&record.numeric, variables, integer_seen);
+            collect_capture_variables_in_program_value(
                 &ProgramValue::Pointer(*record.pointer.clone()),
                 variables,
                 integer_seen,
@@ -3632,7 +3648,7 @@ fn collect_capture_variables_in_pure_argument(
             );
         }
         PureFunctionArgument::Value(value) => {
-            collect_capture_variables_in_c_value(value, variables, integer_seen)
+            collect_capture_variables_in_program_value(value, variables, integer_seen)
         }
         PureFunctionArgument::Integer(value) => {
             collect_shared_integer_bitvector_capture_variables(value, variables, integer_seen)
@@ -3641,7 +3657,7 @@ fn collect_capture_variables_in_pure_argument(
             collect_capture_variables_in_algebraic_term(value, variables, integer_seen)
         }
         PureFunctionArgument::ArrayRef { pointer, .. } => {
-            collect_capture_variables_in_c_value(pointer, variables, integer_seen)
+            collect_capture_variables_in_program_value(pointer, variables, integer_seen)
         }
     }
 }
@@ -3721,8 +3737,8 @@ fn collect_capture_variables_in_algebraic_value(
         return;
     }
     match value {
-        AlgebraicValue::C(value) => {
-            collect_capture_variables_in_c_value(value, variables, integer_seen)
+        AlgebraicValue::Program(value) => {
+            collect_capture_variables_in_program_value(value, variables, integer_seen)
         }
         AlgebraicValue::Integer(value) => {
             collect_integer_bitvector_capture_variables(value, variables, integer_seen)
@@ -4478,18 +4494,18 @@ fn collect_scope_summary_in_argument(
         PureFunctionArgument::SharedMachine(value) => {
             collect_machine_scope_summary(value, summaries)
         }
-        PureFunctionArgument::Value(value) => collect_c_value_scope_summary(value, summaries),
+        PureFunctionArgument::Value(value) => collect_program_value_scope_summary(value, summaries),
         PureFunctionArgument::Integer(value) => {
             collect_integer_scope_summary_shared(value, summaries)
         }
         PureFunctionArgument::Algebraic(value) => collect_algebraic_scope_summary(value, summaries),
         PureFunctionArgument::ArrayRef { pointer, .. } => {
-            collect_c_value_scope_summary(pointer, summaries)
+            collect_program_value_scope_summary(pointer, summaries)
         }
     }
 }
 
-fn collect_c_value_scope_summary(
+fn collect_program_value_scope_summary(
     value: &ProgramValue,
     summaries: &mut std::collections::HashMap<u64, IntegerScopeSummary>,
 ) -> IntegerScopeSummary {
@@ -4498,8 +4514,8 @@ fn collect_c_value_scope_summary(
     }
     match value {
         ProgramValue::PointerInteger(record) => {
-            let mut summary = collect_c_value_scope_summary(&record.numeric, summaries);
-            summary.merge(collect_c_value_scope_summary(
+            let mut summary = collect_program_value_scope_summary(&record.numeric, summaries);
+            summary.merge(collect_program_value_scope_summary(
                 &ProgramValue::Pointer(*record.pointer.clone()),
                 summaries,
             ));
@@ -4605,7 +4621,7 @@ fn collect_algebraic_value_scope_summary(
         return IntegerScopeSummary::default();
     }
     match value {
-        AlgebraicValue::C(value) => collect_c_value_scope_summary(value, summaries),
+        AlgebraicValue::Program(value) => collect_program_value_scope_summary(value, summaries),
         AlgebraicValue::Integer(value) => collect_integer_scope_summary(value, summaries),
         AlgebraicValue::Algebraic(value) => collect_algebraic_scope_summary(value, summaries),
     }
@@ -5250,7 +5266,7 @@ fn collect_pointer_binder_variables(
     );
 }
 
-fn collect_binder_variables_in_c_value(
+fn collect_binder_variables_in_program_value(
     value: &ProgramValue,
     integer_variables: &mut BTreeSet<Variable>,
     bitvector_variables: &mut BTreeSet<Variable>,
@@ -5261,13 +5277,13 @@ fn collect_binder_variables_in_c_value(
     }
     match value {
         ProgramValue::PointerInteger(record) => {
-            collect_binder_variables_in_c_value(
+            collect_binder_variables_in_program_value(
                 &record.numeric,
                 integer_variables,
                 bitvector_variables,
                 integer_seen,
             );
-            collect_binder_variables_in_c_value(
+            collect_binder_variables_in_program_value(
                 &ProgramValue::Pointer(*record.pointer.clone()),
                 integer_variables,
                 bitvector_variables,
@@ -5335,7 +5351,7 @@ fn collect_binder_variables_in_pure_argument(
                 integer_seen,
             );
         }),
-        PureFunctionArgument::Value(value) => collect_binder_variables_in_c_value(
+        PureFunctionArgument::Value(value) => collect_binder_variables_in_program_value(
             value,
             integer_variables,
             bitvector_variables,
@@ -5353,12 +5369,14 @@ fn collect_binder_variables_in_pure_argument(
             bitvector_variables,
             integer_seen,
         ),
-        PureFunctionArgument::ArrayRef { pointer, .. } => collect_binder_variables_in_c_value(
-            pointer,
-            integer_variables,
-            bitvector_variables,
-            integer_seen,
-        ),
+        PureFunctionArgument::ArrayRef { pointer, .. } => {
+            collect_binder_variables_in_program_value(
+                pointer,
+                integer_variables,
+                bitvector_variables,
+                integer_seen,
+            )
+        }
     }
 }
 
@@ -5480,7 +5498,7 @@ fn collect_binder_variables_in_algebraic_value(
         return;
     }
     match value {
-        AlgebraicValue::C(value) => collect_binder_variables_in_c_value(
+        AlgebraicValue::Program(value) => collect_binder_variables_in_program_value(
             value,
             integer_variables,
             bitvector_variables,
@@ -5640,7 +5658,7 @@ fn collect_run_slot_bitvector_variables(
     #[cfg(test)]
     CELLS_COLLECTED.with(|visited| visited.set(visited.get() + 1));
     collect_pointer_bitvector_variables(&run.slot_pointer(index), variables);
-    collect_c_value_bitvector_variables(&run.value(index), variables);
+    collect_program_value_bitvector_variables(&run.value(index), variables);
 }
 
 /// The variables a run's representative slots mention, when they stand for
@@ -5720,7 +5738,7 @@ fn constant_run_variables(
     crate::instrumentation::record_deterministic_work(1);
     let mut shared = BTreeSet::new();
     collect_pointer_bitvector_variables(run.base(), &mut shared);
-    collect_c_value_bitvector_variables(value, &mut shared);
+    collect_program_value_bitvector_variables(value, &mut shared);
     shared
 }
 
@@ -5770,7 +5788,7 @@ fn remembered_memory_variables(memory: &SharedMemory) -> Option<VariableCounts> 
 
 /// Establish the input snapshot's index once, before individual C steps.
 pub(in crate::kernel) fn prepare_memory_variable_index(memory: &Memory) {
-    let shared = crate::kernel::intern_c_memory_ref(memory);
+    let shared = crate::kernel::intern_memory_ref(memory);
     shared_memory_variable_counts(&shared, WholeCount::Charged);
 }
 
@@ -5814,7 +5832,7 @@ pub(in crate::kernel) fn collect_shared_memory_bitvector_variables(
                 }
                 MemoryDerivation::CallHavoc { mutable_ranges, .. } => {
                     for range in mutable_ranges {
-                        collect_c_memory_range_bitvector_variables(range, variables);
+                        collect_memory_range_bitvector_variables(range, variables);
                     }
                 }
                 MemoryDerivation::LoopHavoc {
@@ -5822,7 +5840,7 @@ pub(in crate::kernel) fn collect_shared_memory_bitvector_variables(
                     ..
                 } => {
                     for range in mutable_ranges {
-                        collect_c_memory_range_bitvector_variables(range, variables);
+                        collect_memory_range_bitvector_variables(range, variables);
                     }
                 }
                 _ => {}
@@ -6230,7 +6248,7 @@ fn cell_variables(pointer: &Pointer, value: &ProgramValue) -> BTreeSet<Variable>
     CELLS_COLLECTED.with(|visited| visited.set(visited.get() + 1));
     let mut variables = BTreeSet::new();
     collect_pointer_bitvector_variables(pointer, &mut variables);
-    collect_c_value_bitvector_variables(value, &mut variables);
+    collect_program_value_bitvector_variables(value, &mut variables);
     variables
 }
 
@@ -6533,14 +6551,14 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables_whole(
         #[cfg(test)]
         CELLS_COLLECTED.with(|visited| visited.set(visited.get() + 1));
         collect_pointer_bitvector_variables(pointer, variables);
-        collect_c_value_bitvector_variables(value, variables);
+        collect_program_value_bitvector_variables(value, variables);
     }
     for run in memory.cells.runs() {
         collect_cell_run_bitvector_variables(run, variables);
     }
     for ((pointer, _), value) in memory.union_cells.iter() {
         collect_pointer_bitvector_variables(pointer, variables);
-        collect_c_value_bitvector_variables(value, variables);
+        collect_program_value_bitvector_variables(value, variables);
     }
 }
 
@@ -6553,18 +6571,18 @@ fn collect_expression_value_bitvector_variables(
             collect_operand_bitvector_variables(leaf, variables)
         });
     } else {
-        collect_c_value_bitvector_variables(&value.native(), variables);
+        collect_program_value_bitvector_variables(&value.native(), variables);
     }
 }
 
-pub(crate) fn collect_c_value_bitvector_variables(
+pub(crate) fn collect_program_value_bitvector_variables(
     value: &ProgramValue,
     variables: &mut BTreeSet<Variable>,
 ) {
     match value {
         ProgramValue::PointerInteger(record) => {
-            collect_c_value_bitvector_variables(&record.numeric, variables);
-            collect_c_value_bitvector_variables(
+            collect_program_value_bitvector_variables(&record.numeric, variables);
+            collect_program_value_bitvector_variables(
                 &ProgramValue::Pointer(*record.pointer.clone()),
                 variables,
             );
@@ -6689,7 +6707,7 @@ mod shared_read_walker_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let native = MachineTerm::MemoryLoad(
-            intern_c_memory(Memory::new()),
+            intern_memory(Memory::new()),
             Box::new(pointer),
             LoadKind::Int32,
         );
@@ -6717,7 +6735,7 @@ mod shared_read_walker_tests {
             ),
         };
         let raw = MachineTerm::MemoryLoad(
-            intern_c_memory(Memory::new()),
+            intern_memory(Memory::new()),
             Box::new(pointer),
             LoadKind::Int32,
         );

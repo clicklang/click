@@ -743,7 +743,7 @@ impl<'a> Proof<'a> {
                     ..
                 } => {
                     let term = |value: &AlgebraicValue| match value {
-                        AlgebraicValue::C(value) => Term::ProgramValue(value.clone()),
+                        AlgebraicValue::Program(value) => Term::ProgramValue(value.clone()),
                         AlgebraicValue::Integer(value) => Term::Integer(value.clone()),
                         AlgebraicValue::Algebraic(value) => Term::Algebraic(value.clone()),
                     };
@@ -1203,10 +1203,12 @@ impl<'a> Proof<'a> {
                 );
             }
             match &instance.fields()[index] {
-                AlgebraicValue::C(value) => {
+                AlgebraicValue::Program(value) => {
                     locals.values = locals.values.with_inserted(
                         name.clone(),
-                        ContractExpression::CFragment(ProgramExpression::Value(value.clone())),
+                        ContractExpression::ProgramExpression(ProgramExpression::Value(
+                            value.clone(),
+                        )),
                     );
                 }
                 // Declaration expansion admits only C-typed field binders.
@@ -2474,9 +2476,9 @@ impl<'a> Proof<'a> {
                         captured = ContractSegment {
                             state: ContractSegmentState::Current,
                             surface: ContractSegmentSurface::Range {
-                                base: ContractExpression::CFragment(base.clone()),
-                                start: ContractExpression::CFragment(start.clone()),
-                                end: ContractExpression::CFragment(end.clone()),
+                                base: ContractExpression::ProgramExpression(base.clone()),
+                                start: ContractExpression::ProgramExpression(start.clone()),
+                                end: ContractExpression::ProgramExpression(end.clone()),
                             },
                             base,
                             start,
@@ -2686,7 +2688,7 @@ impl<'a> Proof<'a> {
             }
             transition.locals.values = transition.locals.values.with_inserted(
                 name.clone(),
-                ContractExpression::CFragment(ProgramExpression::Value(value.clone())),
+                ContractExpression::ProgramExpression(ProgramExpression::Value(value.clone())),
             );
         }
         Ok(transition)
@@ -2799,7 +2801,7 @@ impl<'a> Proof<'a> {
                 .values
                 .iter()
                 .filter_map(|(name, value)| match value {
-                    ContractExpression::CFragment(ProgramExpression::Value(value)) => {
+                    ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
                         Some((value.clone(), name.clone()))
                     }
                     _ => None,
@@ -2954,7 +2956,7 @@ impl<'a> Proof<'a> {
             resource,
             &BTreeMap::from([(
                 "result".to_string(),
-                ContractExpression::CFragment(ProgramExpression::Value(
+                ContractExpression::ProgramExpression(ProgramExpression::Value(
                     (*goal.data.core.result).clone(),
                 )),
             )]),
@@ -3233,7 +3235,7 @@ impl<'a> Proof<'a> {
             &value,
         )?;
         let assumptions = self.facts().assumptions();
-        let state = crate::kernel::construct_c_function_resource(
+        let state = crate::kernel::construct_program_function_resource(
             &state,
             context.function,
             context.arguments,
@@ -3311,7 +3313,9 @@ fn fold_end_parameter_name(end: &ContractExpression) -> Option<&String> {
     match end {
         ContractExpression::Binding(binding)
         | ContractExpression::CBinding(binding)
-        | ContractExpression::CFragment(ProgramExpression::Variable(binding)) => Some(binding),
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(binding)) => {
+            Some(binding)
+        }
         _ => None,
     }
 }

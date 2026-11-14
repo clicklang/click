@@ -176,9 +176,9 @@ mod tests {
         let export = decode_fixture(&artifact).unwrap();
         let prepared = super::super::super::import::prepared_for_test(export).unwrap();
         let proof = "verifying \"lib.rs\"; impl Default for demo::Value { fn default() -> demo::Value { ensures result.a == 1u32; ensures result.b == 0u32; } } impl demo::Value { fn new() -> demo::Value { ensures result.a == 1u32; ensures result.b == 0u32; } } fn demo::entry() -> u32 { ensures result == 1u32; }";
-        crate::surface::C0VerificationSession::new_program_prepared(proof, &prepared).unwrap();
+        crate::surface::ProgramVerificationSession::new_program_prepared(proof, &prepared).unwrap();
         assert!(
-            crate::surface::C0VerificationSession::new_program_prepared(
+            crate::surface::ProgramVerificationSession::new_program_prepared(
                 &proof.replace("1u32", "0u32"),
                 &prepared
             )
@@ -221,7 +221,7 @@ mod tests {
             }
             let prepared = super::super::super::import::prepared_for_test(export).unwrap();
             assert!(
-                crate::surface::C0VerificationSession::new_program_prepared(proof, &prepared)
+                crate::surface::ProgramVerificationSession::new_program_prepared(proof, &prepared)
                     .is_err(),
                 "ownership mutation {mutation}"
             );

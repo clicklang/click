@@ -337,7 +337,9 @@ mod tests {
             2 => crate::kernel::int16(seed & 0x7fff),
             4 => ProgramValue::Int32(MachineTerm::constant(seed)),
             8 => ProgramValue::Int64(MachineTerm::int64_constant(i64::from(seed))),
-            16 => match crate::kernel::c_uint128_literal((1u128 << 127) | u128::from(seed)) {
+            16 => match crate::kernel::program_expression::uint128_literal(
+                (1u128 << 127) | u128::from(seed),
+            ) {
                 crate::kernel::ProgramExpression::Value(value) => value,
                 _ => unreachable!("literal is a value"),
             },
@@ -613,7 +615,7 @@ mod tests {
             PointerOffsetTerm::add(
                 PointerOffsetTerm::scale_int32(
                     MachineTerm::MemoryLoad(
-                        crate::kernel::intern_c_memory(Memory::new()),
+                        crate::kernel::intern_memory(Memory::new()),
                         Box::new(at(&PointerOffsetTerm::Constant(0))),
                         crate::kernel::LoadKind::Int32,
                     ),
