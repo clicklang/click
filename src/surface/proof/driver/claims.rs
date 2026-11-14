@@ -3325,7 +3325,18 @@ pub(super) fn finish_ordered_proof<'a>(
                 (!rejected).then_some(path_index)
             })
             .collect();
-        let closing_context = crate::kernel::CContractClosingContext::new(&completed_execution);
+        let resource_prefix = claims
+            .iter()
+            .filter_map(|claim| match claim_targets.get(&claim.key()) {
+                Some(CFunctionContractClaimTarget::EnsureResource(index)) => Some(index + 1),
+                _ => None,
+            })
+            .max()
+            .unwrap_or(0);
+        let closing_context = crate::kernel::CContractClosingContext::for_resource_prefix(
+            &completed_execution,
+            resource_prefix,
+        );
         let mut closed_exit_obligations = Vec::new();
         let mut verified = Vec::new();
         let mut checked_resource_claims_by_path =
@@ -5273,7 +5284,8 @@ pub(super) fn finish_ordered_proof<'a>(
                             certified_path,
                             &checked_specification,
                         )?;
-                        checked_resource_transitions_by_path[path_index] = true;
+                        checked_resource_transitions_by_path[path_index] =
+                            completion.completes_boundary();
                         closed_exit_obligations.push(completion);
                         outcome_proof = Some(root);
                     }

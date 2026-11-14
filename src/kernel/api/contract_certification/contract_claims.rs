@@ -1128,6 +1128,7 @@ fn prepare_function_claim_path(
     checked_returned_resources: crate::kernel::ResourceContext,
     capture_failure: bool,
     checked_transfer: Option<&crate::kernel::functions::CheckedBoundaryResourceTransfer>,
+    checked_outcome: Option<&CFunctionOutcome>,
 ) -> Result<CertifiedFunctionClaimPath, ContractPathPreparationFailure> {
     // The boundary transfer is captured from the proof's entry function,
     // before loop annotations are attached. It depends only on the
@@ -1150,6 +1151,9 @@ fn prepare_function_claim_path(
             .to_string()
             .into());
     };
+    // Closing uses the proof-owned outcome after its explicit resource
+    // operations. Execution-only callers retain their original body outcome.
+    let outcome = checked_outcome.unwrap_or(outcome);
     // The exit's produced binders are held as the proof's exit holds them:
     // one the body left unnamed takes the only instance of its family.
     let adopted_outcome = crate::kernel::functions::exit_with_unheld_produced_binders_adopted(
@@ -3016,6 +3020,7 @@ impl ContractPathSetView<'_> {
                                     .boundary_transfers
                                     .get(index)
                                     .and_then(Option::as_deref),
+                                None,
                             )
                             .map(|mut prepared| {
                                 prepared.completion_path_origin =
@@ -3085,7 +3090,8 @@ fn closed_exit_obligations_cover_every_case(execution: &CFunctionContractExecuti
                     || set
                         .closed_exit_obligations
                         .get(index)
-                        .is_some_and(Option::is_some)
+                        .and_then(Option::as_ref)
+                        .is_some_and(CClosedContractExit::completes_boundary)
             })
         })
     })

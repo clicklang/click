@@ -397,7 +397,12 @@ write-footprint obligations. Resource claim receipts describe individual
 clauses; a checked resource transition alone does not discharge lifetime or
 joint boundary obligations. The closer checks those obligations against the
 retained outcome, receipts and body effects before producing an opaque exit
-completion. Boundary refusals retain the original execution error. Contract
+completion. A clause-specific proof closes the joint resource prefix through
+its last selected resource clause; it cannot certify later clauses whose
+separate proofs have not run. Only a completion of the entire resource prefix
+supplies whole-boundary/body-safety evidence, which registration requires for
+every entry case. Boundary resolution uses the proof-owned outcome after its
+explicit resource operations. Boundary refusals retain the original execution error. Contract
 registration consumes exit completions across entry cases without preparing
 resource/effect paths again. The independent execution-only API still checks
 its supplied execution because it has no completed proof obligations.

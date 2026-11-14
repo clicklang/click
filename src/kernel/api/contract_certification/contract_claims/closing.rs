@@ -13,6 +13,7 @@ pub(crate) struct CContractClosingContext {
     checked_entry: Option<Arc<crate::kernel::functions::CheckedBoundaryResourceTransfer>>,
     resource_claims: Vec<CFunctionContractClaim>,
     resource_keys: Arc<BTreeSet<CFunctionContractClaimKey>>,
+    complete_boundary: bool,
     effect_claims: Vec<CFunctionContractClaim>,
     entry: OnceLock<Result<ClosingEntry, String>>,
 }
@@ -24,7 +25,17 @@ struct ClosingEntry {
 }
 
 impl CContractClosingContext {
+    #[cfg(test)]
     pub(crate) fn new(execution: &CCheckedFunctionExecution) -> Arc<Self> {
+        Self::for_resource_prefix(execution, execution.function.resource_ensures().len())
+    }
+
+    /// A clause-specific proof owes its jointly returned prefix, not clauses
+    /// whose separate proofs have not run. The final prefix closes the boundary.
+    pub(crate) fn for_resource_prefix(
+        execution: &CCheckedFunctionExecution,
+        resource_prefix: usize,
+    ) -> Arc<Self> {
         crate::instrumentation::record_deterministic_work(execution.arguments.len() + 1);
         let resource_claims = execution
             .function
@@ -34,10 +45,7 @@ impl CContractClosingContext {
                 crate::instrumentation::record_deterministic_work(1);
             })
             .filter(|claim| {
-                matches!(
-                    claim.target(),
-                    CFunctionContractClaimTarget::EnsureResource(_)
-                )
+                matches!(claim.target(), CFunctionContractClaimTarget::EnsureResource(index) if *index < resource_prefix)
             })
             .cloned()
             .collect::<Vec<_>>();
@@ -62,6 +70,7 @@ impl CContractClosingContext {
                 .collect(),
             resource_claims,
             resource_keys,
+            complete_boundary: resource_prefix >= execution.function.resource_ensures().len(),
             entry: OnceLock::new(),
         })
     }
@@ -145,9 +154,14 @@ pub(crate) struct CClosedContractExit {
     path_index: usize,
     origin: Theorem,
     resources: Arc<BTreeSet<CFunctionContractClaimKey>>,
+    complete_boundary: bool,
 }
 
 impl CClosedContractExit {
+    pub(crate) fn completes_boundary(&self) -> bool {
+        self.complete_boundary
+    }
+
     pub(in crate::kernel) fn path_index(&self) -> usize {
         self.path_index
     }
@@ -157,7 +171,8 @@ impl CClosedContractExit {
     pub(in crate::kernel) fn covers(&self, claim: &CFunctionContractClaim) -> bool {
         match claim.target() {
             CFunctionContractClaimTarget::EnsureResource(_) => self.resources.contains(claim.key()),
-            CFunctionContractClaimTarget::Effect | CFunctionContractClaimTarget::BodySafety => true,
+            CFunctionContractClaimTarget::BodySafety => self.complete_boundary,
+            CFunctionContractClaimTarget::Effect => true,
             _ => false,
         }
     }
@@ -177,6 +192,7 @@ impl CClosedContractExit {
             path_index,
             origin: path.theorem.clone(),
             resources: Arc::new(claims.into_iter().collect()),
+            complete_boundary: true,
         }
     }
 }
@@ -245,16 +261,23 @@ impl CContractExitObligations {
         let mut closed = self.clone();
         if !outcome.is_exceptional {
             if let CFunctionOutcome::RuntimeError(error) = specification.specification().outcome() {
-                return Err(CContractClosingRefusal::Runtime(error.clone()));
+                if (closed.context.complete_boundary && !closed.resources_closed)
+                    || !crate::kernel::functions::is_deferred_conditional_resource_effect_error(
+                        error,
+                    )
+                {
+                    return Err(CContractClosingRefusal::Runtime(error.clone()));
+                }
             }
             // A checked returned-resource transition discharges only the
             // resource goal. It does not discharge lifetime or effects.
             let receipt_resources_closed = !closed.resources_closed
-                && !execution
-                    .deferred_contract_exits
-                    .get(self.path_index)
-                    .copied()
-                    .unwrap_or(false)
+                && (!closed.context.complete_boundary
+                    || !execution
+                        .deferred_contract_exits
+                        .get(self.path_index)
+                        .copied()
+                        .unwrap_or(false))
                 && matches!(
                     specification.specification().outcome(),
                     CFunctionOutcome::Return { .. }
@@ -263,16 +286,19 @@ impl CContractExitObligations {
             closed.prove_resource_goals(
                 execution,
                 path,
+                outcome,
                 claims,
                 facts,
                 !closed.resources_closed && !receipt_resources_closed,
             )?;
             closed.resources_closed = true;
-            closed.prove_allocation_lifetime(outcome, claims, facts)?;
+            if closed.context.complete_boundary {
+                closed.prove_allocation_lifetime(outcome, claims, facts)?;
+            }
         } else {
             // Normal resource ensures are vacuous on a throw; explicit
             // effect claims and actual writes still require their proofs.
-            closed.prove_resource_goals(execution, path, claims, facts, false)?;
+            closed.prove_resource_goals(execution, path, outcome, claims, facts, false)?;
             closed.resources_closed = true;
         }
         if !closed.footprint_closed {
@@ -285,6 +311,7 @@ impl CContractExitObligations {
                 path_index: self.path_index,
                 origin: path.theorem.clone(),
                 resources: self.context.resource_keys.clone(),
+                complete_boundary: self.context.complete_boundary,
             },
         ))
     }
@@ -322,16 +349,22 @@ impl CContractExitObligations {
         &self,
         execution: &CCheckedFunctionExecution,
         path: &SymbolicCExecutionPath,
+        outcome: &OutcomeProofCore,
         claims: &OutcomeClaimGoals,
         facts: &ProofFacts,
         check_resources: bool,
     ) -> Result<(), CContractClosingRefusal> {
         let context = &self.context;
-        let deferred = execution
-            .deferred_contract_exits
-            .get(self.path_index)
-            .copied()
-            .unwrap_or(false);
+        // A successful checked transition has resolved this boundary. The
+        // original execution's deferred marker predates post-return folds;
+        // replaying it would discard the transition's established custody.
+        let deferred = self.context.complete_boundary
+            && !self.resources_closed
+            && execution
+                .deferred_contract_exits
+                .get(self.path_index)
+                .copied()
+                .unwrap_or(false);
         if (!check_resources || context.resource_claims.is_empty())
             && context.effect_claims.is_empty()
             && !deferred
@@ -352,6 +385,17 @@ impl CContractExitObligations {
             })?
         } else {
             vec![vec![]]
+        };
+        let checked_outcome = if outcome.is_exceptional {
+            CFunctionOutcome::Throw {
+                value: outcome.result.as_ref().clone().into(),
+                state: Box::new((*outcome.state).clone()),
+            }
+        } else {
+            CFunctionOutcome::Return {
+                value: outcome.result.as_ref().clone().into(),
+                state: Box::new((*outcome.state).clone()),
+            }
         };
         let mut checked_claims = Vec::new();
         let mut returned = ResourceContext::new_with_equalities(facts.assumptions());
@@ -388,6 +432,7 @@ impl CContractExitObligations {
                 returned.clone(),
                 false,
                 execution.boundary_transfer.as_deref(),
+                Some(&checked_outcome),
             )
             .map_err(|failure| CContractClosingRefusal::Resource(failure.reason))?;
             match &prepared.outcome {

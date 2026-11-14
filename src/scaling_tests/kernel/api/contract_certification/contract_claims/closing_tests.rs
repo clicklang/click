@@ -100,22 +100,44 @@ fn resource_and_effect_completion_lookup_ignores_unrelated_path_history() {
         for facts in [0, 64, 1024] {
             let (_, mut execution) = fixture(paths);
             let assumptions = (0..facts).fold(PureFactContext::new(), |context, index| {
-                context.assume_condition(ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(975_000 + index)), MachineTerm::constant(0),
-                ), true)
+                context.assume_condition(
+                    ConditionTerm::equal(
+                        MachineTerm::Variable(Variable(975_000 + index)),
+                        MachineTerm::constant(0),
+                    ),
+                    true,
+                )
             });
             for path in &mut execution.cases[0][0].paths {
                 path.post_assumptions = Some(assumptions.clone());
             }
-            execution.cases[0][0].closed_exit_obligations = execution.cases[0][0].paths.iter().enumerate()
-                .map(|(index, path)| Some(CClosedContractExit::fixture_for_claims(index, path, [resource.key().clone()]))).collect();
+            execution.cases[0][0].closed_exit_obligations = execution.cases[0][0]
+                .paths
+                .iter()
+                .enumerate()
+                .map(|(index, path)| {
+                    Some(CClosedContractExit::fixture_for_claims(
+                        index,
+                        path,
+                        [resource.key().clone()],
+                    ))
+                })
+                .collect();
             let cases = contract_path_set_views(&execution, false);
-            let ((resource_closed, effect_closed), work) = crate::instrumentation::measure_deterministic_work(|| (
-                closed_resource_effect_claim_holds(&resource, &cases),
-                closed_resource_effect_claim_holds(&effect, &cases),
-            ));
+            let ((resource_closed, effect_closed), work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    (
+                        closed_resource_effect_claim_holds(&resource, &cases),
+                        closed_resource_effect_claim_holds(&effect, &cases),
+                    )
+                });
             assert!(resource_closed && effect_closed);
-            assert!(cases.iter().flatten().all(|view| view.prepared.get().is_none()));
+            assert!(
+                cases
+                    .iter()
+                    .flatten()
+                    .all(|view| view.prepared.get().is_none())
+            );
             costs.push(work);
             let wrong = CFunctionContractClaim::ensure_resource(1, 1);
             assert!(!closed_resource_effect_claim_holds(&wrong, &cases));
