@@ -244,3 +244,24 @@ fn algebraic_conditional_is_one_branch_once_its_condition_is_decided() {
     assert!(!normalizes(conditional.clone(), empty()));
     assert!(normalizes(conditional.clone(), conditional));
 }
+
+#[test]
+fn retained_algebraic_match_transport_preserves_capture_and_arm_order() {
+    let native = select(var(10), 2, 3, pair(var(1), var(2)));
+    let common = KernelMatch::import_algebraic(&mut KernelTermImport::default(), &native).unwrap();
+    let c = BTreeMap::new();
+    let integer = BTreeMap::new();
+    let algebraic = BTreeMap::from([(Variable(1), var(2))]);
+    let mut old = TermRewrite::for_typed_variables(&c, &integer, &algebraic);
+    let expected = old.algebraic(&native);
+    assert_eq!(old.refusal(), None);
+    let mut new = TermRewrite::for_typed_variables(&c, &integer, &algebraic);
+    let actual = new.retained_match(&common).unwrap();
+    assert_eq!(
+        actual
+            .export_algebraic(&mut KernelTermExport::default())
+            .unwrap(),
+        expected
+    );
+    assert!(new.scope.algebraic.is_empty());
+}

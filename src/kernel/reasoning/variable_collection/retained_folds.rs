@@ -28,14 +28,29 @@ impl FoldVariableRead {
 
 type Variables = crate::persistent::PersistentSet<Variable>;
 
-fn union(left: &Variables, right: &Variables) -> Variables {
+pub(super) fn union(left: &Variables, right: &Variables) -> Variables {
     let (large, small) = if left.len() >= right.len() {
         (left, right)
     } else {
         (right, left)
     };
     let mut result = large.clone();
-    if !large.shares_root_with(small) {
+    if small.is_empty() || large.shares_root_with(small) {
+        return result;
+    }
+    if small.len() >= large.len().div_ceil(2) {
+        // Arm scopes often remove one binder from the same shared body.
+        // Structural differences skip their unchanged summary subtrees.
+        for (variable, in_small) in small.diff(large) {
+            if checked_collection_checkpoint() {
+                break;
+            }
+            if in_small {
+                result = result.with_value(*variable);
+            }
+        }
+    } else {
+        // A small independent contribution should visit only its own values.
         for variable in small.iter() {
             if checked_collection_checkpoint() {
                 break;
@@ -77,7 +92,7 @@ pub(crate) fn collect_fold_variables(
     variables.extend(result.iter().copied());
 }
 
-fn common_variables(
+pub(super) fn common_variables(
     root: &KernelTerm,
     mode: FoldVariableRead,
     summaries: &mut std::collections::HashMap<u64, Variables>,
@@ -196,7 +211,7 @@ fn common_variables(
     summaries[&root.id()].clone()
 }
 
-fn collect_machine_leaf(
+pub(super) fn collect_machine_leaf(
     term: &MachineTerm,
     mode: FoldVariableRead,
     variables: &mut BTreeSet<Variable>,

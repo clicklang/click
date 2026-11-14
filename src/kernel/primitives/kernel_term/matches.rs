@@ -68,13 +68,27 @@ impl KernelMatchArm {
             body,
         )
     }
-    fn export_bindings(
+    pub(crate) fn export_bindings(
         &self,
         export: &mut KernelTermExport,
     ) -> Result<Vec<AlgebraicValue>, &'static str> {
         self.bindings
             .iter()
-            .map(|value| export_value(export, value))
+            .map(|value| {
+                // A word variable declaration has no expression tree to
+                // export. Reify its existing typed descriptor directly.
+                if let (KernelType::C(ty), KernelTermNode::Variable(variable)) =
+                    (value.ty(), value.node())
+                    && let Some(format) = MachineIntegerType::from_c_type(*ty)
+                {
+                    crate::instrumentation::record_deterministic_work(1);
+                    return Ok(AlgebraicValue::C(machine::wrap_exact(
+                        format,
+                        MachineTerm::Variable(*variable),
+                    )));
+                }
+                export_value(export, value)
+            })
             .collect()
     }
 }
@@ -473,4 +487,38 @@ mod tests {
 #[cfg(test)]
 mod scaling_tests {
     include!("../../../scaling_tests/kernel/primitives/kernel_term/matches.rs");
+}
+
+impl KernelTermImport {
+    /// Temporary native field-descriptor boundary for scoped match consumers.
+    pub(crate) fn match_field(&mut self, value: &AlgebraicValue) -> KernelTerm {
+        import_value(self, value)
+    }
+}
+
+#[cfg(test)]
+impl KernelMatch {
+    pub(crate) fn test_scrutinee(fields: Vec<AlgebraicValueType>) -> AlgebraicTerm {
+        let key = AlgebraicValueType::Algebraic {
+            name: "MatchScope".into(),
+            arguments: vec![],
+        };
+        let variants: Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
+            name: "Arm".into(),
+            fields,
+        }]
+        .into();
+        AlgebraicTerm {
+            algebraic_type: AlgebraicType {
+                rigid: false,
+                name: "MatchScope".into(),
+                arguments: vec![],
+                variants: variants.clone(),
+                schemas: Arc::new(AlgebraicSchemas::new(std::collections::BTreeMap::from([(
+                    key, variants,
+                )]))),
+            },
+            node: AlgebraicTermNode::Variable(Variable(991900)),
+        }
+    }
 }
