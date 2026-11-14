@@ -422,6 +422,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_indexed_direc
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_indexed_forall_instantiation_with_surfaces	derive_solve_atomic_proposition	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_indexed_forall_instantiation_with_surfaces	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_indexed_forall_instantiation_with_surfaces	try_fact_transport_from_candidates	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_indexed_forall_instantiation_with_surfaces	universal_candidates	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_indexed_signed_arithmetic	available_surface_fact	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_indexed_signed_arithmetic	check_typed_atomic_solve_candidate	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_indexed_signed_arithmetic	driver	1

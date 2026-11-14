@@ -354,9 +354,6 @@ pub(crate) struct ProofFacts {
         PersistentMap<QuantifiedEquivalenceKey, PersistentSequence<Arc<Proposition>>>,
     /// Selected load identities checked while presenting a rewritten goal.
     rewritten_load_evidence: PersistentSequence<CheckedLoadEquality>,
-    /// Universal facts introduced specifically by a checked predicate unfold.
-    /// Outcome smart search never probes ambient theorem or path universals.
-    predicate_unfolded_universal_facts: PersistentSequence<Proposition>,
     implications_by_consequent:
         PersistentMap<SnapshotBlindPropositionKey, PersistentSequence<ImplicationCandidate>>,
     /// Alpha-invariant selection for quantified implication consequents.
@@ -1069,8 +1066,17 @@ impl ProofFacts {
     pub(crate) fn is_empty(&self) -> bool {
         self.ordered.len() == 0
     }
-    pub(crate) fn predicate_unfolded_universal_facts(&self) -> impl Iterator<Item = &Proposition> {
-        self.predicate_unfolded_universal_facts.iter()
+    /// Search candidates from the ordinary quantified-fact index, independent
+    /// of which proof operation introduced them. Explicit instantiation uses
+    /// the selected-fact lookup instead.
+    pub(crate) fn universal_facts_for_search(
+        &self,
+        _permission: crate::kernel::search::SearchPermission,
+    ) -> impl Iterator<Item = &Proposition> {
+        self.by_quantified_equivalence
+            .values()
+            .flat_map(|bucket| bucket.iter().map(Arc::as_ref))
+            .filter(|fact| matches!(fact, Proposition::ForAll { .. }))
     }
 
     pub(crate) fn from_ordered(facts: &[Proposition]) -> Self {
@@ -1201,7 +1207,6 @@ impl ProofFacts {
             algebraic_equalities_by_term,
             by_quantified_equivalence,
             quantified_conjunct_projections,
-            predicate_unfolded_universal_facts: PersistentSequence::default(),
             rewritten_load_evidence: PersistentSequence::default(),
             implications_by_consequent,
             implications_by_quantified_consequent,
@@ -1398,7 +1403,6 @@ impl ProofFacts {
             algebraic_equalities_by_term,
             by_quantified_equivalence,
             quantified_conjunct_projections,
-            predicate_unfolded_universal_facts: self.predicate_unfolded_universal_facts.clone(),
             rewritten_load_evidence: self.rewritten_load_evidence.clone(),
             implications_by_consequent,
             implications_by_quantified_consequent,
@@ -1628,20 +1632,6 @@ impl ProofFacts {
         let body =
             crate::kernel::substitute_pointer_variable_in_proposition(body, binder, &pointer);
         Some((fresh, body))
-    }
-
-    pub(crate) fn with_predicate_unfold_fact(&self, fact: Proposition) -> Self {
-        let is_universal = matches!(fact, Proposition::ForAll { .. });
-        let mut successor = self.with_fact(fact.clone());
-        if is_universal
-            && !successor
-                .predicate_unfolded_universal_facts
-                .iter()
-                .any(|candidate| candidate == &fact)
-        {
-            successor.predicate_unfolded_universal_facts.push(fact);
-        }
-        successor
     }
 
     /// Materializes only the separations selected by this explicit goal.
