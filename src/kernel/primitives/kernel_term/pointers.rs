@@ -16,7 +16,7 @@ pub(crate) struct KernelPointerQualifiers {
     pub(crate) extent_known: bool,
     pub(crate) object_class: Option<crate::kernel::effective_type::CAccessClass>,
     pub(crate) object_type_evidence: Option<ObjectTypeEvidence>,
-    pub(crate) local_reference: Option<crate::kernel::loans::LocalScalarReference>,
+    pub(in crate::kernel) local_reference: Option<crate::kernel::loans::LocalScalarReference>,
 }
 #[derive(Clone, Debug)]
 pub(crate) struct KernelPointerValue {
@@ -56,6 +56,21 @@ impl SharedPointerValue {
     }
     pub(crate) fn node(&self) -> &KernelPointerValue {
         &self.0
+    }
+    /// Same address roles as PointerValue::pointers. Widths remain separate
+    /// numeric payloads; each reader retains its existing metadata policy.
+    pub(crate) fn addresses(&self) -> impl Iterator<Item = &SharedPointerAddress> {
+        let value = self.node();
+        std::iter::once(&value.address)
+            .chain(std::iter::once(&value.designation))
+            .chain(value.opaque_extent.as_ref())
+            .chain(
+                value
+                    .qualifiers
+                    .as_ref()
+                    .and_then(|q| q.extent.as_ref())
+                    .map(|extent| &extent.start),
+            )
     }
     pub(crate) fn import(value: &PointerValue) -> Self {
         Self::new(KernelPointerValue {

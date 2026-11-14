@@ -249,7 +249,7 @@ pub(super) fn collect_machine_leaf(
     }
 }
 
-fn collect_argument(
+pub(super) fn collect_argument(
     argument: &PureFunctionArgument,
     mode: FoldVariableRead,
     variables: &mut BTreeSet<Variable>,
