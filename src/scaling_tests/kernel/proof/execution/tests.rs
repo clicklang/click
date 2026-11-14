@@ -552,7 +552,7 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
             .without_owned_instance_read_views();
         assert_eq!(state.with_resource_context(resources), folded);
         // Copying an event to a different path with a different body
-        // state is rejected during final certification.
+        // state is rejected when completing the execution proof.
         let mut forged = base.execution_evidence[size - 1].clone();
         forged.push(events.last().unwrap().clone());
         assert!(trace_completion(&function, &forged.to_vec(), facts.assumptions(), false).is_err());

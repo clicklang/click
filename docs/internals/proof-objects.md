@@ -362,14 +362,11 @@ the surface reports as the contract failure. Rejections are counted under
 `instrumentation::ArtifactReuseRejection` and pinned by the
 [artifact reuse rejection ratchet](testing.md#artifact-reuse-rejection-ratchet).
 
-Claims are certified by matching, not by proving again. Every claim closer
-records the kernel-completed proposition it discharged, the certified
-path's specification carries that path's own entry premises, and
-certification lowers each ensure at the certified post-state (under the
-binders of a
-recorded completion when the ensure is quantified, since the loads minted
-under a binder carry its identity) and accepts the claim when the lowering
-equals a recorded completion whose premises the contract context holds.
+Every proposition claim closer records the kernel completion of its
+clause-specific obligation. The checked path's specification carries its own
+entry premises, and contract registration consumes the retained clause and
+producer-path identities. It does not lower the ensure again, including
+quantified ensures whose binders belong to the original obligation.
 
 Post-return `have` completions used by a later named resource fold remain
 on that returned path's checked trace. The kernel binds them to its published
@@ -381,6 +378,40 @@ replace the path context with a proof's ambient assumptions. Explicit
 resource `assumption` closers and `solve` retain the same checked claim
 receipts, and certification checks their joint availability independently of
 how the certificate was printed.
+
+Contract closing constructs the obligations needed to establish the current
+contract at its checked outcome. It does not search for their proofs. Tactics
+may also create obligations; omitted proofs are attempted by the implicit
+solver (currently called the implicit closer in diagnostics and some driver
+names). Proof completion requires every applicable obligation to be closed.
+
+For reusable proposition postconditions, each goal is kernel-created and
+retains its contract clause and evaluation requirements. A failed goal construction is
+reported at contract closing; the driver never substitutes a separately
+lowered surface goal. Completed claims retain their producer path identity.
+Registration consumes these claim/path associations across every entry case
+without reconstructing the postcondition or proving it again.
+
+Outcome proofs also own joint returned-resource, allocation-lifetime and
+write-footprint obligations. Resource claim receipts describe individual
+clauses; a checked resource transition alone does not discharge lifetime or
+joint boundary obligations. The closer checks those obligations against the
+retained outcome, receipts and body effects before producing an opaque exit
+completion. A clause-specific proof closes the joint resource prefix through
+its last selected resource clause; it cannot certify later clauses whose
+separate proofs have not run. Only a completion of the entire resource prefix
+supplies whole-boundary/body-safety evidence, which registration requires for
+every entry case. Boundary resolution uses the proof-owned outcome after its
+explicit resource operations. Boundary refusals retain the original execution error. Contract
+registration consumes exit completions across entry cases without preparing
+resource/effect paths again. The independent execution-only API still checks
+its supplied execution because it has no completed proof obligations.
+
+A function with proof-local clauses, such as a postcondition referring to
+`at(region(0).entry, ...)`, has no reusable modular proposition contract.
+Its source clauses remain ordinary local proof obligations. This distinction
+is established before opening goals; a failed registered contract goal never
+falls back to a local lowering.
 
 There is one lowering. A claim goal is the contract's elaborated ensure
 lowered by the kernel at the path's outcome (`c_function_ensure_goals`); a
@@ -417,18 +448,16 @@ decoded arguments and lowered at the decoded state. A C fragment stated at
 a state that does not justify a load it makes is refused there, unless the
 clause allows symbolic contract loads (a resource segment, an effect
 footprint inside a folded composite), in which case the load stays the
-symbolic term kernel execution spells it as and certification discharges
-its viewability. The surface has no evaluator of its own. A count named at a recorded state
+symbolic term kernel execution spells it as and exposes its viewability as
+an obligation. The surface has no evaluator of its own. A count named at a recorded state
 is that state's population. A negated condition is the condition with the
 other value, as an execution spells the branch it did not take, and
 viewability terms are canonical, so a proposition lowered anywhere is
 spelled as the execution's facts are. The kernel lowering leaves a load's
-viewability as an obligation; the proof-side lowering refuses only a load
-of memory the state shows freed, and certification discharges the rest
-from the path's facts. The two sides are compared in one canonical form
-for the folds that remain (a term compared with itself, a constant premise
-or conjunct, a negated condition), and a completion recorded at the
-artifact's own caller state also certifies a path rebased from that state.
+viewability as an obligation. Claim opening uses the ordinary obligation
+channel to discharge it from the path's facts or an explicit proof. A
+completed postcondition is consumed by its clause and producer path, including
+an authorized rebase of that same path; there is no second lowering to match.
 A claim with no `by` block ends, like every script, with the implicit closer
 (`SmartSite::Implicit`, which diagnostics call the implicit closer): the direct
 logical closure of the kernel's claim goal from the outcome Proof or, when

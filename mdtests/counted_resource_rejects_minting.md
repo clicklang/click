@@ -23,5 +23,5 @@ int32 duplicate_ref(int32 object) {
 ```
 
 ```expect
-fail: did not establish every contract claim
+fail: unproved resource obligation duplicate_ref.produces_0 `object_ref(object)`
 ```

@@ -255,3 +255,28 @@ fn authority_transfer_wrapper_memory_frame_cannot_supply_missing_or_duplicate_ch
             .expect_err("borrowed fields cannot manufacture wrapper or child authority");
     }
 }
+
+#[test]
+fn separately_proved_resource_clauses_cannot_duplicate_a_borrowed_unit() {
+    let source = r#"
+        abstract resource Permit(object: int32);
+        verifying "wrapper.c";
+        int32 duplicate(int32 object) {
+            owns Permit(object);
+            produces Permit(object) by { step_until(function.exit); assumption(); }
+        }
+    "#;
+    let error = verify_c0_project(
+        &project(source),
+        &[(
+            "wrapper.c",
+            "int32 duplicate(int32 object) { return object; }",
+        )],
+    )
+    .expect_err("the last separately proved resource clause still owes its complete joint prefix");
+    assert!(
+        error.message().contains("unproved resource obligation")
+            || error.message().contains("held instance"),
+        "{error}"
+    );
+}

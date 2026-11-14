@@ -3253,3 +3253,87 @@ test_batches! {
         contract_domain_refusal_retains_the_actual_goal_and_checked_context,
     ],
 }
+
+#[test]
+fn contract_closing_preserves_proposition_identity_through_explicit_proofs() {
+    let source = "struct packet { uint32 n; }; void change(uint32* n) { *n = 9; } uint32 consume(struct packet p) { uint32 before = p.n; change(&p.n); return before; }";
+    let proof = r#"verifying "closing.c";
+        void change(uint32* n) { owns n[0..1]; ensures *n == 9u32; }
+        uint32 consume(struct packet p) { ensures result == old(p.n); }
+    "#;
+    let inputs = [("closing.c", source)];
+    let (verified, events) = crate::instrumentation::collect(|| verify_c0_sources(proof, &inputs));
+    let verified = verified.unwrap();
+    assert_eq!(verified.len(), 3);
+    assert_eq!(
+        verified
+            .iter()
+            .filter(|theorem| theorem.checked_proposition.is_some())
+            .count(),
+        2
+    );
+    assert!(!events.iter().any(|event| matches!(event,
+        crate::instrumentation::VerificationEvent::OperationFinished { name, .. } if name == "ensure lowering"
+    )), "completed postconditions must not be lowered again");
+    let expanded = expand_checked_grouped_claim(proof, &verified, "consume").unwrap();
+    verify_c0_sources(&expanded, &inputs).unwrap();
+    let wrong = proof.replace("ensures result == old(p.n);", "ensures result == 9u32;");
+    let error = verify_c0_sources(&wrong, &inputs).unwrap_err();
+    assert!(
+        !error.message().contains("could not certify contract"),
+        "{error}"
+    );
+}
+
+#[test]
+fn contract_closing_keeps_snapshot_clauses_as_local_obligations() {
+    let source = "int unchanged(int x) { return x; }";
+    let proof = r#"verifying "closing.c";
+        int32 unchanged(int32 x) {
+            ensures result == at(region(0).entry, x);
+        } by { step(); normalize(); }
+    "#;
+    let inputs = [("closing.c", source)];
+    verify_c0_sources(proof, &inputs).unwrap();
+    let wrong = proof.replace(
+        "result == at(region(0).entry, x)",
+        "result != at(region(0).entry, x)",
+    );
+    assert!(verify_c0_sources(&wrong, &inputs).is_err());
+}
+
+#[test]
+fn contract_closing_retains_resource_and_write_footprint_completions() {
+    let inputs = [(
+        "closing.c",
+        "int counter; int write(void) { counter = 9; return 0; }",
+    )];
+    let proof = r#"verifying "closing.c";
+        int32 write() { owns counter; ensures result == 0; }
+    "#;
+    let (verified, events) = crate::instrumentation::collect(|| verify_c0_sources(proof, &inputs));
+    let verified = verified.unwrap();
+    assert!(!events.iter().any(|event| matches!(event,
+        crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
+            if name == "storage write footprint check" || name == "implicit empty effect check" || name == "contract path preparation"
+    )));
+    let expanded = expand_checked_grouped_claim(proof, &verified, "write").unwrap();
+    without_implicit_solve(|| verify_c0_sources(&expanded, &inputs)).unwrap();
+
+    let missing_ownership = proof.replace("owns counter;", "");
+    let (result, events) =
+        crate::instrumentation::collect(|| verify_c0_sources(&missing_ownership, &inputs));
+    assert!(
+        result
+            .unwrap_err()
+            .message()
+            .contains("outside the mutable footprint")
+    );
+    assert!(
+        !events.iter().any(|event| matches!(
+            event,
+            crate::instrumentation::VerificationEvent::ContractClaimsFinished { .. }
+        )),
+        "an unproved footprint is refused before contract registration"
+    );
+}

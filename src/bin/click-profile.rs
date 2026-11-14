@@ -660,8 +660,7 @@ const TIMING_PREFIX: &str = "click timing: ";
 #[cfg(test)]
 const IGNORED_TIMING_KINDS: &[&str] = &["contract entry resources"];
 
-/// The two `click timing:` kinds that together make up the kernel
-/// certification phase of one function.
+/// The two legacy `click timing:` kinds attributed to contract completion.
 #[cfg(test)]
 const CERTIFICATION_TIMING_KINDS: &[&str] = &["contract execution", "contract claims"];
 
@@ -786,7 +785,7 @@ enum TimingEvent {
     Failed(StepKey),
     /// One verified function's whole wall-clock time.
     FunctionTotal(String, Duration),
-    /// One kernel certification phase of a function.
+    /// One function's contract-completion work.
     Certification(String, Duration),
     /// Parsing C/Click source, lowering declarations, and selecting the exact
     /// requested proof scope.

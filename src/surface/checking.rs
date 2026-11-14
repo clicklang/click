@@ -12,7 +12,6 @@ mod segments;
 mod signed_arithmetic_planner;
 mod simplex;
 mod special_arithmetic_planner;
-use crate::kernel::memory_effect_write_pointers;
 pub(super) use arithmetic_engine::*;
 pub(super) use contract_evaluation::*;
 pub(super) use integer_refutation_planner::*;
@@ -93,62 +92,6 @@ impl CheckedResourceClaim<'_> {
     }
 }
 
-/// Checks the allocation-lifetime obligation owned by one exact outcome.
-/// The caller decides how to render a leaked allocation; this shared checker
-/// keeps explicit resource claims and the implicit function-exit closer on
-/// the same semantic obligation.
-pub(super) fn check_allocation_lifetime(
-    checked_execution: &CCheckedFunctionExecution,
-    obligation: &crate::kernel::proof::AllocationLifetimeObligation,
-    path_index: usize,
-    assumptions: &crate::kernel::PureFactContext,
-    returned_resources: Option<&crate::kernel::ResourceContext>,
-    outcome: &CFunctionOutcome,
-) -> Result<
-    Result<Option<crate::kernel::proof::LiveAllocationObligation>, crate::kernel::CRuntimeError>,
-    ClickError,
-> {
-    if obligation.path_index() != path_index {
-        return Err(ClickError::new(
-            "allocation-lifetime obligation belongs to a different execution path",
-        ));
-    }
-    let CFunctionOutcome::Return { value, state } = outcome else {
-        return Ok(Ok(None));
-    };
-    let mut lifetime_budget = ExecutionBudget::beside_live_state();
-    let result = match returned_resources {
-        Some(returned_resources) => {
-            crate::kernel::unreturned_allocation_with_checked_returned_resources(
-                checked_execution.allocation_entry_state(),
-                state,
-                &value.native(),
-                checked_execution.function(),
-                checked_execution.function_arguments(),
-                returned_resources,
-                assumptions,
-                &mut lifetime_budget,
-            )
-        }
-        None => crate::kernel::unreturned_allocation_at_function_exit(
-            checked_execution.allocation_entry_state(),
-            state,
-            &value.native(),
-            checked_execution.function(),
-            checked_execution.function_arguments(),
-            assumptions,
-            &mut lifetime_budget,
-        )
-        .map_err(|limit| {
-            ClickError::new(format!(
-                "allocation-lifetime obligation stopped at {}",
-                limit.describe()
-            ))
-        })?,
-    };
-    Ok(result)
-}
-
 /// A plain produced memory clause hands the caller initialized bytes, so the
 /// function must have written every byte of it that holds a value. The first
 /// range it has not, rendered for a diagnostic.
@@ -199,7 +142,6 @@ pub(super) fn prove_ensure_resource<'e>(
     claim_key: CFunctionContractClaimKey,
     claim_label: &str,
     path_index: usize,
-    _allocation_lifetime: &crate::kernel::proof::AllocationLifetimeObligation,
     // Read only to describe a failure: a path's merged facts are its whole
     // history, so a claim that holds does not build them.
     execution_pure_facts: impl Fn() -> crate::kernel::ExecutionFacts,
@@ -519,45 +461,6 @@ pub(super) fn apply_witness_tactic(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn lower_ensure_proposition_goal(
-    available_pure_facts: &(impl PropositionSource + ?Sized),
-    proposition: &ClickProposition,
-    parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    outcome: &CFunctionOutcome,
-    spec_definitions: SpecDefinitions<'_>,
-    recorded_snapshots: &RecordedSnapshots,
-    unfolded_predicates: &[String],
-) -> Result<Proposition, String> {
-    let CFunctionOutcome::Return { value, state } = outcome else {
-        return Err("the execution path does not return".to_string());
-    };
-    let proposition = lower_outcome_proposition_with_recorded_snapshots(
-        parameter_binding,
-        pre_state,
-        state,
-        &value.native(),
-        available_pure_facts,
-        proposition,
-        spec_definitions,
-        recorded_snapshots,
-    );
-    if crate::instrumentation::deadline_exceeded() {
-        return Err(format!(
-            "verification budget exhausted inside {}",
-            crate::instrumentation::deadline_context()
-        ));
-    }
-    let proposition = proposition?;
-    let assumptions = assumptions_from_propositions(available_pure_facts);
-    unfold_predicates_in_proposition(
-        spec_definitions,
-        unfolded_predicates,
-        &proposition,
-        &assumptions,
-    )
-}
-
 pub(super) fn comparison_condition(
     actual: MachineTerm,
     operator: ComparisonOperator,

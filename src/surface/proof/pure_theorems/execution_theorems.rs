@@ -435,12 +435,8 @@ pub(super) fn verify_execution_theorem(
         .iter()
         .filter_map(|v| v.checked_proposition.clone())
         .collect::<Vec<_>>();
-    let claims = c_verified_function_contract_claims_with_checked_propositions(
-        &function,
-        &execution,
-        &propositions,
-    )
-    .ok_or_else(|| error("the one-call proof did not certify every target obligation"))?;
+    let claims = c_function_contract_claims_from_completions(&function, &execution, &propositions)
+        .ok_or_else(|| error("the one-call proof did not certify every target obligation"))?;
     let rule = c_verified_function_rule(function, &claims)
         .ok_or_else(|| error("the one-call proof did not establish a checked contract"))?;
     let authority = match concrete_callee {

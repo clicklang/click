@@ -3575,6 +3575,14 @@ id = "glossary.implication"
 path = "reference/glossary.md#implication"
 
 [[item]]
+id = "glossary.contract-closing"
+path = "reference/glossary.md#contract-closing"
+
+[[item]]
+id = "glossary.implicit-solver"
+path = "reference/glossary.md#implicit-solver"
+
+[[item]]
 id = "glossary.implicit-tail"
 path = "reference/glossary.md#implicit-tail"
 
