@@ -53,7 +53,7 @@ remains supported.
   frontier. See [Execution](#execution).
 - `loop { ... }`: prove a C loop from its invariants, which the back edge
   closes member by member with `solve()`. See [Execution](#execution) and
-  [Resources and snapshots](#resources-and-snapshots).
+  [Resources and transport](#resources-and-transport).
 - `solve()`: close the first open goal, and `solve() using { ... }` from only
   the listed premises. See [Automation and search](#automation-and-search)
   for the different proof-clause forms and their defaults.
@@ -63,9 +63,9 @@ remains supported.
   [Proposition reasoning](#proposition-reasoning).
 - `unfold(...)`: open one layer of a pure function, a predicate, or an owned
   resource. See [Proposition reasoning](#proposition-reasoning) and
-  [Resources and snapshots](#resources-and-snapshots).
+  [Resources and transport](#resources-and-transport).
 - `fold(resource)`: close an owned resource from its body. See
-  [Resources and snapshots](#resources-and-snapshots).
+  [Resources and transport](#resources-and-transport).
 - `if P { ... } else { ... }`: split the proof on a proposition you choose.
   See [Proposition reasoning](#proposition-reasoning).
 - `match value { ... }`: split the proof on an algebraic value's
@@ -112,12 +112,12 @@ when the default misses or when a proof must not search.
   retaining their selected bounds. An equality of `address(p)` and `address(q)`
   supplies numeric addresses without transferring object identity or bounds.
   A frame refusal prints both written operands and the checked propositions,
-  followed by the frontier effects and a shared snapshot/value legend. The
+  followed by the frontier effects and a shared memory/value legend. The
   checked propositions may simplify to `true` or `false`; those are the
   terms the checker compared. With `--trace-proof`, a rejected written
   transport retains the preceding checked path without admitting its target. A planning
   budget failure retains that prefix too; if source and target were already
-  lowered, it prints their checked identities and snapshot legend without
+  lowered, it prints their checked identities and memory legend without
   running more proof checks.
 - **Case splits: `if`, `cases`, `match`, `branch`.** `if P` splits on any
   proposition; `cases` uses a disjunction that is already a fact; `match`
@@ -343,7 +343,7 @@ the one execution transition that fails.
 | `mark name;` | simple | Specialized | Name the current execution state. | [Reference](#proof-marks) |
 | `step()` | simple | Core | Execute one checked statement transition. | [Reference](#single-statements) |
 | `let { result: name } = step()` | simple | Specialized | Bind the checked value of a scalar assignment. | [Reference](#binding-a-statement-result) |
-| `step_until(statement(i))` | smart | Specialized | Execute up to a selected source point, or to `function.exit`, without splitting. | [Reference](#execution-to-a-program-point) |
+| `step_until(statement(i))` | smart | Specialized | Execute up to a selected source point, or to `function.exit`, without splitting. | [Reference](#execution-to-a-point) |
 | `branch [ensuring { ... } then] { ... } else { ... }` | control | Core | Prove and join the arms of source control flow. | [Reference](#source-branches) |
 | `loop [as name] { ... }` | control | Core | Prove a loop from its invariants and ranking obligations. | [Reference](#loop-transitions) |
 | `step(Contract)` | simple | Specialized | Select a named contract for a call. | [Reference](#calls-through-named-contracts) |
@@ -355,7 +355,7 @@ the one execution transition that fails.
 The boundaries are intentional: `step` is one concrete transition, `branch`
 and `loop` unpack the corresponding C control flow at the current frontier,
 `loop` constructs and applies one verified abstract loop transition,
-`step_until` repeats transitions to a program point, and the implicit tail runs
+`step_until` repeats transitions to a point, and the implicit tail runs
 what a script leaves to function exit. A branch continuation executes once
 after its arm states have joined.
 
@@ -374,8 +374,8 @@ remains migration compatibility and should not be used in new proofs.
 **Form:** `mark name;`
 
 **Specialized.** Write it to name the current state so a later fact can refer to
-it with `at(name, ...)`. At any live execution frontier, add a proof-local name
-for the current snapshot without advancing C.
+it with `at(name, ...)`. At any live execution frontier, give the point the
+path is at now a proof-local name without advancing C.
 
 **Accepts** a name not yet marked on the current path, at a live frontier of a
 C function's execution script: the claim's top-level script, a `branch` arm, a
@@ -402,12 +402,13 @@ state under that name and changes nothing else:
   Mark before the last step, or name the final values directly.
 - Inside a `have ... by { ... }` body or a pure theorem, `mark` is refused.
   Write the mark in the execution script.
-- `mark` does not label a program point. `step_until(name)` does not target
+- A mark names a point the path has already reached, not a point in the C
+  region tree that execution can be sent to. `step_until(name)` does not target
   a mark; use `step_until(statement(i))`.
 
 **Failure, checking, and tools:**
 
-Click records the exact snapshot. Expansion leaves the simple tactic
+Click records the exact state at the marked point. Expansion leaves the simple tactic
 unchanged, and profiling attributes only its bounded checking work.
 
 **Checked examples:** [`proof_mark_current_frontier.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_mark_current_frontier.md), [`proof_mark_duplicate.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_mark_duplicate.md), [`proof_mark_unknown.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_mark_unknown.md), [`proof_mark_survives_branch_join.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_mark_survives_branch_join.md), [`nested_loop_enclosing_mark.md`](https://github.com/clicklang/click/blob/master/mdtests/nested_loop_enclosing_mark.md), [`nested_loop_inner_mark_stays_local.md`](https://github.com/clicklang/click/blob/master/mdtests/nested_loop_inner_mark_stays_local.md)
@@ -614,7 +615,7 @@ continuation is refused and names that arm limit.
 To run to function exit and do proof work there on one path, write
 `step_until(function.exit)` and then the work; it never splits, and at a
 branch the facts do not decide it names the split to write
-([Execution to a program point](#execution-to-a-program-point)).
+([Execution to a point](#execution-to-a-point)).
 
 **Checked examples:** [`execute_branch_arm_stops_at_shared_continuation.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_branch_arm_stops_at_shared_continuation.md), [`tactic_execute.md`](https://github.com/clicklang/click/blob/master/mdtests/tactic_execute.md)
 
@@ -654,7 +655,7 @@ A written closer that closes no goal it acts on is refused, `solve` and
 leaves an open claim to the report that names it
 (`mdtests/a_written_solve_that_closes_nothing_is_refused.md`).
 
-### Execution to a program point
+### Execution to a point
 
 **Form:** `step_until(statement(i))`
 
@@ -748,7 +749,7 @@ one case proves does not survive that rejoin, so it cannot be exported
 A non-`if` frontier, overshot arm, unproved interface item, or nondeterministic
 join fails. Click follows the spelled arms and interface; expansion recurses
 into smart descendants, and profiling classifies those descendants. Exported
-facts retain outer proof-binding names for later snapshot rewrites, and reads
+facts retain outer proof-binding names for later `at(...)` rewrites, and reads
 through local pointers keep their declared element types.
 
 **Checked examples:** [`frontier_branch.md`](https://github.com/clicklang/click/blob/master/mdtests/frontier_branch.md), [`branch_interface_mixes_current_read_and_mark.md`](https://github.com/clicklang/click/blob/master/mdtests/branch_interface_mixes_current_read_and_mark.md), [`branch_interface_keeps_model_pointer_names.md`](https://github.com/clicklang/click/blob/master/mdtests/branch_interface_keeps_model_pointer_names.md), [`branch_interface_loaded_wide_pointer.md`](https://github.com/clicklang/click/blob/master/mdtests/branch_interface_loaded_wide_pointer.md)
@@ -814,7 +815,7 @@ from the arm's state, with its path condition available.
 The loop does not search the facts it entered with for ones its frame
 preserves. A fact about memory stated before the loop and needed after it is
 carried by the loop's invariants, or afterwards by
-[`transport`](#fact-transport) from the snapshot it was stated at.
+[`transport`](#fact-transport) from the point it was stated at.
 
 **Failure, checking, and tools:**
 
@@ -1066,7 +1067,7 @@ without a stated `Full(a) == Full(b)`; see
 indexed evidence, so `assumption()` can close a goal in that impossible context
 without another search. The evidence belongs to the current branch and is
 rebuilt when a context is restricted to selected facts; it does not equate reads across
-changed memory snapshots. Exact fact membership remains separate. See
+version points where memory may have changed. Exact fact membership remains separate. See
 [`model_getter_constant_conflict.md`](https://github.com/clicklang/click/blob/master/mdtests/model_getter_constant_conflict.md).
 
 `extract(P)` can also project an available disjunction: each source arm
@@ -1389,7 +1390,7 @@ through a resource, `solve` proves `defined(operand)` as a `have` and cites it i
 the `int32_defined` step
 ([`solve_defined_read_through_a_produced_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_defined_read_through_a_produced_resource.md)).
 
-A goal that reads one cell at two snapshots, such as `owner->cell[0] ==
+A goal that reads one cell at two version points, such as `owner->cell[0] ==
 owner->phase` right after a store wrote the first side from the second, is
 proved by `transport` from the cell's reflexive equality at a recently recorded
 point, with the frame evidence the transport selects as its `using` list
@@ -1412,7 +1413,7 @@ refuted arms closing by `contradiction`
 A goal that an available implication (or chain) concludes whose antecedents are
 exactly available, such as a call guarantee `r == 0 implies X` inside the branch
 where `r == 0`, is closed by modus ponens as a direct step through `extract`'s
-indexed consequent lookup, with the goal's snapshots as written; an antecedent
+indexed consequent lookup, with the goal's `at(...)` points as written; an antecedent
 that is not exactly available is not proved or searched for.
 
 A guarded universal goal `forall k { G implies A }` closes from an available
@@ -1499,10 +1500,10 @@ available when one of these holds:
 - It is a native comparison and the `Integer` comparison of its operands'
   exact observations is available, or the reverse: `x < y` and
   `to_integer(x) < to_integer(y)` are interchangeable.
-- At a completed C outcome, it is a condition stated at another snapshot
+- At a completed C outcome, it is a condition stated at another point
   and the memory history shows each cell it reads unchanged between the two
-  snapshots under the facts in context. Only facts that are that same
-  condition up to their snapshots are checked, so nothing is searched.
+  points under the facts in context. Only facts that are that same
+  condition up to their points are checked, so nothing is searched.
 
 A conjunction goal closes when every conjunct does, and a disjunction goal
 when one disjunct does, each by the rules above, recursively.
@@ -1518,7 +1519,7 @@ when one disjunct does, each by the rules above, recursively.
 - An implication or quantifier whose body is only equivalent to a fact, such
   as `y > x implies 0 < y` from `x < y implies y > 0`: `intro()`, then close
   the body.
-- A fact from another snapshot whose reads that check does not show
+- A fact from another point whose reads that check does not show
   unchanged: an explicit transport step first.
 
 **Failure, checking, and tools:**
@@ -1762,12 +1763,12 @@ validated, even if the graph already establishes the goal. An unsuccessful
 graph query leaves equality unknown, never false.
 
 Ambient equalities in the kernel graph include symbolic-pointer transitivity
-and supported same-snapshot load congruence, plus explicit pointer-offset
+and supported same-version-point load congruence, plus explicit pointer-offset
 equality and addition congruence (including equal displacements of ordinary C
 pointer parameters); explicit int32 equality, transitivity, and addition
 congruence are also available, including propagation into same-width int32
 scaled offsets. Registered four-byte int32 reads also have congruence at equal
-offsets within the same defining snapshot and storage block.
+offsets at the same version point and storage block.
 
 A read of at most four bytes, and `defined(...)` of a read of any width, are
 justified the same way: the walk, reading the cited conditions only, must end
@@ -1989,7 +1990,7 @@ the read type or named-resource field; it must match the constructed equality.
 
 For `defined(read)`, the separated resource must be the complete typed cell.
 The tactic looks up the exact `defined(read)` fact at the footprint's entry
-and constructs it at the exit. The footprint supplies both snapshots; the
+and constructs it at the exit. The footprint supplies both points; the
 separated cell supplies the address. Missing old definedness is a local refusal,
 not a request to search memory history. This rule preserves definedness; it
 does not establish initialization from ownership or value equality alone.
@@ -2082,7 +2083,7 @@ abstract C values, pointers, and the integer types listed above.
 A byte read retains its one-byte storage extent even though C promotes its
 equality to `int32`; separating one byte never licenses a four-byte read. The
 result is oriented after-to-before. Logical read producers
-retain their complete typed values under the exact snapshot, address, and read
+retain their complete typed values under the exact version point, address, and read
 type. `preserve` looks up the selected observations and constructs their equality;
 it does not reconstruct values from cached cells or memory derivations. This
 includes pointers whose address and provenance have different internal names.
@@ -2264,7 +2265,7 @@ must be the goal itself:
   equal the goal's.
 - A contradiction as the conclusion of a `signed_int32` or `rules`
   certificate: only the unsuffixed form accepts one.
-- A node of another family, or a proposition at another snapshot or inside a
+- A node of another family, or a proposition at another point or inside a
   conjunction: a separate `have` step for each family, and `at(...)` or
   `extract(...)` steps for provenance; certificate families never coerce one
   another's propositions.
@@ -2322,14 +2323,14 @@ the current goal. The goal becomes the rewritten proposition; no fact changes.
   range premise and does not turn a machine equality into an Integer one.
   The conversion is bounded to 64 nodes in the cited equality.
 - A pointer equality rewrites the base of an explicit `viewable(...)` claim
-  while preserving its memory snapshot and byte extent. A cited shifted view
+  while preserving the point it is stated at and its byte extent. A cited shifted view
   whose extent is `(i + 4) - i` also covers the same address with a literal
   four-byte extent; constant endpoint differences are compared in the
   extent's own modular arithmetic.
 - A pointer equality also rewrites the addresses of loads read through the
   pointer, including byte reads observed with `to_integer` and a pointer that
   is itself loaded (`o->in->cells[2]` under `o->in == a`); it keeps the read's
-  observed snapshot and load type. An equality whose left side is a whole
+  version point and load type. An equality whose left side is a whole
   symbolic pointer (`p == q`, `p == 0`) replaces that pointer everywhere,
   including inside `p as uint64`; null's address is the integer zero.
 - Rewriting the word inside an integer-derived pointer rebuilds the pointer
@@ -2341,7 +2342,7 @@ the current goal. The goal becomes the rewritten proposition; no fact changes.
 - When exact substitution misses an atomic native equality goal, its two
   operands may match `L` through checked corresponding read leaves, for both
   32-bit and 64-bit reads inside matching arithmetic operators. Alias and
-  snapshot evidence comes from the shared read-equality checker; incompatible
+  version-point evidence comes from the shared read-equality checker; incompatible
   read kinds, changed cells, and differing operators do not match. This
   comparison visits only `L` and the two goal operands.
 
@@ -2883,7 +2884,7 @@ scope the `if` was written in, and may bind the same names
 Where the arms end follows the region: in a function proof with nothing written
 after the `match`, each live arm must reach function exit and the arms are
 joined there; with tactics written after it, every live arm must end at the same
-program point in the same state, and the arms rejoin there so those tactics are
+point in the same state, and the arms rejoin there so those tactics are
 checked once, without the constructor facts or fields of any arm; in a loop's
 `preserve` body with nothing written after the `match`, each live arm must
 execute one complete iteration on its own path — restoring the loop binder,
@@ -2910,7 +2911,7 @@ splits once at the exit frontier instead, on the path's facts, and so does a
 
 Tactics written after a `match` in a `preserve` body are checked once:
 straight-line arms that end in one state rejoin as in a function body, and two
-arms still live at one program point that end apart are refused
+arms still live at one point that end apart are refused
 (`mdtests/loop_body_proof_match_shared_continuation.md`). With `ensuring`, arms
 that end apart rejoin inside the body, as the arms of a `branch` do, and those
 tactics are checked once on the one path that leaves the `match`
@@ -3190,7 +3191,7 @@ simple work or expandable automation from its body.
 
 **Core.** Split pure reasoning into contexts containing `P` and `not P`, then
 require both to prove the same goal. At an execution frontier, straight-line
-arms that end at the same program point in the same state rejoin: the proof
+arms that end at the same point in the same state rejoin: the proof
 continues once from that state, with the facts both arms established.
 
 The arms may reason, run the same C statements, and unfold and refold resources.
@@ -3208,13 +3209,13 @@ are all the proof knows about the fresh one. What follows the `if` is checked
 once.
 
 Without `ensuring`, two arms that are both still live and end in different
-states or at different program points are refused when tactics follow the `if`
+states or at different points are refused when tactics follow the `if`
 (`mdtests/proof_if_arms_must_rejoin.md`); when one arm reaches function exit,
 those tactics belong to the other arm and run once, in it
 (`mdtests/proof_if_one_arm_returns_and_the_other_continues.md`).
 
 In a loop's `preserve` body the rule is the same, except that arms reaching
-those tactics at different program points are different paths of the C and each
+those tactics at different points are different paths of the C and each
 is finished its own way.
 
 At function exit the C state is fixed. When the path's facts already decide
@@ -3425,7 +3426,7 @@ rules. The [checked regression](https://github.com/clicklang/click/blob/master/m
 proves both signed 128-bit range endpoints for a signed 64-by-32-bit
 mathematical product.
 
-## Resources and snapshots
+## Resources and transport
 
 | Form | Class | Audience | Purpose | Details |
 | --- | --- | --- | --- | --- |
@@ -3454,7 +3455,7 @@ steps and transport the unfolded definition.
 
 **Specialized.** Write it when a fact stated at an earlier state is needed at
 the current one and neither `step` nor `solve` carried it. When exact source `P`
-is available, derive target `Q` at another certified snapshot, citing `P` alone
+is available, derive target `Q` at another certified point, citing `P` alone
 as frame evidence. No other available fact is searched for: a frame that needs
 more premises is written in the `using` form below.
 
@@ -3478,7 +3479,7 @@ leaves.
 **Expansion output.** `click expand` writes it; by hand, prefer the bare form
 when the source alone carries the target, and list more premises here when it
 does not. Derive target proposition `Q` from exact
-source `P` using only the listed snapshot and frame evidence. Available in a
+source `P` using only the listed point and frame evidence. Available in a
 pure theorem too, where the listed premises are all there is to read.
 
 **Accepts**, in a C proof or a pure theorem, when:
@@ -3501,7 +3502,7 @@ pure theorem too, where the listed premises are all there is to read.
 
 It adds `Q` as a fact and closes the goal when `Q` is the goal.
 
-For current-snapshot `viewable(A)` to `viewable(B)` with explicitly cited
+For current-point `viewable(A)` to `viewable(B)` with explicitly cited
 `contains(A, B)`, expansion retains ordinary
 `apply(separation::viewable_restrict(A, B)) using { ... }` steps. When both
 are memory ranges with the same written base and int32 endpoints, citing
@@ -3513,7 +3514,7 @@ See `mdtests/viewable_restrict_transport_expansion.md`.
 At an execution frontier, a focused equality between a read now and the same
 read at a named statement's entry also expands to `preserve(separate(statement(...).footprint, R))`
 when that footprint separation is cited, the source is the earlier read's
-reflexive equality, and the statement's recorded exit is the current snapshot.
+reflexive equality, and the statement's recorded exit is the current point.
 This covers memory reads and abstract resource fields. The explicit footprint
 separation proof remains in the expanded script; no history search is needed
 for replay. See `mdtests/single_write_transport_expansion.md` and
@@ -3523,14 +3524,14 @@ For several statements, cite each footprint separation in `using`. Expansion
 writes one `have at(statement(i).exit, read) == at(statement(i).entry, read)`
 proved by `preserve` per cited footprint, then `assumption()` joins the
 endpoint equalities. The premises can be written in either order; they must
-cover the read's path to the current snapshot. No intermediate footprint or
+cover the read's path to the current point. No intermediate footprint or
 separation is discovered from history, and failure of ordinary equality closure is final rather
 than retrying a history search. Both memory reads and abstract resource fields
 use this form. See `mdtests/multi_write_transport_expansion.md` and
 `mdtests/multi_write_resource_transport_expansion.md`.
 
 A focused comparison with one read operand changing from a statement entry
-snapshot to the current state uses the same preservation chain. For example,
+to the current point uses the same preservation chain. For example,
 `transport(at(statement(0).entry, *q) > 0, *q > 0) using { ... }`
 first retains the earlier inequality with `assumption()`, proves the read
 equality from the cited footprint separations, then uses `rewrite` and
@@ -3542,17 +3543,17 @@ resource fields. The source must already be provable, and all supplied
 separations are checked. See `mdtests/inequality_transport_expansion.md` and
 `mdtests/known_value_transport_expansion.md`.
 
-The snapshot may also wrap the whole source comparison, as in
+The `at(...)` may also wrap the whole source comparison, as in
 `transport(at(statement(0).entry, *q == 7), *q == 7) using { ... }`.
 The driver uses the same explicit preservation and rewrite steps. Unsuffixed
-integer literals are snapshot-independent; every other operand retains an
+integer literals are point-independent; every other operand retains an
 explicit `at(...)`. Thus an old comparison of two reads can carry one read
-while the target explicitly keeps the other's old snapshot, but this route
+while the target explicitly keeps the other at its old point, but this route
 does not silently substitute the other's current value. The original source
 fact remains in the proof and is checked by `assumption()`.
 See `mdtests/snapshot_comparison_transport_expansion.md`.
 
-When both operands are reads at earlier snapshots, the comparison route can
+When both operands are reads at earlier points, the comparison route can
 preserve both: `transport(at(statement(0).entry, *q == *r), *q == *r)`.
 Cite the footprint separation for each read in `using`. Expansion writes one
 preservation chain per operand, rewrites both, and closes with `assumption()`.
@@ -3565,7 +3566,7 @@ Conjunction trees of supported scalar comparisons also expand: for example,
 Expansion emits nested ordinary `both` proofs, preserving the written grouping,
 with a preservation/rewrite proof for each scalar leaf. This form handles
 matching conjunction structure; selection and regrouping are described below. The source can wrap the whole tree, a
-subtree, or individual leaves in `at(...)`; nested snapshot wrappers are not
+subtree, or individual leaves in `at(...)`; nested `at(...)` wrappers are not
 handled by this route. Each leaf checks its earlier fact with `assumption()`
 and uses the supplied footprint separations for its changing reads. This covers
 memory and root fields of named resources across one or several statements.
@@ -3579,16 +3580,16 @@ A historical conjunction can also transport selected scalar comparison leaves:
 while `transport(at(statement(0).entry, *q == 7 and (*p == 8 and *r == 8)), *r == 8 and *q == 7)`
 keeps two in a different order. The target may regroup or repeat selected
 leaves in a conjunction tree.
-The driver indexes the written source's snapshotted comparison leaves once and
+The driver indexes the written source's `at(...)` comparison leaves once and
 selects each target leaf by exact spelling. It emits a `have` for each selected
 historical leaf using `assumption()`, followed by its ordinary preservation/rewrite
 proof, and combines the results with `both` in the target's written shape.
 Discarded conjuncts need not remain true; only the selected reads need footprint
 separations. The supplied separations are indexed once and must all be used and
 checked. Whole-tree and subtree `at(...)` wrappers are supported. An exact
-leaf spelling selects one snapshot; this route does not retry other snapshots
+leaf spelling selects one point; this route does not retry other points
 or discover additional evidence. Non-comparison leaves and operand-level
-snapshot spellings remain outside this selection route.
+`at(...)` spellings remain outside this selection route.
 See `mdtests/conjunction_projection_transport_expansion.md` and
 `mdtests/conjunction_selection_transport_expansion.md`.
 
@@ -3603,8 +3604,8 @@ using those equalities. It emits no whole-goal rewrites and does not assume
 that any guard is true. Exact shared read pairs use one preservation chain.
 The driver traverses the written logical trees once and indexes explicit
 separations by written subject. It does not search for aliases or discover
-additional premises. Source snapshots may wrap the whole implication or
-individual subtrees/comparisons; repeated snapshot wrappers are unsupported.
+additional premises. Source `at(...)` forms may wrap the whole implication or
+individual subtrees/comparisons; repeated `at(...)` wrappers are unsupported.
 Memory reads, named resource fields, two-read comparisons and multiple cited
 statements use the same form. Quantifiers and non-comparison leaves remain
 outside this route, as do logical regrouping and top-level disjunction transport.
@@ -3613,7 +3614,7 @@ See `mdtests/implication_transport_expansion.md` and
 
 Other transport routes still retain their existing form.
 
-The frame carries a fact across the steps between its snapshot and the
+The frame carries a fact across the steps between its point and the
 target's when every cell it reads is unchanged. The structural frame does so
 read by read, including 64-bit equality, preserving the read kind, all eight
 bytes, and the other operand; it carries `defined(...)` leaves through the
@@ -3635,7 +3636,7 @@ Beyond it:
 - A universal fact `forall (k: int32) { G implies F }` crosses the same steps:
   `k` is renamed fresh, `G` is assumed, and each read of `F` and `G` is carried
   when the recorded history shows its cell unchanged between its two
-  snapshots, read against the current context's own facts (for example
+  points, read against the current context's own facts (for example
   `k < n` excluding a store to `dst[n]`, `k != cur` excluding a store to
   `visited[cur]`, or `0 <= k and k < n` with a contract separation placing
   `left[k]` apart from it).
@@ -3643,7 +3644,7 @@ Beyond it:
   `memset(dst, 7, 4); dst[4] = 0;`, `memset`'s guarded postcondition carries
   to `(0u64..4u64).all(|k| { dst[k] == 7 })`.
 
-The rule answers the same for every caller, so `solve`'s snapshot transport
+The rule answers the same for every caller, so `solve`'s transport between points
 reaches it too, and `solve` offers an `A and B` source when the goal is held at
 a recorded point only as one of its conjuncts.
 
@@ -3651,7 +3652,7 @@ a recorded point only as one of its conjuncts.
 
 - A mid-execution source that is an available fact but not listed: list it;
   the refusal names it as one to list.
-- A target whose cell a step between the two snapshots may write, such as
+- A target whose cell a step between the two points may write, such as
   `old(p[0]) == 7` to `p[0] == 7` after `p[0] = 9`: no frame exists; prove the
   target from the step's own facts.
 - A pure target that needs a fact not listed, such as `a == 1` to `b == 1`

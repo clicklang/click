@@ -116,7 +116,7 @@ return q == p;
 ```
 
 A pointer counts as freed when its own block holds an allocation base the
-current snapshot has deallocated: the exact base, or an offset into it.
+path has deallocated by the current point: the exact base, or an offset into it.
 Copies count too, so a pointer restored through a byte-representation copy
 is refused in the same way. A symbolic pointer the verifier cannot tie to a
 freed block keeps its ordinary meaning.

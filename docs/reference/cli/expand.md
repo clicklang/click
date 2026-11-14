@@ -14,7 +14,7 @@ another expansion candidate.
 
 An unnamed resource witness can be rendered as `result` when it is exactly
 the checked return pointer. Expansion rechecks that this spelling denotes
-the same premise, including inside address casts and snapshot expressions.
+the same premise, including inside address casts and `at(...)` expressions.
 
 ## Synopsis
 

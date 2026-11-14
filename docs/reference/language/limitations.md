@@ -306,8 +306,8 @@ knows useful fold facts for current stdlib `count` proofs, but it is not a
 general induction engine for arbitrary folds.
 
 Loop invariants now elaborate through spec lowering, so unfolded pure Click
-functions can contain `if`, `let`, and `.fold` values over explicit current and
-entry memory snapshots. This supports direct invariants such as
+functions can contain `if`, `let`, and `.fold` values over reads of explicit current and
+entry memory. This supports direct invariants such as
 `permutation::permutation(p, old(p), lo, hi)` when the proof unfolds the relevant predicate.
 
 ## Loop invariants need explicit facts
