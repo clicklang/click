@@ -5147,7 +5147,7 @@ impl Pointer {
         }
     }
 
-    pub(in crate::kernel) fn shared_element_index_from_base_with_width(
+    pub(crate) fn shared_element_index_from_base_with_width(
         &self,
         base: &Self,
         byte_width: u32,
