@@ -149,10 +149,12 @@ int32 caller(struct node* p) {
     mark before;
     step(overwrite, { w: w });
     have p->other == at(before, p->other) by {
-        transport(
-            at(before, p->other) == at(before, p->other),
-            p->other == at(before, p->other)
-        ) using { };
+        have p->other == at(before, p->other) by {
+            normalize() using {
+                at(before, p->other) == at(before, p->other);
+            };
+        }
+        assumption();
     }
     let { tag: rt1, child: rc0 } = unfold(o);
     let { tag: rt0 } = unfold(rc0);

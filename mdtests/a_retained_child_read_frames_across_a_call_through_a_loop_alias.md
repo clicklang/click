@@ -104,13 +104,13 @@ void probe(struct node* g, struct node* n) {
                     have n == old(n) by { assumption(); }
 
                     have n->right == at(before_call,n->right) by {
-                        transport(
-                            at(before_call,n->right)
-                                == at(before_call,n->right),
-                            n->right == at(before_call,n->right)
-                        ) using {
-                            n == old(n);
-                        };
+                        have n->right == at(before_call, n->right) by {
+                            normalize() using {
+                                at(before_call, n->right) == at(before_call, n->right);
+                                n == old(n);
+                            };
+                        }
+                        assumption();
                     }
 
                     step(); step();

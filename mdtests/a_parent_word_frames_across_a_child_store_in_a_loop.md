@@ -75,9 +75,12 @@ void rotate_child_link(struct rb_node* gparent, struct rb_node* tmp) {
                 assumption();
             }
             have defined(gparent->rb_left) by {
-                transport(defined(at(before_store, gparent->rb_left)), defined(gparent->rb_left)) using {
-                    separate(memory(gparent->rb_left), memory(parent->rb_right));
-                };
+                have defined(gparent->rb_left) by {
+                    normalize() using {
+                        defined(at(before_store, gparent->rb_left));
+                    };
+                }
+                assumption();
             }
             let c = fold(node_at(gparent->rb_left), { v: 0 });
             let s = fold(left_child(gparent), { v: 0 }, { child: c });

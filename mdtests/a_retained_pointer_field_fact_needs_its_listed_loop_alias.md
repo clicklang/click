@@ -117,9 +117,12 @@ void probe(struct node* g, struct node* n) {
 
                     have n->right == at(before_call, n->right);
                     have n->right == saved by {
-                        transport(at(before_call, n->right == saved), n->right == saved) using {
-                            at(before_call, n->right == saved);
-                        };
+                        have n->right == saved by {
+                            normalize() using {
+                                at(before_call, n->right == saved);
+                            };
+                        }
+                        assumption();
                     }
 
                     step(); step();

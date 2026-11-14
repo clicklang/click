@@ -20,7 +20,31 @@ int32 f(const uint8* bytes, const uint8* cursor) {
 int32 shifted(const uint8* bytes, const uint8* cursor) {
  views bytes[0..8]; requires cursor == bytes + 2; ensures result == 0;
 } by {
- have viewable(bytes[2..6]) by { transport(viewable(bytes[0..8]),viewable(bytes[2..6])) using { viewable(bytes[0..8]); 0 <= 2; 2 <= 6; 6 <= 8; }; }
+ have viewable(bytes[2..6]) by { have viewable(bytes[2..6]) by {
+     have viewable(bytes[0..8]) by {
+         assumption();
+     }
+     have viewable(bytes[2..6]) by {
+         have contains(memory(bytes[0..8]), memory(bytes[2..6])) by {
+             apply(click::separation::subrange(bytes, 0, 8, 2, 6)) using {
+                 0 <= 2;
+                 2 <= 6;
+                 6 <= 8;
+             };
+         }
+         apply(click::separation::viewable_restrict(memory(bytes[0..8]), memory(bytes[2..6]))) using {
+             viewable(bytes[0..8]);
+             0 <= 2;
+             2 <= 6;
+             6 <= 8;
+             viewable(bytes[0..8]);
+             contains(memory(bytes[0..8]), memory(bytes[2..6]));
+         };
+     }
+     assumption();
+ }
+     assumption();
+ }
  have viewable(cursor[0..4]) by { rewrite(cursor == bytes + 2); assumption(); }
 }
 ```

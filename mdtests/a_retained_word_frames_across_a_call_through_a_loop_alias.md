@@ -105,10 +105,13 @@ void probe(struct node* g, struct node* n) {
                         step(set_word, { w: w });
 
                     have n->word == at(before_call, n->word) by {
-                        transport(at(before_call, n->word) == at(before_call, n->word),
-                                  n->word == at(before_call, n->word)) using {
-                            n == old(n);
-                        };
+                        have n->word == at(before_call, n->word) by {
+                            normalize() using {
+                                at(before_call, n->word) == at(before_call, n->word);
+                                n == old(n);
+                            };
+                        }
+                        assumption();
                     }
 
                     step(); step();

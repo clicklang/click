@@ -39,10 +39,7 @@ void poke(uint8* s, uint64 n) {
         }
     }
     have s[n] == '\0' by {
-        transport(old(s[n]) == '\0', s[n] == '\0') using {
-            old(s[n]) == '\0';
-            0u64 < n;
-        };
+        assumption();
     }
     have forall (k: uint64) { 0u64 <= k and to_integer(k) < to_integer(n + 1u64) implies defined(s[k]) } by {
         intro();
