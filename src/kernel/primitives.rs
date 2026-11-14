@@ -71,11 +71,13 @@ pub(crate) use contracts::{
 mod integer;
 pub(crate) use integer::WeakIntegerTerm;
 mod kernel_term;
+pub(crate) use kernel_term::{
+    KernelFold, KernelFoldIndex, KernelTermExport, KernelTermImport, clear_integer_bridge_memo,
+};
 pub use kernel_term::{
     KernelIntegerOperator, KernelLegacyTerm, KernelMachineLiteral, KernelTerm, KernelTermNode,
     KernelType,
 };
-pub(crate) use kernel_term::{KernelTermExport, KernelTermImport, clear_integer_bridge_memo};
 mod machine_integer;
 pub use machine_integer::{
     MachineIntegerConstant, MachineIntegerDivisionError, MachineIntegerFormat, MachineIntegerWidth,
