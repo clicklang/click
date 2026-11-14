@@ -7,7 +7,8 @@ mod boolean;
 // Prepared payloads; activation follows scoped consumers and Surface support.
 #[allow(dead_code)]
 mod folds;
-pub(crate) use folds::{KernelFold, KernelFoldIndex};
+pub use folds::KernelFold;
+pub(crate) use folds::KernelFoldIndex;
 mod machine;
 mod reads;
 pub use machine::KernelMachineLiteral;
@@ -36,6 +37,8 @@ pub enum KernelIntegerOperator {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum KernelTermNode {
+    /// Scoped range iteration. Only the body is under its two binders.
+    Fold(KernelFold),
     BoolLiteral(bool),
     BoolCast {
         destination: MachineIntegerType,
@@ -537,6 +540,7 @@ impl KernelTerm {
     /// Immediate expression operands; unmigrated leaves remain opaque.
     pub fn children(&self) -> &[Self] {
         match self.node() {
+            KernelTermNode::Fold(fold) => &fold.arguments,
             KernelTermNode::IntegerOperation { arguments, .. }
             | KernelTermNode::Call { arguments, .. } => arguments,
             KernelTermNode::MachineBinary { arguments, .. }
@@ -888,8 +892,10 @@ impl KernelTermImport {
                     ],
                 },
             ),
-            // Binders and their scoped obligations keep
-            // their exact old representation until their own migration.
+            IntegerTerm::RangeFold { .. } => KernelFold::import_integer(self, term)
+                .expect("Integer fold payload")
+                .into_term(),
+            // Remaining scoped forms keep their native boundary.
             _ => KernelTerm::legacy(PureFunctionArgument::Integer(term.clone())),
         };
         value.remember_integer(term);
@@ -1252,6 +1258,9 @@ impl KernelTermExport {
             _ => 1,
         });
         let value = match term.node() {
+            KernelTermNode::Fold(fold) if term.ty() == &KernelType::Integer => {
+                PureFunctionArgument::Integer(fold.integer_compatibility(self)?.into())
+            }
             KernelTermNode::Legacy(value) => value.value().clone(),
             KernelTermNode::IntegerLiteral(value) => {
                 PureFunctionArgument::Integer(IntegerTerm::Constant(value.clone()).into())

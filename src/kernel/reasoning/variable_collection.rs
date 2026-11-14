@@ -2409,6 +2409,14 @@ fn collect_integer_free_variables_seen(
     variables: &mut BTreeSet<Variable>,
     seen: &mut SeenTerms,
 ) {
+    if retained_folds::collect_native_fold_variables(
+        term,
+        retained_folds::FoldVariableRead::IntegerFree,
+        variables,
+    ) {
+        return;
+    }
+
     if checked_collection_checkpoint() {
         return;
     }
@@ -2847,6 +2855,14 @@ fn collect_integer_variables_seen(
     variables: &mut BTreeSet<Variable>,
     seen: &mut SeenTerms,
 ) {
+    if retained_folds::collect_native_fold_variables(
+        term,
+        retained_folds::FoldVariableRead::ExpressionFree,
+        variables,
+    ) {
+        return;
+    }
+
     crate::instrumentation::record_deterministic_work(1);
     match term {
         IntegerTerm::Constant(_) => {}
@@ -3634,6 +3650,14 @@ fn collect_integer_bitvector_capture_variables(
     variables: &mut BTreeSet<Variable>,
     integer_seen: &mut SeenTerms,
 ) {
+    if retained_folds::collect_native_fold_variables(
+        term,
+        retained_folds::FoldVariableRead::MachineCapture,
+        variables,
+    ) {
+        return;
+    }
+
     if checked_collection_checkpoint() {
         return;
     }
