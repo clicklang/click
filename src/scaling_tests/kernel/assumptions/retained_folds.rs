@@ -49,3 +49,66 @@ fn common_fold_read_dependencies_visit_shared_bodies_once_and_recheck_snapshots(
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }
+
+#[test]
+fn nested_machine_fold_dependencies_share_initial_and_body_subgraphs() {
+    use crate::kernel::{KernelTerm, KernelType, MachineBinaryOp, MachineOperandView};
+    for size in [4, 8, 16] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = CMemory::new();
+        let pointer = Pointer::symbolic(Variable(972010));
+        let read = MachineTerm::MemoryLoad(
+            crate::kernel::intern_c_memory_ref(&memory),
+            Box::new(pointer.clone()),
+            LoadKind::Int32,
+        );
+        let format = MachineIntegerType::Int32;
+        let mut child =
+            KernelTerm::retained_machine_operand(format, MachineOperandView::Legacy(&read));
+        let zero = KernelTerm::retained_machine_operand(
+            format,
+            MachineOperandView::Legacy(&MachineTerm::constant(0)),
+        );
+        let bound = KernelTerm::variable(KernelType::C(CType::Int32), Variable(972011));
+        let mut last = None;
+        for _ in 0..size {
+            let initial = KernelTerm::machine_binary_shared(
+                format,
+                MachineBinaryOp::Add,
+                [child.clone(), zero.clone()],
+            );
+            let body = KernelTerm::machine_binary_shared(
+                format,
+                MachineBinaryOp::Subtract,
+                [child, zero.clone()],
+            );
+            let fold = KernelFold::new(
+                KernelFoldIndex::Int32,
+                Variable(972012),
+                Variable(972013),
+                [zero.clone(), bound.clone(), initial, body],
+            )
+            .unwrap();
+            child = fold.clone().into_term();
+            last = Some(fold);
+        }
+        let before = KernelTermExport::machine_export_count();
+        let mut loads = Vec::new();
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            collect_fold_memory_loads(
+                last.as_ref().unwrap(),
+                &memory,
+                &mut loads,
+                None,
+                &mut BTreeSet::new(),
+            )
+        });
+        result.unwrap();
+        // The two distinct leaf arithmetic parents each report the same read,
+        // as existing dependency collection permits. Nested sharing must not
+        // multiply these reports or the work.
+        assert_eq!(loads, vec![(pointer.clone(), 4), (pointer, 4)]);
+        assert_eq!(KernelTermExport::machine_export_count(), before);
+        assert!(work <= 150 * size + 100, "size={size}, work={work}");
+    }
+}

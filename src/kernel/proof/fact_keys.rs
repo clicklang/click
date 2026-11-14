@@ -1301,6 +1301,18 @@ fn alpha_machine_key<const ALLOW_LOADS: bool>(
                         bindings,
                         next_binder,
                     )?,
+                    V::Shared(root) if matches!(root.node(), N::Fold(_)) => {
+                        let N::Fold(fold) = root.node() else {
+                            unreachable!()
+                        };
+                        fold_keys::machine_fold_key::<ALLOW_LOADS>(
+                            fold.arguments.each_ref().map(V::Shared),
+                            fold.accumulator,
+                            fold.item,
+                            bindings,
+                            next_binder,
+                        )?
+                    }
                     V::Shared(root) if root.machine_read_leaf().is_some() => {
                         alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
                             root.machine_read_leaf().expect("read leaf"),
@@ -1578,6 +1590,34 @@ pub(crate) fn bitvector_folds_alpha_equivalent(
         return None;
     }
     Some(left_key == right_key)
+}
+
+/// Compare bodies under their own binders after the caller has checked the
+/// bounds and initial values equal. Reindex at the right outer operands, as
+/// the native fold congruence rule does; this function proves no endpoint equality.
+pub(crate) fn machine_fold_bodies_alpha_equivalent(
+    left: crate::kernel::MachineOperandView<'_>,
+    right: crate::kernel::MachineOperandView<'_>,
+) -> Option<bool> {
+    let (la, li, left) = left.fold()?;
+    let (ra, ri, right) = right.fold()?;
+    let key = |a, i, body| {
+        let mut environment = fold_keys::bindings();
+        let key = fold_keys::machine_fold_key::<false>(
+            [right[0], right[1], right[2], body],
+            a,
+            i,
+            &mut environment,
+            &mut 0,
+        )?;
+        Some((key, environment.work_units))
+    };
+    let (left, lw) = key(la, li, left[3])?;
+    let (right, rw) = key(ra, ri, right[3])?;
+    if crate::instrumentation::deadline_exceeded_with_work(lw.saturating_add(rw)) {
+        return None;
+    }
+    Some(left == right)
 }
 
 /// Build the snapshot-aware alpha identity of one int32 range fold, with the

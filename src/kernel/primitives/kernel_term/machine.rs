@@ -456,6 +456,13 @@ impl KernelTermImport {
             return self.scalar_read(result, term);
         }
         let node = match term {
+            Old::RangeFold { .. } => {
+                return Some(
+                    KernelFold::import_machine(self, term)?
+                        .into_term()
+                        .with_machine_observation_type(result),
+                );
+            }
             Old::If {
                 condition,
                 then_term,
@@ -592,6 +599,12 @@ impl KernelTermImport {
             return read;
         }
         let node = match term {
+            Old::RangeFold { .. } => {
+                return KernelFold::import_machine(self, term)
+                    .expect("machine fold")
+                    .into_term()
+                    .with_machine_observation_type(result);
+            }
             Old::ClickFunctionApplication { name, arguments } => {
                 return self.machine_call(
                     result,
@@ -692,6 +705,7 @@ impl KernelTermExport {
         MACHINE_EXPORT_COUNT.with(|count| count.set(count.get() + 1));
         crate::instrumentation::record_deterministic_work(1);
         Ok(match term.node() {
+            Node::Fold(fold) => fold.export_machine()?,
             Node::Call { name, arguments } if matches!(term.ty(), KernelType::C(ty) if MachineIntegerType::from_c_type(*ty).is_some()) =>
             {
                 let mut export = Self::default();

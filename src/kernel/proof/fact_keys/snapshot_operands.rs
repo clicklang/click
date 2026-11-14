@@ -19,7 +19,7 @@ enum Node {
         SnapshotBlindBitvectorKey,
     ),
     Exact(MachineTerm),
-    ExactConditional(crate::kernel::SharedMachineIntegerTerm),
+    ExactOperand(crate::kernel::SharedMachineIntegerTerm),
 }
 
 struct Record {
@@ -106,7 +106,7 @@ fn intern(node: Node) -> SnapshotBlindBitvectorKey {
         Node::If(c, a, b) => {
             c.requires_checked_match() || a.requires_checked_match() || b.requires_checked_match()
         }
-        Node::Exact(_) | Node::ExactConditional(_) => false,
+        Node::Exact(_) | Node::ExactOperand(_) => false,
     };
     let record = Arc::new(Record {
         id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
@@ -154,8 +154,8 @@ pub(super) fn written(term: &MachineTerm) -> SnapshotBlindBitvectorKey {
                 snapshot_blind_bitvector_key(else_term),
             )
         }
-        MachineTerm::If { .. } => {
-            Node::ExactConditional(crate::kernel::SharedMachineIntegerTerm::intern(
+        MachineTerm::If { .. } | MachineTerm::RangeFold { .. } => {
+            Node::ExactOperand(crate::kernel::SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int32,
                 term.clone(),
             ))
@@ -237,6 +237,14 @@ pub(super) fn operand(view: crate::kernel::MachineOperandView<'_>) -> SnapshotBl
                 Box::new(snapshot_blind_pointer_key(address)),
                 kind,
             ))
+        } else if matches!(root.node(), crate::kernel::KernelTermNode::Fold(_)) {
+            intern(Node::ExactOperand(
+                crate::kernel::SharedMachineIntegerTerm::observe_shared(
+                    MachineIntegerType::Int32,
+                    root.with_machine_observation_type(MachineIntegerType::Int32),
+                )
+                .expect("machine fold"),
+            ))
         } else if let Some(value) = root.machine_conversion_leaf() {
             written(value)
         } else if let Some(variable) = view.variable() {
@@ -265,7 +273,7 @@ pub(super) fn operand(view: crate::kernel::MachineOperandView<'_>) -> SnapshotBl
                 crate::kernel::integer_comparison_condition!(_, _)
             ) || condition.is_bool_value_form()
             {
-                intern(Node::ExactConditional(
+                intern(Node::ExactOperand(
                     crate::kernel::SharedMachineIntegerTerm::observe_shared(
                         MachineIntegerType::Int32,
                         root.with_machine_observation_type(MachineIntegerType::Int32),

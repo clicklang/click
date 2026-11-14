@@ -195,6 +195,11 @@ impl TermRewrite<'_> {
                 continue;
             }
             let value = match term.node() {
+                KernelTermNode::Fold(fold) => self
+                    .retained_fold_in(fold)
+                    .ok()?
+                    .into_term()
+                    .with_machine_observation_type(format),
                 KernelTermNode::MachineIf { arguments } => {
                     let (condition, guard) = guards.remove(&term.id()).expect("visited guard");
                     if self.integer_exact.is_none()

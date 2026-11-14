@@ -65,6 +65,14 @@ fn collect_machine_operand_carriers(
     }
     if let Some(leaves) = shared_machine_conversion_leaves(root, || variables.visit()) {
         for (_, leaf) in leaves.iter() {
+            if let KernelTermNode::Fold(fold) = leaf.node() {
+                variables.c.insert(fold.accumulator);
+                variables.c.insert(fold.item);
+                for child in &fold.arguments {
+                    collect_machine_operand_carriers(MachineOperandView::Shared(child), variables);
+                }
+                continue;
+            }
             collect_bitvector_carriers(
                 leaf.machine_conversion_leaf().expect("conversion leaf"),
                 variables,
@@ -2168,6 +2176,12 @@ impl<'a> TermRewrite<'a> {
         };
         rewrite.seed_fresh_allocator();
         rewrite
+    }
+
+    /// The ordinary substitution profile with a retained replacement.
+    pub(crate) fn for_machine_operand(from: &'a MachineTerm, to: MachineOperandView<'a>) -> Self {
+        let _collection_scope = crate::instrumentation::CheckedCollectionScope::new();
+        Self::for_bits_with_budget(MachineOperandView::Legacy(from), to, false)
     }
 
     /// Construct the checked machine rewrite used by range-fold laws. Setup

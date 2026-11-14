@@ -413,6 +413,16 @@ pub(in crate::kernel) fn transport_node(
 ) -> Option<KernelTerm> {
     Some(
         match node.node() {
+            KernelTermNode::Fold(fold) => crate::kernel::KernelFold {
+                index: fold.index,
+                accumulator: fold.accumulator,
+                item: fold.item,
+                arguments: children
+                    .try_into()
+                    .ok()
+                    .map(|a: &[KernelTerm; 4]| a.clone())?,
+            }
+            .into_term(),
             KernelTermNode::MachineIf { arguments } => {
                 let [left, right] = children else { return None };
                 KernelTerm::machine_if_shared(
@@ -485,7 +495,9 @@ fn canonical(root: &KernelTerm) -> Option<(HashMap<u64, KernelTerm>, HashMap<u64
             pending.extend(nodes.into_iter().map(|child| (child, false)));
             continue;
         }
-        let has_load = if nodes.is_empty() {
+        let has_load = if matches!(term.node(), KernelTermNode::Fold(_)) {
+            true
+        } else if nodes.is_empty() {
             leaf(term).is_some_and(|value| crate::kernel::eval::term_mentions_a_memory_load(&value))
         } else {
             nodes.iter().any(|node| loads[&node.id()])
@@ -501,6 +513,7 @@ fn canonical(root: &KernelTerm) -> Option<(HashMap<u64, KernelTerm>, HashMap<u64
             };
         loads.insert(term.id(), has_load);
         let value = match term.node() {
+            KernelTermNode::Fold(_) => term.clone(),
             KernelTermNode::MachineIf { arguments } => {
                 let guard = MachineTerm::BoolCast {
                     to: T::UInt8,
@@ -622,8 +635,10 @@ pub(super) fn rewrite(
             })?
             .iter()
             .any(|(_, node)| {
-                node.machine_conversion_leaf()
-                    .is_some_and(crate::kernel::eval::term_mentions_a_memory_load)
+                matches!(node.node(), KernelTermNode::Fold(_))
+                    || node
+                        .machine_conversion_leaf()
+                        .is_some_and(crate::kernel::eval::term_mentions_a_memory_load)
             })
         } else {
             false
@@ -720,6 +735,13 @@ pub(super) fn rewrite(
             continue;
         }
         let value = match term.node() {
+            KernelTermNode::Fold(fold) => {
+                let mut rewrite = super::super::term_rewrite::TermRewrite::for_bits(from, to);
+                match rewrite.retained_fold(fold) {
+                    Ok(fold) => fold.into_term(),
+                    Err(_) => term.clone(),
+                }
+            }
             KernelTermNode::MachineIf { arguments } => {
                 let guard = MachineTerm::BoolCast {
                     to: T::UInt8,
@@ -804,7 +826,8 @@ fn static_syntax(root: &KernelTerm) -> Option<bool> {
                 KernelTermNode::MachineIf { .. }
                 | KernelTermNode::IntegerToMachine { .. }
                 | KernelTermNode::MemoryLoad { .. }
-                | KernelTermNode::Legacy(_) => false,
+                | KernelTermNode::Legacy(_)
+                | KernelTermNode::Fold(_) => false,
                 _ => nodes.iter().all(|node| cache[&node.id()]),
             };
             cache.insert(term.id(), value);

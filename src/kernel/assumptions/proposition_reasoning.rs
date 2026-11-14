@@ -4404,6 +4404,13 @@ impl PureFactContext {
         if let (Some(a), Some(b)) = (leaf(left), leaf(right)) {
             return self.bitvector_terms_equal_for_transport(&a, &b);
         }
+        if let (Some((_, _, a)), Some((_, _, b))) = (left.fold(), right.fold())
+            && (0..3).all(|i| self.transport_views_inner(a[i], b[i], local))
+            && crate::kernel::proof::fact_keys::machine_fold_bodies_alpha_equivalent(left, right)
+                == Some(true)
+        {
+            return true;
+        }
         if self.equality_graph.are_int32_equal_views(left, right) {
             return true;
         }

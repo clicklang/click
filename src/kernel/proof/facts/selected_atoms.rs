@@ -35,10 +35,12 @@ fn syntax_atoms(root: &KernelTerm) -> Option<PersistentSet<BitvectorEqualityAtom
                     bitvector_equality_atom_key(term.machine_read_leaf().expect("read leaf"))
                         .expect("read atom"),
                 ),
-                // The native collector treats conversions as opaque too.
-                KernelTermNode::IntegerToMachine { .. } | KernelTermNode::Legacy(_) => {
-                    PersistentSet::default()
-                }
+                // Native conversions are opaque. Fold children are collected
+                // below with one query-local seen set.
+                KernelTermNode::IntegerToMachine { .. }
+                | KernelTermNode::Legacy(_)
+                | KernelTermNode::Call { .. }
+                | KernelTermNode::Fold(_) => PersistentSet::default(),
                 KernelTermNode::MachineUnary { operand, .. }
                 | KernelTermNode::MachineCast { operand, .. } => {
                     if !finish {
@@ -90,10 +92,21 @@ pub(super) fn collect(
     machine: &SharedMachineIntegerTerm,
     atoms: &mut BTreeSet<BitvectorEqualityAtomKey>,
 ) {
+    collect_in(machine, atoms, &mut BTreeSet::new());
+}
+
+fn collect_in(
+    machine: &SharedMachineIntegerTerm,
+    atoms: &mut BTreeSet<BitvectorEqualityAtomKey>,
+    seen: &mut BTreeSet<u64>,
+) {
     let Some(root) = machine.shared_operand() else {
         collect_bitvector_atoms(machine.value(), atoms);
         return;
     };
+    if !seen.insert(root.id()) {
+        return;
+    }
     let Some(written) = syntax_atoms(root) else {
         return;
     };
@@ -110,8 +123,16 @@ pub(super) fn collect(
         !crate::instrumentation::deadline_exceeded_with_work(1)
     }) {
         for (_, leaf) in leaves.iter() {
-            if let Some(MachineTerm::BoolCast { value, .. }) = leaf.machine_conversion_leaf() {
-                collect_condition_bitvector_atoms(value, atoms);
+            if let KernelTermNode::Fold(fold) = leaf.node() {
+                for child in &fold.arguments {
+                    let child = MachineOperandView::Shared(child).retain(MachineIntegerType::Int32);
+                    collect_in(&child, atoms, seen);
+                }
+            }
+            if let Some(native) = leaf.machine_conversion_leaf() {
+                // Preserve the native opaque leaf's own atom and dependency
+                // rules (calls, Bool guards, pointer addresses and matches).
+                collect_bitvector_atoms(native, atoms);
             }
         }
     }
@@ -134,6 +155,34 @@ pub(super) fn collect(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_fold_atom_selection_keeps_call_bodies_opaque() {
+        use crate::kernel::{KernelTermExport, KernelTermImport};
+        let _session = VerificationSession::enter();
+        let native = MachineTerm::RangeFold {
+            start: Box::new(MachineTerm::constant(0)),
+            end: Box::new(MachineTerm::Variable(Variable(1005390))),
+            initial: Box::new(MachineTerm::constant(0)),
+            accumulator: Variable(1005391),
+            item: Variable(1005392),
+            body: Box::new(MachineTerm::ClickFunctionApplication {
+                name: "opaque_body".into(),
+                arguments: vec![PureFunctionArgument::Value(CValue::Int32(
+                    MachineTerm::Variable(Variable(1005393)),
+                ))],
+            }),
+        };
+        let mut expected = BTreeSet::new();
+        collect_bitvector_atoms(&native, &mut expected);
+        let root = KernelTermImport::default().machine(MachineIntegerType::Int32, &native);
+        let value = SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, root).unwrap();
+        let before = KernelTermExport::machine_export_count();
+        let mut actual = BTreeSet::new();
+        collect(&value, &mut actual);
+        assert_eq!(actual, expected);
+        assert_eq!(KernelTermExport::machine_export_count(), before);
+    }
 
     #[test]
     fn selected_shared_atoms_preserve_literal_conversion_and_load_rules() {

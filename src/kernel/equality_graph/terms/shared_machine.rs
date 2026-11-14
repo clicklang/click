@@ -106,6 +106,25 @@ impl TermClasses {
                 continue;
             }
             let class = match term.node() {
+                N::Fold(_) => {
+                    let format = match width {
+                        W::Bits8 => MachineIntegerType::UInt8,
+                        W::Bits16 => MachineIntegerType::UInt16,
+                        W::Bits32 => MachineIntegerType::Int32,
+                        W::Bits64 => MachineIntegerType::UInt64,
+                        W::Bits128 => MachineIntegerType::UInt128,
+                    };
+                    let atom = MachineAtom::from_numeric_operand(
+                        format,
+                        crate::kernel::MachineOperandView::Shared(term),
+                    );
+                    self.intern_node(match width {
+                        W::Bits8 | W::Bits16 => Node::MachineNarrow(atom),
+                        W::Bits32 => Node::Int32(atom),
+                        W::Bits64 => Node::UInt64(atom),
+                        W::Bits128 => Node::Machine128(atom),
+                    })
+                }
                 N::MachineBinary {
                     format,
                     operator,

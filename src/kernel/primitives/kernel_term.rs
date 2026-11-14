@@ -197,6 +197,7 @@ struct NodeKeyData {
     machine_reads: bool,
     conditional_machine_rewrites: bool,
     machine_conditionals: bool,
+    machine_folds: bool,
     machine_constant: Option<KernelMachineLiteral>,
 }
 #[derive(Clone)]
@@ -246,6 +247,10 @@ impl NodeKey {
         // outside shared observations until their scoped consumers migrate.
         // Inspect immediate children only; retain the result across growing DAGs.
         let opaque_observation_boundary = match &node {
+            KernelTermNode::Fold(fold) if matches!(ty, KernelType::C(_)) => fold
+                .arguments
+                .iter()
+                .any(KernelTerm::has_opaque_observation_boundary),
             KernelTermNode::MemoryLoad { .. } => true,
             KernelTermNode::Legacy(value) | KernelTermNode::LegacyBool(value) => {
                 matches!(
@@ -288,6 +293,13 @@ impl NodeKey {
         // to its leaves, including explicit conversion roots. Opaque payloads
         // keep their old storage; inspect immediate children only.
         let shared_machine_operand = match &node {
+            KernelTermNode::Fold(fold) => {
+                matches!(ty, KernelType::C(_))
+                    && fold
+                        .arguments
+                        .iter()
+                        .all(KernelTerm::is_shared_machine_operand)
+            }
             KernelTermNode::Call { .. } => {
                 matches!(&ty, KernelType::C(c) if MachineIntegerType::from_c_type(*c).is_some())
             }
@@ -311,6 +323,7 @@ impl NodeKey {
             _ => false,
         };
         let machine_conversions = match &node {
+            KernelTermNode::Fold(_) => shared_machine_operand,
             KernelTermNode::Call { .. } => shared_machine_operand,
             KernelTermNode::MachineIf { .. } => true,
             KernelTermNode::IntegerToMachine { .. } => true,
@@ -338,6 +351,7 @@ impl NodeKey {
         // Conditional rewriting leaves ordinary arithmetic untouched. Retain
         // this syntax summary so each query skips unchanged shared prefixes.
         let conditional_machine_rewrites = match &node {
+            KernelTermNode::Fold(_) => shared_machine_operand,
             KernelTermNode::Call { .. } => shared_machine_operand,
             KernelTermNode::MachineIf { .. } => true,
             KernelTermNode::IntegerToMachine { .. } | KernelTermNode::MachineCast { .. } => true,
@@ -369,6 +383,18 @@ impl NodeKey {
             | KernelTermNode::MachineCast { operand, .. } => operand.has_machine_conditionals(),
             _ => false,
         };
+        let machine_folds = match &node {
+            KernelTermNode::Fold(_) => shared_machine_operand,
+            KernelTermNode::MachineBinary { arguments, .. } => {
+                arguments.iter().any(KernelTerm::has_machine_folds)
+            }
+            KernelTermNode::MachineIf { arguments } => {
+                arguments[1..].iter().any(KernelTerm::has_machine_folds)
+            }
+            KernelTermNode::MachineUnary { operand, .. }
+            | KernelTermNode::MachineCast { operand, .. } => operand.has_machine_folds(),
+            _ => false,
+        };
         let machine_constant = machine::constant_reading(&node);
         Self(Arc::new(NodeKeyData {
             machine_constant,
@@ -379,6 +405,7 @@ impl NodeKey {
             machine_reads,
             conditional_machine_rewrites,
             machine_conditionals,
+            machine_folds,
             ty,
             node,
         }))
@@ -490,6 +517,15 @@ impl KernelTerm {
 
     pub(crate) fn has_machine_conditionals(&self) -> bool {
         self.0.key.0.machine_conditionals
+    }
+
+    /// Intrinsic syntax summary, independent of facts and registry state.
+    pub(crate) fn has_machine_folds(&self) -> bool {
+        self.0.key.0.machine_folds
+    }
+
+    pub(crate) fn has_machine_control_terms(&self) -> bool {
+        self.has_machine_conditionals() || self.has_machine_folds()
     }
 
     pub(crate) fn is_shared_machine_operand(&self) -> bool {

@@ -6348,7 +6348,9 @@ fn collect_operand_memories(
             if !seen.insert(root.id()) {
                 continue;
             }
-            if let Some(leaf) = root.machine_conversion_leaf() {
+            if let Some((_, _, children)) = operand.fold() {
+                pending.extend(children.into_iter().rev());
+            } else if let Some(leaf) = root.machine_conversion_leaf() {
                 collect_bitvector_memories(leaf, memories);
             } else if let Some((memory, _, _)) = operand.read() {
                 if !memories.contains(memory) {
@@ -6609,6 +6611,7 @@ mod shared_index_transport;
 pub(in crate::kernel) use shared_index_transport::{
     index_syntax_equal as pointer_index_syntax_equal, map_index as map_shared_pointer_index,
     map_index_with_descent as map_shared_pointer_index_with_descent,
+    map_index_with_fold as map_shared_pointer_index_with_fold,
     transported_scaled_index as rebuild_scaled_pointer_index,
 };
 use shared_index_transport::{

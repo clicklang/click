@@ -269,6 +269,19 @@ full scaling plus fold/variable/rewrite selection passes all 1,870 tests.
 Opaque endpoints reuse their existing numeric observation identity. The full
 non-nightly proof corpus passes with zero fact-stability differences.
 
+6g activates machine fold roots in native import and specification evaluation.
+Symbolic results retain all four common children; concrete evaluation retains
+accumulator values between iterations. Scoped collectors, substitution,
+checking, alpha identity and numeric observations consume common fold operands.
+Pointer-index callbacks distinguish opaque normalization from framed read
+transport and capture-safe variable substitution. Existing concrete fold
+reduction remains checking-only, and the existing Surface spelling is reused.
+Native `MachineTerm` and `CValue` callers remain explicit compatibility consumers;
+this does not remove those carriers or introduce a general lambda representation.
+Validation: the full scaling and related fold, scope, rewrite, identity and
+equality-graph selection passes all 2,113 tests. The full non-nightly proof
+corpus passes with zero fact-stability differences.
+
 ## Chunk 5: execution value handoffs
 
 Retain already-supported machine-integer results through execution, one PR per

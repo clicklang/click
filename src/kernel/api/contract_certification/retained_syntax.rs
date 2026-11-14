@@ -145,6 +145,12 @@ impl Comparison {
                 }
                 continue;
             }
+            if left.fold().is_some() || right.fold().is_some() {
+                if !crate::kernel::machine_operand_syntax_cmp(left, right).is_eq() {
+                    return false;
+                }
+                continue;
+            }
             // Selected native leaves are already stored payloads, not exports.
             fn native(view: Operand<'_>) -> Option<&MachineTerm> {
                 match view {

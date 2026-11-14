@@ -52,7 +52,8 @@ pub(crate) fn shared_machine_syntax_variables(
                 | KernelTermNode::IntegerToMachine { .. }
                 | KernelTermNode::Legacy(_)
                 | KernelTermNode::MemoryLoad { .. }
-                | KernelTermNode::Call { .. } => Default::default(),
+                | KernelTermNode::Call { .. }
+                | KernelTermNode::Fold(_) => Default::default(),
                 KernelTermNode::MachineUnary { operand, .. }
                 | KernelTermNode::MachineCast { operand, .. } => {
                     if !finish {
@@ -120,6 +121,7 @@ pub(crate) fn shared_machine_conversion_leaves(
                     | KernelTermNode::Legacy(_)
                     | KernelTermNode::Call { .. }
                     | KernelTermNode::MachineIf { .. }
+                    | KernelTermNode::Fold(_)
             )
         },
         visit,
@@ -487,6 +489,38 @@ impl SharedMachineIntegerTerm {
 }
 
 impl<'a> MachineOperandView<'a> {
+    pub(crate) fn fold(self) -> Option<(Variable, Variable, [Self; 4])> {
+        match self {
+            Self::Shared(root) => match root.node() {
+                KernelTermNode::Fold(fold) => Some((
+                    fold.accumulator,
+                    fold.item,
+                    fold.arguments.each_ref().map(Self::Shared),
+                )),
+                _ => None,
+            },
+            Self::Legacy(MachineTerm::RangeFold {
+                start,
+                end,
+                initial,
+                accumulator,
+                item,
+                body,
+            }) => Some((
+                *accumulator,
+                *item,
+                [
+                    start.as_ref(),
+                    end.as_ref(),
+                    initial.as_ref(),
+                    body.as_ref(),
+                ]
+                .map(Self::Legacy),
+            )),
+            _ => None,
+        }
+    }
+
     pub(crate) fn conditional(self) -> Option<(std::borrow::Cow<'a, ConditionTerm>, [Self; 2])> {
         match self {
             Self::Shared(root) => match root.node() {
@@ -857,7 +891,9 @@ impl<'a> MachineOperandView<'a> {
                     Some(CarrierWidth::of_machine_type(*destination))
                 }
                 KernelTermNode::MachineLiteral(_) => crate::kernel::root_width(&self.literal()?),
-                KernelTermNode::Variable(_) | KernelTermNode::MachineIf { .. } => None,
+                KernelTermNode::Variable(_)
+                | KernelTermNode::MachineIf { .. }
+                | KernelTermNode::Fold(_) => None,
                 KernelTermNode::MemoryLoad { kind, .. } => Some(CarrierWidth::of_load(*kind)),
                 KernelTermNode::IntegerToMachine { destination, .. } => {
                     Some(CarrierWidth::of_machine_type(*destination))
@@ -925,10 +961,12 @@ impl<'a> MachineOperandView<'a> {
                     }
                     _ => ty,
                 };
-                Some(IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(
-                    observed_ty,
-                    term.with_machine_observation_type(observed_ty),
-                )?))
+                Some(IntegerTerm::Machine(
+                    SharedMachineIntegerTerm::observe_shared(
+                        observed_ty,
+                        term.with_machine_observation_type(observed_ty),
+                    )?,
+                ))
             }
             Self::Legacy(value) => IntegerTerm::from_machine(ty, value.clone()),
         }
