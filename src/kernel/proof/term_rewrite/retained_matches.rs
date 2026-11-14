@@ -23,6 +23,67 @@ impl TermRewrite<'_> {
         result.ok_or(RewriteRefusal::UnsupportedScope)
     }
 
+    /// Select only a checked constructor and substitute its fields simultaneously.
+    /// None means the existing checker has no reduction, including symbolic inputs.
+    pub(crate) fn reduce_retained_match(
+        &mut self,
+        matched: &KernelMatch,
+    ) -> Result<Option<KernelTerm>, RewriteRefusal> {
+        let value = self.reduce_retained_match_in(matched);
+        self.refusal_observed.set(true);
+        match self.refusal_status() {
+            Some(refusal) => Err(refusal),
+            None => Ok(value),
+        }
+    }
+
+    fn reduce_retained_match_in(&mut self, matched: &KernelMatch) -> Option<KernelTerm> {
+        let PureFunctionArgument::Algebraic(scrutinee) = self
+            .fold_integer_bridge
+            .argument(&matched.arguments[0])
+            .ok()?
+        else {
+            return None;
+        };
+        let fields = scrutinee.checked_constructor_fields()?;
+        let AlgebraicTermNode::Constructor { variant, .. } = &scrutinee.node else {
+            return None;
+        };
+        let index = matched
+            .arms
+            .iter()
+            .position(|arm| arm.variant == *variant)?;
+        let schema = scrutinee
+            .algebraic_type
+            .variants
+            .iter()
+            .find(|schema| schema.name == *variant)?;
+        let bindings = matched.arms[index]
+            .export_bindings(&mut self.fold_integer_bridge)
+            .ok()?;
+        if bindings.len() != fields.len() {
+            return None;
+        }
+        let (c, integer, algebraic) = match_field_replacements(&bindings, fields, &schema.fields)?;
+        let mut rewrite = TermRewrite::for_typed_variables(&c, &integer, &algebraic);
+        let value = rewrite.rewrite_retained_match_child(&matched.arguments[index + 1]);
+        self.changed |= rewrite.changed;
+        rewrite.refusal_observed.set(true);
+        self.unsupported_integer_scope |= rewrite.unsupported_integer_scope;
+        self.integer_work_exhausted |= rewrite.integer_work_exhausted;
+        #[cfg(test)]
+        {
+            self.visits += rewrite.visits;
+        }
+        if self.refusal_status().is_some() {
+            return None;
+        }
+        if value.is_some() {
+            self.changed = true;
+        }
+        value
+    }
+
     fn reserve_retained_match_variables(&mut self, matched: &KernelMatch) -> Option<()> {
         self.ensure_replacement_carriers();
         if self.source_variables_reserved {
@@ -124,6 +185,74 @@ impl TermRewrite<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn common_numeric_match_reduction_agrees_with_native_checked_fields() {
+        for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
+            let ty = format.c_type();
+            let binding = AlgebraicValue::C(if format == MachineIntegerType::Int32 {
+                CValue::Int32(MachineTerm::Variable(Variable(7)))
+            } else {
+                CValue::UInt64(MachineTerm::Variable(Variable(7)))
+            });
+            let mut scrutinee = KernelMatch::test_scrutinee(vec![AlgebraicValueType::C(ty)]);
+            scrutinee.node = AlgebraicTermNode::Constructor {
+                variant: "Arm".into(),
+                fields: vec![AlgebraicValue::C(if format == MachineIntegerType::Int32 {
+                    CValue::Int32(MachineTerm::Variable(Variable(8)))
+                } else {
+                    CValue::UInt64(MachineTerm::Variable(Variable(8)))
+                })],
+            };
+            let native = MachineTerm::AlgebraicMatch {
+                scrutinee: Box::new(scrutinee.clone()),
+                arms: vec![AlgebraicBitvectorMatchArm {
+                    variant: "Arm".into(),
+                    bindings: vec![binding],
+                    binding_names: Default::default(),
+                    body: MachineTerm::Variable(Variable(7)),
+                }],
+            };
+            let common =
+                KernelMatch::import_machine(&mut KernelTermImport::default(), format, &native)
+                    .unwrap();
+            let result = TermRewrite::empty()
+                .reduce_retained_match(&common)
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                KernelTermExport::machine(&result).unwrap(),
+                MachineTerm::Variable(Variable(8))
+            );
+        }
+        let mut scrutinee = KernelMatch::test_scrutinee(vec![AlgebraicValueType::Integer]);
+        scrutinee.node = AlgebraicTermNode::Constructor {
+            variant: "Arm".into(),
+            fields: vec![AlgebraicValue::Integer(IntegerTerm::Variable(Variable(8)))],
+        };
+        let native = IntegerTerm::AlgebraicMatch {
+            scrutinee: Box::new(scrutinee),
+            arms: vec![AlgebraicIntegerMatchArm {
+                variant: "Arm".into(),
+                bindings: vec![AlgebraicValue::Integer(IntegerTerm::Variable(Variable(7)))],
+                binding_names: Default::default(),
+                body: IntegerTerm::Variable(Variable(7)).into(),
+            }],
+        };
+        let common =
+            KernelMatch::import_integer(&mut KernelTermImport::default(), &native).unwrap();
+        let result = TermRewrite::empty()
+            .reduce_retained_match(&common)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            KernelTermExport::default()
+                .integer(&result)
+                .unwrap()
+                .as_ref(),
+            &IntegerTerm::Variable(Variable(8))
+        );
+    }
 
     #[test]
     fn common_match_rewrite_preserves_integer_capture_and_machine_scopes() {
