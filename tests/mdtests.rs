@@ -139,7 +139,7 @@ const NIGHTLY: &[&str] = &[
     "c_named_function_contract_frames_guarded_composite.md",                   // 0.8s
     "c_named_function_contract_refinement_theorem.md",                         // 0.7s
     "c_pointer_field_preserving_calls_join_branches.md",                       // 2.6s
-    "program_switch.md",                                                       // 0.5s
+    "c_switch.md",                                                       // 0.5s
     "call_frames_pointer_after_named_unfolds.md",                              // 1.0s
     "call_frees_owned_allocation_beside_borrowed_view.md",                     // 1.0s
     "call_keeps_a_field_bearing_region_beside_the_lent_one.md",                // 1.6s
